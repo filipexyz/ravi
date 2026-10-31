@@ -22,7 +22,14 @@ Run `bun test src/ci/review-gate.test.ts` (no install, full build or full suite 
 - New independent head approval explicitly renewing a justified dismissal: passes once resolved.
 - Pagination to page two finds a blocker; malformed cursor or truncated count blocks.
 - Head or evidence changes between reads: blocks.
+- A code-blocked issue comment posted after green on the same SHA: blocks; editing or deleting it triggers a fresh decision.
+- The same blocker in a PR body or native review body: blocks even with valid approval.
+- Author-session verdict, old-SHA verdict, missing provenance and reader publication: blocks.
+- Single-writer repo plus valid different-session current-head verdict: passes when all findings are resolved.
+- Second writer present: native approval and session verdict are both required.
+- Explicit URL resolution must be newer than the blocker; a subsequent blocker edit invalidates it.
+- The workflow must have no path/branch filters; old PRs predating the workflow need a fresh event.
 
-On the PR, inspect `Review Gate Tests` and the live `Review Gate` logs. A live gate failure for missing independent approval is expected with one collaborator; never manufacture an approval to make the check green. Fixture success is not a live second-identity approval.
+On the PR, inspect `Review Gate Tests` and the live `Review Gate` logs. Missing real session review must remain red; never invent provenance to make it green. A separate reviewing session must actually read the diff and publish its verdict.
 
-Inspect the active ruleset by REST readback and `gh api repos/filipexyz/ravi/rules/branches/dev`. Both named checks must appear with integration 15368; required approvals, stale dismissal, last-push approval and conversation resolution must be enabled. Verify `bypass_actors` is empty. Check PR `reviewDecision`/`mergeStateStatus`; do not attempt a merge as a test.
+Inspect the active ruleset by REST readback and `gh api repos/filipexyz/ravi/rules/branches/dev`. Report actual required checks and native review/conversation settings. The operator promotes Review Gate only after a live green PR. Until then it is advisory. Do not attempt a merge as a test or silently install the stronger native-writer template.

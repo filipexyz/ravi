@@ -386,3 +386,74 @@ describe("review reconciliation: Bash comment and pipeline boundaries", () => {
     expect(checkDangerousPatterns("cat input | python3 script.py 2>/dev/null # comment").safe).toBe(true);
   });
 });
+
+describe("piped interpreters require a resolved script argument", () => {
+  const stdinReceivers = [
+    "python3 -u",
+    "python3 -",
+    "python3 -I -",
+    "node --no-warnings",
+    "node --input-type=module -",
+    "perl -w",
+    "ruby -",
+    "php -d x=1",
+    "python3 - script.py",
+    "python3 -- - script.py",
+    "python3 -W ignore",
+    "python3 -X dev",
+    "php -d script.php",
+    "python3 --unknown script.py",
+    "python3 -i script.py",
+    "python3 -m module",
+    "node --require build.js",
+    "python3 $SCRIPT",
+    'python3 "$SCRIPT"',
+    "python3 *.py",
+    "python3 {,-}",
+    "python3 ''",
+    "python3 /dev/stdin",
+    "python3 /dev/./fd/0",
+    'py"thon3" "-u"',
+    "python3 -\\u",
+  ];
+  for (const receiver of stdinReceivers) {
+    for (const decorated of [
+      receiver,
+      `${receiver} 2>/dev/null`,
+      `FOO=1 ${receiver}`,
+      `FOO=1 ${receiver} 2>/dev/null`,
+    ]) {
+      it(`refuses ${decorated}`, () => {
+        const command = `printf code | ${decorated}`;
+        expect(checkDangerousPatterns(command).safe).toBe(false);
+        expect(parseBashCommand(command).success).toBe(false);
+      });
+    }
+  }
+  for (const receiver of [
+    "python3 script.py",
+    "python3 ./a.py arg",
+    "node build.js",
+    "node --no-warnings build.js",
+    "python3 -u script.py",
+    "python3 -W ignore -X dev script.py",
+    "php -d x=1 script.php",
+    "perl -w script.pl",
+    "ruby -w script.rb",
+    "python3 -- ./a.py -",
+    'python3 "a b.py"',
+  ]) {
+    it(`allows file execution: ${receiver}`, () => {
+      for (const decorated of [
+        receiver,
+        `${receiver} 2>/dev/null`,
+        `FOO=1 ${receiver}`,
+        `FOO=1 ${receiver} 2>/dev/null`,
+      ]) {
+        const command = `printf data | ${decorated}`;
+        expect(checkDangerousPatterns(command).safe).toBe(true);
+        expect(parseBashCommand(command).success).toBe(true);
+      }
+    });
+  }
+});

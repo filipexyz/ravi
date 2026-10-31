@@ -29,9 +29,22 @@ The policy takes effect immediately. Until the workflow lands on `dev`, PRs with
 # Normal review
 
 1. Address findings, push the code and resolve the corresponding threads.
-2. Have a second human GitHub identity with write/maintain/admin permission approve the exact current head. A separate agent using the author's GitHub credentials is not a second identity.
-3. Inspect the latest `Review Gate` result. API failure is a block, not a waiver. Fix credentials/service availability and rerun.
-4. For a resolution without a triggering review event, rerun the gate in Actions. A stale event's head SHA cannot authorize a newer commit.
+2. Record author provenance in the PR body, before the first section (to avoid the PR-description placeholder check): `<!-- ravi-author {"agent":"builder","session":"build-session"} -->`.
+3. A different session reviews the complete final diff and publishes a native review or issue comment with this envelope. Use real session/agent identifiers and a concrete rationale. `resolves` names exact finding URLs explicitly rechecked after their latest edit; leave it empty if there are none.
+
+   `<!-- ravi-review {"head":"<full-current-head-sha>","agent":"reviewer","session":"review-session","authorSession":"build-session","verdict":"approved","reason":"<review rationale>","resolves":[]} -->`
+
+4. If a second human writer exists, also obtain their native exact-head approval. A separate agent using the author's credentials can provide a session verdict, but is not a second GitHub identity. Neither an author-session verdict nor a native approval alone is sufficient.
+5. Inspect the latest `Review Gate` result. API failure is a block, not a waiver. Fix credentials/service availability and rerun.
+6. For a resolution without a triggering review event, rerun the gate in Actions. A stale event's head SHA cannot authorize a newer commit.
+
+# Enforcement and the #776 incident
+
+PR #776 merged with zero native reviews and an issue comment carrying an unresolved code blocker. The original evaluator would reject its absent native approval **if evaluated and required**, but never queried issue comments and could not see that blocker once an otherwise valid approval existed. The ruleset had an empty required-check list; neither a source-level gate nor an advisory failure enforced anything.
+
+The workflow in #778 already had no path filter. PR #775's old check run preceded its introduction; PR #773 received a later event and did run it. Do not diagnose a missing historical check as a path filter without inspecting the workflow and event timestamps.
+
+The operator has separately required `Quality Gate` on `dev`. `Review Gate` remains advisory until a real green PR and current-SHA reporting are verified. Read back effective branch rules before claiming merge protection. Do not change rulesets, permissions or collaborators as part of a parser fix. The existing ruleset JSON is the stronger native-writer template, not the single-writer deployment configuration; applying it unchanged would require a second GitHub reviewer.
 
 # Explicit technical dismissal
 

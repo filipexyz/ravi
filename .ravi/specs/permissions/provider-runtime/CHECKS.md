@@ -44,6 +44,16 @@ Quoting regressions (`bun test src/bash/`):
 - Piped bare interpreters with trailing comments, descriptor duplication,
   output/clobber/combined redirects or leading assignments MUST be refused;
   a real file-script argument MUST retain the documented executable boundary.
+- PR #776 regression: `python3 -u`, `python3 -`, `python3 -I -`,
+  `node --no-warnings`, `node --input-type=module -`, `perl -w`, `ruby -`,
+  and `php -d x=1` as pipe receivers MUST fail in `checkDangerousPatterns`,
+  `parseBashCommand` and the actual PreToolUse hook. Each MUST be tested alone,
+  with `2>/dev/null`, with a leading `FOO=1`, and with both decorations.
+  `python3 script.py`, `python3 ./a.py arg`, `node build.js`, and
+  `node --no-warnings build.js` MUST continue passing.
+- Option operands MUST NOT be mistaken for script files. Unknown flags,
+  interactive modes, dynamic/glob/brace script words, stdin aliases and a
+  filename after an explicit stdin marker MUST fail closed.
 - Single-quoted substitution/backtick/process/heredoc text and escaped dollar
   or backtick in double quotes MUST pass in JSON and rg/grep arguments.
 - Active substitutions outside and inside double quotes MUST fail, including

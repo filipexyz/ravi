@@ -150,10 +150,16 @@ Required capability materializers:
   same word-start comment semantics: an unquoted mid-word `#` is data and MUST
   NOT hide later executables, inline flags or redirect targets. A real comment
   MUST still stop at the next newline.
-- Piped-interpreter stdin detection MUST count command words, excluding leading
-  assignments, comments, redirection operators, descriptors and destinations.
-  These shell decorations MUST NOT make a bare interpreter appear to have a
-  script argument, even when wildcard executable access is granted.
+- Piped interpreters MUST have a resolved, nonempty literal script argument.
+  Flags, option values, the stdin marker `-`, leading assignments, comments,
+  redirection operators, descriptors and destinations MUST NOT count as that
+  argument. The first positional word selects the code source; a later filename
+  MUST NOT override stdin. Known stdin device paths MUST also be refused.
+- Options before a piped script MUST have explicitly supported arity and
+  file-script semantics. Unknown options, alternate/interactive execution modes
+  and unresolved expansions MUST fail closed, even with wildcard executable
+  access. Both parser entry points and the actual PreToolUse hook MUST enforce
+  this rule. File script contents remain outside this syntax check.
 - The bounded scanner MUST refuse unterminated quotes/escapes and unsupported
   ANSI-C / locale quoting rather than assume them safe. It is not a shell AST.
   `stripShellQuoting`, used for identity text checks, MUST NOT be used as the

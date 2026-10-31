@@ -1,6 +1,7 @@
 name: Review Gate
 
 on:
+  # Deliberately no path/branch filters: even docs-only PRs need review evidence.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
   pull_request_review:
@@ -12,6 +13,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 concurrency:
   group: review-gate-${{ github.event.pull_request.number }}

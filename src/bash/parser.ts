@@ -57,6 +57,22 @@ const INLINE_CODE_INTERPRETERS: Record<string, string[]> = {
   php: ["-r"],
 };
 
+// Only options with known arity and file-script semantics are supported before
+// a piped script. Unknown options (including alternate/interactive code modes)
+// fail closed: their next word may be an option value rather than a script.
+const PYTHON_SCRIPT_OPTIONS = {
+  flags: ["-u", "-I", "-B", "-E", "-s", "-S", "-O", "-OO", "-q", "-b", "-bb"],
+  values: ["-W", "-X"],
+};
+const SCRIPT_OPTIONS: Record<string, { flags: string[]; values: string[] }> = {
+  python: PYTHON_SCRIPT_OPTIONS,
+  python3: PYTHON_SCRIPT_OPTIONS,
+  node: { flags: ["--no-warnings", "--trace-warnings"], values: [] },
+  perl: { flags: ["-w", "-W"], values: [] },
+  ruby: { flags: ["-w"], values: [] },
+  php: { flags: ["-n"], values: ["-d", "-c"] },
+};
+
 // ============================================================================
 // Pattern Checking
 // ============================================================================
@@ -87,8 +103,8 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
         if (isInlineCodeExecution(executable, receiver).blocked) {
           return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
         }
-        if (countCommandWords(receiver) === 1) {
-          return { safe: false, reason: "piping to interpreter stdin is not allowed" };
+        if (!hasResolvedScriptArgument(executable, receiver)) {
+          return { safe: false, reason: "piping to interpreter stdin or ambiguous script arguments is not allowed" };
         }
       }
     }
@@ -199,30 +215,55 @@ function parseWords(command: string, env?: Parameters<typeof parseShell>[1]): Pa
 }
 
 /** Assignments, comments and redirect operands are not interpreter arguments. */
-function countCommandWords(command: string): number {
-  const tokens = parseWords(command);
-  let count = 0;
+function resolvedCommandWords(command: string): string[] {
+  const tokens = parseWords(command, () => ({ op: "glob", pattern: "unknown expansion" }));
+  const words: string[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
     const next = tokens[i + 1];
     if (typeof token === "string") {
-      if (count === 0 && isEnvAssignment(token)) continue;
+      if (words.length === 0 && isEnvAssignment(token)) continue;
       if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
-      count++;
+      words.push(token);
     } else if ("comment" in token) {
       break;
-    } else if (token.op === "glob") {
-      count++;
     } else if (token.op === "&" && typeof next === "object" && "op" in next && [">", ">>"].includes(next.op)) {
       // The following redirect token consumes the combined redirect destination.
     } else if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
       if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
-      if (tokens[++i] === undefined) throw new Error("Missing shell redirect destination");
+      const destination = tokens[++i];
+      if (typeof destination !== "string" || !destination) throw new Error("Cannot resolve shell redirect destination");
     } else {
       throw new Error("Cannot resolve shell pipeline arguments");
     }
   }
-  return count;
+  return words;
+}
+
+function hasResolvedScriptArgument(executable: string, command: string): boolean {
+  const [, ...args] = resolvedCommandWords(command);
+  const options = SCRIPT_OPTIONS[executable]!;
+  let endOfOptions = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (!endOfOptions && arg === "--") {
+      endOfOptions = true;
+      continue;
+    }
+    if (!endOfOptions && options.flags.includes(arg)) continue;
+    if (!endOfOptions && options.values.includes(arg)) {
+      const value = args[++i];
+      if (!value || /[{}~]/.test(value)) return false;
+      continue;
+    }
+    // The FIRST positional argument selects the code source. A later filename
+    // cannot turn `python3 - script.py` into file execution. Empty words,
+    // unmodelled expansions and known stdin aliases do not prove a script file.
+    if (!arg || arg.startsWith("-") || /[{}~]/.test(arg)) return false;
+    const path = resolve("/", arg);
+    return !["/dev/stdin", "/dev/fd/0", "/proc/self/fd/0", "/proc/thread-self/fd/0"].includes(path);
+  }
+  return false;
 }
 
 /**
@@ -327,6 +368,8 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
  * - Semicolons: ls; pwd -> ["ls", "pwd"]
  */
 export function parseBashCommand(command: string): ParsedCommand {
+  const patternCheck = checkDangerousPatterns(command);
+  if (!patternCheck.safe) return { executables: [], success: false, error: patternCheck.reason };
   try {
     // Split only on active operators; retain quoted words for token decoding.
     const simpleCommands = splitByOperators(command);

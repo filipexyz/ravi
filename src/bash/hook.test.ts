@@ -130,6 +130,56 @@ describe("Bash quoting permission boundary", () => {
 });
 
 describe("createBashPermissionHook", () => {
+  for (const receiver of [
+    "python3 -u",
+    "python3 -",
+    "python3 -I -",
+    "node --no-warnings",
+    "node --input-type=module -",
+    "perl -w",
+    "ruby -",
+    "php -d x=1",
+    "python3 - script.py",
+    "python3 -W ignore",
+    "python3 $SCRIPT",
+    "python3 --unknown script.py",
+  ]) {
+    it(`denies piped stdin in the actual PreToolUse hook: ${receiver}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      for (const decorated of [
+        receiver,
+        `${receiver} 2>/dev/null`,
+        `FOO=1 ${receiver}`,
+        `FOO=1 ${receiver} 2>/dev/null`,
+      ]) {
+        const result = await callBashHook(`printf code | ${decorated}`, "test-agent", context);
+        expect(isDenied(result)).toBe(true);
+        expect(getDenyReason(result)).toMatch(/interpreter|pipeline/);
+      }
+    });
+  }
+
+  it("allows piped file scripts through the actual PreToolUse hook", async () => {
+    const context = makeToolContext("test-agent", [{ permission: "execute", objectType: "executable", objectId: "*" }]);
+    for (const receiver of [
+      "python3 script.py",
+      "python3 ./a.py arg",
+      "node build.js",
+      "node --no-warnings build.js",
+    ]) {
+      for (const decorated of [
+        receiver,
+        `${receiver} 2>/dev/null`,
+        `FOO=1 ${receiver}`,
+        `FOO=1 ${receiver} 2>/dev/null`,
+      ]) {
+        expect(await callBashHook(`printf data | ${decorated}`, "test-agent", context)).toEqual({});
+      }
+    }
+  });
+
   it("has matcher set to 'Bash'", () => {
     const hook = createBashPermissionHook({ getAgentId: () => undefined });
     expect(hook.matcher).toBe("Bash");

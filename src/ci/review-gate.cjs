@@ -3,7 +3,13 @@ const { readFileSync, appendFileSync } = require("node:fs");
 
 const CHECK_NAME = "Review Gate";
 const SHA = /^[a-f0-9]{40}$/;
+// Set true when native writer approval should be mandatory even in single-writer repos.
+const REQUIRE_NATIVE_WRITER_APPROVAL = false;
 const FIELDS = {
+  comments: `comments(first:100, after:$cursor) {
+    totalCount pageInfo { hasNextPage endCursor }
+    nodes { id body url updatedAt author { login __typename } }
+  }`,
   reviewThreads: `reviewThreads(first:100, after:$cursor) {
     totalCount pageInfo { hasNextPage endCursor }
     nodes { id isResolved isOutdated comments(first:1) {
@@ -45,6 +51,7 @@ function validatePR(pr, expectedSha) {
   requireData(pr.state === "OPEN" && nonempty(pr.baseRefName), "PR is not open");
   requireData(nonempty(pr.author?.login), "missing PR author");
   requireData(typeof pr.isDraft === "boolean", "missing draft state");
+  requireData(typeof pr.body === "string" && nonempty(pr.url), "missing PR body/URL");
   requireData(pr.headRefOid === expectedSha, "head SHA changed; a new run is required");
   return pr;
 }
@@ -53,13 +60,26 @@ async function readPR(api, repo, number, expectedSha) {
   const result = await api.graphql(
     `query($owner:String!,$repo:String!,$number:Int!) {
     repository(owner:$owner,name:$repo) { pullRequest(number:$number) {
-      headRefOid state baseRefName isDraft author { login }
+      headRefOid state baseRefName isDraft body url author { login }
     } }
   }`,
     { ...repo, number },
   );
   requireData(!result?.errors, "GraphQL errors");
   return validatePR(result?.repository?.pullRequest, expectedSha);
+}
+
+function envelope(body, name) {
+  const matches = [...body.matchAll(new RegExp(`<!-- ${name} ([\\s\\S]*?) -->`, "g"))];
+  requireData(matches.length <= 1, `duplicate ${name} provenance`);
+  if (!matches.length) return null;
+  const value = JSON.parse(matches[0][1]);
+  requireData(value && typeof value === "object" && !Array.isArray(value), `invalid ${name} provenance`);
+  return value;
+}
+
+function identity(value) {
+  return value && nonempty(value.agent) && nonempty(value.session);
 }
 
 async function readConnection(api, repo, number, expectedSha, key) {
@@ -111,6 +131,10 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
   const threads = await readConnection(api, repository, number, expectedSha, "reviewThreads");
   const reviews = await readConnection(api, repository, number, expectedSha, "reviews");
   const timeline = await readConnection(api, repository, number, expectedSha, "timelineItems");
+  const comments = await readConnection(api, repository, number, expectedSha, "comments");
+  const writers = await api.independentWriters(owner, repo, pr.author.login);
+  requireData(Array.isArray(writers) && writers.every(nonempty), "missing independent writer inventory");
+  const nativeRequired = REQUIRE_NATIVE_WRITER_APPROVAL || writers.length > 0;
   const problems = [];
   const audit = [];
   if (pr.isDraft) problems.push("PR is still a draft.");
@@ -156,7 +180,51 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
       audit.push(`Approval ${review.id} by ${review.author.login} on ${expectedSha}.`);
     }
   }
-  if (!approved) problems.push(`No independent writer approval on head SHA ${expectedSha}.`);
+  if (nativeRequired && !approved) problems.push(`No independent writer approval on head SHA ${expectedSha}.`);
+
+  // An authenticated writer can publish an agent review using the same GitHub
+  // account as the author. Independence is recorded runtime provenance, not a
+  // claim that two strings are cryptographic proof of two different people.
+  const authorIdentity = envelope(pr.body, "ravi-author");
+  if (!identity(authorIdentity)) problems.push("Missing author agent/session provenance in PR body.");
+  const surfaces = [
+    { id: "pr-body", body: pr.body, url: pr.url },
+    ...reviews.filter((review) => review.state !== "PENDING"),
+    ...comments,
+  ];
+  const blockers = [];
+  const verdicts = [];
+  for (const surface of surfaces) {
+    requireData(typeof surface.body === "string" && nonempty(surface.url), "missing review body/URL");
+    if (/\bblocked-por-c[oó]digo\b/i.test(surface.body)) blockers.push(surface);
+    const verdict = envelope(surface.body, "ravi-review");
+    if (!verdict || surface.id === "pr-body") continue;
+    requireData(
+      SHA.test(verdict.head) && identity(verdict) && nonempty(verdict.authorSession) &&
+      ["approved", "blocked-por-código"].includes(verdict.verdict) && nonempty(verdict.reason) &&
+      Array.isArray(verdict.resolves) && verdict.resolves.every(nonempty),
+      "malformed agent review verdict",
+    );
+    if (verdict.verdict !== "approved" || verdict.head !== expectedSha || !identity(authorIdentity)) continue;
+    if (verdict.session === authorIdentity.session || verdict.authorSession !== authorIdentity.session) continue;
+    requireData(nonempty(surface.author?.login), "missing verdict publisher");
+    const permission = await api.permission(owner, repo, surface.author.login);
+    requireData(["admin", "maintain", "write", "read", "triage", "none"].includes(permission), "missing publisher permission");
+    if (!["admin", "maintain", "write"].includes(permission)) continue;
+    const submitted = timestamp(surface.updatedAt ?? surface.submittedAt);
+    verdicts.push({ verdict, surface, submitted });
+    audit.push(`Agent review ${verdict.agent}/${verdict.session} on ${expectedSha}, published by ${surface.author.login}: ${surface.url}`);
+  }
+  if (!verdicts.length) problems.push(`No independent agent/session verdict on head SHA ${expectedSha}.`);
+  for (const blocker of blockers) {
+    // A new approval does not implicitly waive a code finding. It must name the
+    // exact evidence URL and be newer than that evidence (including edits).
+    const blockedAt = blocker.id === "pr-body" ? Infinity : timestamp(blocker.updatedAt ?? blocker.submittedAt);
+    if (!verdicts.some(({ verdict, submitted }) => submitted > blockedAt && verdict.resolves.includes(blocker.url))) {
+      problems.push(`Unresolved code-blocked review: ${blocker.url}.`);
+    }
+  }
+  audit.push(`Native writer approval ${nativeRequired ? "required" : "not required: no second writer"}.`);
 
   const dismissals = timeline.filter((event) => event.__typename === "ReviewDismissedEvent");
   for (const thread of threads) {
@@ -227,16 +295,18 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
   // Re-read *all* evidence before accepting, not just the head SHA. A review,
   // dismissal or thread change during pagination invalidates this run.
   const current = await readPR(api, repository, number, expectedSha);
-  requireData(current.baseRefName === pr.baseRefName && current.isDraft === pr.isDraft, "PR changed during evaluation");
+  requireData(current.baseRefName === pr.baseRefName && current.isDraft === pr.isDraft && current.body === pr.body, "PR changed during evaluation");
   if (problems.length === 0) {
     for (const [key, before] of [
       ["reviewThreads", threads],
       ["reviews", reviews],
       ["timelineItems", timeline],
+      ["comments", comments],
     ]) {
       const after = await readConnection(api, repository, number, expectedSha, key);
       requireData(JSON.stringify(before) === JSON.stringify(after), `${key}: evidence changed during evaluation`);
     }
+    requireData(JSON.stringify(await api.independentWriters(owner, repo, pr.author.login)) === JSON.stringify(writers), "writer inventory changed during evaluation");
     await readPR(api, repository, number, expectedSha);
   }
   return { ok: problems.length === 0, sha: expectedSha, threads: threads.length, problems, audit };
@@ -271,6 +341,21 @@ function createApi(token, fetcher = fetch) {
         `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators/${encodeURIComponent(user)}/permission`,
       );
       return payload.permission;
+    },
+    independentWriters: async (owner, repo, author) => {
+      const writers = [];
+      const seen = new Set();
+      for (let page = 1; page <= 1000; page++) {
+        const users = await request(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators?per_page=100&page=${page}`);
+        requireData(Array.isArray(users), "missing collaborators");
+        for (const user of users) {
+          requireData(nonempty(user.login) && !seen.has(user.login) && typeof user.permissions?.push === "boolean", "incomplete collaborator inventory");
+          seen.add(user.login);
+          if (user.login.toLowerCase() !== author.toLowerCase() && user.type === "User" && user.permissions.push) writers.push(user.login);
+        }
+        if (users.length < 100) return writers.sort();
+      }
+      throw new Error("collaborator pagination limit reached");
     },
   };
 }
