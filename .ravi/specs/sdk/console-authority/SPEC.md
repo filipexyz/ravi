@@ -10,7 +10,10 @@ applies_to:
   - src/sdk/gateway/console-*.ts
   - src/sdk/gateway/streaming/session-view.ts
   - src/cli/commands/session-conversations.ts
+  - src/cli/decorators.ts
   - src/cli/session-targets.ts
+  - src/sdk/gateway/server.ts
+  - src/sdk/openapi/emit.ts
 owners:
   - ravi-dev
 ---
@@ -30,6 +33,8 @@ owners:
   gateway rejects them before body parsing/dispatch even with a valid runtime
   key. Generated OpenAPI declares Console delegation security, never ordinary
   runtime bearer authority as sufficient for these operations.
+  Shared reviewed controls with `consoleScope` but without `consoleOnly` expose
+  both supported credentials and identify the corresponding listeners.
 - Every request requires a signed Console decision with issuer/kid/audience,
   enrollment/epoch, subject/org/installation/project, exact canonical command
   and semantic action, resource scope, policy revision/digest, invocation origin,
