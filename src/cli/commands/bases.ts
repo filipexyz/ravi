@@ -1583,7 +1583,7 @@ export class BasesRowsCommands {
       }
       let outFile: string | null = null;
       if (out) {
-        outFile = resolveCallerPath(out);
+        outFile = resolveCallerPath(out, "write");
         writeFileSync(outFile, content);
       }
       const payload = {

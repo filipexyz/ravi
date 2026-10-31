@@ -26,6 +26,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
     "src/channels/outbound-consumer.test.ts",
+    // Durable outbound publish outbox: retry/backoff, retention and burst coalescing.
+    "src/channels/outbound-publish-outbox.test.ts",
     "src/channels/runtime-events.test.ts",
     "src/channels/runner.test.ts",
     "src/channels/session-prompt.test.ts",
@@ -47,6 +49,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Thread root card and its brief: shell-typed `\n` decoded into line breaks.
     "src/channels/slack/thread-card.test.ts",
     "src/channels/slack/thread-text.test.ts",
+    // Native channel readiness: broker connection, backend prerequisites, queued-but-undeliverable warnings.
+    "src/channels/native-readiness.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
@@ -74,8 +78,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/router-db.link-requests.test.ts",
     // Trigger session migration: drops the legacy main|isolated CHECK, keeps rows and indexes.
     "src/router/router-db.trigger-session-check.test.ts",
+    // Open channel threads own their session name: missing child and key mismatch are told apart.
+    "src/router/thread-identity.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
     "src/runtime/crash-recovery-store.test.ts",
+    // Agent delete: live contexts revoked, Library listing not inherited by a same-id agent.
+    "src/router/agent-delete.test.ts",
     "src/runtime/session-goals.test.ts",
     // Skill-grant store (dbUpsert/List/DeleteSkillGrant*) is exercised here.
     "src/cli/commands/skills.test.ts",
@@ -182,7 +190,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/triggers/__tests__/debounce.test.ts",
     "src/triggers/__tests__/session-target.test.ts",
   ],
-  "src/approval/": ["src/approval/service.test.ts", "src/approval/grantor.test.ts", "src/approval/decision.test.ts"],
+  "src/approval/": [
+    "src/approval/service.test.ts",
+    "src/approval/grantor.test.ts",
+    "src/approval/decision.test.ts",
+    // A revoked context held in memory no longer authorizes host tools.
+    "src/runtime/context-liveness.test.ts",
+  ],
   "src/apps/": ["src/apps/router.test.ts"],
   "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
 };

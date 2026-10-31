@@ -6498,6 +6498,7 @@ export type ChannelsRestartReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;
@@ -6632,6 +6633,7 @@ export type ChannelsStartReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;
@@ -6714,6 +6716,7 @@ export type ChannelsStatusReturn = {
     adapters: Array<{
       channelId: string;
       connectedAt?: number;
+      detail?: string;
       id: string;
       lastPongAt?: number;
       reason?: string;
@@ -6800,6 +6803,7 @@ export type ChannelsStopReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;
@@ -12229,6 +12233,7 @@ export type CronAddReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12246,6 +12251,7 @@ export type CronDisableReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12263,6 +12269,7 @@ export type CronEnableReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12309,6 +12316,7 @@ export type CronRmReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12327,6 +12335,7 @@ export type CronRunReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -12346,6 +12355,7 @@ export type CronSetReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -20199,6 +20209,7 @@ export type SessionsThreadSendReturn = {
   status: "published";
   thread: {
     childSessionKey: string | null;
+    childSessionMissing: boolean;
     childSessionName: string | null;
     closedAt: number | null;
     createdAt: number;
@@ -20247,6 +20258,7 @@ export type SessionsThreadsReturn = {
   };
   threads: Array<{
     childSessionKey: string | null;
+    childSessionMissing: boolean;
     childSessionName: string | null;
     closedAt: number | null;
     createdAt: number;

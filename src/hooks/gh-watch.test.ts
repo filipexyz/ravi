@@ -901,4 +901,26 @@ describe("gh watch observation", () => {
 
     expect(listed).toBe(0);
   });
+
+  it("creates nothing for text the Bash gate never runs as gh", async () => {
+    resetGhWatchCaches();
+    let work = 0;
+    const d = deps({
+      listWatches: () => {
+        work += 1;
+        return { items: [] } as never;
+      },
+      createTrigger: () => {
+        work += 1;
+        return trigger();
+      },
+      addPending: () => {
+        work += 1;
+      },
+    });
+
+    await observeGhBashCommand("ls x\\;gh pr edit 7 -R o/r", { cwd: "/repo", sessionName: "main" }, d);
+    expect(tokenizeShellCommand("ls x\\;gh")).toEqual(["ls", "x;gh"]);
+    expect(work).toBe(0);
+  });
 });

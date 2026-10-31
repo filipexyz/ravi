@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { isCredentialBrokerError } from "../../credentials/errors.js";
 import type { ChannelConfig } from "../../router/router-db.js";
+import { logger } from "../../utils/logger.js";
 import {
   ChannelBackendOpaqueIdSchema,
   ChannelSafeErrorSchema,
@@ -19,6 +21,8 @@ import type {
 } from "../runtime-events.js";
 import type { NativeChatActionDelivery, NativePresenceDelivery, NativeTextDelivery } from "./types.js";
 import { createNativeChannelDriverHostLease, type NativeChannelDriverHostLease } from "./host.js";
+
+const log = logger.child("channels:native-driver");
 
 export const NATIVE_CHANNEL_DRIVER_PROTOCOL = "ravi.channel.native-driver" as const;
 export const NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION = 1 as const;
@@ -536,11 +540,23 @@ export class NativeChannelDriverManager {
         }
       }
       lease?.dispose();
+      const reason = driverFailureReason(error, "startup_failed");
+      const detail = driverFailureDetail(error);
       this.statuses.set(pendingId, {
         id: pendingId,
         channelId: provider,
         status: "failed",
-        reason: driverFailureReason(error, "startup_failed"),
+        reason,
+        ...(detail ? { detail } : {}),
+      });
+      // Only stable codes go to the log: a raw message can echo part of a
+      // malformed secret (for example a JSON.parse error on the payload).
+      log.warn("Native channel adapter failed to start; it is not retried until the runner restarts", {
+        channel: channel.name,
+        provider,
+        reason,
+        ...(detail ? { detail } : {}),
+        ...(channel.credentialConnection ? { credentialConnection: channel.credentialConnection } : {}),
       });
     }
   }
@@ -662,7 +678,21 @@ function driverFailureReason(
   error: unknown,
   fallback: NativeChannelDriverFailureReason,
 ): NativeChannelDriverFailureReason {
-  return error instanceof NativeChannelDriverContractError ? error.reason : fallback;
+  if (error instanceof NativeChannelDriverContractError) return error.reason;
+  if (isCredentialBrokerError(error)) {
+    // Only an absent or disabled connection is a credentials problem; an
+    // unreachable backend or a failed read stays a startup failure, with its
+    // code as the detail.
+    return error.code === "connection_not_found" || error.code === "connection_disabled"
+      ? "missing_credentials"
+      : fallback;
+  }
+  return fallback;
+}
+
+/** Non-secret code narrowing a failure reason, when the error carries one. */
+function driverFailureDetail(error: unknown): string | undefined {
+  return isCredentialBrokerError(error) ? error.code : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

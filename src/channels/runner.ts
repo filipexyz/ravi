@@ -1,7 +1,7 @@
 import { closeAllRaviDbs } from "../db/close-all.js";
 import { closeNats, connectNats, getNats } from "../nats.js";
 import { configStore } from "../config-store.js";
-import { logger } from "../utils/logger.js";
+import { logger, type LogLevel } from "../utils/logger.js";
 import {
   startNativeInboundChannelActionResponder,
   type NativeInboundChannelActionResponder,
@@ -390,7 +390,20 @@ export async function startChannelRunner(options: ChannelRunnerOptions = {}): Pr
   return runner;
 }
 
+const RUNNER_LOG_LEVELS = new Set<LogLevel>(["debug", "info", "warn", "error"]);
+
+/**
+ * The runner runs from the CLI bundle, whose logging defaults to `error`. As a
+ * long-lived service it logs like the daemon instead: `RAVI_LOG_LEVEL`, else
+ * `info`, so startup and adapter warnings reach the PM2 logs.
+ */
+export function resolveChannelRunnerLogLevel(env: NodeJS.ProcessEnv = process.env): LogLevel {
+  const raw = env.RAVI_LOG_LEVEL?.trim().toLowerCase();
+  return raw && RUNNER_LOG_LEVELS.has(raw as LogLevel) ? (raw as LogLevel) : "info";
+}
+
 export async function runChannelRunnerFromEnv(): Promise<void> {
+  logger.setLevel(resolveChannelRunnerLogLevel());
   const runner = await startChannelRunner({
     consumeOutbound: process.env.RAVI_CHANNELS_CONSUME_OUTBOUND !== "0",
   });

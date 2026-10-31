@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
@@ -30,6 +31,7 @@ import type {
   RuntimeTurnOriginPrincipal,
 } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin, type SessionRelayOriginContext } from "../../runtime/turn-origin.js";
+import { getContext } from "../../cli/context.js";
 import { applyProviderModelRule } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import { logger } from "../../utils/logger.js";
@@ -63,6 +65,32 @@ type PromptPublisher = (
   options?: PublishSessionPromptOptions,
 ) => Promise<void>;
 type EventPublisher = (topic: string, payload: Record<string, unknown>) => Promise<unknown>;
+
+/**
+ * Typed refusals of the thread commands (`sessions report`, `close-thread`,
+ * `thread-send`). The remote relay renders local copy per code
+ * (src/cli/remote-gateway.ts), so callers never see "Remote command failed."
+ */
+export const SLACK_THREAD_ERROR_CODES = [
+  "THREAD_NOT_THREAD_CHILD",
+  "THREAD_IDENTITY_MISMATCH",
+  "THREAD_NOT_CHANNEL_ROOT",
+  "THREAD_NOT_FOUND",
+  "THREAD_NOT_STARTED",
+  "THREAD_SESSION_MISSING",
+  "THREAD_PARENT_MISSING",
+  "THREAD_PARENT_RETURN_PENDING",
+] as const;
+export type SlackThreadErrorCode = (typeof SLACK_THREAD_ERROR_CODES)[number];
+
+/** Quote a value for a copy-paste command line, leaving plain names as they are. */
+function shellArg(value: string): string {
+  return /^[A-Za-z0-9_.:@%+=/-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+export function slackThreadError(code: SlackThreadErrorCode, message: string, suggestedAction?: string) {
+  return new CliExpectedError(message, code, 1, suggestedAction);
+}
 
 export interface SlackThreadLifecycleDependencies {
   publishPrompt: PromptPublisher;
@@ -125,6 +153,7 @@ export async function finalizeSlackThreadCreation(
           record.initiatorSessionKey ?? record.parentSessionKey,
           materialized.agentId,
         ),
+        callerContextId: record.initiatorContextId,
         payload: buildSlackThreadInitialPrompt(record, materialized),
         options: {
           messageId: `slack-thread-start:${record.requestId}`,
@@ -244,7 +273,10 @@ export function ensureSlackThreadLifecycleForSession(session: SessionEntry): Sla
   const chatId = dbGetSessionDefaultChatId(session.sessionKey);
   const chat = chatId ? dbGetChat(chatId) : null;
   if (!chat || chat.channel.toLowerCase() !== "slack" || chat.chatType !== "thread") {
-    throw new Error(`Session is not attached to a Slack thread: ${session.name ?? session.sessionKey}`);
+    throw slackThreadError(
+      "THREAD_NOT_THREAD_CHILD",
+      `Session is not attached to a Slack thread: ${session.name ?? session.sessionKey}`,
+    );
   }
   const threadIdentity = splitSlackThreadPlatformChatId(chat.platformChatId);
   if (!threadIdentity) {
@@ -253,7 +285,7 @@ export function ensureSlackThreadLifecycleForSession(session: SessionEntry): Sla
   const parentSessionKey = slackThreadParentSessionKey(session.sessionKey);
   const parent = getSession(parentSessionKey);
   if (!parent || parent.sessionKey === session.sessionKey) {
-    throw new Error(`Slack thread parent session not found: ${parentSessionKey}`);
+    throw slackThreadError("THREAD_PARENT_MISSING", `Slack thread parent session not found: ${parentSessionKey}`);
   }
   const rootChat = dbFindChat({
     channel: "slack",
@@ -281,15 +313,29 @@ export async function closeSlackThread(
 ): Promise<CloseSlackThreadResult> {
   const existing = ensureSlackThreadLifecycleForSession(session);
   if (existing.parentReturnRequested && existing.parentNotifiedAt === undefined) {
-    const delivered = await deliverSlackThreadParentReturn(existing.requestId, dependencies);
+    let delivered = false;
+    try {
+      delivered = await deliverSlackThreadParentReturn(existing.requestId, dependencies);
+    } catch (error) {
+      // A failed retry leaves the return pending: report that, not a bare failure.
+      log.warn("Retry of pending Slack thread parent return failed", {
+        requestId: existing.requestId,
+        error: errorMessage(error),
+      });
+    }
     const refreshed = getSlackThreadLifecycle(existing.requestId);
     if (!delivered && refreshed?.parentNotifiedAt === undefined) {
-      throw new Error(`Previous Slack thread parent return is still pending: ${existing.requestId}`);
+      throw slackThreadError(
+        "THREAD_PARENT_RETURN_PENDING",
+        `Previous Slack thread parent return is still pending: ${existing.requestId}`,
+        "Retry after the parent session receives the pending return",
+      );
     }
   }
   const closed = closeSlackThreadLifecycle({
     childSessionKey: session.sessionKey,
     returnResult,
+    closeContextId: getContext({ localOnly: true })?.contextId,
   });
 
   if (closed.changed) {
@@ -337,6 +383,7 @@ export async function deliverSlackThreadParentReturn(
         sessionName: parent.name ?? parent.sessionKey,
         action: "session.return",
         principal: resolveChannelLifecyclePrincipal("session.return", record.childSessionKey),
+        callerContextId: record.closeContextId,
         payload: {
           prompt: buildSlackThreadParentNotice(record, "concluída.", "Resultado", record.closeResult),
           source: buildSlackThreadParentSource(record, record.providerThreadId),
@@ -400,6 +447,11 @@ export interface SlackThreadSummary {
   source: SlackThreadLifecycleRecord["source"];
   childSessionKey: string | null;
   childSessionName: string | null;
+  /**
+   * The thread recorded a child session that no longer exists (deleted, expired
+   * or reset). Replies cannot reach it, and dispatching by its name is refused.
+   */
+  childSessionMissing: boolean;
   slackThreadTs: string | null;
   link: string | null;
   runtime: SlackThreadRuntimeSummary;
@@ -459,6 +511,7 @@ export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackT
     source: record.source,
     childSessionKey: record.childSessionKey ?? null,
     childSessionName: record.childSessionName ?? null,
+    childSessionMissing: isSlackThreadChildMissing(record),
     slackThreadTs: record.providerThreadId ?? null,
     link: slackThreadLink(record) ?? null,
     runtime: summarizeSlackThreadRuntime(record),
@@ -472,6 +525,11 @@ export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackT
   };
 }
 
+/** The thread has a child session key, but the session row is gone. */
+export function isSlackThreadChildMissing(record: SlackThreadLifecycleRecord): boolean {
+  return Boolean(record.childSessionKey) && !getSession(record.childSessionKey as string);
+}
+
 /** What this thread is running: resolved from the child session once it exists. */
 export function summarizeSlackThreadRuntime(record: SlackThreadLifecycleRecord): SlackThreadRuntimeSummary {
   const requested = {
@@ -482,13 +540,15 @@ export function summarizeSlackThreadRuntime(record: SlackThreadLifecycleRecord):
   };
   const child = record.childSessionKey ? getSession(record.childSessionKey) : null;
   if (!child) {
+    // A thread that recorded its child but lost it is not "unstarted".
+    const fallbackSource = record.childSessionKey ? "child_missing" : "unstarted";
     return {
       provider: requested.provider ?? "inherited",
-      providerSource: requested.provider ? "thread_creation" : "unstarted",
+      providerSource: requested.provider ? "thread_creation" : fallbackSource,
       model: requested.model,
       modelSource: requested.model ? "thread_creation" : null,
       effort: requested.effort ?? "inherited",
-      effortSource: requested.effort ? "thread_creation" : "unstarted",
+      effortSource: requested.effort ? "thread_creation" : fallbackSource,
       thinking: requested.thinking,
       thinkingSource: requested.thinking ? "thread_creation" : null,
       requested,
@@ -566,15 +626,23 @@ export async function reportSlackThreadProgress(
   const text = message.trim();
   if (!text) throw new Error("Report message is required");
   const record = ensureSlackThreadLifecycleForSession(session);
-  if (!record.providerThreadId) throw new Error(`Slack thread has not started yet: ${record.requestId}`);
+  if (!record.providerThreadId) {
+    throw slackThreadError("THREAD_NOT_STARTED", `Slack thread has not started yet: ${record.requestId}`);
+  }
   const parent = getSession(record.parentSessionKey);
-  if (!parent) throw new Error(`Slack thread parent session not found: ${record.parentSessionKey}`);
+  if (!parent) {
+    throw slackThreadError(
+      "THREAD_PARENT_MISSING",
+      `Slack thread parent session not found: ${record.parentSessionKey}`,
+    );
+  }
   const messageId = `slack-thread-report:${record.requestId}:${randomUUID()}`;
   await publishChannelSessionPrompt(
     {
       sessionName: parent.name ?? parent.sessionKey,
       action: "session.return",
       principal: resolveChannelLifecyclePrincipal("session.return", session.sessionKey),
+      callerContextId: getContext({ localOnly: true })?.contextId,
       payload: {
         prompt: buildSlackThreadParentNotice(record, "reporta progresso.", "Progresso", text),
         source: buildSlackThreadParentSource(record, record.providerThreadId),
@@ -616,20 +684,35 @@ export async function sendSlackThreadMessage(
   if (!text) throw new Error("Thread message is required");
   const parent = input.parentSession;
   if (slackThreadParentSessionKey(parent.sessionKey) !== parent.sessionKey) {
-    throw new Error("Only the channel session that owns these threads can send to them; this session is a thread");
+    throw slackThreadError(
+      "THREAD_NOT_CHANNEL_ROOT",
+      "Only the channel session that owns these threads can send to them; this session is a thread",
+    );
   }
   const found = findSlackThreadForParent(parent.sessionKey, input.ref);
-  if (!found) throw new Error(`Slack thread not found for this session: ${input.ref}`);
+  if (!found) {
+    throw slackThreadError(
+      "THREAD_NOT_FOUND",
+      `Slack thread not found for this session: ${input.ref}`,
+      `List this session's threads with: ravi sessions threads --all --session ${shellArg(parent.name ?? parent.sessionKey)}`,
+    );
+  }
   if (
     (found.status !== "open" && found.status !== "closed") ||
     !found.childSessionKey ||
     !found.providerThreadId ||
     !found.threadCanonicalChatId
   ) {
-    throw new Error(`Slack thread has not started yet: ${found.requestId}`);
+    throw slackThreadError("THREAD_NOT_STARTED", `Slack thread has not started yet: ${found.requestId}`);
   }
   const child = getSession(found.childSessionKey);
-  if (!child) throw new Error(`Slack thread session not found: ${found.childSessionKey}`);
+  if (!child) {
+    throw slackThreadError(
+      "THREAD_SESSION_MISSING",
+      `Slack thread session not found: ${found.childSessionKey}`,
+      "The thread's session no longer exists; start a new thread instead of sending to this one",
+    );
+  }
   const reopened = found.status === "closed";
   const record = reopened ? reopenSlackThreadLifecycle(found.requestId) : found;
   const parentName = parent.name ?? parent.sessionKey;

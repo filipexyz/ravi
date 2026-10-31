@@ -6,6 +6,7 @@ import {
   collectNativeRuntimeDeliveries,
   pruneChannelOutboundPublishOutbox,
   pruneChannelOutboundReceiptLedger,
+  resolveChannelRunnerLogLevel,
   runChannelOutboundLedgerMaintenance,
   slackAdapterHealth,
   startChannelRunnerBackendEgressResponder,
@@ -62,6 +63,29 @@ describe("channel runner PM2 environment", () => {
     } finally {
       setOptionalEnv("RAVI_CHANNELS_CONSUME_OUTBOUND", previousConsumeOutbound);
       setOptionalEnv("RAVI_SLACK_THREAD_REPLY_MODE", previousThreadReplyMode);
+    }
+  });
+});
+
+describe("channel runner log level", () => {
+  it("logs at info by default instead of the CLI's error level", () => {
+    expect(resolveChannelRunnerLogLevel({})).toBe("info");
+    expect(resolveChannelRunnerLogLevel({ RAVI_CLI_LOG_LEVEL: "error" })).toBe("info");
+  });
+
+  it("follows RAVI_LOG_LEVEL like the daemon and ignores invalid values", () => {
+    expect(resolveChannelRunnerLogLevel({ RAVI_LOG_LEVEL: " WARN " })).toBe("warn");
+    expect(resolveChannelRunnerLogLevel({ RAVI_LOG_LEVEL: "debug" })).toBe("debug");
+    expect(resolveChannelRunnerLogLevel({ RAVI_LOG_LEVEL: "verbose" })).toBe("info");
+  });
+
+  it("carries RAVI_LOG_LEVEL into the runner's PM2 env", () => {
+    const previous = process.env.RAVI_LOG_LEVEL;
+    try {
+      process.env.RAVI_LOG_LEVEL = "debug";
+      expect(buildRunnerPm2Env()).toMatchObject({ RAVI_LOG_LEVEL: "debug" });
+    } finally {
+      setOptionalEnv("RAVI_LOG_LEVEL", previous);
     }
   });
 });

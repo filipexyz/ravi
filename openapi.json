@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "cbab5e21ea0962be"
+    "version": "1f9da6f3a1c34dbb"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -37434,6 +37434,9 @@
                                       "connectedAt": {
                                         "type": "number"
                                       },
+                                      "detail": {
+                                        "type": "string"
+                                      },
                                       "id": {
                                         "type": "string"
                                       },
@@ -38169,6 +38172,9 @@
                                       "connectedAt": {
                                         "type": "number"
                                       },
+                                      "detail": {
+                                        "type": "string"
+                                      },
                                       "id": {
                                         "type": "string"
                                       },
@@ -38622,6 +38628,9 @@
                                   },
                                   "connectedAt": {
                                     "type": "number"
+                                  },
+                                  "detail": {
+                                    "type": "string"
                                   },
                                   "id": {
                                     "type": "string"
@@ -39093,6 +39102,9 @@
                                       },
                                       "connectedAt": {
                                         "type": "number"
+                                      },
+                                      "detail": {
+                                        "type": "string"
                                       },
                                       "id": {
                                         "type": "string"
@@ -71512,6 +71524,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71609,6 +71627,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71706,6 +71730,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -71960,6 +71990,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -72061,6 +72097,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -72168,6 +72210,12 @@
                         "type"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -118600,6 +118648,9 @@
                             }
                           ]
                         },
+                        "childSessionMissing": {
+                          "type": "boolean"
+                        },
                         "childSessionName": {
                           "anyOf": [
                             {
@@ -118822,6 +118873,7 @@
                         "source",
                         "childSessionKey",
                         "childSessionName",
+                        "childSessionMissing",
                         "slackThreadTs",
                         "link",
                         "runtime",
@@ -118924,6 +118976,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "childSessionMissing": {
+                            "type": "boolean"
                           },
                           "childSessionName": {
                             "anyOf": [
@@ -119147,6 +119202,7 @@
                           "source",
                           "childSessionKey",
                           "childSessionName",
+                          "childSessionMissing",
                           "slackThreadTs",
                           "link",
                           "runtime",

@@ -88,6 +88,11 @@ import {
   canWriteContacts,
   filterVisibleAgents,
 } from "../../permissions/scope.js";
+import {
+  assertPermissionTagWriteAuthority,
+  assertPrivilegedContactWriteAuthority,
+  isPermissionPolicyTag,
+} from "../../permissions/privileged-contact-writes.js";
 import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as const;
@@ -434,6 +439,13 @@ function failContactNotFound(op: string, contactRef: string, asJson?: boolean): 
  * envelope, let ContractError pass through untouched, and keep every other
  * error on the legacy fail() path.
  */
+/** Permission tags added or removed when a contact's tag list is replaced. */
+function changedPermissionTags(current: readonly string[], next: readonly string[]): string[] {
+  const before = new Set(current.filter(isPermissionPolicyTag));
+  const after = new Set(next.filter(isPermissionPolicyTag));
+  return [...[...after].filter((tag) => !before.has(tag)), ...[...before].filter((tag) => !after.has(tag))];
+}
+
 function rethrowContactCommandError(op: string, contactRef: string, err: unknown, asJson?: boolean): never {
   if (err instanceof ContractError) throw err;
   const message = err instanceof Error ? err.message : String(err);
@@ -1011,6 +1023,11 @@ export class ContactsCommands {
       if (!asJson) console.log(`✓ Mode set: ${contact.id} → ${value}`);
     } else if (key === "email") {
       jsonValue = value === "-" ? null : value;
+      // primary_email resolves inbound senders, so it is an identity key.
+      if (jsonValue !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(jsonValue))) {
+        fail(`Invalid email: ${value}`);
+      }
+      assertPrivilegedContactWriteAuthority("contacts set email", [contact.id]);
       updateContact(contact.id, { email: jsonValue as string | null });
       if (!asJson) console.log(`✓ Email set: ${contact.id} → ${value}`);
     } else if (key === "name") {
@@ -1018,15 +1035,17 @@ export class ContactsCommands {
       updateContact(contact.id, { name: jsonValue as string | null });
       if (!asJson) console.log(`✓ Name set: ${contact.id} → ${value}`);
     } else if (key === "tags") {
+      let tags: unknown;
       try {
-        const tags = JSON.parse(value);
-        if (!Array.isArray(tags)) fail("Tags must be a JSON array");
-        jsonValue = tags;
-        updateContact(contact.id, { tags });
-        if (!asJson) console.log(`✓ Tags set: ${contact.id} → ${value}`);
+        tags = JSON.parse(value);
       } catch {
         fail('Tags must be a valid JSON array, e.g. \'["lead","vip"]\'');
       }
+      if (!Array.isArray(tags) || !tags.every((tag) => typeof tag === "string")) fail("Tags must be a JSON array");
+      assertPermissionTagWriteAuthority("contacts set tags", changedPermissionTags(contact.tags, tags));
+      jsonValue = tags;
+      updateContact(contact.id, { tags });
+      if (!asJson) console.log(`✓ Tags set: ${contact.id} → ${value}`);
     } else if (key === "notes") {
       try {
         const notes = JSON.parse(value);
@@ -1664,6 +1683,7 @@ export class ContactsCommands {
       failContactNotFound("contacts tag", contactRef, asJson);
     }
 
+    assertPermissionTagWriteAuthority("contacts tag", [tag]);
     addContactTag(contact.phone, tag);
     const payload = {
       status: "tag_added" as const,
@@ -1693,6 +1713,7 @@ export class ContactsCommands {
       failContactNotFound("contacts untag", contactRef, asJson);
     }
 
+    assertPermissionTagWriteAuthority("contacts untag", [tag]);
     removeContactTag(contact.phone, tag);
     const payload = {
       status: "tag_removed" as const,
@@ -1723,6 +1744,8 @@ export class ContactsCommands {
   ) {
     if (!channel) fail("--channel is required");
     if (!platformUserId) fail("--id is required");
+    const linkTarget = getContact(contactRef);
+    if (linkTarget) assertPrivilegedContactWriteAuthority("contacts link", [linkTarget.id]);
 
     try {
       const details = linkContactIdentity(contactRef, {
@@ -1912,6 +1935,7 @@ export class ContactsCommands {
     const source = getContact(sourceRef);
     if (!target) failContactNotFound("contacts merge", targetRef, asJson);
     if (!source) failContactNotFound("contacts merge", sourceRef, asJson);
+    assertPrivilegedContactWriteAuthority("contacts merge", [source.id, target.id]);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): the merge deletes the source contact and

@@ -152,27 +152,27 @@ describe("transcribe file contract", () => {
     expect(transcribeCalls).toHaveLength(0);
   });
 
-  it.each([
-    new Error("PRIVATE_MESSAGE_8K2R"),
-    "SENTINEL_SECRET_7M4Q",
-  ])("does not expose a provider rejection in the TRANSCRIBE_FAILED envelope", async (providerFailure) => {
-    const filePath = seedAudioFile();
-    transcribeFailure = providerFailure;
-    try {
-      const error = await expectContractError(
-        () => new TranscribeCommands().file(filePath, "pt", true),
-        "TRANSCRIBE_FAILED",
-        1,
-      );
+  it.each([new Error("PRIVATE_MESSAGE_8K2R"), "SENTINEL_SECRET_7M4Q"])(
+    "does not expose a provider rejection in the TRANSCRIBE_FAILED envelope",
+    async (providerFailure) => {
+      const filePath = seedAudioFile();
+      transcribeFailure = providerFailure;
+      try {
+        const error = await expectContractError(
+          () => new TranscribeCommands().file(filePath, "pt", true),
+          "TRANSCRIBE_FAILED",
+          1,
+        );
 
-      expect(error.message).toBe("Audio transcription failed.");
-      expect(error.details.retryable).toBe(true);
-      const serialized = JSON.stringify(error.envelope());
-      expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
-      expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
-      expect(transcribeCalls).toHaveLength(1);
-    } finally {
-      rmSync(audioDir, { recursive: true, force: true });
-    }
-  });
+        expect(error.message).toBe("Audio transcription failed.");
+        expect(error.details.retryable).toBe(true);
+        const serialized = JSON.stringify(error.envelope());
+        expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+        expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
+        expect(transcribeCalls).toHaveLength(1);
+      } finally {
+        rmSync(audioDir, { recursive: true, force: true });
+      }
+    },
+  );
 });

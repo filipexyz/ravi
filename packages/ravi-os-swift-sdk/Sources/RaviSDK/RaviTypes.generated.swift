@@ -15469,12 +15469,14 @@ public struct CronAddReturn: Codable, Sendable {
   public var job: RaviJSON
   public var status: String
   public var target: RaviJSON
+  public var warnings: [String]?
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON, warnings: [String]? = nil) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
     self.target = target
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15482,6 +15484,7 @@ public struct CronAddReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+    case warnings = "warnings"
   }
 }
 
@@ -15490,12 +15493,14 @@ public struct CronDisableReturn: Codable, Sendable {
   public var job: RaviJSON
   public var status: String
   public var target: RaviJSON
+  public var warnings: [String]?
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON, warnings: [String]? = nil) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
     self.target = target
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15503,6 +15508,7 @@ public struct CronDisableReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+    case warnings = "warnings"
   }
 }
 
@@ -15511,12 +15517,14 @@ public struct CronEnableReturn: Codable, Sendable {
   public var job: RaviJSON
   public var status: String
   public var target: RaviJSON
+  public var warnings: [String]?
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON, warnings: [String]? = nil) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
     self.target = target
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15524,6 +15532,7 @@ public struct CronEnableReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+    case warnings = "warnings"
   }
 }
 
@@ -15619,12 +15628,14 @@ public struct CronRmReturn: Codable, Sendable {
   public var job: RaviJSON
   public var status: String
   public var target: RaviJSON
+  public var warnings: [String]?
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON, warnings: [String]? = nil) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
     self.target = target
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15632,6 +15643,7 @@ public struct CronRmReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+    case warnings = "warnings"
   }
 }
 
@@ -15658,12 +15670,14 @@ public struct CronRunReturn: Codable, Sendable {
   public var job: RaviJSON
   public var status: String
   public var target: RaviJSON
+  public var warnings: [String]?
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON, warnings: [String]? = nil) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
     self.target = target
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15671,6 +15685,7 @@ public struct CronRunReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+    case warnings = "warnings"
   }
 }
 
@@ -15679,12 +15694,14 @@ public struct CronSetReturn: Codable, Sendable {
   public var job: RaviJSON
   public var status: String
   public var target: RaviJSON
+  public var warnings: [String]?
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON, warnings: [String]? = nil) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
     self.target = target
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15692,6 +15709,7 @@ public struct CronSetReturn: Codable, Sendable {
     case job = "job"
     case status = "status"
     case target = "target"
+    case warnings = "warnings"
   }
 }
 

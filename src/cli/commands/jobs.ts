@@ -8,6 +8,7 @@ import { buildCliOffsetPagination } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { getContext } from "../context.js";
+import { canAccessResource, canModifySession, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
 import {
   dbCreateJob,
   dbGetJob,
@@ -119,6 +120,33 @@ function resolveAgentId(explicit?: string): string | null {
   }
 }
 
+/** Jobs belong to their agent: other agents' jobs read as missing. */
+function canUseJob(job: Pick<JobRecord, "agentId">, mode: "read" | "mutate"): boolean {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return true;
+  return canAccessResource(scopeCtx, job.agentId ?? undefined, mode);
+}
+
+function getUsableJob(id: string, mode: "read" | "mutate"): JobRecord | null {
+  const job = dbGetJob(id);
+  return job && canUseJob(job, mode) ? job : null;
+}
+
+/**
+ * A job runs for its agent and reports into its session, so picking another
+ * agent or session needs the authority to act there.
+ */
+function assertJobTargetAuthorized(agentId: string | null, sessionName: string | null): void {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return;
+  if (!canAccessResource(scopeCtx, agentId ?? undefined, "mutate")) {
+    fail(`Agent not found: ${agentId ?? "(none)"}`);
+  }
+  if (sessionName && !canModifySession(scopeCtx, sessionName)) {
+    fail(`Session not found: ${sessionName}`);
+  }
+}
+
 /**
  * Jobs: chamada longa fora do turno.
  *
@@ -163,11 +191,15 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
 
     // Um log por job. Um arquivo compartilhado misturaria saídas de comandos
     // diferentes e o tail perderia sentido.
+    const jobSessionName = resolveSessionName(sessionName);
+    const jobAgentId = resolveAgentId(agentId);
+    assertJobTargetAuthorized(jobAgentId, jobSessionName);
+
     const jobId = `job_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
     const job = dbCreateJob({
       id: jobId,
-      sessionName: resolveSessionName(sessionName),
-      agentId: resolveAgentId(agentId),
+      sessionName: jobSessionName,
+      agentId: jobAgentId,
       command: commandLine,
       cwd: cwd ?? null,
       logPath: join(getRaviStateDir(), "jobs", `${jobId}.log`),
@@ -242,7 +274,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     const pageSize = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 50;
     const skip = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
 
-    const allJobs = dbListJobs({ sessionName: session, limit: 500 });
+    const allJobs = dbListJobs({ sessionName: session, limit: 500 }).filter((job) => canUseJob(job, "read"));
     const items = allJobs.slice(skip, skip + pageSize);
     const payload = {
       total: allJobs.length,
@@ -277,7 +309,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     @Arg("id", { description: "Job id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean,
   ) {
-    const job = dbGetJob(id);
+    const job = getUsableJob(id, "read");
     if (!job) {
       fail(`Job não encontrado: ${id}`);
       return;
@@ -295,7 +327,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     @Option({ flags: "-n, --lines <n>", description: "How many characters to keep (default 4000)" }) lines?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const job = dbGetJob(id);
+    const job = getUsableJob(id, "read");
     if (!job) {
       fail(`Job não encontrado: ${id}`);
       return;
@@ -323,6 +355,10 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
   ) {
     const parsed = timeoutMs ? Number.parseInt(timeoutMs, 10) : 0;
     const timeout = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    if (!getUsableJob(id, "read")) {
+      fail(`Job não encontrado: ${id}`);
+      return;
+    }
     const job = await waitForJob(id, timeout);
     if (!job) {
       fail(`Job ${id} não terminou no tempo esperado`);
@@ -350,7 +386,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     @Arg("id", { description: "Job id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const job = dbGetJob(id);
+    const job = getUsableJob(id, "mutate");
     if (!job) {
       fail(`Job não encontrado: ${id}`);
       return;

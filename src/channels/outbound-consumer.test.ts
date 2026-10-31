@@ -12,6 +12,8 @@ import {
   guardChannelOutboundJob,
   missingAdapterRetryDelayMs,
   persistDeliveredMessage,
+  resetMissingAdapterWarningsForTests,
+  warnMissingAdapter,
   persistDeliveredChatAction,
   processChannelOutboundJob as processChannelOutboundJobWithNats,
 } from "./outbound-consumer.js";
@@ -152,6 +154,16 @@ describe("channel outbound consumer", () => {
     expect(ack).not.toHaveBeenCalled();
     expect(nak).toHaveBeenCalledWith(120_000);
     expect(missingAdapterRetryDelayMs(10)).toBe(300_000);
+  });
+
+  it("warns about a reply with no adapter at most once a minute per channel", () => {
+    resetMissingAdapterWarningsForTests();
+    const fields = { jobId: "job-1", deliveryAttempt: 1, retryDelayMs: 30_000 };
+    expect(warnMissingAdapter("slack", fields, 1_000)).toBe(true);
+    expect(warnMissingAdapter("slack", { ...fields, jobId: "job-2" }, 30_000)).toBe(false);
+    expect(warnMissingAdapter("example", fields, 30_000)).toBe(true);
+    expect(warnMissingAdapter("slack", fields, 61_001)).toBe(true);
+    resetMissingAdapterWarningsForTests();
   });
 
   it("naks retryable adapter send failures", async () => {

@@ -35,8 +35,22 @@
 
 ## Commands
 
+Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
+
+- A symlink `nested/innocent -> .codex` cannot be written through
+  `cd nested && echo '{}' > innocent/config.toml` by an echo/cd writer.
+- Redirects check both successful and failed `cd` outcomes across `&&`, `||`
+  and `;`, including redirects placed before the cd executable.
+- A symlink followed by `..` resolves physically for file tools and shell
+  redirects; dangling file links and cyclic links cannot bypass the guard.
+- Safe writes such as `cd nested && echo ok > notes.txt` remain allowed.
+- Variable/glob/brace targets, multiline comments/continuations, pipelines,
+  subshells and state-changing builtins cannot turn an unresolved destination
+  into a permission allow.
+
 ```bash
 bun test src/permissions/provider-runtime.test.ts
+bun test src/bash/provider-config-writes.test.ts src/bash/parser.test.ts src/bash/hook.test.ts
 bun test src/cli/commands/permissions.test.ts
 bun test src/runtime/runtime-request-context.test.ts
 bun test src/cli/commands/agents.test.ts

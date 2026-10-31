@@ -31,10 +31,12 @@ import {
   resolveSignal,
   unmuteSignal,
   updateSignal,
+  isProducerOwnedSignalKey,
 } from "../../signals/service.js";
 import { dbClearKeyMute, dbSetKeyMute } from "../../signals/signal-db.js";
 import { signalsEnabled, tickSignals } from "../../signals/tick.js";
 import { jsonObjectSchema } from "../return-schemas.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 const clearWhenSchema = z.union([
   z.object({
@@ -425,6 +427,10 @@ export class SignalsCommands {
       });
       if (maxSurfaces !== undefined && (!Number.isInteger(Number(maxSurfaces)) || Number(maxSurfaces) < 1)) {
         usage(op, "--max-surfaces must be a positive integer.", asJson);
+      }
+      assertNoUserOverlayAutomationWrite("signals raise");
+      if (caller.isAgent && isProducerOwnedSignalKey(key)) {
+        usage(op, `Key ${key} is reserved for Ravi's own producers; raise the judgment under another key.`, asJson);
       }
       const result = raiseSignal({
         key,

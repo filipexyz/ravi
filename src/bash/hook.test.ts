@@ -291,6 +291,7 @@ describe("createBashPermissionHook", () => {
         "env -u {RAVI_CONTEXT_KEY,} ravi crypto balance",
         "env -u R{A,}VI_CONTEXT_KEY ravi crypto balance",
         "X=RAVI_CONTEXT_KEY; env -u $X ravi crypto balance",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell expansion under test
         "X=RAVI_CONTEXT_KEY; env -u ${X} ravi crypto balance",
         // Shell tricks around the env name.
         "/usr/bin/ENV -u RAVI_CONTEXT_KEY ravi crypto balance",

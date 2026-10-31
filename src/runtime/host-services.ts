@@ -46,6 +46,7 @@ import {
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { isLibraryPluginSkillAllowedForTurn } from "../library/session-plugins.js";
 import { isOperatorOwnTurn } from "../library/turn.js";
+import { contextCan, fileWriteToolTargets, providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
 import {
   commandLineRunsSkillRemediation,
   extractRequestedSkillsFromCommandLine,
@@ -67,6 +68,8 @@ export interface RuntimeHostServicesOptions {
   approvalSource?: ApprovalTarget;
   toolContext: Record<string, unknown>;
   onSkillGatePersisted?: SkillGatePersistedListener;
+  /** The session's working directory, which the provider resolves relative tool paths against. */
+  cwd?: string;
 }
 
 function hasUnrestrictedToolExecution(agentId: string): boolean {
@@ -460,7 +463,7 @@ function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynam
 }
 
 async function authorizeRuntimeCommandExecution(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted" | "cwd">,
   request: RuntimeCommandAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const command = request.command;
@@ -480,6 +483,7 @@ async function authorizeRuntimeCommandExecution(
     ...(options.context.sessionKey ? { sessionKey: options.context.sessionKey } : {}),
     sessionName: options.context.sessionName ?? options.sessionName,
     capabilities: options.context.capabilities,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
   });
 
   const preliminary = evaluateBashPermission(command, buildBashContext());
@@ -683,7 +687,7 @@ async function authorizeRuntimeCommandExecution(
 }
 
 async function authorizeRuntimeToolUse(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted" | "cwd">,
   request: RuntimeToolUseAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const result = await authorizeRuntimeContext({
@@ -697,6 +701,23 @@ async function authorizeRuntimeToolUse(
 
   if (!result.allowed) {
     return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
+  }
+
+  const configWriteDenial = providerConfigWriteDenial({
+    can: contextCan(options.context),
+    agentId: options.agentId,
+    targets: fileWriteToolTargets(request.toolName, request.input),
+    cwd: options.cwd,
+  });
+  if (configWriteDenial) {
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `tool:${request.toolName}`,
+      reason: configWriteDenial,
+      blockType: "runtime_provider_config_write",
+      detail: { toolName: request.toolName },
+    });
+    return { approved: false, reason: configWriteDenial };
   }
 
   const deniedToolSkill = extractRequestedSkillsFromToolCall(request.toolName, request.input).find(

@@ -43,6 +43,7 @@ import {
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
+import { dbGetCronJob } from "../cron/cron-db.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 
 export interface RuntimeRequestContextOptions {
@@ -343,7 +344,9 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     actorPrincipal,
     hasPromptExternalAuthoritySurface(options.prompt),
   );
-  const userOverlay = resolveUserOverlay(actorPrincipal, surfacePrincipal, actorMetadata);
+  const userOverlay =
+    resolveStoredAutomationCreatorOverlay(options.prompt) ??
+    resolveUserOverlay(actorPrincipal, surfacePrincipal, actorMetadata);
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
@@ -357,6 +360,20 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     consoleBinding,
     userOverlay,
   });
+}
+
+/**
+ * A job a contact wrote from a turn narrowed to their chat grants runs every
+ * turn under those grants as they are now: none left means no capabilities.
+ * The binding is read from the stored job, never from the published prompt.
+ */
+function resolveStoredAutomationCreatorOverlay(prompt: RuntimeLaunchPrompt): ContactChatOverlay | null {
+  if (!prompt._cron || !prompt._jobId) return null;
+  const job = dbGetCronJob(prompt._jobId);
+  const owner = job?.ownerPrincipal ?? "";
+  if (!job?.creatorChat || !owner.startsWith("contact:")) return null;
+  const overlay = resolveContactChatOverlay({ contactId: owner.slice("contact:".length), chatId: job.creatorChat });
+  return { ...overlay, active: true };
 }
 
 function resolveUserOverlay(
@@ -410,11 +427,15 @@ function buildAgentIdentityRuntimeContextInput(options: {
   // In a chat governed by contact grants the sender's chat caps replace the
   // agent identity as the actor branch: agent_ceiling ∩ contact_chat_caps.
   const userOverlay = shouldMaterializeIdentity && options.userOverlay?.active ? options.userOverlay : null;
+  const relayCaller = resolveRelayCaller(options.prompt);
+  const relayNarrowing = relayCaller.narrowing;
+  const turnCapabilities =
+    relayNarrowing ?? (hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined);
   const effectiveCapabilities = buildEffectiveCapabilities({
     agentCapabilities: agentIdentityCapabilities,
     actorCapabilities: userOverlay ? userOverlay.capabilities : agentIdentityCapabilities,
     ...(userOverlay ? { actorOverrideCapabilities: options.capabilities.filter(isTaskSelfCapability) } : {}),
-    turnCapabilities: hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined,
+    turnCapabilities,
   });
 
   return {
@@ -442,13 +463,42 @@ function buildAgentIdentityRuntimeContextInput(options: {
       ...(taskSelfTaskId ? { taskSelfTaskId } : {}),
       actorCapabilityCount: userOverlay ? userOverlay.capabilities.length : 0,
       surfaceCapabilityCount: 0,
-      turnCapabilityCount: observationCapabilities.length,
-      ...(observationCapabilities.length > 0 ? { turnCapabilities: observationCapabilities } : {}),
+      turnCapabilityCount: turnCapabilities?.length ?? 0,
+      ...(turnCapabilities && turnCapabilities.length > 0 ? { turnCapabilities } : {}),
+      ...(relayNarrowing ? { relayNarrowing: true } : {}),
+      ...(relayCaller.contactId ? { relayCallerContactId: relayCaller.contactId } : {}),
       effectiveCapabilityCount: effectiveCapabilities.length,
       ...(options.consoleBinding?.consoleUserId ? { consoleUserId: options.consoleBinding.consoleUserId } : {}),
       ...(options.consoleBinding?.consoleOrgId ? { consoleOrgId: options.consoleBinding.consoleOrgId } : {}),
     },
   };
+}
+
+/**
+ * A turn another turn produced (a session relay, a Slack thread bootstrap,
+ * report or return) never holds more than that turn when it was narrowed to a
+ * contact's chat grants. The caller context is looked up in ravi.db; one that
+ * no longer exists narrows to nothing.
+ */
+function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
+  narrowing?: ContextCapability[];
+  /** The contact the producing turn acted for, so Console calls stay attributed to them. */
+  contactId?: string;
+} {
+  const callerContextId = resolveRuntimeTurnOrigin(prompt._turnOrigin)?.callerContextId;
+  if (!callerContextId) return {};
+  const caller = dbGetContext(callerContextId);
+  if (!caller) return { narrowing: [] };
+  const metadata = caller.metadata ?? {};
+  const narrowed =
+    metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE || metadata.relayNarrowing === true;
+  const actorPrincipal = typeof metadata.actorPrincipal === "string" ? metadata.actorPrincipal : "";
+  const contactId = actorPrincipal.startsWith("contact:")
+    ? actorPrincipal.slice("contact:".length)
+    : typeof metadata.relayCallerContactId === "string"
+      ? metadata.relayCallerContactId
+      : undefined;
+  return { ...(narrowed ? { narrowing: caller.capabilities } : {}), ...(contactId ? { contactId } : {}) };
 }
 
 function buildUserOverlayMetadata(overlay: ContactChatOverlay, applied: boolean): Record<string, unknown> {
@@ -760,6 +810,11 @@ function resolveAutomationPromptPrincipal(
     if (hasResolvedExternalActor(source) || hasResolvedExternalActor(context)) {
       return null;
     }
+    // An interrupted turn from a sender Ravi could not resolve stays unresolved:
+    // the restart must not lift it to the daemon's own authority.
+    if (hasRecordedExternalSender(source) || hasRecordedExternalSender(context)) {
+      return null;
+    }
     return { subjectType: "automation", subjectId: "daemon-restart" };
   }
   return null;
@@ -781,6 +836,27 @@ function hasResolvedExternalActor(
   return Boolean(
     (metadata?.actorType === "contact" && cleanStringValue(metadata.contactId)) ||
       (metadata?.actorType === "agent" && cleanStringValue(metadata.actorAgentId)),
+  );
+}
+
+function hasRecordedExternalSender(
+  metadata:
+    | {
+        actorType?: string;
+        rawSenderId?: string;
+        normalizedSenderId?: string;
+        platformIdentityId?: string;
+        senderId?: string;
+      }
+    | undefined,
+): boolean {
+  return Boolean(
+    metadata &&
+      (metadata.actorType === "unknown" ||
+        cleanStringValue(metadata.rawSenderId) ||
+        cleanStringValue(metadata.normalizedSenderId) ||
+        cleanStringValue(metadata.platformIdentityId) ||
+        cleanStringValue(metadata.senderId)),
   );
 }
 

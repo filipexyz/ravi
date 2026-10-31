@@ -26,6 +26,7 @@ import {
   describePathCli,
   detectFromBinaryPath,
   findPackageRoot,
+  nativeChannelRunnerUpdateWarning,
   packageTagForChannel,
   packageTagForVersion,
   parseGlobalInstallListing,
@@ -567,5 +568,28 @@ describe("update command helpers", () => {
     } finally {
       runtime.cleanup();
     }
+  });
+});
+
+describe("native channel runner update warning", () => {
+  const slack = { name: "slack-a", provider: "slack", enabled: true, createdAt: 1, updatedAt: 1 };
+  const runner = (status: string) =>
+    ({ name: "ravi-channels", pm_id: 1, pid: 10, status, cpu: 0, memory: 0 }) as Pm2Process;
+
+  it("warns when native channels are enabled and the runner was not online", () => {
+    expect(nativeChannelRunnerUpdateWarning([], () => [slack])).toContain("ravi channels start");
+    expect(nativeChannelRunnerUpdateWarning([runner("stopped")], () => [slack])).toContain(
+      "1 native channel(s) are enabled but ravi-channels is not running",
+    );
+  });
+
+  it("stays quiet when the runner was online, no native channel is enabled, or channels cannot be read", () => {
+    expect(nativeChannelRunnerUpdateWarning([runner("online")], () => [slack])).toBeNull();
+    expect(nativeChannelRunnerUpdateWarning([], () => [{ ...slack, enabled: false }])).toBeNull();
+    expect(
+      nativeChannelRunnerUpdateWarning([], () => {
+        throw new Error("db unavailable");
+      }),
+    ).toBeNull();
   });
 });

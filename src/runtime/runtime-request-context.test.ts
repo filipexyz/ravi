@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
-import { dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
+import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
+import { dbCreateCronJob } from "../cron/cron-db.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -19,6 +20,7 @@ import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildLibraryRequestPrompt } from "../library/request-turn.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { createRuntimeContext, resolveRuntimeContext } from "./context-registry.js";
+import { pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
@@ -1067,6 +1069,47 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("keeps the authority of a cron turn on its host-made continuation", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    // A cron turn replies to a chat: its source names the surface, not an actor.
+    const cronTurn: RuntimeLaunchPrompt = {
+      prompt: "daily report",
+      source: { channel: "slack", accountId: "slack-main", chatId: "C0ABC123", canonicalChatId: "chat_group_1" },
+      _cron: true,
+      _jobId: "job-daily",
+    };
+    const continuation = (envelope: Partial<RuntimeLaunchPrompt>) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt: {
+          ...envelope,
+          prompt: "[System] Inatividade: o provider ficou 180s sem produzir evento.",
+          source: cronTurn.source,
+        },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: cronTurn.source,
+      }).runtimeContext;
+
+    const bare = continuation({});
+    expect(bare.metadata?.actorResolution).toBe("missing_contact");
+    expect(bare.capabilities).toEqual([]);
+
+    const inherited = continuation(pickRuntimeTurnAuthorityEnvelope(cronTurn));
+    expect(inherited.metadata).toMatchObject({
+      actorResolution: "resolved",
+      actorPrincipal: "automation:cron:job-daily",
+    });
+    expect(canWithCapabilities(inherited.capabilities, "read", "context", "codex-bash-hook")).toBe(true);
+    expect(canWithCapabilities(inherited.capabilities, "use", "tool", "Bash")).toBe(true);
+  });
+
   it("runs a Library request from another machine as an unresolved external actor", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     const requestSessionKey = `agent:${agent.id}:library-request:req-1`;
@@ -1170,6 +1213,59 @@ describe("runtime request context authority", () => {
     expect(runtimeContext.metadata?.actor).not.toHaveProperty("senderPhone");
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
+  });
+
+  it("narrows a relay produced by a contact-overlay turn to that turn's capabilities", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const overlayCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      sessionKey,
+      sessionName,
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+      metadata: { actorAuthorizationMode: "user-overlay", actorPrincipal: "contact:ana" },
+    });
+    const plainCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      sessionKey,
+      capabilities: [],
+      metadata: { actorAuthorizationMode: "invoke-only" },
+    });
+
+    const build = (callerContextId: string) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: {
+          prompt: "[System] Inform: do it",
+          _turnOrigin: buildSessionRelayTurnOrigin("inform", {
+            agentId: agent.id,
+            sessionKey,
+            sessionName,
+            contextId: callerContextId,
+          }),
+        },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+      }).runtimeContext;
+
+    const narrowed = build(overlayCaller.contextId);
+    expect(narrowed.metadata?.relayNarrowing).toBe(true);
+    expect(narrowed.metadata?.relayCallerContactId).toBe("ana");
+    expect(canWithCapabilities(narrowed.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(narrowed.capabilities, "use", "tool", "Read")).toBe(false);
+
+    const missing = build("ctx_missing_caller");
+    expect(canWithCapabilities(missing.capabilities, "use", "tool", "Bash")).toBe(false);
+
+    const plain = build(plainCaller.contextId);
+    expect(plain.metadata?.relayNarrowing).toBeUndefined();
+    expect(canWithCapabilities(plain.capabilities, "use", "tool", "Read")).toBe(true);
   });
 
   it("keeps a source-less operator relay in the target workspace compartment", () => {
@@ -1558,6 +1654,42 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("keeps an unresolved sender's interrupted turn unresolved across a daemon restart", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    for (const noticeOnly of [false, true]) {
+      const prompt: RuntimeLaunchPrompt = {
+        prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "120363428243036323@g.us",
+          canonicalChatId: "chat_group_1",
+          actorType: "unknown",
+          normalizedSenderId: "5511900000999",
+        },
+        _daemonRestartResume: { restartEpoch: "restart-unknown", sessionKey, ...(noticeOnly ? { noticeOnly } : {}) },
+      };
+
+      const { runtimeContext } = buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt,
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: prompt.source,
+      });
+
+      expect(runtimeContext.metadata?.actorPrincipal).not.toBe("automation:daemon-restart");
+      expect(runtimeContext.metadata?.actorResolution).toBe("missing_contact");
+      expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
+    }
+  });
+
   it("preserves the contact principal for daemon restart resume prompts with a human snapshot source", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
@@ -1812,6 +1944,51 @@ describe("runtime request context chat-scoped user overlay", () => {
     // In the agent ceiling but not granted to the contact in this chat.
     expect(canWithCapabilities(context.capabilities, "execute", "executable", "curl")).toBe(false);
     expect(canWithCapabilities(context.capabilities, "use", "tool", "Bash")).toBe(false);
+  });
+
+  it("runs a cron a narrowed contact wrote under that contact's current chat grants", () => {
+    const chat = groupChat("120363400000000009@g.us");
+    const ana = createContact({ phone: "5511900000009", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const job = dbCreateCronJob({
+      name: "ana-daily",
+      schedule: { type: "every", every: 60_000 },
+      message: "faz o relatorio",
+      agentId: agent.id,
+      ownerPrincipal: `contact:${ana.id}`,
+      creatorChat: chat.id,
+    });
+    const cronContext = () => {
+      const prompt: RuntimeLaunchPrompt = { ...promptInChat(ana.id, chat), _cron: true, _jobId: job.id };
+      const overlaySessionKey = `agent:provider-agent:cron:${job.id}`;
+      getOrCreateSession(overlaySessionKey, agent.id, agent.cwd, { name: `cron-${job.id}` });
+      return buildRuntimeRequestContext({
+        dbSessionKey: overlaySessionKey,
+        sessionName: `cron-${job.id}`,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt,
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: prompt.source,
+      }).runtimeContext;
+    };
+
+    const granted = cronContext();
+    expect(granted.metadata?.actorPrincipal).toBe(`automation:cron:${job.id}`);
+    expect(canWithCapabilities(granted.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(canWithCapabilities(granted.capabilities, "execute", "executable", "curl")).toBe(false);
+
+    dbDeleteContactChatGrant({
+      contactId: ana.id,
+      profileSlug: "permission-image",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    const revoked = cronContext();
+    expect(canWithCapabilities(revoked.capabilities, "mutate", "image", "generate")).toBe(false);
+    expect(canWithCapabilities(revoked.capabilities, "execute", "executable", "curl")).toBe(false);
   });
 
   it("keeps chats without contact grants on the agent identity", () => {

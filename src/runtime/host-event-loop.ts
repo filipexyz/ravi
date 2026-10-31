@@ -92,6 +92,7 @@ import {
   publicRuntimeFailureDetail,
   shouldEmitUserFacingTurnFailure,
 } from "./public-failure.js";
+import { isTransportFailureMessage } from "./transport-failure.js";
 import {
   createTurnToolContinuationLedger,
   listOpenTurnToolNames,
@@ -180,6 +181,10 @@ const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+// Transport drops are transient by nature. A provider outage that outlives this
+// window is worth surfacing again, so transport keeps a short window and never
+// borrows the hour-long session-limit constant.
+const USER_FACING_TRANSPORT_SUPPRESSION_MS = 15 * 60_000;
 const GENERATED_IMAGE_ITEM_TYPE = "imageGeneration";
 const GENERATED_MEDIA_FILE_PREFIX = "ravi-generated-media";
 const MAX_GENERATED_MEDIA_BYTES = 50 * 1024 * 1024;
@@ -777,7 +782,7 @@ function isAlreadyProcessingFailure(event: { error?: string; rawEvent?: Record<s
 }
 
 type UserFacingRuntimeLimitFailure = {
-  kind: "session_limit";
+  kind: "session_limit" | "transport";
   windowKey: string;
   expiresAt: number;
 };
@@ -841,6 +846,22 @@ export function classifyUserFacingRuntimeLimitFailure(
   now = Date.now(),
 ): UserFacingRuntimeLimitFailure | undefined {
   const normalized = normalizeSuppressionText(error);
+
+  // Transport failures repeat identically while a provider link is down. They
+  // are classified by the closed transport signature list, never by free text,
+  // and deduplicated inside their own short window per chat scope. The window
+  // key is the failure class itself: transport errors routinely differ only in
+  // endpoint details (host:port in ECONNREFUSED/ETIMEDOUT messages) while
+  // mapping to the exact same unavailable notice, so the normalized first line
+  // must not split one outage into several suppression windows.
+  if (isTransportFailureMessage(error)) {
+    return {
+      kind: "transport",
+      windowKey: "transport",
+      expiresAt: now + USER_FACING_TRANSPORT_SUPPRESSION_MS,
+    };
+  }
+
   const isExactSessionLimit = /you['’]?ve hit your session limit/i.test(error);
   const isGenericSessionLimitWithReset = /\bsession limit\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
   if (!isExactSessionLimit && !isGenericSessionLimitWithReset) return undefined;
@@ -1370,6 +1391,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         : explain(["O turno nao foi encerrado: ele continua agora, a partir daqui."]),
       deliveryBarrier: "after_tool",
       deliveryBarrierSource: "inferred",
+      ...streaming.currentTurnAuthority,
       source: streaming.currentSource,
       taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
       _agentId: agent.id,
@@ -1999,6 +2021,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
     const metadata = streaming.currentChannelBackend;
     if (!metadata) return;
+    // The physical turn ends, but its queued continuation still owns this channel request.
+    if (
+      streaming.currentTurnYieldContinuationId &&
+      !streaming.internalAbortReason &&
+      (event.type === "turn.interrupted" || event.type === "turn.complete")
+    ) {
+      return;
+    }
     const toolProjection =
       event.type === "tool.started"
         ? {
@@ -4108,6 +4138,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
           await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48);
+          // The restated request is this turn's own input, not the newest history
+          // row, which may be another sender's queued message.
+          const ownPendingIds = new Set(streaming.currentTurnPendingIds ?? []);
           const recovery = buildRuntimeContextRecoveryPrompt({
             sessionName,
             runtimeProvider: runtimeSession.provider,
@@ -4115,7 +4148,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             error: event.error,
             recoveryKind: sessionRecoveryFailure.kind,
             history,
+            latestUserRequest: currentTurnPromptText(),
           });
+          const queuedSuccessors = streaming.pendingMessages
+            .filter((message) => !message.pendingId || !ownPendingIds.has(message.pendingId))
+            .map((message) => ({ ...message }));
           const resetApplied = resetSession(session.sessionKey);
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
@@ -4129,12 +4166,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             prompt: recovery.prompt,
             deliveryBarrier: "after_tool",
             deliveryBarrierSource: "inferred",
+            ...streaming.currentTurnAuthority,
             source: streaming.currentSource,
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
             _agentId: agent.id,
             _runtimeProviderId: runtimeSession.provider,
           });
-          stashedMessages.set(sessionName, [recoveredMessage]);
+          // Messages queued behind the failed turn keep their own sender's envelope.
+          stashedMessages.set(sessionName, [recoveredMessage, ...queuedSuccessors]);
           restartStashedReason = recoveryPlan.reason;
 
           log.warn(recoveryPlan.logMessage, {

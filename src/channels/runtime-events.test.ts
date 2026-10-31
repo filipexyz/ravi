@@ -13,6 +13,9 @@ import { resolveSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeHostStreamingSession } from "../runtime/host-session.js";
 import { runRuntimeEventLoop } from "../runtime/host-event-loop.js";
+import { RuntimeSessionDispatcher } from "../runtime/session-dispatcher.js";
+import { createQueuedRuntimeUserMessage } from "../runtime/delivery-queue.js";
+import type { RuntimeCrashRecoveryCoordinator } from "../runtime/crash-recovery.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
 import type { RuntimeCapabilities, RuntimeEvent, RuntimeSessionHandle } from "../runtime/types.js";
 import {
@@ -916,6 +919,128 @@ describe("channel runtime event projection", () => {
       kind: "turn.terminal_output",
       payload: { state: "interrupted" },
     });
+  });
+
+  for (const terminalType of ["turn.interrupted", "turn.complete"] as const) {
+    it(`keeps a yielded channel request open across ${terminalType} until its continuation replies`, async () => {
+      const metadata = await acceptedMetadata();
+      const events: KnownChannelRuntimeEvent[] = [];
+      const outputs: ChannelOutputEnvelope[] = [];
+      const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+      unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+        async emit(event) {
+          events.push(event);
+        },
+      });
+      unregisterOutput = channelOutputSinks.register(metadata.target, {
+        async emit(output) {
+          outputs.push(output);
+        },
+      });
+      try {
+        await runAcceptedHostRuntime(
+          metadata,
+          [
+            { type: "tool.started", toolUse: { id: "yield-tool", name: "read", input: {} } },
+            { type: "tool.completed", toolUseId: "yield-tool", toolName: "read", content: "done" },
+            terminalType === "turn.complete"
+              ? { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 0 } }
+              : { type: "turn.interrupted" },
+          ],
+          (streaming) => {
+            streaming.currentTurnSuperseded = true;
+            streaming.currentTurnYieldContinuationId = "pending-continuation";
+            streaming.interrupted = true;
+          },
+        );
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("running");
+        expect(events.some((event) => event.kind === "turn.terminal_output")).toBe(false);
+        expect(outputs).toHaveLength(0);
+
+        await runAcceptedHostRuntime(metadata, [
+          { type: "assistant.message", text: "Original work completed after yielding." },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]);
+      } finally {
+        emitSpy.mockRestore();
+      }
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("completed");
+      expect(events.filter((event) => event.kind === "turn.terminal_output")).toHaveLength(1);
+      expect(outputs).toHaveLength(1);
+    });
+  }
+
+  for (const deferred of [false, true]) {
+    it(`closes a waiting continuation's channel request on ${deferred ? "deferred" : "immediate"} session abort`, async () => {
+      const metadata = await acceptedMetadata();
+      const events: KnownChannelRuntimeEvent[] = [];
+      unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+        async emit(event) {
+          events.push(event);
+        },
+      });
+      await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "tool.started", toolUse: { id: "original-tool", name: "read", input: {} } },
+      });
+      const session = resolveSession(metadata.binding.sessionId)!;
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "test",
+        maxConcurrentSessions: 2,
+        interactiveReservedSessions: 0,
+        safeEmit: async () => {},
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "test-model",
+        crashRecovery: { acceptingDeliveries: true } as RuntimeCrashRecoveryCoordinator,
+      });
+      const continuation = {
+        ...createQueuedRuntimeUserMessage({
+          prompt: "resume the original work",
+          _channelBackend: metadata,
+          deliveryBarrier: "after_response",
+        }),
+        yieldedRequest: "original work",
+      };
+      const streaming = streamingSession(metadata, runtimeHandle([]));
+      streaming.currentSource = {
+        channel: "slack",
+        accountId: "slack-account",
+        chatId: "other-chat",
+        threadId: "other-thread",
+      };
+      streaming.currentChannelBackend = undefined;
+      streaming.pendingMessages = [continuation];
+      streaming.toolResultDeliveryPending = deferred;
+      dispatcher.streamingSessions.set(session.name!, streaming);
+      dispatcher.stashedMessages.set(session.name!, [{ ...continuation }]);
+
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("running");
+      expect(dispatcher.abortSession(session.name!)).toBe(true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("interrupted");
+      expect(events.filter((event) => event.kind === "turn.terminal_output")).toHaveLength(1);
+      expect(streaming.pendingMessages).toEqual([]);
+      expect(dispatcher.stashedMessages.has(session.name!)).toBe(false);
+      expect(streaming.pendingAbort).toBe(deferred);
+      expect(streaming.abortController.signal.aborted).toBe(!deferred);
+    });
+  }
+
+  it("still terminalizes an explicitly aborted channel turn while a yield is pending", async () => {
+    const metadata = await acceptedMetadata();
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    try {
+      await runAcceptedHostRuntime(metadata, [{ type: "turn.interrupted" }], (streaming) => {
+        streaming.currentTurnSuperseded = true;
+        streaming.currentTurnYieldContinuationId = "pending-continuation";
+        streaming.internalAbortReason = "explicit_abort";
+        streaming.interrupted = true;
+      });
+    } finally {
+      emitSpy.mockRestore();
+    }
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("interrupted");
   });
 
   it("keeps sentinel assistant content off the channel output path", async () => {

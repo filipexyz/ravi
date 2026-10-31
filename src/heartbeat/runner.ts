@@ -13,6 +13,7 @@ import { dbListAgents } from "../router/router-db.js";
 import {
   expandHome,
   getOrCreateSession,
+  getMainSession,
   getSessionByName,
   generateSessionName,
   ensureUniqueName,
@@ -216,21 +217,18 @@ export class HeartbeatRunner {
 
     // Check if session already exists by name
     let mainSession = getSessionByName(baseName);
+    if (mainSession && mainSession.agentId !== agentId) {
+      // Another agent's session holds the slug (a rename can take a free slug).
+      // Never rebind it: use this agent's own main session instead.
+      log.warn("Heartbeat slug held by another agent's session; using the agent's main session", {
+        sessionName: baseName,
+        holderAgent: mainSession.agentId,
+        agentId,
+      });
+      mainSession = getMainSession(agentId);
+    }
 
-    if (mainSession) {
-      // Session exists — fix agent_id if it was created with wrong agent (race from previous bug)
-      if (mainSession.agentId !== agentId) {
-        log.info("Fixing session agent_id", {
-          sessionName: baseName,
-          oldAgent: mainSession.agentId,
-          newAgent: agentId,
-        });
-        // Re-create session entry with correct agent via getOrCreateSession
-        // (it updates agent_id if session_key matches)
-        getOrCreateSession(mainSession.sessionKey, agentId, agentCwd);
-        mainSession.agentId = agentId;
-      }
-    } else {
+    if (!mainSession) {
       // Session doesn't exist — create it using name as key (matches bot.ts convention)
       const sessionName = ensureUniqueName(baseName);
       mainSession = getOrCreateSession(sessionName, agentId, agentCwd, { name: sessionName });

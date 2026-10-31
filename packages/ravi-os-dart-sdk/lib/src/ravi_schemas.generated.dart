@@ -35688,6 +35688,9 @@ class RaviSchemas {
                       "connectedAt": {
                         "type": "number"
                       },
+                      "detail": {
+                        "type": "string"
+                      },
                       "id": {
                         "type": "string"
                       },
@@ -36389,6 +36392,9 @@ class RaviSchemas {
                       "connectedAt": {
                         "type": "number"
                       },
+                      "detail": {
+                        "type": "string"
+                      },
                       "id": {
                         "type": "string"
                       },
@@ -36818,6 +36824,9 @@ class RaviSchemas {
                   },
                   "connectedAt": {
                     "type": "number"
+                  },
+                  "detail": {
+                    "type": "string"
                   },
                   "id": {
                     "type": "string"
@@ -37265,6 +37274,9 @@ class RaviSchemas {
                       },
                       "connectedAt": {
                         "type": "number"
+                      },
+                      "detail": {
+                        "type": "string"
                       },
                       "id": {
                         "type": "string"
@@ -65308,6 +65320,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65369,6 +65387,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65430,6 +65454,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65612,6 +65642,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65677,6 +65713,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65748,6 +65790,12 @@ class RaviSchemas {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -104736,6 +104784,9 @@ class RaviSchemas {
             }
           ]
         },
+        "childSessionMissing": {
+          "type": "boolean"
+        },
         "childSessionName": {
           "anyOf": [
             {
@@ -104958,6 +105009,7 @@ class RaviSchemas {
         "source",
         "childSessionKey",
         "childSessionName",
+        "childSessionMissing",
         "slackThreadTs",
         "link",
         "runtime",
@@ -105034,6 +105086,9 @@ class RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "childSessionMissing": {
+            "type": "boolean"
           },
           "childSessionName": {
             "anyOf": [
@@ -105257,6 +105312,7 @@ class RaviSchemas {
           "source",
           "childSessionKey",
           "childSessionName",
+          "childSessionMissing",
           "slackThreadTs",
           "link",
           "runtime",

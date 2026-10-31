@@ -39,7 +39,7 @@ import {
   loadRouterConfig,
   setAgentSpecMode,
 } from "../../router/config.js";
-import { dbGetSetting, DmScopeSchema, type ContextCapability } from "../../router/router-db.js";
+import { dbGetSetting, DmScopeSchema, getDefaultAgentId, type ContextCapability } from "../../router/router-db.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import {
   deleteSession,
@@ -1145,6 +1145,10 @@ export class AgentsCommands {
 
     let deleted = false;
     try {
+      // Deleting an agent removes all of its authority: revoke its live contexts
+      // (cascading to children) while contexts.agent_id still names it, since the
+      // delete's ON DELETE SET NULL clears that column.
+      if (id !== getDefaultAgentId()) revokeLiveRuntimeContextsForAgent(id, { reason: "agent_deleted" });
       deleted = deleteAgent(id);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);

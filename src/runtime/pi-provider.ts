@@ -66,6 +66,7 @@ import {
   type PiContextSaturation,
   type PiContextSaturationLevel,
 } from "./pi-context-saturation.js";
+import { classifyTransportFailureKind } from "./transport-failure.js";
 
 const log = logger.child("runtime:pi");
 const DEFAULT_PI_COMMAND = "pi";
@@ -1382,9 +1383,16 @@ async function maybeBuildPiTerminalEvent(
       });
     }
     if (stopReason === "error") {
+      const errorMessage = firstString(message?.errorMessage) ?? "Pi turn failed";
+      // OpenAI-compatible clients (pi with DeepSeek/OpenRouter/...) report a
+      // transport drop as a plain turn_error with a provider-generated message
+      // and zeroed usage. Without the transport kind the host treats it as a
+      // fatal visible failure and never runs the silent stash + restart path.
+      const failureKind = classifyTransportFailureKind(errorMessage);
       return terminalTracker.fail({
-        error: firstString(message?.errorMessage) ?? "Pi turn failed",
+        error: errorMessage,
         recoverable: true,
+        ...(failureKind ? { failureKind } : {}),
         rawEvent,
         metadata: buildPiEventMetadata(rawEvent, context),
       });

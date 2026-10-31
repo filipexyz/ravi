@@ -2,6 +2,7 @@ import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barrier
 import type { SessionEntry } from "../router/index.js";
 import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import type { RuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { SkillGatePersistedListener } from "./skill-gate.js";
@@ -70,6 +71,8 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   launchPrompt?: RuntimeLaunchPrompt;
   pendingId?: string;
   queuedAt?: number;
+  /** Original work for a fresh continuation after yielding to another reply surface. */
+  yieldedRequest?: string;
 }
 
 export function runtimeTurnAttemptTerminalEventType(
@@ -104,6 +107,8 @@ export interface RuntimeHostStreamingSession {
   lastBoundReplyTarget?: RuntimeMessageTarget;
   /** CLI-only or observer turns must not emit to a chat sink. */
   suppressChatEmit?: boolean;
+  /** Authority envelope of the current turn; host-made continuations of the turn inherit it. Set with `currentSource`. */
+  currentTurnAuthority?: RuntimeTurnAuthorityEnvelope;
   /** Provider-neutral channel backend identity for the currently executing turn. */
   currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */
@@ -180,6 +185,8 @@ export interface RuntimeHostStreamingSession {
   currentTurnPendingIds?: string[];
   /** Whether a newer prompt intentionally preempted the active provider turn. */
   currentTurnSuperseded?: boolean;
+  /** Queued continuation owns the logical channel turn after this physical turn yields. */
+  currentTurnYieldContinuationId?: string;
   /** Whether the current provider turn has started at least one tool. Used to block unsafe replay. */
   currentTurnToolStarted?: boolean;
   /** Whether prompt-bearing provider control mutated the physical turn after its immutable handoff. */

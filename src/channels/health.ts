@@ -18,6 +18,8 @@ export interface ChannelAdapterHealth {
   channelId: string;
   status: ChannelAdapterHealthState;
   reason?: string;
+  /** Non-secret, stable code that narrows `reason` (for example `connection_not_found`). */
+  detail?: string;
   connectedAt?: number;
   lastPongAt?: number;
   reconnectCount?: number;
@@ -243,6 +245,7 @@ function isChannelAdapterHealth(value: unknown): value is ChannelAdapterHealth {
   if (typeof value.id !== "string" || typeof value.channelId !== "string") return false;
   if (!CHANNEL_ADAPTER_HEALTH_STATES.has(value.status)) return false;
   if (value.reason !== undefined && typeof value.reason !== "string") return false;
+  if (value.detail !== undefined && typeof value.detail !== "string") return false;
   if (value.connectedAt !== undefined && !isFiniteNumber(value.connectedAt)) return false;
   if (value.lastPongAt !== undefined && !isFiniteNumber(value.lastPongAt)) return false;
   if (

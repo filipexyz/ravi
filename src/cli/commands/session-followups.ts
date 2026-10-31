@@ -2,6 +2,8 @@ import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { canAccessSession, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
+import { resolveSession } from "../../router/sessions.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { jsonObjectSchema } from "../return-schemas.js";
 import {
@@ -20,6 +22,7 @@ import { requireDeliveryBarrier } from "../../delivery-barriers.js";
 import {
   createSessionFollowupCadence,
   getSessionFollowupCadence,
+  getSessionFollowupRun,
   listSessionFollowupCadences,
   listSessionFollowupRuns,
   retrySessionFollowupRuns,
@@ -30,6 +33,7 @@ import {
   type SessionFollowupStep,
   type SessionFollowupTargetType,
 } from "../../session-followups/index.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -128,9 +132,48 @@ function formatFollowupSchedule(cadence: SessionFollowupCadence): string {
   return steps.map((step, index) => `${index + 1}. after ${formatDurationMs(step.afterMs)}`).join(", ");
 }
 
+/**
+ * The owner a non-admin caller is limited to, or null when the caller may see
+ * and change every cadence (local operator, admin).
+ */
+function enforcedOwner(): { type: string; id: string } | null {
+  return isScopeEnforced(getScopeContext()) ? defaultOwner() : null;
+}
+
+function ownsCadence(cadence: SessionFollowupCadence, owner: { type: string; id: string } | null): boolean {
+  return !owner || (cadence.ownerType === owner.type && cadence.ownerId === owner.id);
+}
+
+/**
+ * A cadence delivers prompts into its target, so a non-admin caller owns it
+ * itself and may target only a session it can access. Chat and reading-list
+ * targets resolve to sessions at fire time and stay admin-only.
+ */
+function assertFollowupTargetAuthorized(
+  target: { targetType: SessionFollowupTargetType; targetRef: string },
+  ownerScope: { type: string; id: string },
+): void {
+  assertNoUserOverlayAutomationWrite("session-followups add");
+  const owner = enforcedOwner();
+  if (!owner) return;
+  if (ownerScope.type !== owner.type || ownerScope.id !== owner.id) {
+    fail("--owner is admin-only; a followup is owned by the agent that creates it.");
+  }
+  if (target.targetType !== "session") {
+    fail(
+      `--target-${target.targetType === "chat" ? "chat" : "list"} is admin-only; use --target-session <your session>.`,
+    );
+  }
+  const session = resolveSession(target.targetRef);
+  const scopeCtx = getScopeContext();
+  if (!session || ![session.name, session.sessionKey].some((ref) => ref && canAccessSession(scopeCtx, ref))) {
+    fail(`Session not found: ${target.targetRef}`);
+  }
+}
+
 function requireCadence(id: string): SessionFollowupCadence {
   const cadence = getSessionFollowupCadence(id);
-  if (!cadence) fail(`Session followup cadence not found: ${id}`);
+  if (!cadence || !ownsCadence(cadence, enforcedOwner())) fail(`Session followup cadence not found: ${id}`);
   return cadence;
 }
 
@@ -210,7 +253,9 @@ export class SessionFollowupCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching rows to skip" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const owner = enforcedOwner();
     const page = listSessionFollowupCadences({
+      ...(owner ? { owner } : {}),
       includeDisabled,
       targetType: targetType as SessionFollowupTargetType | undefined,
       limit,
@@ -278,6 +323,7 @@ export class SessionFollowupCommands {
     const target = resolveTarget({ targetSession, targetChat, targetList });
     const schedule = resolveSchedule({ every, at, cron, timezone, steps, message });
     const ownerScope = parseScopedRef(owner, defaultOwner());
+    assertFollowupTargetAuthorized(target, ownerScope);
     const messageTemplate = message?.trim() || schedule.steps?.[0]?.messageTemplate;
     if (!messageTemplate) fail("--message is required unless --step supplies messages.");
     const cadence = createSessionFollowupCadence({
@@ -324,6 +370,7 @@ export class SessionFollowupCommands {
     recalculateNext?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertNoUserOverlayAutomationWrite("session-followups update");
     const current = requireCadence(id);
     const parsedSteps = parseStepSpecs(steps);
     const messageTemplate = message?.trim() || parsedSteps[0]?.messageTemplate;
@@ -408,7 +455,15 @@ export class SessionFollowupCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching rows to skip" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const page = listSessionFollowupRuns({ cadenceId, status: status as never, limit, offset });
+    const owner = enforcedOwner();
+    if (cadenceId && owner) requireCadence(cadenceId);
+    const page = listSessionFollowupRuns({
+      cadenceId,
+      ...(owner ? { owner } : {}),
+      status: status as never,
+      limit,
+      offset,
+    });
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "sessions", "followups", "runs"],
       limit: page.limit,
@@ -442,6 +497,8 @@ export class SessionFollowupCommands {
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertNoUserOverlayAutomationWrite("session-followups run");
+    requireCadence(id);
     const result = await runSessionFollowupNow(id);
     const payload = { result };
     if (asJson) {
@@ -459,6 +516,7 @@ export class SessionFollowupCommands {
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    requireCadence(id);
     const cadence = updateSessionFollowupCadenceState(id, { enabled: false, nextRunAt: null });
     if (!cadence) fail(`Session followup cadence not found: ${id}`);
     const payload = { followup: serializeCadence(cadence) };
@@ -477,6 +535,7 @@ export class SessionFollowupCommands {
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertNoUserOverlayAutomationWrite("session-followups resume");
     const current = requireCadence(id);
     const now = Date.now();
     const nextRunAt = current.schedule.type === "every" ? now : calculateNextRun(current.schedule, now);
@@ -523,6 +582,12 @@ export class SessionFollowupCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (runId && cadenceId) fail("Use either a run id or --cadence, not both.");
+    if (enforcedOwner()) {
+      if (!runId && !cadenceId) fail("Pass a run id or --cadence <id> to retry.");
+      const run = runId ? getSessionFollowupRun(runId) : null;
+      if (runId && !run) fail(`Session followup run not found: ${runId}`);
+      requireCadence(cadenceId ?? run!.cadenceId);
+    }
     const retried = retrySessionFollowupRuns({ id: runId, cadenceId });
     const payload = { retried };
     if (asJson) {

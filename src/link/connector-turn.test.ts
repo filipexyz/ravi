@@ -34,6 +34,7 @@ import {
   buildAgentExecContext,
   buildExecContext,
   classifyConnectorTurn,
+  cronOwnerActsAsOperator,
   decodeExecContextHeader,
   encodeExecContextHeader,
   EXEC_CONTEXT_MAX_BYTES,
@@ -403,8 +404,34 @@ describe("connector turn classification", () => {
     it("refuses a job created by a contact", () => {
       const job = createJob("contact:c_ana");
 
-      const error = expectBlocked(classify(cronTurn(job.id)), "CONNECTOR_SPEAKER_NOT_OWNER");
+      const result = classify(cronTurn(job.id));
+      const error = expectBlocked(result, "CONNECTOR_SPEAKER_NOT_OWNER");
       expect(error.message).toContain("contact:c_ana");
+      expect(!result.ok && result.routineOwner).toEqual({ kind: "cron", id: job.id, ownerPrincipal: "contact:c_ana" });
+    });
+
+    it("agrees with cronOwnerActsAsOperator for every owner", () => {
+      writeCachedActorBinding({
+        contactId: "c_luis",
+        actorPrincipal: "contact:c_luis",
+        consoleUserId: "user_luis",
+        orgId: "org_1",
+        installationId: "inst_1",
+      });
+      const owners: Array<[string | null, boolean]> = [
+        [null, true],
+        ["operator", true],
+        ["contact:c_luis", true],
+        ["contact:c_ana", false],
+        ["unknown", false],
+        ["agent:helper", false],
+      ];
+      for (const [ownerPrincipal, expected] of owners) {
+        expect(cronOwnerActsAsOperator(ownerPrincipal, OWNER)).toBe(expected);
+        const job = createJob(ownerPrincipal ?? undefined);
+        expect(classify(cronTurn(job.id)).ok).toBe(expected);
+      }
+      expect(cronOwnerActsAsOperator("contact:c_luis", { ...OWNER, activeUserId: "user_other" })).toBe(false);
     });
 
     it("refuses a job that no longer exists", () => {

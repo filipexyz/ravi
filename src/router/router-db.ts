@@ -15,6 +15,7 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
+import { getCredentialConnection } from "../credentials/store.js";
 import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
@@ -3340,6 +3341,8 @@ function getDb(): Database {
   ensureColumn(db, "slack_thread_lifecycle", "provider_override", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "effort_override", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "thinking_level", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "initiator_context_id", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "close_context_id", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
   migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
@@ -3382,6 +3385,7 @@ function getDb(): Database {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN owner_principal TEXT");
     log.info("Added owner_principal column to cron_jobs table");
   }
+  ensureColumn(db, "cron_jobs", "creator_chat", "TEXT");
 
   // Migration: add heartbeat_account_id column to agents
   if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {
@@ -3895,22 +3899,56 @@ function backfillLegacySlackInstancesToChannels(database: Database): void {
      VALUES (?, 'slack', ?, ?, NULL, ?, ?, NULL)`,
   );
 
-  let migrated = 0;
+  const inserted: Array<{ name: string; credentialConnection: string; enabled: boolean }> = [];
   database.transaction(() => {
     for (const instance of legacyInstances) {
-      migrated += insertChannel.run(
+      const credentialConnection = legacySlackCredentialConnection(instance.name, instance.defaults);
+      const enabled = instance.enabled !== 0;
+      const changes = insertChannel.run(
         instance.name,
-        instance.enabled === 0 ? 0 : 1,
-        legacySlackCredentialConnection(instance.name, instance.defaults),
+        enabled ? 1 : 0,
+        credentialConnection,
         instance.created_at,
         instance.updated_at,
       ).changes;
+      if (changes > 0) inserted.push({ name: instance.name, credentialConnection, enabled });
     }
   })();
 
-  if (migrated > 0) {
-    log.info("Backfilled Slack channel configs from legacy instances", { count: migrated });
+  if (inserted.length > 0) {
+    log.info("Backfilled Slack channel configs from legacy instances", { count: inserted.length });
+    warnBackfilledSlackChannelsWithoutConnection(inserted);
   }
+}
+
+/**
+ * The backfill names a broker connection after the instance without checking
+ * it exists. Say so when it does not: `ravi-channels` cannot start that Slack
+ * adapter, so its replies stay queued until `ravi credentials add` adds one.
+ */
+export function warnBackfilledSlackChannelsWithoutConnection(
+  channels: ReadonlyArray<{ name: string; credentialConnection: string; enabled: boolean }>,
+  lookup: (provider: string, connection: string) => { status: string } | null = getCredentialConnection,
+): string[] {
+  const missing: string[] = [];
+  for (const channel of channels) {
+    if (!channel.enabled) continue;
+    let found: { status: string } | null;
+    try {
+      found = lookup("slack", channel.credentialConnection);
+    } catch {
+      found = null;
+    }
+    if (found?.status === "active") continue;
+    missing.push(channel.name);
+    log.warn("Backfilled Slack channel has no active broker connection; its replies cannot be delivered", {
+      channel: channel.name,
+      credentialConnection: channel.credentialConnection,
+      connectionStatus: found?.status ?? "not_found",
+      hint: "add it with `ravi credentials add`, then restart `ravi-channels`; `ravi doctor --domain channels` lists it",
+    });
+  }
+  return missing;
 }
 
 function legacySlackCredentialConnection(instanceName: string, defaultsJson: string | null): string {
@@ -7308,6 +7346,15 @@ export function dbListChatIdsByContactIds(input: {
   return result;
 }
 
+/** Drop a removed platform identity from chat participant rows (they keep the raw sender ids). */
+export function dbDetachChatParticipantIdentity(platformIdentityId: string): number {
+  return getDb()
+    .prepare(
+      "UPDATE chat_participants SET contact_id = NULL, platform_identity_id = NULL, updated_at = ? WHERE platform_identity_id = ?",
+    )
+    .run(Date.now(), platformIdentityId).changes;
+}
+
 export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {
   return upsertChatParticipant(getDb(), input);
 }
@@ -9523,6 +9570,8 @@ export function dbDeleteAgent(id: string): boolean {
   for (const { key } of modeKeys) {
     if (key.startsWith(modePrefix) && !key.slice(modePrefix.length).includes(".")) s.deleteSetting.run(key);
   }
+  // And its Library listing: a same-id recreation starts unlisted and closed to requests.
+  getDb().prepare("DELETE FROM library_agents WHERE agent_id = ?").run(id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
@@ -10492,10 +10541,13 @@ export function dbPruneContexts(options: { apply?: boolean; olderThanMs?: number
   const db = getDb();
   const now = Date.now();
   const cutoff = options.olderThanMs != null ? now - Math.max(0, options.olderThanMs) : now;
+  // A revoked row stays until it also expires: a running turn may still hold a
+  // cached copy without revokedAt, and the stored row is what tells it apart
+  // (see isRuntimeContextLive).
   const where = `
     created_at <= ?
     AND (
-      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ?)
+      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ? AND (expires_at IS NULL OR expires_at = 0))
       OR (expires_at IS NOT NULL AND expires_at != 0 AND expires_at <= ?)
     )
   `;

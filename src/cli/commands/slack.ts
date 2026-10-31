@@ -401,9 +401,10 @@ function slackPayloadInput<T>(build: () => T): T {
 }
 
 function readSlackJsonFile(path: string): unknown {
+  const resolved = resolveCallerPath(path);
   let source: string;
   try {
-    source = readFileSync(resolveCallerPath(path), "utf8");
+    source = readFileSync(resolved, "utf8");
   } catch {
     throw slackPayloadInvalid(`Invalid payload file: could not read ${path}`);
   }

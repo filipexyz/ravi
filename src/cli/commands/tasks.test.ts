@@ -3097,7 +3097,7 @@ describe("TaskCommands decisions", () => {
     expect(contractError.envelope().error.code).toBe("TASK_NOT_FOUND");
   });
 
-  it("answer forwards the outcome and --by, and emits task.decision.answered", async () => {
+  it("answer forwards the outcome, records the agent turn as the answerer for --by, and emits task.decision.answered", async () => {
     const commands = new TaskCommands();
     const { logs, error } = await capture(() =>
       commands.answer("task-cli-1", "deploy-window", "Ship after 18h", "Luis", true),
@@ -3108,7 +3108,7 @@ describe("TaskCommands decisions", () => {
         taskId: "task-cli-1",
         key: "deploy-window",
         answer: "Ship after 18h",
-        actor: "Luis",
+        actor: "dev-session (for Luis)",
         agentId: "dev",
         sessionName: "dev-session",
       },
@@ -3116,7 +3116,7 @@ describe("TaskCommands decisions", () => {
     expect(emittedEvents).toEqual([{ taskId: "task-cli-1", type: "task.decision.answered" }]);
     const payload = JSON.parse(logs.join("\n"));
     expect(payload.decision.status).toBe("answered");
-    expect(payload.decision.answeredBy).toBe("Luis");
+    expect(payload.decision.answeredBy).toBe("dev-session (for Luis)");
   });
 
   it("answer without --key or --text is a usage error (exit 2)", async () => {

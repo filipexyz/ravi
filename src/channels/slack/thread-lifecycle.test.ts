@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import type { ChannelOutboundJob } from "../outbound-stream.js";
-import { getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
+import { deleteSession, getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
 import { dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
@@ -13,6 +13,7 @@ import {
   reportSlackThreadProgress,
   sendSlackThreadMessage,
   slackThreadTitle,
+  summarizeSlackThreadRuntime,
 } from "./thread-lifecycle.js";
 import {
   claimSlackThreadCreation,
@@ -380,6 +381,16 @@ describe("Slack thread lifecycle", () => {
     });
     expect(reopened.parentNotifiedAt).toBeUndefined();
 
+    const failingDependencies = {
+      publishPrompt: mock(async () => {
+        throw new Error("nats down");
+      }),
+      publishEvent: mock(async () => {}),
+    };
+    await expect(closeSlackThread(child, "Second result", failingDependencies)).rejects.toMatchObject({
+      code: "THREAD_PARENT_RETURN_PENDING",
+    });
+
     const parentPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const recoveryDependencies = {
       publishPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
@@ -624,6 +635,46 @@ describe("Slack thread orchestration", () => {
     await expect(
       sendSlackThreadMessage({ parentSession: parent, ref: fixture.requestId, message: "Hi" }, dependencies),
     ).rejects.toThrow(`Slack thread has not started yet: ${fixture.requestId}`);
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: fixture.requestId, message: "Hi" }, dependencies),
+    ).rejects.toMatchObject({ code: "THREAD_NOT_STARTED" });
+  });
+
+  it("marks an open thread whose session is gone as missing, not unstarted, and refuses to send to it", async () => {
+    const fixture = seedPendingCreation();
+    const { dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const parent = getSession("ravi-parent")!;
+    const childKey = `ravi-parent:thread:${fixture.threadTs}`;
+    expect(listSlackThreadsForSession(parent).threads[0]?.childSessionMissing).toBe(false);
+
+    deleteSession(childKey);
+
+    const [thread] = listSlackThreadsForSession(parent).threads;
+    expect(thread).toMatchObject({
+      status: "open",
+      childSessionKey: childKey,
+      childSessionMissing: true,
+    });
+    const record = getSlackThreadLifecycle(fixture.requestId)!;
+    expect(
+      summarizeSlackThreadRuntime({ ...record, providerOverride: undefined, effortOverride: undefined }),
+    ).toMatchObject({ providerSource: "child_missing", effortSource: "child_missing" });
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: fixture.requestId, message: "Hi" }, dependencies),
+    ).rejects.toMatchObject({ code: "THREAD_SESSION_MISSING" });
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: "unknown-thread", message: "Hi" }, dependencies),
+    ).rejects.toMatchObject({ code: "THREAD_NOT_FOUND" });
+    await expect(
+      sendSlackThreadMessage(
+        { parentSession: { ...parent, name: "team's channel" }, ref: "unknown-thread", message: "Hi" },
+        dependencies,
+      ),
+    ).rejects.toMatchObject({
+      code: "THREAD_NOT_FOUND",
+      suggestedAction: "List this session's threads with: ravi sessions threads --all --session 'team'\\''s channel'",
+    });
   });
 
   it("titles a thread with the first line of its initial message, trimmed", () => {

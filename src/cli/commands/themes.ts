@@ -321,7 +321,7 @@ export class ThemesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return withPresentationContract("themes init", THEME, asJson, async () => {
-      const outcome = await initTheme({ dir: resolveCallerPath(dir ?? ""), force: force === true });
+      const outcome = await initTheme({ dir: resolveCallerPath(dir ?? "", "write"), force: force === true });
       const payload = {
         success: true as const,
         kind: "theme" as const,

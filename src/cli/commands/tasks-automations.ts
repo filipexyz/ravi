@@ -7,6 +7,7 @@ import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
 import {
   TASK_AUTOMATION_EVENTS,
   TASK_REPORT_EVENTS,
+  assertTaskTargetAuthorized,
   createTaskAutomation,
   deleteTaskAutomation,
   getTaskAutomation,
@@ -322,6 +323,12 @@ export class TaskAutomationCommands {
     }
     if (!instructionsTemplate?.trim()) {
       fail("--instructions is required");
+    }
+
+    try {
+      assertTaskTargetAuthorized({ ...(agentId?.trim() ? { agentId: agentId.trim() } : {}) });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
     }
 
     const automation = createTaskAutomation({

@@ -16,6 +16,7 @@ import {
 import { getContext } from "./context.js";
 import { projectPageDomainSetups } from "../pages/domain-setup.js";
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
+import { TurnRefusalError, turnRefusalDetails } from "../cloud-auth/turn-refusal.js";
 import { payloadInvalidIssues, sanitizePayloadInvalidMessage } from "./payload-error-message.js";
 
 export function commandOperation(group: string, command: string): string {
@@ -30,10 +31,11 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
   const domainSetup =
     error.code === "DOMAIN_SETUP_REQUIRED" ? projectPageDomainSetups(error.details?.setups) : undefined;
   const turnLink = turnLinkErrorCopy(error);
+  const turnRefusal = turnRefusalErrorCopy(error);
   return new ContractError(
     op,
     error.code,
-    turnLink?.message ?? connectorTurn?.message ?? publicMessage(error.code, error.message),
+    turnRefusal?.message ?? turnLink?.message ?? connectorTurn?.message ?? publicMessage(error.code, error.message),
     error.code === "PAYLOAD_INVALID"
       ? CONTRACT_EXIT_USAGE
       : isConnectorPolicyCode(error.code) || connectorTurn?.policy
@@ -47,8 +49,22 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
       ...(domainSetup ? { domainSetup } : {}),
       ...(connectorTurn?.details ?? {}),
       ...(turnLink?.details ?? {}),
+      ...(turnRefusal?.details ?? {}),
     },
   );
+}
+
+/**
+ * `ACTOR_UNKNOWN` this side built (a {@link TurnRefusalError}): its reason
+ * and the copy for that reason. The class is the mark: a Console response is
+ * never one, so a remote `ACTOR_UNKNOWN` keeps the catalog copy whatever its
+ * details say.
+ */
+function turnRefusalErrorCopy(error: CloudAuthError): { message: string; details: ContractErrorDetails } | null {
+  if (!(error instanceof TurnRefusalError)) return null;
+  const message = sanitizePublicContractMessage(error.message);
+  if (!message) return null;
+  return { message, details: { ...turnRefusalDetails(error.reason), suggestedAction: error.suggestedAction } };
 }
 
 /**

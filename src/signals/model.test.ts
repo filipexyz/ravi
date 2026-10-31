@@ -17,6 +17,7 @@ import { dbCreateAgent, dbGetAgent } from "../router/router-db.js";
 import { buildSignalOobPrompt } from "./oob.js";
 import {
   ackSignal,
+  isProducerOwnedSignalKey,
   explainSignal,
   findVisibleSignal,
   listSignals,
@@ -112,6 +113,12 @@ describe("signals service", () => {
         clearWhen: { type: "decay", after_ms: 60_000 },
       }),
     ).toThrow();
+  });
+
+  it("reserves the keys Ravi's own producers raise", () => {
+    expect(isProducerOwnedSignalKey("host.disk.free")).toBe(true);
+    expect(isProducerOwnedSignalKey("task.orphaned.task-1")).toBe(true);
+    expect(isProducerOwnedSignalKey("agent.crm.followup")).toBe(false);
   });
 
   it("rejects a fact raised by an agent", () => {

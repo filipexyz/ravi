@@ -338,6 +338,19 @@ function scopeCan(ctx: ScopeContext, permission: string, objectType: string, obj
   return agentCan(ctx.agentId, permission, objectType, objectId);
 }
 
+/**
+ * Whether the current scope holds one concrete capability, such as
+ * `mutate:task:<id>`. Use it for per-resource grants that have no helper below.
+ */
+export function scopeHasCapability(
+  ctx: ScopeContext,
+  permission: string,
+  objectType: string,
+  objectId: string,
+): boolean {
+  return scopeCan(ctx, permission, objectType, objectId);
+}
+
 // ============================================================================
 // Session Access
 // ============================================================================

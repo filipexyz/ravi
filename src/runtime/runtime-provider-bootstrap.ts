@@ -53,6 +53,7 @@ export async function prepareRuntimeProviderBootstrap(
     resolvedSource: options.resolvedSource,
     approvalSource: options.approvalSource,
     toolContext: options.toolContext,
+    cwd: options.sessionCwd,
     onSkillGatePersisted:
       session || options.onSkillGatePersisted
         ? (skillVisibility, info) => {

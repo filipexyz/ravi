@@ -51,6 +51,7 @@ import {
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
 import type { ChannelChatActionContent } from "./channels/chat-actions.js";
 import { publishChannelOutboundJobDurably } from "./channels/outbound-publish-outbox.js";
+import { warnIfNativeOutboundUndeliverable } from "./channels/native-readiness.js";
 import { buildChannelChatActionJob, buildChannelOutboundJobFromResponse } from "./channels/outbound-stream.js";
 import { subjectForChannelPresence } from "./channels/presence-consumer.js";
 import type { StickerSendEvent } from "./stickers/send.js";
@@ -1288,6 +1289,9 @@ export class Gateway {
     }
 
     if (this.shouldQueueNativeOutbound(target)) {
+      // Queue even when nothing can deliver yet (the job waits for the
+      // channel), but say so at warn level instead of only "queued" at info.
+      warnIfNativeOutboundUndeliverable(target);
       const built = buildChannelOutboundJobFromResponse(sessionName, partResponse);
       if (!built.ok) {
         await emitDelivery({ status: "dropped", reason: built.reason, target, textLen: text.length });

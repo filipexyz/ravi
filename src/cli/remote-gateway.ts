@@ -480,6 +480,67 @@ function sessionsRuntimeCatalogCopy(
   return runtimeControlCatalogCopy(code);
 }
 
+/**
+ * Slack thread commands and task dispatch refuse with typed THREAD_* /
+ * TASK_SESSION_THREAD_IDENTITY_CONFLICT codes (channels/slack/thread-lifecycle.ts,
+ * tasks/service.ts). The relay renders local copy for them instead of the
+ * daemon's free text, which names sessions and threads.
+ */
+const SESSIONS_THREAD_OPS = new Set(["sessions report", "sessions close-thread", "sessions thread-send"]);
+const TASK_DISPATCH_OPS = new Set(["tasks dispatch"]);
+const THREAD_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedAction: string }>> = {
+  THREAD_NOT_THREAD_CHILD: {
+    message: "This command is available only inside a Slack thread child session.",
+    suggestedAction: "Run it from the Slack thread's own session, or pass --session <thread session>",
+  },
+  THREAD_IDENTITY_MISMATCH: {
+    message:
+      "This session has the name of an open Slack thread but is not that thread's session; the thread lost its session.",
+    suggestedAction: "Check the thread with: ravi sessions threads --session <parent session>",
+  },
+  THREAD_NOT_CHANNEL_ROOT: {
+    message: "Only the channel session that owns these threads can send to them; this session is a thread.",
+    suggestedAction: "Send from the parent channel session, or use ravi sessions report from the thread",
+  },
+  THREAD_NOT_FOUND: {
+    message: "Slack thread not found for this session.",
+    suggestedAction: "List the session's threads with: ravi sessions threads --all --session <parent session>",
+  },
+  THREAD_NOT_STARTED: {
+    message: "The Slack thread has not started yet.",
+    suggestedAction: "Retry once the thread is open: ravi sessions threads",
+  },
+  THREAD_SESSION_MISSING: {
+    message: "The Slack thread's session no longer exists.",
+    suggestedAction: "Start a new thread instead of sending to this one",
+  },
+  THREAD_PARENT_MISSING: {
+    message: "The Slack thread's parent session no longer exists.",
+    suggestedAction: "Check the parent channel session with: ravi sessions list --json",
+  },
+  THREAD_PARENT_RETURN_PENDING: {
+    message: "A previous return to the parent session is still pending.",
+    suggestedAction: "Retry after the parent session receives the pending return",
+  },
+};
+const TASK_DISPATCH_COPY: Readonly<Record<string, { message: string; suggestedAction: string }>> = {
+  TASK_SESSION_THREAD_IDENTITY_CONFLICT: {
+    message:
+      "The session name belongs to an open Slack thread whose session is gone or runs under another key; dispatching would create a session outside the thread.",
+    suggestedAction:
+      "Dispatch with another --session, or check the thread with: ravi sessions threads --session <parent session>",
+  },
+};
+
+function threadCommandCatalogCopy(op: string, code: string): { message: string; suggestedAction: string } | undefined {
+  const table = SESSIONS_THREAD_OPS.has(op)
+    ? THREAD_COMMAND_COPY
+    : TASK_DISPATCH_OPS.has(op)
+      ? TASK_DISPATCH_COPY
+      : undefined;
+  return table && Object.hasOwn(table, code) ? table[code] : undefined;
+}
+
 function projectSessionsRuntimeDetails(remote: Record<string, unknown>): ContractErrorDetails {
   const details: ContractErrorDetails = {};
   const operation =
@@ -823,7 +884,7 @@ function remoteContractFailureMessage(
     if (catalog) return catalog.message;
   }
   if (code) {
-    const catalog = sessionsRuntimeCatalogCopy(op, code);
+    const catalog = sessionsRuntimeCatalogCopy(op, code) ?? threadCommandCatalogCopy(op, code);
     if (catalog) return catalog.message;
   }
   if (IDENTITY_LINK_OPS.has(op) && code) {
@@ -940,6 +1001,7 @@ function projectRemoteContractDetails(
   if (denial) Object.assign(details, denial);
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
   const runtimeCatalog = sessionsRuntimeCatalogCopy(op, remote.code);
+  const threadCatalog = threadCommandCatalogCopy(op, remote.code);
   const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;
   const connectorCatalog =
     isConnectorOp(op) && (body.outcome === "failed" || remote.code.startsWith("CONNECTOR_"))
@@ -954,6 +1016,8 @@ function projectRemoteContractDetails(
   } else if (runtimeCatalog) {
     details.suggestedAction = runtimeCatalog.suggestedAction;
     Object.assign(details, projectSessionsRuntimeDetails(remote));
+  } else if (threadCatalog) {
+    details.suggestedAction = threadCatalog.suggestedAction;
   } else if (identityCatalog && body.outcome === "failed") {
     details.suggestedAction = identityCatalog.suggestedAction;
   } else if (connectorCatalog) {

@@ -18,14 +18,17 @@ import {
   getScopeContext,
   isScopeEnforced,
   canAccessResource,
+  canModifySession,
   recordResourceAccessDenial,
   type ScopeContext,
 } from "../../permissions/scope.js";
+import { resolveSession } from "../../router/sessions.js";
 import { getAgent } from "../../router/config.js";
 import { getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
 import { parseOptionalDurationMs } from "../../triggers/debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
+import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
 import {
   dbCreateTrigger,
   dbGetTrigger,
@@ -43,8 +46,9 @@ import {
 import { getTriggerTopicWarnings } from "../../triggers/topic-policy.js";
 import { validateFilter } from "../../triggers/filter.js";
 import { resolveTriggerActivation } from "../../triggers/activation.js";
-import { sessionTargetError, type SessionTarget } from "../../triggers/types.js";
+import { isLegacySessionTarget, sessionTargetError, type SessionTarget } from "../../triggers/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -115,6 +119,51 @@ function assertTriggerMutable(op: string, id: string, trigger: Trigger, asJson?:
       ...(denial.denialId ? { denialId: denial.denialId } : {}),
     },
   });
+}
+
+/**
+ * A trigger runs as its agent, in its session, and replies into its reply
+ * session, so choosing them needs the authority to act there: mutate on the
+ * agent, and modify on a literal session of another agent or on the reply
+ * session. Templated sessions are confined to the trigger's agent at fire time.
+ */
+function assertTriggerTargetAuthorized(
+  op: string,
+  target: { agentId?: string; session?: string; replySession?: string | null },
+  asJson?: boolean,
+): void {
+  assertNoUserOverlayAutomationWrite(op);
+  const scopeCtx = getScopeContext();
+  const owner = target.agentId ?? scopeCtx?.agentId ?? getDefaultAgentId();
+  if (!canAccessResource(scopeCtx, owner, "mutate")) {
+    const denial = recordResourceAccessDenial({
+      ctx: scopeCtx,
+      resourceAgentId: owner,
+      mode: "mutate",
+      resourceLabel: "trigger target agent",
+      command: op,
+    });
+    contractFail(op, "PERMISSION_DENIED", denial.message, {
+      asJson,
+      details: { ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}) },
+    });
+  }
+  if (!isScopeEnforced(scopeCtx)) return;
+  const canModify = (ref: string) => {
+    const existing = resolveSession(ref);
+    return [ref, existing?.name, existing?.sessionKey].some((r) => r && canModifySession(scopeCtx, r));
+  };
+  const literalSession = target.session?.trim();
+  if (literalSession && !isLegacySessionTarget(literalSession) && !literalSession.includes("{{")) {
+    const existing = resolveSession(literalSession);
+    if (existing && existing.agentId !== scopeCtx?.agentId && !canModify(literalSession)) {
+      contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${literalSession}`, { asJson });
+    }
+  }
+  const replySession = target.replySession?.trim();
+  if (replySession && !canModify(replySession)) {
+    contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${replySession}`, { asJson });
+  }
 }
 
 /** Cooldown/debounce of 0 means the feature is off. */
@@ -527,6 +576,7 @@ export class TriggersCommands {
     if (!isShellTrigger && (onError || timeout || envFile)) {
       fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
     }
+    if (isShellTrigger) assertShellAutomationAuthorized("triggers add");
 
     const resolvedMessage = isShellTrigger
       ? {
@@ -594,6 +644,15 @@ export class TriggersCommands {
     // --reply-session overrides the auto-capture when the caller knows the
     // trigger should reply to a different session than the one creating it.
     const replySession = replySessionOverride?.trim() || (ctx?.sessionName ?? ctx?.sessionKey);
+    assertTriggerTargetAuthorized(
+      "triggers add",
+      {
+        ...(agent ? { agentId: agent } : {}),
+        ...(session !== undefined ? { session: sessionTarget } : {}),
+        ...(replySessionOverride?.trim() ? { replySession } : {}),
+      },
+      asJson,
+    );
 
     // Freeze the creator's outbound source as a fallback for when the live
     // session can no longer resolve a deliverable target (lastChannel empty,
@@ -677,6 +736,7 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers enable", id, asJson);
     assertTriggerMutable("triggers enable", id, trigger, asJson);
+    assertNoUserOverlayAutomationWrite("triggers enable");
 
     try {
       const updated = dbUpdateTrigger(id, { enabled: true });
@@ -748,6 +808,17 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers set", id, asJson);
     assertTriggerMutable("triggers set", id, trigger, asJson);
+    // Every edit (message, filter, topic...) changes what runs later as the agent.
+    assertNoUserOverlayAutomationWrite("triggers set");
+    const clearing = value === "null" || value === "-";
+    if (key === "shell" || key === "exec" || key === "env-file") assertShellAutomationAuthorized("triggers set");
+    if (key === "agent") {
+      assertTriggerTargetAuthorized("triggers set", { agentId: clearing ? getDefaultAgentId() : value }, asJson);
+    } else if (key === "session") {
+      assertTriggerTargetAuthorized("triggers set", { agentId: triggerOwnerId(trigger), session: value }, asJson);
+    } else if (key === "replySession" && !clearing) {
+      assertTriggerTargetAuthorized("triggers set", { agentId: triggerOwnerId(trigger), replySession: value }, asJson);
+    }
 
     try {
       let updated: Trigger | null = null;
@@ -955,6 +1026,7 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers test", id, asJson);
     assertTriggerMutable("triggers test", id, trigger, asJson);
+    assertNoUserOverlayAutomationWrite("triggers test");
 
     if (execute !== true) {
       contractDryRun(
