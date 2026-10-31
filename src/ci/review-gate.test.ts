@@ -415,4 +415,50 @@ describe("agent/session verdicts and code blockers across GitHub surfaces", () =
     state.reviews[1].body = '<!-- ravi-review {"head":"invalid"} -->';
     await expect(evaluate(api, args)).rejects.toThrow("malformed agent review verdict");
   });
+
+  test("a code blocker on the second issue-comment page is included", async () => {
+    const { api } = fixture();
+    const original = api.graphql;
+    api.graphql = async (query: string, variables: any) => {
+      const result = await original(query, variables);
+      const pr = result.repository.pullRequest;
+      if (pr.comments) {
+        pr.comments = variables.cursor
+          ? { nodes: [blockedComment], totalCount: 2, pageInfo: { hasNextPage: false, endCursor: "last" } }
+          : {
+              nodes: [{ ...blockedComment, id: "benign", body: "Review in progress." }],
+              totalCount: 2,
+              pageInfo: { hasNextPage: true, endCursor: "next" },
+            };
+      }
+      return result;
+    };
+    expect((await evaluate(api, args)).problems.join("\n")).toContain(blockedComment.url);
+  });
+
+  test("a comment edit while a green decision is being evaluated fails closed", async () => {
+    const { api, state } = fixture();
+    const original = api.graphql;
+    let reads = 0;
+    api.graphql = async (query: string, variables: any) => {
+      if (query.includes("comments(first:100") && ++reads === 2) state.comments.push(blockedComment);
+      return original(query, variables);
+    };
+    await expect(evaluate(api, args)).rejects.toThrow("comments: evidence changed");
+  });
+
+  test.each(["missing", "truncated"])("%s issue-comment data cannot mean no blockers", async (variant) => {
+    const { api } = fixture();
+    const original = api.graphql;
+    api.graphql = async (query: string, variables: any) => {
+      const result = await original(query, variables);
+      const pr = result.repository.pullRequest;
+      if (pr.comments) {
+        if (variant === "missing") delete pr.comments.nodes;
+        else pr.comments.totalCount++;
+      }
+      return result;
+    };
+    await expect(evaluate(api, args)).rejects.toThrow("comments:");
+  });
 });

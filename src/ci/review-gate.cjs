@@ -200,20 +200,29 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
     const verdict = envelope(surface.body, "ravi-review");
     if (!verdict || surface.id === "pr-body") continue;
     requireData(
-      SHA.test(verdict.head) && identity(verdict) && nonempty(verdict.authorSession) &&
-      ["approved", "blocked-por-código"].includes(verdict.verdict) && nonempty(verdict.reason) &&
-      Array.isArray(verdict.resolves) && verdict.resolves.every(nonempty),
+      SHA.test(verdict.head) &&
+        identity(verdict) &&
+        nonempty(verdict.authorSession) &&
+        ["approved", "blocked-por-código"].includes(verdict.verdict) &&
+        nonempty(verdict.reason) &&
+        Array.isArray(verdict.resolves) &&
+        verdict.resolves.every(nonempty),
       "malformed agent review verdict",
     );
     if (verdict.verdict !== "approved" || verdict.head !== expectedSha || !identity(authorIdentity)) continue;
     if (verdict.session === authorIdentity.session || verdict.authorSession !== authorIdentity.session) continue;
     requireData(nonempty(surface.author?.login), "missing verdict publisher");
     const permission = await api.permission(owner, repo, surface.author.login);
-    requireData(["admin", "maintain", "write", "read", "triage", "none"].includes(permission), "missing publisher permission");
+    requireData(
+      ["admin", "maintain", "write", "read", "triage", "none"].includes(permission),
+      "missing publisher permission",
+    );
     if (!["admin", "maintain", "write"].includes(permission)) continue;
     const submitted = timestamp(surface.updatedAt ?? surface.submittedAt);
     verdicts.push({ verdict, surface, submitted });
-    audit.push(`Agent review ${verdict.agent}/${verdict.session} on ${expectedSha}, published by ${surface.author.login}: ${surface.url}`);
+    audit.push(
+      `Agent review ${verdict.agent}/${verdict.session} on ${expectedSha}, published by ${surface.author.login}: ${surface.url}`,
+    );
   }
   if (!verdicts.length) problems.push(`No independent agent/session verdict on head SHA ${expectedSha}.`);
   for (const blocker of blockers) {
@@ -295,7 +304,10 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
   // Re-read *all* evidence before accepting, not just the head SHA. A review,
   // dismissal or thread change during pagination invalidates this run.
   const current = await readPR(api, repository, number, expectedSha);
-  requireData(current.baseRefName === pr.baseRefName && current.isDraft === pr.isDraft && current.body === pr.body, "PR changed during evaluation");
+  requireData(
+    current.baseRefName === pr.baseRefName && current.isDraft === pr.isDraft && current.body === pr.body,
+    "PR changed during evaluation",
+  );
   if (problems.length === 0) {
     for (const [key, before] of [
       ["reviewThreads", threads],
@@ -306,7 +318,10 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
       const after = await readConnection(api, repository, number, expectedSha, key);
       requireData(JSON.stringify(before) === JSON.stringify(after), `${key}: evidence changed during evaluation`);
     }
-    requireData(JSON.stringify(await api.independentWriters(owner, repo, pr.author.login)) === JSON.stringify(writers), "writer inventory changed during evaluation");
+    requireData(
+      JSON.stringify(await api.independentWriters(owner, repo, pr.author.login)) === JSON.stringify(writers),
+      "writer inventory changed during evaluation",
+    );
     await readPR(api, repository, number, expectedSha);
   }
   return { ok: problems.length === 0, sha: expectedSha, threads: threads.length, problems, audit };
@@ -346,12 +361,18 @@ function createApi(token, fetcher = fetch) {
       const writers = [];
       const seen = new Set();
       for (let page = 1; page <= 1000; page++) {
-        const users = await request(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators?per_page=100&page=${page}`);
+        const users = await request(
+          `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators?per_page=100&page=${page}`,
+        );
         requireData(Array.isArray(users), "missing collaborators");
         for (const user of users) {
-          requireData(nonempty(user.login) && !seen.has(user.login) && typeof user.permissions?.push === "boolean", "incomplete collaborator inventory");
+          requireData(
+            nonempty(user.login) && !seen.has(user.login) && typeof user.permissions?.push === "boolean",
+            "incomplete collaborator inventory",
+          );
           seen.add(user.login);
-          if (user.login.toLowerCase() !== author.toLowerCase() && user.type === "User" && user.permissions.push) writers.push(user.login);
+          if (user.login.toLowerCase() !== author.toLowerCase() && user.type === "User" && user.permissions.push)
+            writers.push(user.login);
         }
         if (users.length < 100) return writers.sort();
       }
