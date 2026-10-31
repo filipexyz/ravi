@@ -702,10 +702,11 @@ export function requireTaskProfileDefinition(profileId?: string | null): TaskPro
 
   const profile = loadTaskProfileCatalog().get(normalized);
   if (!profile) {
-    throw new Error(
-      `Unknown task profile: ${normalized}. Available profiles: ${listTaskProfiles()
-        .map((item) => item.id)
-        .join(", ")}.`,
+    throw new CliExpectedError(
+      `Missing task profile: ${normalized}.`,
+      "TASK_PROFILE_NOT_FOUND",
+      1,
+      "Check the profile id and the runtime's profile catalog with 'ravi tasks profiles list --json', then retry",
     );
   }
   return profile;

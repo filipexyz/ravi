@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { describe, expect, it, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 
 import { RaviAppError } from "../../apps/types.js";
@@ -8,13 +10,18 @@ import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { pickFields } from "../../cli/agent-contract.js";
 import { AppsCommands } from "../../cli/commands/apps.js";
 import { TaskCommands } from "../../cli/commands/tasks.js";
+import { TaskProfileCommands } from "../../cli/commands/tasks-profiles.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { contractFail } from "../../cli/agent-contract.js";
 import { fail, getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
 import { getDb } from "../../router/router-db.js";
+import { getOrCreateSession } from "../../router/sessions.js";
 import { dbCreateTask } from "../../tasks/task-db.js";
+import { dbListTasks } from "../../tasks/task-db.js";
+import { invalidateTaskProfileCatalogCache } from "../../tasks/profiles.js";
+import systemProfiles from "../../tasks/profile-catalog/system-profiles.json" with { type: "json" };
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
 import { createHash } from "node:crypto";
@@ -633,6 +640,61 @@ describe("dispatch — validation", () => {
 });
 
 describe("dispatch — error path", () => {
+  it("distinguishes unknown profiles, missing inputs and denied previews without creating tasks", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-gateway-profile-errors-");
+    const previousCwd = process.cwd();
+    process.chdir(stateDir);
+    invalidateTaskProfileCatalogCache();
+    try {
+      getOrCreateSession("main", "main", stateDir, { name: "main" });
+      const profileId = "private-required-input-fixture";
+      const profileDir = join(stateDir, "task-profiles", profileId);
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(
+        join(profileDir, "profile.json"),
+        JSON.stringify({ ...systemProfiles[0], id: profileId, inputs: [{ key: "goal", required: true }] }),
+      );
+      const commands = buildRegistry([TaskCommands, TaskProfileCommands]);
+      const contextRecord = gatewayContext([executeGroup("tasks"), adminSystem()], "main");
+      const invoke = (name: string, profile: string, context = contextRecord) => {
+        const cmd = commands.commands.find((entry) => entry.fullName === name)!;
+        const input =
+          name === "tasks.create"
+            ? { title: "Profile failure fixture", instructions: "Fixture only", profile, reportTo: "main" }
+            : { profileId: profile, title: "Profile failure fixture" };
+        return dispatch(cmd, input, {}, { contextRecord: context, emitAudit: () => {} });
+      };
+
+      expect(dbListTasks()).toHaveLength(0);
+      for (const name of ["tasks.create", "tasks.profiles.preview"]) {
+        const missing = await invoke(name, "missing-profile");
+        expect(missing.response.status).toBe(422);
+        const missingBody = await missing.response.json();
+        expect(missingBody).toMatchObject({
+          exitCode: 1,
+          error: { code: "TASK_PROFILE_NOT_FOUND", message: "Missing task profile: missing-profile." },
+        });
+        expect(JSON.stringify(missingBody)).not.toContain(profileId);
+
+        const invalid = await invoke(name, profileId);
+        expect(invalid.response.status).toBe(400);
+        expect(await invalid.response.json()).toMatchObject({ exitCode: 2, error: { code: "USAGE_ERROR" } });
+      }
+
+      const denied = await invoke("tasks.profiles.preview", profileId, gatewayContext([]));
+      expect(denied.response.status).toBe(403);
+      const deniedBody = await denied.response.json();
+      expect(deniedBody).toMatchObject({ error: { code: "PERMISSION_DENIED" } });
+      expect(JSON.stringify(deniedBody)).not.toContain(profileId);
+      expect(dbListTasks()).toHaveLength(0);
+      expect(getDb().query("SELECT COUNT(*) AS count FROM task_assignments").get()).toEqual({ count: 0 });
+    } finally {
+      process.chdir(previousCwd);
+      invalidateTaskProfileCatalogCache();
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("recovers show and dry-run dispatch after restoring missing decision storage", async () => {
     const stateDir = await createIsolatedRaviState("ravi-gateway-task-schema-test-");
     const stdout = spyOn(process.stdout, "write").mockImplementation((() => true) as never);
