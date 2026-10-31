@@ -95,6 +95,7 @@ export function corsHeaders(
     "Access-Control-Allow-Methods": CORS_ALLOW_METHODS,
     "Access-Control-Allow-Headers": allowHeaders(requestedHeaders),
     "Access-Control-Max-Age": CORS_MAX_AGE_SECONDS,
+    "Access-Control-Expose-Headers": "x-request-id",
     Vary: "Origin",
   };
 }

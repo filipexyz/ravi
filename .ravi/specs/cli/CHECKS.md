@@ -1,5 +1,7 @@
 # Global CLI Contract / CHECKS
 
+- Gateway regression tests preserve throw-site required-flag guidance, fall back from malformed body request IDs to safe headers, classify HTTP 405/413 as usage errors, and suppress repeated diagnostics even with debug logging enabled.
+
 These are acceptance obligations, not a record of green results. The current
 pull-request (PR) head is unverified until continuous integration (CI)
 completes successfully; an older green run does not satisfy this file. Terms
