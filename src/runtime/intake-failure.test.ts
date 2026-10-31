@@ -139,6 +139,28 @@ describe("runtime prompt intake failure", () => {
     expect(responses[0]?.data.target).toEqual(source);
   });
 
+  it("rejects a decision at cold launch if its original agent disappears, without fallback", async () => {
+    await expect(
+      startRuntimeSession({
+        sessionName: "main",
+        prompt: {
+          prompt: "Recorded answer",
+          _decisionDeliveryId: "decision:fixture:answer:2",
+          _decisionSessionKey: SESSION_KEY,
+          _agentId: "gone",
+        },
+        configModel: "test-model",
+        instanceId: "test",
+        streamingSessions: new Map(),
+        stashedMessages: new Map(),
+        safeEmit: async () => {},
+        drainPendingStarts: () => {},
+        crashRecovery: crashRecoveryStub,
+      }),
+    ).rejects.toMatchObject({ reason: "DECISION_AGENT_MISSING" });
+    expect(responses).toEqual([]);
+  });
+
   it("terminalizes every prompt held by a pending start, not only the launch prompt", async () => {
     withoutAgents();
     const source = { channel: "slack", accountId: "ravi-slack", chatId: "C123" };

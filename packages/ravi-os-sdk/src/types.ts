@@ -12509,6 +12509,291 @@ export type DaemonUninstallReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `decisions.answer`. */
+export type DecisionsAnswerInput = {
+  by?: string;
+  execute?: boolean;
+  id: string;
+  text?: string;
+};
+
+/** Return shape for `decisions.answer`. */
+export type DecisionsAnswerReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+};
+
+/** Input shape for `decisions.ask`. */
+export type DecisionsAskInput = {
+  ask?: string;
+  blocks?: boolean;
+  execute?: boolean;
+  key?: string;
+  owner?: string;
+  task?: string;
+  thread?: string;
+};
+
+/** Return shape for `decisions.ask`. */
+export type DecisionsAskReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+};
+
+/** Input shape for `decisions.list`. */
+export type DecisionsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  task?: string;
+  thread?: string;
+};
+
+/** Return shape for `decisions.list`. */
+export type DecisionsListReturn = {
+  decisions: Array<{
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+};
+
+/** Input shape for `decisions.resolve-delivery`. */
+export type DecisionsResolveDeliveryInput = {
+  evidence?: string;
+  execute?: boolean;
+  id: string;
+  outcome?: string;
+};
+
+/** Return shape for `decisions.resolve-delivery`. */
+export type DecisionsResolveDeliveryReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+};
+
+/** Input shape for `decisions.retry`. */
+export type DecisionsRetryInput = {
+  execute?: boolean;
+  id: string;
+};
+
+/** Return shape for `decisions.retry`. */
+export type DecisionsRetryReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+};
+
+/** Input shape for `decisions.show`. */
+export type DecisionsShowInput = {
+  id: string;
+};
+
+/** Return shape for `decisions.show`. */
+export type DecisionsShowReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+  history: Array<{
+    actor: string | null;
+    createdAt: number;
+    id: number;
+    snapshot: string;
+    type: string;
+  }>;
+};
+
 /** Input shape for `devin.auth.check`. */
 export type DevinAuthCheckInput = Record<string, never>;
 
@@ -20214,6 +20499,7 @@ export type SessionsThreadSendReturn = {
     closedAt: number | null;
     createdAt: number;
     link: string | null;
+    openDecisionCount: number;
     parentReturn: {
       pending: boolean;
       requested: boolean;
@@ -20263,6 +20549,7 @@ export type SessionsThreadsReturn = {
     closedAt: number | null;
     createdAt: number;
     link: string | null;
+    openDecisionCount: number;
     parentReturn: {
       pending: boolean;
       requested: boolean;
@@ -23752,56 +24039,6 @@ export type TagsShowReturn = {
   [k: string]: unknown;
 };
 
-/** Input shape for `tasks.answer`. */
-export type TasksAnswerInput = {
-  by?: string;
-  key?: string;
-  taskId: string;
-  text?: string;
-};
-
-/** Return shape for `tasks.answer`. */
-export type TasksAnswerReturn = {
-  created?: boolean;
-  decision: {
-    answer: string | null;
-    answeredAt: number | null;
-    answeredBy: string | null;
-    ask: string;
-    askedAt: number;
-    askedBy: string | null;
-    blocks: boolean;
-    createdAt: number;
-    id: string;
-    key: string;
-    ownerId: string | null;
-    ownerType: "human" | "agent" | "unassigned";
-    status: "open" | "answered" | "superseded";
-    taskId: string;
-    updatedAt: number;
-  };
-  event: {
-    actor?: string;
-    agentId?: string;
-    createdAt: number;
-    id: number;
-    message?: string;
-    progress?: number;
-    sessionName?: string;
-    taskId: string;
-    type: "task.decision.open" | "task.decision.answered";
-  };
-  task: {
-    assigneeAgentId?: string | null;
-    assigneeSessionName?: string | null;
-    id: string;
-    priority: string;
-    progress: number;
-    status: string;
-    title: string;
-  };
-};
-
 /** Input shape for `tasks.archive`. */
 export type TasksArchiveInput = {
   reason?: string;
@@ -24053,57 +24290,6 @@ export type TasksCreateReturn = {
   task: Record<string, unknown>;
   taskProfile: Record<string, unknown>;
   [k: string]: unknown;
-};
-
-/** Input shape for `tasks.decide`. */
-export type TasksDecideInput = {
-  ask?: string;
-  blocks?: boolean;
-  key?: string;
-  owner?: string;
-  taskId: string;
-};
-
-/** Return shape for `tasks.decide`. */
-export type TasksDecideReturn = {
-  created?: boolean;
-  decision: {
-    answer: string | null;
-    answeredAt: number | null;
-    answeredBy: string | null;
-    ask: string;
-    askedAt: number;
-    askedBy: string | null;
-    blocks: boolean;
-    createdAt: number;
-    id: string;
-    key: string;
-    ownerId: string | null;
-    ownerType: "human" | "agent" | "unassigned";
-    status: "open" | "answered" | "superseded";
-    taskId: string;
-    updatedAt: number;
-  };
-  event: {
-    actor?: string;
-    agentId?: string;
-    createdAt: number;
-    id: number;
-    message?: string;
-    progress?: number;
-    sessionName?: string;
-    taskId: string;
-    type: "task.decision.open" | "task.decision.answered";
-  };
-  task: {
-    assigneeAgentId?: string | null;
-    assigneeSessionName?: string | null;
-    id: string;
-    priority: string;
-    progress: number;
-    status: string;
-    title: string;
-  };
 };
 
 /** Input shape for `tasks.deps.add`. */

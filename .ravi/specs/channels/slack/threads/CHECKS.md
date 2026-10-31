@@ -59,3 +59,5 @@ bun test src/prompt-builder.test.ts src/runtime/runtime-system-prompt.test.ts sr
 bun run typecheck
 bun run build
 ```
+
+- `bun test src/decisions/decisions.test.ts src/channels/slack/thread-card.test.ts` MUST verify pending close refusal, one admission, sibling isolation, retry and pending-card fallback.

@@ -199,6 +199,45 @@ function createDispatcher(
 }
 
 describe("RuntimeSessionDispatcher debounce", () => {
+  it("does not acknowledge a decision while it is only in a volatile debounce buffer", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-decision-debounce-");
+    try {
+      dbUpdateAgent("main", { debounceMs: 60000 });
+      configStore.refresh();
+      getOrCreateSession("decision-child", "main", stateDir, { name: "decision-child" });
+      const dispatcher = createDispatcher();
+      const immediate = spyOn(dispatcher, "handlePromptImmediate").mockResolvedValue();
+      const buffered = spyOn(dispatcher, "handlePromptWithDebounce").mockImplementation(() => {});
+      const prompt = { prompt: "Recorded decision", _decisionDeliveryId: "decision:fixture:answer:2" };
+      await dispatcher.handlePrompt("decision-child", prompt);
+      expect(immediate).toHaveBeenCalledWith("decision-child", prompt);
+      expect(buffered).not.toHaveBeenCalled();
+      immediate.mockRestore();
+      buffered.mockRestore();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("rejects a decision's missing agent instead of falling back and reporting admission", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-decision-intake-");
+    try {
+      getOrCreateSession("missing-owner-child", "gone-agent", stateDir, { name: "missing-owner-child" });
+      configStore.refresh();
+      const dispatcher = createDispatcher();
+      const prompt = { prompt: "Recorded outcome", _decisionDeliveryId: "decision:fixture:answer:2" };
+      await expect(dispatcher.handlePrompt("missing-owner-child", prompt)).rejects.toMatchObject({
+        reason: "DECISION_AGENT_MISSING",
+      });
+      await expect(dispatcher.handlePromptImmediate("missing-owner-child", prompt)).rejects.toMatchObject({
+        reason: "DECISION_AGENT_MISSING",
+      });
+      expect(dispatcher.streamingSessions.size).toBe(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("preserves the latest compatible prompt envelope when combining debounced messages", async () => {
     const dispatcher = createDispatcher();
     const prompts: RuntimeLaunchPrompt[] = [];

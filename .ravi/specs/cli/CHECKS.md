@@ -9,7 +9,7 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 
 - `bun test src/sdk/gateway/dispatcher.test.ts` verifies that a missing task
   decision table produces a private HTTP 500 plus a local cause/stack, and that
-  restoring the release DDL in a fixture recovers show and dry-run dispatch.
+  restoring the schema DDL in a fixture recovers show and dry-run dispatch.
 - Unexpected-error diagnostics exclude sentinel context/bearer tokens and
   arbitrary exception payloads while preserving the diagnostic cause.
 

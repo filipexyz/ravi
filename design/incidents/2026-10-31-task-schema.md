@@ -113,15 +113,19 @@ The operator must confirm recovery before any production write. At execution:
    if any count is nonzero or the schema differs, stop and re-evaluate the plan.
 2. Preserve an approved recovery snapshot before a production schema write.
 3. In one short transaction, create only `task_decisions` and its three indexes
-   using the DDL in the installed release / `src/tasks/task-db.ts`.
+   using the DDL in the installed release / commit `05c77ab0`
+   (`git show 05c77ab0:src/tasks/task-db.ts`). Current dev has a newer schema.
    Do not drop, copy over or remove the generic decision tables.
 4. Verify task show and a dispatch **without --execute**, and compare counts.
    No daemon restart is needed for the proposed additive repair.
 
-The gateway regression test simulates the missing table in a temporary fixture,
-asserts show=500 and dry-run dispatch=500, restores the captured release DDL,
-and asserts show=200 / dry-run dispatch=409 exit 3, with zero assignments and
-an unchanged generic destination.
+At PR commit `28821a3a`, the gateway regression test simulated the missing legacy
+table in a temporary fixture,
+asserted show=500 and dry-run dispatch=500, restored the captured release DDL,
+and asserted show=200 / dry-run dispatch=409 exit 3, with zero assignments and
+an unchanged generic destination. After #765 landed on dev, the ongoing regression
+uses the current `decisions` table. It verifies the same failure/recovery boundary
+and unchanged history/deliveries; it is not the DDL for repairing the old daemon.
 
 ## Systemic guard proposal
 
@@ -151,5 +155,8 @@ boundary is already enforced.
 
 - Old source + new regressions: outer-state restoration fails; both diagnostic
   logging regressions fail. Production opens were blocked by the preload.
-- Fixed source: focused helper, gateway and decision tests (see PR for totals).
+- Fixed source on dev after #765: helper 2, gateway 49, decisions 9 and
+  session-dispatcher 107 tests pass (167 total). The formerly escaping
+  session-dispatcher test file reports zero blocked production opens after
+  the helper fix, versus 13 on the original branch code.
 - Full build/typecheck/suite belong in CI, not on this production workstation.

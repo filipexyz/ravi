@@ -52,17 +52,12 @@ import {
   resolveTaskRuntimeForRead,
   reportTaskProgress,
   saveTaskObserverChecklist,
-  decideTask,
-  answerTaskDecision,
   assertTaskTargetAuthorized,
   dbGetTask,
   isTaskVisibleToCaller,
   taskCallerVisibilityEnforced,
   listTaskDecisionAttention,
-  normalizeTaskDecisionKey,
-  parseTaskDecisionOwner,
-  formatTaskDecisionOwner,
-  TaskDecisionError,
+  formatDecisionOwner,
   blockTask,
   failTask,
   taskProfileUsesArtifactFirstSync,
@@ -96,7 +91,6 @@ import {
   taskCommentReturnSchema,
   taskCreateReturnSchema,
   taskDecisionAttentionReturnSchema,
-  taskDecisionMutationReturnSchema,
   taskDispatchReturnSchema,
   taskListReturnSchema,
   taskMutationReturnSchema,
@@ -782,23 +776,9 @@ function formatTaskComment(comment: TaskComment): string {
   return `  - ${formatTime(comment.createdAt)} ${author} :: ${comment.body}`;
 }
 
-function handleTaskDecisionError(op: string, error: unknown, asJson?: boolean): never {
-  if (error instanceof TaskDecisionError) {
-    contractFail(op, error.code, error.message, {
-      asJson,
-      exitCode: error.exitCode,
-      ...(error.suggestedAction ? { details: { suggestedAction: error.suggestedAction } } : {}),
-    });
-  }
-  if (error instanceof Error && /^Task not found/i.test(error.message)) {
-    contractFail(op, "TASK_NOT_FOUND", error.message, { asJson, exitCode: 1 });
-  }
-  throw error;
-}
-
 function formatTaskDecisionLine(decision: TaskDecision, taskStatus?: TaskStatus, archived = false): string {
   const state = decision.status.toUpperCase();
-  const owner = formatTaskDecisionOwner(decision);
+  const owner = formatDecisionOwner(decision);
   const terminal = taskStatus === "done" || taskStatus === "failed";
   const parked =
     !terminal && !archived && decision.status === "open" && decision.blocks && decision.ownerType === "human"
@@ -2356,127 +2336,6 @@ export class TaskCommands {
       console.log(`  ${finalReason}`);
     }
     return result;
-  }
-
-  @Command({
-    name: "decide",
-    description: "Open (or re-ask) a decision with an owner and a stable key on a task",
-  })
-  @CommandAccess({
-    kind: "mutate",
-    resource: "tasks",
-    action: "decide",
-    risk: "medium",
-    resourceId: "taskId",
-    input: ["taskId"],
-  })
-  @Returns(taskDecisionMutationReturnSchema)
-  async decide(
-    @Arg("taskId", { description: "Task ID" }) taskId: string,
-    @Option({ flags: "--key <key>", description: "Stable decision slug, unique while open per task" }) key?: string,
-    @Option({ flags: "--ask <text>", description: "The pending question" }) ask?: string,
-    @Option({ flags: "--owner <owner>", description: "human:<contact>|agent:<id>|unassigned (default: unassigned)" })
-    owner?: string,
-    @Option({ flags: "--blocks", description: "Park the task on this decision" }) blocks?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-  ) {
-    const op = "tasks decide";
-    if (!key?.trim()) {
-      contractFail(op, "USAGE_ERROR", "--key is required.", { asJson, exitCode: 2 });
-    }
-    if (!ask?.trim()) {
-      contractFail(op, "USAGE_ERROR", "--ask is required and must describe the pending question.", {
-        asJson,
-        exitCode: 2,
-      });
-    }
-
-    try {
-      const normalizedKey = normalizeTaskDecisionKey(key);
-      const ownerInput = parseTaskDecisionOwner(owner);
-      const actor = getTaskActor();
-      const result = decideTask(taskId, {
-        key: normalizedKey,
-        ask: ask.trim(),
-        ownerType: ownerInput.ownerType,
-        ownerId: ownerInput.ownerId,
-        blocks: blocks === true,
-        ...actor,
-      });
-      await emitTaskEvent(result.task, result.event);
-
-      const decision = result.decision;
-      if (asJson) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        console.log(`${result.created ? "◇ New decision on" : "◇ Re-asked decision on"} ${taskId} [${decision.key}]`);
-        console.log(`  Owner: ${formatTaskDecisionOwner(decision)}${decision.blocks ? " (blocks)" : ""}`);
-        console.log(`  Ask:   ${decision.ask}`);
-      }
-      return result;
-    } catch (error) {
-      handleTaskDecisionError(op, error, asJson);
-    }
-  }
-
-  @Command({ name: "answer", description: "Answer (close) an open decision on a task" })
-  @CommandAccess({
-    kind: "mutate",
-    resource: "tasks",
-    action: "answer",
-    risk: "medium",
-    resourceId: "taskId",
-    input: ["taskId"],
-  })
-  @Returns(taskDecisionMutationReturnSchema)
-  async answer(
-    @Arg("taskId", { description: "Task ID" }) taskId: string,
-    @Option({ flags: "--key <key>", description: "Decision key to answer" }) key?: string,
-    @Option({ flags: "--text <text>", description: "The decision outcome" }) text?: string,
-    @Option({ flags: "--by <actor>", description: "Who is answering, recorded as provenance" }) by?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-  ) {
-    const op = "tasks answer";
-    if (!key?.trim()) {
-      contractFail(op, "USAGE_ERROR", "--key is required.", { asJson, exitCode: 2 });
-    }
-    if (!text?.trim()) {
-      contractFail(op, "USAGE_ERROR", "--text is required and must carry the decision outcome.", {
-        asJson,
-        exitCode: 2,
-      });
-    }
-
-    try {
-      const normalizedKey = normalizeTaskDecisionKey(key);
-      const actor = getTaskActor();
-      // In an agent turn the authenticated actor answers; --by only names who it answers for.
-      const onBehalfOf = by?.trim();
-      const answerActor =
-        actor.agentId && onBehalfOf && onBehalfOf !== actor.actor
-          ? `${actor.actor} (for ${onBehalfOf})`
-          : onBehalfOf || actor.actor;
-      const result = answerTaskDecision(taskId, {
-        key: normalizedKey,
-        answer: text.trim(),
-        ...(answerActor ? { actor: answerActor } : {}),
-        ...(actor.agentId ? { agentId: actor.agentId } : {}),
-        ...(actor.sessionName ? { sessionName: actor.sessionName } : {}),
-      });
-      await emitTaskEvent(result.task, result.event);
-
-      const decision = result.decision;
-      if (asJson) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        console.log(`✓ Task ${taskId} decision [${decision.key}] answered`);
-        console.log(`  By:     ${decision.answeredBy ?? answerActor ?? "cli"}`);
-        console.log(`  Answer: ${decision.answer}`);
-      }
-      return result;
-    } catch (error) {
-      handleTaskDecisionError(op, error, asJson);
-    }
   }
 
   @Command({

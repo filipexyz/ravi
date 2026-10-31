@@ -65740,6 +65740,1645 @@ export const DaemonUninstallReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `decisions.answer`. */
+export const DecisionsAnswerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Additional provenance only; never authority",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Required for a thread: queues work in the waiting session",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Decision id from ask/list",
+      "type": "string"
+    },
+    "text": {
+      "description": "Explicit outcome",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.answer`. */
+export const DecisionsAnswerReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.ask`. */
+export const DecisionsAskInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "ask": {
+      "description": "Explicit question",
+      "type": "string"
+    },
+    "blocks": {
+      "description": "Blocks work; a human-owned task decision derives parked",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Required for a thread: publishes the question",
+      "type": "boolean"
+    },
+    "key": {
+      "description": "Stable question key within the origin",
+      "type": "string"
+    },
+    "owner": {
+      "description": "human:<contact>|agent:<id>|unassigned; ownership is not approval authority",
+      "type": "string"
+    },
+    "task": {
+      "description": "Originating task",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Managed thread child session or lifecycle id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.ask`. */
+export const DecisionsAskReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.list`. */
+export const DecisionsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include answered history",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default 50, maximum 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Page offset",
+      "type": "string"
+    },
+    "task": {
+      "description": "Filter to a task",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Filter to a thread",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.list`. */
+export const DecisionsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "decisions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answeredBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ask": {
+            "type": "string"
+          },
+          "askedAt": {
+            "type": "number"
+          },
+          "askedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blocks": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "chatId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "sessionKey": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "task",
+                  "thread"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "chatId",
+              "sessionKey"
+            ],
+            "type": "object"
+          },
+          "ownerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerType": {
+            "enum": [
+              "human",
+              "agent",
+              "unassigned"
+            ],
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "answered",
+              "superseded"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "origin",
+          "key",
+          "status",
+          "ownerType",
+          "ownerId",
+          "ask",
+          "askedBy",
+          "askedAt",
+          "answer",
+          "answeredBy",
+          "answeredAt",
+          "blocks",
+          "revision",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "decisions",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.resolve-delivery`. */
+export const DecisionsResolveDeliveryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "evidence": {
+      "description": "Trace reference and finding; stored in audit history",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Record the resolution; not_received makes delivery retryable",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Decision id with uncertain answer delivery",
+      "type": "string"
+    },
+    "outcome": {
+      "description": "received or not_received, established by operator inspection",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.resolve-delivery`. */
+export const DecisionsResolveDeliveryReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.retry`. */
+export const DecisionsRetryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Actually retry publication",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Decision id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.retry`. */
+export const DecisionsRetryReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.show`. */
+export const DecisionsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Decision id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.show`. */
+export const DecisionsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "history": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "number"
+          },
+          "snapshot": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "actor",
+          "snapshot",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries",
+    "history"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `devin.auth.check`. */
 export const DevinAuthCheckInputSchema = {
   "additionalProperties": false,
@@ -103568,6 +105207,9 @@ export const SessionsThreadSendReturnSchema = {
             }
           ]
         },
+        "openDecisionCount": {
+          "type": "number"
+        },
         "parentReturn": {
           "additionalProperties": false,
           "properties": {
@@ -103758,6 +105400,7 @@ export const SessionsThreadSendReturnSchema = {
         "childSessionKey",
         "childSessionName",
         "childSessionMissing",
+        "openDecisionCount",
         "slackThreadTs",
         "link",
         "runtime",
@@ -103868,6 +105511,9 @@ export const SessionsThreadsReturnSchema = {
                 "type": "null"
               }
             ]
+          },
+          "openDecisionCount": {
+            "type": "number"
           },
           "parentReturn": {
             "additionalProperties": false,
@@ -104059,6 +105705,7 @@ export const SessionsThreadsReturnSchema = {
           "childSessionKey",
           "childSessionName",
           "childSessionMissing",
+          "openDecisionCount",
           "slackThreadTs",
           "link",
           "runtime",
@@ -121718,253 +123365,6 @@ export const TagsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `tasks.answer`. */
-export const TasksAnswerInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "by": {
-      "description": "Who is answering, recorded as provenance",
-      "type": "string"
-    },
-    "key": {
-      "description": "Decision key to answer",
-      "type": "string"
-    },
-    "taskId": {
-      "description": "Task ID",
-      "type": "string"
-    },
-    "text": {
-      "description": "The decision outcome",
-      "type": "string"
-    }
-  },
-  "required": [
-    "taskId"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `tasks.answer`. */
-export const TasksAnswerReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "created": {
-      "type": "boolean"
-    },
-    "decision": {
-      "additionalProperties": false,
-      "properties": {
-        "answer": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "answeredAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "answeredBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ask": {
-          "type": "string"
-        },
-        "askedAt": {
-          "type": "number"
-        },
-        "askedBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "blocks": {
-          "type": "boolean"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "id": {
-          "type": "string"
-        },
-        "key": {
-          "type": "string"
-        },
-        "ownerId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ownerType": {
-          "enum": [
-            "human",
-            "agent",
-            "unassigned"
-          ],
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "open",
-            "answered",
-            "superseded"
-          ],
-          "type": "string"
-        },
-        "taskId": {
-          "type": "string"
-        },
-        "updatedAt": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "id",
-        "taskId",
-        "key",
-        "status",
-        "ownerType",
-        "ownerId",
-        "ask",
-        "askedBy",
-        "askedAt",
-        "answer",
-        "answeredBy",
-        "answeredAt",
-        "blocks",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    },
-    "event": {
-      "additionalProperties": false,
-      "properties": {
-        "actor": {
-          "type": "string"
-        },
-        "agentId": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "id": {
-          "type": "number"
-        },
-        "message": {
-          "type": "string"
-        },
-        "progress": {
-          "type": "number"
-        },
-        "sessionName": {
-          "type": "string"
-        },
-        "taskId": {
-          "type": "string"
-        },
-        "type": {
-          "enum": [
-            "task.decision.open",
-            "task.decision.answered"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "taskId",
-        "type",
-        "createdAt"
-      ],
-      "type": "object"
-    },
-    "task": {
-      "additionalProperties": false,
-      "properties": {
-        "assigneeAgentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "assigneeSessionName": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "priority": {
-          "type": "string"
-        },
-        "progress": {
-          "type": "number"
-        },
-        "status": {
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "status",
-        "priority",
-        "progress"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "task",
-    "decision",
-    "event"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `tasks.archive`. */
 export const TasksArchiveInputSchema = {
   "additionalProperties": false,
@@ -122947,257 +124347,6 @@ export const TasksCreateReturnSchema = {
     "dependencies",
     "dependents",
     "launchPlan"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `tasks.decide`. */
-export const TasksDecideInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "ask": {
-      "description": "The pending question",
-      "type": "string"
-    },
-    "blocks": {
-      "description": "Park the task on this decision",
-      "type": "boolean"
-    },
-    "key": {
-      "description": "Stable decision slug, unique while open per task",
-      "type": "string"
-    },
-    "owner": {
-      "description": "human:<contact>|agent:<id>|unassigned (default: unassigned)",
-      "type": "string"
-    },
-    "taskId": {
-      "description": "Task ID",
-      "type": "string"
-    }
-  },
-  "required": [
-    "taskId"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `tasks.decide`. */
-export const TasksDecideReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "created": {
-      "type": "boolean"
-    },
-    "decision": {
-      "additionalProperties": false,
-      "properties": {
-        "answer": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "answeredAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "answeredBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ask": {
-          "type": "string"
-        },
-        "askedAt": {
-          "type": "number"
-        },
-        "askedBy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "blocks": {
-          "type": "boolean"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "id": {
-          "type": "string"
-        },
-        "key": {
-          "type": "string"
-        },
-        "ownerId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ownerType": {
-          "enum": [
-            "human",
-            "agent",
-            "unassigned"
-          ],
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "open",
-            "answered",
-            "superseded"
-          ],
-          "type": "string"
-        },
-        "taskId": {
-          "type": "string"
-        },
-        "updatedAt": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "id",
-        "taskId",
-        "key",
-        "status",
-        "ownerType",
-        "ownerId",
-        "ask",
-        "askedBy",
-        "askedAt",
-        "answer",
-        "answeredBy",
-        "answeredAt",
-        "blocks",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    },
-    "event": {
-      "additionalProperties": false,
-      "properties": {
-        "actor": {
-          "type": "string"
-        },
-        "agentId": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "id": {
-          "type": "number"
-        },
-        "message": {
-          "type": "string"
-        },
-        "progress": {
-          "type": "number"
-        },
-        "sessionName": {
-          "type": "string"
-        },
-        "taskId": {
-          "type": "string"
-        },
-        "type": {
-          "enum": [
-            "task.decision.open",
-            "task.decision.answered"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "taskId",
-        "type",
-        "createdAt"
-      ],
-      "type": "object"
-    },
-    "task": {
-      "additionalProperties": false,
-      "properties": {
-        "assigneeAgentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "assigneeSessionName": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "priority": {
-          "type": "string"
-        },
-        "progress": {
-          "type": "number"
-        },
-        "status": {
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "status",
-        "priority",
-        "progress"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "task",
-    "decision",
-    "event"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

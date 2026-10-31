@@ -633,7 +633,7 @@ describe("dispatch — validation", () => {
 });
 
 describe("dispatch — error path", () => {
-  it("recovers show and dry-run dispatch after restoring the live task decision schema", async () => {
+  it("recovers show and dry-run dispatch after restoring missing decision storage", async () => {
     const stateDir = await createIsolatedRaviState("ravi-gateway-task-schema-test-");
     const stdout = spyOn(process.stdout, "write").mockImplementation((() => true) as never);
     try {
@@ -643,12 +643,12 @@ describe("dispatch — error path", () => {
         createdBy: "test",
       });
       const db = getDb();
-      // Capture the release DDL before emulating the branch's removal. All of
-      // this happens in the fixture; the generic destination stays untouched.
+      // Exercise schema drift against current dev. The historical 3.261031.6
+      // task_decisions reproduction is recorded in the incident dossier.
       const schema = db
-        .query("SELECT sql FROM sqlite_master WHERE tbl_name = 'task_decisions' AND sql IS NOT NULL ORDER BY type DESC")
+        .query("SELECT sql FROM sqlite_master WHERE tbl_name = 'decisions' AND sql IS NOT NULL ORDER BY type DESC")
         .all() as { sql: string }[];
-      db.exec("CREATE TABLE decisions (id TEXT PRIMARY KEY); DROP TABLE task_decisions");
+      db.exec("DROP TABLE decisions");
       const commands = buildRegistry([TaskCommands]);
       const contextRecord = gatewayContext([executeGroup("tasks"), adminSystem()], "main");
       const invoke = async (name: string) => {
@@ -674,6 +674,8 @@ describe("dispatch — error path", () => {
       expect(dryRun.response.status).toBe(409);
       expect(await dryRun.response.json()).toMatchObject({ exitCode: 3, error: { code: "WRITE_REQUIRES_EXECUTE" } });
       expect(db.query("SELECT COUNT(*) AS count FROM decisions").get()).toEqual({ count: 0 });
+      expect(db.query("SELECT COUNT(*) AS count FROM decision_history").get()).toEqual({ count: 0 });
+      expect(db.query("SELECT COUNT(*) AS count FROM decision_deliveries").get()).toEqual({ count: 0 });
       expect(db.query("SELECT COUNT(*) AS count FROM task_assignments").get()).toEqual({ count: 0 });
     } finally {
       stdout.mockRestore();

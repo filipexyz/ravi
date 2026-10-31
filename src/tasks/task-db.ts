@@ -1,6 +1,14 @@
+import {
+  askDecisionRecord,
+  answerDecisionRecord,
+  decisionWrite,
+  listDecisions,
+  decisionFromRow,
+  type DecisionRow,
+} from "../decisions/store.js";
+import type { Decision } from "../decisions/types.js";
 import { randomUUID } from "node:crypto";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
-import { executeWrite } from "../db/write-retry.js";
 import {
   DEFAULT_TASK_CHECKPOINT_INTERVAL_MS,
   computeTaskCheckpointDueAt,
@@ -41,7 +49,7 @@ import {
 import { requireTaskProgressMessage } from "./progress-contract.js";
 import { fromSubjectColumns, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 import { normalizeTaskRuntimeOptions } from "./runtime-options.js";
-import { TaskDecisionError, normalizeTaskDecisionKey } from "./decisions.js";
+import { DecisionError, normalizeDecisionKey } from "../decisions/model.js";
 import { canonicalAssetIdsForTag } from "../tags/helpers.js";
 
 interface TaskRow {
@@ -144,25 +152,7 @@ interface TaskDependencyRow {
   satisfied_by_event_id: number | null;
 }
 
-interface TaskDecisionRow {
-  id: string;
-  task_id: string;
-  key: string;
-  status: TaskDecision["status"];
-  owner_type: TaskDecision["ownerType"];
-  owner_id: string | null;
-  ask: string;
-  asked_by: string | null;
-  asked_at: number;
-  answer: string | null;
-  answered_by: string | null;
-  answered_at: number | null;
-  blocks: number;
-  created_at: number;
-  updated_at: number;
-}
-
-interface TaskOpenDecisionDbRow extends TaskDecisionRow {
+interface TaskOpenDecisionDbRow extends DecisionRow {
   task_title: string;
   task_status: TaskRecord["status"];
   task_priority: TaskRecord["priority"];
@@ -536,31 +526,6 @@ function ensureTaskSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_task_dependencies_upstream ON task_dependencies(depends_on_task_id, task_id);
     CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id, satisfied_at, created_at);
 
-    CREATE TABLE IF NOT EXISTS task_decisions (
-      id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
-      key TEXT NOT NULL,
-      status TEXT NOT NULL,
-      owner_type TEXT NOT NULL DEFAULT 'unassigned',
-      owner_id TEXT,
-      ask TEXT NOT NULL,
-      asked_by TEXT,
-      asked_at INTEGER NOT NULL,
-      answer TEXT,
-      answered_by TEXT,
-      answered_at INTEGER,
-      blocks INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_task_decisions_one_open_per_key
-      ON task_decisions(task_id, key) WHERE status = 'open';
-    CREATE INDEX IF NOT EXISTS idx_task_decisions_task
-      ON task_decisions(task_id, status, asked_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_task_decisions_open
-      ON task_decisions(status, owner_type, asked_at ASC);
   `);
   applyTaskWorktreeSchemaMigrations();
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_updated_id ON tasks(updated_at DESC, id DESC)");
@@ -781,24 +746,9 @@ function rowToTaskDependency(row: TaskDependencyRow): TaskDependencyRecord {
   };
 }
 
-function rowToTaskDecision(row: TaskDecisionRow): TaskDecision {
-  return {
-    id: row.id,
-    taskId: row.task_id,
-    key: row.key,
-    status: row.status,
-    ownerType: row.owner_type,
-    ownerId: row.owner_id,
-    ask: row.ask,
-    askedBy: row.asked_by,
-    askedAt: row.asked_at,
-    answer: row.answer,
-    answeredBy: row.answered_by,
-    answeredAt: row.answered_at,
-    blocks: row.blocks === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
+function taskDecisionProjection(decision: Decision): TaskDecision {
+  const { origin, revision: _revision, ...fields } = decision;
+  return { ...fields, taskId: origin.id };
 }
 
 function rowToTaskLaunchPlan(row: TaskLaunchPlanRow): TaskLaunchPlan {
@@ -2309,162 +2259,61 @@ export function dbAppendTaskEvent(
   return { task: getTaskOrThrow(taskId), event };
 }
 
-function newTaskDecisionId(): string {
-  return `dec_${randomUUID().replace(/-/g, "")}`;
-}
-
-function getOpenTaskDecision(taskId: string, key: string): TaskDecision | null {
-  ensureTaskSchema();
-  const db = getDb();
-  const row = db
-    .prepare("SELECT * FROM task_decisions WHERE task_id = ? AND key = ? AND status = 'open' LIMIT 1")
-    .get(taskId, key) as TaskDecisionRow | null;
-  return row ? rowToTaskDecision(row) : null;
-}
-
-/**
- * Ask (or re-ask) a decision on a task. At most one decision is open per
- * (task_id, key): re-deciding updates the open record instead of duplicating
- * it, preserving its id, askedBy and askedAt so the fold stays deterministic.
- */
+/** Task projection: storage/history belong to the shared decision primitive. */
 export function dbDecideTask(
   taskId: string,
   input: TaskDecisionInput,
 ): { decision: TaskDecision; event: TaskEvent; created: boolean } {
   ensureTaskSchema();
-  const db = getDb();
   getTaskOrThrow(taskId);
-
-  const key = normalizeTaskDecisionKey(input.key);
-  const ask = input.ask.trim();
-  if (!ask) {
-    throw new TaskDecisionError("TASK_DECISION_INVALID_ASK", "A decision needs a non-empty --ask.", {
-      exitCode: 2,
-      suggestedAction: "Describe the pending question in --ask.",
-    });
-  }
-  const ownerType = input.ownerType ?? "unassigned";
-  const ownerId = ownerType === "unassigned" ? null : (input.ownerId ?? null);
-  if (ownerType !== "unassigned" && !ownerId) {
-    throw new TaskDecisionError("TASK_DECISION_INVALID_OWNER", `Decision owner ${ownerType} needs an owner id.`, {
-      exitCode: 2,
-    });
-  }
-  const blocks = input.blocks === true ? 1 : 0;
-
-  return executeWrite(db, () => {
-    const now = Date.now();
-    const existing = getOpenTaskDecision(taskId, key);
-
-    const id = existing?.id ?? newTaskDecisionId();
-    if (existing) {
-      db.prepare(`
-        UPDATE task_decisions
-        SET ask = ?, owner_type = ?, owner_id = ?, blocks = ?, updated_at = ?
-        WHERE id = ?
-      `).run(ask, ownerType, ownerId, blocks, now, existing.id);
-    } else {
-      db.prepare(`
-        INSERT INTO task_decisions (
-          id, task_id, key, status, owner_type, owner_id, ask, asked_by, asked_at,
-          answer, answered_by, answered_at, blocks, created_at, updated_at
-        ) VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)
-      `).run(id, taskId, key, ownerType, ownerId, ask, input.actor ?? null, now, blocks, now, now);
-    }
-
-    db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, taskId);
+  return decisionWrite((db) => {
+    const result = askDecisionRecord({ type: "task", id: taskId, chatId: null, sessionKey: null }, input);
+    db.query("UPDATE tasks SET updated_at=? WHERE id=?").run(Date.now(), taskId);
     const event = appendTaskEvent(taskId, "task.decision.open", {
       actor: input.actor,
       agentId: input.agentId,
       sessionName: input.sessionName,
-      message: `Decision open [${key}]${ownerType === "unassigned" ? "" : ` for ${ownerType}:${ownerId}`}: ${ask}`,
+      message: `Decision open [${result.decision.key}]: ${result.decision.ask}`,
     });
-
-    const row = db.prepare("SELECT * FROM task_decisions WHERE id = ?").get(id) as TaskDecisionRow;
-    return { decision: rowToTaskDecision(row), event, created: !existing };
+    return { ...result, decision: taskDecisionProjection(result.decision), event };
   });
 }
 
-/**
- * Answer the open decision for (task_id, key). Answering a decision that is not
- * open fails with a typed error; answered history is never rewritten.
- */
 export function dbAnswerTaskDecision(
   taskId: string,
   input: TaskDecisionAnswerInput,
 ): { decision: TaskDecision; event: TaskEvent } {
   ensureTaskSchema();
-  const db = getDb();
   getTaskOrThrow(taskId);
-
-  const key = normalizeTaskDecisionKey(input.key);
-  const answer = input.answer.trim();
-  if (!answer) {
-    throw new TaskDecisionError("TASK_DECISION_INVALID_ANSWER", "An answer needs a non-empty --text.", {
-      exitCode: 2,
-      suggestedAction: "Pass the decision outcome in --text.",
-    });
-  }
-
-  return executeWrite(db, () => {
-    const open = getOpenTaskDecision(taskId, key);
-    if (!open) {
-      const latest = db
-        .prepare("SELECT * FROM task_decisions WHERE task_id = ? AND key = ? ORDER BY asked_at DESC, id DESC LIMIT 1")
-        .get(taskId, key) as TaskDecisionRow | null;
-      if (!latest) {
-        throw new TaskDecisionError("TASK_DECISION_NOT_FOUND", `No decision "${key}" on task ${taskId}.`, {
-          suggestedAction: `Open it first: ravi tasks decide ${taskId} --key ${key} --ask "..."`,
-        });
-      }
-      throw new TaskDecisionError(
-        "TASK_DECISION_NOT_OPEN",
-        `Decision "${key}" on task ${taskId} is already ${latest.status}; answered history is immutable.`,
-        { suggestedAction: "Open a new decision with a different key for a new question." },
+  return decisionWrite((db) => {
+    const key = normalizeDecisionKey(input.key);
+    const decisions = listDecisions({ type: "task", id: taskId });
+    const open = decisions.find((d) => d.key === key && d.status === "open");
+    if (!open)
+      throw new DecisionError(
+        decisions.some((d) => d.key === key) ? "DECISION_NOT_OPEN" : "DECISION_NOT_FOUND",
+        "No open decision for this key.",
       );
-    }
-
-    const now = Date.now();
-    const updated = db
-      .prepare(`
-      UPDATE task_decisions
-      SET status = 'answered', answer = ?, answered_by = ?, answered_at = ?, updated_at = ?
-      WHERE id = ? AND status = 'open'
-    `)
-      .run(answer, input.actor ?? null, now, now, open.id);
-    if (updated.changes === 0) {
-      throw new TaskDecisionError(
-        "TASK_DECISION_NOT_OPEN",
-        `Decision "${key}" on task ${taskId} was closed concurrently; answered history is immutable.`,
-        { suggestedAction: "Re-read the task decisions and open a new key if the question is still pending." },
-      );
-    }
-    db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, taskId);
-
+    const decision = answerDecisionRecord(open.id, input.answer, input.actor);
+    db.query("UPDATE tasks SET updated_at=? WHERE id=?").run(Date.now(), taskId);
     const event = appendTaskEvent(taskId, "task.decision.answered", {
       actor: input.actor,
       agentId: input.agentId,
       sessionName: input.sessionName,
-      message: `Decision answered [${key}]: ${answer}`,
+      message: `Decision answered [${key}]: ${decision.answer}`,
     });
-
-    const row = db.prepare("SELECT * FROM task_decisions WHERE id = ?").get(open.id) as TaskDecisionRow;
-    return { decision: rowToTaskDecision(row), event };
+    return { decision: taskDecisionProjection(decision), event };
   });
 }
 
-/** All decisions of a task: open first, then most recently asked. */
 export function dbListTaskDecisions(taskId: string): TaskDecision[] {
   ensureTaskSchema();
-  const db = getDb();
-  const rows = db
-    .prepare(`
-      SELECT * FROM task_decisions
-      WHERE task_id = ?
-      ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'answered' THEN 1 ELSE 2 END, asked_at DESC, id ASC
-    `)
-    .all(taskId) as TaskDecisionRow[];
-  return rows.map(rowToTaskDecision);
+  return listDecisions({ type: "task", id: taskId })
+    .map(taskDecisionProjection)
+    .sort(
+      (a, b) =>
+        Number(b.status === "open") - Number(a.status === "open") || b.askedAt - a.askedAt || a.id.localeCompare(b.id),
+    );
 }
 
 /** Open decisions joined with the owning task, oldest ask first. One query. */
@@ -2473,7 +2322,7 @@ export function dbListOpenTaskDecisions(
 ): TaskOpenDecisionRow[] {
   ensureTaskSchema();
   const db = getDb();
-  const where = ["d.status = 'open'", "t.archived_at IS NULL"];
+  const where = ["d.origin_type = 'task'", "d.status = 'open'", "t.archived_at IS NULL"];
   const params: string[] = [];
   if (options.agentId) {
     where.push("t.assignee_agent_id = ?");
@@ -2484,7 +2333,7 @@ export function dbListOpenTaskDecisions(
     params.push(options.ownerType);
   }
   if (options.taskId) {
-    where.push("d.task_id = ?");
+    where.push("d.origin_id = ?");
     params.push(options.taskId);
   }
 
@@ -2492,15 +2341,15 @@ export function dbListOpenTaskDecisions(
     .prepare(`
       SELECT d.*, t.title AS task_title, t.status AS task_status, t.priority AS task_priority,
              t.assignee_agent_id AS assignee_agent_id, t.assignee_session_name AS assignee_session_name
-      FROM task_decisions d
-      JOIN tasks t ON t.id = d.task_id
+      FROM decisions d
+      JOIN tasks t ON t.id = d.origin_id
       WHERE ${where.join(" AND ")}
       ORDER BY d.asked_at ASC, d.id ASC
     `)
     .all(...params) as TaskOpenDecisionDbRow[];
 
   return rows.map((row) => ({
-    decision: rowToTaskDecision(row),
+    decision: taskDecisionProjection(decisionFromRow(row)),
     taskTitle: row.task_title,
     taskStatus: row.task_status,
     taskPriority: row.task_priority,

@@ -1,3 +1,4 @@
+import type { Decision, DecisionOwnerType, DecisionStatus } from "../decisions/types.js";
 import type { RuntimeEffort } from "../runtime/effort.js";
 import type { SubjectRef } from "../identity/subject.js";
 
@@ -411,32 +412,10 @@ export interface TaskLaunchPlan {
   updatedAt: number;
 }
 
-export type TaskDecisionStatus = "open" | "answered" | "superseded";
-
-export type TaskDecisionOwnerType = "human" | "agent" | "unassigned";
-
-/**
- * A pending question attached to a task. A decision is task metadata, never a
- * task status: it records who owns the answer and whether the task is parked
- * on it.
- */
-export interface TaskDecision {
-  id: string;
-  taskId: string;
-  key: string;
-  status: TaskDecisionStatus;
-  ownerType: TaskDecisionOwnerType;
-  ownerId: string | null;
-  ask: string;
-  askedBy: string | null;
-  askedAt: number;
-  answer: string | null;
-  answeredBy: string | null;
-  answeredAt: number | null;
-  blocks: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
+export type TaskDecisionStatus = DecisionStatus;
+export type TaskDecisionOwnerType = DecisionOwnerType;
+/** Task's read projection of the shared primitive; parked is computed separately. */
+export type TaskDecision = Omit<Decision, "origin" | "revision"> & { taskId: string };
 
 export interface TaskDecisionInput {
   key: string;

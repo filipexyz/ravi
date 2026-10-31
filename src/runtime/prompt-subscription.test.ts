@@ -56,6 +56,16 @@ mock.module("../nats.js", () => ({
   },
 }));
 
+let decisionAdmission: (
+  session: string,
+  prompt: Record<string, unknown>,
+  handle: (prompt: unknown) => Promise<void>,
+) => Promise<boolean> = async () => false;
+mock.module("../decisions/delivery.js", () => ({
+  admitDecisionAnswer: (session: string, prompt: Record<string, unknown>, handle: (prompt: unknown) => Promise<void>) =>
+    decisionAdmission(session, prompt, handle),
+}));
+
 const { RuntimePromptSubscription } = await import("./prompt-subscription.js");
 
 afterAll(() => {
@@ -63,6 +73,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  decisionAdmission = async () => false;
   running = true;
   consumedMessages = [];
   consumeCalls.length = 0;
@@ -73,6 +84,31 @@ beforeEach(() => {
 });
 
 describe("RuntimePromptSubscription", () => {
+  it("routes decision envelopes through durable admission and ACKs an already accepted duplicate without another turn", async () => {
+    const message = makePromptMessage("ravi.session.dev.prompt", {
+      prompt: "duplicate",
+      _decisionDeliveryId: "decision:fixture:answer:2",
+    });
+    consumedMessages = [message];
+    decisionAdmission = async (_session, prompt) => {
+      expect(prompt._decisionDeliveryId).toBe("decision:fixture:answer:2");
+      return true;
+    };
+    const handlePrompt = mock(async () => {});
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: () => {},
+      handlePrompt,
+    });
+    subscription.subscribe();
+    await waitUntil(() => message.ack.mock.calls.length === 1);
+    expect(handlePrompt).not.toHaveBeenCalled();
+    expect(message.nak).not.toHaveBeenCalled();
+  });
+
   it("aborts the pull loop when SESSION_PROMPTS resources disappear", async () => {
     const subscription = new RuntimePromptSubscription({
       isRunning: () => running,
