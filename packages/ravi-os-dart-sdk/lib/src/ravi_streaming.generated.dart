@@ -23,6 +23,14 @@ class RaviSseEvent<T> {
   final T data;
 }
 
+class SessionViewStreamOptions {
+  const SessionViewStreamOptions({this.projectId, this.conversationId, this.cursor});
+
+  final String? projectId;
+  final String? conversationId;
+  final String? cursor;
+}
+
 class EventsStreamOptions {
   const EventsStreamOptions({this.subject, this.filter, this.only, this.noClaude = false, this.noHeartbeat = false});
 
@@ -57,6 +65,26 @@ class InstanceStreamOptions {
 class AuditStreamOptions {
   const AuditStreamOptions();
 }
+
+class SessionViewStreamPayload {
+  const SessionViewStreamPayload({required this.events, required this.cursor});
+
+  final List<RaviJson> events;
+  final String cursor;
+
+  factory SessionViewStreamPayload.fromJson(Map<String, Object?> json) {
+    return SessionViewStreamPayload(
+      events: raviJsonAsList(json["events"], RaviJson.from),
+      cursor: raviJsonAsString(json["cursor"]),
+    );
+  }
+
+  static SessionViewStreamPayload fromJsonValue(Object? json) {
+    return SessionViewStreamPayload.fromJson(raviJsonObject(json, "SessionViewStreamPayload"));
+  }
+}
+
+SessionViewStreamPayload sessionViewStreamPayloadFromJson(Object? json) => SessionViewStreamPayload.fromJsonValue(json);
 
 class GatewayTopicEvent {
   const GatewayTopicEvent({required this.type, required this.topic, required this.data, this.timestamp, this.count});
@@ -340,6 +368,17 @@ class RaviStreamClient {
   final Map<String, String> headers;
   final http.Client _client;
   final bool _ownsClient;
+
+  ///
+  /// Durable private session journal. Requires a fresh Console delegation; local runtime keys are denied.
+  ///
+  Stream<RaviSseEvent<SessionViewStreamPayload>> sessionView([SessionViewStreamOptions options = const SessionViewStreamOptions()]) {
+    final query = <String, String>{};
+    _appendString(query, "projectId", options.projectId);
+    _appendString(query, "conversationId", options.conversationId);
+    _appendString(query, "cursor", options.cursor);
+    return _stream(pathSegments: ["session-view"], query: query, decode: sessionViewStreamPayloadFromJson);
+  }
 
   ///
   /// Subscribe to the full NATS event bus. Mirrors `ravi events stream` and suppresses the same noisy topics (message.*, reaction.*, instance.*, presence.typing, chat.unread-updated, .stream, claude stream chunks).

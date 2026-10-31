@@ -56,6 +56,8 @@ export class BridgeStore {
       CREATE TABLE IF NOT EXISTS delegation_heads(enrollment_id TEXT NOT NULL, subject TEXT NOT NULL, project_id TEXT NOT NULL,
         revision INTEGER NOT NULL, digest TEXT NOT NULL, PRIMARY KEY(enrollment_id,subject,project_id));
       CREATE TABLE IF NOT EXISTS replays(jti TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS gateway_receipts(enrollment_id TEXT NOT NULL,subject TEXT NOT NULL,operation_id TEXT NOT NULL,
+        digest TEXT NOT NULL,status INTEGER,body TEXT,PRIMARY KEY(enrollment_id,subject,operation_id));
       CREATE TABLE IF NOT EXISTS events(conversation_id TEXT NOT NULL, sequence INTEGER NOT NULL, type TEXT NOT NULL,
         data TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(conversation_id,sequence));
       CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, turn_id TEXT NOT NULL,

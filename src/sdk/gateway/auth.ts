@@ -19,6 +19,7 @@
  */
 
 import type { ContextRecord } from "../../router/router-db.js";
+import { currentConsoleInvocation, consoleInvocationLive } from "./console-context.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import { resolveRuntimeContext } from "../../runtime/context-registry.js";
 
@@ -48,6 +49,11 @@ export function parseBearer(headerValue: string | null): string | null {
 }
 
 export function resolveAuth(request: Request, config: GatewayAuthConfig = {}): ResolvedAuth {
+  const invocation = currentConsoleInvocation();
+  if (invocation)
+    return consoleInvocationLive(invocation)
+      ? { context: {}, authenticated: true, contextRecord: null, reason: null }
+      : unauthenticated("revoked");
   const headerValue = request.headers.get("authorization");
   if (!headerValue) {
     return unauthenticated("missing");

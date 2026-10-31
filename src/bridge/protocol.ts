@@ -1,80 +1,33 @@
-/** Canonical wire contract. Fleet vendors this file byte-for-byte as src/shared/human-bridge.ts. */
-import { z } from "zod";
-
-export const BRIDGE_PROTOCOL = "ravi-human-bridge/2" as const;
-export const BRIDGE_COMMAND = "ravi bridge serve-stdio";
-export const MAX_FRAME_BYTES = 65_536;
-export const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+/** Private execution journal DTOs and service inputs. HTTP commands are declared only
+ * in cli/commands/session-conversations.ts; this file is not a transport protocol. */
+import type { ConsoleGrant } from "../sdk/gateway/console-contract.js";
 export const LEASE_MS = 30_000;
-export const capabilitySchema = z
-  .object({
-    permission: z.string().min(1).max(100),
-    objectType: z.string().min(1).max(100),
-    objectId: z.string().min(1).max(300),
-  })
-  .strict();
-export type BridgeCapability = z.infer<typeof capabilitySchema>;
-const id = z.string().uuid();
-const agentId = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/);
-const base = { requestId: id, createdAt: z.number().int().positive(), projectId: id };
-const conversation = { ...base, conversationId: id };
-export const bridgeRequestSchema = z.discriminatedUnion("operation", [
-  z.object({ ...base, operation: z.literal("agents.list") }).strict(),
-  z.object({ ...base, operation: z.literal("conversations.list") }).strict(),
-  z.object({ ...base, operation: z.literal("conversations.create"), agentId }).strict(),
-  z.object({ ...conversation, operation: z.literal("conversations.open") }).strict(),
-  z.object({ ...conversation, operation: z.literal("messages.list"), before: id.nullable() }).strict(),
-  z
-    .object({
-      ...conversation,
-      operation: z.literal("messages.send"),
-      text: z.string().min(1).max(16_384),
-      expectedVersion: z.number().int().nonnegative(),
-    })
-    .strict(),
-  z.object({ ...conversation, operation: z.literal("events.read"), cursor: z.string().max(1500).nullable() }).strict(),
-  z.object({ ...conversation, operation: z.literal("lease.renew") }).strict(),
-  z.object({ ...conversation, operation: z.literal("turns.cancel"), turnId: id }).strict(),
-  z
-    .object({
-      ...conversation,
-      operation: z.literal("approvals.decide"),
-      approvalId: id,
-      decision: z.enum(["approve", "reject"]),
-      expectedVersion: z.number().int().positive(),
-      actionDigest: z.string().length(64),
-    })
-    .strict(),
-  z.object({ ...base, operation: z.literal("requests.get"), targetRequestId: id }).strict(),
-]);
-export type BridgeRequest = z.infer<typeof bridgeRequestSchema>;
-export const bridgeGrantSchema = z.object({
-  protocol: z.literal(BRIDGE_PROTOCOL),
-  orgId: id,
-  installationId: id,
-  enrollmentId: id,
-  epoch: z.number().int().positive(),
-  projectId: id,
-  connectionId: id,
-  policyRevision: z.number().int().positive(),
-  policyDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  agents: z
-    .array(
-      z
-        .object({
-          id: agentId,
-          capabilities: z.array(capabilitySchema).max(100),
-          approvalCapabilities: z.array(capabilitySchema).max(100),
-        })
-        .strict(),
-    )
-    .max(100)
-    .refine((items) => new Set(items.map((a) => a.id)).size === items.length),
-  canSend: z.boolean(),
-  requestDigest: z.string().length(64),
-  canApprove: z.boolean(),
-});
-export type BridgeGrant = z.infer<typeof bridgeGrantSchema> & { sub: string; iss: string; jti: string; exp: number };
+export type BridgeCapability = { permission: string; objectType: string; objectId: string };
+export type BridgeGrant = ConsoleGrant;
+type Base = { requestId: string; createdAt: number; projectId: string };
+type Conversation = { conversationId: string };
+export type BridgeRequest = Base &
+  (
+    | { command: "agents" }
+    | { command: "list"; limit?: number; offset?: number }
+    | { command: "create"; agentId: string }
+    | (Conversation &
+        (
+          | { command: "open" | "renew" }
+          | { command: "history"; before: string | null }
+          | { command: "send"; text: string; expectedVersion: number }
+          | { command: "events"; cursor: string | null }
+          | { command: "cancel"; turnId: string }
+          | {
+              command: "decide";
+              approvalId: string;
+              decision: "approve" | "reject";
+              expectedVersion: number;
+              actionDigest: string;
+            }
+        ))
+    | { command: "receipt"; targetRequestId: string }
+  );
 export type BridgeTurnStatus =
   | "queued"
   | "running"

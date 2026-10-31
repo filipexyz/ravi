@@ -1,4 +1,5 @@
 import { isBridgeSession, isBridgeSessionRef } from "../bridge/isolation.js";
+import { consoleSessionTarget, currentConsoleInvocation } from "../sdk/gateway/console-context.js";
 /**
  * Scope Isolation Module
  *
@@ -322,6 +323,7 @@ export function getScopeContext(): ScopeContext {
  * - Agent is superadmin (has admin relation)
  */
 export function isScopeEnforced(ctx: ScopeContext): boolean {
+  if (currentConsoleInvocation()) return true;
   if (!ctx.agentId) return !localOperatorCan("admin", "system", "*");
   return !scopeCan(ctx, "admin", "system", "*");
 }
@@ -365,6 +367,7 @@ export function scopeHasCapability(
  * 3. Agent has 'access' relation on session:<target> (including wildcards)
  */
 export function canAccessSession(ctx: ScopeContext, targetNameOrKey: string): boolean {
+  if (currentConsoleInvocation()) return Boolean(consoleSessionTarget(targetNameOrKey));
   if (isBridgeSessionRef(targetNameOrKey)) return false;
   if (!ctx.agentId) return localOperatorCan("access", "session", targetNameOrKey);
 
@@ -397,6 +400,7 @@ export function filterAccessibleSessions(ctx: ScopeContext, sessions: SessionEnt
  * 3. Agent has 'modify' relation on session:<target>
  */
 export function canModifySession(ctx: ScopeContext, targetNameOrKey: string): boolean {
+  if (currentConsoleInvocation()) return Boolean(consoleSessionTarget(targetNameOrKey));
   if (isBridgeSessionRef(targetNameOrKey)) return false;
   if (!ctx.agentId) return localOperatorCan("modify", "session", targetNameOrKey);
 

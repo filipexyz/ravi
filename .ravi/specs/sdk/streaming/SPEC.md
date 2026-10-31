@@ -45,7 +45,8 @@ Justificativa:
   **unidirecional servidor → cliente**. WS resolve bidirecional, que não é o
   problema aqui.
 - SSE é HTTP/1.1 nativo: a mesma cadeia de auth Bearer (`rctx_*`) do gateway
-  funciona sem novo middleware.
+  funciona sem novo middleware nos canais NATS. A visão privada `session-view`
+  usa delegação Console; ver [exceção](#visão-privada-delegada-pelo-console).
 - Reconnect automático com `Last-Event-ID` é grátis no client.
 - Não existe connection state machine (heartbeat, ping/pong, close codes) pra
   gerenciar.
@@ -56,15 +57,19 @@ Justificativa:
 - Endpoints de stream MUST ficar sob `/api/v1/_stream/<channel>` e NUNCA sob
   `/api/v1/<group>/<command>` (esse prefixo é reservado pro dispatcher
   single-shot).
-- Toda request SSE MUST exigir `Authorization: Bearer rctx_*` válida e MUST
-  emitir audit `sdk.gateway.stream.opened` na abertura e
-  `sdk.gateway.stream.closed` no fim (cliente desconecta ou server fecha).
+- Toda request SSE MUST exigir identidade autenticada: `Authorization: Bearer
+  rctx_*` nos canais NATS; delegação Console em `session-view`, conforme a
+  [exceção](#visão-privada-delegada-pelo-console). Ambos MUST emitir audit
+  `sdk.gateway.stream.opened` na abertura e `sdk.gateway.stream.closed` no fim,
+  observada a limitação de shutdown do SQLite privado descrita na exceção.
 - Server MUST emitir `event:` + `data:` em JSON. `data:` MUST ser uma única
   linha JSON (sem multi-line `data:`). Nada de raw text.
 - Cada evento MUST incluir `id:` monotônico (UUIDv7 ou seq) pra suportar
-  reconnect via `Last-Event-ID`.
+  reconnect via `Last-Event-ID`, exceto o cursor HMAC opaco de
+  [`session-view`](#visão-privada-delegada-pelo-console).
 - Server MUST mandar comentário keepalive (`: ping`) a cada 15s pra evitar
-  proxy/idle timeout.
+  proxy/idle timeout nos canais NATS. `session-view` usa batches `journal`
+  vazios em pull como [heartbeat](#visão-privada-delegada-pelo-console).
 - O `Bun.serve` que escuta `/api/v1/_stream/*` MUST set `idleTimeout`
   (segundos) **acima** do keepalive. Default do Bun é 10s — isso mata SSE
   idle (incluindo `/_stream/sessions`) antes do primeiro ping. Default
@@ -72,28 +77,31 @@ Justificativa:
   a abaixar o ping; ping <10s martelaria o canal sem necessidade.
 - Filtros de cliente MUST vir via query string (`?subject=...&since=...`),
   nunca via body.
-- Backpressure: quando cliente é lento, server MUST descartar eventos antigos
-  (drop-tail) em vez de bufferizar memória sem limite. Não bloquear o
-  publisher upstream.
+- Backpressure nos canais NATS: quando cliente é lento, server MUST descartar
+  eventos antigos (drop-oldest) em vez de bufferizar memória sem limite. Não
+  bloquear o publisher upstream. `session-view` preserva o journal durável e
+  usa [pull sem descarte](#visão-privada-delegada-pelo-console).
 - Streams MUST terminar com `event: end` quando o stream tem janela natural
   (ex: `--timeout` em `sessions/debug`); streams infinitos terminam apenas
-  quando cliente desconecta.
+  quando cliente desconecta ou a autoridade expira/é revogada. A visão privada
+  [fecha sem `event: end`](#visão-privada-delegada-pelo-console).
 
 ## Channels
 
-Cada channel é uma view nomeada sobre um topic (ou conjunto de topics) NATS,
-publicada como SSE. O channel é registrado em runtime; não usar discovery
-mágico.
+Cada channel é uma view nomeada publicada como SSE: os canais locais leem
+topics NATS; `session-view` lê o journal privado durável na instalação Ravi.
+O channel é registrado em runtime; não usar discovery mágico.
 
 Channels ativos:
 
-| Channel                  | Endpoint                              | Topic NATS subjacente                                                                | Escopo Permission Provider Runtime                |
+| Channel                  | Endpoint                              | Fonte de eventos                                                                | Autoridade exigida                |
 |--------------------------|---------------------------------------|--------------------------------------------------------------------------------------|-----------------------------|
 | `events`                 | `/api/v1/_stream/events`              | `>` com filtros                                                                      | `view system:events`        |
 | `tasks`                  | `/api/v1/_stream/tasks`               | `ravi.task.*.event`                                                                  | `view system:tasks`         |
 | `sessions/<name>`        | `/api/v1/_stream/sessions/<name>`     | `ravi.session.<name>.*` + approval                                                   | `access session:<name>`     |
 | `chats/<chatId>`         | `/api/v1/_stream/chats/<chatId>`      | `message.received.>`, `reaction.received.>`, `presence.typing`, `chat.unread-updated`, filtrado por `chatId` | `view chat:<chatId>`        |
 | `instances/<instanceId>` | `/api/v1/_stream/instances/<id>`      | `instance.>` filtrado por `instanceId`                                               | `view instance:<instanceId>`|
+| `session-view` | `/api/v1/_stream/session-view` | Journal privado durável SQLite na instalação Ravi | Delegação Console + vínculo enrollment/owner/projeto/sessão; sem fallback local/admin |
 | `audit`                  | `/api/v1/_stream/audit`               | `ravi.audit.>`                                                                       | `view system:audit`         |
 
 `chats/<chatId>` é o canal alvo para clientes de UI (mobile, web) que renderizam um chat específico em tempo real. O servidor MUST descartar qualquer evento em que `data.payload.chatId` (ou `data.chatId` como fallback) não case com `<chatId>` para evitar leak entre chats. O channel propaga o topic original em `data.topic` e o payload bruto em `data.data`, sem reformatar — clientes ficam responsáveis pelo shape do payload upstream.
@@ -107,8 +115,9 @@ permanecem permanentemente CLI-only — não fazem sentido remotos.
 
 ## Auth e Escopo
 
-- Auth Bearer é a mesma do gateway: `resolveRuntimeContext(token)`.
-- Cada channel declara um escopo Permission Provider Runtime (ex: `events` → relação `view` em
+- Nos canais NATS, auth Bearer é a mesma do gateway: `resolveRuntimeContext(token)`.
+  `session-view` exige a [autoridade Console](#visão-privada-delegada-pelo-console).
+- Cada channel NATS declara um escopo Permission Provider Runtime (ex: `events` → relação `view` em
   `system:events`). O gateway recusa subscribe sem permissão e emite
   `ravi.audit.denied` antes de fechar a conexão.
 - Streaming endpoint NUNCA aceita token de escopo `open`. Streams sempre
@@ -118,8 +127,9 @@ permanecem permanentemente CLI-only — não fazem sentido remotos.
 
 - WS bidirecional pra controle remoto de agent. Se vier demanda, é spec
   separada (`sdk/control-channel` ou similar), não esta.
-- Replay durável de histórico (ex: `events.replay`). Replay continua sendo
-  request/response normal — bounded query, retorna payload.
+- Replay durável de histórico nos canais NATS (ex: `events.replay`). Neles,
+  replay continua sendo request/response normal — bounded query, retorna
+  payload. `session-view` possui replay durável por cursor como exceção.
 - Substituir CLI: `ravi events stream`, `ravi tasks watch` etc. continuam
   rodando local com o mesmo handler. SSE é exposição adicional, não
   substituição.
@@ -144,9 +154,35 @@ Implementado em:
   stream client with the same official SSE parser (not `EventSource`).
 
 O SDK usa `fetch` streaming em vez de `EventSource` nativo porque o contrato
-MUST exigir header `Authorization: Bearer rctx_*`, e `EventSource` de browser
+MUST exigir header `Authorization` com o bearer da autoridade correspondente,
+e `EventSource` de browser
 não permite header customizado sem polyfill.
 
 O channel `events` reaproveita o mesmo filtro glob do CLI (`*` dentro do
 segmento, `**` atravessando segmentos) e suprime os eventos ruidosos que o CLI
 já suprime por padrão.
+
+## Visão privada delegada pelo Console
+
+`session-view` é registrado em `defaultStreamChannels` e gera `sessionView` nos
+SDKs. É uma exceção explícita à autenticação rctx dos canais locais: só aceita
+a autoridade `sdk/console-authority`; contextos locais/admin são negados. O
+handler pertence ao registro de streams, com schema de opções e payload. O
+journal fica no SQLite privado da instalação Ravi; o Console não armazena o
+histórico. Cada `id:` SSE é o cursor HMAC opaco vinculado a
+owner/projeto/enrollment/epoch/conversa. O reconnect envia esse cursor na query
+assinada; se houver `Last-Event-ID`, ele MUST coincidir com a query. Não se usa
+UUIDv7/seq público como `id:`.
+
+Pull/backpressure preserva a posição no journal sem drop-oldest. Enquanto há
+consumo, cada pull após o primeiro espera 250ms e emite um batch `journal`,
+mesmo vazio; esse batch faz o heartbeat, sem `: ping` separado. Reconnect não
+renova o lease do turno. Expiração/revogação da delegação fecha o stream sem
+`event: end`; falhas emitem `gateway.error` e fecham. Reconectar exige nova
+delegação e nova validação de ownership/cursor.
+
+Os eventos `sdk.gateway.stream.opened` e `sdk.gateway.stream.closed` são
+inseridos diretamente na tabela `audit` do SQLite privado do Ravi, não no sink
+NATS de auditoria comum. A admissão exige audit de abertura; o fechamento é
+best-effort se desconexão/shutdown já fechou o banco. Falha no audit de
+fechamento nunca prolonga a autoridade nem reabre o stream.

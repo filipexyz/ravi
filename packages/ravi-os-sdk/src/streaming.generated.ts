@@ -23,6 +23,13 @@ export interface RaviSseEvent<TData = unknown> {
   data: TData;
 }
 
+export interface SessionViewStreamOptions {
+  projectId?: string;
+  conversationId?: string;
+  cursor?: string;
+  signal?: AbortSignal;
+}
+
 export interface EventsStreamOptions {
   subject?: string;
   filter?: string;
@@ -54,6 +61,84 @@ export interface InstanceStreamOptions {
 export interface AuditStreamOptions {
   signal?: AbortSignal;
 }
+
+export type SessionViewStreamPayload = {
+  cursor: string;
+  events: Array<({
+    createdAt: number;
+    data: {
+      createdAt: number;
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "message.accepted";
+  }) | ({
+    createdAt: number;
+    data: {
+      createdAt: number;
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "message.finalized";
+  }) | ({
+    createdAt: number;
+    data: {
+      cancelRequested: boolean;
+      id: string;
+      status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+    };
+    sequence: number;
+    type: "turn.state";
+  }) | ({
+    createdAt: number;
+    data: {
+      status: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "turn.activity";
+  }) | ({
+    createdAt: number;
+    data: {
+      turnId: string;
+    };
+    sequence: number;
+    type: "cancel.requested";
+  }) | ({
+    createdAt: number;
+    data: {
+      actionDigest: string;
+      capability: {
+        objectId: string;
+        objectType: string;
+        permission: string;
+      };
+      description: string;
+      expiresAt: number;
+      id: string;
+      state: "pending" | "approved" | "rejected" | "expired" | "invalidated";
+      turnId: string;
+      version: number;
+    };
+    sequence: number;
+    type: "approval.opened";
+  }) | ({
+    createdAt: number;
+    data: {
+      id: string;
+      state: "approved" | "rejected" | "expired" | "invalidated";
+      version?: number;
+    };
+    sequence: number;
+    type: "approval.state";
+  })>;
+};
 
 export type GatewayTopicEvent = {
   count?: number;
@@ -174,6 +259,17 @@ export class RaviStreamClient {
       config.fetch,
       "RaviStreamClient: no global `fetch` available. Pass `config.fetch` explicitly when running in a stripped-down runtime.",
     );
+  }
+
+  /**
+   * Durable private session journal. Requires a fresh Console delegation; local runtime keys are denied.
+   */
+  sessionView(options: SessionViewStreamOptions = {}): AsyncIterable<RaviSseEvent<SessionViewStreamPayload>> {
+    const params = new URLSearchParams();
+    appendString(params, "projectId", options.projectId);
+    appendString(params, "conversationId", options.conversationId);
+    appendString(params, "cursor", options.cursor);
+    return this.stream<SessionViewStreamPayload>("session-view", params, options.signal);
   }
 
   /**

@@ -26,3 +26,6 @@
   `src/cli/commands/sessions.test.ts`, `src/db.test.ts`).
 - Request-context and provider-bootstrap tests reject Pi/Claude/Grok for bridge
   before preparation; ordinary provider contract tests remain unchanged.
+
+- The service behavioral suite now enters via the canonical HTTP dispatcher;
+  `src/sdk/gateway/console.test.ts` checks the new signed request boundary.

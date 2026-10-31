@@ -27733,6 +27733,189 @@ public struct SessionsCloseThreadReturn: Codable, Sendable {
   }
 }
 
+public typealias SessionsConversationsAgentsReturn = [RaviJSON]
+
+public struct SessionsConversationsCancelReturn: Codable, Sendable {
+  public var cancelRequested: Bool
+  public var conversationId: String
+  public var status: String
+  public var turnId: String
+
+  public init(cancelRequested: Bool, conversationId: String, status: String, turnId: String) {
+    self.cancelRequested = cancelRequested
+    self.conversationId = conversationId
+    self.status = status
+    self.turnId = turnId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cancelRequested = "cancelRequested"
+    case conversationId = "conversationId"
+    case status = "status"
+    case turnId = "turnId"
+  }
+}
+
+public struct SessionsConversationsCreateReturn: Codable, Sendable {
+  public var conversation: RaviJSON
+  public var conversationId: String
+
+  public init(conversation: RaviJSON, conversationId: String) {
+    self.conversation = conversation
+    self.conversationId = conversationId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case conversation = "conversation"
+    case conversationId = "conversationId"
+  }
+}
+
+public struct SessionsConversationsDecideReturn: Codable, Sendable {
+  public var approvalId: String
+  public var conversationId: String
+  public var state: String
+  public var version: Double
+
+  public init(approvalId: String, conversationId: String, state: String, version: Double) {
+    self.approvalId = approvalId
+    self.conversationId = conversationId
+    self.state = state
+    self.version = version
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approvalId = "approvalId"
+    case conversationId = "conversationId"
+    case state = "state"
+    case version = "version"
+  }
+}
+
+public struct SessionsConversationsEventsReturn: Codable, Sendable {
+  public var cursor: String
+  public var events: [RaviJSON]
+
+  public init(cursor: String, events: [RaviJSON]) {
+    self.cursor = cursor
+    self.events = events
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cursor = "cursor"
+    case events = "events"
+  }
+}
+
+public struct SessionsConversationsHistoryReturn: Codable, Sendable {
+  public var hasOlder: Bool
+  public var messages: [RaviJSON]
+
+  public init(hasOlder: Bool, messages: [RaviJSON]) {
+    self.hasOlder = hasOlder
+    self.messages = messages
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case hasOlder = "hasOlder"
+    case messages = "messages"
+  }
+}
+
+public struct SessionsConversationsListOptions: Codable, Sendable {
+  public var limit: Int?
+  public var offset: Int?
+
+  public init(limit: Int? = nil, offset: Int? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public typealias SessionsConversationsListReturn = [RaviJSON]
+
+public struct SessionsConversationsOpenReturn: Codable, Sendable {
+  public var approvals: [RaviJSON]
+  public var conversation: RaviJSON
+  public var cursor: String
+  public var hasOlder: Bool
+  public var messages: [RaviJSON]
+  public var turn: RaviJSON
+
+  public init(approvals: [RaviJSON], conversation: RaviJSON, cursor: String, hasOlder: Bool, messages: [RaviJSON], turn: RaviJSON) {
+    self.approvals = approvals
+    self.conversation = conversation
+    self.cursor = cursor
+    self.hasOlder = hasOlder
+    self.messages = messages
+    self.turn = turn
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approvals = "approvals"
+    case conversation = "conversation"
+    case cursor = "cursor"
+    case hasOlder = "hasOlder"
+    case messages = "messages"
+    case turn = "turn"
+  }
+}
+
+public typealias SessionsConversationsReceiptReturn = RaviJSON
+
+public struct SessionsConversationsRenewReturn: Codable, Sendable {
+  public var conversationId: String
+  public var renewed: Bool
+
+  public init(conversationId: String, renewed: Bool) {
+    self.conversationId = conversationId
+    self.renewed = renewed
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case conversationId = "conversationId"
+    case renewed = "renewed"
+  }
+}
+
+public struct SessionsConversationsSendReturn: Codable, Sendable {
+  public var accepted: Bool
+  public var conversationId: String
+  public var messageId: String
+  public var turnId: String
+  public var version: Double
+
+  public init(accepted: Bool, conversationId: String, messageId: String, turnId: String, version: Double) {
+    self.accepted = accepted
+    self.conversationId = conversationId
+    self.messageId = messageId
+    self.turnId = turnId
+    self.version = version
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case accepted = "accepted"
+    case conversationId = "conversationId"
+    case messageId = "messageId"
+    case turnId = "turnId"
+    case version = "version"
+  }
+}
+
 public struct SessionsCreateThreadOptions: Codable, Sendable {
   public var effort: String?
   public var model: String?
