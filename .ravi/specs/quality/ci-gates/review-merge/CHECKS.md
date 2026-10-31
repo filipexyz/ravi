@@ -36,4 +36,4 @@ Run `bun test src/ci/review-gate.test.ts` (no install, full build or full suite 
 
 On the PR, inspect `Review Gate Tests` and the live `Review Gate` logs. Missing real session review must remain red; never invent provenance to make it green. A separate reviewing session must actually read the diff and publish its verdict.
 
-Inspect the active ruleset by REST readback and `gh api repos/filipexyz/ravi/rules/branches/dev`. Report actual required checks and native review/conversation settings. The operator promotes Review Gate only after a live green PR. Until then it is advisory. Do not attempt a merge as a test or silently install the stronger native-writer template.
+Inspect the active ruleset by REST readback and `gh api repos/filipexyz/ravi/rules/branches/dev`. Report actual required checks and native review/conversation settings. Review Gate stays advisory; any future promotion is a separate operator decision, outside this PR. Do not attempt a merge as a test or silently install the stronger native-writer template.

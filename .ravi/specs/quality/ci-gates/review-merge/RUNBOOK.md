@@ -48,7 +48,7 @@ PR #776 merged with zero native reviews and an issue comment carrying an unresol
 
 The workflow in #778 already had no path filter. PR #775's old check run preceded its introduction; PR #773 received a later event and did run it. Do not diagnose a missing historical check as a path filter without inspecting the workflow and event timestamps.
 
-The operator has separately required `Quality Gate` on `dev`. `Review Gate` remains advisory until a real green PR and current-SHA reporting are verified. Read back effective branch rules before claiming merge protection. Do not change rulesets, permissions or collaborators as part of a parser fix. The existing ruleset JSON is the stronger native-writer template, not the single-writer deployment configuration; applying it unchanged would require a second GitHub reviewer.
+The operator has separately required `Quality Gate` on `dev`. `Review Gate` remains advisory; this PR does not promise or perform promotion to a required check. Read back effective branch rules before claiming merge protection. Do not change rulesets, permissions or collaborators as part of a parser fix. The existing ruleset JSON is the stronger native-writer template, not the single-writer deployment configuration; applying it unchanged would require a second GitHub reviewer.
 
 # Explicit technical dismissal
 
