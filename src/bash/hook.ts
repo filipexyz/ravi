@@ -400,6 +400,8 @@ function checkExecutablePermissionsForContext(
   command: string,
   ctx: BashPermissionContext,
 ): { allowed: boolean; reason?: string; deniedCapabilities?: BashPermissionDecision["deniedCapabilities"] } {
+  // Preserve quoting here: the parser distinguishes literal data from active
+  // substitutions. stripShellQuoting is for identity text checks, not syntax.
   const patternCheck = checkDangerousPatterns(command);
   if (!patternCheck.safe) {
     return { allowed: false, reason: patternCheck.reason };

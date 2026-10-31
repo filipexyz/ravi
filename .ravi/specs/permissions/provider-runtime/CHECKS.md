@@ -35,6 +35,27 @@
 
 ## Commands
 
+Quoting regressions (`bun test src/bash/`):
+
+- Single-quoted substitution/backtick/process/heredoc text and escaped dollar
+  or backtick in double quotes MUST pass in JSON and rg/grep arguments.
+- Active substitutions outside and inside double quotes MUST fail, including
+  line continuations, nested quote text and escaped backslash parity.
+- Actual heredocs (even with quoted delimiters), here-strings and process
+  substitutions MUST fail. Literal operator text MUST NOT create a pipeline.
+- Quoted/escaped executable names, inline flags and piped interpreter receivers
+  MUST retain their refusals, including with wildcard executable grants.
+- Quote concatenation, backslashes inside single quotes, comments after escaped
+  whitespace, command boundaries after comments and quoted newlines MUST be tested.
+- Harmless printf fixtures MUST compare actual Bash output with the guard's
+  expansion classification when `/bin/bash` is available.
+- Real Bash comparisons MUST include nested and unquoted substitutions, escaped
+  metacharacters, and heredocs with bare, quoted and escaped delimiters. A literal
+  heredoc body does not make the heredoc operator permitted by this policy.
+- Hook tests MUST demonstrate that named-executable grants permit literal search
+  arguments, do not permit a later shell, and still permit interpreter file
+  scripts: this last case documents the explicitly open capability boundary.
+
 Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
 
 - A symlink `nested/innocent -> .codex` cannot be written through
