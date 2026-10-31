@@ -50,7 +50,7 @@ Ignored signals expire with `reason=ignored`. They cannot reopen before `reopen_
 If `explain` says `out_of_scope`:
 
 - confirm the session's agent id, bound chat, contact, and project;
-- confirm `signals.fleet_session` when the scope is `fleet`;
+- confirm `signals.install_session` when the scope is `install`;
 - confirm the signal's `target_sessions` override.
 
 A signal without a resolvable session is list-only by design, not a delivery bug.

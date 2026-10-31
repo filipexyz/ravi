@@ -294,6 +294,11 @@ function sessionLifetimeTokens(session: { inputTokens?: number | null; outputTok
   return (session.inputTokens ?? 0) + (session.outputTokens ?? 0);
 }
 
+/** Turn usage the provider never reported renders `unknown`, never `0` (sessions/turn-output inv. 7). */
+function formatTurnTokenCount(value: number | null): string {
+  return value === null ? "unknown" : formatTokenCount(value);
+}
+
 function formatTokenCount(value: number | null | undefined): string {
   const n = Math.round(value ?? 0);
   return n.toLocaleString("en-US");
@@ -2012,11 +2017,13 @@ SOURCES
       console.log(`    Effective context: ${formatTokenCount(contextTokens)}`);
       if (lastTurn) {
         console.log(
-          `    Last turn: context=${formatTokenCount(lastTurn.effectiveContextTokens)} input=${formatTokenCount(
+          `    Last turn: context=${formatTurnTokenCount(lastTurn.effectiveContextTokens)} input=${formatTurnTokenCount(
             lastTurn.inputTokens,
-          )} cache=${formatTokenCount(lastTurn.cacheReadTokens + lastTurn.cacheCreationTokens)} output=${formatTokenCount(
-            lastTurn.outputTokens,
-          )} duration=${formatDurationMs(lastTurn.durationMs)}`,
+          )} cache=${formatTurnTokenCount(
+            lastTurn.cacheReadTokens === null && lastTurn.cacheCreationTokens === null
+              ? null
+              : (lastTurn.cacheReadTokens ?? 0) + (lastTurn.cacheCreationTokens ?? 0),
+          )} output=${formatTurnTokenCount(lastTurn.outputTokens)} duration=${formatDurationMs(lastTurn.durationMs)}`,
         );
       } else {
         console.log("    Last turn: (none)");
@@ -2026,7 +2033,9 @@ SOURCES
           recent.effectiveContextTokensAvg,
         )} maxContext=${formatTokenCount(recent.effectiveContextTokensMax)} avgInput=${formatTokenCount(
           recent.inputTokensAvg,
-        )} cost=${formatCostUsd(recent.costUsdTotal)}`,
+        )} cost=${formatCostUsd(recent.costUsdTotal)}${
+          recent.unknownUsageTurns > 0 ? ` unknownUsage=${recent.unknownUsageTurns}` : ""
+        }`,
       );
       console.log(`    Updated: ${updated}`);
       console.log();

@@ -19,6 +19,7 @@
  */
 
 import { getRecentHistory } from "../db.js";
+import { isCommentaryMetadata, isFinalAssistantMessage } from "../runtime/utterance-class.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
@@ -153,7 +154,9 @@ type RuntimeEventStream = AsyncGenerator<{ topic: string; data: Record<string, u
 export interface LibraryRequestTurnDeps {
   publishPrompt?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
   subscribe?: (...topics: string[]) => RuntimeEventStream;
-  readHistory?: (sessionName: string) => Array<{ role: string; content: string }>;
+  readHistory?: (
+    sessionName: string,
+  ) => Array<{ id?: number; role: string; content: string; utterance_class?: string | null }>;
   timeoutMs?: number;
   /** How long `.response` events are still collected after the terminal event (default 500 ms). */
   graceMs?: number;
@@ -188,10 +191,17 @@ function responseText(data: Record<string, unknown>): string {
   return text.trim() === SILENT_TOKEN ? "" : text;
 }
 
-function lastAssistantText(history: Array<{ role: string; content: string }>): string {
+type HistoryRow = { id?: number; role: string; content: string; utterance_class?: string | null };
+
+function lastHistoryId(history: HistoryRow[]): number {
+  return history.reduce((max, row) => (typeof row.id === "number" && row.id > max ? row.id : max), 0);
+}
+
+function lastAssistantText(history: HistoryRow[]): string {
   for (let index = history.length - 1; index >= 0; index--) {
     const message = history[index]!;
-    if (message.role === "assistant" && message.content.trim() && message.content.trim() !== SILENT_TOKEN) {
+    // Commentary is history, never the answer (sessions/turn-output inv. 2).
+    if (isFinalAssistantMessage(message) && message.content.trim() && message.content.trim() !== SILENT_TOKEN) {
       return message.content;
     }
   }
@@ -222,6 +232,8 @@ export async function runLibraryRequestTurn(
         for await (const event of stream) {
           if (!collecting) return;
           if (event.topic.endsWith(".response")) {
+            // Commentary is history, never the answer (sessions/turn-output inv. 2).
+            if (isCommentaryMetadata(event.data.metadata)) continue;
             const text = responseText(event.data);
             if (text.trim()) parts.push(text);
             continue;
@@ -238,6 +250,17 @@ export async function runLibraryRequestTurn(
       }
     })();
   });
+
+  const readHistory = deps.readHistory ?? ((name: string) => getRecentHistory(name, 20));
+  // The history fallback reads only rows written after this point, so a reused
+  // session can never answer with an earlier turn's final message.
+  let historyCursor: number | null = null;
+  try {
+    historyCursor = lastHistoryId(readHistory(sessionName));
+  } catch {
+    // Without a baseline, history cannot prove that an answer belongs to this turn.
+    historyCursor = null;
+  }
 
   try {
     // The session belongs to the asked agent; nothing here names a producer or an operator.
@@ -263,10 +286,11 @@ export async function runLibraryRequestTurn(
     return { ok: false, failure: `${why}${end.error ? `: ${end.error}` : "."}`.slice(0, 500), sessionName };
   }
   let reply = parts.join("\n\n").trim();
-  if (!reply) {
-    const readHistory = deps.readHistory ?? ((name: string) => getRecentHistory(name, 20));
+  if (!reply && historyCursor !== null) {
     try {
-      reply = lastAssistantText(readHistory(sessionName)).trim();
+      reply = lastAssistantText(
+        readHistory(sessionName).filter((row) => typeof row.id !== "number" || row.id > historyCursor),
+      ).trim();
     } catch {
       reply = "";
     }

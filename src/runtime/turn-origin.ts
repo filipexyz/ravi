@@ -4,6 +4,7 @@ import type {
   RuntimeTurnOriginPrincipal,
   RuntimeTurnOriginMetadata,
   SessionRelayAction,
+  SignalTurnOriginMetadata,
   SessionRelayTurnOriginMetadata,
 } from "./message-types.js";
 
@@ -98,6 +99,17 @@ export function buildChannelTurnOrigin(
   };
 }
 
+/** A deterministic signal delivery acts for its own automation, never a chat participant. */
+export function buildSignalTurnOrigin(signalId: string): SignalTurnOriginMetadata {
+  return {
+    protocol: RUNTIME_TURN_ORIGIN_PROTOCOL,
+    schemaVersion: RUNTIME_TURN_ORIGIN_SCHEMA_VERSION,
+    producer: "signals",
+    action: "escalate",
+    principal: { type: "automation", id: `signal:${signalId}` },
+  };
+}
+
 /**
  * Validate the wire envelope before it can affect authority or turn
  * classification. Extra fields are intentionally discarded. This validates
@@ -140,6 +152,21 @@ export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetad
       action: value.action,
       principal,
       ...caller,
+    };
+  }
+
+  if (
+    value.producer === "signals" &&
+    value.action === "escalate" &&
+    principal.type === "automation" &&
+    principal.id.startsWith("signal:")
+  ) {
+    return {
+      protocol: RUNTIME_TURN_ORIGIN_PROTOCOL,
+      schemaVersion: RUNTIME_TURN_ORIGIN_SCHEMA_VERSION,
+      producer: "signals",
+      action: "escalate",
+      principal,
     };
   }
 

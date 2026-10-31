@@ -20470,7 +20470,9 @@ export type SignalsAckInput = {
 
 /** Return shape for `signals.ack`. */
 export type SignalsAckReturn = {
+  changed?: boolean;
   created?: boolean;
+  reopened?: boolean;
   signal: {
     acknowledgedAt?: number | null;
     acknowledgedBy?: string | null;
@@ -20551,6 +20553,8 @@ export type SignalsBudgetReturn = {
     day: string;
     held: number;
     limit: number;
+    oobLimit: number;
+    oobUsed: number;
     used: number;
   };
 };
@@ -20566,6 +20570,8 @@ export type SignalsExplainReturn = {
     day: string;
     held: number;
     limit: number;
+    oobLimit: number;
+    oobUsed: number;
     used: number;
   };
   clearRule: string;
@@ -20574,11 +20580,14 @@ export type SignalsExplainReturn = {
     actorId?: string;
     actorType?: string;
     createdAt: number;
+    fromState?: string;
     id: number;
     message?: string;
     payload?: Record<string, unknown>;
     signalId: string;
+    toState?: string;
     type: string;
+    version?: number;
   }>;
   keyMute: ({
     mutedUntil: number;
@@ -20589,9 +20598,16 @@ export type SignalsExplainReturn = {
     cleared: boolean | null;
     error: string | null;
     fields?: Record<string, unknown>;
+    status: string;
   };
   lastOobAt: number | null;
   lastSurfaceAt: number | null;
+  ledgerToday: {
+    failed: number;
+    pending: number;
+    sent: number;
+  };
+  nextSurfaceAt: number | null;
   signal: {
     acknowledgedAt?: number | null;
     acknowledgedBy?: string | null;
@@ -20659,6 +20675,11 @@ export type SignalsExplainReturn = {
     version: number;
   };
   targetSessions: string[];
+  tick: {
+    lastSuccessfulTickAt: number | null;
+    staleAfterMs: number;
+    staleAfterSource: string;
+  };
 };
 
 /** Input shape for `signals.list`. */
@@ -20751,7 +20772,9 @@ export type SignalsMuteInput = {
 
 /** Return shape for `signals.mute`. */
 export type SignalsMuteReturn = {
+  changed?: boolean;
   created?: boolean;
+  reopened?: boolean;
   signal: {
     acknowledgedAt?: number | null;
     acknowledgedBy?: string | null;
@@ -20869,7 +20892,9 @@ export type SignalsRaiseInput = {
 
 /** Return shape for `signals.raise`. */
 export type SignalsRaiseReturn = {
+  changed?: boolean;
   created?: boolean;
+  reopened?: boolean;
   signal: {
     acknowledgedAt?: number | null;
     acknowledgedBy?: string | null;
@@ -20950,7 +20975,9 @@ export type SignalsResolveInput = {
 
 /** Return shape for `signals.resolve`. */
 export type SignalsResolveReturn = {
+  changed?: boolean;
   created?: boolean;
+  reopened?: boolean;
   signal: {
     acknowledgedAt?: number | null;
     acknowledgedBy?: string | null;
@@ -21118,7 +21145,25 @@ export type SignalsTickReturn = {
   evaluated: number;
   executed: boolean;
   expired: number;
+  outbox: {
+    failed: number;
+    retried: number;
+    sent: number;
+  };
   resolved: number;
+  skipped: Array<{
+    id: string;
+    reason: string;
+    sessionName: string;
+  }>;
+  tickState: {
+    lastSuccessfulTickAt: number | null;
+    lastTickAt: number | null;
+    lastTickError: string | null;
+    staleAfterMs: number;
+    staleAfterSource: string;
+    tickIntervalMs: number;
+  };
   watchers: Array<{
     error?: string;
     id: string;
@@ -21134,7 +21179,9 @@ export type SignalsUnmuteInput = {
 
 /** Return shape for `signals.unmute`. */
 export type SignalsUnmuteReturn = {
+  changed?: boolean;
   created?: boolean;
+  reopened?: boolean;
   signal: {
     acknowledgedAt?: number | null;
     acknowledgedBy?: string | null;
@@ -21229,7 +21276,9 @@ export type SignalsUpdateInput = {
 
 /** Return shape for `signals.update`. */
 export type SignalsUpdateReturn = {
+  changed?: boolean;
   created?: boolean;
+  reopened?: boolean;
   signal: {
     acknowledgedAt?: number | null;
     acknowledgedBy?: string | null;

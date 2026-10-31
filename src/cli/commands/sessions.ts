@@ -1862,6 +1862,15 @@ type StreamTerminalState =
   | { kind: "interrupted"; error: string }
   | { kind: "timeout" };
 
+/** Turn usage the provider never reported renders `unknown`, never `0` (sessions/turn-output inv. 7). */
+function formatTurnTokens(n: number | null): string {
+  return n === null ? "unknown" : formatTokens(n);
+}
+
+function sumKnownTokens(...values: Array<number | null>): number | null {
+  return values.every((value) => value === null) ? null : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+}
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -2550,6 +2559,20 @@ function buildTraceEventDetailLines(
         .filter(Boolean)
         .join(" "),
     );
+    // The turn snapshot is folded into its adapter request: keep its usage and output state.
+    const turn = getTurnForEvent(trace, event);
+    if (turn && turn.status !== "running") {
+      lines.push(
+        [
+          `status=${turn.status}`,
+          `tokens=input:${turn.inputTokens ?? "unknown"}`,
+          `output:${turn.outputTokens ?? "unknown"}`,
+          turn.outputState ? `outputState=${turn.outputState}` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    }
 
     if (options.raw) {
       const requestBlob = getBlob(trace, requestBlobSha);
@@ -2603,12 +2626,15 @@ function buildTraceTurnDetailLines(
       .filter(Boolean)
       .join(" "),
     [
-      `tokens=input:${turn.inputTokens}`,
-      `output:${turn.outputTokens}`,
-      `cacheRead:${turn.cacheReadTokens}`,
-      `cacheCreate:${turn.cacheCreationTokens}`,
-      `cost=${turn.costUsd.toFixed(6)}`,
-    ].join(" "),
+      `tokens=input:${turn.inputTokens ?? "unknown"}`,
+      `output:${turn.outputTokens ?? "unknown"}`,
+      `cacheRead:${turn.cacheReadTokens ?? "unknown"}`,
+      `cacheCreate:${turn.cacheCreationTokens ?? "unknown"}`,
+      `cost=${turn.costUsd === null ? "unknown" : turn.costUsd.toFixed(6)}`,
+      turn.outputState ? `outputState=${turn.outputState}` : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
     `systemPrompt=${formatTraceSha(turn.systemPromptSha256)} userPrompt=${formatTraceSha(turn.userPromptSha256)} requestBlob=${formatTraceSha(turn.requestBlobSha256)}`,
   ];
 
@@ -3139,13 +3165,13 @@ export class SessionCommands {
     if (turnUsage.lastTurn) {
       printInspectionField(
         "Last turn",
-        `context=${formatTokens(turnUsage.lastTurn.effectiveContextTokens)} input=${formatTokens(
+        `context=${formatTurnTokens(turnUsage.lastTurn.effectiveContextTokens)} input=${formatTurnTokens(
           turnUsage.lastTurn.inputTokens,
-        )} cache=${formatTokens(
-          turnUsage.lastTurn.cacheReadTokens + turnUsage.lastTurn.cacheCreationTokens,
-        )} output=${formatTokens(turnUsage.lastTurn.outputTokens)} duration=${formatDurationMs(
+        )} cache=${formatTurnTokens(
+          sumKnownTokens(turnUsage.lastTurn.cacheReadTokens, turnUsage.lastTurn.cacheCreationTokens),
+        )} output=${formatTurnTokens(turnUsage.lastTurn.outputTokens)} duration=${formatDurationMs(
           turnUsage.lastTurn.durationMs,
-        )}`,
+        )}${turnUsage.lastTurn.outputState === "incomplete" ? " outputState=incomplete" : ""}`,
         RUNTIME_SNAPSHOT_META,
         { labelWidth: 14 },
       );
@@ -3160,7 +3186,9 @@ export class SessionCommands {
         turnUsage.recent.effectiveContextTokensAvg,
       )} maxContext=${formatTokens(turnUsage.recent.effectiveContextTokensMax)} avgInput=${formatTokens(
         turnUsage.recent.inputTokensAvg,
-      )} cost=${formatCostUsd(turnUsage.recent.costUsdTotal)}`,
+      )} cost=${formatCostUsd(turnUsage.recent.costUsdTotal)}${
+        turnUsage.recent.unknownUsageTurns > 0 ? ` unknownUsage=${turnUsage.recent.unknownUsageTurns}` : ""
+      }`,
       RUNTIME_SNAPSHOT_META,
       { labelWidth: 14 },
     );

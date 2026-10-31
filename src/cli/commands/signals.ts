@@ -6,23 +6,26 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { fail, getContext } from "../context.js";
+import { getContext } from "../context.js";
+import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail } from "../agent-contract.js";
 import {
   assertSignalTitle,
   normalizeSeverity,
   parseDurationMs,
   parseMetricSpec,
   normalizeScope,
+  SignalNotFoundError,
+  SignalUsageError,
   validateClearWhen,
 } from "../../signals/validation.js";
-import type { ClearWhen, RaiseSignalInput } from "../../signals/types.js";
+import type { ClearWhen, RaiseSignalInput, SignalCaller, SignalRecord } from "../../signals/types.js";
 import { SIGNAL_STATES } from "../../signals/types.js";
 import {
   ackSignal,
   explainSignal,
-  findSignal,
+  findVisibleSignal,
   getSignalBudget,
-  listSignals,
+  listVisibleSignals,
   muteSignal,
   raiseSignal,
   resolveSignal,
@@ -30,14 +33,8 @@ import {
   updateSignal,
   isProducerOwnedSignalKey,
 } from "../../signals/service.js";
-import {
-  dbClearKeyMute,
-  dbGetLatestSignalByKey,
-  dbGetNonTerminalSignalByKey,
-  dbSetKeyMute,
-} from "../../signals/signal-db.js";
-import { readSessionSignalContext, signalIsInSessionScope } from "../../signals/subjects.js";
-import { tickSignals } from "../../signals/tick.js";
+import { dbClearKeyMute, dbSetKeyMute } from "../../signals/signal-db.js";
+import { signalsEnabled, tickSignals } from "../../signals/tick.js";
 import { jsonObjectSchema } from "../return-schemas.js";
 import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
@@ -115,6 +112,9 @@ const signalEventSchema = z.object({
   actorId: z.string().optional(),
   message: z.string().optional(),
   payload: jsonObjectSchema.optional(),
+  version: z.number().optional(),
+  fromState: z.string().optional(),
+  toState: z.string().optional(),
   createdAt: z.number(),
 });
 
@@ -123,6 +123,8 @@ const signalMutationReturnSchema = z.object({
   signal: signalRecordSchema,
   created: z.boolean().optional(),
   updated: z.boolean().optional(),
+  reopened: z.boolean().optional(),
+  changed: z.boolean().optional(),
   suppressed: z.string().optional(),
 });
 
@@ -136,6 +138,17 @@ const signalBudgetSchema = z.object({
   used: z.number(),
   limit: z.number(),
   held: z.number(),
+  oobUsed: z.number(),
+  oobLimit: z.number(),
+});
+
+const signalTickStateSchema = z.object({
+  lastSuccessfulTickAt: z.number().nullable(),
+  lastTickAt: z.number().nullable(),
+  lastTickError: z.string().nullable(),
+  tickIntervalMs: z.number(),
+  staleAfterMs: z.number(),
+  staleAfterSource: z.string(),
 });
 
 const signalExplainReturnSchema = z.object({
@@ -147,11 +160,19 @@ const signalExplainReturnSchema = z.object({
     at: z.number().nullable(),
     error: z.string().nullable(),
     cleared: z.boolean().nullable(),
+    status: z.string(),
     fields: jsonObjectSchema.optional(),
   }),
+  tick: z.object({
+    lastSuccessfulTickAt: z.number().nullable(),
+    staleAfterMs: z.number(),
+    staleAfterSource: z.string(),
+  }),
   budget: signalBudgetSchema,
+  ledgerToday: z.object({ pending: z.number(), sent: z.number(), failed: z.number() }),
   lastSurfaceAt: z.number().nullable(),
   lastOobAt: z.number().nullable(),
+  nextSurfaceAt: z.number().nullable(),
   keyMute: z
     .object({
       mutedUntil: z.number(),
@@ -180,6 +201,9 @@ const signalTickReturnSchema = z.object({
       sessionName: z.string(),
     }),
   ),
+  skipped: z.array(z.object({ id: z.string(), sessionName: z.string(), reason: z.string() })),
+  outbox: z.object({ sent: z.number(), retried: z.number(), failed: z.number() }),
+  tickState: signalTickStateSchema,
   watchers: z.array(
     z.object({
       id: z.string(),
@@ -200,10 +224,10 @@ function parseEvidence(value: string | undefined): Record<string, unknown> | und
   try {
     parsed = JSON.parse(value);
   } catch {
-    throw new Error("--evidence must be valid JSON.");
+    throw new SignalUsageError("--evidence must be valid JSON.");
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("--evidence must be a JSON object.");
+    throw new SignalUsageError("--evidence must be a JSON object.");
   }
   return parsed as Record<string, unknown>;
 }
@@ -214,11 +238,11 @@ function parseSubject(
   if (!value?.trim()) return undefined;
   const separator = value.indexOf(":");
   if (separator <= 0 || separator === value.length - 1) {
-    throw new Error("--subject must be <task|session|agent|contact|project>:<id>.");
+    throw new SignalUsageError("--subject must be <task|session|agent|contact|project>:<id>.");
   }
   const type = value.slice(0, separator);
   if (!["task", "session", "agent", "contact", "project"].includes(type)) {
-    throw new Error("Invalid --subject type.");
+    throw new SignalUsageError("Invalid --subject type.");
   }
   return { subjectType: type as RaiseSignalInput["subjectType"], subjectId: value.slice(separator + 1) };
 }
@@ -250,13 +274,13 @@ function parseClearRule(options: {
     Boolean(options.clearManual),
   ].filter(Boolean).length;
   if (modes !== 1) {
-    throw new Error(
+    throw new SignalUsageError(
       "Provide exactly one clear rule: --clear-probe/--clear-expr, --clear-metric, --clear-producer-resolve, --clear-decay, or --clear-manual.",
     );
   }
   if (options.clearProbe || options.clearExpr) {
     if (!options.clearProbe || !options.clearExpr) {
-      throw new Error("--clear-probe and --clear-expr are required together.");
+      throw new SignalUsageError("--clear-probe and --clear-expr are required together.");
     }
     return {
       type: "probe",
@@ -277,7 +301,7 @@ function parseClearRule(options: {
     };
   }
   if (options.clearProducerResolve) {
-    if (!options.ttl) throw new Error("--clear-producer-resolve requires --ttl.");
+    if (!options.ttl) throw new SignalUsageError("--clear-producer-resolve requires --ttl.");
     return { type: "producer_resolve", ttl_ms: parseDurationMs(options.ttl, "--ttl") };
   }
   if (options.clearDecay) {
@@ -286,9 +310,9 @@ function parseClearRule(options: {
   return { type: "manual" };
 }
 
-function humanSignal(signal: ReturnType<typeof findSignal>): void {
+function humanSignal(signal: SignalRecord | null | undefined): void {
   if (!signal) return;
-  console.log(`${signal.id}  ${signal.state}  ${signal.kind}/${signal.severity}  ${signal.key}`);
+  console.log(`${signal.id}  ${signal.state}  ${signal.kind}/${signal.severity}  ${signal.key}  v${signal.version}`);
   console.log(`  ${signal.title}`);
   if (signal.detail) console.log(`  ${signal.detail}`);
   console.log(
@@ -297,37 +321,36 @@ function humanSignal(signal: ReturnType<typeof findSignal>): void {
 }
 
 /**
- * The caller as the invocation resolved it (in-process tool or gateway
- * context first, then the runtime env), not the raw environment alone.
+ * The caller as the invocation context (ToolContext) resolved it. An agent
+ * turn is a session-bound context; the operator's CLI has none. The process
+ * environment is never read here directly (invariant 7).
  */
-function signalCaller(): { isAgent: boolean; sessionName: string | null } {
+function signalCaller(): SignalCaller {
   const ctx = getContext();
-  const isAgent = Boolean(
-    ctx?.agentId?.trim() ||
-      ctx?.context?.agentId?.trim() ||
-      process.env.RAVI_AGENT_ID?.trim() ||
-      process.env.RAVI_CONTEXT_KEY?.trim(),
-  );
-  const sessionName =
-    ctx?.sessionName?.trim() ||
-    ctx?.sessionKey?.trim() ||
-    process.env.RAVI_SESSION_NAME?.trim() ||
-    process.env.RAVI_SESSION_KEY?.trim() ||
-    null;
-  return { isAgent, sessionName };
+  const sessionName = ctx?.sessionName?.trim() || ctx?.context?.sessionName?.trim() || null;
+  const sessionKey = ctx?.sessionKey?.trim() || ctx?.context?.sessionKey?.trim() || null;
+  const agentId = ctx?.agentId?.trim() || ctx?.context?.agentId?.trim() || null;
+  const isAgent = Boolean(sessionName || sessionKey || ctx?.context?.kind === "agent-runtime");
+  return { isAgent, agentId, sessionName: sessionName ?? sessionKey };
 }
 
-/** A signal outside the caller session's scope is NOT_FOUND, like `list`. */
-function findVisibleSignal(idOrKey: string) {
-  const signal = findSignal(idOrKey);
-  if (!signal) return null;
-  const { sessionName } = signalCaller();
-  if (sessionName && !signalIsInSessionScope(signal, readSessionSignalContext(sessionName))) return null;
-  return signal;
+/**
+ * Map service errors onto the CLI contract: invalid input or state is exit 2,
+ * a missing or out-of-scope record is exit 1 NOT_FOUND, anything else exit 1.
+ */
+function failSignal(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof ContractError) throw error;
+  if (error instanceof SignalUsageError) {
+    contractFail(op, "USAGE_ERROR", error.message, { asJson, exitCode: CONTRACT_EXIT_USAGE });
+  }
+  if (error instanceof SignalNotFoundError) {
+    contractFail(op, "NOT_FOUND", error.message, { asJson });
+  }
+  contractFail(op, "COMMAND_FAILED", error instanceof Error ? error.message : String(error), { asJson });
 }
 
-function assertVisibleSignal(idOrKey: string) {
-  if (!findVisibleSignal(idOrKey)) fail(`Signal not found: ${idOrKey}`);
+function usage(op: string, message: string, asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, { asJson, exitCode: CONTRACT_EXIT_USAGE });
 }
 
 @Group({
@@ -342,7 +365,11 @@ export class SignalsCommands {
   raise(
     @Arg("key", { description: "Stable condition key, e.g. host.disk.free" }) key: string,
     @Option({ flags: "--kind <fact|judgment>", description: "Producer species" }) kind: string,
-    @Option({ flags: "--scope <scope>", description: "fleet or person|chat|project|agent:<id>" }) scope: string,
+    @Option({
+      flags: "--scope <scope>",
+      description: "install or person|chat|project|agent:<id> (an agent turn defaults to agent:<its id>)",
+    })
+    scope: string,
     @Option({ flags: "--title <title>", description: "One redacted line" }) title: string,
     @Option({ flags: "--severity <severity>", description: "ambient|piggyback|nudge|interrupt|page" })
     severity?: string,
@@ -370,11 +397,22 @@ export class SignalsCommands {
     @Option({ flags: "--subject <type:id>", description: "Entity the signal is about" }) subject?: string,
     @Option({ flags: "--target-session <names>", description: "Comma-separated explicit target sessions" })
     targetSession?: string,
-    @Option({ flags: "--source <source>", description: "Producer provenance" }) source?: string,
+    @Option({
+      flags: "--source <source>",
+      description: "Producer provenance (operator only; agents raise as themselves)",
+    })
+    source?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const op = "signals.raise";
     try {
-      const scopeValue = normalizeScope(scope);
+      const caller = signalCaller();
+      if (kind !== "fact" && kind !== "judgment") {
+        usage(op, "Invalid --kind. Use fact|judgment.", asJson);
+      }
+      const scopeText = scope?.trim() || (caller.isAgent && caller.agentId ? `agent:${caller.agentId}` : "");
+      if (!scopeText) usage(op, "--scope is required.", asJson);
+      const scopeValue = normalizeScope(scopeText);
       const subjectValue = parseSubject(subject);
       const clearWhen = parseClearRule({
         clearProbe,
@@ -387,42 +425,28 @@ export class SignalsCommands {
         clearManual,
         ttl,
       });
-      if (kind !== "fact" && kind !== "judgment") {
-        fail("Invalid --kind. Use fact|judgment.");
-      }
-      if (kind === "fact" && signalCaller().isAgent) {
-        fail("Facts must be raised by code producers. Agent turns may raise judgment signals only.");
+      if (maxSurfaces !== undefined && (!Number.isInteger(Number(maxSurfaces)) || Number(maxSurfaces) < 1)) {
+        usage(op, "--max-surfaces must be a positive integer.", asJson);
       }
       assertNoUserOverlayAutomationWrite("signals raise");
-      if (signalCaller().isAgent && isProducerOwnedSignalKey(key)) {
-        fail(`Key ${key} is reserved for Ravi's own producers; raise the judgment under another key.`);
-      }
-      const caller = signalCaller();
-      const ctx = getContext();
-      const callerSessionKey = ctx?.sessionKey?.trim() || process.env.RAVI_SESSION_KEY?.trim();
-      // An agent raises as its own session: --source cannot borrow another owner.
-      const producerId = caller.isAgent
-        ? `session:${callerSessionKey || caller.sessionName || "unknown"}`
-        : source?.trim() || (callerSessionKey ? `session:${callerSessionKey}` : "cli:signals");
-      if (caller.isAgent) {
-        // Re-raising someone else's key would rewrite their judgment and echo it back.
-        const prior = dbGetNonTerminalSignalByKey(key) ?? dbGetLatestSignalByKey(key);
-        if (prior && prior.producerId !== producerId) {
-          fail(`Key ${key} is not available to this session; raise the judgment under another key.`);
-        }
+      if (caller.isAgent && isProducerOwnedSignalKey(key)) {
+        usage(op, `Key ${key} is reserved for Ravi's own producers; raise the judgment under another key.`, asJson);
       }
       const result = raiseSignal({
         key,
         kind,
-        producerId,
+        // Ownership is decided by the service from the caller; this is the
+        // operator's provenance label only.
+        producerId: source?.trim() || "cli:signals",
+        caller,
         scopeType: scopeValue.scopeType,
         scopeId: scopeValue.scopeId,
         ...(subjectValue ?? {}),
         ...(severity ? { severity: normalizeSeverity(severity) } : {}),
-        title: assertSignalTitle(title),
+        title: assertSignalTitle(title ?? ""),
         ...(detail ? { detail } : {}),
         ...(evidence ? { evidence: parseEvidence(evidence) } : {}),
-        clearWhen: validateClearWhen(clearWhen, kind === "fact" ? "fact" : "judgment"),
+        clearWhen: validateClearWhen(clearWhen, kind),
         ...(dedupeKey ? { dedupeKey } : {}),
         ...(cooldown ? { cooldownMs: parseDurationMs(cooldown, "--cooldown") } : {}),
         ...(renotifyAfter ? { renotifyAfterMs: parseDurationMs(renotifyAfter, "--renotify-after") } : {}),
@@ -433,20 +457,27 @@ export class SignalsCommands {
         ...(targetSession ? { targetSessions: parseTargetSessions(targetSession) } : {}),
       });
       const payload = {
-        status: result.suppressed ? "suppressed" : result.created ? "created" : "updated",
+        status: result.suppressed
+          ? "suppressed"
+          : result.created
+            ? "created"
+            : result.reopened
+              ? "reopened"
+              : "updated",
         signal: result.signal,
         created: result.created,
         updated: result.updated,
+        ...(result.reopened ? { reopened: true } : {}),
         ...(result.suppressed ? { suppressed: result.suppressed } : {}),
       };
       if (asJson) printJson(payload);
       else {
-        console.log(`${result.created ? "✓ raised" : "✓ updated"}: ${result.signal.id} (${result.signal.state})`);
+        console.log(`✓ ${payload.status}: ${result.signal.id} (${result.signal.state})`);
         humanSignal(result.signal);
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSignal(op, error, asJson);
     }
   }
 
@@ -463,9 +494,9 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      assertVisibleSignal(idOrKey);
       const signal = updateSignal({
         idOrKey,
+        caller: signalCaller(),
         ...(severity ? { severity: normalizeSeverity(severity) } : {}),
         ...(title ? { title } : {}),
         ...(detail ? { detail } : {}),
@@ -477,7 +508,7 @@ export class SignalsCommands {
       else humanSignal(signal);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSignal("signals.update", error, asJson);
     }
   }
 
@@ -486,54 +517,43 @@ export class SignalsCommands {
   @Returns(signalsListReturnSchema)
   list(
     @Option({ flags: "--state <state>", description: "State filter or non_terminal" }) state?: string,
-    @Option({ flags: "--scope <scope>", description: "fleet or type:id" }) scope?: string,
+    @Option({ flags: "--scope <scope>", description: "install or type:id" }) scope?: string,
     @Option({ flags: "--key <key>", description: "Exact key" }) key?: string,
     @Option({ flags: "--limit <n>", description: "Max rows" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Rows to skip" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const parsedScope = scope ? normalizeScope(scope) : undefined;
-    if (state && state !== "non_terminal" && !(SIGNAL_STATES as readonly string[]).includes(state)) {
-      fail(`Invalid --state: ${state}. Use ${SIGNAL_STATES.join("|")}|non_terminal.`);
-    }
-    const parsedLimit = limit ? Number(limit) : undefined;
-    if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1)) {
-      fail("--limit must be a positive integer.");
-    }
-    const parsedOffset = offset ? Number(offset) : undefined;
-    if (parsedOffset !== undefined && (!Number.isInteger(parsedOffset) || parsedOffset < 0)) {
-      fail("--offset must be a non-negative integer.");
-    }
-    const { sessionName } = signalCaller();
-    const filters: Parameters<typeof listSignals>[0] = {
-      ...(state ? { state: state === "non_terminal" ? "non_terminal" : (state as never) } : {}),
-      ...(parsedScope ? { scopeType: parsedScope.scopeType, scopeId: parsedScope.scopeId } : {}),
-      ...(key ? { key } : {}),
-    };
-    // A session sees only its scope; filter before paging so the page and
-    // total count only visible rows.
-    let visible: ReturnType<typeof listSignals>;
-    if (sessionName) {
-      const sessionContext = readSessionSignalContext(sessionName);
-      const start = parsedOffset ?? 0;
-      const inScope = listSignals({ ...filters, limit: 500 }).filter((item) =>
-        signalIsInSessionScope(item, sessionContext),
-      );
-      visible = parsedLimit ? inScope.slice(start, start + parsedLimit) : inScope.slice(start);
-    } else {
-      visible = listSignals({
-        ...filters,
+    const op = "signals.list";
+    try {
+      const parsedScope = scope ? normalizeScope(scope) : undefined;
+      if (state && state !== "non_terminal" && !(SIGNAL_STATES as readonly string[]).includes(state)) {
+        usage(op, `Invalid --state: ${state}. Use ${SIGNAL_STATES.join("|")}|non_terminal.`, asJson);
+      }
+      const parsedLimit = limit ? Number(limit) : undefined;
+      if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1)) {
+        usage(op, "--limit must be a positive integer.", asJson);
+      }
+      const parsedOffset = offset ? Number(offset) : undefined;
+      if (parsedOffset !== undefined && (!Number.isInteger(parsedOffset) || parsedOffset < 0)) {
+        usage(op, "--offset must be a non-negative integer.", asJson);
+      }
+      const { items, total } = listVisibleSignals(signalCaller(), {
+        ...(state ? { state: state === "non_terminal" ? "non_terminal" : (state as never) } : {}),
+        ...(parsedScope ? { scopeType: parsedScope.scopeType, scopeId: parsedScope.scopeId } : {}),
+        ...(key ? { key } : {}),
         ...(parsedLimit ? { limit: parsedLimit } : {}),
         ...(parsedOffset ? { offset: parsedOffset } : {}),
       });
+      const payload = { total, items };
+      if (asJson) printJson(payload);
+      else if (items.length === 0) console.log("No signals.");
+      else
+        for (const item of items)
+          console.log(`${item.id}  ${item.state}  ${item.kind}/${item.severity}  ${item.key}  ${item.title}`);
+      return payload;
+    } catch (error) {
+      failSignal(op, error, asJson);
     }
-    const payload = { total: visible.length, items: visible };
-    if (asJson) printJson(payload);
-    else if (visible.length === 0) console.log("No signals.");
-    else
-      for (const item of visible)
-        console.log(`${item.id}  ${item.state}  ${item.kind}/${item.severity}  ${item.key}  ${item.title}`);
-    return payload;
   }
 
   @Command({ name: "show", description: "Show one signal" })
@@ -543,11 +563,14 @@ export class SignalsCommands {
     @Arg("idOrKey", { description: "Signal id or key" }) idOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const signal = findVisibleSignal(idOrKey);
-    if (!signal) fail(`Signal not found: ${idOrKey}`);
-    if (asJson) printJson({ signal });
-    else humanSignal(signal);
-    return { signal };
+    try {
+      const signal = findVisibleSignal(idOrKey, signalCaller());
+      if (asJson) printJson({ signal });
+      else humanSignal(signal);
+      return { signal };
+    } catch (error) {
+      failSignal("signals.show", error, asJson);
+    }
   }
 
   @Command({ name: "ack", description: "Acknowledge a signal" })
@@ -556,22 +579,23 @@ export class SignalsCommands {
   ack(
     @Arg("idOrKey", { description: "Signal id or key" }) idOrKey: string,
     @Option({ flags: "--note <text>", description: "Ack note" }) note?: string,
-    @Option({ flags: "--by <actor>", description: "Actor, e.g. agent:main or operator:luis" }) by?: string,
+    @Option({ flags: "--by <actor>", description: "Operator label, e.g. operator:luis (agents ack as themselves)" })
+    by?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      const target = findVisibleSignal(idOrKey);
-      if (!target) fail(`Signal not found: ${idOrKey}`);
-      if (signalCaller().isAgent && target.kind === "fact") {
-        fail("Fact signals require operator acknowledgement. Agents may acknowledge judgments only.");
-      }
-      const signal = ackSignal({ idOrKey, ...(note ? { note } : {}), ...(by ? { by } : {}) });
-      const payload = { status: "acknowledged", signal };
+      const { signal, changed } = ackSignal({
+        idOrKey,
+        caller: signalCaller(),
+        ...(note ? { note } : {}),
+        ...(by ? { by } : {}),
+      });
+      const payload = { status: changed ? "acknowledged" : "unchanged", signal, changed };
       if (asJson) printJson(payload);
-      else console.log(`✓ acknowledged: ${signal.id}`);
+      else console.log(`✓ ${changed ? "acknowledged" : "already acknowledged"}: ${signal.id}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSignal("signals.ack", error, asJson);
     }
   }
 
@@ -585,14 +609,13 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      assertVisibleSignal(idOrKey);
-      const signal = resolveSignal({ idOrKey, reason, ...(by ? { by } : {}) });
+      const signal = resolveSignal({ idOrKey, reason, caller: signalCaller(), ...(by ? { by } : {}) });
       const payload = { status: "resolved", signal };
       if (asJson) printJson(payload);
       else console.log(`✓ resolved: ${signal.id}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSignal("signals.resolve", error, asJson);
     }
   }
 
@@ -607,9 +630,10 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      assertVisibleSignal(idOrKey);
+      if (!duration) usage("signals.mute", "--for is required.", asJson);
       const signal = muteSignal({
         idOrKey,
+        caller: signalCaller(),
         forMs: parseDurationMs(duration, "--for"),
         ...(reason ? { reason } : {}),
         ...(by ? { by } : {}),
@@ -619,7 +643,7 @@ export class SignalsCommands {
       else console.log(`✓ muted: ${signal.id}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSignal("signals.mute", error, asJson);
     }
   }
 
@@ -631,14 +655,13 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      assertVisibleSignal(idOrKey);
-      const signal = unmuteSignal({ idOrKey });
+      const signal = unmuteSignal({ idOrKey, caller: signalCaller() });
       const payload = { status: "unmuted", signal };
       if (asJson) printJson(payload);
       else console.log(`✓ unmuted: ${signal.id}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSignal("signals.unmute", error, asJson);
     }
   }
 
@@ -651,13 +674,19 @@ export class SignalsCommands {
     @Option({ flags: "--reason <text>", description: "Mute reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const now = Date.now();
-    const mutedUntil = now + parseDurationMs(duration, "--for");
-    dbSetKeyMute(key, mutedUntil, reason, now);
-    const payload = { status: "muted", key, mutedUntil, ...(reason ? { reason } : {}) };
-    if (asJson) printJson(payload);
-    else console.log(`✓ muted key ${key} until ${new Date(mutedUntil).toISOString()}`);
-    return payload;
+    try {
+      const caller = signalCaller();
+      if (caller.isAgent) findVisibleSignal(key, caller);
+      const now = Date.now();
+      const mutedUntil = now + parseDurationMs(duration ?? "", "--for");
+      dbSetKeyMute(key, mutedUntil, reason, now);
+      const payload = { status: "muted", key, mutedUntil, ...(reason ? { reason } : {}) };
+      if (asJson) printJson(payload);
+      else console.log(`✓ muted key ${key} until ${new Date(mutedUntil).toISOString()}`);
+      return payload;
+    } catch (error) {
+      failSignal("signals.mute-key", error, asJson);
+    }
   }
 
   @Command({ name: "unmute-key", description: "Unmute a key" })
@@ -667,14 +696,20 @@ export class SignalsCommands {
     @Arg("key", { description: "Signal key" }) key: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    dbClearKeyMute(key);
-    const payload = { status: "unmuted", key };
-    if (asJson) printJson(payload);
-    else console.log(`✓ unmuted key ${key}`);
-    return payload;
+    try {
+      const caller = signalCaller();
+      if (caller.isAgent) findVisibleSignal(key, caller);
+      dbClearKeyMute(key);
+      const payload = { status: "unmuted", key };
+      if (asJson) printJson(payload);
+      else console.log(`✓ unmuted key ${key}`);
+      return payload;
+    } catch (error) {
+      failSignal("signals.unmute-key", error, asJson);
+    }
   }
 
-  @Command({ name: "tick", description: "Evaluate signals and escalate due ones" })
+  @Command({ name: "tick", description: "Evaluate signals and escalate due ones (dry-run unless --execute)" })
   @CommandAccess({
     kind: "mutate",
     resource: "signals",
@@ -684,18 +719,34 @@ export class SignalsCommands {
   })
   @Returns(signalTickReturnSchema)
   async tick(
-    @Option({ flags: "--execute", description: "Actually deliver out-of-band signals" }) execute?: boolean,
+    @Option({ flags: "--execute", description: "Actually evaluate, expire and deliver out-of-band signals" })
+    execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const result = await tickSignals({ execute: execute === true });
+    if (execute !== true) {
+      // A tick has triggered effects: without --execute it is a plan (exit 3).
+      contractDryRun("signals.tick", result as unknown as Record<string, unknown>, { asJson });
+    }
+    if (!result.executed) {
+      // --execute was given but nothing ran: a failure (exit 1), never the dry-run brake.
+      const disabled = !signalsEnabled();
+      contractFail(
+        "signals.tick",
+        disabled ? "SIGNALS_DISABLED" : "TICK_LOCKED",
+        disabled ? "Signals are disabled (signals.enabled != true)." : "Another tick holds the lock; nothing ran.",
+        { asJson },
+      );
+    }
     if (asJson) printJson(result);
     else {
-      console.log(`signals tick (${result.executed ? "execute" : "dry-run"})`);
+      console.log("signals tick (execute)");
       console.log(
         `  evaluated ${result.evaluated} · resolved ${result.resolved} · expired ${result.expired} · escalated ${result.escalated}`,
       );
       for (const candidate of result.candidates)
         console.log(`  ${candidate.severity} ${candidate.id} -> ${candidate.sessionName}`);
+      for (const skipped of result.skipped) console.log(`  held ${skipped.id} (${skipped.reason})`);
       for (const error of result.errors) console.log(`  ! ${error.id}: ${error.error}`);
     }
     return result;
@@ -708,24 +759,33 @@ export class SignalsCommands {
     @Arg("idOrKey", { description: "Signal id or key" }) idOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    assertVisibleSignal(idOrKey);
-    const explanation = explainSignal(idOrKey);
-    if (!explanation) fail(`Signal not found: ${idOrKey}`);
-    if (asJson) printJson(explanation);
-    else {
-      humanSignal(explanation.signal);
-      console.log(`  effective: ${explanation.effectiveSeverity}`);
-      console.log(`  targets: ${explanation.targetSessions.join(", ") || "(none)"}`);
-      console.log(`  closes: ${explanation.clearRule}`);
-      console.log(`  budget: ${explanation.budget.used}/${explanation.budget.limit}`);
-      console.log(
-        `  last surface: ${explanation.lastSurfaceAt ? new Date(explanation.lastSurfaceAt).toISOString() : "never"}`,
-      );
-      console.log(`  last oob: ${explanation.lastOobAt ? new Date(explanation.lastOobAt).toISOString() : "never"}`);
-      if (explanation.keyMute)
-        console.log(`  key mute until ${new Date(explanation.keyMute.mutedUntil).toISOString()}`);
+    try {
+      const explanation = explainSignal(idOrKey, signalCaller());
+      if (asJson) printJson(explanation);
+      else {
+        humanSignal(explanation.signal);
+        console.log(`  effective: ${explanation.effectiveSeverity}`);
+        console.log(`  targets: ${explanation.targetSessions.join(", ") || "(none)"}`);
+        console.log(`  closes: ${explanation.clearRule}`);
+        const evaluation = explanation.lastEvaluation;
+        console.log(
+          `  observation: ${evaluation.status}${evaluation.at ? ` at ${new Date(evaluation.at).toISOString()}` : ""}${evaluation.error ? ` (${evaluation.error})` : ""}`,
+        );
+        console.log(`  budget: ${explanation.budget.used}/${explanation.budget.limit}`);
+        console.log(
+          `  ledger today: ${explanation.ledgerToday.sent} sent · ${explanation.ledgerToday.pending} pending · ${explanation.ledgerToday.failed} failed`,
+        );
+        console.log(
+          `  last surface: ${explanation.lastSurfaceAt ? new Date(explanation.lastSurfaceAt).toISOString() : "never"}`,
+        );
+        console.log(`  last oob: ${explanation.lastOobAt ? new Date(explanation.lastOobAt).toISOString() : "never"}`);
+        if (explanation.keyMute)
+          console.log(`  key mute until ${new Date(explanation.keyMute.mutedUntil).toISOString()}`);
+      }
+      return explanation;
+    } catch (error) {
+      failSignal("signals.explain", error, asJson);
     }
-    return explanation;
   }
 
   @Command({ name: "budget", description: "Show the daily surface budget" })
@@ -735,7 +795,10 @@ export class SignalsCommands {
     const budget = getSignalBudget();
     const payload = { budget };
     if (asJson) printJson(payload);
-    else console.log(`${budget.used}/${budget.limit} surfaces used on ${budget.day} (${budget.held} held)`);
+    else
+      console.log(
+        `${budget.used}/${budget.limit} surfaces used on ${budget.day} (${budget.held} held) · OOB ${budget.oobUsed}/${budget.oobLimit}`,
+      );
     return payload;
   }
 }

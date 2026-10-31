@@ -935,7 +935,7 @@ describe("RaviBot runtime guards", () => {
     delete process.env.RAVI_BIN;
     activeProvider = "claude";
     resetRuntimeDoubles();
-    saveMessageImpl = () => {};
+    saveMessageImpl = () => true;
     agentCanImpl = () => true;
     dbInsertCostEventMock.mockClear();
     calculateCostImpl = () => null;
@@ -2216,7 +2216,7 @@ describe("RaviBot streaming session lifecycle", () => {
     clearProviderSession.mockClear();
     activeProvider = "claude";
     resetRuntimeDoubles();
-    saveMessageImpl = () => {};
+    saveMessageImpl = () => true;
     agentCanImpl = () => true;
     canWithCapabilitiesImpl = (
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>,

@@ -29403,14 +29403,18 @@ public struct SignalsAckOptions: Codable, Sendable {
 }
 
 public struct SignalsAckReturn: Codable, Sendable {
+  public var changed: Bool?
   public var created: Bool?
+  public var reopened: Bool?
   public var signal: RaviJSON
   public var status: String
   public var suppressed: String?
   public var updated: Bool?
 
-  public init(created: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+  public init(changed: Bool? = nil, created: Bool? = nil, reopened: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+    self.changed = changed
     self.created = created
+    self.reopened = reopened
     self.signal = signal
     self.status = status
     self.suppressed = suppressed
@@ -29418,7 +29422,9 @@ public struct SignalsAckReturn: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case changed = "changed"
     case created = "created"
+    case reopened = "reopened"
     case signal = "signal"
     case status = "status"
     case suppressed = "suppressed"
@@ -29447,10 +29453,13 @@ public struct SignalsExplainReturn: Codable, Sendable {
   public var lastEvaluation: RaviJSON
   public var lastOobAt: RaviJSON
   public var lastSurfaceAt: RaviJSON
+  public var ledgerToday: RaviJSON
+  public var nextSurfaceAt: RaviJSON
   public var signal: RaviJSON
   public var targetSessions: [String]
+  public var tick: RaviJSON
 
-  public init(budget: RaviJSON, clearRule: String, effectiveSeverity: String, events: [RaviJSON], keyMute: RaviJSON, lastEvaluation: RaviJSON, lastOobAt: RaviJSON, lastSurfaceAt: RaviJSON, signal: RaviJSON, targetSessions: [String]) {
+  public init(budget: RaviJSON, clearRule: String, effectiveSeverity: String, events: [RaviJSON], keyMute: RaviJSON, lastEvaluation: RaviJSON, lastOobAt: RaviJSON, lastSurfaceAt: RaviJSON, ledgerToday: RaviJSON, nextSurfaceAt: RaviJSON, signal: RaviJSON, targetSessions: [String], tick: RaviJSON) {
     self.budget = budget
     self.clearRule = clearRule
     self.effectiveSeverity = effectiveSeverity
@@ -29459,8 +29468,11 @@ public struct SignalsExplainReturn: Codable, Sendable {
     self.lastEvaluation = lastEvaluation
     self.lastOobAt = lastOobAt
     self.lastSurfaceAt = lastSurfaceAt
+    self.ledgerToday = ledgerToday
+    self.nextSurfaceAt = nextSurfaceAt
     self.signal = signal
     self.targetSessions = targetSessions
+    self.tick = tick
   }
 
   enum CodingKeys: String, CodingKey {
@@ -29472,8 +29484,11 @@ public struct SignalsExplainReturn: Codable, Sendable {
     case lastEvaluation = "lastEvaluation"
     case lastOobAt = "lastOobAt"
     case lastSurfaceAt = "lastSurfaceAt"
+    case ledgerToday = "ledgerToday"
+    case nextSurfaceAt = "nextSurfaceAt"
     case signal = "signal"
     case targetSessions = "targetSessions"
+    case tick = "tick"
   }
 }
 
@@ -29565,14 +29580,18 @@ public struct SignalsMuteOptions: Codable, Sendable {
 }
 
 public struct SignalsMuteReturn: Codable, Sendable {
+  public var changed: Bool?
   public var created: Bool?
+  public var reopened: Bool?
   public var signal: RaviJSON
   public var status: String
   public var suppressed: String?
   public var updated: Bool?
 
-  public init(created: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+  public init(changed: Bool? = nil, created: Bool? = nil, reopened: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+    self.changed = changed
     self.created = created
+    self.reopened = reopened
     self.signal = signal
     self.status = status
     self.suppressed = suppressed
@@ -29580,7 +29599,9 @@ public struct SignalsMuteReturn: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case changed = "changed"
     case created = "created"
+    case reopened = "reopened"
     case signal = "signal"
     case status = "status"
     case suppressed = "suppressed"
@@ -29790,14 +29811,18 @@ public struct SignalsRaiseOptions: Codable, Sendable {
 }
 
 public struct SignalsRaiseReturn: Codable, Sendable {
+  public var changed: Bool?
   public var created: Bool?
+  public var reopened: Bool?
   public var signal: RaviJSON
   public var status: String
   public var suppressed: String?
   public var updated: Bool?
 
-  public init(created: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+  public init(changed: Bool? = nil, created: Bool? = nil, reopened: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+    self.changed = changed
     self.created = created
+    self.reopened = reopened
     self.signal = signal
     self.status = status
     self.suppressed = suppressed
@@ -29805,7 +29830,9 @@ public struct SignalsRaiseReturn: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case changed = "changed"
     case created = "created"
+    case reopened = "reopened"
     case signal = "signal"
     case status = "status"
     case suppressed = "suppressed"
@@ -29838,14 +29865,18 @@ public struct SignalsResolveOptions: Codable, Sendable {
 }
 
 public struct SignalsResolveReturn: Codable, Sendable {
+  public var changed: Bool?
   public var created: Bool?
+  public var reopened: Bool?
   public var signal: RaviJSON
   public var status: String
   public var suppressed: String?
   public var updated: Bool?
 
-  public init(created: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+  public init(changed: Bool? = nil, created: Bool? = nil, reopened: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+    self.changed = changed
     self.created = created
+    self.reopened = reopened
     self.signal = signal
     self.status = status
     self.suppressed = suppressed
@@ -29853,7 +29884,9 @@ public struct SignalsResolveReturn: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case changed = "changed"
     case created = "created"
+    case reopened = "reopened"
     case signal = "signal"
     case status = "status"
     case suppressed = "suppressed"
@@ -29898,17 +29931,23 @@ public struct SignalsTickReturn: Codable, Sendable {
   public var evaluated: Double
   public var executed: Bool
   public var expired: Double
+  public var outbox: RaviJSON
   public var resolved: Double
+  public var skipped: [RaviJSON]
+  public var tickState: RaviJSON
   public var watchers: [RaviJSON]
 
-  public init(candidates: [RaviJSON], errors: [RaviJSON], escalated: Double, evaluated: Double, executed: Bool, expired: Double, resolved: Double, watchers: [RaviJSON]) {
+  public init(candidates: [RaviJSON], errors: [RaviJSON], escalated: Double, evaluated: Double, executed: Bool, expired: Double, outbox: RaviJSON, resolved: Double, skipped: [RaviJSON], tickState: RaviJSON, watchers: [RaviJSON]) {
     self.candidates = candidates
     self.errors = errors
     self.escalated = escalated
     self.evaluated = evaluated
     self.executed = executed
     self.expired = expired
+    self.outbox = outbox
     self.resolved = resolved
+    self.skipped = skipped
+    self.tickState = tickState
     self.watchers = watchers
   }
 
@@ -29919,20 +29958,27 @@ public struct SignalsTickReturn: Codable, Sendable {
     case evaluated = "evaluated"
     case executed = "executed"
     case expired = "expired"
+    case outbox = "outbox"
     case resolved = "resolved"
+    case skipped = "skipped"
+    case tickState = "tickState"
     case watchers = "watchers"
   }
 }
 
 public struct SignalsUnmuteReturn: Codable, Sendable {
+  public var changed: Bool?
   public var created: Bool?
+  public var reopened: Bool?
   public var signal: RaviJSON
   public var status: String
   public var suppressed: String?
   public var updated: Bool?
 
-  public init(created: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+  public init(changed: Bool? = nil, created: Bool? = nil, reopened: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+    self.changed = changed
     self.created = created
+    self.reopened = reopened
     self.signal = signal
     self.status = status
     self.suppressed = suppressed
@@ -29940,7 +29986,9 @@ public struct SignalsUnmuteReturn: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case changed = "changed"
     case created = "created"
+    case reopened = "reopened"
     case signal = "signal"
     case status = "status"
     case suppressed = "suppressed"
@@ -30006,14 +30054,18 @@ public struct SignalsUpdateOptions: Codable, Sendable {
 }
 
 public struct SignalsUpdateReturn: Codable, Sendable {
+  public var changed: Bool?
   public var created: Bool?
+  public var reopened: Bool?
   public var signal: RaviJSON
   public var status: String
   public var suppressed: String?
   public var updated: Bool?
 
-  public init(created: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+  public init(changed: Bool? = nil, created: Bool? = nil, reopened: Bool? = nil, signal: RaviJSON, status: String, suppressed: String? = nil, updated: Bool? = nil) {
+    self.changed = changed
     self.created = created
+    self.reopened = reopened
     self.signal = signal
     self.status = status
     self.suppressed = suppressed
@@ -30021,7 +30073,9 @@ public struct SignalsUpdateReturn: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case changed = "changed"
     case created = "created"
+    case reopened = "reopened"
     case signal = "signal"
     case status = "status"
     case suppressed = "suppressed"

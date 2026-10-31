@@ -3882,12 +3882,13 @@ createInterface({input:process.stdin}).on("line", (line) => {
       expect(terminals[0]?.type).toBe(
         ending === "failed" ? "turn.failed" : ending === "interrupted" ? "turn.interrupted" : "turn.complete",
       );
-      if (ending !== "interrupted" && ending !== "failed") {
-        expect(findEventsByType(events, "turn.complete")[0]?.usage).toMatchObject({
-          inputTokens: 22,
-          outputTokens: 6,
-          cacheReadTokens: 8,
-        });
+      const terminal = terminals[0];
+      if (
+        terminal?.type === "turn.complete" ||
+        terminal?.type === "turn.failed" ||
+        terminal?.type === "turn.interrupted"
+      ) {
+        expect(terminal.usage).toMatchObject({ inputTokens: 22, outputTokens: 6, cacheReadTokens: 8 });
       }
     });
   }

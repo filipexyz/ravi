@@ -21,7 +21,7 @@ applies_to:
   - src/router/sessions.ts
 owners:
   - ravi-dev
-status: draft
+status: active
 normative: true
 ---
 
@@ -132,6 +132,23 @@ materialized text.
   watchdog turns into a data-loss path.
 - A consumer that coerces `NULL` usage to `0` recreates the original bug: work
   happened, the counters say nothing happened.
+
+## Implementation Status
+
+- `src/db.ts`: assistant rows carry `utterance_class` (`final` | `commentary`; NULL is a
+  legacy final row) and `turn_id`. `saveMessage` skips an exact same-turn replay
+  (same session, turn, role, class and content) and writes any other row.
+  `isFinalAssistantMessage` (`src/runtime/utterance-class.ts`) is the one predicate for
+  "this row may stand as the answer".
+- `src/runtime/host-event-loop.ts`: every non-silent utterance is materialized with its
+  class and turn id before, and independently of, delivery. Delivery cleanup cannot rewrite the materialized provider block; a history write failure is logged and does not stop delivery. A terminal turn with
+  commentary and no final utterance is recorded with `output_state = 'incomplete'`.
+- `session_turns`: token and cost columns are NULL when the provider reported no usage
+  (`turn.failed`, `turn.interrupted`); reported terminal usage is preserved, including Codex goal-chain usage and Claude failure results. `output_state` holds `final` or `incomplete`.
+- Readers: `sessions send -w`, Library request turns and the Knowledge curator take only
+  final rows as the answer; replay detection compares against final rows only.
+  `sessions info`, `sessions trace` and `agents session` print `unknown` for NULL usage,
+  and the 24h aggregate skips NULL rows and reports `unknownUsage=<n>`.
 
 ## Validation
 

@@ -182,7 +182,15 @@ export interface ChannelTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
  * a credential: access to the internal prompt bus is the trust boundary.
  * `source` and `context` continue to describe the reply surface.
  */
-export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | ChannelTurnOriginMetadata;
+export interface SignalTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
+  producer: "signals";
+  action: "escalate";
+}
+
+export type RuntimeTurnOriginMetadata =
+  | SessionRelayTurnOriginMetadata
+  | ChannelTurnOriginMetadata
+  | SignalTurnOriginMetadata;
 
 /** Prompt message structure */
 export interface PromptMessage {

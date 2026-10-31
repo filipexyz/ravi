@@ -26,7 +26,7 @@ ravi signals budget --json
 
 ```bash
 ravi signals raise host.disk.free \
-  --kind fact --scope fleet --severity page \
+  --kind fact --scope install --severity page \
   --title "Disk free below 15%" \
   --evidence '{"metric":"free_pct","value":9.2,"threshold":15}' \
   --clear-probe host.disk --clear-expr "free_pct >= 20" \
@@ -137,8 +137,13 @@ Use the state DB from `getRaviStateDir()` (see `src/utils/paths.ts`).
 
 ```sql
 SELECT state, count(*) FROM signals GROUP BY state;
-SELECT id, key, state, surface_count, escalation_count FROM signals WHERE state NOT IN ('resolved','expired');
-SELECT signal_id, route, created_at FROM signal_surfaces ORDER BY created_at DESC LIMIT 20;
+-- Counts are derived from `sent` ledger rows in the current episode; the stored columns are not authoritative.
+SELECT s.id, s.key, s.state,
+  (SELECT COUNT(*) FROM signal_surfaces ss
+    WHERE ss.signal_id = s.id AND ss.status = 'sent' AND COALESCE(ss.sent_at, ss.created_at) >= s.opened_at) AS surface_count
+FROM signals s WHERE s.state NOT IN ('resolved','expired');
+-- `pending` reserves, `failed` was released: only `sent` rows are deliveries.
+SELECT signal_id, route, status, created_at, sent_at, failed_at FROM signal_surfaces ORDER BY created_at DESC LIMIT 20;
 SELECT count(*) FROM signals WHERE state NOT IN ('resolved','expired') AND clear_when_json IS NULL;
 ```
 

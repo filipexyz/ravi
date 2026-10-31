@@ -82,7 +82,7 @@ Fact and judgment share storage and delivery, but they MUST NOT share authority:
 
 The severity ceiling is enforced by producer type, not by the text of the alert. A judgment titled "PRODUCTION DOWN" remains a `piggyback` judgment.
 
-Authority follows the same rule. Whether a caller may raise a `fact`, request `page`, or `ack` a fact is decided by the resolved caller context (`ToolContext`), never by process environment or by the kind named in the request. A record's `owner` and `kind` are immutable through a re-raise.
+Authority follows the same rule. Whether a caller may raise a `fact`, request `page`, or `ack` a fact is decided by the resolved caller context (`ToolContext`), never by process environment or by the kind named in the request. A record's `owner`, `kind` and declared scope are immutable through a re-raise. Explicit target sessions may change; an agent judgment is pinned to the caller's canonical session.
 
 ### 2. A signal is a condition with a close rule
 
@@ -198,7 +198,10 @@ One logical delivery is: select → reserve → send → confirm.
 - A crash between reserve and send leaves exactly one of two states: reservation plus `pending` outbox row, or no reservation. It can never leave a fresh cooldown or a consumed surface without a send.
 - The outbox is the only retry mechanism. No timer, sweep, or provider redelivery may re-send a surface outside it.
 - `signal_surfaces` is the ledger, not a counter: each row carries `status` (`pending`, `sent`, `failed`), and every budget, surface and escalation total is derived from those statuses.
-- Tick ownership is acquired by a single conditional write, not read-then-write.
+- Tick ownership is acquired by a single conditional write with a unique holder; release is conditional on that holder.
+- An outbox sender acquires a recoverable per-row lease before any transport call. Page outcomes are persisted before prompt publication, and eligibility is checked again between those side effects.
+- Signal prompts carry a typed `signals/escalate` automation origin. Destination chat metadata does not supply the actor.
+- Transport idempotency remains required across an ambiguous send/ack crash; the local ledger alone cannot guarantee exactly-once external delivery.
 
 ## CLI and Observability Contract
 
@@ -283,7 +286,7 @@ Details live in `runtime/signals/producers`.
 
 - A probe is slow or hangs and blocks turn start. Probes MUST have a hard timeout and a cached last value; the render path MUST NOT wait indefinitely.
 - A producer raises a new key every time (for example, including a timestamp in the key), defeating dedupe and flooding storage.
-- A scope resolver attaches a fleet fact to every session, turning piggyback into a broadcast.
+- A scope resolver attaches an install fact to every session, turning piggyback into a broadcast.
 - `clear_when` is treated as a general expression language and becomes an injection or CPU surface. Only registered probes and a tiny comparison grammar are allowed.
 - The agent acknowledges a fact to silence it while the condition remains true. Facts re-notify while true, and ack is not resolve.
 - Tick stops running, so piggyback works but escalations silently stop. Tick health MUST be observable.

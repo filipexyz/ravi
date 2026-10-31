@@ -8,6 +8,7 @@ import type {
   RedactionResult,
   SessionEventRecord,
   SessionTraceBlobRecord,
+  SessionTurnOutputState,
   SessionTurnRecord,
   UpsertSessionTurnInput,
 } from "./types.js";
@@ -95,6 +96,7 @@ interface SessionTurnRow {
   cost_usd: number | null;
   error: string | null;
   abort_reason: string | null;
+  output_state?: string | null;
   started_at: number;
   completed_at: number | null;
   updated_at: number;
@@ -142,13 +144,14 @@ type StoredTurn = {
   userPromptSha256: string | null;
   systemPromptSha256: string | null;
   requestBlobSha256: string | null;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  costUsd: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  costUsd: number | null;
   error: string | null;
   abortReason: string | null;
+  outputState: SessionTurnOutputState | null;
   startedAt: number;
   completedAt: number | null;
   updatedAt: number;
@@ -395,13 +398,15 @@ function rowToSessionTurn(row: SessionTurnRow): SessionTurnRecord {
     userPromptSha256: row.user_prompt_sha256,
     systemPromptSha256: row.system_prompt_sha256,
     requestBlobSha256: row.request_blob_sha256,
-    inputTokens: row.input_tokens ?? 0,
-    outputTokens: row.output_tokens ?? 0,
-    cacheReadTokens: row.cache_read_tokens ?? 0,
-    cacheCreationTokens: row.cache_creation_tokens ?? 0,
-    costUsd: row.cost_usd ?? 0,
+    // NULL is "the provider reported no usage", never zero (sessions/turn-output inv. 7).
+    inputTokens: row.input_tokens ?? null,
+    outputTokens: row.output_tokens ?? null,
+    cacheReadTokens: row.cache_read_tokens ?? null,
+    cacheCreationTokens: row.cache_creation_tokens ?? null,
+    costUsd: row.cost_usd ?? null,
     error: row.error,
     abortReason: row.abort_reason,
+    outputState: toOutputState(row.output_state),
     startedAt: row.started_at,
     completedAt: row.completed_at,
     updatedAt: row.updated_at,
@@ -529,11 +534,16 @@ function pickText<K extends keyof UpsertSessionTurnInput>(
 function pickNumber<K extends keyof UpsertSessionTurnInput>(
   input: UpsertSessionTurnInput,
   key: K,
-  current: number,
-): number {
+  current: number | null,
+): number | null {
   if (!hasOwn(input, key) || input[key] === undefined) return current;
   const value = input[key];
+  if (value === null) return null;
   return typeof value === "number" && Number.isFinite(value) ? value : current;
+}
+
+function toOutputState(value: unknown): SessionTurnOutputState | null {
+  return value === "final" || value === "incomplete" ? value : null;
 }
 
 function pickBoolean<K extends keyof UpsertSessionTurnInput>(
@@ -579,13 +589,14 @@ function normalizeTurn(input: UpsertSessionTurnInput, current: StoredTurn | null
     userPromptSha256: pickText(input, "userPromptSha256", current?.userPromptSha256 ?? null),
     systemPromptSha256: pickText(input, "systemPromptSha256", current?.systemPromptSha256 ?? null),
     requestBlobSha256: pickText(input, "requestBlobSha256", current?.requestBlobSha256 ?? null),
-    inputTokens: pickNumber(input, "inputTokens", current?.inputTokens ?? 0),
-    outputTokens: pickNumber(input, "outputTokens", current?.outputTokens ?? 0),
-    cacheReadTokens: pickNumber(input, "cacheReadTokens", current?.cacheReadTokens ?? 0),
-    cacheCreationTokens: pickNumber(input, "cacheCreationTokens", current?.cacheCreationTokens ?? 0),
-    costUsd: pickNumber(input, "costUsd", current?.costUsd ?? 0),
+    inputTokens: pickNumber(input, "inputTokens", current?.inputTokens ?? null),
+    outputTokens: pickNumber(input, "outputTokens", current?.outputTokens ?? null),
+    cacheReadTokens: pickNumber(input, "cacheReadTokens", current?.cacheReadTokens ?? null),
+    cacheCreationTokens: pickNumber(input, "cacheCreationTokens", current?.cacheCreationTokens ?? null),
+    costUsd: pickNumber(input, "costUsd", current?.costUsd ?? null),
     error,
     abortReason,
+    outputState: hasOwn(input, "outputState") ? toOutputState(input.outputState) : (current?.outputState ?? null),
     startedAt:
       hasOwn(input, "startedAt") && input.startedAt !== undefined
         ? input.startedAt
@@ -608,9 +619,9 @@ export function upsertSessionTurn(input: UpsertSessionTurnInput): SessionTurnRec
       turn_id, session_key, session_name, run_id, agent_id, provider, model, effort, thinking,
       cwd, status, resume, fork, provider_session_id_before, provider_session_id_after,
       user_prompt_sha256, system_prompt_sha256, request_blob_sha256, input_tokens, output_tokens,
-      cache_read_tokens, cache_creation_tokens, cost_usd, error, abort_reason, started_at,
+      cache_read_tokens, cache_creation_tokens, cost_usd, error, abort_reason, output_state, started_at,
       completed_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(turn_id) DO UPDATE SET
       session_key = excluded.session_key,
       session_name = excluded.session_name,
@@ -636,6 +647,7 @@ export function upsertSessionTurn(input: UpsertSessionTurnInput): SessionTurnRec
       cost_usd = excluded.cost_usd,
       error = excluded.error,
       abort_reason = excluded.abort_reason,
+      output_state = excluded.output_state,
       started_at = excluded.started_at,
       completed_at = excluded.completed_at,
       updated_at = excluded.updated_at
@@ -666,6 +678,7 @@ export function upsertSessionTurn(input: UpsertSessionTurnInput): SessionTurnRec
     turn.costUsd,
     turn.error,
     turn.abortReason,
+    turn.outputState,
     turn.startedAt,
     turn.completedAt,
     turn.updatedAt,

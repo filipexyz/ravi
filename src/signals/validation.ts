@@ -10,19 +10,38 @@ import {
   type SignalSeverity,
 } from "./types.js";
 
+/**
+ * Invalid input, invalid state, a cross-owner raise or an unknown probe: the
+ * CLI maps it to exit 2 and nothing is written.
+ */
+export class SignalUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SignalUsageError";
+  }
+}
+
+/** The record does not exist or is outside the caller's scope (never revealed as forbidden). */
+export class SignalNotFoundError extends Error {
+  constructor(idOrKey: string) {
+    super(`Signal not found: ${idOrKey}`);
+    this.name = "SignalNotFoundError";
+  }
+}
+
 const DURATION_RE = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)$/i;
 
 export function parseDurationMs(value: string, label = "duration"): number {
   const trimmed = value.trim();
   if (!trimmed) {
-    throw new Error(`${label} is required.`);
+    throw new SignalUsageError(`${label} is required.`);
   }
   if (/^\d+$/.test(trimmed)) {
     return Number(trimmed);
   }
   const match = DURATION_RE.exec(trimmed);
   if (!match) {
-    throw new Error(`Invalid ${label}: ${value}. Use values like 30s, 5m, 6h, 7d.`);
+    throw new SignalUsageError(`Invalid ${label}: ${value}. Use values like 30s, 5m, 6h, 7d.`);
   }
   const amount = Number(match[1]);
   const unit = match[2].toLowerCase();
@@ -45,7 +64,7 @@ export function normalizeKind(value: string): SignalKind {
   if ((SIGNAL_KINDS as readonly string[]).includes(value)) {
     return value as SignalKind;
   }
-  throw new Error(`Invalid --kind: ${value}. Use fact|judgment.`);
+  throw new SignalUsageError(`Invalid --kind: ${value}. Use fact|judgment.`);
 }
 
 export function normalizeProducerClass(
@@ -56,7 +75,7 @@ export function normalizeProducerClass(
   const explicit = value?.trim().toLowerCase();
   if (explicit) {
     if (!(SIGNAL_PRODUCER_CLASSES as readonly string[]).includes(explicit)) {
-      throw new Error(`Invalid producer class: ${value}. Use ${SIGNAL_PRODUCER_CLASSES.join("|")}.`);
+      throw new SignalUsageError(`Invalid producer class: ${value}. Use ${SIGNAL_PRODUCER_CLASSES.join("|")}.`);
     }
     return explicit as SignalProducerClass;
   }
@@ -82,7 +101,7 @@ export function normalizeSeverity(value: string | undefined): SignalSeverity {
   if ((SIGNAL_SEVERITIES as readonly string[]).includes(normalized)) {
     return normalized as SignalSeverity;
   }
-  throw new Error(`Invalid --severity: ${value}. Use ${SIGNAL_SEVERITIES.join("|")}.`);
+  throw new SignalUsageError(`Invalid --severity: ${value}. Use ${SIGNAL_SEVERITIES.join("|")}.`);
 }
 
 const SEVERITY_RANK: Record<SignalSeverity, number> = {
@@ -128,17 +147,17 @@ export function effectiveSeverity(
 
 export function normalizeScope(value: string): { scopeType: SignalScopeType; scopeId: string } {
   const trimmed = value.trim();
-  if (trimmed === "fleet") {
-    return { scopeType: "fleet", scopeId: "fleet" };
+  if (trimmed === "install") {
+    return { scopeType: "install", scopeId: "install" };
   }
   const separator = trimmed.indexOf(":");
   if (separator <= 0 || separator === trimmed.length - 1) {
-    throw new Error(`Invalid --scope: ${value}. Use fleet or <person|chat|project|agent>:<id>.`);
+    throw new SignalUsageError(`Invalid --scope: ${value}. Use install or <person|chat|project|agent>:<id>.`);
   }
   const type = trimmed.slice(0, separator);
   const id = trimmed.slice(separator + 1);
-  if (!(SIGNAL_SCOPE_TYPES as readonly string[]).includes(type) || type === "fleet") {
-    throw new Error(`Invalid --scope type: ${type}. Use person|chat|project|agent|fleet.`);
+  if (!(SIGNAL_SCOPE_TYPES as readonly string[]).includes(type) || type === "install") {
+    throw new SignalUsageError(`Invalid --scope type: ${type}. Use person|chat|project|agent|install.`);
   }
   return { scopeType: type as SignalScopeType, scopeId: id };
 }
@@ -162,7 +181,7 @@ export function sanitizeSignalText(value: string, maxLength: number): string {
 export function assertSignalTitle(value: string): string {
   const title = sanitizeSignalText(value, 120);
   if (!title) {
-    throw new Error("--title is required.");
+    throw new SignalUsageError("--title is required.");
   }
   return title;
 }
@@ -182,7 +201,7 @@ type Clause = { field: string; op: "gt" | "gte" | "lt" | "lte" | "eq" | "neq"; v
 function parseClause(text: string): Clause {
   const match = /^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(>=|<=|==|!=|>|=|<)\s*(-?\d+(?:\.\d+)?)$/.exec(text.trim());
   if (!match) {
-    throw new Error(`Invalid clear expression clause: ${text}. Use field >= number.`);
+    throw new SignalUsageError(`Invalid clear expression clause: ${text}. Use field >= number.`);
   }
   return { field: match[1], op: OP_ALIASES[match[2]], value: Number(match[3]) };
 }
@@ -190,7 +209,7 @@ function parseClause(text: string): Clause {
 export function parseClearExpression(expr: string): { clauses: Clause[]; joins: Array<"and" | "or"> } {
   const tokens = expr.trim().split(/\s+(and|or)\s+/i);
   if (tokens.length === 0 || tokens.length % 2 === 0) {
-    throw new Error(`Invalid clear expression: ${expr}.`);
+    throw new SignalUsageError(`Invalid clear expression: ${expr}.`);
   }
   const clauses: Clause[] = [];
   const joins: Array<"and" | "or"> = [];
@@ -202,7 +221,7 @@ export function parseClearExpression(expr: string): { clauses: Clause[]; joins: 
     }
   }
   if (clauses.length > 3) {
-    throw new Error("A clear expression supports at most three clauses.");
+    throw new SignalUsageError("A clear expression supports at most three clauses.");
   }
   return { clauses, joins };
 }
@@ -241,30 +260,30 @@ function compareClause(clause: Clause, fields: Record<string, unknown>): boolean
 
 export function validateClearWhen(clearWhen: ClearWhen, kind: SignalKind): ClearWhen {
   if (kind === "judgment" && clearWhen.type !== "decay" && clearWhen.type !== "manual") {
-    throw new Error("A judgment clear rule must be decay or manual.");
+    throw new SignalUsageError("A judgment clear rule must be decay or manual.");
   }
   if (kind === "fact" && (clearWhen.type === "decay" || clearWhen.type === "manual")) {
-    throw new Error("A fact clear rule must be probe, metric, or producer_resolve.");
+    throw new SignalUsageError("A fact clear rule must be probe, metric, or producer_resolve.");
   }
   switch (clearWhen.type) {
     case "probe": {
-      if (!clearWhen.probe.trim()) throw new Error("Probe id is required.");
+      if (!clearWhen.probe.trim()) throw new SignalUsageError("Probe id is required.");
       parseClearExpression(clearWhen.expr);
-      if (clearWhen.recheck_ms < 1000) throw new Error("Probe recheck must be at least 1s.");
-      if (clearWhen.grace_ms < 0) throw new Error("Probe grace must be >= 0.");
+      if (clearWhen.recheck_ms < 1000) throw new SignalUsageError("Probe recheck must be at least 1s.");
+      if (clearWhen.grace_ms < 0) throw new SignalUsageError("Probe grace must be >= 0.");
       return clearWhen;
     }
     case "metric": {
-      if (!clearWhen.field.trim()) throw new Error("Metric field is required.");
-      if (!Number.isFinite(clearWhen.value)) throw new Error("Metric value must be a number.");
+      if (!clearWhen.field.trim()) throw new SignalUsageError("Metric field is required.");
+      if (!Number.isFinite(clearWhen.value)) throw new SignalUsageError("Metric value must be a number.");
       return clearWhen;
     }
     case "producer_resolve": {
-      if (clearWhen.ttl_ms <= 0) throw new Error("producer_resolve requires a positive ttl.");
+      if (clearWhen.ttl_ms <= 0) throw new SignalUsageError("producer_resolve requires a positive ttl.");
       return clearWhen;
     }
     case "decay": {
-      if (clearWhen.after_ms <= 0) throw new Error("decay requires a positive duration.");
+      if (clearWhen.after_ms <= 0) throw new SignalUsageError("decay requires a positive duration.");
       return clearWhen;
     }
     case "manual":
@@ -275,7 +294,7 @@ export function validateClearWhen(clearWhen: ClearWhen, kind: SignalKind): Clear
 export function parseMetricSpec(value: string): { field: string; op: Clause["op"]; value: number } {
   const match = /^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(>=|<=|==|!=|>|=|<)\s*(-?\d+(?:\.\d+)?)$/.exec(value.trim());
   if (!match) {
-    throw new Error(`Invalid --clear-metric: ${value}. Use field>=number.`);
+    throw new SignalUsageError(`Invalid --clear-metric: ${value}. Use field>=number.`);
   }
   return { field: match[1], op: OP_ALIASES[match[2]], value: Number(match[3]) };
 }

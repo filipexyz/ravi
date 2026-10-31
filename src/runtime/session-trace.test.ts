@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getRecentHistory, saveMessage } from "../db.js";
+import { getRecentHistory, saveMessage, getChatDbPath } from "../db.js";
+import { Database } from "bun:sqlite";
 import { nats } from "../nats.js";
 import { attachChatToSession, detachChatFromSession } from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
@@ -3478,11 +3479,146 @@ describe("runtime session trace instrumentation", () => {
       ]),
     );
 
+    // sessions/turn-output: commentary is materialized as its own row with its
+    // class, never concatenated into the final answer.
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content, utterance_class }) => [content, utterance_class])).toEqual([
+      ["Checking the durable state.", "commentary"],
+      ["Final answer only.", "final"],
+    ]);
+    expect(assistant.every(({ turn_id }) => turn_id === "turn-final-with-commentary")).toBe(true);
+    expect(getSessionTurn("turn-final-with-commentary")?.outputState).toBe("final");
+  });
+
+  it("continues delivery when durable assistant output cannot be written", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-storage-failure");
+    getRecentHistory(SESSION_NAME, 1);
+    const db = new Database(getChatDbPath());
+    db.exec(`CREATE TRIGGER fail_assistant_write BEFORE INSERT ON messages
+      WHEN NEW.role = 'assistant' BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END`);
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "The answer is ready." },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]),
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data: data as Record<string, unknown> });
+          },
+        },
+      );
+      expect(
+        emitted.some(
+          ({ topic, data }) =>
+            topic.endsWith(".runtime") && data.type === "assistant.message" && data.text === "The answer is ready.",
+        ),
+      ).toBe(true);
+      expect(getSessionTurn("turn-storage-failure")?.status).toBe("complete");
+      expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toHaveLength(0);
+    } finally {
+      db.exec("DROP TRIGGER fail_assistant_write");
+      db.close();
+    }
+  });
+
+  it("keeps commentary of a turn that fails without a final utterance and marks it incomplete with NULL usage", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-commentary-then-fail");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Reading the repo.", metadata: { item: { phase: "commentary" } } },
+        { type: "assistant.message", text: "Running the tests.", metadata: { item: { phase: "commentary" } } },
+        { type: "turn.failed", error: "provider_inactive", recoverable: false },
+      ]),
+    );
+
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content, utterance_class }) => [content, utterance_class])).toEqual([
+      ["Reading the repo.", "commentary"],
+      ["Running the tests.", "commentary"],
+    ]);
+    const turn = getSessionTurn("turn-commentary-then-fail");
+    expect(turn?.status).toBe("failed");
+    expect(turn?.outputState).toBe("incomplete");
+    // No usage was reported: NULL, never 0.
+    expect(turn?.inputTokens).toBeNull();
+    expect(turn?.outputTokens).toBeNull();
+    const summary = getSessionTurnUsageSummary(SESSION_KEY);
+    expect(summary.lastTurn?.inputTokens).toBeNull();
+    expect(summary.lastTurn?.outputState).toBe("incomplete");
+    // The aggregate skips the unknown turn instead of adding zero, and counts it apart.
+    expect(summary.recent.completeTurns).toBe(0);
+    expect(summary.recent.unknownUsageTurns).toBe(1);
+  });
+
+  for (const terminal of ["turn.failed", "turn.interrupted"] as const) {
+    it(`preserves reported usage when a turn ends with ${terminal}`, async () => {
+      const streaming = makeStreamingSession();
+      const turnId = `turn-measured-${terminal}`;
+      seedAdapterTrace(streaming, turnId);
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "Measured work.", metadata: { item: { phase: "commentary" } } },
+          terminal === "turn.failed"
+            ? {
+                type: terminal,
+                error: "provider_inactive",
+                recoverable: false,
+                usage: { inputTokens: 23, outputTokens: 9, cacheReadTokens: 4 },
+              }
+            : { type: terminal, usage: { inputTokens: 23, outputTokens: 9, cacheReadTokens: 4 } },
+        ]),
+      );
+      expect(getSessionTurn(turnId)).toMatchObject({
+        inputTokens: 23,
+        outputTokens: 9,
+        cacheReadTokens: 4,
+        outputState: "incomplete",
+      });
+    });
+  }
+
+  it("writes one row for an exact same-turn commentary replay, and a new row in a later turn", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-replay-a");
+    const commentary = { item: { phase: "commentary" } };
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Looking at the logs.", metadata: commentary },
+        { type: "assistant.message", text: "Looking at the logs.", metadata: commentary },
+        { type: "assistant.message", text: "Done." },
+        { type: "turn.complete", providerSessionId: "provider-after", usage: { inputTokens: 1, outputTokens: 1 } },
+      ]),
+    );
     expect(
       getRecentHistory(SESSION_NAME)
         .filter(({ role }) => role === "assistant")
         .map(({ content }) => content),
-    ).toEqual(["Final answer only."]);
+    ).toEqual(["Looking at the logs.", "Done."]);
+
+    // The same text in another turn is a new utterance, not a replay.
+    expect(
+      saveMessage(SESSION_NAME, "assistant", "Looking at the logs.", null, {
+        utteranceClass: "commentary",
+        turnId: "turn-replay-b",
+      }),
+    ).toBe(true);
+    expect(
+      saveMessage(SESSION_NAME, "assistant", "Looking at the logs.", null, {
+        utteranceClass: "commentary",
+        turnId: "turn-replay-b",
+      }),
+    ).toBe(false);
+    expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toHaveLength(3);
   });
 
   it("persists each visible assistant.message as its own chat.db row in one physical turn", async () => {
@@ -4095,7 +4231,7 @@ describe("runtime session trace instrumentation", () => {
     expect(assistants[0]!.content).not.toContain(assistants[1]!.content);
   });
 
-  it("refuses empty-join mash of assistant history and keeps the new utterance clean", async () => {
+  it("keeps the provider utterance in history independently of delivery cleanup", async () => {
     saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "assistant", "Olá. A conexão foi restabelecida.", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "assistant", "primeiro?", null, { agentId: AGENT_ID });
@@ -4129,14 +4265,12 @@ describe("runtime session trace instrumentation", () => {
       "Olá",
       "ok.",
       "pong",
-      "Oi. No que você quer trabalhar?",
+      "Olá. A conexão foi restabelecida.Olá. A conexão foi restabelecida.primeiro?Oláok.pongOi. No que você quer trabalhar?",
     ]);
-    expect(assistants.some(({ content }) => content.includes("primeiro?Olá"))).toBe(false);
-    expect(assistants.some(({ content }) => content.includes("ok.pong"))).toBe(false);
-    expect(assistants.at(-1)?.content).toBe("Oi. No que você quer trabalhar?");
+    expect(assistants.at(-1)?.turn_id).toBe("turn-empty-join-mash");
   });
 
-  it("splits a first-turn empty-join mash into separate rows", async () => {
+  it("stores a provider text block as one row even when delivery splits it", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-empty-join-first");
     await runTraceLoop(
@@ -4152,9 +4286,8 @@ describe("runtime session trace instrumentation", () => {
     );
 
     const assistants = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
-    expect(assistants.map(({ content }) => content)).toEqual(["primeiro?", "Olá"]);
-    expect(assistants).toHaveLength(2);
-    expect(assistants[0]!.id).not.toBe(assistants[1]!.id);
+    expect(assistants.map(({ content }) => content)).toEqual(["primeiro?Olá"]);
+    expect(assistants).toHaveLength(1);
   });
 
   it("delivers a new-turn exact repeat of an earlier assistant phrase", async () => {
@@ -4207,7 +4340,7 @@ describe("runtime session trace instrumentation", () => {
     ).toBe(true);
   });
 
-  it("skips a pure mashed replay with a warn-visible silent runtime event", async () => {
+  it("keeps a new-turn utterance even when delivery suppresses a suspected mashed replay", async () => {
     saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "assistant", "primeiro?", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "assistant", "Olá", null, { agentId: AGENT_ID });
@@ -4238,7 +4371,8 @@ describe("runtime session trace instrumentation", () => {
       getRecentHistory(SESSION_NAME)
         .filter(({ role }) => role === "assistant")
         .map(({ content }) => content),
-    ).toEqual(["primeiro?", "Olá"]);
+    ).toEqual(["primeiro?", "Olá", "primeiro?Olá"]);
+    expect(getSessionTurn("turn-mashed-replay-skip")?.outputState).toBe("final");
     expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
     expect(emitted.some((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "silent")).toBe(true);
     expect(emitted.find((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "silent")?.data.reason).toBe(
@@ -4296,7 +4430,7 @@ describe("runtime session trace instrumentation", () => {
 
     const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("failed");
-    expect(getSessionTurn("turn-login-stub")?.status).toBe("failed");
+    expect(getSessionTurn("turn-login-stub")).toMatchObject({ status: "failed", inputTokens: 0, outputTokens: 0 });
   });
 
   it("records provider turn interruptions as terminal interrupted turns", async () => {
@@ -4615,6 +4749,11 @@ describe("runtime session trace instrumentation", () => {
       provider: "grok",
     });
 
+    expect(getSessionTurn("turn-grok-tools-silence")).toMatchObject({
+      status: "failed",
+      inputTokens: 1,
+      outputTokens: 1,
+    });
     expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
     expect(
       responses.some(

@@ -49,8 +49,8 @@ export function raiseTaskStallSignal(input: {
     return { classification };
   }
   const scopeAgentId = input.task.assigneeAgentId;
-  const scopeType = scopeAgentId ? "agent" : "fleet";
-  const scopeId = scopeAgentId ?? "fleet";
+  const scopeType = scopeAgentId ? "agent" : "install";
+  const scopeId = scopeAgentId ?? "install";
   const producerId = `task-observer:${input.sourceSession}`;
   if (classification.action === "stall") {
     const raised = raiseSignal({

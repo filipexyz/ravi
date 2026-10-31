@@ -8,6 +8,7 @@ import {
   getExpiredSessions,
   getOrCreateSession,
   getSession,
+  getSessionTurnUsageSummary,
   listSessionSubscriptions,
   resetSession,
   setSessionEphemeral,
@@ -18,6 +19,7 @@ import {
 } from "./sessions.js";
 import type { MessageContext } from "../runtime/message-types.js";
 import { lowestTierReadInTurn, recordKnowledgeRead } from "../knowledge/store/turn-reads.js";
+import { upsertSessionTurn } from "../session-trace/session-trace-db.js";
 
 let stateDir: string | null = null;
 
@@ -29,6 +31,42 @@ describe("sessions store", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("reports unknown usage as null and counts it apart instead of summing it as zero", () => {
+    const sessionKey = "agent:main:usage-summary";
+    const now = Date.now();
+    upsertSessionTurn({
+      turnId: "turn-known",
+      sessionKey,
+      status: "complete",
+      inputTokens: 100,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.01,
+      startedAt: now - 2_000,
+      completedAt: now - 1_500,
+      updatedAt: now - 1_500,
+    });
+    upsertSessionTurn({
+      turnId: "turn-unknown",
+      sessionKey,
+      status: "failed",
+      inputTokens: null,
+      outputTokens: null,
+      outputState: "incomplete",
+      startedAt: now - 1_000,
+      completedAt: now - 500,
+      updatedAt: now - 500,
+    });
+
+    const summary = getSessionTurnUsageSummary(sessionKey);
+    expect(summary.lastTurn?.inputTokens).toBeNull();
+    expect(summary.lastTurn?.effectiveContextTokens).toBeNull();
+    expect(summary.lastTurn?.outputState).toBe("incomplete");
+    expect(summary.recent.inputTokensAvg).toBe(100);
+    expect(summary.recent.unknownUsageTurns).toBe(1);
   });
 
   it("clears the session's Knowledge reads on reset, so the old context no longer gates writes", () => {
