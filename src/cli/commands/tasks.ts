@@ -1129,6 +1129,11 @@ export class TaskCommands {
     effort?: string,
     @Option({ flags: "--thinking <level>", description: "Runtime thinking: off|normal|verbose" })
     thinking?: string,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Stable creation key; retries reuse the task and its Thread",
+    })
+    idempotencyKey?: string,
   ) {
     if (!instructions?.trim()) {
       fail("--instructions is required");
@@ -1161,12 +1166,8 @@ export class TaskCommands {
     const tagSlugs = parseTagSlugs(tagSlugsRaw);
     const runtimeOverride = parseRuntimeOverride(model, effort, thinking);
     const actor = getTaskActor();
-    if (!actor.sessionName && !reportToSessionName?.trim()) {
-      fail(
-        "Cannot infer task report target outside a Ravi session. Run with RAVI_CONTEXT_KEY or pass --report-to <session>.",
-      );
-    }
     const created = await createTask({
+      ...(idempotencyKey?.trim() ? { idempotencyKey: idempotencyKey.trim() } : {}),
       title: title.trim(),
       instructions: instructions.trim(),
       priority: requirePriority(priority),
@@ -1188,7 +1189,7 @@ export class TaskCommands {
 
     let task = created.task;
     let launchResult: Awaited<ReturnType<typeof queueOrDispatchTask>> | null = null;
-    if (assigneeAgentId) {
+    if (assigneeAgentId && task.status !== "done" && task.status !== "failed") {
       launchResult = await queueOrDispatchTask(created.task.id, {
         agentId: assigneeAgentId,
         sessionName: sessionName?.trim() || getDefaultTaskSessionNameForTask(created.task),
