@@ -35,7 +35,7 @@ bun src/cli/index.ts agents list    # the CLI straight from source, no bundle
 ./bin/ravi daemon dev               # rebuilds on every src/ change; apply with ravi daemon restart -m "<reason>"
 ```
 
-To try commands without touching a real install, give them a throwaway home: `HOME=$(mktemp -d) ./bin/ravi <group> <command> --help`.
+To try source commands safely, set an isolated state directory: `RAVI_STATE_DIR="$(mktemp -d)" bun src/cli/index.ts <group> <command> --help`. Do not invoke the auto-building wrapper on a production host.
 
 ## Build
 
@@ -83,7 +83,27 @@ The pre-push checks clear both runtime identity and Git's repository-local
 environment variables. Test fixtures that initialize their own repositories must
 not inherit the pushing checkout's `GIT_DIR`, index or worktree paths.
 
-Never bypass the hooks with `--no-verify`.
+Never bypass the hooks with `--no-verify`, per-command `git -c core.hooksPath=/dev/null push`, or shared hook settings. Per-command bypass is still bypass even when persistent config and hook files remain unchanged.
+
+### Production-host publication
+
+On a machine running the live daemon, do not run the full build/suite or install dependencies in a new worktree. Use the sanctioned Git Data API tool after committing:
+
+```bash
+bun scripts/publish-branch.ts --branch fix/example --test src/router/state-boundary.test.ts
+bun scripts/publish-branch.ts --branch fix/example --test src/router/state-boundary.test.ts --execute
+gh pr create --base dev --head fix/example --body-file /path/to/pr-description.md
+```
+
+Repeat `--test` for relevant exact test files. Both preview and execute run focused tests and the spec/coverage gate in temporary state. The tool requires clean committed work and verifies the uploaded tree equals HEAD before creating a fresh work branch. It never changes hooks or publishes directly to release branches. Existing refs require explicit `--update`: fetch and merge the remote work-branch snapshot first; updates append to that exact parent with `force: false` and refuse stale heads. Current fetched dev must also be integrated and is preserved as a second parent when necessary, so upstream ancestry survives publication. It creates a squash snapshot with a different commit id; local signatures/history are not preserved. Use the explicit update flow for subsequent publications on the same PR. Full build, typecheck, lint, generated-code checks and suite are enforced by PR CI; wait for green CI before merge.
+
+### Real state and caller identity
+
+There is one real state directory, not a "production environment" opt-in. Only the installed runtime registered in PM2 may initialize/migrate real state. Identity is checked through the code location, actual process/parent PID and live registration; inherited env labels or argv alone are insufficient. No new launcher flag is required.
+
+CLI/build/test/worktree execution must select an isolated `RAVI_STATE_DIR` on the command. Missing state selection refuses before SQLite opens the real default; explicitly selecting real state does not authorize a worktree. Use the installed daemon gateway for real state. Fixture cleanup restores its enclosing state selection.
+
+If a legitimate runtime is refused after rollout, restore the previous known-good installed package and existing launchers, recover service, then inspect package location/process registration. No environment setup order or DB rollback is introduced. See `.ravi/specs/quality/state-boundary/RUNBOOK.md`.
 
 ## Adding or changing a CLI command
 
@@ -187,9 +207,11 @@ bun run check:docs          # lint:docs + docs:check-links (also: make docs-chec
 
 ## Pull requests
 
-- Keep each pull request to one change. Run `bun run test` and `make quality` before pushing; the pre-push hook runs the same build, typecheck and test steps.
+- Keep each pull request to one change. On development machines, run `bun run test` and `make quality` before pushing. On production hosts, use the focused publication path above and require the complete checks in PR CI.
 - Fill in every section of [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md): the objective, the problem, the solution, the practical impact, what does not change, how you validated it, the risks and how to roll it back. Follow-ups are optional. The "PR Description" check fails when a required section is missing, has less than 20 characters of content, or still contains template comments, `TODO`/`TBD` or an empty `-` bullet. Name the commands and tests you actually ran under Validation.
 - CI runs `bun run build`, `bun run typecheck`, `bun run test` and the Swift SDK tests, then a quality gate on the pull request diff:
   - **Specs:** every changed spec needs valid frontmatter and its `WHY.md`, `RUNBOOK.md` and `CHECKS.md`, and `CHECKS.md` needs verifiable list items.
   - **Coverage:** a change under `src/channels/`, `src/omni/`, `src/router/`, `src/runtime/`, `src/jobs/`, `src/watch/`, `src/hooks/`, `src/session-trace/`, `src/triggers/`, `src/approval/`, `src/apps/` or `src/devin/` must include one of that area's focused test files (listed in `src/ci/quality-gate.ts`) in the same diff. Diffs that only touch docs, Markdown or `.ravi/` are exempt.
 - Run the gate locally against `dev` with `git fetch origin dev && GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts`.
+
+The daemon is the sole owner of real-state schemas. It initializes runtime stores before serving; channels checks per-store, exact-release readiness before connecting to NATS and never migrates. Stop the old channels runner before a schema upgrade, initialize the daemon, then start channels from the same release. Starting channels first fails with `STATE_SCHEMA_NOT_READY`, without database creation or automatic repair.

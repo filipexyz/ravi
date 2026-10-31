@@ -1,7 +1,9 @@
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { executeWrite, resetWriteCounter } from "../db/write-retry.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage } from "../utils/pagination.js";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -291,11 +293,12 @@ export function closeCredentialsDb(): void {
 
 function getCredentialDb(options: CredentialStoreOptions = {}): Database {
   const path = options.dbPath ?? getCredentialsDbPath(options.env);
+  assertDatabaseTargetAllowed(path, { env: options.env });
   if (handle?.path === path) return handle.db;
   handle?.db.close();
   mkdirSync(dirname(path), { recursive: true });
-  const db = new Database(path, { create: true });
-  db.exec("PRAGMA journal_mode = WAL");
+  const db = openStateDatabase(path, { create: true }, { env: options.env });
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   ensureSchema(db);
   handle = { db, path };
@@ -303,6 +306,10 @@ function getCredentialDb(options: CredentialStoreOptions = {}): Database {
 }
 
 function ensureSchema(db: Database): void {
+  initializeStateSchema(db, "credentials", () => migrateSchema(db));
+}
+
+function migrateSchema(db: Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS credential_connections (
       id TEXT PRIMARY KEY,

@@ -1,7 +1,9 @@
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
 import { getRaviStateDir } from "../utils/paths.js";
 import { executeWrite } from "../db/write-retry.js";
 import { reconcileColumns } from "../db/reconcile-columns.js";
@@ -91,6 +93,7 @@ function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
 
 function ensureDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (insightDbState.db !== null && insightDbState.dbPath === nextDbPath) {
     return insightDbState.db;
   }
@@ -101,8 +104,8 @@ function ensureDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  const db = new Database(nextDbPath);
-  db.exec("PRAGMA journal_mode = WAL");
+  const db = openStateDatabase(nextDbPath);
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
   initializeSchema(db);
@@ -176,6 +179,10 @@ const SCHEMA_SQL = `
 `;
 
 function initializeSchema(db: Database): void {
+  initializeStateSchema(db, "insights", () => migrateSchema(db));
+}
+
+function migrateSchema(db: Database): void {
   db.exec(SCHEMA_SQL);
   reconcileColumns(db, SCHEMA_SQL, { label: "insights-db" });
 }
@@ -624,3 +631,5 @@ export function dbAddInsightComment(input: AddInsightCommentInput): InsightComme
 
   return rowToInsightComment(row);
 }
+
+export { ensureDb as ensureInsightsDb };

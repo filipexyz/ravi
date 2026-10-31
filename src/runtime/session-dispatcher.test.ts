@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { getRecentHistory } from "../db.js";
 import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
@@ -617,7 +617,15 @@ function channelBackendMetadata(turnId: string): NonNullable<RuntimeLaunchPrompt
 }
 
 describe("RuntimeSessionDispatcher runtime recovery", () => {
-  afterEach(() => mock.restore());
+  let recoveryState: string | undefined;
+  beforeEach(async () => {
+    recoveryState = await createIsolatedRaviState("ravi-runtime-recovery-");
+  });
+  afterEach(async () => {
+    mock.restore();
+    await cleanupIsolatedRaviState(recoveryState);
+    recoveryState = undefined;
+  });
 
   it("sends only a generic notice to the channel and alerts the operator after repeated event-loop closures", async () => {
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];

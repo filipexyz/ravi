@@ -1,4 +1,6 @@
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { initializeStateSchema } from "./db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "./db/state-boundary.js";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { getRaviStateDir } from "./utils/paths.js";
@@ -15,8 +17,9 @@ export function getChatDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return resolveDbPath(env);
 }
 
-function getDb(): Database {
+export function getDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (db !== null && dbPath === nextDbPath) {
     return db;
   }
@@ -26,13 +29,23 @@ function getDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  db = new Database(nextDbPath);
+  db = openStateDatabase(nextDbPath);
   dbPath = nextDbPath;
 
   // WAL mode for concurrent read/write access (CLI + daemon)
-  db.exec("PRAGMA journal_mode = WAL");
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
 
+  try {
+    initializeStateSchema(db, "chat", () => initializeChatSchema(db!));
+  } catch (error) {
+    close();
+    throw error;
+  }
+  return db;
+}
+
+function initializeChatSchema(db: Database): void {
   // Initialize schema
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -83,8 +96,6 @@ function getDb(): Database {
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_agent_chat ON messages(agent_id, chat_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_source_message ON messages(source_message_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_turn ON messages(session_id, turn_id)");
-
-  return db;
 }
 
 export interface Message {

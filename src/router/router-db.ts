@@ -1,3 +1,5 @@
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { migrateDecisions } from "../decisions/schema.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
 /**
@@ -1376,6 +1378,7 @@ function dropPreviewLibraryRequestsTable(db: Database): void {
 
 function getDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
     return routerDbState.db;
   }
@@ -1389,7 +1392,7 @@ function getDb(): Database {
   mkdirSync(stateDir, { recursive: true });
 
   // Auto-migrate from legacy path (~/ravi/ravi.db → ~/.ravi/ravi.db)
-  if (nextDbPath === DEFAULT_DB_PATH && !existsSync(nextDbPath) && existsSync(LEGACY_DB_PATH)) {
+  if (!isSchemaConsumer() && nextDbPath === DEFAULT_DB_PATH && !existsSync(nextDbPath) && existsSync(LEGACY_DB_PATH)) {
     log.info("Migrating database from ~/ravi/ravi.db to ~/.ravi/ravi.db");
     renameSync(LEGACY_DB_PATH, nextDbPath);
     // Also move WAL/SHM files if they exist
@@ -1399,13 +1402,13 @@ function getDb(): Database {
     }
   }
 
-  const db = new Database(nextDbPath);
+  const db = openStateDatabase(nextDbPath);
   instrumentSlowQueries(db, nextDbPath);
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
   // WAL mode for concurrent read/write access (CLI + daemon).
-  db.exec("PRAGMA journal_mode = WAL");
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   // Wait up to 5s for locks to clear instead of failing immediately.
   db.exec("PRAGMA busy_timeout = 5000");
   // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
@@ -1424,6 +1427,16 @@ function getDb(): Database {
 
   // Enable foreign keys before schema creation
   db.exec("PRAGMA foreign_keys = ON");
+  try {
+    initializeStateSchema(db, "router", () => initializeRouterSchema(db, nextDbPath));
+  } catch (error) {
+    closeRouterDb();
+    throw error;
+  }
+  return db;
+}
+
+function initializeRouterSchema(db: Database, nextDbPath: string): void {
   dropPreviewLibraryRequestsTable(db);
 
   // Initialize schema
@@ -3621,7 +3634,6 @@ function getDb(): Database {
   }
 
   log.debug("Database initialized", { path: nextDbPath });
-  return db;
 }
 
 /**
