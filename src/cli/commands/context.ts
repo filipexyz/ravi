@@ -652,6 +652,51 @@ export class ContextCommands {
     console.log(JSON.stringify(output));
     return output;
   }
+  @Command({
+    name: "bridge-tool-hook",
+    description: "Authorize one Console bridge command, including an owner decision when eligible",
+    remoteTimeoutMs: 600_000,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "context",
+    action: "bridge-tool-hook",
+    risk: "high",
+    redactions: ["payload"],
+    localOperator: false,
+  })
+  async bridgeToolHook(
+    @Option({ flags: "--json", description: "Machine output" }) _json = false,
+    @Option({ flags: "--payload <json>", description: "Hook input" }) payloadJson?: string,
+  ) {
+    let output: Record<string, unknown>;
+    try {
+      const context = this.requireResolvedContext({ touch: false, readOnly: true });
+      if (typeof context.metadata?.bridgeTurnId !== "string") throw new Error("A live bridge turn is required");
+      const payload = parseCodexHookPayload(payloadJson),
+        input = asRecord(payload.tool_input);
+      const command = typeof input?.command === "string" ? input.command : "";
+      if (!["Bash", "shell"].includes(String(payload.tool_name)) || !command)
+        throw new Error("Unsupported bridge tool");
+      const { createRuntimeHostServices } = await import("../../runtime/host-services.js");
+      const services = createRuntimeHostServices({
+        context,
+        agentId: context.agentId!,
+        sessionName: context.sessionName!,
+        toolContext: {},
+      });
+      const decision = await services.authorizeCommandExecution({
+        command,
+        input: input ?? {},
+        eventData: { command, toolUseId: payload.tool_use_id ?? null },
+      });
+      output = decision.approved ? {} : buildPreToolUseDenyResult(decision.reason ?? "Action denied");
+    } catch {
+      output = buildPreToolUseDenyResult("Bridge command authority is unavailable");
+    }
+    console.log(JSON.stringify(output));
+    return output;
+  }
   private requireResolvedContext(options: { touch?: boolean; readOnly?: boolean } = {}) {
     const inlineContext = getContext()?.context;
     if (inlineContext) {
@@ -1251,6 +1296,7 @@ export class ContextCredentialsCommands {
 }
 
 declareCommandReturns(ContextCommands, {
+  bridgeToolHook: contextCodexBashHookReturnSchema,
   authorize: contextAuthorizeReturnSchema,
   capabilities: contextCapabilitiesReturnSchema,
   check: contextCheckReturnSchema,

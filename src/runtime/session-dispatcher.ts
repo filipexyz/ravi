@@ -654,6 +654,7 @@ export class RuntimeSessionDispatcher {
         type: "turn.interrupted",
         provider: session.queryHandle.provider,
         reason: abortReason,
+        ...(session.currentBridgeTurnId ? { _bridgeTurnId: session.currentBridgeTurnId } : {}),
         sessionName,
         ...(cancelledTool ? { cancelledTool } : {}),
         ...(session.currentSource ? { _source: session.currentSource } : {}),
@@ -2521,10 +2522,23 @@ export class RuntimeSessionDispatcher {
       messageId: prompt.context?.messageId ?? prompt.source?.sourceMessageId,
       payloadJson: { ...capacity, reason, retryable: timedOut },
     });
-    // A watchdog is not acceptance. Reject back to the original durable delivery;
-    // resolving here used to ACK and discard the user's only retryable copy.
-    if (timedOut) pendingStart.reject(new RuntimeStartCapacityError({ ...capacity, reason }));
-    else pendingStart.resolve();
+    // A watchdog is not acceptance. Reject back to the original durable delivery.
+    if (timedOut) {
+      pendingStart.reject(new RuntimeStartCapacityError({ ...capacity, reason }));
+    } else {
+      this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.dropped",
+          ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
+          reason,
+          lane: capacity.lane,
+          sessionName,
+          ...(prompt.source ? { _source: prompt.source } : {}),
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => log.warn("Failed to emit pending start failure event", { sessionName, reason, error }));
+      pendingStart.resolve();
+    }
   }
 
   private scheduleIdleGapRecovery(

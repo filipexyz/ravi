@@ -427,6 +427,49 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({ op: "tasks create", code: "USAGE_ERROR", exitCode: 2, message });
   });
 
+  it("preserves a missing task profile error from the gateway", () => {
+    const message = "private profile catalog /runtime/path";
+    const error = remoteGatewayErrorToContractError(
+      "tasks create",
+      result({
+        status: 422,
+        body: JSON.stringify({
+          success: false,
+          op: "tasks create",
+          exitCode: 1,
+          outcome: "failed",
+          error: { code: "TASK_PROFILE_NOT_FOUND", message, retryable: false },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      op: "tasks create",
+      code: "TASK_PROFILE_NOT_FOUND",
+      exitCode: 1,
+      message: "Task profile was not found in this runtime.",
+    });
+    expect(error?.details.suggestedAction).toContain("ravi tasks profiles list --json");
+    expect(JSON.stringify(error?.envelope())).not.toContain(message);
+  });
+
+  it("does not apply the task profile copy to other commands", () => {
+    const error = remoteGatewayErrorToContractError(
+      "demo echo",
+      result({
+        status: 422,
+        body: JSON.stringify({
+          success: false,
+          op: "demo echo",
+          exitCode: 1,
+          outcome: "failed",
+          error: { code: "TASK_PROFILE_NOT_FOUND", message: "private", retryable: false },
+        }),
+      }),
+    );
+    expect(error?.message).toBe("Remote command failed.");
+  });
+
   it("projects 400 validation issues into a usage error", () => {
     const error = remoteGatewayErrorToContractError(
       "tasks create",

@@ -28,7 +28,8 @@ import { getContext } from "../cli/context.js";
 import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../cloud-auth/actor-bindings.js";
 import { CloudAuthError, type CloudAuthErrorCode } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
-import { dbGetCronJob } from "../cron/cron-db.js";
+import { getContactById } from "../contacts.js";
+import { readCronRunAuthority, readSpawnedCronRunAuthority } from "../cron/authority.js";
 import { dmContactForChat } from "../knowledge/contacts.js";
 import {
   dbGetAgent,
@@ -139,7 +140,8 @@ export interface ConnectorTurnDeps {
   activeOrgId?: string | null;
   /** Name used in chat lines ("I can't use <owner>'s Gmail ..."). */
   ownerName?: string | null;
-  getCronJobOwner?: (jobId: string) => { found: boolean; ownerPrincipal: string | null };
+  /** Live revocation check on the admitted contact, never on a replacement owner. */
+  getContactStatus?: (contactId: string) => string | null;
   /** The contact a direct chat is with, or null when the chat is not a known direct chat. */
   getDmChatContact?: (input: { chatId: string; channel: string | null }) => string | null;
   getContactBinding?: (contactId: string) => ContactConsoleIdentity | null;
@@ -198,7 +200,12 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
   if (!runtime.present) return terminalTurn();
   const owner = resolveOwner(deps, env);
   if (runtime.spawnedPrincipal) {
-    return classifyNonContactPrincipal(runtime.spawnedPrincipal, {}, owner, deps, null);
+    const jobId = runtime.spawnedPrincipal.startsWith("automation:cron:")
+      ? runtime.spawnedPrincipal.slice("automation:cron:".length)
+      : "";
+    return classifyNonContactPrincipal(runtime.spawnedPrincipal, {}, owner, deps, {
+      cronRunAuthority: readSpawnedCronRunAuthority(env, jobId),
+    });
   }
   if (!runtime.record) {
     return notOwner("unknown", unknownTurnMessage(owner));
@@ -306,7 +313,13 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
     };
   }
 
-  const verdict = classifyNonContactPrincipal(actorPrincipal, base, owner, deps, metadata);
+  const verdict = classifyNonContactPrincipal(actorPrincipal, base, owner, deps, {
+    ...metadata,
+    // CLI children may supply metadata, but only a host-issued turn owns admission.
+    // A normal child inherits the turn through findActorContext; a forged actor
+    // on the child itself must not substitute a new cron snapshot.
+    cronRunAuthority: actorContext.kind === "turn-runtime" ? metadata.cronRunAuthority : undefined,
+  });
   if (!verdict.ok) return verdict;
   const answer = resolveAnswerChat(surface, metadata, verdict.turn, {
     sessionKey: sameSessionKey(actorContext.sessionKey, runtime.record.sessionKey),
@@ -631,18 +644,25 @@ function classifyNonContactPrincipal(
     }
     if (principalId.startsWith("cron:") && principalId.length > "cron:".length) {
       const jobId = principalId.slice("cron:".length);
-      const job = (deps.getCronJobOwner ?? readCronJobOwner)(jobId);
-      if (!job.found) {
+      const job = readCronRunAuthority(metadata?.cronRunAuthority, jobId);
+      if (!job) {
         return notOwner(
           actorPrincipal,
-          `Cron job ${jobId} no longer exists, so Ravi cannot tell who owns this routine and will not use ${owner.label}'s connected accounts.`,
+          `Cron run ${jobId} has no valid admission authority, so Ravi cannot tell who owns this run and will not use ${owner.label}'s connected accounts.`,
         );
       }
-      if (!cronOwnerIsOperator(job.ownerPrincipal, owner, deps)) {
+      if (job.ownerPrincipal.startsWith("contact:")) {
+        const contactId = job.ownerPrincipal.slice("contact:".length);
+        const status = (deps.getContactStatus ?? readCronContactStatus)(contactId);
+        if (!status || status === "blocked") {
+          return notOwner(actorPrincipal, `Cron run ${jobId}'s admitted owner is removed or blocked.`);
+        }
+      }
+      if (!job.ownerIsOperator || !cronOwnerIsOperator(job.ownerPrincipal, owner, deps)) {
         return {
           ...notOwner(
             actorPrincipal,
-            `Cron job ${jobId} was created by ${job.ownerPrincipal}, not by ${owner.label}, so it cannot use ${owner.label}'s connected accounts.`,
+            `Cron run ${jobId} was admitted for ${job.ownerPrincipal}, not by ${owner.label}, so it cannot use ${owner.label}'s connected accounts.`,
           ),
           routineOwner: { kind: "cron", id: jobId, ownerPrincipal: job.ownerPrincipal ?? "unknown" },
         };
@@ -992,12 +1012,11 @@ function readProjectionSourceId(metadata: Record<string, unknown>): string | nul
   return stringField(projection as Record<string, unknown>, "sourceContextId");
 }
 
-function readCronJobOwner(jobId: string): { found: boolean; ownerPrincipal: string | null } {
+function readCronContactStatus(contactId: string): string | null {
   try {
-    const job = dbGetCronJob(jobId);
-    return job ? { found: true, ownerPrincipal: job.ownerPrincipal ?? null } : { found: false, ownerPrincipal: null };
+    return getContactById(contactId)?.status ?? null;
   } catch {
-    return { found: false, ownerPrincipal: null };
+    return null;
   }
 }
 

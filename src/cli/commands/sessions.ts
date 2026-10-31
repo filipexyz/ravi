@@ -3,6 +3,14 @@
  */
 
 import "reflect-metadata";
+import {
+  isBridgeSessionTarget,
+  listSessions,
+  getSessionsByAgent,
+  getSession,
+  resolveSession,
+  findSessionByChatId,
+} from "../session-targets.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
@@ -34,14 +42,9 @@ import {
   type SessionAdapterRecord,
 } from "../../adapters/index.js";
 import {
-  listSessions,
-  getSessionsByAgent,
-  getSession,
   deleteSession,
   resetSession,
-  resolveSession,
   getOrCreateSession,
-  findSessionByChatId,
   updateSessionDisplayName,
   renameSessionName,
   updateSessionModelOverride,
@@ -3520,6 +3523,9 @@ export class SessionCommands {
     resource: "sessions",
     action: "set-display",
     risk: "medium",
+    redactions: ["displayName"],
+    consoleScope: "session",
+    resourceId: "nameOrKey",
   })
   setDisplay(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3549,7 +3555,7 @@ export class SessionCommands {
     const beforeDisplayName = s.displayName ?? null;
     updateSessionDisplayName(s.sessionKey, nextDisplayName);
     const after = resolveSession(s.sessionKey) ?? ({ ...s, displayName: nextDisplayName } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("set-display", s, after, beforeDisplayName !== nextDisplayName, {
         displayName: nextDisplayName,
       });
@@ -3796,6 +3802,8 @@ export class SessionCommands {
     resource: "sessions",
     action: "set-model",
     risk: "medium",
+    consoleScope: "session",
+    resourceId: "nameOrKey",
   })
   async setModel(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3988,6 +3996,8 @@ export class SessionCommands {
     resource: "sessions",
     action: "set-thinking",
     risk: "medium",
+    consoleScope: "session",
+    resourceId: "nameOrKey",
   })
   setThinking(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -4034,7 +4044,7 @@ export class SessionCommands {
         ...s,
         ...(thinkingLevel === null ? { thinkingLevel: undefined } : { thinkingLevel }),
       } as SessionEntry);
-    if (asJson) {
+    if (shouldReturnStructuredResult(asJson)) {
       const payload = buildSessionMutationJson("set-thinking", s, after, beforeThinkingLevel !== thinkingLevel, {
         thinkingLevel,
         appliesOn: "next-session-start",
@@ -5801,6 +5811,10 @@ export class SessionCommands {
    * Resolve a target session by name, key, or chatId. Optionally create with -a.
    */
   private resolveTraceTarget(nameOrKey: string): { session: SessionEntry | null } | null {
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
     let session = resolveSession(nameOrKey);
     if (!session) {
       const match = findSessionByChatId(nameOrKey);
@@ -5827,6 +5841,10 @@ export class SessionCommands {
       onCreated?: (session: SessionEntry | null) => void;
     } = {},
   ): SessionEntry | null {
+    if (isBridgeSessionTarget(nameOrKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return null;
+    }
     let session = resolveSession(nameOrKey);
 
     // Try chatId lookup

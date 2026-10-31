@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { withoutRaviRuntimeContextEnv } from "../test/ravi-state.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dbCreateAgent,
@@ -920,6 +922,42 @@ describe("approval service", () => {
     expect(emitted.filter((entry) => entry.topic === "ravi.approval.response")).toHaveLength(1);
     expect(emitted[0]?.data._emitId).toBeTruthy();
     expect(emitted[0]?.data.messageId).toBe("msg_approval_1");
+  });
+
+  it("applies a Console bridge grant before the local chat-only profile, while revoked contexts still deny", () => {
+    // A separate process owns the singleton bridge store; no shared runtime state.
+    execFileSync(
+      process.execPath,
+      [
+        "--eval",
+        `
+      import assert from "node:assert/strict";
+      import { randomUUID } from "node:crypto";
+      import { getBridgeStore } from "./src/bridge/store.ts";
+      import { getOrCreateSession } from "./src/router/sessions.ts";
+      import { dbCreateAgent, dbUpdateAgent, dbCreateContext } from "./src/router/router-db.ts";
+      import { authorizeRuntimeContext } from "./src/approval/service.ts";
+      const store = getBridgeStore(), id = randomUUID(), turn = randomUUID(), enrollment = randomUUID();
+      const sessionKey = "agent:bridge-test:console:" + id;
+      const cap = {permission:"execute", objectType:"executable", objectId:"printf"};
+      dbCreateAgent({id:"bridge-test",cwd:"/tmp/bridge-fixture"});
+      dbUpdateAgent("bridge-test",{defaults:{runtimePermissions:{profile:"chat-only"}}});
+      store.putEnrollment({id:enrollment,orgId:randomUUID(),installationId:randomUUID(),runtimeId:randomUUID(),issuer:"https://issuer.test",issuerPublicKey:"synthetic",issuerKeyId:"test",epoch:1,active:true});
+      const subject=randomUUID(),project=randomUUID();
+      store.db.query("INSERT INTO conversations(id,enrollment_id,subject,project_id,agent_id,session_name,session_key,title,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(id,enrollment,subject,project,"bridge-test","console-"+id,sessionKey,"Synthetic",Date.now());
+      const grant={enrollmentId:enrollment,epoch:1,exp:Math.floor(Date.now()/1000)+30,canSend:true,sub:subject,projectId:project,agents:[{id:"bridge-test",capabilities:[cap],approvalCapabilities:[]}]};
+      store.db.query("INSERT INTO turns(id,conversation_id,status,lease_until,authority,created_at) VALUES(?,?,?,?,?,?)").run(turn,id,"running",Date.now()+30000,JSON.stringify(grant),Date.now());
+      getOrCreateSession(sessionKey,"bridge-test","/tmp/bridge-fixture",{name:"console-"+id});
+      const context=dbCreateContext({contextId:randomUUID(),contextKey:randomUUID(),kind:"turn-runtime",agentId:"bridge-test",sessionKey,sessionName:"console-"+id,capabilities:[],metadata:{bridgeTurnId:turn},createdAt:Date.now()});
+      assert.equal((await authorizeRuntimeContext({context,...cap})).allowed,true);
+      assert.equal((await authorizeRuntimeContext({context:{...context,revokedAt:Date.now()-1},...cap})).allowed,false);
+      store.db.query("UPDATE turns SET lease_until=0 WHERE id=?").run(turn);
+      assert.equal((await authorizeRuntimeContext({context,...cap})).allowed,false);
+      store.close();
+    `,
+      ],
+      { env: { ...withoutRaviRuntimeContextEnv(), RAVI_STATE_DIR: stateDir! }, stdio: "pipe", timeout: 20000 },
+    );
   });
 
   it("denies chat-only tool and exec requests before approval escalation", async () => {

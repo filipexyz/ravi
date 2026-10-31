@@ -1,3 +1,4 @@
+import type { CronRunAuthority } from "../cron/authority.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
@@ -194,6 +195,8 @@ export type RuntimeTurnOriginMetadata =
 
 /** Prompt message structure */
 export interface PromptMessage {
+  /** Trusted bridge producer reference; all authority is reloaded from its durable receipt. */
+  _bridgeTurnId?: string;
   prompt: string;
   /** Ravi Commands that produced this prompt, when a user invoked #command. */
   commands?: RaviCommandPromptMetadata[];
@@ -231,6 +234,8 @@ export interface PromptMessage {
   _cron?: boolean;
   /** Cron job id when `_cron` is true. */
   _jobId?: string;
+  /** Ownership fixed by the runner before dispatch, never rebuilt from a live job. */
+  _cronAuthority?: CronRunAuthority;
   /** Trigger runner prompt marker. */
   _trigger?: boolean;
   /** Trigger id when `_trigger` is true. */

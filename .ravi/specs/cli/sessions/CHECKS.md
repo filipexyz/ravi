@@ -24,3 +24,6 @@
   `--execute` (asserted literally in `sessions.test.ts`).
 - `bun test src/cli/commands/sessions.test.ts` SHOULD pass after any change to
   the sessions contract surface.
+
+- `src/sdk/gateway/console.test.ts` invokes an existing session control through
+  verified ownership, denies a second owner and rejects sibling propagation.

@@ -2476,6 +2476,12 @@ public struct ContextNamespace: Sendable {
     return try await transport.call(groupSegments: ["context"], command: "authorize", body: requestBody, as: ContextAuthorizeReturn.self)
   }
 
+  public func bridgeToolHook(_ options: ContextBridgeToolHookOptions = .init()) async throws -> ContextBridgeToolHookReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["context"], command: "bridge-tool-hook", body: requestBody, as: ContextBridgeToolHookReturn.self)
+  }
+
   public func capabilities() async throws -> ContextCapabilitiesReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["context"], command: "capabilities", body: requestBody, as: ContextCapabilitiesReturn.self)
@@ -5669,6 +5675,10 @@ public struct SessionsNamespace: Sendable {
     self.transport = transport
   }
 
+  public var conversations: SessionsConversationsNamespace {
+    SessionsConversationsNamespace(transport: transport)
+  }
+
   public var followups: SessionsFollowupsNamespace {
     SessionsFollowupsNamespace(transport: transport)
   }
@@ -5949,6 +5959,121 @@ public struct SessionsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     return try await transport.call(groupSegments: ["sessions"], command: "visibility", body: requestBody, as: SessionsVisibilityReturn.self)
+  }
+}
+
+public struct SessionsConversationsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func agents(_ projectId: String, _ requestId: String, _ createdAt: Int) async throws -> SessionsConversationsAgentsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "agents", body: requestBody, as: SessionsConversationsAgentsReturn.self)
+  }
+
+  public func cancel(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String, _ turnId: String) async throws -> SessionsConversationsCancelReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    requestBody["turnId"] = try RaviJSON.fromEncodable(turnId)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "cancel", body: requestBody, as: SessionsConversationsCancelReturn.self)
+  }
+
+  public func create(_ projectId: String, _ requestId: String, _ createdAt: Int, _ agentId: String) async throws -> SessionsConversationsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["agentId"] = try RaviJSON.fromEncodable(agentId)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "create", body: requestBody, as: SessionsConversationsCreateReturn.self)
+  }
+
+  public func decide(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String, _ approvalId: String, _ decision: String, _ expectedVersion: Int, _ actionDigest: String) async throws -> SessionsConversationsDecideReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    requestBody["approvalId"] = try RaviJSON.fromEncodable(approvalId)
+    requestBody["decision"] = try RaviJSON.fromEncodable(decision)
+    requestBody["expectedVersion"] = try RaviJSON.fromEncodable(expectedVersion)
+    requestBody["actionDigest"] = try RaviJSON.fromEncodable(actionDigest)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "decide", body: requestBody, as: SessionsConversationsDecideReturn.self)
+  }
+
+  public func events(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String, _ cursor: RaviJSON) async throws -> SessionsConversationsEventsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    requestBody["cursor"] = try RaviJSON.fromEncodable(cursor)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "events", body: requestBody, as: SessionsConversationsEventsReturn.self)
+  }
+
+  public func history(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String, _ before: RaviJSON) async throws -> SessionsConversationsHistoryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    requestBody["before"] = try RaviJSON.fromEncodable(before)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "history", body: requestBody, as: SessionsConversationsHistoryReturn.self)
+  }
+
+  public func list(_ projectId: String, _ requestId: String, _ createdAt: Int, _ options: SessionsConversationsListOptions = .init()) async throws -> SessionsConversationsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "list", body: requestBody, as: SessionsConversationsListReturn.self)
+  }
+
+  public func open_(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String) async throws -> SessionsConversationsOpenReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "open", body: requestBody, as: SessionsConversationsOpenReturn.self)
+  }
+
+  public func receipt(_ projectId: String, _ requestId: String, _ createdAt: Int, _ targetRequestId: String) async throws -> SessionsConversationsReceiptReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["targetRequestId"] = try RaviJSON.fromEncodable(targetRequestId)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "receipt", body: requestBody, as: SessionsConversationsReceiptReturn.self)
+  }
+
+  public func renew(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String) async throws -> SessionsConversationsRenewReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "renew", body: requestBody, as: SessionsConversationsRenewReturn.self)
+  }
+
+  public func send(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String, _ text: String, _ expectedVersion: Int) async throws -> SessionsConversationsSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    requestBody["text"] = try RaviJSON.fromEncodable(text)
+    requestBody["expectedVersion"] = try RaviJSON.fromEncodable(expectedVersion)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "send", body: requestBody, as: SessionsConversationsSendReturn.self)
   }
 }
 

@@ -1,10 +1,12 @@
 import { nats } from "../nats.js";
+import { recordBridgeRuntimeEvent } from "../bridge/native.js";
 
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_PAYLOAD_BYTES = 60000;
 
 /** Emit to NATS, truncating oversized payloads without dropping the event. */
 export async function safeEmit(topic: string, data: Record<string, unknown>): Promise<void> {
+  recordBridgeRuntimeEvent(topic, data);
   let json = JSON.stringify(data);
   if (json.length <= MAX_PAYLOAD_BYTES) {
     await nats.emit(topic, data);
