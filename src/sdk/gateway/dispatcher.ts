@@ -41,12 +41,11 @@ import {
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import { parseCallerCwd } from "../../cli/caller-cwd.js";
-import { sanitizePublicValue } from "../../cli/redaction.js";
-import { logger } from "../../utils/logger.js";
 import { enforceWriteAfterRead, writeAfterReadContractError } from "../../knowledge/safety/write-after-read.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
-const log = logger.child("gateway:dispatcher");
+import { withGatewayRequest } from "./request-context.js";
+import { logGatewayFailure } from "./diagnostics.js";
 
 export interface DispatchOptions {
   /** Allow `superadmin`-scoped commands. Off by default. */
@@ -102,6 +101,27 @@ export async function dispatch(
   body: unknown,
   scopeContext: ScopeContext,
   opts: DispatchOptions = {},
+): Promise<DispatchResult> {
+  return withGatewayRequest(commandOperation(cmd.groupSegments.join("_"), cmd.command), async () => {
+    try {
+      return await dispatchCommand(cmd, body, scopeContext, opts);
+    } catch (error) {
+      const contract =
+        error instanceof ContractError
+          ? error
+          : mapExecutionErrorToContractError(commandOperation(cmd.groupSegments.join("_"), cmd.command), error);
+      const status = error instanceof ContractError ? undefined : 500;
+      if (status === 500) logGatewayFailure(error, contract.code);
+      return { response: contractErrorResponse(contract, status), audit: null };
+    }
+  });
+}
+
+async function dispatchCommand(
+  cmd: CommandRegistryEntry,
+  body: unknown,
+  scopeContext: ScopeContext,
+  opts: DispatchOptions,
 ): Promise<DispatchResult> {
   const tool = `${cmd.groupSegments.join("_")}_${cmd.command}`;
   const group = cmd.groupSegments.join("_");
@@ -204,6 +224,7 @@ export async function dispatch(
       outcome = contractFailureOutcome(appError);
       auditExitCode = appError.exitCode;
       auditErrorCode = appError.code;
+      if (err.status >= 500) logGatewayFailure(err, appError.code);
       response = contractErrorResponse(appError, err.status);
     } else {
       const knownContractError =
@@ -225,26 +246,7 @@ export async function dispatch(
           : undefined;
       const isUnexpected =
         !(err instanceof ContractError) && !isCloudAuthError(err) && knownContractError.code === "UNHANDLED_ERROR";
-      if (isUnexpected) {
-        // Keep the cause locally without copying request bodies, raw context
-        // keys or arbitrary properties attached to the exception into logs.
-        const diagnostic = sanitizePublicValue({
-          error: err instanceof Error ? err.message : "Non-Error exception",
-          errorName: err instanceof Error ? err.name : typeof err,
-          stack:
-            err instanceof Error
-              ? err.stack
-                  ?.split("\n")
-                  .filter((line) => /^\s+at\s/.test(line))
-                  .slice(0, 8)
-              : undefined,
-        }) as Record<string, unknown>;
-        log.error("Unhandled command exception", {
-          command: cmd.fullName,
-          durationMs: Date.now() - startedAt,
-          ...diagnostic,
-        });
-      }
+      if (isUnexpected || (cloudStatus && cloudStatus >= 500)) logGatewayFailure(err, knownContractError.code);
       response = contractErrorResponse(knownContractError, cloudStatus ?? (isUnexpected ? 500 : undefined));
     }
     const audit = buildAuditEvent(cmd, tool, auditInput, outcome, startedAt, lineage, auditExitCode, auditErrorCode);
@@ -269,6 +271,7 @@ export async function dispatch(
       const error = binaryResponseToContractError(commandOperation(group, cmd.command), returnValue.status);
       const binaryOutcome = error.code === "PERMISSION_DENIED" ? "denied" : contractFailureOutcome(error);
       const responseStatus = returnValue.status >= 400 ? returnValue.status : 502;
+      if (responseStatus >= 500) logGatewayFailure(error, error.code);
       response = contractErrorResponse(error, responseStatus, binaryOutcome);
       const audit = buildAuditEvent(
         cmd,

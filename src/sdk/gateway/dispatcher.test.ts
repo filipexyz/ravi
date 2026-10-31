@@ -698,7 +698,7 @@ describe("dispatch — error path", () => {
       expect(body).not.toContain("task_decisions");
       const diagnostic = stderr.mock.calls.map((call) => String(call[0])).join("");
       expect(diagnostic).toContain("no such table: task_decisions");
-      expect(diagnostic).toContain("command=demo.boom");
+      expect(diagnostic).toContain("command=demo boom");
       expect(diagnostic).toContain("stack=");
       expect(diagnostic).toContain("dispatcher.test.ts");
     } finally {
@@ -868,7 +868,10 @@ describe("dispatch — error path", () => {
       success: false,
       op: "demo boom",
       exitCode: 1,
-      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+      error: {
+        code: "UNHANDLED_ERROR",
+        message: "demo boom failed internally. Report the requestId to the operator before retrying.",
+      },
     });
     expect(JSON.stringify(body)).not.toContain("kaboom");
     expect(audits.events).toHaveLength(1);
@@ -896,7 +899,7 @@ describe("dispatch — error path", () => {
         op: string;
         exitCode: number;
         outcome: string;
-        error: { code: string; message: string; retryable: boolean; suggestedAction: string };
+        error: { code: string; message: string; retryable: boolean; suggestedAction: string; requestId: string };
       };
       expect(body).toEqual({
         success: false,
@@ -908,6 +911,7 @@ describe("dispatch — error path", () => {
           message: "contract stopped execution",
           retryable: false,
           suggestedAction: "inspect the structured response",
+          requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
         },
       });
       expect(audits.events).toHaveLength(1);
