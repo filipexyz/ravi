@@ -398,7 +398,7 @@ describe("Webhook HTTP server", () => {
         auth:
           init?.headers instanceof Headers
             ? init.headers.get("authorization")
-            : (init?.headers as Record<string, string>).authorization,
+            : ((init?.headers as Record<string, string> | undefined)?.authorization ?? null),
       });
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
