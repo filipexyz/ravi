@@ -120,6 +120,42 @@ describe("runtime request first-turn context key", () => {
     stateDir = null;
   });
 
+  it("rejects persisted incompatible configuration before issuing runtime authority", async () => {
+    const sessionCwd = stateDir!;
+    await expect(
+      buildRuntimeStartRequest({
+        runId: "run-invalid-model",
+        sessionName: SESSION_NAME,
+        prompt: { prompt: "work", source },
+        session: session(sessionCwd),
+        agent: { ...agent(sessionCwd), provider: "claude", model: "deepseek/deepseek-flash" },
+        runtimeProviderId: "claude",
+        runtimeProvider: {
+          id: "claude",
+          getCapabilities: () => capabilities,
+          startSession: () => emptyRuntimeSession(),
+        },
+        runtimeCapabilities: capabilities,
+        sessionCwd,
+        dbSessionKey: SESSION_KEY,
+        model: "deepseek/deepseek-flash",
+        runtimeResolution: {
+          options: { model: "deepseek/deepseek-flash" },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: source,
+        streamingSession: streamingSession("work"),
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: "claude",
+        crashRecovery: crashRecovery(),
+      }),
+    ).rejects.toThrow("does not belong");
+    expect(dbListContexts({ sessionKey: SESSION_KEY, kind: "turn-runtime", includeInactive: true })).toHaveLength(0);
+  });
+
   it("does not revoke the published key when the first turn starts after request build", async () => {
     const sessionCwd = stateDir!;
     const streaming = streamingSession("ravi agents list");

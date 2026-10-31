@@ -26184,20 +26184,7 @@ public struct RuntimeCredentialsSelectReturn: Codable, Sendable {
   }
 }
 
-public struct RuntimeCredentialsStatusReturn: Codable, Sendable {
-  public var credential: [String: RaviJSON]
-  public var health: RaviJSON
-
-  public init(credential: [String: RaviJSON], health: RaviJSON) {
-    self.credential = credential
-    self.health = health
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case credential = "credential"
-    case health = "health"
-  }
-}
+public typealias RuntimeCredentialsStatusReturn = RaviJSON
 
 public struct RuntimeEnvGetReturn: Codable, Sendable {
   public var key: String

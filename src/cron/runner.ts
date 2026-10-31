@@ -44,6 +44,7 @@ import {
   type CronTurnOutcome,
 } from "./turn-outcome.js";
 import type { CronJob } from "./types.js";
+import { notifyCronFailure } from "./failure-notification.js";
 
 const log = logger.child("cron:runner");
 const MAX_NOTIFY_OUTPUT_CHARS = 4000;
@@ -210,23 +211,13 @@ export class CronRunner {
 
     try {
       const sessionName =
-        job.sessionTarget === "main" ? await this.executeMainJob(job) : await this.executeIsolatedJob(job);
-
-      // Calculate next run from the scheduled time (not now) to prevent drift
-      // For interval jobs, use the original nextRunAt as base
-      const nextRunAt = this.calculateFollowupRun(job, startTime);
-
-      dbMarkJobDispatched(job.id, { lastRunAt: startTime, nextRunAt });
-      this.pendingTurns.set(job.id, { sessionName, dispatchedAt: startTime });
+        job.sessionTarget === "main"
+          ? await this.executeMainJob(job, startTime)
+          : await this.executeIsolatedJob(job, startTime);
 
       log.info("Job dispatched", { jobId: job.id, jobName: job.name, sessionName });
 
-      // Delete one-shot jobs after successful dispatch
-      if (job.deleteAfterRun || job.schedule.type === "at") {
-        log.info("Deleting one-shot job", { jobId: job.id });
-        dbDeleteCronJob(job.id);
-        this.pendingTurns.delete(job.id);
-      }
+      // One-shots stay inspectable until their turn actually succeeds.
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -243,6 +234,7 @@ export class CronRunner {
       this.pendingTurns.delete(job.id);
 
       log.error("Job dispatch failed", { jobId: job.id, jobName: job.name, error: errorMessage });
+      await notifyCronFailure({ ...job, lastRunAt: startTime }, errorMessage);
     }
   }
 
@@ -257,7 +249,7 @@ export class CronRunner {
    *
    * Public so the NATS subscription and tests share a single code path.
    */
-  handleRuntimeEvent(event: { topic: string; data: unknown }): void {
+  async handleRuntimeEvent(event: { topic: string; data: unknown }): Promise<void> {
     const outcome = parseCronTurnOutcome(event);
     if (!outcome) return;
 
@@ -268,20 +260,20 @@ export class CronRunner {
       }
       const pending = this.pendingTurns.get(outcome.jobId);
       this.pendingTurns.delete(outcome.jobId);
-      this.recordTurnOutcome(outcome.jobId, outcome, pending);
+      await this.recordTurnOutcome(outcome.jobId, outcome, pending);
       return;
     }
 
     if (outcome.provenance === "none" && outcome.kind === "failed") {
-      for (const [jobId, pending] of this.pendingTurns) {
+      for (const [jobId, pending] of [...this.pendingTurns]) {
         if (pending.sessionName !== outcome.sessionName) continue;
         this.pendingTurns.delete(jobId);
-        this.recordTurnOutcome(jobId, outcome, pending);
+        await this.recordTurnOutcome(jobId, outcome, pending);
       }
     }
   }
 
-  private recordTurnOutcome(jobId: string, outcome: CronTurnOutcome, pending?: PendingCronTurn): void {
+  private async recordTurnOutcome(jobId: string, outcome: CronTurnOutcome, pending?: PendingCronTurn): Promise<void> {
     const job = dbGetCronJob(jobId);
     if (!job) {
       log.debug("Ignoring turn outcome for unknown cron job", { jobId, kind: outcome.kind });
@@ -296,6 +288,11 @@ export class CronRunner {
 
     const state = buildCronTurnOutcomeState(outcome, { dispatchedAt: pending?.dispatchedAt ?? job.lastRunAt });
     dbRecordJobOutcome(jobId, state);
+    if (state.lastStatus === "error") {
+      await notifyCronFailure(job, state.lastError ?? "Agent turn failed");
+    } else if (job.deleteAfterRun || job.schedule.type === "at") {
+      dbDeleteCronJob(job.id);
+    }
 
     log[state.lastStatus === "ok" ? "info" : "warn"]("Job turn finished", {
       jobId,
@@ -551,7 +548,7 @@ export class CronRunner {
    * If replySession is set, uses that session instead of agent main.
    * Returns the session name the prompt was published to.
    */
-  private async executeMainJob(job: CronJob): Promise<string> {
+  private async executeMainJob(job: CronJob, startTime: number): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
 
     let sessionName: string;
@@ -585,6 +582,7 @@ export class CronRunner {
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
+    this.trackAgentDispatch(job, sessionName, startTime);
     await publishSessionPrompt(sessionName, {
       prompt,
       source: markCronSourceAsBackground(source),
@@ -600,7 +598,7 @@ export class CronRunner {
    * Execute a job in an isolated session.
    * Returns the session name the prompt was published to.
    */
-  private async executeIsolatedJob(job: CronJob): Promise<string> {
+  private async executeIsolatedJob(job: CronJob, startTime: number): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
     const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
@@ -643,6 +641,7 @@ export class CronRunner {
       source.accountId = job.accountId;
     }
 
+    this.trackAgentDispatch(job, sessionName, startTime);
     await publishSessionPrompt(sessionName, {
       prompt,
       source: markCronSourceAsBackground(source),
@@ -652,6 +651,12 @@ export class CronRunner {
       _jobId: job.id,
     });
     return sessionName;
+  }
+
+  private trackAgentDispatch(job: CronJob, sessionName: string, startTime: number): void {
+    // Register before publish: a launch failure may arrive before its ack.
+    dbMarkJobDispatched(job.id, { lastRunAt: startTime, nextRunAt: this.calculateFollowupRun(job, startTime) });
+    this.pendingTurns.set(job.id, { sessionName, dispatchedAt: startTime });
   }
 
   /**
@@ -736,7 +741,7 @@ export class CronRunner {
       for await (const event of stream) {
         if (!this.running) break;
         try {
-          this.handleRuntimeEvent(event);
+          await this.handleRuntimeEvent(event);
         } catch (err) {
           log.error("Failed to record cron turn outcome", { topic: event.topic, error: err });
         }

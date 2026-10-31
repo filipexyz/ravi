@@ -336,6 +336,18 @@ describe("AgentsCommands set model validation", () => {
     instructionStates.clear();
   });
 
+  it("rejects incompatible agent creation and mutation before writing", async () => {
+    const commands = new AgentsCommands();
+    expect(() => commands.create("invalid", "/tmp/invalid", "claude", "deepseek/deepseek-flash", true)).toThrow(
+      "does not belong",
+    );
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    await expect(commands.set("dev", "model", "deepseek/deepseek-flash", true)).rejects.toThrow("does not belong");
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "pi", model: "deepseek/deepseek-flash" };
+    await expect(commands.set("dev", "provider", "claude", true)).rejects.toThrow("does not belong");
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
   it("rejects Pi provider ids used as model selectors", async () => {
     const commands = new AgentsCommands();
 
@@ -867,7 +879,7 @@ describe("AgentsCommands model preset mutations", () => {
   });
 
   it("clears the preset when a direct model is written", async () => {
-    currentAgent = { id: "dev", cwd: "/tmp/dev", modelPresetId: "fast-sonnet" };
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", modelPresetId: "fast-sonnet" };
     const commands = new AgentsCommands();
 
     await commands.set("dev", "model", "sonnet", true);

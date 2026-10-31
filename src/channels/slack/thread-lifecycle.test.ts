@@ -6,6 +6,7 @@ import { dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
   closeSlackThread,
+  closeSlackThreadRecord,
   deliverSlackThreadParentReturn,
   finalizeSlackThreadCreation,
   listSlackThreadsForSession,
@@ -20,6 +21,7 @@ import {
   completeSlackThreadCreation,
   createSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
+  findSlackThreadLifecycleByChildRef,
   getSlackThreadLifecycle,
   markSlackThreadRootDelivered,
 } from "./thread-lifecycle-store.js";
@@ -36,6 +38,36 @@ afterEach(async () => {
 });
 
 describe("Slack thread lifecycle", () => {
+  it("closes a pruned child's durable card without recreating the session", async () => {
+    const fixture = seedPendingCreation();
+    const jobs: ChannelOutboundJob[] = [];
+    const deps = {
+      publishPrompt: mock(async () => {}),
+      publishEvent: mock(async () => {}),
+      publishOutbound: mock(async (job: ChannelOutboundJob) => {
+        jobs.push(job);
+      }),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, deps);
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    deleteSession(child.sessionKey);
+    const record = findSlackThreadLifecycleByChildRef(child.name!)!;
+    expect(record.childSessionKey).toBe(child.sessionKey);
+    const result = await closeSlackThreadRecord(record, undefined, deps);
+    expect(result.record.status).toBe("closed");
+    expect(getSession(child.sessionKey)).toBeNull();
+    expect(
+      jobs.some(
+        (job) =>
+          job.request.content.type === "chat_action" &&
+          job.request.content.actionId === "message.edit" &&
+          job.request.content.threadCard?.status === "closed",
+      ),
+    ).toBe(true);
+    expect((await closeSlackThreadRecord(record, undefined, deps)).changed).toBe(false);
+    expect(findSlackThreadLifecycleByChildRef("unknown")).toBeNull();
+  });
+
   it("materializes one child turn after durable root delivery and applies its model first", async () => {
     const fixture = seedPendingCreation();
     const prompts: Array<{

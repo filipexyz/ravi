@@ -1833,6 +1833,14 @@ describe("sessions runtime remote relay", () => {
     expect(remote).toMatchObject({ code: RUNTIME_CONTROL_TIMEOUT, details: { retryable: false } });
   });
 
+  it("renders missing sessions for info and orphan-close without leaking names", async () => {
+    for (const op of ["sessions info", "sessions close-thread"]) {
+      const remote = await relay(op, new ContractError(op, "SESSION_NOT_FOUND", "private-session-8k2r", 1));
+      expect(remote?.message).toBe("Session not found, or not visible to this context.");
+      expect(JSON.stringify(remote?.envelope())).not.toContain("private-session-8k2r");
+    }
+  });
+
   it("renders SESSION_NOT_FOUND without echoing the requested session", async () => {
     const remote = await relay(
       "sessions runtime steer",
@@ -1863,6 +1871,16 @@ describe("thread command remote relay", () => {
     const response = contractErrorResponse(local);
     return remoteGatewayErrorToContractError(op, result({ status: response.status, body: await response.text() }));
   }
+
+  it("returns a creation failure for an incompatible model instead of generic remote text", async () => {
+    const remote = await relay(
+      "sessions create-thread",
+      new ContractError("sessions create-thread", "THREAD_MODEL_INVALID", "PRIVATE_MODEL_8K2R", 1),
+    );
+    expect(remote?.message).toContain("Thread was not created");
+    expect(remote?.details.suggestedAction).toContain("--provider codex");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE_MODEL_8K2R");
+  });
 
   it("relays a report outside a thread with local copy instead of Remote command failed", async () => {
     const remote = await relay(
