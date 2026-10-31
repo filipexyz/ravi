@@ -36,6 +36,11 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 - CI MUST validate changed specs with `ravi specs get <spec_id> --mode full --json` and `ravi specs get <spec_id> --mode checks --json`.
 - CI MUST fail on spec id/path/kind mismatch, invalid frontmatter, missing required companion, or empty/non-verifiable CHECKS for changed specs.
 - Runtime/consumer changes MUST include or trigger focused tests.
+- The session-dispatcher state-isolation regression MUST run in its own process
+  with a disposable outer state directory and a test-only SQLite preload that
+  rejects production state paths before opening them. Even a caught rejection
+  MUST fail the test run. This harness does not replace the production storage
+  access policy.
 - Docs-only changes MAY skip runtime coverage but MUST NOT skip spec validation when `.ravi/specs/**` changed.
 - The quality gate MUST be deterministic from the diff and path mapping, not from subjective PR author/source judgement.
 - Devin-authored deliveries MUST pass the same gate as any PR; if PR touches `src/devin/**`, run existing Devin coverage.
