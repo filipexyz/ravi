@@ -1,7 +1,7 @@
 # Runbook
 
 1. Build with `bun run build`. Keep the feature disabled on existing installations
-   until the matching Console bridge v2 client and trust configuration are ready.
+   until the matching Console gateway client and trust configuration are ready.
 2. Provision an isolated runtime, explicit model credential and private state.
    Enable `RAVI_HUMAN_BRIDGE=1` only there. A custom Responses provider uses a
    private JSON file selected by `RAVI_BRIDGE_CODEX_PROVIDER_FILE`; its fields are
@@ -19,7 +19,7 @@
    bridge receipts/journal; do not replay uncertain turns. Existing non-bridge
    state requires no schema migration or conversion.
 
-The bridge v2 protocol intentionally rejects v1; it requires a matching client.
+The gateway wire contract rejects old bridge frames; it requires a matching client.
 The CLI now loads `.env` from the selected `RAVI_STATE_DIR`; default installations
 still use `~/.ravi/.env`. An explicitly separate state directory must contain its
 own configuration rather than inheriting another installation's secrets.

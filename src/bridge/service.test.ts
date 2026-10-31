@@ -7,8 +7,41 @@ import { SignJWT, importPKCS8 } from "jose";
 import { BridgeStore, type Enrollment } from "./store.js";
 import { BridgeService } from "./service.js";
 import { requestDigest, runtimeIdentity } from "./auth.js";
-import { BRIDGE_PROTOCOL, type BridgeRequest, type BridgeResult } from "./protocol.js";
+import { type BridgeRequest, type BridgeResult } from "./protocol.js";
 
+import { CONSOLE_PROTOCOL } from "../sdk/gateway/console-contract.js";
+import { consoleRequestDigest } from "../sdk/gateway/console-auth.js";
+import { handleConsoleRequest } from "../sdk/gateway/console-handler.js";
+import { createGatewayHandlerContext } from "../sdk/gateway/server.js";
+import { buildRegistry } from "../cli/registry-snapshot.js";
+import { SessionConversationCommands } from "../cli/commands/session-conversations.js";
+const gateway = createGatewayHandlerContext({ registry: buildRegistry([SessionConversationCommands]) });
+function wire(request: BridgeRequest) {
+  const { command, ...body } = request;
+  return { path: `/api/v1/sessions/conversations/${command}`, body: JSON.stringify(body), command };
+}
+async function gatewayHandle(request: BridgeRequest, token: string, nonce: string): Promise<BridgeResult> {
+  const value = wire(request);
+  const response = await handleConsoleRequest(
+    new Request(`http://ravi.internal${value.path}`, {
+      method: "POST",
+      body: value.body,
+      headers: { authorization: `Bearer ${token}` },
+    }),
+    nonce,
+    service,
+    gateway,
+  );
+  const data = (await response.json()) as { error?: { code: string }; effectState?: "none" | "unknown" };
+  return response.ok
+    ? { ok: true, requestId: request.requestId, data }
+    : {
+        ok: false,
+        requestId: request.requestId,
+        error: data.error?.code ?? "INVALID_REQUEST",
+        effectState: data.effectState ?? "none",
+      };
+}
 let dir: string,
   store: BridgeStore,
   service: BridgeService,
@@ -17,9 +50,9 @@ let dir: string,
 let project: string;
 let owner: string, other: string, connection: string, started: string[], cancelled: string[];
 const conditional = { permission: "execute", objectType: "command", objectId: "printf bridge-test" };
-function req(operation: string, fields: Record<string, unknown> = {}): BridgeRequest {
+function req(command: string, fields: Record<string, unknown> = {}): BridgeRequest {
   return {
-    operation,
+    command,
     requestId: randomUUID(),
     createdAt: Date.now(),
     projectId: project,
@@ -27,15 +60,24 @@ function req(operation: string, fields: Record<string, unknown> = {}): BridgeReq
   } as BridgeRequest;
 }
 async function sign(request: BridgeRequest, subject = owner, overrides: Record<string, unknown> = {}) {
+  const value = wire(request),
+    cmd = gateway.table.byPath.get(value.path)!;
   return new SignJWT({
-    protocol: BRIDGE_PROTOCOL,
+    protocol: CONSOLE_PROTOCOL,
+    origin: { kind: "browser", sessionId: "service-tests" },
+    operationId: request.requestId,
+    createdAt: request.createdAt,
+    command: cmd.fullName,
+    access: { kind: cmd.access!.kind, resource: cmd.access!.resource, action: cmd.access!.action },
+    scope:
+      "conversationId" in request ? { kind: "session", conversationId: request.conversationId } : { kind: "project" },
     orgId: enrollment.orgId,
     installationId: enrollment.installationId,
     enrollmentId: enrollment.id,
     epoch: enrollment.epoch,
     projectId: request.projectId,
     connectionId: connection,
-    requestDigest: requestDigest(request),
+    requestDigest: consoleRequestDigest("POST", value.path, value.body, request.requestId, request.createdAt),
     agents: [{ id: "main", capabilities: [], approvalCapabilities: [conditional] }],
     policyRevision: 1,
     policyDigest: "a".repeat(64),
@@ -46,14 +88,14 @@ async function sign(request: BridgeRequest, subject = owner, overrides: Record<s
     .setProtectedHeader({ alg: "EdDSA", kid: enrollment.issuerKeyId })
     .setIssuer(enrollment.issuer)
     .setSubject(subject)
-    .setAudience(typeof overrides.aud === "string" ? overrides.aud : `ravi:${enrollment.runtimeId}:bridge:v2`)
+    .setAudience(typeof overrides.aud === "string" ? overrides.aud : `ravi:${enrollment.runtimeId}:gateway:v1`)
     .setIssuedAt()
     .setExpirationTime("30s")
     .setJti(randomUUID())
     .sign(await importPKCS8(issuer.privateKey, "EdDSA"));
 }
 async function call(request: BridgeRequest, subject = owner, overrides: Record<string, unknown> = {}) {
-  return service.handle(request, await sign(request, subject, overrides), connection);
+  return gatewayHandle(request, await sign(request, subject, overrides), connection);
 }
 function data(result: BridgeResult): any {
   expect(result.ok).toBe(true);
@@ -61,10 +103,10 @@ function data(result: BridgeResult): any {
   return result.data;
 }
 async function create() {
-  return data(await call(req("conversations.create", { agentId: "main" }))).conversationId as string;
+  return data(await call(req("create", { agentId: "main" }))).conversationId as string;
 }
 async function send(conversationId: string) {
-  return data(await call(req("messages.send", { conversationId, text: "hello", expectedVersion: 0 })));
+  return data(await call(req("send", { conversationId, text: "hello", expectedVersion: 0 })));
 }
 
 beforeEach(() => {
@@ -107,50 +149,46 @@ afterEach(() => {
 
 describe("human bridge durable authority", () => {
   it("rejects tampering, wrong connection, audience and replay before effects", async () => {
-    const request = req("conversations.create", { agentId: "main" }),
+    const request = req("create", { agentId: "main" }),
       token = await sign(request);
-    expect(await service.handle({ ...request, agentId: "evil" }, token, connection)).toMatchObject({
+    expect(await gatewayHandle({ ...request, agentId: "evil" } as BridgeRequest, token, connection)).toMatchObject({
       ok: false,
       error: "INVALID_DELEGATION",
     });
-    expect(await service.handle(request, token, randomUUID())).toMatchObject({
+    expect(await gatewayHandle(request, token, randomUUID())).toMatchObject({
       ok: false,
       error: "INVALID_DELEGATION",
     });
     expect(await call(request, owner, { aud: "wrong" })).toMatchObject({ ok: false, error: "INVALID_DELEGATION" });
-    const first = await service.handle(request, token, connection);
+    const first = await gatewayHandle(request, token, connection);
     expect(first.ok).toBe(true);
-    expect(await service.handle(request, token, connection)).toMatchObject({ ok: false, error: "ASSERTION_REPLAY" });
+    expect(await gatewayHandle(request, token, connection)).toMatchObject({ ok: false, error: "ASSERTION_REPLAY" });
   });
   it("keeps each human's conversations, history, cursors and receipts private", async () => {
-    const createRequest = req("conversations.create", { agentId: "main" });
+    const createRequest = req("create", { agentId: "main" });
     const id = data(await call(createRequest)).conversationId;
-    const snapshot = data(await call(req("conversations.open", { conversationId: id })));
-    for (const operation of ["conversations.open", "messages.list", "events.read", "lease.renew"]) {
+    const snapshot = data(await call(req("open", { conversationId: id })));
+    for (const operation of ["open", "history", "events", "renew"]) {
       const fields =
-        operation === "messages.list"
-          ? { before: null }
-          : operation === "events.read"
-            ? { cursor: snapshot.cursor }
-            : {};
+        operation === "history" ? { before: null } : operation === "events" ? { cursor: snapshot.cursor } : {};
       expect(await call(req(operation, { conversationId: id, ...fields }), other)).toMatchObject({
         ok: false,
         error: "NOT_FOUND_OR_DENIED",
       });
     }
-    expect(data(await call(req("conversations.list"), other))).toEqual([]);
-    expect(await call(req("requests.get", { targetRequestId: createRequest.requestId }), other)).toMatchObject({
+    expect(data(await call(req("list"), other))).toEqual([]);
+    expect(await call(req("receipt", { targetRequestId: createRequest.requestId }), other)).toMatchObject({
       ok: false,
       error: "REQUEST_NOT_FOUND",
     });
   });
   it("returns the committed receipt after reconnect without a second dispatch", async () => {
     const id = await create();
-    const request = req("messages.send", { conversationId: id, text: "hello", expectedVersion: 0 });
+    const request = req("send", { conversationId: id, text: "hello", expectedVersion: 0 });
     const receipt = data(await call(request));
     connection = randomUUID();
     expect(data(await call(request))).toEqual(receipt);
-    expect(data(await call(req("requests.get", { targetRequestId: request.requestId })))).toEqual(receipt);
+    expect(data(await call(req("receipt", { targetRequestId: request.requestId })))).toEqual(receipt);
     await service.tick();
     await service.tick();
     expect(started).toEqual([receipt.turnId]);
@@ -158,26 +196,26 @@ describe("human bridge durable authority", () => {
       ok: false,
       error: "IDEMPOTENCY_CONFLICT",
     });
-    expect(data(await call(req("conversations.open", { conversationId: id }))).messages).toHaveLength(1);
+    expect(data(await call(req("open", { conversationId: id }))).messages).toHaveLength(1);
   });
   it("replays journal after disconnect and rejects a cursor from another conversation", async () => {
     const id = await create();
-    const before = data(await call(req("conversations.open", { conversationId: id })));
+    const before = data(await call(req("open", { conversationId: id })));
     await send(id);
     connection = randomUUID();
-    const replay = data(await call(req("events.read", { conversationId: id, cursor: before.cursor })));
+    const replay = data(await call(req("events", { conversationId: id, cursor: before.cursor })));
     expect(replay.events.map((e: any) => e.type)).toEqual(["message.accepted"]);
     const next = await create();
-    expect(await call(req("events.read", { conversationId: next, cursor: replay.cursor }))).toMatchObject({
+    expect(await call(req("events", { conversationId: next, cursor: replay.cursor }))).toMatchObject({
       ok: false,
       error: "RESYNC_REQUIRED",
     });
-    expect(data(await call(req("events.read", { conversationId: id, cursor: replay.cursor }))).events).toEqual([]);
+    expect(data(await call(req("events", { conversationId: id, cursor: replay.cursor }))).events).toEqual([]);
   });
   it("cancels a queued turn atomically and never dispatches it", async () => {
     const id = await create(),
       receipt = await send(id);
-    const request = req("turns.cancel", { conversationId: id, turnId: receipt.turnId });
+    const request = req("cancel", { conversationId: id, turnId: receipt.turnId });
     const cancelledReceipt = data(await call(request));
     expect(data(await call(request))).toEqual(cancelledReceipt);
     await service.tick();
@@ -188,7 +226,7 @@ describe("human bridge durable authority", () => {
     const id = await create(),
       receipt = await send(id);
     await service.tick();
-    expect(await call(req("messages.send", { conversationId: id, text: "again", expectedVersion: 2 }))).toMatchObject({
+    expect(await call(req("send", { conversationId: id, text: "again", expectedVersion: 2 }))).toMatchObject({
       ok: false,
       error: "TURN_BUSY",
     });
@@ -196,7 +234,7 @@ describe("human bridge durable authority", () => {
     await service.tick();
     expect(store.turn(receipt.turnId)!.status).toBe("authorization_expired");
     expect(cancelled).toHaveLength(1);
-    expect(await call(req("lease.renew", { conversationId: id }))).toMatchObject({
+    expect(await call(req("renew", { conversationId: id }))).toMatchObject({
       ok: false,
       error: "INVALID_DELEGATION",
     });
@@ -212,7 +250,7 @@ describe("human bridge durable authority", () => {
         "INSERT INTO approvals(id,conversation_id,turn_id,capability,description,action_digest,expires_at) VALUES (?,?,?,?,?,?,?)",
       )
       .run(approvalId, id, receipt.turnId, JSON.stringify(conditional), "test", digest, Date.now() + 30_000);
-    const request = req("approvals.decide", {
+    const request = req("decide", {
       conversationId: id,
       approvalId,
       decision: "approve",
@@ -260,20 +298,20 @@ describe("Console is the only bridge permission authority", () => {
     await service.tick();
     const context = { kind: "turn-runtime", capabilities: [], metadata: { bridgeTurnId: receipt.turnId } };
     expect(bridgeContextCapabilities(context, store)).toEqual([]);
-    data(await call(req("lease.renew", { conversationId: id }), owner, grants(2)));
+    data(await call(req("renew", { conversationId: id }), owner, grants(2)));
     expect(bridgeContextCapabilities(context, store)).toEqual([sleep]);
     const child = { ...context, kind: "cli-runtime", capabilities: [] };
     expect(bridgeContextCapabilities(child, store)).toEqual([]);
-    data(await call(req("conversations.open", { conversationId: id }), owner, grants(3, [])));
+    data(await call(req("open", { conversationId: id }), owner, grants(3, [])));
     expect(bridgeContextCapabilities(context, store)).toEqual([]);
-    expect(await call(req("lease.renew", { conversationId: id }), owner, grants(2))).toMatchObject({
+    expect(await call(req("renew", { conversationId: id }), owner, grants(2))).toMatchObject({
       ok: false,
       error: "STALE_DELEGATION",
     });
-    data(await call(req("lease.renew", { conversationId: id }), owner, grants(4)));
+    data(await call(req("renew", { conversationId: id }), owner, grants(4)));
     expect(bridgeContextCapabilities(context, store)).toEqual([sleep]);
     expect(store.enrollment(enrollment.id)).toEqual(enrollment);
-    data(await call(req("conversations.open", { conversationId: id }), owner, { ...grants(5), canSend: false }));
+    data(await call(req("open", { conversationId: id }), owner, { ...grants(5), canSend: false }));
     await service.tick();
     expect(store.turn(receipt.turnId)!.status).toBe("authorization_expired");
     expect(cancelled).toHaveLength(1);
@@ -284,17 +322,17 @@ describe("Console is the only bridge permission authority", () => {
       const id = await create();
       const receipt = await send(id);
       await service.tick();
-      data(await call(req("lease.renew", { conversationId: id }), owner, grants(2)));
+      data(await call(req("renew", { conversationId: id }), owner, grants(2)));
       const context = { kind: "turn-runtime", capabilities: [], metadata: { bridgeTurnId: receipt.turnId } };
       expect(bridgeContextCapabilities(context, store)).toEqual([sleep]);
-      const denied = req("lease.renew", { conversationId: id });
+      const denied = req("renew", { conversationId: id });
       expect(await call(denied, owner, { ...grants(3), ...revoke })).toMatchObject({
         ok: false,
         error: "NOT_FOUND_OR_DENIED",
       });
       expect(bridgeContextCapabilities(context, store)).toEqual([]);
       expect(store.db.query<{ revision: number }, []>("SELECT revision FROM delegation_heads").get()!.revision).toBe(3);
-      expect(await call(req("lease.renew", { conversationId: id }), owner, grants(2))).toMatchObject({
+      expect(await call(req("renew", { conversationId: id }), owner, grants(2))).toMatchObject({
         ok: false,
         error: "STALE_DELEGATION",
       });
@@ -311,7 +349,7 @@ describe("Console is the only bridge permission authority", () => {
     await service.tick();
     expect(store.turn(receipt.turnId)!.status).toBe("authorization_expired");
     expect(cancelled).toHaveLength(1);
-    data(await call(req("lease.renew", { conversationId: id }), owner, grants(2)));
+    data(await call(req("renew", { conversationId: id }), owner, grants(2)));
     expect(store.turn(receipt.turnId)!.status).toBe("authorization_expired");
   });
   it("uses current Console eligibility for an exact action and never upgrades the next invocation", async () => {
@@ -331,10 +369,10 @@ describe("Console is the only bridge permission authority", () => {
     const options = { context, ...conditional, eventData: { command: "printf test", toolUseId: "first" } };
     let waiting = authorizeBridgeAction(options, store);
     await new Promise((r) => setTimeout(r, 30));
-    let snapshot = data(await call(req("conversations.open", { conversationId: id })));
+    let snapshot = data(await call(req("open", { conversationId: id })));
     const approval = snapshot.approvals[0];
     expect(approval.state).toBe("pending");
-    const decide = req("approvals.decide", {
+    const decide = req("decide", {
       conversationId: id,
       approvalId: approval.id,
       decision: "approve",
@@ -350,9 +388,9 @@ describe("Console is the only bridge permission authority", () => {
     expect((await waiting).approved).toBe(true);
     waiting = authorizeBridgeAction({ ...options, eventData: { command: "printf next", toolUseId: "second" } }, store);
     await new Promise((r) => setTimeout(r, 30));
-    snapshot = data(await call(req("conversations.open", { conversationId: id })));
+    snapshot = data(await call(req("open", { conversationId: id })));
     expect(snapshot.approvals[0].state).toBe("pending");
-    data(await call(req("lease.renew", { conversationId: id }), owner, grants(2, [], [])));
+    data(await call(req("renew", { conversationId: id }), owner, grants(2, [], [])));
     expect((await waiting).allowed).toBe(false);
     expect(
       store.db
@@ -376,7 +414,7 @@ it("terminalizes failed preparation by its exact bridge turn and cancels absent 
     second = await send(next);
   await service.tick();
   service.runtime.cancel = () => false;
-  data(await call(req("turns.cancel", { conversationId: next, turnId: second.turnId })));
+  data(await call(req("cancel", { conversationId: next, turnId: second.turnId })));
   await service.tick();
   expect(store.turn(second.turnId)!.status).toBe("cancelled");
 });

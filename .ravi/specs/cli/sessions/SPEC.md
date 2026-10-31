@@ -131,3 +131,11 @@ triggered runtime execution use risk-based confirmation.
 - Hint builders are asserted literally in `sessions.test.ts`; changing a taught
   command without updating the test (and vice versa) breaks the suite — this is
   intentional drift protection between hints and the real contract.
+
+## Private Console sessions
+
+`sessions conversations` declares the private conversation command family in
+this same registry. Ordinary callers cannot substitute local wildcard or admin
+grants for Console ownership. The existing set-model, set-thinking and
+set-display handlers support an exact durable session delegation; propagate
+is outside that scope. Their structured results are returned over the gateway.

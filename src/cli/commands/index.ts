@@ -82,6 +82,7 @@ export * from "./sdk-returns.js";
 export * from "./sdk.js";
 export * from "./self.js";
 export * from "./service.js";
+export * from "./session-conversations.js";
 export * from "./session-followups.js";
 export * from "./sessions-runtime.js";
 export * from "./sessions.js";

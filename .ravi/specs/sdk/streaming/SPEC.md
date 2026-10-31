@@ -150,3 +150,12 @@ não permite header customizado sem polyfill.
 O channel `events` reaproveita o mesmo filtro glob do CLI (`*` dentro do
 segmento, `**` atravessando segmentos) e suprime os eventos ruidosos que o CLI
 já suprime por padrão.
+
+## Visão privada delegada pelo Console
+
+`session-view` é registrado em `defaultStreamChannels` e gera `sessionView` nos
+SDKs. É uma exceção explícita à autenticação rctx dos canais locais: só aceita
+a autoridade `sdk/console-authority`; contextos locais/admin são negados. O
+handler pertence ao registro de streams, com schema de opções e payload. O
+journal durável usa cursor HMAC owner/projeto/enrollment/epoch e pull/backpressure,
+sem a política drop-oldest dos canais NATS. Reconnect não renova o lease do turno.

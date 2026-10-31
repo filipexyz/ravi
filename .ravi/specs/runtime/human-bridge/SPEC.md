@@ -26,7 +26,7 @@ owners:
 
 - SSH authenticates a dedicated transport account, never a human. Its only
   command is `ravi bridge serve-stdio`; it forwards bytes to the dedicated
-  bridge socket and has no access to Ravi's state, general CLI gateway or model
+  Console gateway HTTP socket and has no access to Ravi's state, general CLI gateway or model
   credentials. No PTY, forwarding, password or arbitrary command is allowed.
 - The runtime verifies an Ed25519 delegation for EVERY request against a local
   enrollment. The issuer, runtime audience, organization, installation, subject,
@@ -44,7 +44,7 @@ owners:
   trust. It contains NO subjects, project/agent allowlists, capabilities or local
   permission profiles. Agent configuration selects execution/provider settings,
   never a second permission ceiling. Non-bridge paths retain their own authority.
-- Protocol v2 delegates per-agent concrete capabilities and conditional actions,
+- The Console gateway delegation delegates per-agent concrete capabilities and conditional actions,
   bound to the Console's policy revision/digest. Console policy administration
   uses its existing draft/preview/publish and CAS flow. Human membership and
   read/send/approve grants are rechecked before signing every request.
@@ -60,7 +60,8 @@ owners:
   sandbox and resource isolation are mandatory; grants cannot disable them.
 - Generic CLI/SDK session read, recap, trace, list and control surfaces must exclude
   the reserved bridge namespace, even for ordinary wildcard/admin capabilities.
-  Humans read their history only through the owner-verified bridge API. Private
+  Humans read history through owner-verified canonical conversation commands.
+  Reviewed configuration handlers require the same durable ownership binding. Private
   prompts/replies must not be copied into the ordinary chat/knowledge store.
 - Only Codex currently implements the mandatory bridge isolation. Any other
   selected runtime provider MUST be rejected before credentials or preparation.
@@ -111,6 +112,10 @@ owners:
   when it begins with text from an earlier turn. History-prefix heuristics MUST
   NOT truncate that response. Same-turn duplicate delivery remains suppressed.
   raw reasoning, provider prompts, raw tool payloads and debug SSE are excluded.
-  Fleet polls the signed transport and exposes SSE with durable scoped cursors.
+  The canonical gateway streams the projection over HTTP/SSE with durable scoped cursors.
   Read/reconnect does not renew execution authority. Browser storage contains
   no secrets; an uncertain send keeps its original request identity for retry.
+
+The transport and control boundary is specified in `sdk/console-authority`. The
+former NDJSON bridge operation protocol has been removed; enrollment and private
+execution storage remain, and ordinary local callers cannot obtain human authority.

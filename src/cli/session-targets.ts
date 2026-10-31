@@ -1,20 +1,27 @@
 import * as sessions from "../router/sessions.js";
 import type { SessionEntry } from "../router/types.js";
 import { isBridgeSession, isBridgeSessionRef } from "../bridge/isolation.js";
+import { consoleSessionTarget, currentConsoleInvocation } from "../sdk/gateway/console-context.js";
 
 // Generic CLI/SDK session tools are not an alternate authority for private
 // humans. Even local administrator capabilities cannot substitute a delegation.
 function visible(session: SessionEntry | null): SessionEntry | null {
+  if (currentConsoleInvocation()) return session && consoleSessionTarget(session.sessionKey) ? session : null;
   return session && !isBridgeSession(session) ? session : null;
 }
 
 export function isBridgeSessionTarget(ref: string): boolean {
+  if (consoleSessionTarget(ref)) return false;
   if (isBridgeSessionRef(ref)) return true;
   const session = sessions.resolveSession(ref) ?? sessions.findSessionByChatId(ref);
   return Boolean(session && isBridgeSession(session));
 }
 
 export function resolveSession(ref: string): SessionEntry | null {
+  if (currentConsoleInvocation()) {
+    const key = consoleSessionTarget(ref);
+    return key ? sessions.getSession(key) : null;
+  }
   return isBridgeSessionRef(ref) ? null : visible(sessions.resolveSession(ref));
 }
 

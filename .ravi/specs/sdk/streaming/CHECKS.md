@@ -100,3 +100,6 @@ voltam para o dispatcher single-shot.
 - **Confusão de prefixos:** se algum handler novo tentar registrar
   `/_stream/<channel>` colidindo com handler dispatcher, gateway MUST
   detectar collision em build do route-table e falhar.
+
+- `src/sdk/gateway/console.test.ts` cobre visão privada com cursor assinado e
+  ausência de renovação por leitura; a geração dos três SDKs inclui `sessionView`.

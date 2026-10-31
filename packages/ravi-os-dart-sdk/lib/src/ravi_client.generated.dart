@@ -7962,6 +7962,8 @@ class SessionsNamespace {
 
   final RaviTransport _transport;
 
+  SessionsConversationsNamespace get conversations => SessionsConversationsNamespace(_transport);
+
   SessionsFollowupsNamespace get followups => SessionsFollowupsNamespace(_transport);
 
   SessionsRuntimeNamespace get runtime => SessionsRuntimeNamespace(_transport);
@@ -8412,6 +8414,174 @@ class SessionsNamespace {
       command: "visibility",
       body: requestBody,
       decode: sessionsVisibilityReturnFromJson,
+    );
+  }
+}
+
+class SessionsConversationsNamespace {
+  const SessionsConversationsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<SessionsConversationsAgentsReturn> agents(String projectId, String requestId, int createdAt) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "agents",
+      body: requestBody,
+      decode: sessionsConversationsAgentsReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsCancelReturn> cancel(String projectId, String requestId, int createdAt, String conversationId, String turnId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["turnId"] = RaviJson.from(turnId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "cancel",
+      body: requestBody,
+      decode: sessionsConversationsCancelReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsCreateReturn> create(String projectId, String requestId, int createdAt, String agentId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["agentId"] = RaviJson.from(agentId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "create",
+      body: requestBody,
+      decode: sessionsConversationsCreateReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsDecideReturn> decide(String projectId, String requestId, int createdAt, String conversationId, String approvalId, String decision, int expectedVersion, String actionDigest) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["approvalId"] = RaviJson.from(approvalId);
+    requestBody["decision"] = RaviJson.from(decision);
+    requestBody["expectedVersion"] = RaviJson.from(expectedVersion);
+    requestBody["actionDigest"] = RaviJson.from(actionDigest);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "decide",
+      body: requestBody,
+      decode: sessionsConversationsDecideReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsEventsReturn> events(String projectId, String requestId, int createdAt, String conversationId, RaviJson cursor) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["cursor"] = RaviJson.from(cursor);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "events",
+      body: requestBody,
+      decode: sessionsConversationsEventsReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsHistoryReturn> history(String projectId, String requestId, int createdAt, String conversationId, RaviJson before) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["before"] = RaviJson.from(before);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "history",
+      body: requestBody,
+      decode: sessionsConversationsHistoryReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsListReturn> list(String projectId, String requestId, int createdAt, [SessionsConversationsListOptions options = const SessionsConversationsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "list",
+      body: requestBody,
+      decode: sessionsConversationsListReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsOpenReturn> open(String projectId, String requestId, int createdAt, String conversationId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "open",
+      body: requestBody,
+      decode: sessionsConversationsOpenReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsReceiptReturn> receipt(String projectId, String requestId, int createdAt, String targetRequestId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["targetRequestId"] = RaviJson.from(targetRequestId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "receipt",
+      body: requestBody,
+      decode: sessionsConversationsReceiptReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsRenewReturn> renew(String projectId, String requestId, int createdAt, String conversationId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "renew",
+      body: requestBody,
+      decode: sessionsConversationsRenewReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsSendReturn> send(String projectId, String requestId, int createdAt, String conversationId, String text, int expectedVersion) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["text"] = RaviJson.from(text);
+    requestBody["expectedVersion"] = RaviJson.from(expectedVersion);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "send",
+      body: requestBody,
+      decode: sessionsConversationsSendReturnFromJson,
     );
   }
 }

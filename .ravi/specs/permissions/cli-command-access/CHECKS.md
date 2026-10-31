@@ -84,3 +84,6 @@ permissions.command_access.open_high_risk = 0
   enforcement from returning.
 - Add operator-control tests proving direct terminal mode is explicit and never
   used for runtime contexts.
+
+- `src/sdk/gateway/console.test.ts` covers canonical semantic action binding
+  and the absence of local administrator fallback for remote invocations.

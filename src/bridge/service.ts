@@ -1,21 +1,19 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
-  bridgeRequestSchema,
   BridgeError,
   LEASE_MS,
   type BridgeGrant,
   type BridgeRequest,
-  type BridgeResult,
   type BridgeSnapshot,
   type BridgeApproval,
   type BridgeEvent,
 } from "./protocol.js";
-import { requestDigest, verifyBridgeGrant } from "./auth.js";
+import { requestDigest } from "./auth.js";
 import { conversationDto, type BridgeStore, type Enrollment, type ConversationRow } from "./store.js";
 import { bridgeTurnAuthority } from "./authority.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 
-const MUTATIONS = new Set(["conversations.create", "messages.send", "turns.cancel", "approvals.decide"]);
+const MUTATIONS = new Set(["create", "send", "cancel", "decide"]);
 export interface BridgeRuntime {
   agents(): { id: string; name: string }[];
   start(turnId: string): Promise<void>;
@@ -71,31 +69,16 @@ export class BridgeService {
       this.ticking = false;
     }
   }
-  async handle(input: unknown, token: string, connectionId: string): Promise<BridgeResult> {
-    let requestId = "";
-    try {
-      const request = bridgeRequestSchema.parse(input);
-      requestId = request.requestId;
-      const { grant, enrollment } = await verifyBridgeGrant(this.store, request, token, connectionId, this.runtimeId);
-      this.store.atomic(() => {
-        // Verification yields during crypto: recheck enrollment inside the transaction.
-        const live = this.store.enrollment(enrollment.id);
-        if (!live?.active || live.epoch !== grant.epoch) throw new BridgeError("ACCESS_REVOKED");
-        this.advanceDelegation(grant);
-      });
-      // Policy is an authenticated fact, independent of whether this operation
-      // succeeds. A denied renewal/read must not roll back revocation or its
-      // high-water mark. Neither transaction yields between these checks.
-      const data = this.store.atomic(() => this.execute(request, grant, enrollment));
-      return { ok: true, requestId, data };
-    } catch (error) {
-      return {
-        ok: false,
-        requestId,
-        error: error instanceof BridgeError ? error.code : "INVALID_REQUEST",
-        effectState: error instanceof BridgeError ? error.effectState : "none",
-      };
-    }
+  acceptDelegation(grant: BridgeGrant) {
+    this.store.atomic(() => {
+      const live = this.store.enrollment(grant.enrollmentId);
+      if (!live?.active || live.epoch !== grant.epoch) throw new BridgeError("ACCESS_REVOKED");
+      this.advanceDelegation(grant);
+    });
+  }
+  /** Called only after authentication by the gateway; keeps admission and receipt atomic. */
+  executeAuthorized(request: BridgeRequest, grant: BridgeGrant, enrollment: Enrollment) {
+    return this.store.atomic(() => this.execute(request, grant, enrollment));
   }
   private advanceDelegation(grant: BridgeGrant) {
     const head = this.store.db
@@ -129,6 +112,12 @@ export class BridgeService {
     }
   }
   private execute(request: BridgeRequest, grant: BridgeGrant, enrollment: Enrollment): unknown {
+    if (
+      this.store.db
+        .query("SELECT 1 FROM gateway_receipts WHERE enrollment_id=? AND subject=? AND operation_id=?")
+        .get(enrollment.id, grant.sub, request.requestId)
+    )
+      throw new BridgeError("IDEMPOTENCY_CONFLICT");
     const conversation =
       "conversationId" in request
         ? this.store.authorizedConversation(request.conversationId, enrollment, grant.sub, request.projectId)
@@ -141,32 +130,38 @@ export class BridgeService {
       )
       .get(enrollment.id, grant.sub, request.requestId);
     const digest = requestDigest(request);
-    if (MUTATIONS.has(request.operation) && receipt) {
+    if (MUTATIONS.has(request.command) && receipt) {
       if (receipt.digest !== digest) throw new BridgeError("IDEMPOTENCY_CONFLICT");
       return this.authorizeReceipt(receipt, enrollment, grant, request.projectId);
     }
     if (
-      MUTATIONS.has(request.operation) &&
+      MUTATIONS.has(request.command) &&
       (request.createdAt < Date.now() - 600_000 || request.createdAt > Date.now() + 5000)
     )
       throw new BridgeError("REQUEST_EXPIRED");
-    if (["conversations.create", "messages.send", "lease.renew"].includes(request.operation) && !grant.canSend)
+    if (["create", "send", "renew"].includes(request.command) && !grant.canSend)
       throw new BridgeError("NOT_FOUND_OR_DENIED");
     let result: unknown;
-    switch (request.operation) {
-      case "agents.list":
+    switch (request.command) {
+      case "agents":
         result = this.runtime.agents().filter((agent) => grant.agents.some((a) => a.id === agent.id));
         break;
-      case "conversations.list":
+      case "list":
         result = this.store.db
-          .query<ConversationRow, [string, string, string]>(
-            "SELECT * FROM conversations WHERE enrollment_id=? AND subject=? AND project_id=? ORDER BY updated_at DESC LIMIT 100",
+          .query<ConversationRow, [string, string, string, string, number, number]>(
+            "SELECT * FROM conversations WHERE enrollment_id=? AND subject=? AND project_id=? AND agent_id IN (SELECT value FROM json_each(?)) ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?",
           )
-          .all(enrollment.id, grant.sub, request.projectId)
-          .filter((c) => grant.agents.some((a) => a.id === c.agent_id))
+          .all(
+            enrollment.id,
+            grant.sub,
+            request.projectId,
+            JSON.stringify(grant.agents.map((a) => a.id)),
+            request.limit ?? 100,
+            request.offset ?? 0,
+          )
           .map(conversationDto);
         break;
-      case "conversations.create": {
+      case "create": {
         if (
           !grant.agents.some((a) => a.id === request.agentId) ||
           !this.runtime.agents().some((agent) => agent.id === request.agentId)
@@ -190,13 +185,13 @@ export class BridgeService {
         result = { conversationId: id, conversation: conversationDto(this.store.conversation(id)!) };
         break;
       }
-      case "conversations.open":
+      case "open":
         result = this.snapshot(conversation!, grant, enrollment);
         break;
-      case "messages.list":
+      case "history":
         result = this.history(conversation!.id, request.before);
         break;
-      case "messages.send": {
+      case "send": {
         if (Buffer.byteLength(request.text) > 16_384) throw new BridgeError("PAYLOAD_TOO_LARGE");
         if (conversation!.version !== request.expectedVersion) throw new BridgeError("VERSION_CONFLICT");
         if (this.store.activeTurn(conversation!.id)) throw new BridgeError("TURN_BUSY");
@@ -240,7 +235,7 @@ export class BridgeService {
         };
         break;
       }
-      case "lease.renew": {
+      case "renew": {
         const turn = this.store.activeTurn(conversation!.id);
         if (turn && turn.lease_until > Date.now() && !turn.cancel_requested) {
           this.store.db
@@ -253,7 +248,7 @@ export class BridgeService {
         };
         break;
       }
-      case "events.read": {
+      case "events": {
         const after = request.cursor ? this.parseCursor(request.cursor, conversation!, grant, enrollment) : 0;
         const events = this.store.db
           .query<{ sequence: number; type: string; data: string; created_at: number }, [string, number]>(
@@ -272,7 +267,7 @@ export class BridgeService {
         };
         break;
       }
-      case "requests.get": {
+      case "receipt": {
         const found = this.store.db
           .query<{ result: string; project_id: string }, [string, string, string]>(
             "SELECT result,project_id FROM receipts WHERE enrollment_id=? AND subject=? AND request_id=?",
@@ -282,7 +277,7 @@ export class BridgeService {
         result = this.authorizeReceipt(found, enrollment, grant, request.projectId);
         break;
       }
-      case "turns.cancel": {
+      case "cancel": {
         const turn = this.store.turn(request.turnId);
         if (!turn || turn.conversation_id !== conversation!.id) throw new BridgeError("NOT_FOUND_OR_DENIED");
         const active = ["queued", "running", "awaiting_approval"].includes(turn.status);
@@ -296,7 +291,7 @@ export class BridgeService {
         result = { conversationId: conversation!.id, turnId: turn.id, cancelRequested: active, status: turn.status };
         break;
       }
-      case "approvals.decide": {
+      case "decide": {
         const row = this.store.db
           .query<
             {
@@ -343,7 +338,7 @@ export class BridgeService {
         break;
       }
     }
-    if (MUTATIONS.has(request.operation)) {
+    if (MUTATIONS.has(request.command)) {
       this.store.db
         .query("INSERT INTO receipts VALUES (?,?,?,?,?,?)")
         .run(enrollment.id, grant.sub, request.requestId, digest, JSON.stringify(result), request.projectId);
@@ -356,7 +351,7 @@ export class BridgeService {
           enrollment.id,
           grant.sub,
           request.requestId,
-          request.operation,
+          request.command,
           conversation?.id ?? null,
           "accepted",
         );
@@ -378,7 +373,9 @@ export class BridgeService {
     return result;
   }
   private cursor(c: ConversationRow, g: BridgeGrant, e: Enrollment, sequence: number) {
-    const body = Buffer.from(JSON.stringify([e.id, e.epoch, g.sub, c.id, sequence])).toString("base64url");
+    const body = Buffer.from(JSON.stringify([e.id, e.epoch, g.sub, c.project_id, c.id, sequence])).toString(
+      "base64url",
+    );
     return `${body}.${createHmac("sha256", this.cursorKey).update(body).digest("base64url")}`;
   }
   private parseCursor(cursor: string, c: ConversationRow, g: BridgeGrant, e: Enrollment) {
@@ -388,13 +385,14 @@ export class BridgeService {
       const expected = createHmac("sha256", this.cursorKey).update(body).digest();
       const actual = Buffer.from(mac, "base64url");
       if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error();
-      const [enrollment, epoch, subject, conversation, sequence] = JSON.parse(
+      const [enrollment, epoch, subject, project, conversation, sequence] = JSON.parse(
         Buffer.from(body, "base64url").toString(),
       );
       if (
         enrollment !== e.id ||
         epoch !== e.epoch ||
         subject !== g.sub ||
+        project !== c.project_id ||
         conversation !== c.id ||
         !Number.isSafeInteger(sequence) ||
         sequence < 0
