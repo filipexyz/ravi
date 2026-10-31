@@ -145,11 +145,15 @@ export function contractErrorResponse(
     error: {
       ...envelope.error,
       message:
-        (!legacyGeneric ? safeMessage : undefined) ??
-        `${error.op} failed (${error.code}). Report this requestId to the operator.`,
+        error.code === "UNHANDLED_ERROR"
+          ? `${error.op} failed internally. Report the requestId to the operator before retrying.`
+          : ((!legacyGeneric ? safeMessage : undefined) ??
+            `${error.op} failed (${error.code}). Report this requestId to the operator.`),
       suggestedAction:
-        (safeAction && !/^Inspect redacted (?:remote|runtime) logs/.test(safeAction) ? safeAction : undefined) ??
-        `Check '${error.op} --help' and correct the input before retrying`,
+        error.code === "UNHANDLED_ERROR"
+          ? "Report the operation and requestId to the operator; do not automatically retry the command"
+          : ((safeAction && !/^Inspect redacted (?:remote|runtime) logs/.test(safeAction) ? safeAction : undefined) ??
+            `Check '${error.op} --help' and correct the input before retrying`),
       requestId,
       ...(diagnosticRequestId ? { diagnosticRequestId } : {}),
     },

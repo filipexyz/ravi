@@ -131,10 +131,10 @@ export function unexpectedErrorToContractError(op: string): ContractError {
   return new ContractError(
     op,
     "UNHANDLED_ERROR",
-    `${op} failed internally. Report the requestId to the operator before retrying.`,
+    `${op} failed internally. Report the operation to the operator before retrying.`,
     CONTRACT_EXIT_ERROR,
     {
-      suggestedAction: "Report the operation and requestId to the operator; do not automatically retry the command",
+      suggestedAction: "Report the operation to the operator; do not automatically retry the command",
     },
   );
 }

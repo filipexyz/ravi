@@ -25,6 +25,7 @@ normative: true
 - Request ids MUST be server-generated UUIDs, isolated across concurrent requests, also exposed as `x-request-id`. Caller-supplied ids MUST NOT be trusted or logged.
 - Validation MUST identify fields in `issues[].path`; missing required handler flags (`--flag is required`) MUST additionally carry `field`, `argument`, `VALIDATION_ERROR`, exit 2 and HTTP 422. Schema/body usage errors remain HTTP 400, exit 2.
 - CLI and SDK MUST preserve correlation ids and typed field/argument information. The CLI MUST show the request id in text mode as well as JSON mode.
+- Local CLI/tool failures without an HTTP request MUST identify the operation without asking for a nonexistent request id. The gateway adds correlation-specific copy with the server-generated id.
 - Public expected error messages and suggested actions MUST survive the common remote boundary after bounded sanitization. Arbitrary provider bodies, exception properties, stacks, credentials and secret-bearing paths MUST NOT cross it.
 - Generic fallbacks `Remote command failed` and `Inspect redacted remote logs` MUST NOT be rendered. Unusable upstream errors MUST identify the operation, code/status and a concrete next action.
 - Unexpected failures before, during or after handler execution MUST produce HTTP 500 with a safe envelope. They MUST NOT escape into Bun's unstructured error response.
