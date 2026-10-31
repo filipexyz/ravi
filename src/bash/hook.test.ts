@@ -93,6 +93,12 @@ describe("Bash quoting permission boundary", () => {
       'py"thon3" -c "print(1)"',
       'node -e"console.log(1)"',
       'cat script | "python3"',
+      "X=a#b bash -c id",
+      "python3 -W ignore#x -c code",
+      "X=a#b sudo bash -c id",
+      "printf code | python3 # comment",
+      "printf code | python3 2>/dev/null",
+      "printf code | X=a#b python3 2>/dev/null",
     ]) {
       const decision = evaluateBashPermission(command, {
         agentId: "test-agent",
