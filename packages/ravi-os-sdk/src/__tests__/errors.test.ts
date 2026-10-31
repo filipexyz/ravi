@@ -264,3 +264,25 @@ describe("gateway ContractError compatibility", () => {
     expect(error.body).toEqual(body);
   });
 });
+
+
+describe("gateway error correlation", () => {
+  it("keeps request/diagnostic ids and validation fields in the SDK error", () => {
+    const body = contractBody(2, "usage_error");
+    Object.assign(body.error, {
+      requestId: "5d8b1710-bace-4efa-8ac6-6d006e80d53e",
+      diagnosticRequestId: "c9bc1cb5-e23e-4c96-a009-75df935035ec",
+      field: "instructions", argument: "--instructions",
+    });
+    expect(buildErrorFromGateway(422, body).body).toEqual(body);
+  });
+  it("does not accept arbitrary text as correlation or field metadata", () => {
+    const body = contractBody(2, "usage_error");
+    Object.assign(body.error, { requestId: "password=private", diagnosticRequestId: "Bearer private", field: "arbitrary text", argument: "--flag=private" });
+    const error = buildErrorFromGateway(422, body) as RaviContractError;
+    expect(error.contractBody.error.requestId).toBeUndefined();
+    expect(error.contractBody.error.diagnosticRequestId).toBeUndefined();
+    expect(error.contractBody.error.field).toBeUndefined();
+    expect(error.contractBody.error.argument).toBeUndefined();
+  });
+});

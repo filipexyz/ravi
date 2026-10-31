@@ -11,9 +11,9 @@ describe("gateway request logging", () => {
     expect(gatewayLogLevel("POST", path, 401, 70_001)).toBe("debug");
   });
 
-  it("keeps non-auth failures and server errors prominent", () => {
+  it("keeps 4xx prominent and leaves 5xx diagnostics to the throttled error logger", () => {
     expect(gatewayLogLevel("POST", "/api/v1/demo/echo", 400, 1)).toBe("warn");
-    expect(gatewayLogLevel("POST", "/api/v1/demo/echo", 500, 1)).toBe("error");
+    expect(gatewayLogLevel("POST", "/api/v1/demo/echo", 500, 1)).toBe("debug");
     expect(gatewayLogLevel("POST", "/api/v1/demo/echo", 200, 1)).toBe("debug");
   });
 });
