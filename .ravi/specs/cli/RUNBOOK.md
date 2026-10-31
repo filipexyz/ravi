@@ -17,6 +17,9 @@ Terms and transport names follow the normative definitions in
    `UNHANDLED_ERROR` or `RETURN_SHAPE_ERROR` envelope. Any other known
    `ContractError` must be translated before the unexpected-error path and
    retain its own non-500 status mapping.
+   Inspect `gateway:dispatcher` / `Unhandled command exception` in the local
+   daemon log for the original cause and stack. Access logs alone only contain
+   the resulting status. Never add the raw exception to the HTTP response.
 6. In remote mode, verify the target gateway performs authorization. Reject a
    response as non-canonical if `success`, `op`, `exitCode`, `outcome` and the
    error shape are incomplete or incoherent; never trust or print its raw body.

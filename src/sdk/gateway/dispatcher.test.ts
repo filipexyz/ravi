@@ -1,16 +1,20 @@
 import "reflect-metadata";
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
+import { Database } from "bun:sqlite";
 import { z } from "zod";
 
 import { RaviAppError } from "../../apps/types.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { pickFields } from "../../cli/agent-contract.js";
 import { AppsCommands } from "../../cli/commands/apps.js";
+import { TaskCommands } from "../../cli/commands/tasks.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { contractFail } from "../../cli/agent-contract.js";
 import { fail, getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
+import { getDb } from "../../router/router-db.js";
+import { dbCreateTask } from "../../tasks/task-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
 import { createHash } from "node:crypto";
@@ -629,6 +633,102 @@ describe("dispatch — validation", () => {
 });
 
 describe("dispatch — error path", () => {
+  it("recovers show and dry-run dispatch after restoring missing decision storage", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-gateway-task-schema-test-");
+    const stdout = spyOn(process.stdout, "write").mockImplementation((() => true) as never);
+    try {
+      const { task } = dbCreateTask({
+        title: "Schema incident fixture",
+        instructions: "Fixture only",
+        createdBy: "test",
+      });
+      const db = getDb();
+      // Exercise schema drift against current dev. The historical 3.261031.6
+      // task_decisions reproduction is recorded in the incident dossier.
+      const schema = db
+        .query("SELECT sql FROM sqlite_master WHERE tbl_name = 'decisions' AND sql IS NOT NULL ORDER BY type DESC")
+        .all() as { sql: string }[];
+      db.exec("DROP TABLE decisions");
+      const commands = buildRegistry([TaskCommands]);
+      const contextRecord = gatewayContext([executeGroup("tasks"), adminSystem()], "main");
+      const invoke = async (name: string) => {
+        const cmd = commands.commands.find((entry) => entry.fullName === name)!;
+        return dispatch(
+          cmd,
+          { taskId: task.id, ...(name === "tasks.dispatch" ? { agent: "main" } : {}) },
+          {},
+          { contextRecord, emitAudit: () => {} },
+        );
+      };
+      for (const name of ["tasks.show", "tasks.dispatch"]) {
+        const broken = await invoke(name);
+        expect(broken.response.status).toBe(500);
+        expect(await broken.response.json()).toMatchObject({ error: { code: "UNHANDLED_ERROR" } });
+      }
+
+      db.transaction(() => {
+        for (const row of schema) db.exec(row.sql);
+      })();
+      expect((await invoke("tasks.show")).response.status).toBe(200);
+      const dryRun = await invoke("tasks.dispatch");
+      expect(dryRun.response.status).toBe(409);
+      expect(await dryRun.response.json()).toMatchObject({ exitCode: 3, error: { code: "WRITE_REQUIRES_EXECUTE" } });
+      expect(db.query("SELECT COUNT(*) AS count FROM decisions").get()).toEqual({ count: 0 });
+      expect(db.query("SELECT COUNT(*) AS count FROM decision_history").get()).toEqual({ count: 0 });
+      expect(db.query("SELECT COUNT(*) AS count FROM decision_deliveries").get()).toEqual({ count: 0 });
+      expect(db.query("SELECT COUNT(*) AS count FROM task_assignments").get()).toEqual({ count: 0 });
+    } finally {
+      stdout.mockRestore();
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("logs the original SQLite cause and stack while keeping the HTTP 500 private", async () => {
+    const fixture = new Database(":memory:");
+    const handler = spyOn(GatewayDemoCommands.prototype, "boom").mockImplementation(() => {
+      fixture.query("SELECT * FROM task_decisions").all();
+      throw new Error("unreachable");
+    });
+    const stderr = spyOn(process.stderr, "write").mockImplementation((() => true) as never);
+    try {
+      const result = await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: () => {} });
+      expect(result.response.status).toBe(500);
+      const body = JSON.stringify(await result.response.json());
+      expect(body).toContain("UNHANDLED_ERROR");
+      expect(body).not.toContain("task_decisions");
+      const diagnostic = stderr.mock.calls.map((call) => String(call[0])).join("");
+      expect(diagnostic).toContain("no such table: task_decisions");
+      expect(diagnostic).toContain("command=demo.boom");
+      expect(diagnostic).toContain("stack=");
+      expect(diagnostic).toContain("dispatcher.test.ts");
+    } finally {
+      stderr.mockRestore();
+      handler.mockRestore();
+      fixture.close();
+    }
+  });
+
+  it("redacts credential tokens from unexpected-error diagnostics", async () => {
+    const error = Object.assign(new Error("kaboom rctx_diagnostic_secret Bearer diagnostic-secret"), {
+      body: "private request body",
+    });
+    const handler = spyOn(GatewayDemoCommands.prototype, "boom").mockImplementation(() => {
+      throw error;
+    });
+    const stderr = spyOn(process.stderr, "write").mockImplementation((() => true) as never);
+    try {
+      await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: () => {} });
+      const diagnostic = stderr.mock.calls.map((call) => String(call[0])).join("");
+      expect(diagnostic).toContain("kaboom");
+      expect(diagnostic).not.toContain("rctx_diagnostic_secret");
+      expect(diagnostic).not.toContain("diagnostic-secret");
+      expect(diagnostic).not.toContain("private request body");
+    } finally {
+      stderr.mockRestore();
+      handler.mockRestore();
+    }
+  });
+
   it.each([
     ["demo.cloud-auth-error", 401, "AUTH_REQUIRED"],
     ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED"],

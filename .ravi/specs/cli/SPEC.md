@@ -96,6 +96,10 @@ The canonical failure value is a `ContractError` and its envelope:
   tools, gateway and audit MUST NOT expose the raw exception, provider detail
   or stack. The gateway MAY retain HTTP `500` for this internal-fault class,
   but its body remains the canonical contract envelope.
+- The gateway MUST retain an unexpected handler's cause and stack in its local
+  diagnostic log, together with the command identity. Diagnostics MUST redact
+  credential tokens and MUST NOT copy the request body, runtime context key or
+  arbitrary exception properties. Public envelopes and audit remain generic.
 - A return-shape violation is `RETURN_SHAPE_ERROR`, exit `1`, outcome `failed`
   and MAY retain HTTP `500`. A non-success binary response is normalized to a
   safe stable code before it reaches SDK callers or audit; provider response
