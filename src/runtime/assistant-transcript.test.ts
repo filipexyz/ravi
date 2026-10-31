@@ -9,6 +9,23 @@ import {
 } from "./assistant-transcript.js";
 
 describe("assistant transcript empty-join mash", () => {
+  it("preserves a bridge turn's complete response even when it extends earlier text", () => {
+    expect(
+      classifyVisibleAssistantUtterances("BRIDGE_TEST_APPROVED", ["BRIDGE_TEST"], { structuredTurn: true }),
+    ).toEqual({ utterances: ["BRIDGE_TEST_APPROVED"] });
+    expect(classifyVisibleAssistantUtterances("Olá.Olá", ["Olá."], { structuredTurn: true })).toEqual({
+      utterances: ["Olá.Olá"],
+    });
+    expect(classifyVisibleAssistantUtterances("BRIDGE_TEST", ["BRIDGE_TEST"], { structuredTurn: true })).toEqual({
+      utterances: ["BRIDGE_TEST"],
+    });
+    expect(
+      classifyVisibleAssistantUtterances("BRIDGE_TEST", [], {
+        structuredTurn: true,
+        alreadyDeliveredThisTurn: ["BRIDGE_TEST"],
+      }),
+    ).toEqual({ utterances: [], skipReason: "same_turn_replay" });
+  });
   it("detects the live primeiro?Olá empty-join pattern", () => {
     expect(looksLikeEmptyJoinMash("primeiro?Olá")).toBe(true);
     expect(looksLikeEmptyJoinMash("ok.Pong")).toBe(true);

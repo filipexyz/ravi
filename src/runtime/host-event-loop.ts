@@ -1955,6 +1955,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     const augmented = {
       ...event,
+      ...(streaming.currentBridgeTurnId ? { _bridgeTurnId: streaming.currentBridgeTurnId } : {}),
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       ...(!streaming.suppressChatEmit && !isObserverRuntimeSessionName(sessionName) && streaming.currentReplyTarget
         ? { _replyTarget: streaming.currentReplyTarget }
@@ -3376,6 +3377,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 ? { utterances: [messageText] }
                 : classifyVisibleAssistantUtterances(messageText, priorAssistantContents, {
                     alreadyDeliveredThisTurn: deliveredVisibleThisTurn,
+                    structuredTurn: Boolean(streaming.currentBridgeTurnId),
                   });
               const visibleUtterances = visibility.utterances;
               if (!commentaryResponse && visibleUtterances.length === 0) {

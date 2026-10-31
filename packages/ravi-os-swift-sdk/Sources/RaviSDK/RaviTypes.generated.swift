@@ -12199,6 +12199,36 @@ public struct ContextAuthorizeReturn: Codable, Sendable {
   }
 }
 
+public struct ContextBridgeToolHookOptions: Codable, Sendable {
+  public var payload: String?
+
+  public init(payload: String? = nil) {
+    self.payload = payload
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case payload = "payload"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.payload {
+      body["payload"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct ContextBridgeToolHookReturn: Codable, Sendable {
+  public var hookSpecificOutput: RaviJSON?
+
+  public init(hookSpecificOutput: RaviJSON? = nil) {
+    self.hookSpecificOutput = hookSpecificOutput
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case hookSpecificOutput = "hookSpecificOutput"
+  }
+}
+
 public struct ContextCapabilitiesReturn: Codable, Sendable {
   public var agentId: RaviJSON
   public var capabilities: [RaviJSON]

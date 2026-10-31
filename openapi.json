@@ -80,7 +80,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "428961cc942d2a02"
+    "version": "fcc5b23d85ddee5a"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -61300,6 +61300,78 @@
         },
         "security": [],
         "summary": "Request approval and extend the current runtime context if approved",
+        "tags": [
+          "context"
+        ]
+      }
+    },
+    "/api/v1/context/bridge-tool-hook": {
+      "post": {
+        "operationId": "context.bridge-tool-hook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "payload": {
+                    "description": "Hook input",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "hookSpecificOutput": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "hookEventName": {
+                          "const": "PreToolUse",
+                          "type": "string"
+                        },
+                        "permissionDecision": {
+                          "enum": [
+                            "deny"
+                          ],
+                          "type": "string"
+                        },
+                        "permissionDecisionReason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "hookEventName",
+                        "permissionDecision",
+                        "permissionDecisionReason"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Authorize one Console bridge command, including an owner decision when eligible",
         "tags": [
           "context"
         ]
@@ -159518,6 +159590,10 @@
     {
       "description": "Typed project databases (Bases) in Ravi Console",
       "name": "bases"
+    },
+    {
+      "description": "Enroll the private Console human bridge",
+      "name": "bridge"
     },
     {
       "description": "Manage Ravi MCP bridges through Console",

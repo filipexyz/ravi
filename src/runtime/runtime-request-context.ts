@@ -1,4 +1,6 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
+import { resolveBridgeInvocation } from "../bridge/authority.js";
+import { assertBridgeProvider, isBridgeSessionRef } from "../bridge/isolation.js";
 import {
   dbGetContext,
   dbUpdateContextCapabilities,
@@ -73,6 +75,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
+  if (prompt._bridgeTurnId || isBridgeSessionRef(dbSessionKey)) assertBridgeProvider(runtimeProviderId);
   const capabilities = buildRuntimeContextCapabilities(agent.id, sessionName, prompt);
   // A fresh runtime launch owns the session's authority slot. Any turn-scoped
   // context still live here belongs to a runtime that is already gone: idle
@@ -150,6 +153,8 @@ export function refreshRuntimeRequestContextForTurn(options: {
   /** Where this turn's answer goes, as the runtime bound it for the turn. */
   replyTarget?: TurnReplyTarget;
 }): ContextRecord {
+  if (options.prompt._bridgeTurnId || isBridgeSessionRef(options.dbSessionKey))
+    assertBridgeProvider(options.runtimeProviderId);
   const derived = deriveRuntimeContextForPrompt({
     agentId: options.agent.id,
     sessionKey: options.dbSessionKey,
@@ -287,6 +292,11 @@ function deriveRuntimeContextForPrompt(options: {
   metadata: Record<string, unknown>;
   source: ContextSource | undefined;
 } {
+  if (options.prompt._bridgeTurnId || /^agent:[^:]+:console:[0-9a-f-]{36}$/.test(options.sessionKey)) {
+    if (!options.prompt._bridgeTurnId) throw new Error("Console turns require a fresh human delegation");
+    const bridge = resolveBridgeInvocation(options.prompt._bridgeTurnId, options.sessionKey, options.agentId);
+    return { ...bridge, metadata: { ...options.metadata, ...bridge.metadata } };
+  }
   const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
   return {
     capabilities: identity.capabilities,

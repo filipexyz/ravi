@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { bridgeContextLive } from "../bridge/authority.js";
 import {
   dbCreateContext,
   dbGetContext,
@@ -149,7 +150,9 @@ export function revokeLiveRuntimeContextsForAgent(
   agentId: string,
   options: RevokeRuntimeContextOptions = {},
 ): RevokeContextResult[] {
-  const contexts = dbListContexts({ agentId, includeInactive: false });
+  const contexts = dbListContexts({ agentId, includeInactive: false }).filter(
+    (context) => !context.metadata?.bridgeTurnId,
+  );
   const liveContextIds = new Set(contexts.map((context) => context.contextId));
   const roots = contexts.filter((context) => {
     const parentContextId = context.metadata?.parentContextId;
@@ -207,6 +210,7 @@ export function resolveRuntimeContext(
 ): ContextRecord | null {
   const record = options?.readOnly ? dbGetContextByKeyReadOnly(contextKey) : dbGetContextByKey(contextKey);
   if (!record) return null;
+  if (!bridgeContextLive(record.metadata)) return null;
   if (record.revokedAt && record.revokedAt <= Date.now()) return null;
   if (record.expiresAt && record.expiresAt <= Date.now()) return null;
 
@@ -227,6 +231,7 @@ export function resolveRuntimeContextOrThrow(
   if (!record) {
     throw new Error("Context not found");
   }
+  if (!bridgeContextLive(record.metadata)) throw new Error("Bridge context revoked or expired");
   if (record.revokedAt && record.revokedAt <= Date.now()) {
     throw new Error("Context revoked");
   }
@@ -254,6 +259,8 @@ export function issueRuntimeContext(input: IssueRuntimeContextInput): ContextRec
   if (!isRuntimeContextLive(input.parent, now)) {
     throw new Error(`Parent context ${input.parent.contextId} is revoked or expired`);
   }
+  if (input.parent.metadata?.bridgeTurnId && (input.identity || input.kind === "turn-runtime"))
+    throw new Error("Bridge children cannot replace their session identity or become a root turn");
   const delegatedIdentity = input.identity ? resolveDelegatedIdentity(input.parent, input.identity) : undefined;
   const sessionActor =
     delegatedIdentity && input.identity?.projectSessionActor
@@ -483,6 +490,13 @@ function buildDerivedContextMetadata(
     Object.assign(derived, sessionActorMetadata);
   }
 
+  // A child cannot discard or replace the parent's live bridge lease.
+  for (const key of Object.keys(derived)) if (key.startsWith("bridge")) delete derived[key];
+  if (parent.metadata?.bridgeTurnId) {
+    for (const [key, value] of Object.entries(parent.metadata))
+      if (key.startsWith("bridge") || key.startsWith("console")) derived[key] = value;
+    derived.authorityResolver = "console-bridge-v2";
+  }
   return derived;
 }
 

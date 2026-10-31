@@ -10465,6 +10465,20 @@ export type ContextAuthorizeReturn = {
   reason: string | null;
 };
 
+/** Input shape for `context.bridge-tool-hook`. */
+export type ContextBridgeToolHookInput = {
+  payload?: string;
+};
+
+/** Return shape for `context.bridge-tool-hook`. */
+export type ContextBridgeToolHookReturn = {
+  hookSpecificOutput?: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "deny";
+    permissionDecisionReason: string;
+  };
+};
+
 /** Input shape for `context.capabilities`. */
 export type ContextCapabilitiesInput = Record<string, never>;
 
