@@ -1,3 +1,4 @@
+import { migrateDecisions } from "../decisions/schema.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
 /**
  * Router Database - SQLite-backed configuration storage
@@ -3337,6 +3338,7 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN on_error TEXT");
     log.info("Added on_error column to triggers table");
   }
+  migrateDecisions(db);
   ensureColumn(db, "slack_thread_lifecycle", "requested_by", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "provider_override", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "effort_override", "TEXT");

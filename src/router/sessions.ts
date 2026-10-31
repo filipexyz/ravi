@@ -905,6 +905,20 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
       const s = getStatements();
       s.updateName.run(newName, Date.now(), sessionKey);
       renameThreadSessionNames(db, sessionKey, newName);
+      // Task assignments still store a session name. Keep active bindings attached
+      // to this runtime so renaming cannot bypass decision self-answer protection.
+      // Task tables are lazily initialized; do not create them just for a rename.
+      if (oldName && db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_assignments'").get()) {
+        db.query(`UPDATE tasks SET assignee_session_name=? WHERE assignee_session_name=? AND id IN
+          (SELECT task_id FROM task_assignments WHERE session_name=? AND status IN ('assigned','accepted','blocked'))`).run(
+          newName,
+          oldName,
+          oldName,
+        );
+        db.query(
+          "UPDATE task_assignments SET session_name=? WHERE session_name=? AND status IN ('assigned','accepted','blocked')",
+        ).run(newName, oldName);
+      }
       return oldName ? dbRenameRouteSessionName(oldName, newName) : 0;
     },
     { label: "router:renameSessionCanonical" },

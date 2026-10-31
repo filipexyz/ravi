@@ -13597,6 +13597,254 @@ class DaemonUninstallReturn {
 
 DaemonUninstallReturn daemonUninstallReturnFromJson(Object? json) => DaemonUninstallReturn.fromJsonValue(json);
 
+class DecisionsAnswerOptions {
+  const DecisionsAnswerOptions({this.by, this.execute, this.text});
+
+  final String? by;
+  final bool? execute;
+  final String? text;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+  }
+}
+
+class DecisionsAnswerReturn {
+  const DecisionsAnswerReturn({this.created, required this.decision, required this.deliveries});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+
+  factory DecisionsAnswerReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsAnswerReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+    );
+  }
+
+  static DecisionsAnswerReturn fromJsonValue(Object? json) {
+    return DecisionsAnswerReturn.fromJson(raviJsonObject(json, "DecisionsAnswerReturn"));
+  }
+}
+
+DecisionsAnswerReturn decisionsAnswerReturnFromJson(Object? json) => DecisionsAnswerReturn.fromJsonValue(json);
+
+class DecisionsAskOptions {
+  const DecisionsAskOptions({this.ask, this.blocks, this.execute, this.key, this.owner, this.task, this.thread});
+
+  final String? ask;
+  final bool? blocks;
+  final bool? execute;
+  final String? key;
+  final String? owner;
+  final String? task;
+  final String? thread;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (ask != null) {
+      into["ask"] = RaviJson.from(ask);
+    }
+    if (blocks != null) {
+      into["blocks"] = RaviJson.from(blocks);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (owner != null) {
+      into["owner"] = RaviJson.from(owner);
+    }
+    if (task != null) {
+      into["task"] = RaviJson.from(task);
+    }
+    if (thread != null) {
+      into["thread"] = RaviJson.from(thread);
+    }
+  }
+}
+
+class DecisionsAskReturn {
+  const DecisionsAskReturn({this.created, required this.decision, required this.deliveries});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+
+  factory DecisionsAskReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsAskReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+    );
+  }
+
+  static DecisionsAskReturn fromJsonValue(Object? json) {
+    return DecisionsAskReturn.fromJson(raviJsonObject(json, "DecisionsAskReturn"));
+  }
+}
+
+DecisionsAskReturn decisionsAskReturnFromJson(Object? json) => DecisionsAskReturn.fromJsonValue(json);
+
+class DecisionsListOptions {
+  const DecisionsListOptions({this.all, this.limit, this.offset, this.task, this.thread});
+
+  final bool? all;
+  final String? limit;
+  final String? offset;
+  final String? task;
+  final String? thread;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (task != null) {
+      into["task"] = RaviJson.from(task);
+    }
+    if (thread != null) {
+      into["thread"] = RaviJson.from(thread);
+    }
+  }
+}
+
+class DecisionsListReturn {
+  const DecisionsListReturn({required this.decisions, required this.pagination});
+
+  final List<RaviJson> decisions;
+  final RaviJson pagination;
+
+  factory DecisionsListReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsListReturn(
+      decisions: raviJsonAsList(json["decisions"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+    );
+  }
+
+  static DecisionsListReturn fromJsonValue(Object? json) {
+    return DecisionsListReturn.fromJson(raviJsonObject(json, "DecisionsListReturn"));
+  }
+}
+
+DecisionsListReturn decisionsListReturnFromJson(Object? json) => DecisionsListReturn.fromJsonValue(json);
+
+class DecisionsResolveDeliveryOptions {
+  const DecisionsResolveDeliveryOptions({this.evidence, this.execute, this.outcome});
+
+  final String? evidence;
+  final bool? execute;
+  final String? outcome;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (evidence != null) {
+      into["evidence"] = RaviJson.from(evidence);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (outcome != null) {
+      into["outcome"] = RaviJson.from(outcome);
+    }
+  }
+}
+
+class DecisionsResolveDeliveryReturn {
+  const DecisionsResolveDeliveryReturn({this.created, required this.decision, required this.deliveries});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+
+  factory DecisionsResolveDeliveryReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsResolveDeliveryReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+    );
+  }
+
+  static DecisionsResolveDeliveryReturn fromJsonValue(Object? json) {
+    return DecisionsResolveDeliveryReturn.fromJson(raviJsonObject(json, "DecisionsResolveDeliveryReturn"));
+  }
+}
+
+DecisionsResolveDeliveryReturn decisionsResolveDeliveryReturnFromJson(Object? json) => DecisionsResolveDeliveryReturn.fromJsonValue(json);
+
+class DecisionsRetryOptions {
+  const DecisionsRetryOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class DecisionsRetryReturn {
+  const DecisionsRetryReturn({this.created, required this.decision, required this.deliveries});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+
+  factory DecisionsRetryReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsRetryReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+    );
+  }
+
+  static DecisionsRetryReturn fromJsonValue(Object? json) {
+    return DecisionsRetryReturn.fromJson(raviJsonObject(json, "DecisionsRetryReturn"));
+  }
+}
+
+DecisionsRetryReturn decisionsRetryReturnFromJson(Object? json) => DecisionsRetryReturn.fromJsonValue(json);
+
+class DecisionsShowReturn {
+  const DecisionsShowReturn({this.created, required this.decision, required this.deliveries, required this.history});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+  final List<RaviJson> history;
+
+  factory DecisionsShowReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsShowReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+      history: raviJsonAsList(json["history"], RaviJson.from),
+    );
+  }
+
+  static DecisionsShowReturn fromJsonValue(Object? json) {
+    return DecisionsShowReturn.fromJson(raviJsonObject(json, "DecisionsShowReturn"));
+  }
+}
+
+DecisionsShowReturn decisionsShowReturnFromJson(Object? json) => DecisionsShowReturn.fromJsonValue(json);
+
 class DevinAuthCheckReturn {
   const DevinAuthCheckReturn({required this.baseUrl, this.configuredOrgId, required this.ok, required this.self});
 
@@ -29995,50 +30243,6 @@ class TagsShowReturn {
 
 TagsShowReturn tagsShowReturnFromJson(Object? json) => TagsShowReturn.fromJsonValue(json);
 
-class TasksAnswerOptions {
-  const TasksAnswerOptions({this.by, this.key, this.text});
-
-  final String? by;
-  final String? key;
-  final String? text;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (by != null) {
-      into["by"] = RaviJson.from(by);
-    }
-    if (key != null) {
-      into["key"] = RaviJson.from(key);
-    }
-    if (text != null) {
-      into["text"] = RaviJson.from(text);
-    }
-  }
-}
-
-class TasksAnswerReturn {
-  const TasksAnswerReturn({this.created, required this.decision, required this.event, required this.task});
-
-  final bool? created;
-  final RaviJson decision;
-  final RaviJson event;
-  final RaviJson task;
-
-  factory TasksAnswerReturn.fromJson(Map<String, Object?> json) {
-    return TasksAnswerReturn(
-      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
-      decision: RaviJson.from(json["decision"]),
-      event: RaviJson.from(json["event"]),
-      task: RaviJson.from(json["task"]),
-    );
-  }
-
-  static TasksAnswerReturn fromJsonValue(Object? json) {
-    return TasksAnswerReturn.fromJson(raviJsonObject(json, "TasksAnswerReturn"));
-  }
-}
-
-TasksAnswerReturn tasksAnswerReturnFromJson(Object? json) => TasksAnswerReturn.fromJsonValue(json);
-
 class TasksArchiveOptions {
   const TasksArchiveOptions({this.reason});
 
@@ -30562,54 +30766,6 @@ class TasksCreateReturn {
 }
 
 TasksCreateReturn tasksCreateReturnFromJson(Object? json) => TasksCreateReturn.fromJsonValue(json);
-
-class TasksDecideOptions {
-  const TasksDecideOptions({this.ask, this.blocks, this.key, this.owner});
-
-  final String? ask;
-  final bool? blocks;
-  final String? key;
-  final String? owner;
-
-  void encodeBody(Map<String, RaviJson> into) {
-    if (ask != null) {
-      into["ask"] = RaviJson.from(ask);
-    }
-    if (blocks != null) {
-      into["blocks"] = RaviJson.from(blocks);
-    }
-    if (key != null) {
-      into["key"] = RaviJson.from(key);
-    }
-    if (owner != null) {
-      into["owner"] = RaviJson.from(owner);
-    }
-  }
-}
-
-class TasksDecideReturn {
-  const TasksDecideReturn({this.created, required this.decision, required this.event, required this.task});
-
-  final bool? created;
-  final RaviJson decision;
-  final RaviJson event;
-  final RaviJson task;
-
-  factory TasksDecideReturn.fromJson(Map<String, Object?> json) {
-    return TasksDecideReturn(
-      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
-      decision: RaviJson.from(json["decision"]),
-      event: RaviJson.from(json["event"]),
-      task: RaviJson.from(json["task"]),
-    );
-  }
-
-  static TasksDecideReturn fromJsonValue(Object? json) {
-    return TasksDecideReturn.fromJson(raviJsonObject(json, "TasksDecideReturn"));
-  }
-}
-
-TasksDecideReturn tasksDecideReturnFromJson(Object? json) => TasksDecideReturn.fromJsonValue(json);
 
 class TasksDepsAddReturn {
   const TasksDepsAddReturn({required this.event, required this.task});

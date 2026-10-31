@@ -10,3 +10,4 @@ export * from "./automations-db.js";
 export * from "./automations.js";
 export * from "./decisions.js";
 export * from "./service.js";
+export { DecisionError, normalizeDecisionKey, parseDecisionOwner, formatDecisionOwner } from "../decisions/model.js";

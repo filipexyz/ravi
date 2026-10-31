@@ -1,104 +1,13 @@
 import type {
-  TaskDecision,
   TaskDecisionAttentionEntry,
   TaskDecisionAttentionItem,
   TaskDecisionAttentionOptions,
   TaskDecisionAttentionReport,
-  TaskDecisionOwnerType,
-  TaskDecisionStatus,
   TaskOpenDecisionRow,
   TaskStatus,
 } from "./types.js";
 
-export type TaskDecisionErrorCode =
-  | "TASK_DECISION_NOT_FOUND"
-  | "TASK_DECISION_NOT_OPEN"
-  | "TASK_DECISION_SELF_ANSWER"
-  | "TASK_DECISION_INVALID_KEY"
-  | "TASK_DECISION_INVALID_OWNER"
-  | "TASK_DECISION_INVALID_ASK"
-  | "TASK_DECISION_INVALID_ANSWER";
-
-export class TaskDecisionError extends Error {
-  readonly code: TaskDecisionErrorCode;
-  readonly exitCode: number;
-  readonly suggestedAction?: string;
-
-  constructor(
-    code: TaskDecisionErrorCode,
-    message: string,
-    options: { exitCode?: number; suggestedAction?: string } = {},
-  ) {
-    super(message);
-    this.name = "TaskDecisionError";
-    this.code = code;
-    this.exitCode = options.exitCode ?? 1;
-    this.suggestedAction = options.suggestedAction;
-  }
-}
-
-export const TASK_DECISION_STATUSES = [
-  "open",
-  "answered",
-  "superseded",
-] as const satisfies readonly TaskDecisionStatus[];
-
-export const TASK_DECISION_OWNER_TYPES = [
-  "human",
-  "agent",
-  "unassigned",
-] as const satisfies readonly TaskDecisionOwnerType[];
-
-const TASK_DECISION_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const TERMINAL_TASK_STATUSES = new Set<TaskStatus>(["done", "failed"]);
-
-/** Normalize and validate a decision key. Keys are stable per task. */
-export function normalizeTaskDecisionKey(raw: string | null | undefined): string {
-  const key = (raw ?? "").trim().toLowerCase();
-  if (!TASK_DECISION_KEY_PATTERN.test(key)) {
-    throw new TaskDecisionError(
-      "TASK_DECISION_INVALID_KEY",
-      `Invalid decision key ${JSON.stringify(raw ?? "")}: use a lowercase slug (a-z, 0-9, dot, dash, underscore; max 64 chars).`,
-      { exitCode: 2, suggestedAction: "Pick a stable key such as 'deploy-window' or 'owner-approval'." },
-    );
-  }
-  return key;
-}
-
-/**
- * Parse `human:<contact>`, `agent:<id>` or `unassigned`. Anything else is a
- * usage error; the owner is never inferred from free text.
- */
-export function parseTaskDecisionOwner(raw: string | null | undefined): {
-  ownerType: TaskDecisionOwnerType;
-  ownerId: string | null;
-} {
-  const value = (raw ?? "").trim();
-  if (!value) {
-    return { ownerType: "unassigned", ownerId: null };
-  }
-  if (value === "unassigned") {
-    return { ownerType: "unassigned", ownerId: null };
-  }
-
-  const separator = value.indexOf(":");
-  const ownerType = (separator === -1 ? "" : value.slice(0, separator)) as TaskDecisionOwnerType;
-  const ownerId = separator === -1 ? "" : value.slice(separator + 1).trim();
-  if (!TASK_DECISION_OWNER_TYPES.includes(ownerType) || ownerType === "unassigned" || !ownerId) {
-    throw new TaskDecisionError(
-      "TASK_DECISION_INVALID_OWNER",
-      `Invalid decision owner ${JSON.stringify(value)}: use human:<contact>, agent:<agent-id> or unassigned.`,
-      { exitCode: 2, suggestedAction: "Pass --owner human:<contact-id>, --owner agent:<agent-id> or omit it." },
-    );
-  }
-  return { ownerType, ownerId };
-}
-
-export function formatTaskDecisionOwner(decision: Pick<TaskDecision, "ownerType" | "ownerId">): string {
-  return decision.ownerType === "unassigned" || !decision.ownerId
-    ? "unassigned"
-    : `${decision.ownerType}:${decision.ownerId}`;
-}
 
 export function isTaskDecisionParked(row: TaskOpenDecisionRow, now = Date.now()): boolean {
   void now;

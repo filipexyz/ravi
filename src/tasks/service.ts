@@ -147,7 +147,8 @@ import type {
   TaskWorktreeMode,
 } from "./types.js";
 import { TASK_REPORT_EVENTS } from "./types.js";
-import { TaskDecisionError, foldTaskDecisionAttention } from "./decisions.js";
+import { foldTaskDecisionAttention } from "./decisions.js";
+import { DecisionError } from "../decisions/model.js";
 import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../tags/service.js";
 import type { TagBinding } from "../tags/types.js";
@@ -1910,7 +1911,7 @@ export function isTaskVisibleToCaller(task: TaskRecord): boolean {
  * dispatcher, or to whoever holds an explicit task grant. The command gate alone
  * lets every agent with the baseline tasks group through for any task id.
  */
-function assertTaskMutationAuthorized(
+export function assertTaskMutationAuthorized(
   task: TaskRecord,
   action: string,
   options: { verb: string; extraAgentIds?: Array<string | null | undefined> },
@@ -3467,8 +3468,8 @@ export function answerTaskDecision(
   });
   const assignment = dbGetActiveAssignment(taskId);
   if (assignment && input.sessionName && assignment.sessionName === input.sessionName) {
-    throw new TaskDecisionError(
-      "TASK_DECISION_SELF_ANSWER",
+    throw new DecisionError(
+      "DECISION_SELF_ANSWER",
       `Cannot answer decision "${input.key}" on task ${taskId} from its own work session ${assignment.sessionName}. ` +
         `The pending decision is waiting on someone else.`,
       { suggestedAction: "Answer it from the requesting session, a human turn, or another agent session." },

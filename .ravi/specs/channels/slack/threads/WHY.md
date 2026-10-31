@@ -35,3 +35,6 @@ useful result.
   This is racy and leaves an agent-created branch idle.
 - Model close by deleting or editing the Slack root. That destroys conversation
   history and does not represent Ravi's runtime lifecycle.
+
+
+Decisions belong to their own ledger; a thread can wait for an explicit answer without a task. Open questions prevent closure so a completed card never silently hides pending work.

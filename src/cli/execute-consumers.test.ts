@@ -209,6 +209,17 @@ const executeConsumers: readonly ExecuteConsumer[] = [
 
 const executeInstructions = [
   {
+    name: "thread decision question in the sessions skill",
+    path: "src/plugins/internal/ravi-system/skills/sessions/SKILL.md",
+    instruction:
+      'ravi decisions ask --thread <sessão-filha> --key janela --ask "Qual janela?" --owner human:<contato> --execute --json',
+  },
+  {
+    name: "thread decision answer in the sessions skill",
+    path: "src/plugins/internal/ravi-system/skills/sessions/SKILL.md",
+    instruction: 'ravi decisions answer <decision-id> --text "Após 18h" --execute --json',
+  },
+  {
     name: "session reset documentation",
     path: "README.md",
     instruction: "ravi sessions reset main --execute",
