@@ -61,6 +61,68 @@ function getDenyReason(result: Record<string, unknown>): string {
 // Bash Permission Hook Tests
 // ============================================================================
 
+describe("Bash quoting permission boundary", () => {
+  it("allows literal search/JSON data with only the named executable grant", () => {
+    for (const command of [
+      "rg -F '$(whoami)' file",
+      'grep -F "\\$(whoami)" file',
+      "printf '%s' '{\"pattern\":\"$(id) `id` <(id) <<EOF\"}'",
+      "printf '%s' 'it'\\''s $(id)'",
+      'printf "%s" "<(id) >(id) <<EOF"',
+    ]) {
+      const executable = command.split(" ")[0]!;
+      const decision = evaluateBashPermission(command, {
+        agentId: "test-agent",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: executable }],
+      });
+      expect(decision.allowed).toBe(true);
+    }
+  });
+
+  it("keeps active syntax, quoted shells and inline interpreters blocked with wildcard execute", () => {
+    for (const command of [
+      'printf "%s" "$(whoami)"',
+      'printf "%s" "$\\\n(whoami)"',
+      'printf "%s" "`whoami`"',
+      "cat <<'EOF'\nliteral\nEOF",
+      "cat <(printf ok)",
+      'ba"sh" -c "echo ok"',
+      'sudo "bash" -c "echo ok"',
+      'python3 "-c" "print(1)"',
+      'py"thon3" -c "print(1)"',
+      'node -e"console.log(1)"',
+      'cat script | "python3"',
+    ]) {
+      const decision = evaluateBashPermission(command, {
+        agentId: "test-agent",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      });
+      expect(decision.allowed).toBe(false);
+    }
+  });
+
+  it("does not turn literal data into permission to run a different executable", () => {
+    const decision = evaluateBashPermission("grep '$(id)' file; ba'sh' script", {
+      agentId: "test-agent",
+      kind: "test-runtime",
+      capabilities: [{ permission: "execute", objectType: "executable", objectId: "grep" }],
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toContain("bash");
+  });
+
+  it("documents the file-script limit: interpreter permission does not inspect script content", () => {
+    const decision = evaluateBashPermission("python3 ./script.py", {
+      agentId: "test-agent",
+      kind: "test-runtime",
+      capabilities: [{ permission: "execute", objectType: "executable", objectId: "python3" }],
+    });
+    expect(decision.allowed).toBe(true);
+  });
+});
+
 describe("createBashPermissionHook", () => {
   it("has matcher set to 'Bash'", () => {
     const hook = createBashPermissionHook({ getAgentId: () => undefined });
