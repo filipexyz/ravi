@@ -457,3 +457,54 @@ describe("piped interpreters require a resolved script argument", () => {
     });
   }
 });
+
+describe("piped interpreter descriptor aliases and receiver segments", () => {
+  for (const path of [
+    "/dev/stdin",
+    ...[0, 3, 7, 42, 65535].flatMap((fd) => [`/dev/fd/${fd}`, `/proc/self/fd/${fd}`, `/proc/thread-self/fd/${fd}`]),
+    "/dev/./fd/3",
+    "/proc/self/fd/../fd/7",
+  ]) {
+    it(`refuses descriptor aliases by shape: ${path}`, () => {
+      for (const interpreter of ["python3", "node", "perl", "ruby", "php"]) {
+        for (const redirect of ["", " 3<&0", " 7<&0"]) {
+          const command = `printf code | ${interpreter} '${path}'${redirect}`;
+          expect(checkDangerousPatterns(command).safe).toBe(false);
+          expect(parseBashCommand(command).success).toBe(false);
+        }
+      }
+    });
+  }
+
+  for (const receiver of [
+    "# c\n python3 -u",
+    "# c\n\n # another comment\n python3 -u",
+    "\n\n python3 -u",
+    "# c\n python3 - 2>/dev/null",
+    "# c\n node --no-warnings",
+    "# c\n bash",
+    "# c\n python3 -c 'print(731)'",
+    "cat; # c\n python3 -u",
+  ]) {
+    it(`continues checking all receiver segments: ${JSON.stringify(receiver)}`, () => {
+      const command = `printf 'print(731)\\n' | ${receiver}`;
+      expect(checkDangerousPatterns(command).safe).toBe(false);
+      expect(parseBashCommand(command).success).toBe(false);
+    });
+  }
+
+  it("allows file scripts after empty and comment-only receiver segments", () => {
+    for (const receiver of [
+      "python3 script.py",
+      "python3 ./a.py arg",
+      "node build.js",
+      "node --no-warnings build.js",
+    ]) {
+      for (const prefix of ["", "printf data | ", "printf data | # c\n\n # another comment\n "]) {
+        const command = prefix + receiver;
+        expect(checkDangerousPatterns(command).safe).toBe(true);
+        expect(parseBashCommand(command).success).toBe(true);
+      }
+    }
+  });
+});

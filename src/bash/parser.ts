@@ -95,16 +95,18 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
     for (let i = 0; i < inspected.syntax.length; i++) {
       if (inspected.syntax[i] !== "|" || /[|>]/.test(inspected.syntax[i - 1] ?? "") || inspected.syntax[i + 1] === "|")
         continue;
-      const receiver = splitByOperators(inspected.command.slice(i + 1))[0] ?? "";
-      const executable = parseSimpleCommand(receiver);
-      if (!executable) continue;
-      if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
-      if (INLINE_CODE_INTERPRETERS[executable]) {
-        if (isInlineCodeExecution(executable, receiver).blocked) {
-          return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
-        }
-        if (!hasResolvedScriptArgument(executable, receiver)) {
-          return { safe: false, reason: "piping to interpreter stdin or ambiguous script arguments is not allowed" };
+      // A comment/empty segment after a pipe does not end its receiver scan.
+      for (const receiver of splitByOperators(inspected.command.slice(i + 1))) {
+        const executable = parseSimpleCommand(receiver);
+        if (!executable) continue;
+        if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
+        if (INLINE_CODE_INTERPRETERS[executable]) {
+          if (isInlineCodeExecution(executable, receiver).blocked) {
+            return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
+          }
+          if (!hasResolvedScriptArgument(executable, receiver)) {
+            return { safe: false, reason: "piping to interpreter stdin or ambiguous script arguments is not allowed" };
+          }
         }
       }
     }
@@ -258,10 +260,10 @@ function hasResolvedScriptArgument(executable: string, command: string): boolean
     }
     // The FIRST positional argument selects the code source. A later filename
     // cannot turn `python3 - script.py` into file execution. Empty words,
-    // unmodelled expansions and known stdin aliases do not prove a script file.
+    // unmodelled expansions and descriptor aliases do not prove a script file.
     if (!arg || arg.startsWith("-") || /[{}~]/.test(arg)) return false;
     const path = resolve("/", arg);
-    return !["/dev/stdin", "/dev/fd/0", "/proc/self/fd/0", "/proc/thread-self/fd/0"].includes(path);
+    return !/^\/(?:dev\/stdin|dev\/fd\/\d+|proc\/(?:self|thread-self)\/fd\/\d+)$/.test(path);
   }
   return false;
 }

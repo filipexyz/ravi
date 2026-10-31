@@ -561,6 +561,45 @@ describe("createBashPermissionHook", () => {
   });
 });
 
+describe("piped interpreter descriptor aliases and receiver segments", () => {
+  for (const receiver of [
+    "python3 /dev/fd/3 3<&0",
+    "python3 /dev/fd/7 7<&0",
+    "python3 /dev/fd/65535",
+    "python3 /proc/self/fd/3 3<&0",
+    "python3 /proc/thread-self/fd/7 7<&0",
+    "python3 '/dev/./fd/3' 3<&0",
+    "# c\n python3 -u",
+    "# c\n\n # another comment\n python3 -u",
+    "\n\n python3 -u",
+    "cat; # c\n python3 -u",
+    "python3 - 2>/dev/null",
+  ]) {
+    it(`denies through the actual PreToolUse hook: ${JSON.stringify(receiver)}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      const result = await callBashHook(`printf 'print(731)\\n' | ${receiver}`, "test-agent", context);
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toMatch(/interpreter|pipeline/);
+    });
+  }
+
+  it("allows file-script controls with and without a commented pipeline", async () => {
+    const context = makeToolContext("test-agent", [{ permission: "execute", objectType: "executable", objectId: "*" }]);
+    for (const receiver of [
+      "python3 script.py",
+      "python3 ./a.py arg",
+      "node build.js",
+      "node --no-warnings build.js",
+    ]) {
+      for (const prefix of ["", "printf data | ", "printf data | # c\n\n # another comment\n "]) {
+        expect(await callBashHook(prefix + receiver, "test-agent", context)).toEqual({});
+      }
+    }
+  });
+});
+
 // ============================================================================
 // Tool Permission Hook Tests
 // ============================================================================
