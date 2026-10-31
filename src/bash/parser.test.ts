@@ -461,7 +461,15 @@ describe("piped interpreters require a resolved script argument", () => {
 describe("piped interpreter descriptor aliases and receiver segments", () => {
   for (const path of [
     "/dev/stdin",
-    ...[0, 3, 7, 42, 65535].flatMap((fd) => [`/dev/fd/${fd}`, `/proc/self/fd/${fd}`, `/proc/thread-self/fd/${fd}`]),
+    "/dev/stdout",
+    "/dev/stderr",
+    ...[0, 3, 7, 42, 65535].flatMap((fd) => [
+      `/dev/fd/${fd}`,
+      `/proc/self/fd/${fd}`,
+      `/proc/thread-self/fd/${fd}`,
+      `/proc/123/fd/${fd}`,
+      `/proc/123/task/456/fd/${fd}`,
+    ]),
     "/dev/./fd/3",
     "/proc/self/fd/../fd/7",
   ]) {

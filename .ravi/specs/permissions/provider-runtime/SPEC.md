@@ -154,7 +154,12 @@ Required capability materializers:
   Flags, option values, the stdin marker `-`, leading assignments, comments,
   redirection operators, descriptors and destinations MUST NOT count as that
   argument. The first positional word selects the code source; a later filename
-  MUST NOT override stdin. Known stdin device paths MUST also be refused.
+  MUST NOT override stdin. Descriptor device paths (`/dev/fd/N`, `/proc/**/fd/N`,
+  and `/dev/stdin`, `/dev/stdout`, `/dev/stderr`) MUST also be refused for every
+  descriptor number: redirection can alias any of them to piped stdin.
+- Pipeline inspection MUST continue after empty/comment-only receiver segments;
+  a whole-line comment MUST NOT hide an interpreter on the next line. The
+  bounded guard conservatively checks every remaining receiver segment.
 - Options before a piped script MUST have explicitly supported arity and
   file-script semantics. Unknown options, alternate/interactive execution modes
   and unresolved expansions MUST fail closed, even with wildcard executable

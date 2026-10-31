@@ -263,7 +263,9 @@ function hasResolvedScriptArgument(executable: string, command: string): boolean
     // unmodelled expansions and descriptor aliases do not prove a script file.
     if (!arg || arg.startsWith("-") || /[{}~]/.test(arg)) return false;
     const path = resolve("/", arg);
-    return !/^\/(?:dev\/stdin|dev\/fd\/\d+|proc\/(?:self|thread-self)\/fd\/\d+)$/.test(path);
+    // Any descriptor may alias stdin after duplication, including stdout/stderr
+    // and numeric process/task paths. Its pathname cannot prove a script file.
+    return !/^\/dev\/(?:std(?:in|out|err)|fd\/\d+)$/.test(path) && !/^\/proc\/.*\/fd\/\d+$/.test(path);
   }
   return false;
 }

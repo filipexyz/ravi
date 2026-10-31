@@ -54,6 +54,11 @@ Quoting regressions (`bun test src/bash/`):
 - Option operands MUST NOT be mistaken for script files. Unknown flags,
   interactive modes, dynamic/glob/brace script words, stdin aliases and a
   filename after an explicit stdin marker MUST fail closed.
+- PR #784 independent review regressions: `python3 /dev/fd/3 3<&0` and
+  `| # comment` followed by `python3 -u` on the next line MUST be denied in both
+  parser entry points and the actual hook. Cover arbitrary descriptor numbers,
+  `/proc/**/fd/N`, stdout/stderr aliases, multiple leading comment lines and a
+  real `python3 script.py` receiver after comments that still passes.
 - Single-quoted substitution/backtick/process/heredoc text and escaped dollar
   or backtick in double quotes MUST pass in JSON and rg/grep arguments.
 - Active substitutions outside and inside double quotes MUST fail, including
