@@ -306,6 +306,7 @@ export interface ResolvedTaskProfile extends TaskProfileDefinition {
 
 export interface TaskRecord {
   id: string;
+  threadId: string;
   title: string;
   instructions: string;
   status: TaskStatus;
@@ -345,6 +346,7 @@ export interface TaskRecord {
 
 export interface TaskAssignment {
   id: string;
+  executionStatus?: "legacy" | "pending" | "accepting" | "refused" | "admitted" | "uncertain";
   taskId: string;
   agentId: string;
   sessionName: string;
@@ -514,6 +516,8 @@ export interface TaskReadiness {
 }
 
 export interface CreateTaskInput {
+  /** Stable caller-scoped operation key. Retry returns the original task and thread. */
+  idempotencyKey?: string;
   title: string;
   instructions: string;
   priority?: TaskPriority;

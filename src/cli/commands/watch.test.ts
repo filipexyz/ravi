@@ -351,7 +351,7 @@ describe("watch write brake", () => {
           undefined,
           undefined,
         ),
-      ).rejects.toMatchObject({ code: "COMMAND_FAILED", exitCode: 1 });
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR", exitCode: 2 });
     });
 
     expect(createTriggerCalls).toHaveLength(0);

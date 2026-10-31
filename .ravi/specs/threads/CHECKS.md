@@ -53,3 +53,5 @@ bun test src/cli/commands/sessions.test.ts
 bun test src/runtime/thread-context.test.ts
 bun run build
 ```
+
+- Run `bun test src/tasks/thread-core.test.ts` in isolated state to verify task-owned Threads, terminal atomicity and refusal of a second lifecycle writer.

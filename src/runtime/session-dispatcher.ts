@@ -873,9 +873,12 @@ export class RuntimeSessionDispatcher {
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent =
       routerConfig.agents[agentId] ??
-      (prompt._decisionDeliveryId ? undefined : routerConfig.agents[routerConfig.defaultAgent]);
+      (prompt._decisionDeliveryId || prompt._taskAssignmentId
+        ? undefined
+        : routerConfig.agents[routerConfig.defaultAgent]);
     if (!agent) {
       if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+      if (prompt._taskAssignmentId) throw new Error("Task assignment agent is unavailable");
       this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }
@@ -889,8 +892,15 @@ export class RuntimeSessionDispatcher {
     const debounceMs = isGroup && agent?.groupDebounceMs ? agent.groupDebounceMs : agent?.debounceMs;
     log.debug("handlePrompt", { sessionName, agentId, debounceMs, isGroup });
 
-    // Decision receipts must not acknowledge a timer buffer as runtime admission.
-    if (!prompt._decisionDeliveryId && debounceMs && debounceMs > 0 && this.streamingSessions.has(sessionName)) {
+    // Durable admission must not acknowledge a timer buffer, and cold starts
+    // must prove capacity before any volatile debounce can accept their prompt.
+    if (
+      !prompt._decisionDeliveryId &&
+      !prompt._taskAssignmentId &&
+      debounceMs &&
+      debounceMs > 0 &&
+      this.streamingSessions.has(sessionName)
+    ) {
       this.handlePromptWithDebounce(sessionName, prompt, debounceMs);
       return;
     }
@@ -1000,9 +1010,12 @@ export class RuntimeSessionDispatcher {
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent =
       routerConfig.agents[agentId] ??
-      (prompt._decisionDeliveryId ? undefined : routerConfig.agents[routerConfig.defaultAgent]);
+      (prompt._decisionDeliveryId || prompt._taskAssignmentId
+        ? undefined
+        : routerConfig.agents[routerConfig.defaultAgent]);
     if (!agent) {
       if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+      if (prompt._taskAssignmentId) throw new Error("Task assignment agent is unavailable");
       this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }

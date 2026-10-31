@@ -299,8 +299,13 @@ describe("tools export contract errors", () => {
     expect(JSON.parse(text)).toMatchObject({
       success: false,
       op: "contract boom",
-      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+      error: {
+        code: "UNHANDLED_ERROR",
+        message: "contract boom failed internally. Report the operation to the operator before retrying.",
+        retryable: false,
+      },
     });
+    expect(text).not.toContain("requestId");
   });
 
   it("converts a legacy expected failure into one canonical envelope", async () => {

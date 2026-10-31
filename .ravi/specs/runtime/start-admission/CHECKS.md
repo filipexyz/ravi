@@ -13,3 +13,4 @@ Run focused tests with `RAVI_STATE_DIR` set to a disposable directory before Bun
 - Dry-run stuck reports MUST NOT consume cooldown or write replay state.
 - `src/decisions/decisions.test.ts` MUST emulate transport deduplication: capacity refusal gets a new delivery, ambiguous publication reuses its ID, and admission remains exactly once.
 - Idle sessions MUST survive a refused lane when reclaiming every candidate cannot admit it, including outstanding start reservations.
+- `src/tasks/thread-core.test.ts` MUST exercise real task admission through the prompt consumer: bounded refusal, inbox-before-ACK, DB reopen, no restart replay, explicit new-transport resumption and exactly one admitted execution.

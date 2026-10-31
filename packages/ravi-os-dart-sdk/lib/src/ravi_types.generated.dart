@@ -30890,13 +30890,14 @@ class TasksCommentReturn {
 TasksCommentReturn tasksCommentReturnFromJson(Object? json) => TasksCommentReturn.fromJsonValue(json);
 
 class TasksCreateOptions {
-  const TasksCreateOptions({this.agent, this.assignee, this.checkpoint, this.dependsOn, this.effort, this.input, this.instructions, this.model, this.parent, this.priority, this.profile, this.reportEvents, this.reportTo, this.session, this.tag, this.thinking, this.worktreeBranch, this.worktreeMode, this.worktreePath});
+  const TasksCreateOptions({this.agent, this.assignee, this.checkpoint, this.dependsOn, this.effort, this.idempotencyKey, this.input, this.instructions, this.model, this.parent, this.priority, this.profile, this.reportEvents, this.reportTo, this.session, this.tag, this.thinking, this.worktreeBranch, this.worktreeMode, this.worktreePath});
 
   final String? agent;
   final String? assignee;
   final String? checkpoint;
   final List<String>? dependsOn;
   final String? effort;
+  final String? idempotencyKey;
   final List<String>? input;
   final String? instructions;
   final String? model;
@@ -30927,6 +30928,9 @@ class TasksCreateOptions {
     }
     if (effort != null) {
       into["effort"] = RaviJson.from(effort);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (input != null) {
       into["input"] = RaviJson.from(input);

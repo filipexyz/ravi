@@ -323,6 +323,7 @@ export interface RemoteDispatchResult {
   /** Exact response bytes, used for binary @Returns responses. */
   bodyBytes?: Uint8Array;
   contentType: string | null;
+  requestId?: string;
 }
 
 export type RemoteDispatchOutput = { kind: "bytes"; value: Uint8Array } | { kind: "text"; value: string };
@@ -376,7 +377,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
   if (result.contentType?.includes("application/json")) {
     try {
       const body = JSON.parse(result.body) as Record<string, unknown>;
-      if (isCompleteContractErrorBody(body, op)) {
+      if (isCompleteContractErrorBody(body, op) || (body.op === "gateway" && isCompleteContractErrorBody(body))) {
         const turnLink = turnLinkRemoteCopy(body.error);
         const connectorTurn = turnLink ?? connectorTurnRemoteCopy(op, body.error);
         const library = connectorTurn ? null : (operatorOnlyRemoteCopy(op, body) ?? libraryRemoteCopy(op, body));
@@ -388,9 +389,10 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           body.error.code,
         );
         // An issue-first projection already names the field; the Library copy only replaces the generic line.
-        const generic = projected === REMOTE_GENERIC_FAILURE || projected === REMOTE_GENERIC_BLOCKED;
+        const generic = projected === remoteFailureMessage(op, body.error.code) || projected === REMOTE_GENERIC_BLOCKED;
         const dnsHint =
           op === PAGES_DOMAINS_OP && isRemoteWriteBrake(body) ? plannedDomainDnsHint(body.error.plan) : null;
+        const requestId = safeRequestId(body.error.requestId) ?? safeRequestId(result.requestId);
         return new ContractError(
           op,
           body.error.code,
@@ -400,6 +402,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           body.exitCode,
           {
             ...projectRemoteContractDetails(op, body, result.status),
+            ...(requestId ? { requestId } : {}),
             ...(connectorTurn?.details ?? {}),
             ...(library?.details ?? {}),
           },
@@ -438,11 +441,18 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
       // Fall through to a redacted transport failure.
     }
   }
-  return new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {
-    retryable: result.status >= 500,
-    suggestedAction: "Check gateway availability and retry",
-    status: result.status,
-  });
+  return new ContractError(
+    op,
+    "SERVER_UNAVAILABLE",
+    `${op}: gateway returned HTTP ${result.status} without a valid error envelope. Report the requestId to the operator.`,
+    1,
+    {
+      retryable: false,
+      ...(safeRequestId(result.requestId) ? { requestId: safeRequestId(result.requestId) } : {}),
+      suggestedAction: "Check gateway availability and report this response; do not automatically retry a write",
+      status: result.status,
+    },
+  );
 }
 
 interface CompleteContractErrorBody {
@@ -695,7 +705,13 @@ const LIBRARY_REMOTE_OPS = new Set([
   "agents ask",
   "pages read",
 ]);
-const REMOTE_GENERIC_FAILURE = "Remote command failed.";
+function remoteFailureMessage(op: string, code?: string): string {
+  return `${op} failed (${code ?? "COMMAND_FAILED"}). Check the input with '${op} --help'; report the requestId if it persists.`;
+}
+
+function safeRequestId(value: unknown): string | undefined {
+  return typeof value === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value) ? value : undefined;
+}
 // `pages domains` relays Console's DNS instruction: the code says external DNS
 // work is pending, and the steps are projected field by field (domain-setup.ts).
 const PAGES_DOMAINS_OP = "pages domains";
@@ -761,14 +777,25 @@ function operatorOnlyRemoteCopy(
  * is printed too when no issue already carries it.
  */
 export function remoteNextStepLine(error: ContractError): string | null {
-  if (!isLibraryRemoteOp(error.op) && !isOperatorOnlyRefusal(error.op, error.code)) return null;
+  if (
+    !isLibraryRemoteOp(error.op) &&
+    !isOperatorOnlyRefusal(error.op, error.code) &&
+    !safeRequestId(error.details.requestId)
+  )
+    return null;
   const next = error.details.suggestedAction;
   if (typeof next !== "string" || !next.trim()) return null;
   const issues = Array.isArray(error.details.issues) ? error.details.issues : [];
   const carried = issues.some(
     (issue) => issue && typeof issue === "object" && (issue as { code?: unknown }).code === "SUGGESTED_ACTION",
   );
-  return carried ? null : `Next: ${next}`;
+  const requestId = safeRequestId(error.details.requestId);
+  const diagnosticId = safeRequestId(error.details.diagnosticRequestId);
+  return carried
+    ? requestId
+      ? `requestId: ${requestId}`
+      : null
+    : `Next: ${next}${requestId ? ` (requestId: ${requestId}${diagnosticId ? `; diagnosticRequestId: ${diagnosticId}` : ""})` : ""}`;
 }
 
 function libraryRemoteCopy(
@@ -877,6 +904,7 @@ function connectorExpiresAt(value: unknown): string | undefined {
 /** A message, or a chat line under `detailKey` (sanitized as the envelope sanitizes that detail, links kept). */
 function boundedRemoteLine(value: unknown, max: number, detailKey?: string): string | undefined {
   if (typeof value !== "string" || value.length > max || hasControlCharacters(value)) return undefined;
+  if (/^Inspect redacted (?:remote|runtime) logs/.test(value)) return undefined;
   const safe = detailKey ? sanitizePublicValue(value, detailKey) : sanitizePublicContractMessage(value);
   return typeof safe === "string" && safe.trim() && safe.length <= max ? safe : undefined;
 }
@@ -957,7 +985,11 @@ function remoteContractFailureMessage(
     const catalog = cloudContractCatalogCopy(code);
     if (catalog) return catalog.message;
   }
-  return REMOTE_GENERIC_FAILURE;
+  const safe = boundedRemoteLine(sourceMessage, LIBRARY_REMOTE_MESSAGE_MAX);
+  return safe &&
+    !/^(?:Remote command failed\.?|Command could not be completed\.?|Command failed unexpectedly\.?)$/.test(safe)
+    ? safe
+    : remoteFailureMessage(op, code);
 }
 
 function remoteValidationFailureMessage(
@@ -989,7 +1021,7 @@ function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["o
   if (outcome === "blocked" && code === "WRITE_REQUIRES_EXECUTE")
     return `Re-run '${op}' adding --execute to perform the write`;
   if (outcome === "blocked") return "Review the remote policy block before retrying the command";
-  return "Inspect redacted remote logs and retry when the underlying cause is resolved";
+  return `Check '${op} --help' and report code ${code ?? "COMMAND_FAILED"} with requestId to the operator before retrying`;
 }
 
 function boundedStringList(value: unknown, pattern: RegExp): string[] | undefined {
@@ -1063,6 +1095,8 @@ function projectRemoteContractDetails(
 ): ContractErrorDetails {
   const remote = body.error;
   const details: ContractErrorDetails = { retryable: remote.retryable, status };
+  if (safeRequestId(remote.diagnosticRequestId))
+    details.diagnosticRequestId = safeRequestId(remote.diagnosticRequestId);
   const denial = projectRemoteDenial(body);
   if (denial) Object.assign(details, denial);
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
@@ -1092,7 +1126,20 @@ function projectRemoteContractDetails(
   } else if (connectorCatalog) {
     details.suggestedAction = connectorCatalog.suggestedAction;
   } else if (typeof remote.suggestedAction === "string" || isRemoteWriteBrake(body)) {
-    details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
+    details.suggestedAction =
+      body.outcome === "failed"
+        ? (boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX) ??
+          remoteSuggestedAction(op, body.outcome, remote.code))
+        : remoteSuggestedAction(op, body.outcome, remote.code);
+  }
+  if (!details.suggestedAction) details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
+  for (const key of ["field", "argument"] as const) {
+    const value = remote[key];
+    if (
+      typeof value === "string" &&
+      (key === "argument" ? REMOTE_FLAG_PATTERN : /^[a-z][A-Za-z0-9_]{0,63}$/).test(value)
+    )
+      details[key] = value;
   }
   const suggestions = boundedStringList(remote.suggestions, REMOTE_SUGGESTION_ID_PATTERN);
   if (suggestions) details.suggestions = suggestions;
@@ -1280,6 +1327,7 @@ async function fetchViaUnixSocket(input: {
             body: new TextDecoder().decode(bytes),
             bodyBytes: bytes,
             contentType: typeof res.headers["content-type"] === "string" ? res.headers["content-type"] : null,
+            requestId: safeRequestId(res.headers["x-request-id"]),
           });
         });
       },
@@ -1301,6 +1349,7 @@ async function remoteResultFromResponse(response: Response): Promise<RemoteDispa
     body: new TextDecoder().decode(bytes),
     bodyBytes: bytes,
     contentType: response.headers.get("content-type"),
+    requestId: safeRequestId(response.headers.get("x-request-id")),
   };
 }
 

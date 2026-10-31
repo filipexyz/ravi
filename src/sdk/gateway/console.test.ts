@@ -330,7 +330,9 @@ test("ordinary runtime authority rejects Console-only routes before body parsing
       localGateway,
     );
     expect(response!.status).toBe(403);
-    expect(await response!.json()).toMatchObject({ error: "ConsoleAuthorityRequired" });
+    expect(await response!.json()).toMatchObject({
+      error: { code: "CONSOLE_AUTHORITY_REQUIRED", requestId: response!.headers.get("x-request-id") },
+    });
   }
   expect(store.db.query("SELECT count(*) n FROM conversations").get()).toEqual({ n: 0 });
 });

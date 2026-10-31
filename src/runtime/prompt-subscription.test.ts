@@ -72,6 +72,12 @@ mock.module("../decisions/delivery.js", () => ({
     decisionAdmission(session, prompt, handle),
 }));
 
+let taskAdmission: typeof decisionAdmission = async () => false;
+mock.module("../tasks/dispatch-admission.js", () => ({
+  admitTaskDispatch: (session: string, prompt: Record<string, unknown>, handle: (prompt: unknown) => Promise<void>) =>
+    taskAdmission(session, prompt, handle),
+}));
+
 const { RuntimePromptSubscription } = await import("./prompt-subscription.js");
 
 afterAll(() => {
@@ -85,6 +91,7 @@ afterEach(async () => {
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-prompt-subscription-");
   decisionAdmission = async () => false;
+  taskAdmission = async () => false;
   running = true;
   consumedMessages = [];
   consumeCalls.length = 0;
@@ -159,6 +166,60 @@ describe("RuntimePromptSubscription", () => {
     expect(handlePrompt).toHaveBeenCalledTimes(1);
     expect(emitCalls.filter((call) => call.payload.type === "dispatch.start_retry")).toHaveLength(0);
     expect(listLocalInboxItems()).toHaveLength(0);
+  });
+
+  it("consumes task dispatch through assignment admission before any channel or runtime work", async () => {
+    const message = makePromptMessage("ravi.session.worker.prompt", {
+      prompt: "task",
+      _taskAssignmentId: "assignment",
+      taskBarrierTaskId: "task",
+    });
+    consumedMessages = [message];
+    taskAdmission = async (session, prompt, handle) => {
+      expect(session).toBe("worker");
+      expect(prompt._taskAssignmentId).toBe("assignment");
+      await handle({ ...prompt, prompt: "frozen task" });
+      return true;
+    };
+    const handlePrompt = mock(async () => {});
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: () => {},
+      handlePrompt,
+    });
+    subscription.subscribe();
+    await waitUntil(() => message.ack.mock.calls.length === 1);
+    expect(handlePrompt).toHaveBeenCalledTimes(1);
+    expect(handlePrompt).toHaveBeenCalledWith("worker", {
+      prompt: "frozen task",
+      _taskAssignmentId: "assignment",
+      taskBarrierTaskId: "task",
+    });
+    expect(message.nak).not.toHaveBeenCalled();
+  });
+
+  it("ACKs a duplicate task dispatch without executing it again", async () => {
+    const message = makePromptMessage("ravi.session.worker.prompt", {
+      prompt: "task",
+      _taskAssignmentId: "assignment",
+    });
+    consumedMessages = [message];
+    taskAdmission = async () => true;
+    const handlePrompt = mock(async () => {});
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: () => {},
+      handlePrompt,
+    });
+    subscription.subscribe();
+    await waitUntil(() => message.ack.mock.calls.length === 1);
+    expect(handlePrompt).not.toHaveBeenCalled();
   });
 
   it("routes decision envelopes through durable admission and ACKs an already accepted duplicate without another turn", async () => {

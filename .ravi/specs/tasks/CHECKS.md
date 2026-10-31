@@ -41,3 +41,5 @@
 
 - `bun test src/tasks/service.test.ts src/tasks/runtime-options.test.ts`
 - `bun test src/cli/commands/tasks.test.ts src/cli/commands/tasks-profiles.test.ts`
+
+- Run `bun test src/tasks/thread-core.test.ts src/runtime/prompt-subscription.test.ts` in isolated state to verify channel-free creation and assignment admission.

@@ -223,7 +223,7 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
   });
 
-  it("redacts malformed remote failures as retryable server errors", () => {
+  it("redacts malformed remote failures without encouraging retries of an uncertain write", () => {
     const error = remoteGatewayErrorToContractError(
       "commands list",
       result({ status: 503, contentType: "text/plain", body: "private upstream response" }),
@@ -233,7 +233,7 @@ describe("remote gateway exit taxonomy", () => {
       op: "commands list",
       code: "SERVER_UNAVAILABLE",
       exitCode: 1,
-      details: { status: 503, retryable: true },
+      details: { status: 503, retryable: false },
     });
     expect(JSON.stringify(error?.envelope())).not.toContain("private upstream response");
   });
@@ -307,7 +307,7 @@ describe("remote gateway exit taxonomy", () => {
       }),
     );
 
-    expect(error?.message).toBe("Remote command failed.");
+    expect(error?.message).toContain("pages ship failed (DOMAIN_SETUP_REQUIRED)");
   });
 
   it("shows the DNS to add on a pages domains dry-run through the gateway", () => {
@@ -463,11 +463,11 @@ describe("remote gateway exit taxonomy", () => {
           op: "demo echo",
           exitCode: 1,
           outcome: "failed",
-          error: { code: "TASK_PROFILE_NOT_FOUND", message: "private", retryable: false },
+          error: { code: "TASK_PROFILE_NOT_FOUND", message: "Profile lookup failed.", retryable: false },
         }),
       }),
     );
-    expect(error?.message).toBe("Remote command failed.");
+    expect(error?.message).toBe("Profile lookup failed.");
   });
 
   it("projects 400 validation issues into a usage error", () => {
@@ -619,7 +619,12 @@ describe("remote gateway exit taxonomy", () => {
   });
 
   it.each([
-    [1, "failed", "COMMAND_FAILED", "Remote command failed."],
+    [
+      1,
+      "failed",
+      "COMMAND_FAILED",
+      "commands list failed (COMMAND_FAILED). Check the input with 'commands list --help'; report the requestId if it persists.",
+    ],
     [1, "denied", "PERMISSION_DENIED", "Remote gateway denied the command."],
     [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],
     [
@@ -1028,7 +1033,7 @@ describe("remote gateway exit taxonomy", () => {
     },
   );
 
-  it("keeps generic isolated media send failures as Remote command failed", () => {
+  it("keeps unknown media failures private with operation and code", () => {
     const error = remoteGatewayErrorToContractError(
       "media send",
       result({
@@ -1050,7 +1055,7 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({
       op: "media send",
       code: "COMMAND_FAILED",
-      message: "Remote command failed.",
+      message: expect.stringContaining("media send failed (COMMAND_FAILED)"),
       details: { retryable: true },
     });
     expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
@@ -1078,7 +1083,7 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({
       op: "transcribe file",
       code: FILE_NOT_FOUND_CODE,
-      message: "Remote command failed.",
+      message: expect.stringContaining("transcribe file failed (FILE_NOT_FOUND)"),
     });
     expect(error?.message).not.toBe(FILE_NOT_FOUND_MESSAGE);
     expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
@@ -1591,7 +1596,7 @@ describe("Library refusals over the gateway", () => {
     });
     expect(remote?.message).toBe(local.message);
     expect(remote?.details.suggestedAction).not.toContain("Inspect redacted remote logs");
-    expect(remoteNextStepLine(remote!)).toBe("Next: Pick another slug with --slug");
+    expect(remoteNextStepLine(remote!)).toContain("Next: Pick another slug with --slug");
   });
 
   it("keeps which item a slug conflict is about (ref, scope, project, archived)", async () => {
@@ -1674,7 +1679,7 @@ describe("Library refusals over the gateway", () => {
     });
     expect(remote?.message).not.toBe("Remote command was blocked by policy.");
     // The next step already travels as an issue, so text mode does not print it twice.
-    expect(remoteNextStepLine(remote!)).toBeNull();
+    expect(remoteNextStepLine(remote!)).toContain(String(remote?.details.requestId));
   });
 
   it("leaves other commands with the generic relay copy", async () => {
@@ -1686,9 +1691,9 @@ describe("Library refusals over the gateway", () => {
       "transcribe file",
       result({ status: response.status, body: await response.text() }),
     );
-    expect(remote?.message).toBe("Remote command failed.");
+    expect(remote?.message).toContain("transcribe file failed (CONFLICT)");
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
-    expect(remoteNextStepLine(remote!)).toBeNull();
+    expect(remoteNextStepLine(remote!)).toContain(String(remote?.details.requestId));
   });
 });
 
@@ -1752,7 +1757,7 @@ describe("operator-only refusals over the gateway", () => {
         replyTo: "same_chat",
       },
     });
-    expect(remoteNextStepLine(remote!)).toBe(
+    expect(remoteNextStepLine(remote!)).toContain(
       `Next: The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
     );
   });
@@ -1897,7 +1902,7 @@ describe("sessions runtime remote relay", () => {
       new ContractError("media send", RUNTIME_CONTROL_DISABLED, "PRIVATE_8K2R", 1, { suggestedAction: "x" }),
     );
 
-    expect(remote?.message).toBe("Remote command failed.");
+    expect(remote?.message).toContain("media send failed (RUNTIME_CONTROL_DISABLED)");
   });
 });
 
@@ -1967,7 +1972,8 @@ describe("thread command remote relay", () => {
       ["sessions list", "THREAD_NOT_THREAD_CHILD"],
     ] as const) {
       const remote = await relay(op, new ContractError(op, code, "PRIVATE_8K2R", 1));
-      expect(remote?.message).toMatch(/^Remote (command|gateway request) failed\.$/);
+      expect(remote?.message).toContain(op);
+      expect(remote?.message).not.toContain("Remote command failed");
     }
   });
 });
