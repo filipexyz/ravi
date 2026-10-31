@@ -30,13 +30,17 @@ The policy takes effect immediately. Until the workflow lands on `dev`, PRs with
 
 1. Address findings, push the code and resolve the corresponding threads.
 2. Record author provenance in the PR body, before the first section (to avoid the PR-description placeholder check): `<!-- ravi-author {"agent":"builder","session":"build-session"} -->`.
-3. A different session reviews the complete final diff and publishes a native review or issue comment with this envelope. Use real session/agent identifiers and a concrete rationale. `resolves` names exact finding URLs explicitly rechecked after their latest edit; leave it empty if there are none.
+3. A different session reviews the complete final diff and submits a **native PR review**, with this envelope in its body or review comment. Use real session/agent identifiers and a concrete rationale. `resolves` names exact finding URLs explicitly rechecked after their latest edit; leave it empty if there are none. Issue comments cannot carry approving verdicts. With the same GitHub account, submit a native `COMMENT` review, not GitHub self-`APPROVE`.
 
    `<!-- ravi-review {"head":"<full-current-head-sha>","agent":"reviewer","session":"review-session","authorSession":"build-session","verdict":"approved","reason":"<review rationale>","resolves":[]} -->`
 
 4. If a second human writer exists, also obtain their native exact-head approval. A separate agent using the author's credentials can provide a session verdict, but is not a second GitHub identity. Neither an author-session verdict nor a native approval alone is sufficient.
 5. Inspect the latest `Review Gate` result. API failure is a block, not a waiver. Fix credentials/service availability and rerun.
 6. For a resolution without a triggering review event, rerun the gate in Actions. A stale event's head SHA cannot authorize a newer commit.
+
+Publish through `POST /repos/<owner>/<repo>/pulls/<number>/reviews`, with `event: "COMMENT"`, `commit_id` equal to the reviewed full head SHA and `body` containing the envelope and findings. Build the payload in a JSON file and pass `gh api ... --input <file>`; do not interpolate review prose into a shell command. The reviewer publishes its own evidence; the author must not manufacture a reviewing session.
+
+Residual explicitly accepted by the operator: a blocking **issue comment** posted after the last PR event does not invalidate the existing check by itself. `issues: read` only permits reading it. Binding verdicts therefore go in native reviews; every subsequent PR event/push reads issue comments again and refuses unresolved blockers. No `issue_comment` workflow, Checks write access or secret is added. Reopen this design only for a legitimate blocker that native review cannot express.
 
 # Enforcement and the #776 incident
 

@@ -73,6 +73,7 @@ function fixture() {
     reviews: [structuredClone(finding), structuredClone(approval)],
     timelineItems: [],
     comments: [],
+    reviewComments: {},
     writers: ["reviewer"],
   };
   const calls: any[] = [];
@@ -85,6 +86,16 @@ function fixture() {
         query.includes(`${name}(first:`),
       );
       const pr = structuredClone(state.pr);
+      if (variables.reviewId) {
+        const nodes = structuredClone(state.reviewComments[variables.reviewId] ?? []);
+        return {
+          repository: { pullRequest: pr },
+          node: {
+            id: variables.reviewId,
+            comments: { nodes, totalCount: nodes.length, pageInfo: { hasNextPage: false, endCursor: null } },
+          },
+        };
+      }
       if (key) {
         const nodes = structuredClone(state[key]);
         pr[key] = { nodes, totalCount: nodes.length, pageInfo: { hasNextPage: false, endCursor: null } };
@@ -330,6 +341,8 @@ test("workflow gate is unconditional, read-only, and listens for pushes and revi
   expect(workflow).not.toContain("paths:");
   expect(workflow).not.toContain("branches:");
   expect(workflow).not.toContain(": write");
+  expect(workflow).toContain("issues: read");
+  expect(workflow).not.toContain("issue_comment:");
 });
 
 describe("agent/session verdicts and code blockers across GitHub surfaces", () => {
@@ -341,7 +354,7 @@ describe("agent/session verdicts and code blockers across GitHub surfaces", () =
     updatedAt: "2026-10-31T21:00:00Z",
   };
 
-  test("#776: issue comment after green turns the same head red; edit/delete re-evaluate", async () => {
+  test("#776: issue comment is a blocker when the next PR event evaluates the same head", async () => {
     const { api, state } = fixture();
     expect((await evaluate(api, args)).ok).toBe(true);
     state.comments.push(structuredClone(blockedComment));
@@ -355,6 +368,21 @@ describe("agent/session verdicts and code blockers across GitHub surfaces", () =
     expect((await evaluate(api, args)).ok).toBe(false);
     state.comments = [];
     expect((await evaluate(api, args)).ok).toBe(true);
+  });
+
+  test("a new native review after green immediately makes the same head red", async () => {
+    const { api, state } = fixture();
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.reviews.push({
+      ...finding,
+      id: "new-blocker",
+      body: blockedComment.body,
+      submittedAt: blockedComment.updatedAt,
+      url: "https://github.com/example/repo/pull/1#pullrequestreview-3",
+    });
+    const blocked = await evaluate(api, args);
+    expect(blocked.sha).toBe(HEAD);
+    expect(blocked.problems.join("\n")).toContain("Unresolved code-blocked review");
   });
 
   test.each(["PR body", "review body", "issue comment"])(
@@ -371,13 +399,50 @@ describe("agent/session verdicts and code blockers across GitHub surfaces", () =
   test("single writer can publish a review from a different session on the exact head", async () => {
     const { api, state } = fixture();
     state.writers = [];
-    state.reviews = [];
+    state.reviews = [{ ...approval, author, state: "COMMENTED" }];
     state.reviewThreads = [];
-    state.comments = [{ ...blockedComment, body: verdict() }];
     expect((await evaluate(api, args)).ok).toBe(true);
-    state.comments[0].body = verdict({ session: "build-session", agent: "builder" });
+    state.reviews[0].body = verdict({ session: "build-session", agent: "builder" });
     expect((await evaluate(api, args)).ok).toBe(false);
-    state.comments[0].body = verdict({ head: NEXT });
+    state.reviews[0].body = verdict({ head: NEXT });
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test("issue comments never approve or resolve a code blocker", async () => {
+    const { api, state } = fixture();
+    state.writers = [];
+    state.reviews[1].body = "No native verdict yet.";
+    state.comments = [{ ...blockedComment, body: verdict() }];
+    expect((await evaluate(api, args)).ok).toBe(false);
+    state.comments = [
+      blockedComment,
+      {
+        ...blockedComment,
+        id: "resolution",
+        updatedAt: "2026-10-31T22:00:00Z",
+        body: verdict({ resolves: [blockedComment.url] }),
+      },
+    ];
+    state.reviews[1].body = verdict();
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test("native review comments carry verdicts and code blockers", async () => {
+    const { api, state } = fixture();
+    state.reviews[1].body = "Verdict is on the reviewed line.";
+    state.reviewComments.approval = [
+      { ...blockedComment, id: "native-comment", body: verdict(), commit: { oid: HEAD } },
+    ];
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.reviewComments.approval.push({ ...blockedComment, id: "native-blocker", commit: { oid: HEAD } });
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test.each(["stale native commit", "dismissed native review"])("rejects approving envelope on %s", async (variant) => {
+    const { api, state } = fixture();
+    state.writers = [];
+    if (variant === "stale native commit") state.reviews[1].commit.oid = NEXT;
+    else state.reviews[1].state = "DISMISSED";
     expect((await evaluate(api, args)).ok).toBe(false);
   });
 
@@ -441,7 +506,8 @@ describe("agent/session verdicts and code blockers across GitHub surfaces", () =
     const original = api.graphql;
     let reads = 0;
     api.graphql = async (query: string, variables: any) => {
-      if (query.includes("comments(first:100") && ++reads === 2) state.comments.push(blockedComment);
+      if (!variables.reviewId && query.includes("comments(first:100") && ++reads === 2)
+        state.comments.push(blockedComment);
       return original(query, variables);
     };
     await expect(evaluate(api, args)).rejects.toThrow("comments: evidence changed");

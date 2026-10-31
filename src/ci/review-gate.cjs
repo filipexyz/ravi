@@ -18,7 +18,7 @@ const FIELDS = {
   }`,
   reviews: `reviews(first:100, after:$cursor) {
     totalCount pageInfo { hasNextPage endCursor }
-    nodes { id state submittedAt body url author { login __typename } commit { oid } }
+    nodes { id state submittedAt updatedAt body url author { login __typename } commit { oid } }
   }`,
   // Filtering timelineItems by itemTypes gives an UNFILTERED totalCount on GitHub.
   // Fetch the whole connection and filter locally, so completeness is verifiable.
@@ -82,7 +82,7 @@ function identity(value) {
   return value && nonempty(value.agent) && nonempty(value.session);
 }
 
-async function readConnection(api, repo, number, expectedSha, key) {
+async function readConnection(api, repo, number, expectedSha, key, reviewId) {
   const nodes = [];
   const ids = new Set();
   const cursors = new Set();
@@ -90,17 +90,28 @@ async function readConnection(api, repo, number, expectedSha, key) {
   let total;
   for (let page = 0; page < 1000; page++) {
     const result = await api.graphql(
-      `query($owner:String!,$repo:String!,$number:Int!,$cursor:String) {
+      `query($owner:String!,$repo:String!,$number:Int!,$cursor:String${reviewId ? ",$reviewId:ID!" : ""}) {
       repository(owner:$owner,name:$repo) { pullRequest(number:$number) {
-        headRefOid ${FIELDS[key]}
+        headRefOid ${reviewId ? "" : FIELDS[key]}
       } }
+      ${
+        reviewId
+          ? `node(id:$reviewId) { ... on PullRequestReview {
+        id comments(first:100, after:$cursor) {
+          totalCount pageInfo { hasNextPage endCursor }
+          nodes { id body url updatedAt author { login __typename } commit { oid } }
+        }
+      } }`
+          : ""
+      }
     }`,
-      { ...repo, number, cursor },
+      { ...repo, number, cursor, ...(reviewId ? { reviewId } : {}) },
     );
     requireData(!result?.errors, `${key}: GraphQL errors`);
     const pr = result?.repository?.pullRequest;
     requireData(pr?.headRefOid === expectedSha, `${key}: head SHA changed or missing`);
-    const connection = pr[key];
+    if (reviewId) requireData(result.node?.id === reviewId, "missing native review comment owner");
+    const connection = reviewId ? result.node.comments : pr[key];
     requireData(connection && Array.isArray(connection.nodes), `${key}: missing nodes`);
     requireData(Number.isSafeInteger(connection.totalCount) && connection.totalCount >= 0, `${key}: missing count`);
     requireData(typeof connection.pageInfo?.hasNextPage === "boolean", `${key}: missing pageInfo`);
@@ -124,6 +135,16 @@ async function readConnection(api, repo, number, expectedSha, key) {
   throw new Error(`${key}: pagination limit reached; refusing incomplete evidence`);
 }
 
+async function readNativeComments(api, repository, number, expectedSha, reviews) {
+  const comments = [];
+  for (const review of reviews) {
+    if (review.state === "PENDING") continue;
+    const nodes = await readConnection(api, repository, number, expectedSha, "reviewComments", review.id);
+    for (const node of nodes) comments.push({ ...node, reviewId: review.id });
+  }
+  return comments;
+}
+
 async function evaluate(api, { owner, repo, number, expectedSha }) {
   requireData(SHA.test(expectedSha), "missing expected SHA");
   const repository = { owner, repo };
@@ -132,6 +153,7 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
   const reviews = await readConnection(api, repository, number, expectedSha, "reviews");
   const timeline = await readConnection(api, repository, number, expectedSha, "timelineItems");
   const comments = await readConnection(api, repository, number, expectedSha, "comments");
+  const nativeComments = await readNativeComments(api, repository, number, expectedSha, reviews);
   const writers = await api.independentWriters(owner, repo, pr.author.login);
   requireData(Array.isArray(writers) && writers.every(nonempty), "missing independent writer inventory");
   const nativeRequired = REQUIRE_NATIVE_WRITER_APPROVAL || writers.length > 0;
@@ -189,7 +211,8 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
   if (!identity(authorIdentity)) problems.push("Missing author agent/session provenance in PR body.");
   const surfaces = [
     { id: "pr-body", body: pr.body, url: pr.url },
-    ...reviews.filter((review) => review.state !== "PENDING"),
+    ...reviews.filter((review) => review.state !== "PENDING").map((review) => ({ ...review, reviewId: review.id })),
+    ...nativeComments,
     ...comments,
   ];
   const blockers = [];
@@ -197,8 +220,12 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
   for (const surface of surfaces) {
     requireData(typeof surface.body === "string" && nonempty(surface.url), "missing review body/URL");
     if (/\bblocked-por-c[oó]digo\b/i.test(surface.body)) blockers.push(surface);
+    // Only a submitted native review can carry an approving verdict. Issue
+    // comments are risk evidence, never an approval or a finding waiver.
+    const nativeReview = byId.get(surface.reviewId);
+    if (!nativeReview || !["COMMENTED", "APPROVED"].includes(nativeReview.state)) continue;
     const verdict = envelope(surface.body, "ravi-review");
-    if (!verdict || surface.id === "pr-body") continue;
+    if (!verdict) continue;
     requireData(
       SHA.test(verdict.head) &&
         identity(verdict) &&
@@ -210,6 +237,7 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
       "malformed agent review verdict",
     );
     if (verdict.verdict !== "approved" || verdict.head !== expectedSha || !identity(authorIdentity)) continue;
+    if (nativeReview.commit.oid !== expectedSha || surface.commit?.oid !== expectedSha) continue;
     if (verdict.session === authorIdentity.session || verdict.authorSession !== authorIdentity.session) continue;
     requireData(nonempty(surface.author?.login), "missing verdict publisher");
     const permission = await api.permission(owner, repo, surface.author.login);
@@ -318,6 +346,11 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
       const after = await readConnection(api, repository, number, expectedSha, key);
       requireData(JSON.stringify(before) === JSON.stringify(after), `${key}: evidence changed during evaluation`);
     }
+    requireData(
+      JSON.stringify(await readNativeComments(api, repository, number, expectedSha, reviews)) ===
+        JSON.stringify(nativeComments),
+      "native review comments: evidence changed during evaluation",
+    );
     requireData(
       JSON.stringify(await api.independentWriters(owner, repo, pr.author.login)) === JSON.stringify(writers),
       "writer inventory changed during evaluation",
