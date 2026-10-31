@@ -88,6 +88,28 @@ function raise(key: string, flags: RaiseFlags) {
 const agentTurn = { sessionName: "main-session", sessionKey: "agent:main:main-session", agentId: "main" };
 
 describe("signals CLI contract", () => {
+  it("does not let an agent mute or unmute an out-of-scope key", async () => {
+    raiseSignal({
+      key: "private.fact",
+      kind: "fact",
+      producerId: "review",
+      scopeType: "agent",
+      scopeId: "private",
+      targetSessions: ["private"],
+      title: "Private fact",
+      clearWhen: { type: "producer_resolve", ttl_ms: 60_000 },
+    });
+    const mute = await quiet(() =>
+      runWithContext(agentTurn, () => commands.muteKey("private.fact", "1h", undefined, true)),
+    );
+    const unmute = await quiet(() => runWithContext(agentTurn, () => commands.unmuteKey("private.fact", true)));
+    expect(mute.error?.code).toBe("NOT_FOUND");
+    expect(unmute.error?.code).toBe("NOT_FOUND");
+    const absent = await quiet(() =>
+      runWithContext(agentTurn, () => commands.muteKey("missing.fact", "1h", undefined, true)),
+    );
+    expect(absent.error?.code).toBe("NOT_FOUND");
+  });
   it("exits 2 and writes nothing for a raise without a clear rule", async () => {
     const { error } = await quiet(() => raise("cli.none", { kind: "fact", scope: "install", title: "No rule" }));
     expect(error?.exitCode).toBe(2);

@@ -270,6 +270,8 @@ export function ensureSignalSchema(): void {
   addColumn("signal_surfaces", "sent_at", "INTEGER");
   addColumn("signal_surfaces", "failed_at", "INTEGER");
   addColumn("signal_surfaces", "error", "TEXT");
+  addColumn("signal_outbox", "claim_token", "TEXT");
+  addColumn("signal_outbox", "claim_until", "INTEGER");
   addColumn("signal_events", "version", "INTEGER");
   addColumn("signal_events", "from_state", "TEXT");
   addColumn("signal_events", "to_state", "TEXT");
@@ -280,6 +282,18 @@ export function ensureSignalSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_signal_surfaces_status
       ON signal_surfaces(budget_day, status, session_name);
   `);
+  // One-time copy: clearing a later observation must not resurrect legacy data.
+  db.transaction(() => {
+    const migrated = db.prepare("SELECT 1 FROM signal_meta WHERE key = 'observation_cache_migrated'").get();
+    if (migrated) return;
+    db.exec(`INSERT OR IGNORE INTO signal_observations
+      (signal_id, observed_at, error, fields_json, clear_since, updated_at)
+      SELECT id, last_eval_at, last_eval_error, NULL, clear_since, updated_at
+      FROM signals WHERE last_eval_at IS NOT NULL`);
+    db.prepare("INSERT INTO signal_meta (key, value, updated_at) VALUES ('observation_cache_migrated', '1', ?)").run(
+      Date.now(),
+    );
+  }).immediate();
   migrateFleetScopeToInstall();
   schemaPath = path;
 }
@@ -488,7 +502,7 @@ export interface SignalAudit {
  * the caller must re-read and re-validate before trying again.
  */
 export function dbCommitSignalTransition(
-  before: Pick<SignalRecord, "id" | "version" | "state">,
+  before: SignalRecord,
   next: SignalRecord,
   audit: SignalAudit,
   now: number,
@@ -499,6 +513,15 @@ export function dbCommitSignalTransition(
     next.version = before.version + 1;
     next.updatedAt = now;
     if (!casUpdateSignal(next, before.version)) return false;
+    if (
+      next.openedAt !== before.openedAt ||
+      next.subjectType !== before.subjectType ||
+      next.subjectId !== before.subjectId ||
+      JSON.stringify(next.clearWhen) !== JSON.stringify(before.clearWhen) ||
+      JSON.stringify(next.evidence) !== JSON.stringify(before.evidence)
+    ) {
+      db.prepare("DELETE FROM signal_observations WHERE signal_id = ?").run(next.id);
+    }
     insertSignalEvent({
       signalId: next.id,
       ...audit,
@@ -1238,7 +1261,40 @@ export function dbReleaseSignalSurface(input: {
   return run.immediate() as boolean;
 }
 
-/** Record a retryable send failure: the row stays `pending` under the same key. */
+/** Acquire one pending send with a recoverable lease, even across independent drainers. */
+export function dbClaimOutboxRow(id: number, token: string, now: number, leaseMs: number): boolean {
+  ensureSignalSchema();
+  return (
+    getDb()
+      .prepare(`UPDATE signal_outbox SET claim_token = ?, claim_until = ?
+    WHERE id = ? AND status = 'pending' AND (claim_until IS NULL OR claim_until <= ?)`)
+      .run(token, now + leaseMs, id, now).changes === 1
+  );
+}
+
+export function dbOwnsOutboxClaim(id: number, token: string): boolean {
+  ensureSignalSchema();
+  return !!getDb()
+    .prepare("SELECT 1 FROM signal_outbox WHERE id = ? AND claim_token = ? AND status = 'pending'")
+    .get(id, token);
+}
+
+export function dbReleaseOutboxClaim(id: number, token: string): void {
+  ensureSignalSchema();
+  getDb()
+    .prepare("UPDATE signal_outbox SET claim_token = NULL, claim_until = NULL WHERE id = ? AND claim_token = ?")
+    .run(id, token);
+}
+
+/** Persist the page outcome before the independent prompt side effect. */
+export function dbRecordOutboxPage(id: number, pageStatus: SignalOutboxRecord["pageStatus"], now: number): void {
+  ensureSignalSchema();
+  getDb()
+    .prepare("UPDATE signal_outbox SET page_status = ?, updated_at = ? WHERE id = ? AND status = 'pending'")
+    .run(pageStatus ?? null, now, id);
+}
+
+/** Record a retryable send failure; the reservation keeps its idempotency key. */
 export function dbRecordOutboxAttempt(input: {
   outboxId: number;
   error?: string | null;
@@ -1327,13 +1383,10 @@ export function dbAcquireTickLock(holder: string, now = Date.now(), staleMs = 10
 
 export function dbReleaseTickLock(holder: string): void {
   ensureSignalSchema();
-  const row = getDb().prepare("SELECT value FROM signal_meta WHERE key = 'tick_lock'").get() as
-    | { value: string }
-    | undefined;
-  const parsed = row ? parseJson<{ holder: string }>(row.value) : undefined;
-  if (parsed?.holder === holder) {
-    getDb().prepare("DELETE FROM signal_meta WHERE key = 'tick_lock'").run();
-  }
+  getDb()
+    .prepare(`DELETE FROM signal_meta WHERE key = 'tick_lock'
+    AND CASE WHEN json_valid(value) THEN json_extract(value, '$.holder') = ? ELSE 0 END`)
+    .run(holder);
 }
 
 export function dbPruneSignals(now = Date.now(), retentionMs = 30 * 86_400_000): number {

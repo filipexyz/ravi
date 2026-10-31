@@ -333,7 +333,7 @@ describe("signals authority from the invocation context", () => {
     db.prepare(
       `INSERT INTO sessions (session_key, name, agent_id, agent_cwd, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(`agent:${agentId}:${name}`, name, agentId, "/tmp", Date.now(), Date.now());
+    ).run(`agent:${agentId}:${name === "main-session" ? "main" : name}`, name, agentId, "/tmp", Date.now(), Date.now());
   }
 
   const agentCaller: SignalCaller = { isAgent: true, agentId: "main", sessionName: "main-session" };

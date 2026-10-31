@@ -62,7 +62,7 @@ The first and third queries MUST return 0 rows. The second MUST show no `judgmen
 
 ## Scope
 
-- `install` resolves to exactly one session.
+- `install` resolves to one existing canonical session, or no target when unbound; never a bare agent id.
 - A `person` signal with no bound session stays list-only.
 - A signal is never rendered into a session outside its scope.
 - `--all` requires operator capability.
@@ -96,3 +96,9 @@ ravi signals explain <id> --json
 - One signal at the daily budget boundary.
 
 The fixture set MUST be reused by render, tick, and CLI tests so the three paths cannot drift.
+
+## PR 751 review regressions
+
+- `src/signals/review-regressions.test.ts`: retarget, downgrade, mute during page send, concurrent tick/drain ownership, failed-probe freshness, caller-session targeting, canonical install target, atomic observation invalidation and migration from existing observation columns.
+- `src/cli/commands/signals.test.ts`: key mute/unmute use the same caller visibility predicate.
+- `src/runtime/turn-origin.test.ts` and `src/runtime/runtime-request-context.test.ts`: typed signal origin resolves on a destination chat; unknown external actors remain denied.

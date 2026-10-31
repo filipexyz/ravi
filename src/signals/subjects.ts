@@ -79,7 +79,7 @@ export function isSubjectTerminal(
       return !task || taskSubjectIsTerminal(task);
     }
     case "session": {
-      const session = getSessionByName(subjectId) ?? getSessionByName(subjectId.replace(/:.*$/, ""));
+      const session = getSessionByName(subjectId) ?? getSession(subjectId);
       if (!session) return true;
       return Boolean(session.ephemeral && session.expiresAt != null && session.expiresAt <= now);
     }
@@ -94,17 +94,19 @@ export function isSubjectTerminal(
 }
 
 /** The one session that receives `install`-scoped signals (this installation of Ravi). */
-export function resolveInstallSessionName(): string {
+export function resolveInstallSessionName(): string | null {
   const configured = dbGetSetting("signals.install_session")?.trim();
-  if (configured) return configured;
+  if (configured) return (getSessionByName(configured) ?? getSession(configured))?.name ?? null;
   const agentId = dbGetSetting("defaultAgent")?.trim() || "main";
-  return getMainSession(agentId)?.name ?? agentId;
+  return getMainSession(agentId)?.name ?? null;
 }
 
 export function resolveScopeSessionNames(scopeType: SignalScopeType, scopeId: string): string[] {
   switch (scopeType) {
-    case "install":
-      return [resolveInstallSessionName()];
+    case "install": {
+      const name = resolveInstallSessionName();
+      return name ? [name] : [];
+    }
     case "agent": {
       const main = getMainSession(scopeId);
       return main?.name ? [main.name] : [];
@@ -177,7 +179,7 @@ export function readSessionSignalContext(sessionName: string): SignalSessionCont
     .prepare("SELECT project_id FROM session_goals WHERE session_key = ? AND status = 'active' LIMIT 1")
     .get(session.sessionKey) as { project_id: string | null } | undefined;
   return {
-    sessionName,
+    sessionName: session.name ?? sessionName,
     sessionKey: session.sessionKey,
     agentId: session.agentId,
     chatId,
@@ -186,20 +188,7 @@ export function readSessionSignalContext(sessionName: string): SignalSessionCont
   };
 }
 
+/** Rendering, command visibility and OOB delivery share the same resolved session names. */
 export function signalIsInSessionScope(signal: SignalRecord, context: SignalSessionContext): boolean {
-  if (signal.targetSessions && signal.targetSessions.length > 0) {
-    return signal.targetSessions.includes(context.sessionName);
-  }
-  switch (signal.scopeType) {
-    case "install":
-      return context.sessionName === resolveInstallSessionName();
-    case "agent":
-      return Boolean(context.agentId && context.agentId === signal.scopeId);
-    case "chat":
-      return Boolean(context.chatId && context.chatId === signal.scopeId);
-    case "person":
-      return Boolean(context.contactIds?.includes(signal.scopeId));
-    case "project":
-      return Boolean(context.projectId && context.projectId === signal.scopeId);
-  }
+  return resolveSignalTargetSessions(signal).includes(context.sessionName);
 }

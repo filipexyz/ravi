@@ -675,6 +675,8 @@ export class SignalsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      const caller = signalCaller();
+      if (caller.isAgent) findVisibleSignal(key, caller);
       const now = Date.now();
       const mutedUntil = now + parseDurationMs(duration ?? "", "--for");
       dbSetKeyMute(key, mutedUntil, reason, now);
@@ -694,11 +696,17 @@ export class SignalsCommands {
     @Arg("key", { description: "Signal key" }) key: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    dbClearKeyMute(key);
-    const payload = { status: "unmuted", key };
-    if (asJson) printJson(payload);
-    else console.log(`✓ unmuted key ${key}`);
-    return payload;
+    try {
+      const caller = signalCaller();
+      if (caller.isAgent) findVisibleSignal(key, caller);
+      dbClearKeyMute(key);
+      const payload = { status: "unmuted", key };
+      if (asJson) printJson(payload);
+      else console.log(`✓ unmuted key ${key}`);
+      return payload;
+    } catch (error) {
+      failSignal("signals.unmute-key", error, asJson);
+    }
   }
 
   @Command({ name: "tick", description: "Evaluate signals and escalate due ones (dry-run unless --execute)" })

@@ -28,7 +28,6 @@ import {
 } from "./validation.js";
 import {
   budgetDay,
-  dbClearSignalObservation,
   dbCommitSignalTransition,
   dbCountBudgetUnits,
   dbCountOobSlots,
@@ -109,7 +108,7 @@ function actorFor(caller: SignalCaller | undefined, by: string | undefined): { a
  */
 export function transitionSignal(
   id: string,
-  apply: (draft: SignalRecord) => "noop" | void,
+  apply: (draft: SignalRecord) => "noop" | undefined,
   audit: SignalAudit | ((draft: SignalRecord) => SignalAudit),
   now = Date.now(),
 ): { signal: SignalRecord; changed: boolean } {
@@ -136,7 +135,7 @@ function assertScopeIncludesCaller(
   caller: SignalCaller,
   scope: Pick<SignalRecord, "scopeType" | "scopeId" | "targetSessions">,
 ): void {
-  const sessionName = caller.sessionName?.trim();
+  const sessionName = caller.sessionName ? callerSessionContext(caller, caller.sessionName).sessionName : null;
   if (!sessionName) {
     throw new SignalUsageError("An agent turn without a session cannot raise signals.");
   }
@@ -144,7 +143,8 @@ function assertScopeIncludesCaller(
     throw new SignalUsageError("An agent may target only its own session.");
   }
   const probe = { ...scope, targetSessions: undefined } as SignalRecord;
-  if (!signalIsInSessionScope(probe, callerSessionContext(caller, sessionName))) {
+  const ownAgentScope = scope.scopeType === "agent" && scope.scopeId === caller.agentId;
+  if (!ownAgentScope && !signalIsInSessionScope(probe, callerSessionContext(caller, sessionName))) {
     throw new SignalUsageError(
       `Scope ${scope.scopeType}:${scope.scopeId} does not include this session; an agent raises only into its own scope.`,
     );
@@ -176,6 +176,8 @@ export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
   let producerId = input.producerId;
   let producerType = input.producerType ?? (input.kind === "fact" ? "code" : "agent");
   if (caller?.isAgent) {
+    if (isProducerOwnedSignalKey(input.key))
+      throw new SignalUsageError("This key namespace belongs to a code producer.");
     if (input.kind === "fact") {
       throw new SignalUsageError(
         "Facts must be raised by code producers. Agent turns may raise judgment signals only.",
@@ -186,6 +188,8 @@ export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
     producerId = owner;
     producerType = "agent";
     assertScopeIncludesCaller(caller, input);
+    // A judgment from a work/thread session must never fall back to the agent's main session.
+    input = { ...input, targetSessions: [callerSessionContext(caller, caller.sessionName!).sessionName] };
   }
   const producerClass = normalizeProducerClass(input.producerClass, input.kind, producerId);
 
@@ -225,6 +229,9 @@ export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
         `Key ${input.key} belongs to a ${record.kind} owned by ${record.producerId}; cross-owner or cross-kind raise is not allowed.`,
       );
     }
+    if (record.scopeType !== input.scopeType || record.scopeId !== input.scopeId) {
+      throw new SignalUsageError(`Key ${input.key} already belongs to scope ${record.scopeType}:${record.scopeId}.`);
+    }
   };
 
   const existing = dbGetNonTerminalSignalByKey(input.key);
@@ -259,6 +266,10 @@ export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
           changes.push("severity");
         }
         draft.lastSeenAt = now;
+        for (const field of ["targetSessions", "subjectType", "subjectId", "dedupeKey"] as const) {
+          if (input[field] !== undefined && JSON.stringify(input[field]) !== JSON.stringify(draft[field]))
+            changes.push(field);
+        }
         draft.targetSessions = input.targetSessions ?? draft.targetSessions;
         draft.subjectType = input.subjectType ?? draft.subjectType;
         draft.subjectId = input.subjectId ?? draft.subjectId;
@@ -272,7 +283,6 @@ export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
       }),
       now,
     );
-    if (changes.includes("clearWhen")) dbClearSignalObservation(existing.id);
     return { signal: result.signal, created: false, updated: changes.length > 0 };
   }
 
@@ -286,13 +296,15 @@ export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
     const result = transitionSignal(
       latest.id,
       (draft) => {
+        assertSameOwner(draft);
         if (!isTerminal(draft)) throw new SignalUsageError(`Signal ${draft.id} reopened concurrently.`);
+        if (draft.closedAt != null && now - draft.closedAt < draft.reopenAfterMs) return "noop";
         Object.assign(draft, freshEpisodeFields(input, { title, detail, clearWhen, effective, now }));
       },
       { type: "signal.reopened", ...actor, message: "raise after reopen_after_ms" },
       now,
     );
-    dbClearSignalObservation(latest.id);
+    if (!result.changed) return { signal: result.signal, created: false, updated: false, suppressed: "reopen" };
     return { signal: result.signal, created: false, updated: true, reopened: true };
   }
 
@@ -356,6 +368,9 @@ function freshEpisodeFields(
     previousState: undefined,
     targetSessions: input.targetSessions,
     ...(input.evidence ? { evidence: input.evidence } : {}),
+    ...(input.subjectType !== undefined ? { subjectType: input.subjectType } : {}),
+    ...(input.subjectId !== undefined ? { subjectId: input.subjectId } : {}),
+    ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
     cooldownMs: input.cooldownMs ?? DEFAULT_COOLDOWN_MS[resolved.effective],
     renotifyAfterMs: input.renotifyAfterMs ?? DEFAULT_RENOTIFY_MS[resolved.effective],
     escalateAfterMs:

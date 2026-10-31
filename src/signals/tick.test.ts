@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbSetSetting, closeRouterDb } from "../router/router-db.js";
 import { tickSignals } from "./tick.js";
+import { getOrCreateSession } from "../router/sessions.js";
 import {
   dbGetSignalById,
   dbGetTickState,
@@ -154,6 +155,7 @@ describe("signals tick", () => {
   });
 
   it("raises a disk signal from the watcher and clears it after grace", async () => {
+    getOrCreateSession("agent:main:main", "main", "/tmp", { name: "main" });
     const now = Date.now();
     let value = 9.2;
     setDiskProbeForTests(() => ({

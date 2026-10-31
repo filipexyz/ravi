@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { dbGetSetting } from "../router/router-db.js";
 import type {
   SignalOobSkipped,
@@ -145,7 +146,7 @@ export async function tickSignals(deps: SignalTickDependencies = {}): Promise<Ti
   }
   ensureSignalSchema();
 
-  const holder = `tick:${process.pid}:${now}`;
+  const holder = `tick:${process.pid}:${randomUUID()}`;
   if (execute && !dbAcquireTickLock(holder, now)) {
     return result;
   }
@@ -205,6 +206,7 @@ export async function tickSignals(deps: SignalTickDependencies = {}): Promise<Ti
       if (recheckDue(signal, now)) {
         result.evaluated += 1;
         const evaluation = evaluateClearRule(signal, { now, probe: deps.probe });
+        if (evaluation.error) result.errors.push({ id: signal.id, error: evaluation.error });
         if (execute) {
           // The cache render reads: the evaluation's own time and its real error.
           dbWriteSignalObservation(
