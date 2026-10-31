@@ -1,5 +1,7 @@
 # Cron / CHECKS
 
+- Router migration MUST create `cron_runs` without replaying existing jobs and preserve pending run identity and admitted notification owner across job deletion and DB reopen (`src/router/router.test.ts`).
+
 ## Test State MUST Be Isolated
 
 - Every cron database test MUST create and clean its own isolated Ravi state, including
