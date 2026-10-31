@@ -100,6 +100,7 @@ emit `ravi.config.changed`.
 
 ## Provider/model coherence
 
+- Session model/provider mutations MUST check all required authority before resolving or validating the resulting provider/model pair. This includes agent-default authority for `--propagate` and provider switches. A denied caller MUST receive `PERMISSION_DENIED` without changing agent defaults, the target session, or sibling sessions, even when the requested pair is incompatible. Hidden sessions MUST continue to appear missing.
 - Agent create/model/provider mutations and session model/provider mutations MUST validate the resulting effective pair before writing or publishing configuration events. Session validation includes inherited agent/global settings and stored session overrides.
 - Known incompatible model families MUST be rejected. Open-ended model ids and custom provider catalogs MUST remain usable; this is not a frozen allowlist of every model.
 - Codex-only agent selectors MUST NOT be launched through an inherited Pi runtime. Thread creation MUST reject that pair before publishing a Slack root or creating its lifecycle, with `THREAD_MODEL_INVALID` and guidance to provide `--provider` with `--model`.

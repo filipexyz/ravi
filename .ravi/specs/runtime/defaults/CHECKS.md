@@ -19,10 +19,13 @@ bun test src/runtime/runtime-defaults.test.ts src/runtime/runtime-selection.test
 bun test src/runtime/task-runtime-context.test.ts src/runtime/session-resolver.test.ts
 bun test src/tasks/runtime-options.test.ts
 bun test src/cli/commands/settings.test.ts src/cli/commands/sessions.test.ts
+bun test src/cli/commands/sessions-attach-authorization.test.ts
 ```
 
 ## Resolution Checks
 
+- Unauthorized session provider/model propagation MUST return `PERMISSION_DENIED` for both compatible and incompatible pairs, leaving agent defaults, the target session, and sibling sessions unchanged.
+- An unauthorized provider switch without `--propagate` MUST return `PERMISSION_DENIED` before compatibility validation and leave configuration unchanged.
 - Stored `runtime.defaultModel` MUST win over `RAVI_MODEL`.
 - Resolution MUST use `RAVI_MODEL` only when no stored/session/agent/preset
   model exists.

@@ -3690,6 +3690,9 @@ export class SessionCommands {
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
     const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
+    if (propagate === true && providerOverride && agent) {
+      assertAgentDefaultsWriteAuthorized(s.agentId);
+    }
     const nextRuntime = resolveEffectiveSessionRuntime({
       session: {
         ...s,
@@ -3703,7 +3706,6 @@ export class SessionCommands {
       assertModelValidForProvider(nextRuntime.provider.value, nextRuntime.model.value);
     }
     if (propagate === true && providerOverride && agent) {
-      assertAgentDefaultsWriteAuthorized(s.agentId);
       if (agent.model) assertModelValidForProvider(providerOverride, agent.model);
       const preset = agent.modelPresetId ? getRuntimeModelPreset(agent.modelPresetId) : null;
       if (preset && preset.provider !== providerOverride) {
@@ -3831,6 +3833,9 @@ export class SessionCommands {
     const modelOverride = model === "clear" ? null : model;
     const beforeModelOverride = s.modelOverride ?? null;
     const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
+    if (propagate === true && modelOverride && agent) {
+      assertAgentDefaultsWriteAuthorized(s.agentId);
+    }
     const nextRuntime = resolveEffectiveSessionRuntime({
       session: { ...s, modelOverride: modelOverride ?? undefined },
       agent,
@@ -3839,7 +3844,6 @@ export class SessionCommands {
       assertModelValidForProvider(nextRuntime.provider.value, nextRuntime.model.value);
     }
     if (propagate === true && modelOverride && agent) {
-      assertAgentDefaultsWriteAuthorized(s.agentId);
       assertModelValidForProvider(agent.provider, modelOverride);
     }
     if (model === "clear") {
