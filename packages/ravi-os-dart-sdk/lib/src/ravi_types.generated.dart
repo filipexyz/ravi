@@ -10221,6 +10221,36 @@ class ContextAuthorizeReturn {
 
 ContextAuthorizeReturn contextAuthorizeReturnFromJson(Object? json) => ContextAuthorizeReturn.fromJsonValue(json);
 
+class ContextBridgeToolHookOptions {
+  const ContextBridgeToolHookOptions({this.payload});
+
+  final String? payload;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (payload != null) {
+      into["payload"] = RaviJson.from(payload);
+    }
+  }
+}
+
+class ContextBridgeToolHookReturn {
+  const ContextBridgeToolHookReturn({this.hookSpecificOutput});
+
+  final RaviJson? hookSpecificOutput;
+
+  factory ContextBridgeToolHookReturn.fromJson(Map<String, Object?> json) {
+    return ContextBridgeToolHookReturn(
+      hookSpecificOutput: json["hookSpecificOutput"] == null ? null : RaviJson.from(json["hookSpecificOutput"]),
+    );
+  }
+
+  static ContextBridgeToolHookReturn fromJsonValue(Object? json) {
+    return ContextBridgeToolHookReturn.fromJson(raviJsonObject(json, "ContextBridgeToolHookReturn"));
+  }
+}
+
+ContextBridgeToolHookReturn contextBridgeToolHookReturnFromJson(Object? json) => ContextBridgeToolHookReturn.fromJsonValue(json);
+
 class ContextCapabilitiesReturn {
   const ContextCapabilitiesReturn({required this.agentId, required this.capabilities, required this.contextId, required this.kind, required this.sessionKey, required this.sessionName});
 

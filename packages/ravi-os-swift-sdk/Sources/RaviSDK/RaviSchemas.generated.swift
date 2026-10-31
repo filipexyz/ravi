@@ -56896,6 +56896,52 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextBridgeToolHookInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "description": "Hook input",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let ContextBridgeToolHookReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "hookSpecificOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "hookEventName": {
+            "const": "PreToolUse",
+            "type": "string"
+          },
+          "permissionDecision": {
+            "enum": [
+              "deny"
+            ],
+            "type": "string"
+          },
+          "permissionDecisionReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hookEventName",
+          "permissionDecision",
+          "permissionDecisionReason"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
   public static let ContextCapabilitiesInputSchema = #"""
   {
     "additionalProperties": false,

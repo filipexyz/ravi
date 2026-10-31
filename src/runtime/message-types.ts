@@ -186,6 +186,8 @@ export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | Channel
 
 /** Prompt message structure */
 export interface PromptMessage {
+  /** Trusted bridge producer reference; all authority is reloaded from its durable receipt. */
+  _bridgeTurnId?: string;
   prompt: string;
   /** Ravi Commands that produced this prompt, when a user invoked #command. */
   commands?: RaviCommandPromptMetadata[];

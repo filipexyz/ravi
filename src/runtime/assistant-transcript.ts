@@ -21,6 +21,8 @@ export type VisibleAssistantResolution = {
 
 export type ResolveVisibleAssistantOptions = {
   alreadyDeliveredThisTurn?: readonly string[];
+  /** Native bridge events already have a validated turn boundary; text is not a history accumulator. */
+  structuredTurn?: boolean;
 };
 
 const UPPER_START = /^[\p{Lu}]/u;
@@ -103,6 +105,11 @@ export function classifyVisibleAssistantUtterances(
   if (!trimmed) return { utterances: [], skipReason: "empty" };
 
   const alreadyDelivered = new Set((options?.alreadyDeliveredThisTurn ?? []).map((row) => row.trim()).filter(Boolean));
+  if (options?.structuredTurn) {
+    return alreadyDelivered.has(trimmed)
+      ? { utterances: [], skipReason: "same_turn_replay" }
+      : { utterances: [trimmed] };
+  }
   const peeled = peelPersistedAssistantPrefix(trimmed, existingAssistantRows);
   if (!peeled) return { utterances: [], skipReason: "mashed_replay" };
 

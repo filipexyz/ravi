@@ -56896,6 +56896,52 @@ class RaviSchemas {
 }
 ''';
 
+  static const contextBridgeToolHookInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "payload": {
+      "description": "Hook input",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const contextBridgeToolHookReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "hookSpecificOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "hookEventName": {
+          "const": "PreToolUse",
+          "type": "string"
+        },
+        "permissionDecision": {
+          "enum": [
+            "deny"
+          ],
+          "type": "string"
+        },
+        "permissionDecisionReason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hookEventName",
+        "permissionDecision",
+        "permissionDecisionReason"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "object"
+}
+''';
+
   static const contextCapabilitiesInputSchema = r'''
 {
   "additionalProperties": false,

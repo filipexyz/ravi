@@ -2472,6 +2472,12 @@ public struct ContextNamespace: Sendable {
     return try await transport.call(groupSegments: ["context"], command: "authorize", body: requestBody, as: ContextAuthorizeReturn.self)
   }
 
+  public func bridgeToolHook(_ options: ContextBridgeToolHookOptions = .init()) async throws -> ContextBridgeToolHookReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["context"], command: "bridge-tool-hook", body: requestBody, as: ContextBridgeToolHookReturn.self)
+  }
+
   public func capabilities() async throws -> ContextCapabilitiesReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["context"], command: "capabilities", body: requestBody, as: ContextCapabilitiesReturn.self)

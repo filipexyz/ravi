@@ -11,6 +11,7 @@ import {
 import { dbGetAgent } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
+import { prepareBridgeCodexProfile } from "../bridge/codex-profile.js";
 import {
   createCodexTransport,
   resolveCodexTransportKind,
@@ -74,7 +75,7 @@ const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const CODEX_SUB_AGENT_DIRECT_INPUT_ERROR = "direct app-server input is not allowed for multi-agent v2 sub-agents";
 const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
-const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
+const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH", "BRIDGE_MODEL_API_KEY"]);
 const CODEX_SHELL_ENV_INCLUDE_ONLY = [
   "RAVI_*",
   "CODEX_HOME",
@@ -376,8 +377,12 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       ensureAgentInstructionFiles(input.cwd);
-      const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
-      ensureCodexBashHookConfig(materialized?.configDir);
+      const materialized = input.modelBroker
+        ? materializeRuntimeModelBroker(input.modelBroker)
+        : input.humanBridge
+          ? prepareBridgeCodexProfile(input.cwd)
+          : undefined;
+      ensureCodexBashHookConfig(materialized?.configDir, input.humanBridge);
       const syncedSkills = materialized
         ? syncCodexSkills(input.plugins ?? [], {
             codexSkillsDir: join(materialized.configDir, "skills"),
@@ -387,7 +392,9 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       const syncedSkillNames = Array.isArray(syncedSkills) ? syncedSkills : [];
       skillVisibilityByCwd.set(input.cwd, { syncedSkillNames });
       return {
-        ...(materialized ? { env: materialized.env } : {}),
+        ...(materialized
+          ? { env: { ...materialized.env, ...(input.humanBridge ? { RAVI_BRIDGE_TURN: "1" } : {}) } }
+          : {}),
         ...(input.hostServices ? { startRequest: createCodexRuntimeStartRequest(input.hostServices) } : {}),
       };
     },
@@ -762,7 +769,10 @@ async function* normalizeCodexEvents(
 
       const turn = transport.startTurn({
         cwd: input.cwd,
-        security: resolveCodexThreadSecurity(input.agentId),
+        security:
+          input.env?.RAVI_BRIDGE_TURN === "1"
+            ? RESTRICTED_CODEX_THREAD_SECURITY
+            : resolveCodexThreadSecurity(input.agentId),
         env: input.env ?? process.env,
         model: resolveCodexModelArg(
           promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : input.model,
@@ -1350,7 +1360,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
   const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
     const hookResult = shouldMaterializeCodexHookForCommand(command)
-      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME, input.env?.RAVI_BRIDGE_TURN === "1")
       : null;
     // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
     // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
@@ -1368,7 +1378,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     let channelReady = false;
     const newTransport = createCodexTransport(transportKind, {
       command,
-      baseArgs: buildCodexAppServerBaseArgs(),
+      baseArgs: buildCodexAppServerBaseArgs(input.env?.RAVI_BRIDGE_TURN === "1"),
       cwd: input.cwd,
       env: spawnEnv,
       onMessage: (line: string) => {
@@ -2162,6 +2172,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     forkThreadId: string | null = null,
     forkBeforeTurnId: string | null = null,
   ): Promise<void> {
+    if (input.env?.RAVI_BRIDGE_TURN === "1") {
+      const { ensureBridgeCodexGuard } = await import("../bridge/codex-trust.js");
+      if (!input.env.CODEX_HOME) throw new Error("Missing private bridge profile");
+      await ensureBridgeCodexGuard(sendRequest, input.cwd, input.env.CODEX_HOME);
+    }
     const effort = toCodexRuntimeEffort(input.effort);
     const security = input.security ?? UNRESTRICTED_CODEX_THREAD_SECURITY;
     currentSecurity = security;
@@ -2269,7 +2284,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   async function ensureClient(input: CodexCliTurnRequest, controlOnly = false): Promise<void> {
     metadataControlOnly = controlOnly;
     const hookResult = shouldMaterializeCodexHookForCommand(command)
-      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME, input.env?.RAVI_BRIDGE_TURN === "1")
       : null;
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
     const hookChanged =
@@ -2586,10 +2601,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 }
 
-function buildCodexAppServerBaseArgs(): string[] {
+function buildCodexAppServerBaseArgs(humanBridge = false): string[] {
   return [
     "-c",
-    "features.codex_hooks=true",
+    humanBridge ? "features.hooks=true" : "features.codex_hooks=true",
     "-c",
     "shell_environment_policy.inherit=all",
     "-c",

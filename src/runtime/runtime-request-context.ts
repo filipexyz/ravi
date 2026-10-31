@@ -1,4 +1,5 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
+import { resolveBridgeInvocation } from "../bridge/authority.js";
 import {
   dbGetContext,
   dbUpdateContextCapabilities,
@@ -287,6 +288,11 @@ function deriveRuntimeContextForPrompt(options: {
   metadata: Record<string, unknown>;
   source: ContextSource | undefined;
 } {
+  if (options.prompt._bridgeTurnId || /^agent:[^:]+:console:[0-9a-f-]{36}$/.test(options.sessionKey)) {
+    if (!options.prompt._bridgeTurnId) throw new Error("Console turns require a fresh human delegation");
+    const bridge = resolveBridgeInvocation(options.prompt._bridgeTurnId, options.sessionKey, options.agentId);
+    return { ...bridge, metadata: { ...options.metadata, ...bridge.metadata } };
+  }
   const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
   return {
     capabilities: identity.capabilities,

@@ -641,6 +641,7 @@ export class RuntimeSessionDispatcher {
         type: "turn.interrupted",
         provider: session.queryHandle.provider,
         reason: abortReason,
+        ...(session.currentBridgeTurnId ? { _bridgeTurnId: session.currentBridgeTurnId } : {}),
         sessionName,
         ...(cancelledTool ? { cancelledTool } : {}),
         ...(session.currentSource ? { _source: session.currentSource } : {}),
@@ -2534,6 +2535,7 @@ export class RuntimeSessionDispatcher {
     this.options
       .safeEmit(`ravi.session.${sessionName}.runtime`, {
         type: timedOut ? "session.timeout" : "dispatch.dropped",
+        ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
         reason,
         lane,
         sessionName,

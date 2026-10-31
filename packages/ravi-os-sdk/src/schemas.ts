@@ -56425,6 +56425,50 @@ export const ContextAuthorizeReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `context.bridge-tool-hook`. */
+export const ContextBridgeToolHookInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "payload": {
+      "description": "Hook input",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.bridge-tool-hook`. */
+export const ContextBridgeToolHookReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "hookSpecificOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "hookEventName": {
+          "const": "PreToolUse",
+          "type": "string"
+        },
+        "permissionDecision": {
+          "enum": [
+            "deny"
+          ],
+          "type": "string"
+        },
+        "permissionDecisionReason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hookEventName",
+        "permissionDecision",
+        "permissionDecisionReason"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.capabilities`. */
 export const ContextCapabilitiesInputSchema = {
   "additionalProperties": false,

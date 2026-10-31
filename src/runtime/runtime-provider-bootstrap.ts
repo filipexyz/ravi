@@ -77,6 +77,7 @@ export async function prepareRuntimeProviderBootstrap(
   });
   const discoveredPlugins = [...discoverPlugins(), ...library.plugins];
   const providerBootstrap = await options.runtimeProvider.prepareSession?.({
+    humanBridge: Boolean(options.context?.metadata?.bridgeTurnId),
     agentId: options.agent.id,
     cwd: options.sessionCwd,
     ...(discoveredPlugins.length > 0 ? { plugins: discoveredPlugins } : {}),

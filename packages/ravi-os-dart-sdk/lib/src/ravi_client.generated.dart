@@ -3291,6 +3291,17 @@ class ContextNamespace {
     );
   }
 
+  Future<ContextBridgeToolHookReturn> bridgeToolHook([ContextBridgeToolHookOptions options = const ContextBridgeToolHookOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["context"],
+      command: "bridge-tool-hook",
+      body: requestBody,
+      decode: contextBridgeToolHookReturnFromJson,
+    );
+  }
+
   Future<ContextCapabilitiesReturn> capabilities() async {
     final requestBody = <String, RaviJson>{};
     return _transport.callJson(

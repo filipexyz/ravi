@@ -46,6 +46,7 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
 export type RuntimeTurnAuthorityEnvelope = Pick<
   RuntimeLaunchPrompt,
   | "context"
+  | "_bridgeTurnId"
   | "_approvalSource"
   | "_turnOrigin"
   | "_heartbeat"
@@ -69,6 +70,7 @@ export function pickRuntimeTurnAuthorityEnvelope(
 ): RuntimeTurnAuthorityEnvelope {
   if (!prompt) return {};
   const envelope: RuntimeTurnAuthorityEnvelope = {};
+  if (prompt._bridgeTurnId) envelope._bridgeTurnId = prompt._bridgeTurnId;
   if (prompt.context) envelope.context = { ...prompt.context };
   if (prompt._approvalSource) envelope._approvalSource = { ...prompt._approvalSource };
   if (prompt._turnOrigin) envelope._turnOrigin = prompt._turnOrigin;
