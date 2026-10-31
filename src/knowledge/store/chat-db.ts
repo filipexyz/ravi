@@ -1,4 +1,4 @@
-import { openStateDatabase } from "../../db/production-boundary.js";
+import { openStateDatabase } from "../../db/state-boundary.js";
 // chat.db cleanup for synthetic sessions (contract §13.3): a curator turn
 // quotes up to 200 of a contact's messages, so its rows are deleted once the
 // turn is over.

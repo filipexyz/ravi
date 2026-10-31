@@ -1,4 +1,5 @@
-import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/production-boundary.js";
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -104,7 +105,7 @@ function ensureDb(): Database {
   mkdirSync(getRaviStateDir(), { recursive: true });
 
   const db = openStateDatabase(nextDbPath);
-  db.exec("PRAGMA journal_mode = WAL");
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
   initializeSchema(db);
@@ -178,6 +179,10 @@ const SCHEMA_SQL = `
 `;
 
 function initializeSchema(db: Database): void {
+  initializeStateSchema(db, "insights", () => migrateSchema(db));
+}
+
+function migrateSchema(db: Database): void {
   db.exec(SCHEMA_SQL);
   reconcileColumns(db, SCHEMA_SQL, { label: "insights-db" });
 }
@@ -626,3 +631,5 @@ export function dbAddInsightComment(input: AddInsightCommentInput): InsightComme
 
   return rowToInsightComment(row);
 }
+
+export { ensureDb as ensureInsightsDb };

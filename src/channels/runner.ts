@@ -143,6 +143,7 @@ export class ChannelRunner {
     this.adapterStatuses.clear();
 
     const env = this.options.env ?? process.env;
+    (await import("../db/runtime-state.js")).assertRuntimeStateReady(env);
     await connectNats(this.options.natsUrl ?? env.NATS_URL ?? "nats://127.0.0.1:4222", {
       explicit: true,
       retry: true,

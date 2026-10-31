@@ -1,4 +1,5 @@
-import { assertDatabaseTargetAllowed, openStateDatabase } from "../../db/production-boundary.js";
+import { initializeStateSchema } from "../../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../../db/state-boundary.js";
 // Local Knowledge database `~/.ravi/knowledge.db` (spec knowledge, contract
 // §10.1). Its own file, not ravi.db: FTS5 tables cannot go through
 // `reconcileColumns`, chat history lives in chat.db, and the file can be
@@ -143,23 +144,25 @@ export function getKnowledgeDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
   const db = openStateDatabase(nextDbPath);
-  db.exec("PRAGMA journal_mode = WAL");
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA synchronous = NORMAL");
   db.exec("PRAGMA foreign_keys = ON");
-  db.exec(KNOWLEDGE_SCHEMA_SQL);
-  reconcileColumns(db, KNOWLEDGE_SCHEMA_SQL, { label: "knowledge" });
-  const fts5 = !knowledgeDbState.forceFts5Off && probeFts5(db);
-  if (fts5) {
-    for (const statement of KNOWLEDGE_FTS_SQL) db.exec(statement);
-    // Rows written while FTS5 was off live only in the plain tables.
-    if (readKnowledgeMeta("fts5", db) === "off") rebuildFtsTables(db);
-  }
-  writeMeta(db, "fts5", fts5 ? "on" : "off");
+  initializeStateSchema(db, "knowledge", () => {
+    db.exec(KNOWLEDGE_SCHEMA_SQL);
+    reconcileColumns(db, KNOWLEDGE_SCHEMA_SQL, { label: "knowledge" });
+    const fts5 = !knowledgeDbState.forceFts5Off && probeFts5(db);
+    if (fts5) {
+      for (const statement of KNOWLEDGE_FTS_SQL) db.exec(statement);
+      // Rows written while FTS5 was off live only in the plain tables.
+      if (readKnowledgeMeta("fts5", db) === "off") rebuildFtsTables(db);
+    }
+    writeMeta(db, "fts5", fts5 ? "on" : "off");
+  });
 
   knowledgeDbState.db = db;
   knowledgeDbState.dbPath = nextDbPath;
-  knowledgeDbState.fts5 = fts5;
+  knowledgeDbState.fts5 = readKnowledgeMeta("fts5", db) === "on";
   return db;
 }
 

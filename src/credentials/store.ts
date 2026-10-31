@@ -1,4 +1,5 @@
-import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/production-boundary.js";
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -297,7 +298,7 @@ function getCredentialDb(options: CredentialStoreOptions = {}): Database {
   handle?.db.close();
   mkdirSync(dirname(path), { recursive: true });
   const db = openStateDatabase(path, { create: true }, { env: options.env });
-  db.exec("PRAGMA journal_mode = WAL");
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   ensureSchema(db);
   handle = { db, path };
@@ -305,6 +306,10 @@ function getCredentialDb(options: CredentialStoreOptions = {}): Database {
 }
 
 function ensureSchema(db: Database): void {
+  initializeStateSchema(db, "credentials", () => migrateSchema(db));
+}
+
+function migrateSchema(db: Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS credential_connections (
       id TEXT PRIMARY KEY,

@@ -1,4 +1,4 @@
-import { openStateDatabase } from "../../db/production-boundary.js";
+import { openStateDatabase } from "../../db/state-boundary.js";
 /**
  * DB Commands - Inspection of ravi.db state, locks and WAL.
  */

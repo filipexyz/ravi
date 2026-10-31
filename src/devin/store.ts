@@ -1,4 +1,5 @@
-import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/production-boundary.js";
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -23,7 +24,7 @@ function getDevinDb(): Database {
   mkdirSync(dirname(path), { recursive: true });
   db = openStateDatabase(path);
   dbPath = path;
-  db.exec("PRAGMA journal_mode = WAL");
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
   return db;
@@ -177,7 +178,11 @@ export interface ListDevinSessionRecordsOptions {
   limit?: number;
 }
 
-function ensureDevinSchema(): void {
+export function ensureDevinSchema(): void {
+  initializeStateSchema(getDevinDb(), "devin", migrateDevinSchema);
+}
+
+function migrateDevinSchema(): void {
   getDevinDb().exec(`
     CREATE TABLE IF NOT EXISTS devin_sessions (
       id TEXT PRIMARY KEY,

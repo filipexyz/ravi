@@ -168,6 +168,8 @@ export async function cleanupIsolatedRaviState(stateDir?: string | null): Promis
   closeSessionStore();
   closeSessionGoalStore();
   closeRouterDb();
+  // A suite/launcher may already have a sandbox. Unsetting this variable would
+  // send the next DB consumer to ~/.ravi, including its automatic migrations.
   if (previousStateDir === undefined) {
     delete process.env.RAVI_STATE_DIR;
   } else {

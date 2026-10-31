@@ -68,6 +68,7 @@ bun run lint:fix      # apply Biome fixes in src/
 - `bun run test` runs a curated list of suites and then checks generated code against the live command registry: the TypeScript SDK, `docs/openapi.json`, `openapi.json`, and the Swift and Dart SDKs. A plain `bun test` with no path runs every test file, which is not what CI runs.
 - Other entry points: `bun run test:cli-commands`, `bun run test:sdk`, `bun run test:agent-contract`, `bun run test:swift-sdk` (needs Swift), and `bun run test:live` (sets `RAVI_LIVE_TESTS=1` and calls real providers).
 - Tests that touch Ravi's SQLite state must isolate it with `createIsolatedRaviState()` and `cleanupIsolatedRaviState()` from `src/test/ravi-state.ts`, which point `RAVI_STATE_DIR` at a temporary directory.
+- A launcher-level `RAVI_STATE_DIR` must survive fixture cleanup: later tests may open storage after the fixture closes. Run source checks with an explicit temporary state directory; on a production host also block production SQLite opens before imports. An environment override alone is not a storage access guard. `src/test/ravi-state.test.ts` covers restoration of the outer sandbox.
 - `src/cli/execute-consumers.test.ts` checks exact command strings in `README.md`, `AGENTS.md`, skills and docs. If you change whether a command needs `--execute`, update that test and the files it checks.
 
 ## Git hooks
@@ -88,18 +89,20 @@ Never bypass the hooks with `--no-verify`, per-command `git -c core.hooksPath=/d
 On a machine running the live daemon, do not run the full build/suite or install dependencies in a new worktree. Use the sanctioned Git Data API tool after committing:
 
 ```bash
-bun scripts/publish-branch.ts --branch fix/example --test src/router/production-boundary.test.ts
-bun scripts/publish-branch.ts --branch fix/example --test src/router/production-boundary.test.ts --execute
+bun scripts/publish-branch.ts --branch fix/example --test src/router/state-boundary.test.ts
+bun scripts/publish-branch.ts --branch fix/example --test src/router/state-boundary.test.ts --execute
 gh pr create --base dev --head fix/example --body-file /path/to/pr-description.md
 ```
 
 Repeat `--test` for relevant exact test files. Both preview and execute run focused tests and the spec/coverage gate in temporary state. The tool requires clean committed work and verifies the uploaded tree equals HEAD before creating a fresh work branch. It never changes hooks or publishes directly to release branches. Existing refs require explicit `--update`: fetch and merge the remote work-branch snapshot first; updates append to that exact parent with `force: false` and refuse stale heads. It creates a squash snapshot with a different commit id; local signatures/history are not preserved. Use the explicit update flow for subsequent publications on the same PR. Full build, typecheck, lint, generated-code checks and suite are enforced by PR CI; wait for green CI before merge.
 
-### Production database confirmation
+### Real state and caller identity
 
-Writable state opens under `~/.ravi` fail closed because initialization can migrate schema even during a read command. Development and CI must use isolated `RAVI_STATE_DIR`; test cleanup restores its previous value. Symlink aliases are protected and hardlinked database files are refused. Tests cannot opt in to production.
+There is one real state directory, not a "production environment" opt-in. Only the installed runtime registered in PM2 may initialize/migrate real state. Identity is checked through the code location, actual process/parent PID and live registration; inherited env labels or argv alone are insufficient. No new launcher flag is required.
 
-**Before installing a release containing the guard**, configure `RAVI_CONFIRM_PRODUCTION_STATE_DIR` to the absolute production root in BOTH existing PM2 ecosystem `env` entries (`ravi` and `ravi-channels`), apply with `--update-env` while the old release still works, verify both launchers and persist with `pm2 save`. Only then install the guarded release; reversing the order can cause total outage. For another production root, also set `RAVI_PRODUCTION_STATE_DIR`; the default remains protected. Keep confirmation out of shared shell profiles and development/test processes. Source/build/worktree execution rejects confirmation even if inherited; production must use the installed package. If installed in the wrong order, restore the exact previous known-good package and normal launchers, recover service, then configure both launchers before retrying. This is a deployment prerequisite, not an instruction to mutate the live environment while developing. See `.ravi/specs/quality/production-boundary/RUNBOOK.md`.
+CLI/build/test/worktree execution must select an isolated `RAVI_STATE_DIR` on the command. Missing state selection refuses before SQLite opens the real default; explicitly selecting real state does not authorize a worktree. Use the installed daemon gateway for real state. Fixture cleanup restores its enclosing state selection.
+
+If a legitimate runtime is refused after rollout, restore the previous known-good installed package and existing launchers, recover service, then inspect package location/process registration. No environment setup order or DB rollback is introduced. See `.ravi/specs/quality/state-boundary/RUNBOOK.md`.
 
 ## Adding or changing a CLI command
 
@@ -209,3 +212,5 @@ bun run check:docs          # lint:docs + docs:check-links (also: make docs-chec
   - **Specs:** every changed spec needs valid frontmatter and its `WHY.md`, `RUNBOOK.md` and `CHECKS.md`, and `CHECKS.md` needs verifiable list items.
   - **Coverage:** a change under `src/channels/`, `src/omni/`, `src/router/`, `src/runtime/`, `src/jobs/`, `src/watch/`, `src/hooks/`, `src/session-trace/`, `src/triggers/`, `src/approval/`, `src/apps/` or `src/devin/` must include one of that area's focused test files (listed in `src/ci/quality-gate.ts`) in the same diff. Diffs that only touch docs, Markdown or `.ravi/` are exempt.
 - Run the gate locally against `dev` with `git fetch origin dev && GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts`.
+
+The daemon is the sole owner of real-state schemas. It initializes runtime stores before serving; channels checks per-store, exact-release readiness before connecting to NATS and never migrates. Stop the old channels runner before a schema upgrade, initialize the daemon, then start channels from the same release. Starting channels first fails with `STATE_SCHEMA_NOT_READY`, without database creation or automatic repair.

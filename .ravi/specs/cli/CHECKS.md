@@ -7,6 +7,12 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 
 ## Required checks
 
+- `bun test src/sdk/gateway/dispatcher.test.ts` verifies that a missing task
+  decision table produces a private HTTP 500 plus a local cause/stack, and that
+  restoring the schema DDL in a fixture recovers show and dry-run dispatch.
+- Unexpected-error diagnostics exclude sentinel context/bearer tokens and
+  arbitrary exception payloads while preserving the diagnostic cause.
+
 - Every migrated JSON failure has one canonical envelope and the correct
   operation path.
 - Exit `0/1/2/3` survives handler, root/domain parser, bootstrap, tool and

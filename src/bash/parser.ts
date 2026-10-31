@@ -1,8 +1,8 @@
 /**
  * Bash Command Parser
  *
- * Extracts all executables from bash commands for permission checking.
- * Includes injection safety checks to prevent bypassing restrictions.
+ * Extracts visible executables from the supported shell subset for permission
+ * checking. Syntax checks prevent common accidents, not arbitrary host effects.
  */
 
 import type { ParsedCommand, PatternCheckResult } from "./types.js";
@@ -14,28 +14,13 @@ import { physicalPathForPermissionCheck } from "../permissions/provider-config-p
 // Dangerous Patterns (checked before parsing)
 // ============================================================================
 
-/**
- * Patterns that indicate injection attempts or bypass vectors.
- * These are checked against the raw command BEFORE parsing.
- */
+/** Active shell syntax only; quoted data must not match these patterns. */
 const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /\$\(/, reason: "command substitution $(...)  is not allowed" },
-  { pattern: /`[^`]*`/, reason: "backtick command substitution is not allowed" },
+  { pattern: /\$\(/, reason: "command substitution $(...) is not allowed" },
+  { pattern: /`/, reason: "backtick command substitution is not allowed" },
   { pattern: /<\(/, reason: "process substitution <(...) is not allowed" },
   { pattern: />\(/, reason: "process substitution >(...) is not allowed" },
   { pattern: /<<[<-]?/, reason: "here documents are not allowed" },
-  {
-    pattern: /\|\s*(bash|sh|zsh|dash|ksh|csh|fish)\b/,
-    reason: "piping to shell is not allowed",
-  },
-  {
-    pattern: /\|\s*(python|python3|node|perl|ruby)\s+(-c|-e)\b/,
-    reason: "piping to interpreter with inline code is not allowed",
-  },
-  {
-    pattern: /\|\s*(python|python3|node|perl|ruby)\s*$/,
-    reason: "piping to interpreter stdin is not allowed",
-  },
 ];
 
 /**
@@ -81,14 +66,34 @@ const INLINE_CODE_INTERPRETERS: Record<string, string[]> = {
  * This is a fail-fast check to catch injection attempts.
  */
 export function checkDangerousPatterns(command: string): PatternCheckResult {
+  const inspected = inspectShellSyntax(command);
+  if (inspected.error) return { safe: false, reason: inspected.error };
   for (const { pattern, reason } of DANGEROUS_PATTERNS) {
-    if (pattern.test(command)) {
-      return {
-        safe: false,
-        reason,
-        pattern: pattern.source,
-      };
+    if (pattern.test(inspected.syntax)) {
+      return { safe: false, reason, pattern: pattern.source };
     }
+  }
+  try {
+    // Inspect real pipe operators, then decode the receiving command's words.
+    // A quoted/escaped pipe is data; a quoted executable is still executable.
+    for (let i = 0; i < inspected.syntax.length; i++) {
+      if (inspected.syntax[i] !== "|" || /[|>]/.test(inspected.syntax[i - 1] ?? "") || inspected.syntax[i + 1] === "|")
+        continue;
+      const receiver = splitByOperators(inspected.command.slice(i + 1))[0] ?? "";
+      const executable = parseSimpleCommand(receiver);
+      if (!executable) continue;
+      if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
+      if (INLINE_CODE_INTERPRETERS[executable]) {
+        if (isInlineCodeExecution(executable, receiver).blocked) {
+          return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
+        }
+        if (parseShell(receiver).length === 1) {
+          return { safe: false, reason: "piping to interpreter stdin is not allowed" };
+        }
+      }
+    }
+  } catch {
+    return { safe: false, reason: "Cannot parse shell pipeline safely" };
   }
   return { safe: true };
 }
@@ -98,52 +103,69 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
 // ============================================================================
 
 /**
- * Normalize command by replacing newlines with semicolons.
- * This ensures multi-line commands are properly parsed.
+ * Bounded lexical view, not a shell evaluator. Keep source and syntax offsets
+ * aligned: mask literal characters, never delete quote boundaries and join
+ * unrelated tokens. Single quotes suppress all expansion; double quotes still
+ * evaluate dollar-paren and backticks. Only backslash-newline is removed where
+ * the shell actually treats it as a continuation.
  */
-function normalizeCommand(command: string): string {
-  return command.replace(/\n/g, " ; ");
-}
-
-/**
- * Remove quoted strings from command to avoid false positives.
- * Replaces both single and double quoted strings with placeholders.
- */
-function removeQuotedStrings(command: string): string {
-  let result = "";
-  let inSingle = false;
-  let inDouble = false;
-  let escape = false;
-
-  for (let i = 0; i < command.length; i++) {
-    const char = command[i];
-
-    if (escape) {
-      escape = false;
+function inspectShellSyntax(input: string): { command: string; syntax: string; error?: string } {
+  let command = "";
+  let syntax = "";
+  let quote: "'" | '"' | undefined;
+  let wordStart = true;
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i]!;
+    let nextIndex = i + 1;
+    // Dollar-paren / expanded quoting may straddle one or more continuations.
+    if (char === "$" && quote !== "'") {
+      while (input[nextIndex] === "\\" && input[nextIndex + 1] === "\n") nextIndex += 2;
+    }
+    const next = input[nextIndex];
+    if (quote !== "'" && char === "\\") {
+      if (next === "\n") {
+        i++;
+        continue;
+      }
+      if (next === undefined) return { command, syntax, error: "Unterminated shell escape" };
+      // Inside double quotes, backslash only escapes $, `, ", backslash or newline.
+      if (!quote || /[$`"\\]/.test(next)) {
+        command += char + next;
+        syntax += "  ";
+        wordStart = false;
+        i++;
+        continue;
+      }
+    }
+    if (!quote && char === "$" && (next === "'" || next === '"')) {
+      return { command, syntax, error: "Expanded shell quoting is not supported" };
+    }
+    if (!quote && char === "#" && wordStart) {
+      while (i < input.length && input[i] !== "\n") {
+        command += input[i];
+        syntax += " ";
+        i++;
+      }
+      i--;
       continue;
     }
-
-    if (char === "\\") {
-      escape = true;
-      continue;
+    command += char;
+    if (char === quote) {
+      quote = undefined;
+      syntax += " ";
+    } else if (!quote && (char === "'" || char === '"')) {
+      quote = char;
+      syntax += " ";
+    } else if (quote === '"' && char === "$" && next === "(") {
+      command += next;
+      syntax += "$(";
+      i = nextIndex;
+    } else {
+      syntax += !quote || (quote === '"' && char === "`") ? char : " ";
     }
-
-    if (char === "'" && !inDouble) {
-      inSingle = !inSingle;
-      continue;
-    }
-
-    if (char === '"' && !inSingle) {
-      inDouble = !inDouble;
-      continue;
-    }
-
-    if (!inSingle && !inDouble) {
-      result += char;
-    }
+    wordStart = !quote && /[\s;&|()<>]/.test(char);
   }
-
-  return result;
+  return { command, syntax, ...(quote ? { error: "Unterminated shell quote" } : {}) };
 }
 
 /**
@@ -167,21 +189,22 @@ function isEnvAssignment(token: string): boolean {
  * Parse a single simple command (no pipes/chains) and extract the executable.
  */
 function parseSimpleCommand(command: string): string | null {
-  const cleaned = removeQuotedStrings(command.trim());
-  const tokens = cleaned.split(/\s+/).filter(Boolean);
-
-  for (const token of tokens) {
-    // Skip env var assignments
-    if (isEnvAssignment(token)) {
+  const tokens = parseShell(command.trim(), () => ({ op: "glob", pattern: "unknown expansion" }));
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (typeof token !== "string") {
+      if ("comment" in token) break;
+      if (token.op === "glob") throw new Error("Cannot resolve a dynamic shell executable");
+      if ([">", ">>", "<", ">&"].includes(token.op)) {
+        const next = tokens[i + 1];
+        if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
+        i++; // redirect destination
+      }
       continue;
     }
-
-    // Skip common shell redirections
-    if (/^[0-9]*[<>]/.test(token) || token === "<" || token === ">") {
-      continue;
-    }
-
-    // Extract executable name from path
+    if (isEnvAssignment(token)) continue;
+    const next = tokens[i + 1];
+    if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
     return extractExecutableName(token);
   }
 
@@ -193,49 +216,22 @@ function parseSimpleCommand(command: string): string | null {
  * Returns array of simple commands.
  */
 function splitByOperators(command: string): string[] {
-  // Remove quoted strings to avoid splitting inside quotes
-  const cleaned = removeQuotedStrings(command);
-
-  // Split by operators: |, &&, ||, ;
-  // But not || or && inside brackets
+  const inspected = inspectShellSyntax(command);
+  if (inspected.error) throw new Error(inspected.error);
   const commands: string[] = [];
-  let current = "";
-  let i = 0;
-
-  while (i < cleaned.length) {
-    const char = cleaned[i];
-    const next = cleaned[i + 1];
-
-    // Handle operators
-    if (char === "|" && next !== "|") {
-      // Pipe
-      if (current.trim()) commands.push(current.trim());
-      current = "";
-      i++;
+  let start = 0;
+  for (const match of inspected.syntax.matchAll(/\|\||&&|[|;&\n]/g)) {
+    const index = match.index!;
+    // Descriptor duplication, combined redirects and clobber are not chains.
+    if (match[0] === "&" && (/[<>]/.test(inspected.syntax[index - 1] ?? "") || inspected.syntax[index + 1] === ">"))
       continue;
-    }
-
-    if ((char === "&" && next === "&") || (char === "|" && next === "|")) {
-      // && or ||
-      if (current.trim()) commands.push(current.trim());
-      current = "";
-      i += 2;
-      continue;
-    }
-
-    if (char === ";") {
-      // Semicolon
-      if (current.trim()) commands.push(current.trim());
-      current = "";
-      i++;
-      continue;
-    }
-
-    current += char;
-    i++;
+    if (match[0] === "|" && inspected.syntax[index - 1] === ">") continue;
+    const part = inspected.command.slice(start, match.index).trim();
+    if (part) commands.push(part);
+    start = match.index! + match[0].length;
   }
-
-  if (current.trim()) commands.push(current.trim());
+  const last = inspected.command.slice(start).trim();
+  if (last) commands.push(last);
   return commands;
 }
 
@@ -247,23 +243,32 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
   if (!flags) return { blocked: false };
 
   // Check if any inline code flag is present in the command
-  const tokens = command.split(/\s+/);
-  const execIndex = tokens.findIndex((t) => extractExecutableName(t) === executable);
+  const tokens = parseShell(command);
+  const execIndex = tokens.findIndex((t) => typeof t === "string" && extractExecutableName(t) === executable);
 
   if (execIndex === -1) return { blocked: false };
 
   // Look at tokens after the executable
   for (let i = execIndex + 1; i < tokens.length; i++) {
     const token = tokens[i];
-    if (flags.some((flag) => token === flag || token.startsWith(flag + "="))) {
+    if (typeof token !== "string") {
+      if (!token || "comment" in token) break;
+      if ([">", ">>", "<", ">&"].includes(token.op)) {
+        const next = tokens[i + 1];
+        if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
+        i++;
+      }
+      continue;
+    }
+    if (
+      flags.some(
+        (flag) => token === flag || token.startsWith(flag + "=") || (flag.length === 2 && token.startsWith(flag)),
+      )
+    ) {
       return {
         blocked: true,
         reason: `${executable} with inline code flag is not allowed`,
       };
-    }
-    // Stop at pipes/chains
-    if (token === "|" || token === "&&" || token === "||" || token === ";") {
-      break;
     }
   }
 
@@ -283,11 +288,8 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
  */
 export function parseBashCommand(command: string): ParsedCommand {
   try {
-    // Normalize newlines
-    const normalized = normalizeCommand(command);
-
-    // Split by operators
-    const simpleCommands = splitByOperators(normalized);
+    // Split only on active operators; retain quoted words for token decoding.
+    const simpleCommands = splitByOperators(command);
 
     // Extract executables from each command
     const executables: string[] = [];
@@ -300,10 +302,13 @@ export function parseBashCommand(command: string): ParsedCommand {
 
         // Check for sudo - also extract the actual command
         if (exec === "sudo") {
-          const afterSudo = cmd.replace(/^\s*sudo\s+/, "");
-          const actualExec = parseSimpleCommand(afterSudo);
+          const words = parseShell(cmd).filter((token): token is string => typeof token === "string");
+          const index = words.findIndex((word) => extractExecutableName(word) === "sudo");
+          const actualExec = words[index + 1] ? extractExecutableName(words[index + 1]!) : null;
           if (actualExec) {
             executables.push(actualExec);
+            const inline = isInlineCodeExecution(actualExec, cmd);
+            if (inline.blocked) seenInline.push(inline.reason!);
           }
         }
 

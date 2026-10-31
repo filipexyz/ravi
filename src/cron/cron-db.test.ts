@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getDb } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dbCreateCronJob,
   dbGetCronJob,
@@ -9,13 +10,15 @@ import {
   dbUpdateJobState,
 } from "./cron-db.js";
 
-const createdJobIds: string[] = [];
+let stateDir: string | null = null;
 
-afterEach(() => {
-  const db = getDb();
-  for (const id of createdJobIds.splice(0)) {
-    db.prepare("DELETE FROM cron_jobs WHERE id = ?").run(id);
-  }
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-cron-db-test-");
+});
+
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
 });
 
 describe("dbUpdateCronJob", () => {
@@ -30,7 +33,6 @@ describe("dbUpdateCronJob", () => {
       shellEnvFile: "/tmp/job.env",
       onError: "notify-session:ops",
     });
-    createdJobIds.push(created.id);
 
     const reloaded = dbGetCronJob(created.id);
     expect(reloaded).toMatchObject({
@@ -54,7 +56,6 @@ describe("dbUpdateCronJob", () => {
       replySession: "agent:main:main",
       sessionTarget: "main",
     });
-    createdJobIds.push(created.id);
 
     const updated = dbUpdateCronJob(created.id, {
       accountId: undefined,
@@ -93,13 +94,11 @@ describe("cron owner principal", () => {
       message: "noop",
       ownerPrincipal: "operator",
     });
-    createdJobIds.push(owned.id);
     const legacy = dbCreateCronJob({
       name: `test-owner-legacy-${Date.now()}`,
       schedule: { type: "every", every: 60_000 },
       message: "noop",
     });
-    createdJobIds.push(legacy.id);
 
     expect(dbGetCronJob(owned.id)?.ownerPrincipal).toBe("operator");
     expect(dbGetCronJob(legacy.id)?.ownerPrincipal).toBeUndefined();
@@ -116,7 +115,6 @@ describe("cron owner principal", () => {
       message: "noop",
       ownerPrincipal: "operator",
     });
-    createdJobIds.push(created.id);
 
     const updated = dbUpdateCronJob(created.id, { ownerPrincipal: "contact:c_bob" });
 
@@ -132,7 +130,6 @@ describe("agent job dispatch and outcome state", () => {
       schedule: { type: "every", every: 60_000 },
       message: "noop",
     });
-    createdJobIds.push(created.id);
 
     dbUpdateJobState(created.id, {
       lastRunAt: 1_000,
@@ -159,7 +156,6 @@ describe("agent job dispatch and outcome state", () => {
       schedule: { type: "every", every: 60_000 },
       message: "noop",
     });
-    createdJobIds.push(created.id);
 
     dbMarkJobDispatched(created.id, { lastRunAt: 5_000, nextRunAt: 65_000 });
 

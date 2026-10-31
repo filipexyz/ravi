@@ -1,4 +1,5 @@
-import { assertDatabaseTargetAllowed, openStateDatabase } from "../../db/production-boundary.js";
+import { initializeStateSchema } from "../../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../../db/state-boundary.js";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -772,11 +773,16 @@ function openDb(dbPath: string): Database {
   assertDatabaseTargetAllowed(dbPath);
   mkdirSync(join(dbPath, ".."), { recursive: true });
   const db = openStateDatabase(dbPath);
-  db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA busy_timeout = 5000");
+  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
   return db;
 }
 
 function ensureSchema(db: Database): void {
+  initializeStateSchema(db, "return-schemas", () => initializeReturnSchema(db));
+}
+
+function initializeReturnSchema(db: Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS ${TABLE} (
       full_name TEXT PRIMARY KEY,

@@ -20,9 +20,10 @@ const REQUIRED_COMPANIONS = ["WHY.md", "RUNBOOK.md", "CHECKS.md"] as const;
  */
 export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/health.ts": ["src/channels/health.test.ts"],
-  "src/channels/runner.ts": ["src/channels/runner.test.ts"],
+  "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    "src/db/schema-owner.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
     "src/channels/outbound-consumer.test.ts",
@@ -59,9 +60,11 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Headless Omni stub: presence/renew no-ops when Omni is not installed.
     "src/omni/stub-consumer.test.ts",
   ],
-  "src/db/production-boundary.ts": ["src/router/production-boundary.test.ts"],
+  "src/db/schema-owner.ts": ["src/db/schema-owner.test.ts"],
+  "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
+  "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
-    "src/router/production-boundary.test.ts",
+    "src/router/state-boundary.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
     "src/router/router.test.ts",
