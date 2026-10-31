@@ -151,7 +151,14 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Empty-join mash split: initials such as "R.M." stay inside one reply.
     "src/runtime/assistant-transcript.test.ts",
   ],
-  "src/jobs/": ["src/jobs/jobs.test.ts", "src/jobs/promotion.test.ts"],
+  "src/jobs/": [
+    "src/jobs/jobs.test.ts",
+    "src/jobs/promotion.test.ts",
+    // Detach por tempo: a decisão pura, o wrapper de shell de verdade (timer,
+    // setsid, registro, exit code, kill) e o kill entregando desfecho.
+    "src/jobs/detach.test.ts",
+    "src/jobs/detach-wrapper.test.ts",
+  ],
   "src/watch/": [
     // Contrato: o que o connector declara suportado localmente é o que o poller
     // consegue produzir. Foi o buraco que deixou `pull_request.merged` declarado e

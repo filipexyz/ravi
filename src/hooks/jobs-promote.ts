@@ -1,12 +1,18 @@
 /**
- * Hook que promove comando longo para job.
+ * Hook que reescreve comando de Bash para o wrapper de detach.
  *
- * O agente continua escrevendo o comando que ele quer; se o comando se declara
- * longo, ele vira job em background e o agente recebe o id na hora. O turno nunca
- * fica preso, então a próxima mensagem da pessoa é processada imediatamente.
+ * O agente continua escrevendo o comando que quer; o comando passa a rodar dentro
+ * de `ravi-jobs-exec`, que decide **pelo relógio** se ele vira job. A decisão não é
+ * mais tomada aqui, por sintaxe — era exatamente isso que deixava `bun test`,
+ * `docker build` e deploy presos no turno.
  *
  * Reescrita, não bloqueio: a decisão de rodar é do comando, e a de autorizar é do
- * hook de permissão. Aqui só trocamos a forma de execução.
+ * hook de permissão (que roda antes deste). Aqui só trocamos a forma de execução.
+ *
+ * Modos:
+ * - padrão: toda chamada de Bash passa pelo wrapper;
+ * - `RAVI_JOBS_WRAP=0`: volta à promoção antiga, por sintaxe (rollback);
+ * - `RAVI_JOBS_PROMOTE=0`: não mexe em nada.
  */
 
 import type { HookCallbackMatcher } from "../bash/hook.js";
@@ -18,6 +24,8 @@ import {
   resolveJobPromotionConfig,
   type JobPromotionDecision,
 } from "../jobs/promotion.js";
+import { buildWrappedBashCommand, shouldWrapBashCommand } from "../jobs/detach.js";
+import { ensureDetachScript, resolveDetachScriptPath } from "../jobs/detach-script.js";
 
 const log = logger.child("hooks:jobs-promote");
 
@@ -26,6 +34,8 @@ export interface JobPromotionHookOptions {
   agentId?: string | null;
   cwd?: string | null;
   enabled?: boolean;
+  /** Injetável no teste: evita materializar o script no estado real. */
+  scriptPath?: string | null;
 }
 
 export function createJobPromotionHook(options: JobPromotionHookOptions = {}): HookCallbackMatcher {
@@ -41,40 +51,71 @@ export function createJobPromotionHook(options: JobPromotionHookOptions = {}): H
           const command = toolInput?.command;
           if (!command) return {};
 
-          const config = resolveJobPromotionConfig();
-          const decision: JobPromotionDecision = decideJobPromotion(
-            { command, declaredTimeoutMs: readDeclaredTimeoutMs(toolInput) },
-            config,
-          );
-          if (!decision.promote) return {};
+          if (process.env.RAVI_JOBS_WRAP === "0") {
+            return promoteBySyntax(command, toolInput, options);
+          }
 
-          const promoted = buildPromotedCommand({
+          const scriptPath = options.scriptPath ?? resolveDetachScriptPath();
+          if (!shouldWrapBashCommand(command, { scriptPath })) return {};
+          // O script é gerado no começo de sessão; esta chamada cobre o caso de
+          // ele ter sido apagado (limpeza de estado) sem derrubar o turno.
+          const resolvedPath = options.scriptPath ?? ensureDetachScript();
+
+          const wrapped = buildWrappedBashCommand({
+            scriptPath: resolvedPath,
             command,
             sessionName: options.sessionName ?? null,
             agentId: options.agentId ?? null,
-            cwd: options.cwd ?? null,
-          });
-
-          log.info("Promoting long command to background job", {
-            sessionName: options.sessionName ?? null,
-            reason: decision.reason,
-            detail: decision.detail ?? null,
           });
 
           return {
             hookSpecificOutput: {
               hookEventName: "PreToolUse" as const,
-              updatedInput: { ...(toolInput as Record<string, unknown>), command: promoted },
+              updatedInput: { ...(toolInput as Record<string, unknown>), command: wrapped },
             },
           };
         } catch (error) {
           // Um hook que quebra a tool call por causa da própria decisão é pior que
           // rodar o comando em foreground.
-          log.warn("Job promotion hook failed; running the command as-is", { error });
+          log.warn("Long-tool detach hook failed; running the command as-is", { error });
           return {};
         }
       },
     ],
+  };
+}
+
+/** Rollback: política antiga, decidida antes do comando rodar. */
+function promoteBySyntax(
+  command: string,
+  toolInput: Record<string, unknown>,
+  options: JobPromotionHookOptions,
+): Record<string, unknown> {
+  const config = resolveJobPromotionConfig();
+  const decision: JobPromotionDecision = decideJobPromotion(
+    { command, declaredTimeoutMs: readDeclaredTimeoutMs(toolInput) },
+    config,
+  );
+  if (!decision.promote) return {};
+
+  const promoted = buildPromotedCommand({
+    command,
+    sessionName: options.sessionName ?? null,
+    agentId: options.agentId ?? null,
+    cwd: options.cwd ?? null,
+  });
+
+  log.info("Promoting long command to background job", {
+    sessionName: options.sessionName ?? null,
+    reason: decision.reason,
+    detail: decision.detail ?? null,
+  });
+
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse" as const,
+      updatedInput: { ...toolInput, command: promoted },
+    },
   };
 }
 

@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ContextCapability } from "../router/router-db.js";
+import { buildWrappedBashCommand, shouldWrapBashCommand } from "../jobs/detach.js";
+import { ensureDetachScript, resolveDetachScriptPath } from "../jobs/detach-script.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import {
@@ -129,7 +131,12 @@ function parseDecision(value) {
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === "object" && typeof parsed.allowed === "boolean") {
-      if (parsed.allowed) return { allowed: true };
+      if (parsed.allowed) {
+        // O host pode devolver uma reescrita do comando (detach de comando longo).
+        // Ela vale só para uma decisão já autorizada: a permissão viu o comando real.
+        const command = typeof parsed.command === "string" && parsed.command.trim() ? parsed.command : undefined;
+        return { allowed: true, command };
+      }
       const reason = typeof parsed.reason === "string" && parsed.reason.trim() ? parsed.reason.trim() : OPAQUE;
       return { allowed: false, reason };
     }
@@ -183,6 +190,11 @@ export default function (pi) {
       }
       if (!decision.allowed) {
         return { block: true, reason: decision.reason || OPAQUE };
+      }
+      if (decision.command && event.input && typeof event.input === "object") {
+        // Pi garante que mutação de event.input afeta a execução. Aplicada depois
+        // da autorização, de propósito: o gate nunca autoriza o wrapper.
+        event.input.command = decision.command;
       }
       return undefined;
     });
@@ -250,11 +262,20 @@ export interface PiToolPermissionHandlers {
 export interface PiToolPermissionDecision {
   allowed: boolean;
   reason?: string;
+  /**
+   * Reescrita do comando aprovado (detach de comando longo). Nunca é um comando
+   * novo: é o mesmo comando, rodando através do wrapper.
+   */
+  command?: string;
 }
 
 export function formatPiPermissionUiDecisionValue(decision: PiToolPermissionDecision): string {
   if (decision.allowed) {
-    return JSON.stringify({ v: PI_PERMISSION_DECISION_VERSION, allowed: true });
+    return JSON.stringify({
+      v: PI_PERMISSION_DECISION_VERSION,
+      allowed: true,
+      ...(decision.command ? { command: decision.command } : {}),
+    });
   }
   return JSON.stringify({
     v: PI_PERMISSION_DECISION_VERSION,
@@ -280,7 +301,11 @@ export function parsePiPermissionUiDecisionValue(value: unknown): PiToolPermissi
   const parsed = parseJsonRecord(trimmed);
   if (parsed && typeof parsed.allowed === "boolean") {
     if (parsed.allowed) {
-      return { allowed: true };
+      // O host pode ter reescrito o comando (detach). Quem lê a decisão precisa
+      // receber a reescrita: o espelho da extensão já a aplica, e descartar aqui
+      // faria o mesmo valor significar coisas diferentes nos dois lados.
+      const command = firstString(parsed.command);
+      return command ? { allowed: true, command } : { allowed: true };
     }
     return {
       allowed: false,
@@ -480,7 +505,29 @@ export async function authorizePiToolCall(
     };
   }
 
-  return { allowed: true };
+  // Autorizado. Só agora o comando pode ganhar o wrapper de detach: o gate de
+  // permissão decide sobre o comando que o agente pediu, nunca sobre o wrapper.
+  const detachCommand = buildPiDetachCommand(mapped, command);
+  return detachCommand ? { allowed: true, command: detachCommand } : { allowed: true };
+}
+
+/**
+ * Pi não suporta `updatedInput` como o caminho Claude; o que ele suporta é mutação
+ * de `event.input` dentro de `tool_call`. A política mora aqui (testável) e a
+ * extensão só aplica a string devolvida.
+ *
+ * Falha do detach nunca derruba a tool call: sem wrapper o comando roda igual.
+ */
+function buildPiDetachCommand(toolName: string, command: string | undefined): string | null {
+  if (toolName !== "Bash" || !command) return null;
+  try {
+    const scriptPath = resolveDetachScriptPath();
+    if (!shouldWrapBashCommand(command, { scriptPath })) return null;
+    const resolvedPath = ensureDetachScript();
+    return buildWrappedBashCommand({ scriptPath: resolvedPath, command });
+  } catch {
+    return null;
+  }
 }
 
 function isPiSkillAuthorized(skillName: string, handlers: PiToolPermissionHandlers): boolean {
