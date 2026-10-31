@@ -17,6 +17,7 @@ const RAVI_STATE_LOCK_TIMEOUT_MS = 120_000;
 const pendingStateDirs = new Set<string>();
 let pendingStateCleanupRegistered = false;
 let previousAuditSuppression: string | undefined;
+let previousStateDir: string | undefined;
 
 export const RAVI_RUNTIME_CONTEXT_ENV_KEYS = [
   "RAVI_ACCOUNT_ID",
@@ -112,6 +113,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   const stateDir = mkdtempSync(join(tmpdir(), prefix));
   pendingStateDirs.add(stateDir);
   ensurePendingStateCleanup();
+  previousStateDir = process.env.RAVI_STATE_DIR;
   process.env.RAVI_STATE_DIR = stateDir;
   previousAuditSuppression = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
   process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
@@ -166,7 +168,14 @@ export async function cleanupIsolatedRaviState(stateDir?: string | null): Promis
   closeSessionStore();
   closeSessionGoalStore();
   closeRouterDb();
-  delete process.env.RAVI_STATE_DIR;
+  // A suite/launcher may already have a sandbox. Unsetting this variable would
+  // send the next DB consumer to ~/.ravi, including its automatic migrations.
+  if (previousStateDir === undefined) {
+    delete process.env.RAVI_STATE_DIR;
+  } else {
+    process.env.RAVI_STATE_DIR = previousStateDir;
+  }
+  previousStateDir = undefined;
   if (previousAuditSuppression === undefined) {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
   } else {
