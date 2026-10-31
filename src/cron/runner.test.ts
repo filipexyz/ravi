@@ -41,7 +41,9 @@ mock.module("../omni/session-stream.js", () => ({
 
 const { CronRunner } = await import("./runner.js");
 const { resolveConnectorTurn } = await import("../link/connector-turn.js");
-const { dbCreateCronJob, dbGetCronJob, dbMarkJobDispatched, dbUpdateJobState } = await import("./cron-db.js");
+const { dbCreateCronJob, dbGetCronJob, dbMarkJobDispatched, dbUpdateJobState, dbUpdateCronJob } = await import(
+  "./cron-db.js"
+);
 const { CRON_RUNTIME_EVENTS_TOPIC } = await import("./turn-outcome.js");
 
 let stateDir: string | null = null;
@@ -404,7 +406,104 @@ describe("CronRunner shell jobs and personal connectors", () => {
     await new CronRunner().triggerJob(job.id);
     expect(existsSync(out)).toBe(false);
     const after = dbGetCronJob(job.id);
-    expect(after?.lastStatus).toBe("error");
-    expect(after?.lastError).toContain("not the operator, so it does not run");
+    expect(after?.enabled).toBe(false);
+    expect(after?.nextRunAt).toBeUndefined();
+    expect(after?.lastRunAt).toBeUndefined();
+    expect(after?.lastStatus).toBeUndefined();
+    expect(publishCalls).toHaveLength(1);
+    expect(publishCalls[0]!.payload.prompt).toContain("CRON_SHELL_NOT_OPERATOR");
+  });
+
+  it("reconciles legacy shell jobs at load once, including distant and unscheduled jobs", async () => {
+    const out = join(stateDir!, "must-not-run.txt");
+    const jobs = [
+      createAgentJob({ executionType: "shell", ownerPrincipal: "agent:test-agent", shellCommand: `touch '${out}'` }),
+      createAgentJob({
+        executionType: "shell",
+        ownerPrincipal: "unknown",
+        schedule: { type: "at", at: Date.now() + 86400000 },
+      }),
+    ];
+    dbMarkJobDispatched(jobs[0]!.id, { lastRunAt: 123 }); // no next run
+    const runner = new CronRunner();
+    await runner.start();
+    try {
+      expect(publishCalls).toHaveLength(2);
+      for (const job of jobs) {
+        const after = dbGetCronJob(job.id)!;
+        expect(after.enabled).toBe(false);
+        expect(after.nextRunAt).toBeUndefined();
+        expect(after.lastStatus).toBeUndefined();
+      }
+      const snapshots = jobs.map((job) => dbGetCronJob(job.id));
+      runner.refreshTimers();
+      await runner.triggerJob(jobs[0]!.id);
+      await runner.stop();
+      await runner.start();
+      expect(jobs.map((job) => dbGetCronJob(job.id))).toEqual(snapshots);
+      expect(publishCalls).toHaveLength(2);
+      expect(publishCalls[0]!.payload.prompt).not.toContain(out);
+      expect(existsSync(out)).toBe(false);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it("rechecks ownership at the due cycle and preserves historical outcomes", async () => {
+    const job = createAgentJob({ executionType: "shell", ownerPrincipal: "operator", shellCommand: "exit 0" });
+    const runner = new CronRunner();
+    const timer = spyOn(globalThis, "setTimeout");
+    try {
+      await runner.start();
+      dbUpdateCronJob(job.id, { ownerPrincipal: "agent:test-agent" });
+      dbUpdateJobState(job.id, { lastRunAt: 123, lastStatus: "error", lastError: "old failure", nextRunAt: 1 });
+      const wakeup = timer.mock.calls[0]![0] as () => Promise<void>;
+      wakeup();
+      await Promise.resolve();
+      const after = dbGetCronJob(job.id)!;
+      expect(after).toMatchObject({ enabled: false, lastRunAt: 123, lastStatus: "error", lastError: "old failure" });
+      expect(after.nextRunAt).toBeUndefined();
+      expect(publishCalls).toHaveLength(1);
+      runner.refreshTimers();
+      expect(dbGetCronJob(job.id)).toEqual(after);
+      expect(publishCalls).toHaveLength(1);
+    } finally {
+      await runner.stop();
+      timer.mockRestore();
+    }
+  });
+
+  it("keeps operator shell and agent-owned agent jobs enabled and executable", async () => {
+    const shell = createAgentJob({ executionType: "shell", ownerPrincipal: "operator", shellCommand: "exit 0" });
+    const agent = createAgentJob({ ownerPrincipal: "agent:test-agent" });
+    const runner = new CronRunner();
+    await runner.start();
+    try {
+      expect(publishCalls).toHaveLength(0);
+      await runner.triggerJob(shell.id);
+      await runner.triggerJob(agent.id);
+      expect(dbGetCronJob(shell.id)).toMatchObject({ enabled: true, lastStatus: "ok" });
+      expect(dbGetCronJob(agent.id)?.enabled).toBe(true);
+      expect(publishCalls).toHaveLength(1);
+      expect(publishCalls[0]!.payload._jobId).toBe(agent.id);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it("keeps a refused job disabled when notice delivery fails, without retrying it", async () => {
+    const job = createAgentJob({ executionType: "shell", ownerPrincipal: "agent:test-agent", shellCommand: "exit 0" });
+    publishError = new Error("notice unavailable");
+    const runner = new CronRunner();
+    await runner.start();
+    try {
+      expect(dbGetCronJob(job.id)?.enabled).toBe(false);
+      publishError = null;
+      runner.refreshTimers();
+      expect(publishCalls).toHaveLength(0);
+      expect(dbGetCronJob(job.id)?.lastRunAt).toBeUndefined();
+    } finally {
+      await runner.stop();
+    }
   });
 });

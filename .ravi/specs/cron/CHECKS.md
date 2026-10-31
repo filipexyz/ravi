@@ -1,5 +1,15 @@
 # Cron / CHECKS
 
+## Invalid Ownership MUST Reconcile Without Executing
+
+- `bun test src/cron/` MUST prove legacy agent-owned shell jobs, including distant
+  and unscheduled jobs, disable at load without executing or updating run history.
+- The same suite MUST prove a second cycle/reload/manual trigger emits no second
+  notice, ownership changes after timer arming are checked, and a failed notice
+  never re-enables the job. Operator shell and agent-owned agent jobs still run.
+- `bun test src/cli/commands/cron-commands.test.ts` MUST distinguish invalid shell,
+  operator shell and agent-owned agent jobs in JSON and text without mutating rows.
+
 ## Distant Jobs MUST NOT Overflow The Timer
 
 - `bun test src/cron/runner.test.ts` MUST prove a job more than 2,147,483,647 ms

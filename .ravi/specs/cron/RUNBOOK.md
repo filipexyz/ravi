@@ -1,5 +1,22 @@
 # Cron / RUNBOOK
 
+## Shell Job Disabled By Ownership
+
+`cron list` displays `disabled-owner`; `cron show <id> --json` reports
+`ownershipError: CRON_SHELL_NOT_OPERATOR`. Before the scheduler reconciles an
+enabled invalid row, text list shows `invalid-owner`. Inspection does not write.
+
+The scheduler keeps the row and previous execution history, clears its next run
+and sends one notice to the default agent's main session. Check daemon logs if
+the notice was not delivered. There are no repeated run failures for this state.
+
+The operator can recreate the command from their own authenticated turn or
+convert the job to an agent prompt. Do not blindly enable the same invalid job
+or change its owner in the DB. Correcting ownership never auto-enables it.
+
+Rollback of the code does not enable rows already disabled; inspect each one
+before an explicit operator recovery. No production data is deleted.
+
 ## Stale Agent on a Cron Job
 
 ### Symptom

@@ -520,6 +520,49 @@ describe("CronCommands JSON list target resolution", () => {
     const tr = shellItem!.targetResolution as Record<string, unknown>;
     expect(tr.state).toBe("ok");
   });
+
+  it("distinguishes invalid shell ownership from operator shell and agent jobs in list", async () => {
+    const base = cronJobs[0]!;
+    cronJobs = [
+      { ...base, id: "bad-shell", executionType: "shell", ownerPrincipal: "agent:test", enabled: false },
+      { ...base, id: "good-shell", executionType: "shell", ownerPrincipal: "operator", enabled: true },
+      { ...base, id: "good-agent", executionType: "agent", ownerPrincipal: "agent:test", enabled: true },
+      { ...base, id: "pending-shell", executionType: "shell", ownerPrincipal: "agent:test", enabled: true },
+    ];
+    const payload = await captureJson(async () => new CronCommands().list(true));
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items.find((job) => job.id === "bad-shell")).toMatchObject({
+      enabled: false,
+      ownershipError: "CRON_SHELL_NOT_OPERATOR",
+    });
+    expect(items.find((job) => job.id === "good-shell")).toMatchObject({
+      enabled: true,
+      ownershipError: null,
+      runsAsOperator: true,
+    });
+    expect(items.find((job) => job.id === "good-agent")).toMatchObject({
+      enabled: true,
+      ownershipError: null,
+      runsAsOperator: false,
+    });
+    expect(items.find((job) => job.id === "pending-shell")).toMatchObject({
+      enabled: true,
+      ownershipError: "CRON_SHELL_NOT_OPERATOR",
+    });
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => lines.push(args.join(" "));
+    try {
+      new CronCommands().list();
+    } finally {
+      console.log = originalLog;
+    }
+    expect(lines.find((line) => line.includes("bad-shell"))).toContain("disabled-owner");
+    expect(lines.find((line) => line.includes("pending-shell"))).toContain("invalid-owner");
+    expect(lines.find((line) => line.includes("good-shell"))).toContain("enabled");
+    expect(lines.find((line) => line.includes("good-agent"))).toContain("enabled");
+    expect(cronJobs[3]!.enabled).toBe(true); // list is read-only
+  });
 });
 
 describe("CronCommands agent-scoped listing", () => {
