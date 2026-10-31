@@ -59,6 +59,15 @@ Commands without `@Returns` remain valid SDK operations, but clients MUST treat
 their return payload as unknown or generic JSON. That fallback is compatibility
 behavior, not the target typed SDK experience.
 
+## Authority metadata
+
+`CommandAccess.consoleOnly` marks operations that require signed Console
+authority. The canonical catalog retains these operations and their metadata.
+OpenAPI emits `consoleDelegation` security for them; a runtime context key is
+insufficient. Reviewed commands with `consoleScope` but without `consoleOnly`
+accept either ordinary gateway runtime authority or delegation on the dedicated
+Console listener, with the boundary described on the operation.
+
 ## Escape hatch — `@Returns.binary()`
 
 ### Use case

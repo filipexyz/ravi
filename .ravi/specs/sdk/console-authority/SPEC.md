@@ -26,6 +26,10 @@ owners:
   to the pinned Ed25519 runtime identity. The catalog exposes reviewed
   `CommandAccess.consoleScope` boundaries. This marker describes supported
   resource resolution; it is not a grant or a local permission policy.
+  Private conversation commands also declare `consoleOnly: true`. The ordinary
+  gateway rejects them before body parsing/dispatch even with a valid runtime
+  key. Generated OpenAPI declares Console delegation security, never ordinary
+  runtime bearer authority as sufficient for these operations.
 - Every request requires a signed Console decision with issuer/kid/audience,
   enrollment/epoch, subject/org/installation/project, exact canonical command
   and semantic action, resource scope, policy revision/digest, invocation origin,
@@ -51,7 +55,9 @@ owners:
   or siblings. Unreviewed commands, `CliOnly` and `superadmin` deny by default.
 - Admission of private sends persists message, execution row and receipt in one
   transaction. Same ID/different payload conflicts. Generic reviewed control
-  handlers persist admission before effects; a crash before a final receipt is
+  handlers atomically persist the admission receipt and audit before effects.
+  Failure to insert the audit rolls back the pending receipt, reports no effect
+  and permits a safe retry. After admission commits, a crash before a final receipt is
   `EXECUTION_UNKNOWN` and must never trigger automatic replay. Both receipt
   namespaces reject reuse of an operation ID across command families.
 - New policy restrictions commit before operation dispatch, even when dispatch

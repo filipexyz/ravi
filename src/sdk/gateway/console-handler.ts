@@ -57,27 +57,27 @@ export async function handleConsoleRequest(
       body: request.method === "GET" ? undefined : raw,
       signal: request.signal,
     });
-    const execute = () =>
+    // Audit admission and generic receipts commit together, before any handler effect.
+    const admitAudit = () =>
+      service.store.db
+        .query(
+          "INSERT INTO audit(created_at,enrollment_id,subject,request_id,operation,target,result) VALUES (?,?,?,?,?,?,?)",
+        )
+        .run(
+          Date.now(),
+          grant.enrollmentId,
+          grant.sub,
+          grant.operationId,
+          grant.command,
+          grant.scope.kind === "session" ? grant.scope.conversationId : grant.projectId,
+          JSON.stringify({
+            state: "admitted",
+            origin: grant.origin.kind,
+            policyRevision: grant.policyRevision,
+          }),
+        ).lastInsertRowid;
+    const execute = (auditId: number | bigint) =>
       withConsoleInvocation(invocation, async () => {
-        // Audit admission before any effect. A failure afterwards is uncertain,
-        // never a claim that the operation did not execute.
-        const audit = service.store.db
-          .query(
-            "INSERT INTO audit(created_at,enrollment_id,subject,request_id,operation,target,result) VALUES (?,?,?,?,?,?,?)",
-          )
-          .run(
-            Date.now(),
-            grant.enrollmentId,
-            grant.sub,
-            grant.operationId,
-            grant.command,
-            grant.scope.kind === "session" ? grant.scope.conversationId : grant.projectId,
-            JSON.stringify({
-              state: "admitted",
-              origin: grant.origin.kind,
-              policyRevision: grant.policyRevision,
-            }),
-          );
         dispatched = true;
         const response =
           (await handleGatewayRequest(fresh, { ...gateway, allowSuperadmin: false })) ??
@@ -88,13 +88,13 @@ export async function handleConsoleRequest(
             origin: grant.origin.kind,
             policyRevision: grant.policyRevision,
           }),
-          audit.lastInsertRowid,
+          auditId,
         );
         return response;
       });
     // Private-session mutations already atomically persist message, receipt and dispatch.
-    if (cmd.groupPath === "sessions.conversations" || cmd.access.kind === "read") return await execute();
-    return await journalCommand(invocation, raw, url.pathname, execute);
+    if (cmd.groupPath === "sessions.conversations" || cmd.access.kind === "read") return await execute(admitAudit());
+    return await journalCommand(invocation, raw, url.pathname, admitAudit, execute);
   } catch (error) {
     const effectState = error instanceof BridgeError ? error.effectState : dispatched ? "unknown" : "none";
     const code = error instanceof BridgeError ? error.code : dispatched ? "EXECUTION_UNKNOWN" : "INVALID_REQUEST";
@@ -130,11 +130,17 @@ async function boundedBody(request: Request): Promise<string> {
 
 /** Generic effects cannot share an atomic transaction with arbitrary handlers. Unknown
  * admission is durable and is never executed a second time after a crash or lost reply. */
-async function journalCommand(value: ConsoleInvocation, raw: string, path: string, execute: () => Promise<Response>) {
+async function journalCommand(
+  value: ConsoleInvocation,
+  raw: string,
+  path: string,
+  admitAudit: () => number | bigint,
+  execute: (auditId: number | bigint) => Promise<Response>,
+) {
   const { grant, service } = value;
   const digest = requestDigest({ path, raw, createdAt: grant.createdAt, projectId: grant.projectId });
   const key = [grant.enrollmentId, grant.sub, grant.operationId] as const;
-  const found = service.store.atomic(() => {
+  const admission = service.store.atomic(() => {
     if (
       service.store.db.query("SELECT 1 FROM receipts WHERE enrollment_id=? AND subject=? AND request_id=?").get(...key)
     )
@@ -144,20 +150,21 @@ async function journalCommand(value: ConsoleInvocation, raw: string, path: strin
         "SELECT digest,status,body FROM gateway_receipts WHERE enrollment_id=? AND subject=? AND operation_id=?",
       )
       .get(...key);
-    if (row) return row;
+    if (row) return { receipt: row };
     if (grant.createdAt < Date.now() - 600_000 || grant.createdAt > Date.now() + 5000)
       throw new BridgeError("REQUEST_EXPIRED");
     service.store.db
       .query("INSERT INTO gateway_receipts(enrollment_id,subject,operation_id,digest) VALUES (?,?,?,?)")
       .run(...key, digest);
-    return null;
+    return { auditId: admitAudit() };
   });
-  if (found) {
+  if (admission.receipt) {
+    const found = admission.receipt;
     if (found.digest !== digest) throw new BridgeError("IDEMPOTENCY_CONFLICT");
     if (!found.status || found.body === null) throw new BridgeError("EXECUTION_UNKNOWN", "unknown");
     return new Response(found.body, { status: found.status, headers: { "content-type": "application/json" } });
   }
-  const response = await execute();
+  const response = await execute(admission.auditId);
   const body = await response.text();
   service.store.db
     .query("UPDATE gateway_receipts SET status=?,body=? WHERE enrollment_id=? AND subject=? AND operation_id=?")

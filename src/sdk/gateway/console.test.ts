@@ -285,6 +285,56 @@ test("existing session controls use durable ownership, never local administrator
   expect(getSession(c.session_key)!.displayName).toBe("Reviewed label");
 });
 
+test("pre-dispatch audit failure rolls back admission and allows a safe retry", async () => {
+  const id = await create(),
+    c = store.conversation(id)!;
+  getOrCreateSession(c.session_key, "main", dir, { name: c.session_name });
+  const before = getSession(c.session_key)!.displayName;
+  store.db.exec(
+    "CREATE TRIGGER fail_audit_insert BEFORE INSERT ON audit BEGIN SELECT RAISE(ABORT, 'fixture failure'); END",
+  );
+  const body = input({ conversationId: id, nameOrKey: id, displayName: "Safe retry" });
+  const first = await call("sessions.set-display", body);
+  expect(first.status).toBe(403);
+  expect(await first.json()).toMatchObject({ effectState: "none" });
+  expect(getSession(c.session_key)!.displayName).toBe(before);
+  expect(store.db.query("SELECT count(*) n FROM gateway_receipts").get()).toEqual({ n: 0 });
+  store.db.exec("DROP TRIGGER fail_audit_insert");
+  expect((await call("sessions.set-display", body)).status).toBe(200);
+  expect(getSession(c.session_key)!.displayName).toBe("Safe retry");
+});
+
+test("ordinary runtime authority rejects Console-only routes before body parsing or dispatch", async () => {
+  const localGateway = createGatewayHandlerContext({
+    registry: buildRegistry([SessionConversationCommands]),
+    auth: {
+      resolveContext: () => ({
+        contextId: "ctx_local_admin",
+        contextKey: "rctx_local_admin",
+        kind: "turn-runtime",
+        agentId: "main",
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+        metadata: { authorityMode: "delegated" },
+        createdAt: Date.now(),
+      }),
+    },
+  });
+  for (const [path, command] of localGateway.table.byPath) {
+    expect(command.access?.consoleOnly).toBe(true);
+    const response = await handleGatewayRequest(
+      new Request(`http://ravi.internal${path}`, {
+        method: "POST",
+        headers: { authorization: "Bearer rctx_local_admin" },
+        body: "invalid json",
+      }),
+      localGateway,
+    );
+    expect(response!.status).toBe(403);
+    expect(await response!.json()).toMatchObject({ error: "ConsoleAuthorityRequired" });
+  }
+  expect(store.db.query("SELECT count(*) n FROM conversations").get()).toEqual({ n: 0 });
+});
+
 test("post-effect audit failure stays uncertain and retry cannot repeat the handler", async () => {
   const id = await create(),
     c = store.conversation(id)!;

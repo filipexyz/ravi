@@ -71,7 +71,13 @@
     "securitySchemes": {
       "bearerAuth": {
         "bearerFormat": "rctx",
-        "description": "Runtime context-key (`rctx_*`) issued by the Ravi gateway. Required for every non-`open` scope. Bootstrap the first key with `ravi daemon init-admin-key`; rotate, derive, and revoke via the `ravi context` family. Specs: `runtime/context-keys`, `sdk/auth`.",
+        "description": "Runtime context-key (`rctx_*`) issued by the Ravi gateway. Used by ordinary gateway operations; not accepted by Console-only operations. Bootstrap the first key with `ravi daemon init-admin-key`; rotate, derive, and revoke via the `ravi context` family. Specs: `runtime/context-keys`, `sdk/auth`.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "consoleDelegation": {
+        "bearerFormat": "JWT",
+        "description": "Signed Console delegation, valid for at most 30 seconds and bound to the exact HTTP request, resource scope and pinned connection. Accepted only on the dedicated Console listener over private SSH, never on the ordinary gateway. Spec: `sdk/console-authority`.",
         "scheme": "bearer",
         "type": "http"
       }
@@ -80,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "5b0def7d86b2d117"
+    "version": "a50ffa4241c9b456"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -114403,6 +114409,7 @@
     },
     "/api/v1/sessions/conversations/agents": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.agents",
         "requestBody": {
           "content": {
@@ -114479,7 +114486,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "agents.list in the authorized private session store",
@@ -114490,6 +114497,7 @@
     },
     "/api/v1/sessions/conversations/cancel": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.cancel",
         "requestBody": {
           "content": {
@@ -114597,7 +114605,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "turns.cancel in the authorized private session store",
@@ -114608,6 +114616,7 @@
     },
     "/api/v1/sessions/conversations/create": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.create",
         "requestBody": {
           "content": {
@@ -114717,7 +114726,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "conversations.create in the authorized private session store",
@@ -114728,6 +114737,7 @@
     },
     "/api/v1/sessions/conversations/decide": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.decide",
         "requestBody": {
           "content": {
@@ -114849,7 +114859,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "approvals.decide in the authorized private session store",
@@ -114860,6 +114870,7 @@
     },
     "/api/v1/sessions/conversations/events": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.events",
         "requestBody": {
           "content": {
@@ -115354,7 +115365,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "events.read in the authorized private session store",
@@ -115365,6 +115376,7 @@
     },
     "/api/v1/sessions/conversations/history": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.history",
         "requestBody": {
           "content": {
@@ -115493,7 +115505,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "messages.list in the authorized private session store",
@@ -115504,6 +115516,7 @@
     },
     "/api/v1/sessions/conversations/list": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.list",
         "requestBody": {
           "content": {
@@ -115608,7 +115621,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "conversations.list in the authorized private session store",
@@ -115619,6 +115632,7 @@
     },
     "/api/v1/sessions/conversations/open": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.open",
         "requestBody": {
           "content": {
@@ -115883,7 +115897,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "conversations.open in the authorized private session store",
@@ -115894,6 +115908,7 @@
     },
     "/api/v1/sessions/conversations/receipt": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.receipt",
         "requestBody": {
           "content": {
@@ -116113,7 +116128,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "requests.get in the authorized private session store",
@@ -116124,6 +116139,7 @@
     },
     "/api/v1/sessions/conversations/renew": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.renew",
         "requestBody": {
           "content": {
@@ -116205,7 +116221,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "lease.renew in the authorized private session store",
@@ -116216,6 +116232,7 @@
     },
     "/api/v1/sessions/conversations/send": {
       "post": {
+        "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "sessions.conversations.send",
         "requestBody": {
           "content": {
@@ -116326,7 +116343,7 @@
         },
         "security": [
           {
-            "bearerAuth": []
+            "consoleDelegation": []
           }
         ],
         "summary": "messages.send in the authorized private session store",
@@ -120173,6 +120190,7 @@
     },
     "/api/v1/sessions/set-display": {
       "post": {
+        "description": "Accepts a runtime context key on the ordinary gateway, or a signed Console delegation on the dedicated Console listener within the declared resource scope.",
         "operationId": "sessions.set-display",
         "requestBody": {
           "content": {
@@ -120219,7 +120237,14 @@
             "description": "Internal error."
           }
         },
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "consoleDelegation": []
+          }
+        ],
         "summary": "Set session display label",
         "tags": [
           "sessions"
@@ -120845,6 +120870,7 @@
     },
     "/api/v1/sessions/set-model": {
       "post": {
+        "description": "Accepts a runtime context key on the ordinary gateway, or a signed Console delegation on the dedicated Console listener within the declared resource scope.",
         "operationId": "sessions.set-model",
         "requestBody": {
           "content": {
@@ -121531,7 +121557,14 @@
             "description": "Internal error."
           }
         },
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "consoleDelegation": []
+          }
+        ],
         "summary": "Set session model override",
         "tags": [
           "sessions"
@@ -122234,6 +122267,7 @@
     },
     "/api/v1/sessions/set-thinking": {
       "post": {
+        "description": "Accepts a runtime context key on the ordinary gateway, or a signed Console delegation on the dedicated Console listener within the declared resource scope.",
         "operationId": "sessions.set-thinking",
         "requestBody": {
           "content": {
@@ -122280,7 +122314,14 @@
             "description": "Internal error."
           }
         },
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "consoleDelegation": []
+          }
+        ],
         "summary": "Set session thinking level",
         "tags": [
           "sessions"

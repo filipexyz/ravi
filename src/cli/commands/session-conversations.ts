@@ -63,6 +63,7 @@ export class SessionConversationCommands {
     risk: "low",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "project",
   })
   @Returns(z.array(z.object({ id: z.string(), name: z.string() })))
@@ -82,6 +83,7 @@ export class SessionConversationCommands {
     risk: "low",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "project",
   })
   @Returns(z.array(conversationSchema))
@@ -113,6 +115,7 @@ export class SessionConversationCommands {
     risk: "medium",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "project",
   })
   @Returns(createdSchema)
@@ -133,6 +136,7 @@ export class SessionConversationCommands {
     risk: "low",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "session",
     resourceId: "conversationId",
   })
@@ -154,6 +158,7 @@ export class SessionConversationCommands {
     risk: "low",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "session",
     resourceId: "conversationId",
   })
@@ -176,6 +181,7 @@ export class SessionConversationCommands {
     risk: "high",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "session",
     resourceId: "conversationId",
   })
@@ -199,6 +205,7 @@ export class SessionConversationCommands {
     risk: "low",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "session",
     resourceId: "conversationId",
   })
@@ -221,6 +228,7 @@ export class SessionConversationCommands {
     risk: "medium",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "session",
     resourceId: "conversationId",
   })
@@ -242,6 +250,7 @@ export class SessionConversationCommands {
     risk: "medium",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "session",
     resourceId: "conversationId",
   })
@@ -264,6 +273,7 @@ export class SessionConversationCommands {
     risk: "high",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "session",
     resourceId: "conversationId",
   })
@@ -298,6 +308,7 @@ export class SessionConversationCommands {
     risk: "low",
     redactions: ["text"],
     localOperator: false,
+    consoleOnly: true,
     consoleScope: "project",
   })
   @Returns(receiptSchema)

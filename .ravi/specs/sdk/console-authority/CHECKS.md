@@ -15,3 +15,9 @@
   the proposed commits. Historical bridge results are not validation of this code.
 - The paired Fleet test runs the real Ravi HTTP listener and SQLite journal through
   Node HTTP/SSE and restricted SSH. Its runtime is a fixture, not a model E2E proof.
+
+- Audit insertion failure rolls back generic receipt admission; retry executes
+  once. Audit update failure after effects remains unknown and never replays.
+- Every private conversation command rejects valid ordinary runtime authority
+  before body parsing. OpenAPI tests distinguish Console-only, shared and local
+  operations; generated artifacts must match the canonical access metadata.
