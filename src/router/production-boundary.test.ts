@@ -1,7 +1,16 @@
 import { afterEach, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { spawnSync } from "node:child_process";
-import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/production-boundary.js";
@@ -10,7 +19,11 @@ const dirs: string[] = [];
 function fixture() {
   const homeDir = mkdtempSync(join(tmpdir(), "ravi-production-boundary-"));
   dirs.push(homeDir);
-  return { homeDir, argv: ["bun", "index.js"], env: {} };
+  const release = join(homeDir, "release");
+  mkdirSync(join(release, "dist", "bundle"), { recursive: true });
+  writeFileSync(join(release, "package.json"), JSON.stringify({ name: "ravi.bot" }));
+  const modulePath = join(release, "dist", "bundle", "production-boundary.ts");
+  return { homeDir, modulePath, argv: ["bun", "index.js"], env: {} };
 }
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -63,6 +76,55 @@ it("requires exact production root confirmation and never accepts it in tests", 
   expect(() =>
     assertDatabaseTargetAllowed(path, { ...options, env: { RAVI_CONFIRM_PRODUCTION_STATE_DIR: options.homeDir } }),
   ).toThrow();
+});
+
+it("launches an installed daemon with confirmation, refuses without actionable rollout/rollback instructions, and never admits source/build/worktree code", () => {
+  const options = fixture();
+  const production = join(options.homeDir, "production");
+  mkdirSync(production);
+  copyFileSync(resolve(import.meta.dir, "../db/production-boundary.ts"), options.modulePath);
+  const entry = join(options.homeDir, "release", "dist", "bundle", "index.ts");
+  writeFileSync(
+    entry,
+    `import { openStateDatabase } from './production-boundary.ts';
+    const db = openStateDatabase(process.env.TARGET_DB!);
+    db.exec('CREATE TABLE IF NOT EXISTS launched (id TEXT)'); db.close();`,
+  );
+  const env = {
+    PATH: process.env.PATH,
+    NODE_ENV: "production",
+    RAVI_PRODUCTION_STATE_DIR: production,
+    TARGET_DB: join(production, "ravi.db"),
+  };
+  const launch = (path: string, extra: NodeJS.ProcessEnv = {}) =>
+    spawnSync(process.execPath, [path, "daemon", "run"], {
+      env: { ...env, ...extra },
+      encoding: "utf8",
+      timeout: 5000,
+    });
+  const refused = launch(entry);
+  expect(refused.status).not.toBe(0);
+  expect(refused.stderr).toContain("RAVI_CONFIRM_PRODUCTION_STATE_DIR");
+  expect(refused.stderr).toContain("PM2 ecosystem env of BOTH ravi and ravi-channels");
+  expect(refused.stderr).toContain("Before installing this release");
+  expect(refused.stderr).toContain("reinstall the previous release first");
+  expect(existsSync(env.TARGET_DB)).toBe(false);
+  const confirmed = { RAVI_CONFIRM_PRODUCTION_STATE_DIR: production };
+  expect(launch(entry, confirmed).status).toBe(0);
+  const check = new Database(env.TARGET_DB, { readonly: true });
+  expect(check.query("SELECT name FROM sqlite_master WHERE name='launched'").get()).toEqual({ name: "launched" });
+  check.close();
+
+  // An inherited production confirmation never authorizes a test process.
+  expect(launch(entry, { ...confirmed, NODE_ENV: "test" }).stderr).toContain("Tests cannot confirm");
+  // Both source builds and linked worktrees are refused by code location,
+  // even while argv claims to be a daemon and cwd is outside the checkout.
+  const release = join(options.homeDir, "release");
+  mkdirSync(join(release, "src"));
+  expect(launch(entry, confirmed).stderr).toContain("Source checkouts, builds and worktrees cannot confirm");
+  rmSync(join(release, "src"), { recursive: true });
+  writeFileSync(join(release, ".git"), "gitdir: /fixture/worktree");
+  expect(launch(entry, confirmed).stderr).toContain("Source checkouts, builds and worktrees cannot confirm");
 });
 
 it("protects an additional production root without unprotecting the default or legacy database", () => {

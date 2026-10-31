@@ -20,6 +20,7 @@ export interface PublishPlan {
   baseTree: string;
   message: string;
   changes: TreeChange[];
+  update: boolean;
 }
 
 function run(
@@ -38,7 +39,7 @@ function run(
   return result.stdout;
 }
 
-export function planPublication(branch: string, cwd = process.cwd()): PublishPlan {
+export function planPublication(branch: string, cwd = process.cwd(), update = false): PublishPlan {
   // This tool cannot publish release branches or tags, even with --execute.
   if (!/^(fix|feat|chore|docs|test|refactor|agent)\/[a-zA-Z0-9._/-]+$/.test(branch)) {
     throw new Error("Use a work branch under fix/, feat/, chore/, docs/, test/, refactor/ or agent/.");
@@ -49,7 +50,8 @@ export function planPublication(branch: string, cwd = process.cwd()): PublishPla
   const remote = git("remote", "get-url", "origin");
   const repository = remote.match(/^(?:https:\/\/github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?$/)?.[1];
   if (!repository) throw new Error("origin must be a github.com repository (without embedded credentials).");
-  const base = git("rev-parse", "origin/dev");
+  const baseRef = update ? `origin/${branch}` : "origin/dev";
+  const base = git("rev-parse", baseRef);
   const head = git("rev-parse", "HEAD");
   git("merge-base", "--is-ancestor", base, head);
   git("diff", "--check", base, head);
@@ -70,20 +72,27 @@ export function planPublication(branch: string, cwd = process.cwd()): PublishPla
     base,
     head,
     changes,
+    update,
     tree: git("rev-parse", "HEAD^{tree}"),
-    baseTree: git("rev-parse", "origin/dev^{tree}"),
+    baseTree: git("rev-parse", `${baseRef}^{tree}`),
     message: `${git("log", "-1", "--format=%B")}\n\nLocal-Commit: ${head}\nPublication: Git Data API; full validation required in PR CI.`,
   };
 }
 
-export type GitApi = (method: "GET" | "POST", endpoint: string, body?: unknown) => unknown;
+export type GitApi = (method: "GET" | "POST" | "PATCH", endpoint: string, body?: unknown) => unknown;
 
-/** Create-only: existing refs and races fail, never update/force-push history. */
+/** Explicit updates append to the fetched parent; races fail, never force history. */
 export function publishPlan(plan: PublishPlan, api: GitApi, readBlob: (sha: string) => Buffer): string {
   const root = `repos/${plan.repository}/git`;
-  const refs = api("GET", `${root}/matching-refs/heads/${plan.branch}`) as Array<{ ref: string }>;
-  if (refs.some((ref) => ref.ref === `refs/heads/${plan.branch}`))
-    throw new Error("Remote branch exists; choose a new work branch.");
+  const refs = api("GET", `${root}/matching-refs/heads/${plan.branch}`) as Array<{
+    ref: string;
+    object: { sha: string };
+  }>;
+  const existing = refs.find((ref) => ref.ref === `refs/heads/${plan.branch}`);
+  if (plan.update) {
+    if (existing?.object.sha !== plan.base)
+      throw new Error("Remote work branch moved or is missing; fetch and integrate before updating.");
+  } else if (existing) throw new Error("Remote branch exists; fetch, integrate and explicitly use --update.");
   const base = api("GET", `${root}/commits/${plan.base}`) as { tree: { sha: string } };
   if (base.tree.sha !== plan.baseTree) throw new Error("Remote base tree differs from local base.");
   for (const sha of new Set(plan.changes.flatMap((change) => (change.sha ? [change.sha] : [])))) {
@@ -97,7 +106,8 @@ export function publishPlan(plan: PublishPlan, api: GitApi, readBlob: (sha: stri
   const commit = api("POST", `${root}/commits`, { message: plan.message, tree: tree.sha, parents: [plan.base] }) as {
     sha: string;
   };
-  api("POST", `${root}/refs`, { ref: `refs/heads/${plan.branch}`, sha: commit.sha });
+  if (plan.update) api("PATCH", `${root}/refs/heads/${plan.branch}`, { sha: commit.sha, force: false });
+  else api("POST", `${root}/refs`, { ref: `refs/heads/${plan.branch}`, sha: commit.sha });
   return commit.sha;
 }
 
@@ -118,7 +128,7 @@ export function runFocusedChecks(plan: PublishPlan, tests: string[], cwd = proce
     console.log(run("bun", ["test", ...tests], { cwd, env }).toString());
     console.log(run("bun", ["src/ci/run-quality-gate.ts"], { cwd, env }).toString());
     // A check that edits tracked files invalidates the reviewed plan.
-    const after = planPublication(plan.branch, cwd);
+    const after = planPublication(plan.branch, cwd, plan.update);
     if (after.head !== plan.head || after.tree !== plan.tree || after.base !== plan.base)
       throw new Error("Checkout changed during checks.");
   } finally {
@@ -130,15 +140,19 @@ export function main(args = process.argv.slice(2)): void {
   try {
     let branch = "";
     let execute = false;
+    let update = false;
     const tests: string[] = [];
     for (let i = 0; i < args.length; i++) {
       if (args[i] === "--branch") branch = args[++i] ?? "";
       else if (args[i] === "--test") tests.push(args[++i] ?? "");
       else if (args[i] === "--execute") execute = true;
+      else if (args[i] === "--update") update = true;
       else
-        throw new Error("Usage: bun scripts/publish-branch.ts --branch fix/name --test src/path.test.ts [--execute]");
+        throw new Error(
+          "Usage: bun scripts/publish-branch.ts --branch fix/name --test src/path.test.ts [--update] [--execute]",
+        );
     }
-    const plan = planPublication(branch);
+    const plan = planPublication(branch, process.cwd(), update);
     console.log(
       JSON.stringify(
         {
@@ -149,6 +163,7 @@ export function main(args = process.argv.slice(2)): void {
           tree: plan.tree,
           files: plan.changes.map((c) => c.path),
           execute,
+          update,
         },
         null,
         2,
@@ -173,7 +188,7 @@ export function main(args = process.argv.slice(2)): void {
       );
     } else
       console.log(
-        "Preview passed. Re-run with --execute to create the remote work branch; no hook settings are changed.",
+        "Preview passed. Re-run with --execute to publish the remote work branch; no hook settings are changed.",
       );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

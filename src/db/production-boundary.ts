@@ -1,7 +1,8 @@
 import { Database, type DatabaseOptions } from "bun:sqlite";
-import { lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export class ProductionDatabaseError extends Error {
   readonly code = "PRODUCTION_DATABASE_REFUSED";
@@ -40,7 +41,27 @@ export interface DatabaseBoundaryOptions {
   env?: NodeJS.ProcessEnv;
   homeDir?: string;
   argv?: string[];
+  modulePath?: string;
 }
+
+/** Trust the code's location, never cwd or argv claiming to be a daemon. */
+function isDevelopmentCode(modulePath: string): boolean {
+  let dir = dirname(canonicalStatePath(modulePath));
+  while (true) {
+    const manifest = join(dir, "package.json");
+    if (existsSync(manifest)) {
+      const pkg = JSON.parse(readFileSync(manifest, "utf8")) as { name?: string };
+      if (pkg.name === "ravi.bot") {
+        return existsSync(join(dir, "src")) || existsSync(join(dir, ".git"));
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return true; // Unknown provenance is not a deployment.
+    dir = parent;
+  }
+}
+
+const developmentCode = isDevelopmentCode(fileURLToPath(import.meta.url));
 
 /** Must run before mkdir, legacy file moves, opening SQLite, or cached reuse. */
 export function assertDatabaseTargetAllowed(path: string, options: DatabaseBoundaryOptions = {}): void {
@@ -68,8 +89,16 @@ export function assertDatabaseTargetAllowed(path: string, options: DatabaseBound
 
   const argv = options.argv ?? process.argv;
   const testing = env.NODE_ENV === "test" || argv.some((arg) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(arg));
+  const development = options.modulePath ? isDevelopmentCode(options.modulePath) : developmentCode;
   const confirmed = env.RAVI_CONFIRM_PRODUCTION_STATE_DIR;
-  if (!testing && !legacy && confirmed && isAbsolute(confirmed) && canonicalStatePath(confirmed) === productionRoot) {
+  if (
+    !testing &&
+    !development &&
+    !legacy &&
+    confirmed &&
+    isAbsolute(confirmed) &&
+    canonicalStatePath(confirmed) === productionRoot
+  ) {
     return;
   }
   throw new ProductionDatabaseError(
@@ -77,7 +106,9 @@ export function assertDatabaseTargetAllowed(path: string, options: DatabaseBound
       "Set RAVI_STATE_DIR to an isolated directory for development/tests. " +
       (testing
         ? "Tests cannot confirm production access."
-        : "A reviewed deployment must explicitly set RAVI_CONFIRM_PRODUCTION_STATE_DIR to the absolute production state directory."),
+        : development
+          ? "Source checkouts, builds and worktrees cannot confirm production access, even with an inherited confirmation. Use an installed release for production."
+          : `Before installing this release, set RAVI_CONFIRM_PRODUCTION_STATE_DIR=${productionRoot} in the PM2 ecosystem env of BOTH ravi and ravi-channels; apply it to the existing launchers with --update-env and persist with pm2 save. If already installed in the wrong order, reinstall the previous release first, restore service, then configure both launchers before retrying.`),
   );
 }
 

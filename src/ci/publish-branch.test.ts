@@ -29,12 +29,17 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(cwd, { recursive: true, force: true }));
 
-function backend(plan: PublishPlan, options: { existing?: boolean; badBlob?: boolean; badTree?: boolean } = {}) {
+function backend(
+  plan: PublishPlan,
+  options: { existing?: boolean; badBlob?: boolean; badTree?: boolean; moved?: boolean } = {},
+) {
   const calls: Array<{ method: string; endpoint: string; body: unknown }> = [];
   const api: GitApi = (method, endpoint, body) => {
     calls.push({ method, endpoint, body });
     if (method === "GET" && endpoint.includes("matching-refs"))
-      return options.existing ? [{ ref: `refs/heads/${plan.branch}` }] : [];
+      return options.existing
+        ? [{ ref: `refs/heads/${plan.branch}`, object: { sha: options.moved ? "new-head" : plan.base } }]
+        : [];
     if (method === "GET") return { tree: { sha: plan.baseTree } };
     if (endpoint.endsWith("/blobs")) {
       const blob = body as { encoding: string; content: string };
@@ -93,4 +98,24 @@ it("does not mutate existing refs or publish a mismatching blob/tree", () => {
     expect(calls.some((c) => c.endpoint.endsWith("/refs"))).toBe(false);
     if (options.existing) expect(calls.some((c) => c.method === "POST")).toBe(false);
   }
+});
+
+it("only updates explicitly, from an integrated remote parent, with force false; refuses stale heads", () => {
+  git("update-ref", "refs/remotes/origin/fix/fixture", "origin/dev");
+  const plan = planPublication("fix/fixture", cwd, true);
+  const { api, calls } = backend(plan, { existing: true });
+  publishPlan(plan, api, (sha) => execFileSync("git", ["cat-file", "blob", sha], { cwd }));
+  expect(calls.at(-1)).toMatchObject({
+    method: "PATCH",
+    endpoint: "repos/example/fixture/git/refs/heads/fix/fixture",
+    body: { sha: "remote-commit", force: false },
+  });
+  for (const options of [{ existing: true, moved: true }, {}]) {
+    const stale = backend(plan, options);
+    expect(() => publishPlan(plan, stale.api, () => Buffer.from("unused"))).toThrow("fetch and integrate");
+    expect(stale.calls.every((call) => call.method === "GET")).toBe(true);
+  }
+  git("checkout", "--orphan", "unrelated-update");
+  git("commit", "-qm", "unrelated");
+  expect(() => planPublication("fix/fixture", cwd, true)).toThrow();
 });
