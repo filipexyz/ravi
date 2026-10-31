@@ -66,6 +66,7 @@ A trigger with a valid filter, or with no filter, MUST behave exactly as before.
 - A trigger with `agentId` set to an agent that does not exist MUST report `runtimeState: unbound_agent` and MUST NOT create a session cwd of `/tmp/ravi-<agentId>`.
 - `ghFollowFilter(repo, number)` MUST return a filter that passes `validateFilter` and matches only that repo and PR number, through both `payload.number` and `payload.pull_request.number`.
 - The `gh-follow` maintenance sweep MUST rewrite invalid filters on triggers for open PRs, MUST leave canonical filters untouched, and MUST delete triggers whose PR is no longer open instead of repairing them.
+- The same sweep MUST ensure a watch for every repo that still has a follow trigger or a pending follow, MUST NOT ensure a watch for a repo whose last trigger it just removed, and MUST keep the trigger when ensuring its watch fails.
 
 ## Task Automations
 
