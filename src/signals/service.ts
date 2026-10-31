@@ -108,7 +108,8 @@ function actorFor(caller: SignalCaller | undefined, by: string | undefined): { a
  */
 export function transitionSignal(
   id: string,
-  apply: (draft: SignalRecord) => "noop" | undefined,
+  // biome-ignore lint/suspicious/noConfusingVoidType: Mutators may omit a return; only the noop sentinel suppresses the write.
+  apply: (draft: SignalRecord) => "noop" | void,
   audit: SignalAudit | ((draft: SignalRecord) => SignalAudit),
   now = Date.now(),
 ): { signal: SignalRecord; changed: boolean } {
