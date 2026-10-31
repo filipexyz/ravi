@@ -36,8 +36,8 @@ export async function handleConsoleRequest(
       throw new BridgeError("NOT_FOUND_OR_DENIED");
     // Project membership is not authority for installation-wide commands. Private sessions
     // resolve their durable owner/project binding in the storage adapter, never by name.
+    if (cmd.access.consoleScope !== grant.scope.kind) throw new BridgeError("RESOURCE_SCOPE_REQUIRED");
     if (cmd.groupPath !== "sessions.conversations") {
-      if (cmd.access.consoleScope !== grant.scope.kind) throw new BridgeError("RESOURCE_SCOPE_REQUIRED");
       if (grant.scope.kind === "session") {
         const body = JSON.parse(raw);
         const ref = body[cmd.access.resourceId ?? ""];

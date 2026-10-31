@@ -183,6 +183,20 @@ test("private ownership, project, scope and execution authority stay isolated", 
       .status,
   ).not.toBe(200);
 });
+test("project conversation commands reject a session-scoped or installation-scoped delegation", async () => {
+  const id = await create();
+  for (const scope of [{ kind: "session", conversationId: id }, { kind: "installation" }]) {
+    for (const command of ["agents", "list", "create", "receipt"]) {
+      const fields =
+        command === "create" ? { agentId: "main" } : command === "receipt" ? { targetRequestId: randomUUID() } : {};
+      const response = await call(command, input(fields), { scope });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ error: { code: "RESOURCE_SCOPE_REQUIRED" } });
+    }
+  }
+  expect(store.db.query("SELECT count(*) n FROM conversations").get()).toEqual({ n: 1 });
+});
+
 test("browser-independent invocations preserve authority and durable delivery identity", async () => {
   for (const origin of [
     { kind: "channel", connectorId: "slack-installation", conversationId: "thread", deliveryId: "message-1" },

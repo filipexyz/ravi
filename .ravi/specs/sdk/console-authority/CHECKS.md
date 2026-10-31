@@ -1,5 +1,8 @@
 # Checks
 
+- `console.test.ts` rejects session/installation grants for every project-scoped
+  conversation command before dispatch and confirms that no conversation is created.
+
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/sdk/gateway/console.test.ts`
   verifies HTTP binding, JTI reuse, local-token rejection, private ownership,
   browser-independent origins, policy revocation, receipts, SSE and existing controls.

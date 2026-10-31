@@ -42,6 +42,9 @@ owners:
   Execution uses only current per-agent capabilities from the signed delegation;
   child attenuation, exact-action approval and lease revocation remain binding.
 - Private sessions resolve through the durable enrollment/owner/project binding.
+  Every command, including private conversation commands, MUST match the signed
+  scope kind to its declared `consoleScope` before dispatch. Session authority
+  MUST NOT admit project-wide listing, creation or receipt lookup.
   Names, aliases and local wildcard/admin grants confer no ownership. Ordinary
   session tools remain blind to private history. Reviewed existing configuration
   handlers resolve only the delegated session and cannot propagate to an agent
