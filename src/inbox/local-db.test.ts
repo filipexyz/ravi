@@ -3,6 +3,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { createMailAccount, createMailMailbox, importMailMessage } from "../mailbox/index.js";
 import { LOCAL_INBOX_MAIL_RECEIVED_SUBJECT, setLocalInboxEventPublisherForTests } from "./local-events.js";
 import {
+  findLocalInboxItemByDedupeKey,
   listLocalInboxEvents,
   listLocalInboxItems,
   markLocalInboxItem,
@@ -49,6 +50,24 @@ describe("local inbox db", () => {
     expect(second.created).toBe(false);
     expect(second.item.id).toBe(first.item.id);
     expect(listLocalInboxItems({ includeArchived: true })).toHaveLength(1);
+  });
+
+  it("looks up durable receipts without marking them seen or appending events", () => {
+    expect(findLocalInboxItemByDedupeKey("missing")).toBeNull();
+    const { item } = upsertLocalInboxItem({
+      sourceDomain: "system",
+      sourceType: "runtime_start_rejected",
+      sourceId: "start-1",
+      dedupeKey: "runtime-start:1",
+      metadata: { prompt: { prompt: "original" } },
+    });
+    const events = listLocalInboxEvents(item.id);
+    expect(findLocalInboxItemByDedupeKey(item.dedupeKey)).toMatchObject({
+      id: item.id,
+      status: "open",
+      metadata: { prompt: { prompt: "original" } },
+    });
+    expect(listLocalInboxEvents(item.id)).toEqual(events);
   });
 
   it("projects inbound mail into local inbox items", () => {

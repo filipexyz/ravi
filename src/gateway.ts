@@ -1070,6 +1070,7 @@ export class Gateway {
       // dropped); no further runtime event will arrive to end it.
       type === "dispatch.restart_suppressed" ||
       type === "dispatch.dropped" ||
+      type === "dispatch.start_rejected" ||
       (!type &&
         (nativeEvent === "turn.complete" ||
           nativeEvent === "turn.completed" ||
@@ -1087,7 +1088,13 @@ export class Gateway {
   }
 
   private isPresenceStartEvent(type: string | undefined, nativeEvent?: string): boolean {
-    if (type === "prompt.published" || type === "turn.started" || type === "thread.started") return true;
+    if (
+      type === "prompt.received" ||
+      type === "prompt.published" ||
+      type === "turn.started" ||
+      type === "thread.started"
+    )
+      return true;
     if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
     return false;
   }
