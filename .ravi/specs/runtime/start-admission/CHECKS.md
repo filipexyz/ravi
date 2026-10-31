@@ -10,3 +10,6 @@ Run focused tests with `RAVI_STATE_DIR` set to a disposable directory before Bun
 
 - `src/runtime/prompt-subscription.test.ts` MUST prove two pre-handoff capacity retries, success without inbox, exhaustion with durable receipt, duplicate receipt fencing, and no local retry of ambiguous provider failure.
 - `python3 -m unittest discover -s scripts/ops -p 'test_queue_recovery.py'` MUST detect an unstarted child even without recent timeout events, excluding any prior handoff and recent dispatch.
+- Dry-run stuck reports MUST NOT consume cooldown or write replay state.
+- `src/decisions/decisions.test.ts` MUST emulate transport deduplication: capacity refusal gets a new delivery, ambiguous publication reuses its ID, and admission remains exactly once.
+- Idle sessions MUST survive a refused lane when reclaiming every candidate cannot admit it, including outstanding start reservations.

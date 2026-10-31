@@ -26,16 +26,18 @@ export interface DecisionDelivery {
 }
 interface DeliveryRow extends DecisionDelivery {
   payload: string | null;
+  transportMessageId: string | null;
   claimId: string | null;
   claimUntil: number | null;
 }
 
 const SELECT = `SELECT id,decision_id AS decisionId,kind,revision,status,attempts,next_attempt_at AS nextAttemptAt,
-  last_error AS lastError,delivered_at AS deliveredAt,payload_json AS payload,claim_id AS claimId,claim_until AS claimUntil FROM decision_deliveries`;
+  last_error AS lastError,delivered_at AS deliveredAt,payload_json AS payload,transport_message_id AS transportMessageId,claim_id AS claimId,claim_until AS claimUntil FROM decision_deliveries`;
 
 export function decisionDeliveries(decisionId: string): DecisionDelivery[] {
   return (getDb().query(`${SELECT} WHERE decision_id=? ORDER BY created_at,id`).all(decisionId) as DeliveryRow[]).map(
-    ({ payload: _payload, claimId: _claim, claimUntil: _until, ...publicRow }) => publicRow,
+    ({ payload: _payload, transportMessageId: _transport, claimId: _claim, claimUntil: _until, ...publicRow }) =>
+      publicRow,
   );
 }
 
@@ -117,7 +119,7 @@ async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Prom
       if (!row.payload) throw new Error("ANSWER_PAYLOAD_MISSING");
       const payload = JSON.parse(row.payload) as RuntimeLaunchPrompt;
       await deps.publishPrompt(child.name ?? child.sessionKey, payload as unknown as Record<string, unknown>, {
-        messageId: row.id,
+        messageId: row.transportMessageId ?? row.id,
       });
       // Publication is not admission. The consumer owns 'delivered'.
       getDb()
@@ -203,11 +205,14 @@ export async function admitDecisionAnswer(
     if (error instanceof DecisionDispatchRejectedError || error instanceof RuntimeStartCapacityError) {
       getDb()
         .query(
-          "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error=? WHERE id=? AND claim_id=?",
+          "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error=?,transport_message_id=? WHERE id=? AND claim_id=?",
         )
         .run(
           Date.now() + 30_000,
           error instanceof RuntimeStartCapacityError ? error.code : error.reason,
+          // This delivery was definitively refused before handoff. A new
+          // transport ID avoids suppressing the retry after the original ACK.
+          randomUUID(),
           id,
           claimed.claim,
         );
@@ -269,8 +274,14 @@ export function resolveUncertainDecisionDelivery(decisionId: string, outcome: st
     validateDeliveryResolution(decisionId, outcome, evidence);
     const delivery = decisionDeliveries(decisionId).find((d) => d.kind === "answer" && d.status === "uncertain")!;
     db.query(
-      "UPDATE decision_deliveries SET status=?,claim_id=NULL,claim_until=NULL,next_attempt_at=0,delivered_at=?,last_error=NULL WHERE id=? AND status='uncertain'",
-    ).run(outcome === "received" ? "delivered" : "pending", outcome === "received" ? Date.now() : null, delivery.id);
+      "UPDATE decision_deliveries SET status=?,claim_id=NULL,claim_until=NULL,next_attempt_at=0,delivered_at=?,last_error=NULL,transport_message_id=CASE WHEN ?='not_received' THEN ? ELSE transport_message_id END WHERE id=? AND status='uncertain'",
+    ).run(
+      outcome === "received" ? "delivered" : "pending",
+      outcome === "received" ? Date.now() : null,
+      outcome,
+      randomUUID(),
+      delivery.id,
+    );
     db.query(
       "INSERT INTO decision_history(decision_id,type,actor,snapshot_json,created_at) VALUES (?,'delivery_resolved','operator',?,?)",
     ).run(decisionId, JSON.stringify({ deliveryId: delivery.id, outcome, evidence: evidence.trim() }), Date.now());

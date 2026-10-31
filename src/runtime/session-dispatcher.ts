@@ -1796,6 +1796,12 @@ export class RuntimeSessionDispatcher {
     const candidates = [...this.streamingSessions.entries()]
       .filter(([name, session]) => session.done || this.isReclaimableForStart(name, session))
       .sort(([, a], [, b]) => a.lastActivity - b.lastActivity);
+    const limit =
+      this.resolveStartLane(sessionName, prompt) === "background" && this.options.interactiveReservedSessions > 0
+        ? this.getBackgroundStartLimit()
+        : this.options.maxConcurrentSessions;
+    // Preserve idle state if even reclaiming every candidate cannot admit work.
+    if (this.getRuntimeSessionPoolUsedSlots() - candidates.length >= limit) return;
     for (const [name, session] of candidates) {
       if (this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) break;
       log.info("Reclaiming idle runtime session for admission", {

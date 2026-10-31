@@ -100,6 +100,20 @@ describe("immediate runtime admission", () => {
     expect(d.startReservations.size).toBe(2);
   });
 
+  it("preserves idle sessions when reclaiming every candidate cannot admit the background lane", async () => {
+    const d = dispatcher(3, 1);
+    d.streamingSessions.set("working", session({ turnActive: true }));
+    d.startReservations.add("starting");
+    const idle = session();
+    d.streamingSessions.set("idle", idle);
+    await expect(reserve(d, "background", { prompt: "tick", _cron: true })).rejects.toBeInstanceOf(
+      RuntimeStartCapacityError,
+    );
+    expect(idle.done).toBe(false);
+    expect(d.streamingSessions.has("idle")).toBe(true);
+    expect(d.startReservations.has("background")).toBe(false);
+  });
+
   it("starts B and C independently while A's cold start is blocked; reservations bound concurrency", async () => {
     const d = dispatcher(3);
     let release!: () => void;

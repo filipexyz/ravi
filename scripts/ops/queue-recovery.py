@@ -351,8 +351,9 @@ def main() -> int:
         last = entry.get("lastTryTs")
         if last and now - int(last) < 6 * 3600 * 1000:
             continue
-        state[key] = {"lastTryTs": now, "count": info["count"]}
-        save_state(state)
+        if args.apply:
+            state[key] = {"lastTryTs": now, "count": info["count"]}
+            save_state(state)
         stuck_reports.append(f"{session_name} ({info['count']}x)")
     if stuck_reports:
         log("stuck " + ", ".join(stuck_reports))

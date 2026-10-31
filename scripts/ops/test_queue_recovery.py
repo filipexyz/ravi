@@ -75,5 +75,23 @@ class NeverStartedTests(unittest.TestCase):
         replay.assert_not_called()
 
 
+    def test_dry_run_stuck_report_does_not_consume_cooldown(self):
+        event = {"session_name": "stuck", "source_channel": "slack", "source_account_id": "test",
+                 "source_chat_id": "C1", "timestamp": self.now - 3600_000}
+        with patch.object(recovery.time, "time", return_value=self.now / 1000), \
+             patch.object(recovery, "timeout_events", return_value=[event] * 3), \
+             patch.object(recovery, "never_started_threads", return_value=[]), \
+             patch.object(recovery, "slack_history", return_value=[]), \
+             patch.object(recovery, "answered_after", return_value=False), \
+             patch.object(recovery, "load_state", return_value={}), \
+             patch.object(recovery, "save_state") as save, \
+             patch.object(recovery, "replay") as replay, \
+             patch.object(recovery, "log"), \
+             patch("sys.argv", ["queue-recovery.py"]), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(recovery.main(), 0)
+        save.assert_not_called()
+        replay.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
