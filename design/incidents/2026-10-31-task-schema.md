@@ -127,6 +127,36 @@ an unchanged generic destination. After #765 landed on dev, the ongoing regressi
 uses the current `decisions` table. It verifies the same failure/recovery boundary
 and unchanged history/deliveries; it is not the DDL for repairing the old daemon.
 
+## Authorized recovery check, 15:11:34Z
+
+After recovery was authorized, the first read-only inspection already found
+`task_decisions` and its three indexes restored. Column, foreign-key, index and
+normalized SQL comparisons matched the exact block extracted from the installed
+3.261031.6 bundle. No recovery SQL was applied by this investigation.
+All four decision tables were empty at that observation.
+
+The initial schema-only record and extracted DDL are in
+`/tmp/ravi-task-restore-20261031T151134Z/sqlite-master-before.json` and
+`bundle-task-decisions.sql` in the same directory. This record captures the
+first read of the authorized check, not the earlier absent-table state.
+The entire database was not copied.
+
+Validation: `tasks show task-12178a2a --json` exited 0; dispatch with `--agent dev`
+and without `--execute` returned HTTP 409 / exit 3. Omitting the required agent
+returned HTTP 422, not 500. Two direct POSTs to `/api/v1/tasks/list` with the
+extension Origin returned HTTP 200 (limit 100, with/without dispatched filter).
+They used this investigation's runtime context, not the browser's identity.
+The last observed real-extension 500 was at 11:50:55 local.
+
+The follow-up regression ships the temporary guard as a dedicated **test-only**
+preload in `src/test/isolated-runtime-preload.ts`. It creates the outer sandbox
+before Ravi imports and rejects SQLite opens under the operator state before
+connection. An after-suite assertion fails even if a test caught the rejection.
+With the old cleanup, the actual session-dispatcher suite fails at the original
+recovery path; with the fixed helper, all 107 tests pass. The production guard
+and official lightweight publication flow remain owned by the separate
+development/production boundary workstream.
+
 ## Systemic guard proposal
 
 Restoring the launcher's state directory fixes this incident's escape, but is
