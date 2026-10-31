@@ -3,7 +3,8 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { dbSetSetting, getDb } from "../router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
 import { deliverSignalOutboxRow, reserveSignalOob } from "./oob.js";
-import { raiseSignal, muteSignal, updateSignal } from "./service.js";
+import { raiseSignal, muteSignal, updateSignal, signalVisibleTo } from "./service.js";
+import { renderSignalsForTurn } from "./render.js";
 import {
   dbGetSignalById,
   dbGetOutboxRow,
@@ -264,6 +265,63 @@ describe("signals review regressions", () => {
     expect(resolveSignalTargetSessions(signal)).toEqual(["operator-home"]);
     dbSetSetting("signals.install_session", "missing");
     expect(resolveSignalTargetSessions(signal)).toEqual([]);
+  });
+
+  it("revokes project visibility and pending delivery when a goal is no longer active", async () => {
+    const session = getOrCreateSession("agent:main:work", "main", "/tmp", { name: "work" });
+    getDb()
+      .prepare(
+        `INSERT INTO session_goals (session_key, goal_id, objective, status, project_id, created_at, updated_at)
+         VALUES (?, 'review-goal', 'Project work', 'active', 'review-project', ?, ?)`,
+      )
+      .run(session.sessionKey, now, now);
+    const signal = raiseSignal({
+      key: "review.project",
+      kind: "fact",
+      producerId: "review",
+      scopeType: "project",
+      scopeId: "review-project",
+      severity: "page",
+      title: "Project needs attention",
+      clearWhen: { type: "producer_resolve", ttl_ms: 86_400_000 },
+      now,
+    }).signal;
+    const caller = { isAgent: true, agentId: "main", sessionName: "work" };
+    expect(resolveSignalTargetSessions(signal)).toEqual(["work"]);
+    expect(signalVisibleTo(signal, caller)).toBe(true);
+    dbRecordTickRun({ now, tickIntervalMs: 300_000 });
+    dbWriteSignalObservation({ signalId: signal.id, observedAt: now });
+    const reservation = reserveSignalOob({
+      signal,
+      sessionName: "work",
+      routeSeverity: "page",
+      freshEvaluation: true,
+      now,
+    });
+    if (!reservation.reserved) throw new Error("reservation failed");
+
+    for (const status of ["paused", "budget_limited", "usage_limited", "blocked", "complete"]) {
+      getDb().prepare("UPDATE session_goals SET status = ? WHERE session_key = ?").run(status, session.sessionKey);
+      expect(resolveSignalTargetSessions(signal)).toEqual([]);
+      expect(signalVisibleTo(signal, caller)).toBe(false);
+      expect(renderSignalsForTurn({ sessionName: "work", now: now + 1 }).suffix).toBe("");
+    }
+    let sends = 0;
+    const result = await deliverSignalOutboxRow({
+      outboxId: reservation.outboxId,
+      tickState: dbGetTickState(),
+      now: now + 1,
+      publishPrompt: async () => {
+        sends++;
+      },
+      sendPage: async () => {
+        sends++;
+        return "sent";
+      },
+    });
+    expect(result.outcome).toBe("failed");
+    expect(sends).toBe(0);
+    expect(dbListSignalSurfaces(signal.id)[0]?.status).toBe("failed");
   });
 
   it("migrates cached observations from an existing signal store", () => {

@@ -259,7 +259,7 @@ Exactly one scope per signal:
 | `agent` | agent id | That agent's main session |
 | `chat` | canonical chat id | The session currently attached to that chat |
 | `person` | contact id | The session bound to that person's direct chat |
-| `project` | project id | Sessions currently working in that project |
+| `project` | project id | Sessions whose current goal is active in that project |
 
 `install` means this installation of Ravi: one daemon and its state DB. It is not a
 fleet of installations. Rows stored with the legacy scope `fleet` are converted to

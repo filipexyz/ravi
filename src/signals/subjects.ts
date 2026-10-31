@@ -141,7 +141,7 @@ export function resolveScopeSessionNames(scopeType: SignalScopeType, scopeId: st
           `SELECT DISTINCT s.name AS name
            FROM session_goals g
            JOIN sessions s ON s.session_key = g.session_key
-           WHERE g.project_id = ? AND s.name IS NOT NULL`,
+           WHERE g.project_id = ? AND g.status = 'active' AND s.name IS NOT NULL`,
         )
         .all(scopeId) as Array<{ name: string }>;
       return rows.map((row) => row.name);

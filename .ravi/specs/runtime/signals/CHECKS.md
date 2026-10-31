@@ -64,6 +64,7 @@ The first and third queries MUST return 0 rows. The second MUST show no `judgmen
 
 - `install` resolves to one existing canonical session, or no target when unbound; never a bare agent id.
 - A `person` signal with no bound session stays list-only.
+- A project goal that is no longer active stops granting scope visibility, prompt rendering and pending OOB delivery to its session.
 - A signal is never rendered into a session outside its scope.
 - `--all` requires operator capability.
 
