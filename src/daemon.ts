@@ -205,6 +205,7 @@ process.on("unhandledRejection", (reason, promise) => {
   log.error("Unhandled rejection", { reason, stack, promise });
 });
 
+let humanBridge: { stop(): Promise<void> } | null = null;
 let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
 let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
@@ -257,6 +258,7 @@ async function shutdown(signal: string, exitCode = 0) {
       updatedAt: Date.now(),
     });
 
+    await humanBridge?.stop();
     // Stop bot FIRST to abort SDK subprocesses
     if (bot) {
       log.info("Stopping bot (aborting SDK subprocesses)...");
@@ -398,6 +400,12 @@ export async function startDaemon() {
   bot = new RaviBot({ config, onFatalRuntimeError: restartAfterFatalRuntimeError });
   await bot.start();
   log.info("Bot started");
+  if (process.env.RAVI_HUMAN_BRIDGE === "1") {
+    const { startHumanBridge } = await import("./bridge/socket.js");
+    const { nativeBridgeRuntime } = await import("./bridge/native.js");
+    humanBridge = await startHumanBridge(nativeBridgeRuntime(bot));
+    log.info("Human bridge listening on its local socket");
+  }
 
   // Step 6: Set up omni sender + consumer + gateway
   if (omniApiUrl && omniApiKey) {

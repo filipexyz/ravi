@@ -10221,6 +10221,36 @@ class ContextAuthorizeReturn {
 
 ContextAuthorizeReturn contextAuthorizeReturnFromJson(Object? json) => ContextAuthorizeReturn.fromJsonValue(json);
 
+class ContextBridgeToolHookOptions {
+  const ContextBridgeToolHookOptions({this.payload});
+
+  final String? payload;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (payload != null) {
+      into["payload"] = RaviJson.from(payload);
+    }
+  }
+}
+
+class ContextBridgeToolHookReturn {
+  const ContextBridgeToolHookReturn({this.hookSpecificOutput});
+
+  final RaviJson? hookSpecificOutput;
+
+  factory ContextBridgeToolHookReturn.fromJson(Map<String, Object?> json) {
+    return ContextBridgeToolHookReturn(
+      hookSpecificOutput: json["hookSpecificOutput"] == null ? null : RaviJson.from(json["hookSpecificOutput"]),
+    );
+  }
+
+  static ContextBridgeToolHookReturn fromJsonValue(Object? json) {
+    return ContextBridgeToolHookReturn.fromJson(raviJsonObject(json, "ContextBridgeToolHookReturn"));
+  }
+}
+
+ContextBridgeToolHookReturn contextBridgeToolHookReturnFromJson(Object? json) => ContextBridgeToolHookReturn.fromJsonValue(json);
+
 class ContextCapabilitiesReturn {
   const ContextCapabilitiesReturn({required this.agentId, required this.capabilities, required this.contextId, required this.kind, required this.sessionKey, required this.sessionName});
 
@@ -23646,6 +23676,216 @@ class SessionsCloseThreadReturn {
 }
 
 SessionsCloseThreadReturn sessionsCloseThreadReturnFromJson(Object? json) => SessionsCloseThreadReturn.fromJsonValue(json);
+
+typedef SessionsConversationsAgentsReturn = List<RaviJson>;
+
+SessionsConversationsAgentsReturn sessionsConversationsAgentsReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
+class SessionsConversationsCancelReturn {
+  const SessionsConversationsCancelReturn({required this.cancelRequested, required this.conversationId, required this.status, required this.turnId});
+
+  final bool cancelRequested;
+  final String conversationId;
+  final String status;
+  final String turnId;
+
+  factory SessionsConversationsCancelReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsCancelReturn(
+      cancelRequested: raviJsonAsBool(json["cancelRequested"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+      status: raviJsonAsString(json["status"]),
+      turnId: raviJsonAsString(json["turnId"]),
+    );
+  }
+
+  static SessionsConversationsCancelReturn fromJsonValue(Object? json) {
+    return SessionsConversationsCancelReturn.fromJson(raviJsonObject(json, "SessionsConversationsCancelReturn"));
+  }
+}
+
+SessionsConversationsCancelReturn sessionsConversationsCancelReturnFromJson(Object? json) => SessionsConversationsCancelReturn.fromJsonValue(json);
+
+class SessionsConversationsCreateReturn {
+  const SessionsConversationsCreateReturn({required this.conversation, required this.conversationId});
+
+  final RaviJson conversation;
+  final String conversationId;
+
+  factory SessionsConversationsCreateReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsCreateReturn(
+      conversation: RaviJson.from(json["conversation"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+    );
+  }
+
+  static SessionsConversationsCreateReturn fromJsonValue(Object? json) {
+    return SessionsConversationsCreateReturn.fromJson(raviJsonObject(json, "SessionsConversationsCreateReturn"));
+  }
+}
+
+SessionsConversationsCreateReturn sessionsConversationsCreateReturnFromJson(Object? json) => SessionsConversationsCreateReturn.fromJsonValue(json);
+
+class SessionsConversationsDecideReturn {
+  const SessionsConversationsDecideReturn({required this.approvalId, required this.conversationId, required this.state, required this.version});
+
+  final String approvalId;
+  final String conversationId;
+  final String state;
+  final double version;
+
+  factory SessionsConversationsDecideReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsDecideReturn(
+      approvalId: raviJsonAsString(json["approvalId"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+      state: raviJsonAsString(json["state"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static SessionsConversationsDecideReturn fromJsonValue(Object? json) {
+    return SessionsConversationsDecideReturn.fromJson(raviJsonObject(json, "SessionsConversationsDecideReturn"));
+  }
+}
+
+SessionsConversationsDecideReturn sessionsConversationsDecideReturnFromJson(Object? json) => SessionsConversationsDecideReturn.fromJsonValue(json);
+
+class SessionsConversationsEventsReturn {
+  const SessionsConversationsEventsReturn({required this.cursor, required this.events});
+
+  final String cursor;
+  final List<RaviJson> events;
+
+  factory SessionsConversationsEventsReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsEventsReturn(
+      cursor: raviJsonAsString(json["cursor"]),
+      events: raviJsonAsList(json["events"], RaviJson.from),
+    );
+  }
+
+  static SessionsConversationsEventsReturn fromJsonValue(Object? json) {
+    return SessionsConversationsEventsReturn.fromJson(raviJsonObject(json, "SessionsConversationsEventsReturn"));
+  }
+}
+
+SessionsConversationsEventsReturn sessionsConversationsEventsReturnFromJson(Object? json) => SessionsConversationsEventsReturn.fromJsonValue(json);
+
+class SessionsConversationsHistoryReturn {
+  const SessionsConversationsHistoryReturn({required this.hasOlder, required this.messages});
+
+  final bool hasOlder;
+  final List<RaviJson> messages;
+
+  factory SessionsConversationsHistoryReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsHistoryReturn(
+      hasOlder: raviJsonAsBool(json["hasOlder"]),
+      messages: raviJsonAsList(json["messages"], RaviJson.from),
+    );
+  }
+
+  static SessionsConversationsHistoryReturn fromJsonValue(Object? json) {
+    return SessionsConversationsHistoryReturn.fromJson(raviJsonObject(json, "SessionsConversationsHistoryReturn"));
+  }
+}
+
+SessionsConversationsHistoryReturn sessionsConversationsHistoryReturnFromJson(Object? json) => SessionsConversationsHistoryReturn.fromJsonValue(json);
+
+class SessionsConversationsListOptions {
+  const SessionsConversationsListOptions({this.limit, this.offset});
+
+  final int? limit;
+  final int? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+typedef SessionsConversationsListReturn = List<RaviJson>;
+
+SessionsConversationsListReturn sessionsConversationsListReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
+class SessionsConversationsOpenReturn {
+  const SessionsConversationsOpenReturn({required this.approvals, required this.conversation, required this.cursor, required this.hasOlder, required this.messages, required this.turn});
+
+  final List<RaviJson> approvals;
+  final RaviJson conversation;
+  final String cursor;
+  final bool hasOlder;
+  final List<RaviJson> messages;
+  final RaviJson turn;
+
+  factory SessionsConversationsOpenReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsOpenReturn(
+      approvals: raviJsonAsList(json["approvals"], RaviJson.from),
+      conversation: RaviJson.from(json["conversation"]),
+      cursor: raviJsonAsString(json["cursor"]),
+      hasOlder: raviJsonAsBool(json["hasOlder"]),
+      messages: raviJsonAsList(json["messages"], RaviJson.from),
+      turn: RaviJson.from(json["turn"]),
+    );
+  }
+
+  static SessionsConversationsOpenReturn fromJsonValue(Object? json) {
+    return SessionsConversationsOpenReturn.fromJson(raviJsonObject(json, "SessionsConversationsOpenReturn"));
+  }
+}
+
+SessionsConversationsOpenReturn sessionsConversationsOpenReturnFromJson(Object? json) => SessionsConversationsOpenReturn.fromJsonValue(json);
+
+typedef SessionsConversationsReceiptReturn = RaviJson;
+
+SessionsConversationsReceiptReturn sessionsConversationsReceiptReturnFromJson(Object? json) => RaviJson.from(json);
+
+class SessionsConversationsRenewReturn {
+  const SessionsConversationsRenewReturn({required this.conversationId, required this.renewed});
+
+  final String conversationId;
+  final bool renewed;
+
+  factory SessionsConversationsRenewReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsRenewReturn(
+      conversationId: raviJsonAsString(json["conversationId"]),
+      renewed: raviJsonAsBool(json["renewed"]),
+    );
+  }
+
+  static SessionsConversationsRenewReturn fromJsonValue(Object? json) {
+    return SessionsConversationsRenewReturn.fromJson(raviJsonObject(json, "SessionsConversationsRenewReturn"));
+  }
+}
+
+SessionsConversationsRenewReturn sessionsConversationsRenewReturnFromJson(Object? json) => SessionsConversationsRenewReturn.fromJsonValue(json);
+
+class SessionsConversationsSendReturn {
+  const SessionsConversationsSendReturn({required this.accepted, required this.conversationId, required this.messageId, required this.turnId, required this.version});
+
+  final bool accepted;
+  final String conversationId;
+  final String messageId;
+  final String turnId;
+  final double version;
+
+  factory SessionsConversationsSendReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsSendReturn(
+      accepted: raviJsonAsBool(json["accepted"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+      messageId: raviJsonAsString(json["messageId"]),
+      turnId: raviJsonAsString(json["turnId"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static SessionsConversationsSendReturn fromJsonValue(Object? json) {
+    return SessionsConversationsSendReturn.fromJson(raviJsonObject(json, "SessionsConversationsSendReturn"));
+  }
+}
+
+SessionsConversationsSendReturn sessionsConversationsSendReturnFromJson(Object? json) => SessionsConversationsSendReturn.fromJsonValue(json);
 
 class SessionsCreateThreadOptions {
   const SessionsCreateThreadOptions({this.effort, this.model, this.provider, this.session, this.thinking});

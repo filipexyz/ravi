@@ -1,7 +1,13 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { authorizeContextCapabilities } from "../permissions/context-capabilities-provider.js";
+import { canWithCapabilityContext } from "../permissions/capability-context.js";
+import { recordBridgeRuntimeEvent } from "../bridge/native.js";
+import { bridgeContextCapabilities, bridgeContextLive } from "../bridge/authority.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
 import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
-import { dbCreateCronJob } from "../cron/cron-db.js";
+import { dbCreateCronJob, dbUpdateCronJob } from "../cron/cron-db.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -54,6 +60,93 @@ describe("runtime request context authority", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("refuses alternate providers before resolving a bridge turn or touching provider credentials", () => {
+    for (const provider of ["pi", "claude", "grok"] as const) {
+      expect(() =>
+        buildRuntimeRequestContext({
+          dbSessionKey: "agent:provider-agent:console:00000000-0000-4000-8000-000000000001",
+          sessionName: "console-00000000-0000-4000-8000-000000000001",
+          sessionCwd: agent.cwd,
+          agent,
+          prompt: { prompt: "private", _bridgeTurnId: "turn-test" },
+          runtimeProviderId: provider,
+          model: "test-model",
+          runtimeResolution,
+        }),
+      ).toThrow("isolated Codex provider");
+    }
+    expect(() =>
+      refreshRuntimeRequestContextForTurn({
+        runtimeContext: {} as any,
+        toolContext: {},
+        dbSessionKey: "agent:provider-agent:console:00000000-0000-4000-8000-000000000001",
+        sessionName: "private",
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: { prompt: "next", _bridgeTurnId: "next-turn" },
+        runtimeProviderId: "pi",
+        model: "test",
+        runtimeResolution,
+      }),
+    ).toThrow("isolated Codex provider");
+    expect(existsSync(join(stateDir!, "human-bridge"))).toBe(false);
+  });
+
+  it("ordinary authorization and runtime events never open bridge state", () => {
+    const context = {
+      kind: "turn-runtime",
+      capabilities: [{ permission: "read", objectType: "test", objectId: "own" }],
+    };
+    expect(bridgeContextCapabilities(context)).toEqual(context.capabilities);
+    expect(bridgeContextLive(undefined)).toBe(true);
+    expect(canWithCapabilityContext(context, "read", "test", "own")).toBe(true);
+    expect(canWithCapabilityContext(context, "read", "test", "foreign")).toBe(false);
+    expect(
+      authorizeContextCapabilities({
+        permission: "read",
+        objectType: "test",
+        objectId: "own",
+        capabilities: context.capabilities,
+      }).decision,
+    ).toBe("allow");
+    recordBridgeRuntimeEvent("ravi.session.console-main.runtime", { type: "turn.complete" });
+    recordBridgeRuntimeEvent("ravi.session.console-00000000-0000-4000-8000-000000000001.runtime", {
+      type: "turn.complete",
+    });
+    expect(existsSync(join(stateDir!, "human-bridge"))).toBe(false);
+  });
+
+  it("keeps ordinary sessions whose agent is named console on their existing authority path", () => {
+    const consoleAgent = { id: "console", cwd: "/tmp/console-agent" };
+    dbCreateAgent(consoleAgent);
+    const key = "agent:console:main";
+    getOrCreateSession(key, consoleAgent.id, consoleAgent.cwd, { name: "console-main" });
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: key,
+      sessionName: "console-main",
+      sessionCwd: consoleAgent.cwd,
+      agent: consoleAgent,
+      prompt: { prompt: "ordinary Console integration" },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+    expect(runtimeContext.metadata?.authorityMode).toBe("agent-identity");
+    expect(runtimeContext.metadata?.bridgeTurnId).toBeUndefined();
+    expect(() =>
+      buildRuntimeRequestContext({
+        dbSessionKey: "agent:console:console:00000000-0000-4000-8000-000000000001",
+        sessionName: "private-bridge",
+        sessionCwd: consoleAgent.cwd,
+        agent: consoleAgent,
+        prompt: { prompt: "missing delegation" },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+      }),
+    ).toThrow("fresh human delegation");
   });
 
   it("uses agent identity authority by default when the env var is unset", () => {
@@ -2003,7 +2096,17 @@ describe("runtime request context chat-scoped user overlay", () => {
       creatorChat: chat.id,
     });
     const cronContext = () => {
-      const prompt: RuntimeLaunchPrompt = { ...promptInChat(ana.id, chat), _cron: true, _jobId: job.id };
+      const prompt: RuntimeLaunchPrompt = {
+        ...promptInChat(ana.id, chat),
+        _cron: true,
+        _jobId: job.id,
+        _cronAuthority: {
+          jobId: job.id,
+          ownerPrincipal: `contact:${ana.id}`,
+          ownerIsOperator: false,
+          creatorChat: chat.id,
+        },
+      };
       const overlaySessionKey = `agent:provider-agent:cron:${job.id}`;
       getOrCreateSession(overlaySessionKey, agent.id, agent.cwd, { name: `cron-${job.id}` });
       return buildRuntimeRequestContext({
@@ -2019,6 +2122,8 @@ describe("runtime request context chat-scoped user overlay", () => {
       }).runtimeContext;
     };
 
+    // The queued prompt retains the contact overlay after the live row changes.
+    dbUpdateCronJob(job.id, { ownerPrincipal: "operator", creatorChat: undefined });
     const granted = cronContext();
     expect(granted.metadata?.actorPrincipal).toBe(`automation:cron:${job.id}`);
     expect(canWithCapabilities(granted.capabilities, "mutate", "image", "generate")).toBe(true);

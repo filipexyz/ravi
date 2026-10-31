@@ -1,4 +1,6 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
+import { resolveBridgeInvocation } from "../bridge/authority.js";
+import { assertBridgeProvider, isBridgeSessionRef } from "../bridge/isolation.js";
 import {
   dbGetContext,
   dbUpdateContextCapabilities,
@@ -43,7 +45,7 @@ import {
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
-import { dbGetCronJob } from "../cron/cron-db.js";
+import { readCronRunAuthority } from "../cron/authority.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 
 export interface RuntimeRequestContextOptions {
@@ -73,6 +75,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
+  if (prompt._bridgeTurnId || isBridgeSessionRef(dbSessionKey)) assertBridgeProvider(runtimeProviderId);
   const capabilities = buildRuntimeContextCapabilities(agent.id, sessionName, prompt);
   // A fresh runtime launch owns the session's authority slot. Any turn-scoped
   // context still live here belongs to a runtime that is already gone: idle
@@ -150,6 +153,8 @@ export function refreshRuntimeRequestContextForTurn(options: {
   /** Where this turn's answer goes, as the runtime bound it for the turn. */
   replyTarget?: TurnReplyTarget;
 }): ContextRecord {
+  if (options.prompt._bridgeTurnId || isBridgeSessionRef(options.dbSessionKey))
+    assertBridgeProvider(options.runtimeProviderId);
   const derived = deriveRuntimeContextForPrompt({
     agentId: options.agent.id,
     sessionKey: options.dbSessionKey,
@@ -287,6 +292,11 @@ function deriveRuntimeContextForPrompt(options: {
   metadata: Record<string, unknown>;
   source: ContextSource | undefined;
 } {
+  if (options.prompt._bridgeTurnId || /^agent:[^:]+:console:[0-9a-f-]{36}$/.test(options.sessionKey)) {
+    if (!options.prompt._bridgeTurnId) throw new Error("Console turns require a fresh human delegation");
+    const bridge = resolveBridgeInvocation(options.prompt._bridgeTurnId, options.sessionKey, options.agentId);
+    return { ...bridge, metadata: { ...options.metadata, ...bridge.metadata } };
+  }
   const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
   return {
     capabilities: identity.capabilities,
@@ -365,11 +375,12 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
 /**
  * A job a contact wrote from a turn narrowed to their chat grants runs every
  * turn under those grants as they are now: none left means no capabilities.
- * The binding is read from the stored job, never from the published prompt.
+ * The runner captured owner/chat with the prompt; queued work must not adopt
+ * a new owner or lose its overlay after an edit or one-shot deletion.
  */
 function resolveStoredAutomationCreatorOverlay(prompt: RuntimeLaunchPrompt): ContactChatOverlay | null {
   if (!prompt._cron || !prompt._jobId) return null;
-  const job = dbGetCronJob(prompt._jobId);
+  const job = readCronRunAuthority(prompt._cronAuthority, prompt._jobId);
   const owner = job?.ownerPrincipal ?? "";
   if (!job?.creatorChat || !owner.startsWith("contact:")) return null;
   const overlay = resolveContactChatOverlay({ contactId: owner.slice("contact:".length), chatId: job.creatorChat });
@@ -731,6 +742,9 @@ function buildRuntimeContextMetadata(options: {
     ...(options.replyTarget ? { [TURN_REPLY_TARGET_METADATA_KEY]: options.replyTarget } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
     ...(turnOrigin ? { turnOrigin } : {}),
+    ...(options.prompt._cron && options.prompt._jobId
+      ? { cronRunAuthority: readCronRunAuthority(options.prompt._cronAuthority, options.prompt._jobId) }
+      : {}),
     ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),
   };

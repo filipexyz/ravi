@@ -1380,6 +1380,18 @@ describe("SessionCommands list --json", () => {
     ];
   });
 
+  it("omits private bridge sessions even when ordinary scope enforcement is bypassed", () => {
+    listedSessions.push({
+      ...listedSessions[0]!,
+      sessionKey: "agent:main:console:00000000-0000-4000-8000-000000000001",
+      name: "legacy-alias",
+    });
+    scopeEnforced = false;
+    const payload = JSON.parse(captureLogs(() => new SessionCommands().list(undefined, false, true)));
+    expect(payload.total).toBe(1);
+    expect(payload.sessions[0].sessionKey).toBe("agent:main:main");
+  });
+
   it("prints structured session entities", () => {
     const payload = JSON.parse(
       captureLogs(() => {
@@ -3480,6 +3492,22 @@ describe("SessionCommands read", () => {
       updatedAt: 2000,
     };
     sessionDerivedSource = undefined;
+  });
+
+  it("denies private bridge read, recap and trace despite ordinary access or admin bypass", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    resolvedSession = { ...resolvedSession!, sessionKey: `agent:main:console:${id}`, name: `console-${id}` };
+    for (const enforced of [false, true]) {
+      scopeEnforced = enforced;
+      canAccess = true;
+      const commands = new SessionCommands();
+      for (const ref of [`console-${id}`, `agent:main:console:${id}`, "legacy-alias"]) {
+        expect(() => commands.read(ref, "10", true)).toThrow("Session not found");
+        expect(() => commands.recap(ref)).toThrow("Session not found");
+        expect(() => commands.trace(ref)).toThrow("Session not found");
+      }
+    }
+    expect(chatHistoryReads).toBe(0);
   });
 
   it("reads durable session history across provider session changes before provider transcript", () => {

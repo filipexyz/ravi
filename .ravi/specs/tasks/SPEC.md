@@ -93,6 +93,14 @@ Tasks do not own:
 - Prompts the task runtime sends to the assignee (dispatch, resume, comment steer, observer nudge, checkpoint reminder) MUST name the assigned agent, so a missing work session is never cold-started on the default agent. Dispatch, restart recovery and a recreated session's brief also carry the task id as their task binding.
 - A comment that steers a dispatched, in-progress or blocked task MUST check or recreate the assignee's session under the assigned agent before it resumes the task. When that session cannot be resolved for the assignee (it belongs to another agent, or the agent is gone), the comment MUST be kept, the task MUST stay as it was, and the result MUST carry the reason it was not steered.
 - Dispatch MUST refuse a session owned by another agent with a typed `TASK_SESSION_OWNERSHIP_CONFLICT` error before it auto-resumes a blocked task.
+- A scoped caller reusing an existing worker session MUST hold current-session
+  authority or `modify session:<name-or-key>`, even if both sessions belong to
+  the same agent. Read access alone MUST NOT permit publishing task instructions.
+  Unauthorized workers MUST appear missing. New worker sessions remain subject
+  to the agent-target boundary. CLI/stream create MUST preflight explicit worker
+  targets before task insertion; dispatch MUST check the resolved target before
+  its preview, and service dispatch/launch-plan preparation MUST check it before
+  session/profile writes, assignment, auto-resume or prompt publication.
 - Dispatch, assignee session resolution and restart recovery MUST refuse, with a typed `TASK_SESSION_THREAD_IDENTITY_CONFLICT` error and before they write a session, a session name that belongs to an open channel thread whose session is gone or now resolves under another key than the thread's (`<parent>:thread:<ts>`). They MUST NOT recreate such a session under the bare name. `src/tasks` reads thread identity through the router (`src/router/thread-identity.ts`), not through channel code.
 - Task-level and dispatch-level runtime overrides MUST NOT be implemented by mutating session model or thinking preferences.
 - Reporting, blocking, completing, and failing a task MUST write through the task runtime so DB state and task events stay authoritative.

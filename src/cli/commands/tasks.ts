@@ -1147,6 +1147,7 @@ export class TaskCommands {
       if (assigneeAgentId) requireTaskRuntimeAgent(assigneeAgentId);
       assertTaskTargetAuthorized({
         ...(assigneeAgentId ? { agentId: assigneeAgentId } : {}),
+        ...(sessionName?.trim() ? { workerSessionName: sessionName } : {}),
         ...(reportToSessionName?.trim() ? { reportToSessionName } : {}),
       });
     } catch (error) {
@@ -1922,6 +1923,7 @@ export class TaskCommands {
       requireTaskRuntimeAgent(normalizedAgentId);
       assertTaskTargetAuthorized({
         agentId: normalizedAgentId,
+        ...(sessionName?.trim() ? { workerSessionName: sessionName } : {}),
         ...(reportToSessionName?.trim() ? { reportToSessionName } : {}),
         ...(actorSessionName?.trim() ? { actorSessionName } : {}),
       });
@@ -1999,6 +2001,7 @@ export class TaskCommands {
     }
 
     const resolvedSessionName = sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task);
+    assertTaskTargetAuthorized({ agentId: normalizedAgentId, workerSessionName: resolvedSessionName });
     if (execute !== true) {
       // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any dispatch.
       contractDryRun(

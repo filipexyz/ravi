@@ -411,6 +411,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       storedRuntimeSessionParams,
       storedProviderSessionId,
       canResumeStoredSession,
+      resumeDecision,
       resolvedSource,
       approvalSource,
       streamingSession,
@@ -520,6 +521,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
     await safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "turn.failed",
+      ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
       provider: runtimeProviderId,
       error: errorMessage,
       recoverable: false,

@@ -10465,6 +10465,20 @@ export type ContextAuthorizeReturn = {
   reason: string | null;
 };
 
+/** Input shape for `context.bridge-tool-hook`. */
+export type ContextBridgeToolHookInput = {
+  payload?: string;
+};
+
+/** Return shape for `context.bridge-tool-hook`. */
+export type ContextBridgeToolHookReturn = {
+  hookSpecificOutput?: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "deny";
+    permissionDecisionReason: string;
+  };
+};
+
 /** Input shape for `context.capabilities`. */
 export type ContextCapabilitiesInput = Record<string, never>;
 
@@ -19446,6 +19460,319 @@ export type SessionsCloseThreadReturn = {
     threadTs: string | null;
   };
   status: "closed";
+};
+
+/** Input shape for `sessions.conversations.agents`. */
+export type SessionsConversationsAgentsInput = {
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.agents`. */
+export type SessionsConversationsAgentsReturn = Array<{
+  id: string;
+  name: string;
+}>;
+
+/** Input shape for `sessions.conversations.cancel`. */
+export type SessionsConversationsCancelInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+  turnId: string;
+};
+
+/** Return shape for `sessions.conversations.cancel`. */
+export type SessionsConversationsCancelReturn = {
+  cancelRequested: boolean;
+  conversationId: string;
+  status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  turnId: string;
+};
+
+/** Input shape for `sessions.conversations.create`. */
+export type SessionsConversationsCreateInput = {
+  agentId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.create`. */
+export type SessionsConversationsCreateReturn = {
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  conversationId: string;
+};
+
+/** Input shape for `sessions.conversations.decide`. */
+export type SessionsConversationsDecideInput = {
+  actionDigest: string;
+  approvalId: string;
+  conversationId: string;
+  createdAt: number;
+  decision: "approve" | "reject";
+  expectedVersion: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.decide`. */
+export type SessionsConversationsDecideReturn = {
+  approvalId: string;
+  conversationId: string;
+  state: "approved" | "rejected";
+  version: number;
+};
+
+/** Input shape for `sessions.conversations.events`. */
+export type SessionsConversationsEventsInput = {
+  conversationId: string;
+  createdAt: number;
+  cursor: string | null;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.events`. */
+export type SessionsConversationsEventsReturn = {
+  cursor: string;
+  events: Array<({
+    createdAt: number;
+    data: {
+      createdAt: number;
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "message.accepted";
+  }) | ({
+    createdAt: number;
+    data: {
+      createdAt: number;
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "message.finalized";
+  }) | ({
+    createdAt: number;
+    data: {
+      cancelRequested: boolean;
+      id: string;
+      status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+    };
+    sequence: number;
+    type: "turn.state";
+  }) | ({
+    createdAt: number;
+    data: {
+      status: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "turn.activity";
+  }) | ({
+    createdAt: number;
+    data: {
+      turnId: string;
+    };
+    sequence: number;
+    type: "cancel.requested";
+  }) | ({
+    createdAt: number;
+    data: {
+      actionDigest: string;
+      capability: {
+        objectId: string;
+        objectType: string;
+        permission: string;
+      };
+      description: string;
+      expiresAt: number;
+      id: string;
+      state: "pending" | "approved" | "rejected" | "expired" | "invalidated";
+      turnId: string;
+      version: number;
+    };
+    sequence: number;
+    type: "approval.opened";
+  }) | ({
+    createdAt: number;
+    data: {
+      id: string;
+      state: "approved" | "rejected" | "expired" | "invalidated";
+      version?: number;
+    };
+    sequence: number;
+    type: "approval.state";
+  })>;
+};
+
+/** Input shape for `sessions.conversations.history`. */
+export type SessionsConversationsHistoryInput = {
+  before: string | null;
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.history`. */
+export type SessionsConversationsHistoryReturn = {
+  hasOlder: boolean;
+  messages: Array<{
+    createdAt: number;
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    turnId: string;
+  }>;
+};
+
+/** Input shape for `sessions.conversations.list`. */
+export type SessionsConversationsListInput = {
+  createdAt: number;
+  limit?: number;
+  offset?: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.list`. */
+export type SessionsConversationsListReturn = Array<{
+  agentId: string;
+  id: string;
+  title: string;
+  updatedAt: number;
+  version: number;
+}>;
+
+/** Input shape for `sessions.conversations.open`. */
+export type SessionsConversationsOpenInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.open`. */
+export type SessionsConversationsOpenReturn = {
+  approvals: Array<{
+    actionDigest: string;
+    capability: {
+      objectId: string;
+      objectType: string;
+      permission: string;
+    };
+    description: string;
+    expiresAt: number;
+    id: string;
+    state: "pending" | "approved" | "rejected" | "expired" | "invalidated";
+    turnId: string;
+    version: number;
+  }>;
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  cursor: string;
+  hasOlder: boolean;
+  messages: Array<{
+    createdAt: number;
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    turnId: string;
+  }>;
+  turn: ({
+    cancelRequested: boolean;
+    id: string;
+    status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  }) | null;
+};
+
+/** Input shape for `sessions.conversations.receipt`. */
+export type SessionsConversationsReceiptInput = {
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+  targetRequestId: string;
+};
+
+/** Return shape for `sessions.conversations.receipt`. */
+export type SessionsConversationsReceiptReturn = ({
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  conversationId: string;
+}) | ({
+  accepted: true;
+  conversationId: string;
+  messageId: string;
+  turnId: string;
+  version: number;
+}) | ({
+  cancelRequested: boolean;
+  conversationId: string;
+  status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  turnId: string;
+}) | ({
+  approvalId: string;
+  conversationId: string;
+  state: "approved" | "rejected";
+  version: number;
+});
+
+/** Input shape for `sessions.conversations.renew`. */
+export type SessionsConversationsRenewInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.renew`. */
+export type SessionsConversationsRenewReturn = {
+  conversationId: string;
+  renewed: boolean;
+};
+
+/** Input shape for `sessions.conversations.send`. */
+export type SessionsConversationsSendInput = {
+  conversationId: string;
+  createdAt: number;
+  expectedVersion: number;
+  projectId: string;
+  requestId: string;
+  text: string;
+};
+
+/** Return shape for `sessions.conversations.send`. */
+export type SessionsConversationsSendReturn = {
+  accepted: true;
+  conversationId: string;
+  messageId: string;
+  turnId: string;
+  version: number;
 };
 
 /** Input shape for `sessions.create-thread`. */

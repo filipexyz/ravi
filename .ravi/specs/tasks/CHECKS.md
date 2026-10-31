@@ -1,5 +1,11 @@
 # Tasks Checks
 
+- `bun test src/tasks/worker-session-authorization.test.ts` MUST reject an
+  unauthorized same-agent worker by name and key, including with read access;
+  CLI/stream create leave no task, dispatch leaves no assignment or prompt,
+  and deferred work leaves no launch plan. Resolved default targets are checked
+  even in previews. Current sessions and explicit modify grants remain allowed.
+
 ## Runtime State Checks
 
 - Task creation MUST persist the resolved profile id, version, source,

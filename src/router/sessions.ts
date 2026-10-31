@@ -6,6 +6,7 @@
  */
 
 import type { Statement } from "bun:sqlite";
+import { getRecentHistory } from "../db.js";
 import { toPersistedChannelContext, type ChannelContext } from "../channels/context.js";
 import type { SessionEntry } from "./types.js";
 import { findOpenThreadIdentity, renameThreadSessionNames } from "./thread-identity.js";
@@ -46,6 +47,7 @@ interface SessionRow {
   runtime_provider: string | null;
   runtime_provider_override: string | null;
   runtime_session_json: string | null;
+  history_reset_after_id: number | null;
   runtime_session_display_id: string | null;
   agent_id: string;
   agent_cwd: string;
@@ -92,6 +94,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     runtimeProvider: row.runtime_provider ?? undefined,
     runtimeProviderOverride: row.runtime_provider_override ?? undefined,
     runtimeSessionParams,
+    historyResetAfterId: row.history_reset_after_id ?? undefined,
     runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
     providerSessionId,
     sdkSessionId: row.sdk_session_id ?? undefined,
@@ -669,8 +672,12 @@ export function deleteSession(sessionKey: string): boolean {
  * Reset a session — clears conversation state but keeps the session entry
  * (name, agent, routing, display name, etc. are preserved).
  */
-export function resetSession(sessionKey: string): boolean {
+export function resetSession(sessionKey: string, options: { preserveHistoryContext?: boolean } = {}): boolean {
   const db = getDb();
+  const session = getSession(sessionKey);
+  const historyResetAfterId = options.preserveHistoryContext
+    ? (session?.historyResetAfterId ?? null)
+    : (getRecentHistory(session?.name ?? sessionKey, 1).at(-1)?.id ?? 0);
   db.prepare(
     `
     UPDATE sessions SET
@@ -678,6 +685,7 @@ export function resetSession(sessionKey: string): boolean {
       runtime_provider = NULL,
       runtime_session_json = NULL,
       runtime_session_display_id = NULL,
+      history_reset_after_id = ?,
       system_sent = 0,
       aborted_last_run = 0,
       compaction_count = 0,
@@ -688,7 +696,7 @@ export function resetSession(sessionKey: string): boolean {
       updated_at = ?
     WHERE session_key = ?
   `,
-  ).run(Date.now(), sessionKey);
+  ).run(historyResetAfterId, Date.now(), sessionKey);
   const changed = getDbChanges() > 0;
   try {
     // What the old context read no longer gates writes (Knowledge §11.4).

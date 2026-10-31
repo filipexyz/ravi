@@ -60,6 +60,7 @@ export function reportRuntimePromptIntakeFailure(input: {
   input
     .safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "dispatch.dropped",
+      ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
       reason: `intake_failed:${reason}`,
       sessionName,
       ...(source ? { _source: source } : {}),

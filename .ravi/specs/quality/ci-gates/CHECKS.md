@@ -27,6 +27,12 @@ status: active
 
 ## CI Integration Checks
 
+- `bun test --timeout 20000 --preload ./src/test/isolated-runtime-preload.ts src/runtime/session-dispatcher.test.ts` passes and is selected by `test:runtime-host`.
+- Replacing fixture cleanup with the former unconditional removal of
+  `RAVI_STATE_DIR` makes that command fail with `TEST_PRODUCTION_DB_BLOCKED`
+  before opening any production database; catching the exception in a test
+  cannot hide the failure from the preload's final assertion.
+
 - A pull request targeting a feature branch starts the same Quality Gate as a pull request targeting `main` or `dev`.
 - `.github/workflows/ci.yml` includes a step that runs spec validation for PRs.
 - `.ravi/specs/**` is not excluded from CI via `paths-ignore` for pull_request events.

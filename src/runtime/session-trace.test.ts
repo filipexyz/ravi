@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { getRecentHistory, saveMessage, getChatDbPath } from "../db.js";
 import { Database } from "bun:sqlite";
 import { nats } from "../nats.js";
-import { attachChatToSession, detachChatFromSession } from "../router/sessions.js";
+import {
+  attachChatToSession,
+  detachChatFromSession,
+  resetSession,
+  updateProviderSession,
+  clearProviderSession,
+} from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
   getOrCreateSession,
@@ -63,6 +69,8 @@ import {
   resolveRuntimeCredentialUpstreamProvider,
   resolveRuntimePromptSource,
 } from "./runtime-request-builder.js";
+import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
+import { resolveRuntimeSession } from "./session-resolver.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { loadedSkillMatchesGate } from "./skill-gate.js";
@@ -541,6 +549,165 @@ describe("runtime session trace instrumentation", () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
+
+  for (const child of [false, true]) {
+    for (const gate of ["compatible", "skill", "credential", "reset", "missing", "provider"] as const) {
+      it(`cold start after idle eviction preserves context (${child ? "child" : "root"}, ${gate})`, async () => {
+        const sessionKey = child ? `${SESSION_KEY}:thread:continuity` : SESSION_KEY;
+        const sessionName = child ? "cold-child" : SESSION_NAME;
+        const previousTtl = process.env.RAVI_RUNTIME_IDLE_SESSION_TTL_MS;
+        process.env.RAVI_RUNTIME_IDLE_SESSION_TTL_MS = "10";
+        const session = getOrCreateSession(sessionKey, AGENT_ID, stateDir!, { name: sessionName });
+        updateSessionName(sessionKey, sessionName);
+        if (child) updateProviderSession(SESSION_KEY, PROVIDER, "unrelated-parent-state");
+        saveMessage(sessionName, "user", "Implementar apenas o endpoint de status.");
+        saveMessage(sessionName, "assistant", "Decidido: endpoint GET /status, teste focado, sem deploy.");
+        saveMessage("another-session", "assistant", "NEVER IMPORT OTHER SESSION CONTEXT");
+        const params = {
+          sessionId: "previous-provider-session",
+          skillVisibility: gate === "skill" ? makeSkillVisibility("advertised") : makeRaviTaskSkillVisibility(),
+          ...(gate === "credential"
+            ? {
+                runtimeCredential: {
+                  credentialId: "previous-account",
+                  fingerprint: "previous",
+                  runtimeProvider: PROVIDER,
+                },
+              }
+            : {}),
+        };
+        const oldRuntime = makeRuntimeSessionThenHang([
+          {
+            type: "turn.complete",
+            providerSessionId: "previous-provider-session",
+            session: { displayId: "previous-provider-session", params },
+            usage: { inputTokens: 10, outputTokens: 4 },
+          },
+        ]);
+        const oldStreaming = makeStreamingSession({ queryHandle: oldRuntime });
+        const live = new Map([[sessionName, oldStreaming]]);
+        const provider: SessionRuntimeProvider = {
+          id: PROVIDER,
+          getCapabilities: () => capabilities,
+          startSession: () => makeRuntimeSession([]),
+        };
+        registerRuntimeProvider(PROVIDER, () => provider);
+        try {
+          await runTraceLoop(oldStreaming, oldRuntime, { sessionName, session, streamingSessions: live });
+          expect(listSessionEventsForTest(sessionKey).some((event) => event.eventType === "session.idle_evicted")).toBe(
+            true,
+          );
+          expect(live.has(sessionName)).toBe(false);
+          expect(getSession(sessionKey)?.providerSessionId).toBe("previous-provider-session");
+
+          if (gate === "reset") resetSession(sessionKey);
+          if (gate === "missing") clearProviderSession(sessionKey);
+          const prompt = { prompt: "pode implementar" };
+          const stored = getSession(sessionKey)!;
+          if (gate === "provider") {
+            stored.runtimeProvider = "previous-provider";
+            stored.runtimeProviderOverride = PROVIDER;
+          }
+          const resolved = resolveRuntimeSession({
+            sessionName,
+            prompt,
+            defaultRuntimeProviderId: PROVIDER,
+            identity: {
+              sessionEntry: stored,
+              session: stored,
+              agentId: AGENT_ID,
+              agent: makeAgent(),
+              agentCwd: stateDir!,
+              sessionCwd: stateDir!,
+              dbSessionKey: sessionKey,
+            },
+          })!;
+          expect(resolved.canResumeStoredSession).toBe(!["reset", "missing", "provider"].includes(gate));
+          saveMessage(sessionName, "user", prompt.prompt);
+          const streaming = makeStreamingSession({ pendingMessages: [createQueuedRuntimeUserMessage(prompt)] });
+          const { runtimeRequest } = await buildRuntimeStartRequest({
+            runId: "run-cold-start",
+            sessionName,
+            prompt,
+            session: stored,
+            agent: makeAgent(),
+            runtimeProviderId: PROVIDER,
+            runtimeProvider: provider,
+            runtimeCapabilities: capabilities,
+            sessionCwd: stateDir!,
+            dbSessionKey: sessionKey,
+            model: MODEL,
+            runtimeResolution: {
+              options: { model: MODEL },
+              sources: { model: "agent_default", effort: null, thinking: null },
+              hasTaskRuntimeContext: false,
+            },
+            storedRuntimeSessionParams: resolved.storedRuntimeSessionParams,
+            storedProviderSessionId: resolved.storedProviderSessionId,
+            canResumeStoredSession: resolved.canResumeStoredSession,
+            resumeDecision: resolved.resumeDecision,
+            streamingSession: streaming,
+            stashedMessages: new Map(),
+            defaultRuntimeProviderId: PROVIDER,
+            crashRecovery,
+          });
+          try {
+            const yielded = await runtimeRequest.prompt.next();
+            const content = yielded.value!.message.content;
+            expect(content).toContain("pode implementar");
+            expect(content).not.toContain("NEVER IMPORT OTHER SESSION CONTEXT");
+            expect(runtimeRequest.forkSession).toBeUndefined();
+            if (gate === "compatible") {
+              expect(runtimeRequest.resume).toBe("previous-provider-session");
+              expect(content).not.toContain("Runtime Context Recovery");
+            } else if (gate === "reset") {
+              expect(runtimeRequest.resume).toBeUndefined();
+              expect(content).not.toContain("Runtime Context Recovery");
+              expect(content).not.toContain("Decidido:");
+              expect(getRecentHistory(sessionName).some((message) => message.content.startsWith("Decidido:"))).toBe(
+                true,
+              );
+            } else {
+              expect(runtimeRequest.resume).toBeUndefined();
+              expect(runtimeRequest.resumeSession).toBeUndefined();
+              expect(content).toContain("Decidido: endpoint GET /status, teste focado, sem deploy.");
+              expect(content).toContain("# Current Request\npode implementar");
+              expect(
+                listSessionEventsForTest(sessionKey).find((event) => event.eventType === "runtime.continuity")
+                  ?.payloadJson,
+              ).toMatchObject({
+                strategy: "durable_history",
+                reason: {
+                  skill: "skill_visibility_changed",
+                  credential: "credential_changed",
+                  missing: "missing_provider_session",
+                  provider: "provider_mismatch",
+                }[gate],
+              });
+            }
+            expect(getRecentHistory(sessionName).filter((message) => message.content === prompt.prompt)).toHaveLength(
+              1,
+            );
+            // A second turn on this live handle must not repeat the recovery block.
+            streaming.turnActive = false;
+            streaming.pendingMessages = [createQueuedRuntimeUserMessage({ prompt: "segundo turno" })];
+            streaming.onTurnComplete?.();
+            const second = await runtimeRequest.prompt.next();
+            expect(second.value!.message.content).toBe("segundo turno");
+          } finally {
+            streaming.done = true;
+            streaming.onTurnComplete?.();
+            await runtimeRequest.prompt.return(undefined);
+          }
+        } finally {
+          unregisterRuntimeProvider(PROVIDER);
+          oldStreaming.abortController.abort();
+          if (previousTtl === undefined) delete process.env.RAVI_RUNTIME_IDLE_SESSION_TTL_MS;
+          else process.env.RAVI_RUNTIME_IDLE_SESSION_TTL_MS = previousTtl;
+        }
+      });
+    }
+  }
 
   it("records adapter.request with prompt blobs when the runtime prompt generator yields", async () => {
     const rulesDir = join(stateDir ?? "/tmp", ".ravi", "rules");
