@@ -392,6 +392,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         const generic = projected === remoteFailureMessage(op, body.error.code) || projected === REMOTE_GENERIC_BLOCKED;
         const dnsHint =
           op === PAGES_DOMAINS_OP && isRemoteWriteBrake(body) ? plannedDomainDnsHint(body.error.plan) : null;
+        const requestId = safeRequestId(body.error.requestId) ?? safeRequestId(result.requestId);
         return new ContractError(
           op,
           body.error.code,
@@ -401,9 +402,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           body.exitCode,
           {
             ...projectRemoteContractDetails(op, body, result.status),
-            ...(safeRequestId(body.error.requestId ?? result.requestId)
-              ? { requestId: safeRequestId(body.error.requestId ?? result.requestId) }
-              : {}),
+            ...(requestId ? { requestId } : {}),
             ...(connectorTurn?.details ?? {}),
             ...(library?.details ?? {}),
           },

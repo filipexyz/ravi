@@ -37,7 +37,7 @@ function diagnostic(error: unknown, seen = new Set<unknown>()): Record<string, u
   };
 }
 
-/** First occurrence gets the stack and cause; repetitions point to it at debug level. */
+/** First occurrence gets the stack and cause; repeat responses point to its request ID. */
 export function logGatewayFailure(error: unknown, code: string, now = Date.now()): void {
   const context = gatewayRequestContext();
   const { requestId, op } = context;
@@ -49,7 +49,6 @@ export function logGatewayFailure(error: unknown, code: string, now = Date.now()
   if (previous && now - previous.at < WINDOW_MS) {
     previous.suppressed++;
     context.diagnosticRequestId = previous.requestId;
-    log.debug("Repeated gateway failure", { command: op, code, requestId, firstRequestId: previous.requestId });
     return;
   }
   if (!previous && occurrences.size >= MAX_KEYS) occurrences.delete(occurrences.keys().next().value!);

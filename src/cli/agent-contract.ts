@@ -116,7 +116,7 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
       argument,
       field,
       issues: [{ path: [field], code: "required", message: `${argument} is required.` }],
-      suggestedAction: `Provide ${argument} and retry '${op}'`,
+      suggestedAction: sanitizePublicContractMessage(error.suggestedAction) ?? `Provide ${argument} and retry '${op}'`,
     });
   }
   const message = sanitizePublicContractMessage(error.message) ?? GENERIC_COMMAND_FAILED_MESSAGE;

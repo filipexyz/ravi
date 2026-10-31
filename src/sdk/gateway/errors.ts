@@ -81,7 +81,7 @@ export function errorResponse(status: number, error: string, extras: Record<stri
       gatewayRequestContext().op,
       code,
       publicMessage ?? message,
-      status === 400 || status === 422 ? 2 : 1,
+      [400, 405, 413, 422].includes(status) ? 2 : 1,
       {
         suggestedAction,
         ...(Array.isArray(extras.issues) ? { issues: extras.issues } : {}),

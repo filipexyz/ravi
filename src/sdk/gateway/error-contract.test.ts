@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
-import { ContractError } from "../../cli/agent-contract.js";
+import { ContractError, expectedErrorToContractError } from "../../cli/agent-contract.js";
+import { CliExpectedError } from "../../cli/expected-error.js";
+import { logger } from "../../utils/logger.js";
 import { CronCommands } from "../../cli/commands/cron.js";
 import { WorkflowRunCommands } from "../../cli/commands/workflows.js";
 import { ArtifactsCommands } from "../../cli/commands/artifacts.js";
@@ -95,6 +97,44 @@ async function relay(response: Response, op: string) {
 }
 
 describe("gateway error contract end to end", () => {
+  it("preserves safe throw-site guidance for missing required flags", () => {
+    const error = expectedErrorToContractError(
+      "tasks create",
+      new CliExpectedError(
+        "--instructions is required.",
+        "COMMAND_FAILED",
+        1,
+        "Describe the task objective in --instructions",
+      ),
+    );
+    expect(error?.details.suggestedAction).toBe("Describe the task objective in --instructions");
+  });
+
+  it("uses a safe header correlation when a contract body has an invalid requestId", () => {
+    const requestId = "00000000-0000-4000-8000-000000000001";
+    const error = remoteGatewayErrorToContractError("tasks create", {
+      status: 422,
+      ok: false,
+      contentType: "application/json",
+      requestId,
+      body: JSON.stringify({
+        success: false,
+        op: "tasks create",
+        exitCode: 2,
+        outcome: "usage_error",
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Input is invalid.",
+          retryable: false,
+          requestId: "invalid",
+          suggestedAction: "Correct the input",
+        },
+      }),
+    });
+    expect(error?.code).toBe("VALIDATION_ERROR");
+    expect(error?.details.requestId).toBe(requestId);
+  });
+
   it("names --instructions in the real tasks create 422 and CLI output", async () => {
     const response = (await handleGatewayRequest(
       request("tasks/create", JSON.stringify({ title: "Probe", priority: "low" })),
@@ -222,6 +262,7 @@ describe("gateway error contract end to end", () => {
     expect(response.status).toBe(status);
     const remote = await relay(response, path.replaceAll("/", " "));
     expect(remote.code).toBe(code);
+    expect(remote.exitCode).toBe([400, 405, 413, 422].includes(status) ? 2 : 1);
     expect(remote.details.requestId).toBe(response.headers.get("x-request-id"));
     expect(remote.message).not.toContain("Remote command failed");
     expect(remote.details.suggestedAction).not.toContain("Inspect redacted remote logs");
@@ -242,6 +283,7 @@ describe("gateway error contract end to end", () => {
   });
 
   it("logs first cause, suppresses repeats, reports counts after window, and redacts secrets", () => {
+    logger.setLevel("debug");
     const cause = new Error(
       'database password="not-for-logs" token=opaque-secret access_token=opaque-access apiKey=opaque-key ctx_fixture_secret https://user:pass@host/query?key=secret',
     );
@@ -259,6 +301,7 @@ describe("gateway error contract end to end", () => {
       const second = run(60_001);
       const logs = stderr.mock.calls.map((call) => String(call[0])).join("");
       expect(logs.match(/Gateway command exception/g)).toHaveLength(2);
+      expect(logs).not.toContain("Repeated gateway failure");
       expect(logs).toContain(first);
       expect(logs).toContain(second);
       expect(logs).toContain("suppressed=2");
@@ -273,6 +316,7 @@ describe("gateway error contract end to end", () => {
       ])
         expect(logs).not.toContain(secret);
     } finally {
+      logger.setLevel("info");
       stderr.mockRestore();
     }
   });
