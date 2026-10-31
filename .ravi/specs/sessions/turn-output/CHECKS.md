@@ -20,6 +20,7 @@ fail before the fix lands, and to stay as a regression test after it.
 ## Run health and usage
 
 - [x] A turn that fails with `provider_inactive` persists the reason and the usage it received.
+- [x] Host conversion of `turn.complete` to failure after tools or a login stub preserves provider usage, including measured zero.
 - [x] Usage not reported by the provider is persisted as `NULL` and rendered as `unknown`, never `0`.
 - [ ] `sessions info` prints `unknown` for a turn with `NULL` usage.
 - [x] A token-summing aggregate skips `NULL` rows and reports an `unknown` count instead of adding zero.

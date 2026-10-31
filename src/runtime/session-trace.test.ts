@@ -4430,7 +4430,7 @@ describe("runtime session trace instrumentation", () => {
 
     const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("failed");
-    expect(getSessionTurn("turn-login-stub")?.status).toBe("failed");
+    expect(getSessionTurn("turn-login-stub")).toMatchObject({ status: "failed", inputTokens: 0, outputTokens: 0 });
   });
 
   it("records provider turn interruptions as terminal interrupted turns", async () => {
@@ -4749,6 +4749,11 @@ describe("runtime session trace instrumentation", () => {
       provider: "grok",
     });
 
+    expect(getSessionTurn("turn-grok-tools-silence")).toMatchObject({
+      status: "failed",
+      inputTokens: 1,
+      outputTokens: 1,
+    });
     expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
     expect(
       responses.some(

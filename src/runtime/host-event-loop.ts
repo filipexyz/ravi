@@ -2826,6 +2826,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             type: "turn.failed",
             error: blockedComplete.error,
             recoverable: true,
+            usage: event.usage,
             rawEvent: event.rawEvent,
             metadata: event.metadata,
           };
@@ -2845,6 +2846,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           type: "turn.failed",
           error,
           recoverable: false,
+          usage: event.usage,
           rawEvent: event.rawEvent,
         };
       }
