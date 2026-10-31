@@ -1,5 +1,12 @@
 # Cron / CHECKS
 
+## Test State MUST Be Isolated
+
+- Every cron database test MUST create and clean its own isolated Ravi state, including
+  `cron-db.test.ts`; a process-level state directory alone is insufficient because
+  cleanup in another test file can remove that override. Tests MUST NOT fall back
+  to the operator installation.
+
 ## Invalid Ownership MUST Reconcile Without Executing
 
 - `bun test src/cron/` MUST prove legacy agent-owned shell jobs, including distant

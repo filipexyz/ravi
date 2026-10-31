@@ -473,6 +473,33 @@ describe("CronRunner shell jobs and personal connectors", () => {
     }
   });
 
+  it("claims one notice across runners and refuses an explicit invalid re-enable", async () => {
+    const out = join(stateDir!, "must-not-run-again.txt");
+    const job = createAgentJob({
+      executionType: "shell",
+      ownerPrincipal: "agent:test-agent",
+      shellCommand: `touch '${out}'`,
+    });
+    const first = new CronRunner();
+    const second = new CronRunner();
+    try {
+      await Promise.all([first.start(), second.start()]);
+      expect(publishCalls).toHaveLength(1);
+      await Promise.all([first.triggerJob(job.id), second.triggerJob(job.id)]);
+      expect(publishCalls).toHaveLength(1);
+      dbUpdateCronJob(job.id, { enabled: true });
+      await Promise.all([first.triggerJob(job.id), second.triggerJob(job.id)]);
+      expect(publishCalls).toHaveLength(2);
+      expect(dbGetCronJob(job.id)).toMatchObject({ enabled: false });
+      expect(dbGetCronJob(job.id)?.nextRunAt).toBeUndefined();
+      expect(dbGetCronJob(job.id)?.lastRunAt).toBeUndefined();
+      expect(existsSync(out)).toBe(false);
+    } finally {
+      await first.stop();
+      await second.stop();
+    }
+  });
+
   it("keeps operator shell and agent-owned agent jobs enabled and executable", async () => {
     const shell = createAgentJob({ executionType: "shell", ownerPrincipal: "operator", shellCommand: "exit 0" });
     const agent = createAgentJob({ ownerPrincipal: "agent:test-agent" });
