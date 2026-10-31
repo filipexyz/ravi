@@ -50,6 +50,7 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => ({ agentId: "dev" }),
   isScopeEnforced: () => scopeEnforced,
   canAccessSession: () => canAccess,
+  canAccessResource: () => true,
   canModifySession: () => canModify,
 }));
 

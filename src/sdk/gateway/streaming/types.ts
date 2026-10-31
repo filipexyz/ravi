@@ -122,5 +122,7 @@ export interface StreamingGatewayConfig {
   channels?: StreamChannel[];
   keepaliveMs?: number;
   maxQueue?: number;
+  /** How often an open stream re-checks that its context is live and still authorized. */
+  authRecheckMs?: number;
   emitAudit?: (event: StreamAuditEvent) => Promise<void> | void;
 }

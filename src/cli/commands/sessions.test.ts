@@ -489,11 +489,14 @@ mock.module("../../adapters/index.js", () => ({
   getSessionAdapterDebugSnapshot: (adapterId: string) => adapterSnapshots.get(adapterId) ?? null,
 }));
 
+const actualScopeModule = await import("../../permissions/scope.js");
 mock.module("../../permissions/scope.js", () => ({
+  ...actualScopeModule,
   getScopeContext: () => (scopeEnforced ? { agentId: "dev" } : undefined),
   isScopeEnforced: () => scopeEnforced,
   canAccessSession: () => canAccess,
   canModifySession: () => true,
+  canAccessResource: () => true,
   canAccessContact: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
 }));

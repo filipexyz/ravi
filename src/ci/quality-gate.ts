@@ -82,6 +82,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/thread-identity.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
     "src/runtime/crash-recovery-store.test.ts",
+    // Agent delete: live contexts revoked, Library listing not inherited by a same-id agent.
+    "src/router/agent-delete.test.ts",
     "src/runtime/session-goals.test.ts",
     // Skill-grant store (dbUpsert/List/DeleteSkillGrant*) is exercised here.
     "src/cli/commands/skills.test.ts",
@@ -188,7 +190,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/triggers/__tests__/debounce.test.ts",
     "src/triggers/__tests__/session-target.test.ts",
   ],
-  "src/approval/": ["src/approval/service.test.ts", "src/approval/grantor.test.ts", "src/approval/decision.test.ts"],
+  "src/approval/": [
+    "src/approval/service.test.ts",
+    "src/approval/grantor.test.ts",
+    "src/approval/decision.test.ts",
+    // A revoked context held in memory no longer authorizes host tools.
+    "src/runtime/context-liveness.test.ts",
+  ],
   "src/apps/": ["src/apps/router.test.ts"],
   "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
 };

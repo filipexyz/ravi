@@ -34,6 +34,7 @@ import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
   hasIsolatedRuntimeTurnEnvelope,
+  runtimeTurnActorKey,
   hasDeliverableRuntimeMessages,
   prepareRuntimeInterruptSuccessor,
   shouldInterruptRuntimeForIncoming,
@@ -3126,6 +3127,7 @@ export function canUseNativeRuntimeSteer(
     barrier === "after_tool" &&
     !hasIsolatedRuntimeTurnEnvelope(prompt) &&
     isSameRuntimeTurnSurface(session.currentSource, prompt?.source) &&
+    isSameRuntimeTurnActor(session, prompt) &&
     supportsNativeSteer &&
     session.turnActive &&
     Boolean(session.currentCrashRecoveryAttemptId) &&
@@ -3137,6 +3139,17 @@ export function canUseNativeRuntimeSteer(
     getPendingRuntimeTurnSuccessors(session).length === 0 &&
     canReuseLivePiSteerAuthority(session.currentRuntimeContextKey)
   );
+}
+
+/**
+ * Native steer injects text into the running turn without rebuilding its
+ * context, so only the sender that turn was authorized for may steer it.
+ */
+function isSameRuntimeTurnActor(session: RuntimeHostStreamingSession, prompt?: RuntimeLaunchPrompt): boolean {
+  if (prompt?._observation) return false;
+  const active = runtimeTurnActorKey({ source: session.currentSource, context: session.currentTurnAuthority?.context });
+  const incoming = runtimeTurnActorKey(prompt);
+  return active !== null && incoming !== null && active === incoming;
 }
 
 /** Unset keys stay compatible. A published key must still resolve or steer is refused. */
@@ -3166,7 +3179,8 @@ function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeL
   let currentKey: string | null = null;
 
   for (const message of messages) {
-    if (hasIsolatedRuntimeTurnEnvelope(message)) {
+    // An isolated envelope, or a sender with no identity at all, is its own turn.
+    if (hasIsolatedRuntimeTurnEnvelope(message) || runtimeTurnActorKey(message) === null) {
       if (currentBatch.length > 0) {
         batches.push(currentBatch);
         currentBatch = [];
@@ -3221,6 +3235,8 @@ function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
     deliveryClass,
     source: prompt.source ? getMessageTargetKey(prompt.source) : "",
     approvalSource: prompt._approvalSource ? getMessageTargetKey(prompt._approvalSource) : "",
+    // The batch runs under the last message's actor, so it never mixes senders.
+    actor: runtimeTurnActorKey(prompt) ?? "",
   });
 }
 

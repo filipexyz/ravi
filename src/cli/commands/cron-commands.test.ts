@@ -304,6 +304,13 @@ describe("CronCommands --json", () => {
     ).rejects.toThrow("--message cannot be combined with --shell/--exec");
   });
 
+  it("refuses a job from a relayed contact-narrowed turn that has no chat to bind it to", async () => {
+    mockCliContext = { agentId: "dev", context: { metadata: { relayNarrowing: true } } };
+    await expect(
+      new CronCommands().add("Relayed", undefined, "30m", undefined, undefined, "hello"),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+  });
+
   it("derives durable creation idempotency from observer source turns", async () => {
     mockCliContext = {
       agentId: "observer",
@@ -879,6 +886,44 @@ describe("CronCommands cross-agent access", () => {
     ]);
   });
 
+  it("cron add cannot aim a job at another agent without modify agent:<target>", async () => {
+    const error = await captureContractError(() =>
+      new CronCommands().add(
+        "Aimed",
+        undefined,
+        "30m",
+        undefined,
+        undefined,
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "owner",
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(error.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "owner", command: "cron add" });
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("cron set cannot retarget an own job to another agent or its session", async () => {
+    cronJob = { ...cronJob, agentId: "viewer" };
+    const before = { ...cronJob };
+
+    const agentError = await captureContractError(() => new CronCommands().set("cron-owner", "agent", "owner", true));
+    expect(agentError.envelope().error.code).toBe("PERMISSION_DENIED");
+    const defaultError = await captureContractError(() => new CronCommands().set("cron-owner", "agent", "-", true));
+    expect(defaultError.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(cronJob).toEqual(before);
+  });
+
   it("denial does not disclose the owning agent when the caller cannot view it", async () => {
     const error = await captureContractError(() => new CronCommands().disable("cron-owner", true));
 
@@ -1436,12 +1481,13 @@ describe("CronCommands owner principal", () => {
   });
 
   it("moves a contact's job to the operator when the operator rewrites it", async () => {
-    cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob" };
+    cronJob = { ...cronJob, ownerPrincipal: "contact:c_bob", creatorChat: "chat-bob" };
 
     const payload = await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
 
     expect(payload).toMatchObject({ warnings: [], job: { ownerPrincipal: "operator", runsAsOperator: true } });
     expect(cronUpdatePatches[0]).toMatchObject({ ownerPrincipal: "operator" });
+    expect(cronUpdatePatches[0]).toHaveProperty("creatorChat", undefined);
   });
 
   it("keeps a contact's job with that contact when the operator edits around its prompt", async () => {
@@ -1450,13 +1496,16 @@ describe("CronCommands owner principal", () => {
       ["reply-session", "agent:main:main"],
       ["name", "Renamed"],
     ]) {
-      cronJob = { ...cronJob, message: "their prompt", ownerPrincipal: "contact:c_bob" };
+      cronJob = { ...cronJob, message: "their prompt", ownerPrincipal: "contact:c_bob", creatorChat: "chat-bob" };
       cronUpdatePatches = [];
 
       const payload = await captureJson(() => new CronCommands().set("cron-1", key, value, true));
 
-      expect(payload).toMatchObject({ job: { ownerPrincipal: "contact:c_bob", runsAsOperator: false } });
+      expect(payload).toMatchObject({
+        job: { ownerPrincipal: "contact:c_bob", creatorChat: "chat-bob", runsAsOperator: false },
+      });
       expect(cronUpdatePatches[0]).not.toHaveProperty("ownerPrincipal");
+      expect(cronUpdatePatches[0]).not.toHaveProperty("creatorChat");
     }
   });
 
@@ -1482,6 +1531,7 @@ describe("CronCommands owner principal", () => {
       onError: "notify-session:theirs",
       message: "",
       ownerPrincipal: "contact:c_bob",
+      creatorChat: "chat-bob",
     };
 
     const payload = await captureJson(() => new CronCommands().set("cron-1", "shell", "echo mine", true));
@@ -1489,6 +1539,7 @@ describe("CronCommands owner principal", () => {
     expect(payload).toMatchObject({ job: { ownerPrincipal: "operator", shellCommand: "echo mine" } });
     expect(cronUpdatePatches[0]).toHaveProperty("shellEnvFile", undefined);
     expect(cronUpdatePatches[0]).toHaveProperty("onError", undefined);
+    expect(cronUpdatePatches[0]).toHaveProperty("creatorChat", undefined);
   });
 
   it("does not hand a contact's shell job to the operator for an env-file edit", async () => {

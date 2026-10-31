@@ -596,6 +596,36 @@ describe("runtime delivery queue", () => {
     expect(getDeliverableRuntimeMessages("dev", session)).toEqual([active]);
   });
 
+  it("never folds queued messages from different senders into one turn", () => {
+    const source = { channel: "whatsapp", accountId: "wa", chatId: "group:1" };
+    const stranger = createQueuedRuntimeUserMessage({
+      prompt: "stranger",
+      source: { ...source, actorType: "unknown", normalizedSenderId: "5511900000001" },
+    });
+    const owner = createQueuedRuntimeUserMessage({
+      prompt: "owner",
+      source: { ...source, actorType: "contact", contactId: "owner" },
+    });
+    const ownerAgain = createQueuedRuntimeUserMessage({
+      prompt: "owner again",
+      source: { ...source, actorType: "contact", contactId: "owner" },
+    });
+    const anonymous = createQueuedRuntimeUserMessage({
+      prompt: "anonymous",
+      source: { ...source, actorType: "unknown" },
+    });
+
+    expect(getDeliverableRuntimeMessages("dev", makeStreamingSession({ pendingMessages: [stranger, owner] }))).toEqual([
+      stranger,
+    ]);
+    expect(
+      getDeliverableRuntimeMessages("dev", makeStreamingSession({ pendingMessages: [owner, ownerAgain, stranger] })),
+    ).toEqual([owner, ownerAgain]);
+    expect(
+      getDeliverableRuntimeMessages("dev", makeStreamingSession({ pendingMessages: [anonymous, anonymous] })),
+    ).toEqual([anonymous]);
+  });
+
   it("keeps a prior delivery attempt out of a fresh unassigned batch", () => {
     const fresh = createQueuedRuntimeUserMessage({ prompt: "fresh" });
     const priorAttempt = createQueuedRuntimeUserMessage({ prompt: "prior attempt" });

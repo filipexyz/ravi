@@ -244,7 +244,7 @@ describe("RuntimeSessionDispatcher debounce", () => {
           accountId: "main",
           chatId: "group:123",
           messageId: "m2",
-          senderId: "u2",
+          senderId: "u1",
           isGroup: true,
           timestamp: 2,
         },
@@ -261,7 +261,46 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(prompts[0].deliveryBarrier).toBe("after_tool");
     expect(prompts[0].deliveryBarrierSource).toBe("inferred");
     expect(prompts[0].context?.messageId).toBe("m2");
-    expect(prompts[0].context?.senderId).toBe("u2");
+    expect(prompts[0].context?.senderId).toBe("u1");
+  });
+
+  it("never folds debounced messages from different senders into one turn", async () => {
+    const dispatcher = createDispatcher();
+    const prompts: RuntimeLaunchPrompt[] = [];
+    (
+      dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+    ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      prompts.push(prompt);
+    });
+
+    const source = { channel: "whatsapp", accountId: "main", chatId: "group:123" };
+    const context = (messageId: string, senderId: string, contactId?: string) => ({
+      channelId: "whatsapp",
+      channelName: "WhatsApp",
+      accountId: "main",
+      chatId: "group:123",
+      messageId,
+      senderId,
+      isGroup: true,
+      timestamp: 1,
+      ...(contactId ? { actorType: "contact" as const, contactId } : { actorType: "unknown" as const }),
+    });
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      { prompt: "from a stranger", source, _agentId: "agent-a", context: context("m1", "u1") },
+      60_000,
+    );
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      { prompt: "from the owner", source, _agentId: "agent-a", context: context("m2", "u2", "owner") },
+      60_000,
+    );
+
+    await dispatcher.flushDebounce("session");
+
+    expect(prompts.map((prompt) => prompt.prompt)).toEqual(["from a stranger", "from the owner"]);
+    expect(prompts[0].context?.contactId).toBeUndefined();
+    expect(prompts[1].context?.contactId).toBe("owner");
   });
 
   it("does not merge task-gated prompts with normal interactive prompts", async () => {
@@ -902,6 +941,32 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
   it("allows active Pi steer when a durable attempt can fence the input mutation", () => {
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_tool")).toBe(true);
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_response")).toBe(false);
+  });
+
+  it("only native-steers input from the active turn's own sender", () => {
+    const activeSource = {
+      channel: "whatsapp",
+      accountId: "wa-a",
+      chatId: "group:123",
+      canonicalChatId: "chat-group",
+      actorType: "contact" as const,
+      contactId: "owner",
+    };
+    const session = createStreamingSession({ currentSource: activeSource });
+
+    expect(canUseNativeRuntimeSteer(session, "after_tool", { prompt: "same", source: { ...activeSource } })).toBe(true);
+    expect(
+      canUseNativeRuntimeSteer(session, "after_tool", {
+        prompt: "another member",
+        source: { ...activeSource, contactId: "member" },
+      }),
+    ).toBe(false);
+    expect(
+      canUseNativeRuntimeSteer(session, "after_tool", {
+        prompt: "unresolved sender",
+        source: { ...activeSource, actorType: "unknown", contactId: undefined },
+      }),
+    ).toBe(false);
   });
 
   it("only native-steers input from the active turn's reply surface", () => {

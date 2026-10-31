@@ -12,7 +12,7 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 afterAll(() => mock.restore());
 
@@ -52,6 +52,13 @@ mock.module("../context.js", () => ({
   fail: (message: string) => {
     throw new Error(message);
   },
+}));
+
+// getContext is undefined here, so caller paths only resolve; the file-authority
+// check lives in caller-cwd.test.ts.
+mock.module("../caller-cwd.js", () => ({
+  getCallerCwd: () => process.cwd(),
+  resolveCallerPath: (path: string) => resolve(path),
 }));
 
 mock.module("../../image/generator.js", () => ({

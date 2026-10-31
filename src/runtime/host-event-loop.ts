@@ -4112,6 +4112,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
           await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48);
+          // The restated request is this turn's own input, not the newest history
+          // row, which may be another sender's queued message.
+          const ownPendingIds = new Set(streaming.currentTurnPendingIds ?? []);
           const recovery = buildRuntimeContextRecoveryPrompt({
             sessionName,
             runtimeProvider: runtimeSession.provider,
@@ -4119,7 +4122,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             error: event.error,
             recoveryKind: sessionRecoveryFailure.kind,
             history,
+            latestUserRequest: currentTurnPromptText(),
           });
+          const queuedSuccessors = streaming.pendingMessages
+            .filter((message) => !message.pendingId || !ownPendingIds.has(message.pendingId))
+            .map((message) => ({ ...message }));
           const resetApplied = resetSession(session.sessionKey);
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
@@ -4139,7 +4146,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             _agentId: agent.id,
             _runtimeProviderId: runtimeSession.provider,
           });
-          stashedMessages.set(sessionName, [recoveredMessage]);
+          // Messages queued behind the failed turn keep their own sender's envelope.
+          stashedMessages.set(sessionName, [recoveredMessage, ...queuedSuccessors]);
           restartStashedReason = recoveryPlan.reason;
 
           log.warn(recoveryPlan.logMessage, {

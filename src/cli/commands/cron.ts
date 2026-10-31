@@ -13,6 +13,7 @@ import {
   getScopeContext,
   isScopeEnforced,
   canAccessResource,
+  canModifySession,
   recordResourceAccessDenial,
   type ScopeContext,
 } from "../../permissions/scope.js";
@@ -44,6 +45,8 @@ import {
   cronOwnerActsAsOperator,
   resolveCronOwnerPrincipalForCurrentTurn,
 } from "../../link/connector-turn.js";
+import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -227,6 +230,37 @@ function assertCronJobMutable(op: string, id: string, job: CronJob, asJson?: boo
   });
 }
 
+/**
+ * A job runs as its agent and replies into its reply session, so choosing them
+ * needs the same authority as acting there: mutate on the agent and modify on
+ * the session. Without it an agent with cron grants could aim automation at
+ * another agent and run under that agent's ceiling.
+ */
+function assertCronTargetAuthorized(
+  op: string,
+  target: { agentId?: string; replySession?: string },
+  asJson?: boolean,
+): void {
+  const scopeCtx = getScopeContext();
+  const owner = target.agentId ?? scopeCtx?.agentId ?? getDefaultAgentId();
+  if (!canAccessResource(scopeCtx, owner, "mutate")) {
+    const denial = recordResourceAccessDenial({
+      ctx: scopeCtx,
+      resourceAgentId: owner,
+      mode: "mutate",
+      resourceLabel: "cron target agent",
+      command: op,
+    });
+    contractFail(op, "PERMISSION_DENIED", denial.message, {
+      asJson,
+      details: { ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}) },
+    });
+  }
+  if (target.replySession && isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, target.replySession)) {
+    contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${target.replySession}`, { asJson });
+  }
+}
+
 /** "Runs as" for personal connectors. Legacy rows without an owner run as the operator. */
 function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
   return job.ownerPrincipal ?? CRON_OPERATOR_OWNER;
@@ -282,9 +316,9 @@ function printCronRunsAs(job: CronJob, warning: string): void {
  * `cron set` keys that change neither what a job runs nor where its output
  * goes. Any other key (name, which goes into the prompt and the isolated
  * session's name, instructions, agent, env file, error target, reply
- * session, account, and any key added later) set by anyone but the job's
- * owner makes the setter its owner, the operator included: a job never runs
- * one person's authority under another person's changes.
+ * session, account, and any key added later) set by a different non-operator
+ * makes the setter its owner. The operator takes over only when rewriting
+ * what runs, as selected by CRON_RUN_KEYS below.
  */
 const CRON_OWNER_KEEP_KEYS = new Set(["description", "cron", "every", "tz", "timezone", "timeout", "delete-after"]);
 
@@ -317,15 +351,43 @@ function failUnknownCronSetKey(key: string): never {
 }
 
 /** Owner change that goes in the same write as a `cron set` edit, or nothing. */
-function cronOwnerUpdateForSet(key: string, job: CronJob): Pick<CronJob, "ownerPrincipal"> | Record<string, never> {
+function cronOwnerUpdateForSet(
+  key: string,
+  job: CronJob,
+): Pick<CronJob, "ownerPrincipal" | "creatorChat"> | Record<string, never> {
   if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
   const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
-  if (setterOwner === cronJobRunsAs(job)) return {};
+  const overlayChat = currentUserOverlayChat();
+  if (setterOwner === cronJobRunsAs(job)) {
+    return overlayChat && overlayChat !== job.creatorChat ? { creatorChat: overlayChat } : {};
+  }
   // The operator takes over someone else's job only by writing what it runs
   // (its message or command). Any other edit leaves it with its owner, so a
   // prompt or command the operator did not write never gains their authority.
   if (setterOwner === CRON_OPERATOR_OWNER && !CRON_RUN_KEYS.has(key)) return {};
-  return { ownerPrincipal: setterOwner };
+  return { ownerPrincipal: setterOwner, creatorChat: overlayChat };
+}
+
+/**
+ * The chat whose contact grants narrow the current turn, when they do. A job
+ * written from such a turn keeps running under those grants, never under the
+ * executor agent's full ceiling.
+ */
+function currentUserOverlayChat(): string | undefined {
+  const metadata = getContext()?.context?.metadata;
+  if (metadata?.actorAuthorizationMode !== "user-overlay") return undefined;
+  const chat = typeof metadata.userOverlayChat === "string" ? metadata.userOverlayChat.replace(/^chat:/, "") : "";
+  return chat || undefined;
+}
+
+/**
+ * A turn relayed from a contact-narrowed turn has no chat of its own to bind a
+ * job to, so it cannot write one that would later run with the agent's authority.
+ */
+function assertCronCreatorBindable(op: string): void {
+  if (getContext()?.context?.metadata?.relayNarrowing === true && !currentUserOverlayChat()) {
+    assertNoUserOverlayAutomationWrite(op);
+  }
 }
 
 function serializeCronJob(job: CronJob) {
@@ -577,6 +639,9 @@ export class CronCommands {
       fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
     }
 
+    if (isShellJob) assertShellAutomationAuthorized("cron add");
+    assertCronCreatorBindable("cron add");
+
     // Validate message is provided for agent jobs.
     if (!isShellJob && !message) {
       fail("--message is required");
@@ -634,6 +699,7 @@ export class CronCommands {
     // Resolve agent: explicit flag > caller agent (from session context) > system default
     const ctx = getContext();
     const resolvedAgent = agent ?? ctx?.agentId;
+    if (agent) assertCronTargetAuthorized("cron add", { agentId: agent }, asJson);
 
     // Resolve account in this order:
     //   1. explicit --account flag
@@ -672,6 +738,7 @@ export class CronCommands {
       shellEnvFile: isShellJob ? envFile : undefined,
       onError: normalizedOnError,
       ownerPrincipal,
+      creatorChat: currentUserOverlayChat(),
     };
 
     try {
@@ -821,6 +888,15 @@ export class CronCommands {
     const job = dbGetCronJob(id);
     if (!job) failCronJobNotFound("cron set", id, asJson);
     assertCronJobMutable("cron set", id, job, asJson);
+    if (key === "agent") {
+      const nextAgent = value === "null" || value === "-" ? getDefaultAgentId() : value;
+      assertCronTargetAuthorized("cron set", { agentId: nextAgent }, asJson);
+    }
+    if (key === "shell" || key === "exec" || key === "env-file") assertShellAutomationAuthorized("cron set");
+    if (!CRON_OWNER_KEEP_KEYS.has(key)) assertCronCreatorBindable("cron set");
+    if (key === "reply-session" && value !== "null" && value !== "-") {
+      assertCronTargetAuthorized("cron set", { agentId: cronJobOwnerId(job), replySession: value }, asJson);
+    }
     const ownerUpdate = cronOwnerUpdateForSet(key, job);
     // Setting a command, or a change that moves a shell job to another owner,
     // must leave it with an owner that acts as the operator. Other edits of an

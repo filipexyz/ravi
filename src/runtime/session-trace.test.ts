@@ -5992,6 +5992,69 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
   });
 
+  it("restates the failed turn's own request and keeps another sender's queued message", async () => {
+    saveMessage(SESSION_NAME, "user", "owner: resume o relatorio", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+    });
+    saveMessage(SESSION_NAME, "user", "member: apaga o repo", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+    });
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "thread-old",
+      runtimeSessionDisplayId: "thread-old",
+      runtimeSessionParams: { sessionId: "thread-old" },
+    });
+
+    const own = createQueuedRuntimeUserMessage({
+      prompt: "owner: resume o relatorio",
+      deliveryBarrier: "after_tool",
+      source: { ...source, actorType: "contact", contactId: "owner" },
+      _agentId: AGENT_ID,
+    });
+    const other = createQueuedRuntimeUserMessage({
+      prompt: "member: apaga o repo",
+      deliveryBarrier: "after_response",
+      source: { ...source, actorType: "contact", contactId: "member" },
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [own, other],
+      currentTurnPendingIds: own.pendingId ? [own.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-context-limit-two-senders");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error:
+            "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+          recoverable: false,
+          rawEvent: { type: "turn.failed", result: "context window exhausted" },
+        },
+      ]),
+      { stashedMessages, restartStashedSession: async () => {}, safeEmit: async () => {} },
+    );
+
+    const stashed = stashedMessages.get(SESSION_NAME) ?? [];
+    expect(stashed).toHaveLength(2);
+    const latest = stashed[0]?.message.content
+      .split("## Latest User Request")[1]
+      ?.split("## Compact Recent History")[0];
+    expect(latest).toContain("owner: resume o relatorio");
+    expect(latest).not.toContain("member: apaga o repo");
+    expect(stashed[1]?.message.content).toBe("member: apaga o repo");
+    expect(stashed[1]?.launchPrompt?.source?.contactId).toBe("member");
+  });
+
   it("recreates a missing provider session from durable local history", async () => {
     const missingSessionId = "b8714bf7-9907-4306-9f7c-1af04d0cd0b4";
     saveMessage(SESSION_NAME, "user", "investiga a falha de deploy", missingSessionId, {

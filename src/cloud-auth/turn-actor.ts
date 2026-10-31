@@ -32,10 +32,19 @@ export function turnActorContactId(env: NodeJS.ProcessEnv = process.env, deps: A
   if (!deps.actor && !inRuntimeTurn(env)) return null;
   try {
     const decision = resolveAccessActor({ ...deps, turn: { ...deps.turn, env } });
-    return decision.kind === "contact" ? decision.contactId : null;
-  } catch {
+    if (decision.kind === "contact") return decision.contactId;
+    // A relay a contact's turn produced is still that contact's request: it
+    // never goes out as the operator alone.
+    if (decision.kind === "refused") return relayCallerContactId();
     return null;
+  } catch {
+    return relayCallerContactId();
   }
+}
+
+function relayCallerContactId(): string | null {
+  const value = getContext()?.context?.metadata?.relayCallerContactId;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 /**

@@ -442,7 +442,46 @@ export function getDeliverableRuntimeMessages(
   const nextSurfaceIndex = replayBounded.findIndex(
     (message, index) => index > 0 && runtimeTurnSurfaceKey(message.launchPrompt?.source) !== firstSurface,
   );
-  return nextSurfaceIndex < 0 ? replayBounded : replayBounded.slice(0, nextSurfaceIndex);
+  const surfaceBounded = nextSurfaceIndex < 0 ? replayBounded : replayBounded.slice(0, nextSurfaceIndex);
+
+  // One physical provider turn also has one authority: the turn context is
+  // built for a single actor, so a message from another sender waits for the
+  // following turn instead of running under this one's identity.
+  const firstActor = runtimeTurnActorKey(surfaceBounded[0]?.launchPrompt);
+  if (firstActor === null) return surfaceBounded.slice(0, 1);
+  const nextActorIndex = surfaceBounded.findIndex(
+    (message, index) => index > 0 && runtimeTurnActorKey(message.launchPrompt) !== firstActor,
+  );
+  return nextActorIndex < 0 ? surfaceBounded : surfaceBounded.slice(0, nextActorIndex);
+}
+
+/**
+ * The identity a turn's authority is built for. Two messages may share a
+ * provider turn only when their keys are equal. An explicitly unknown sender
+ * with no identifier at all (null) never shares a turn.
+ */
+export function runtimeTurnActorKey(
+  prompt: Pick<RuntimeLaunchPrompt, "source" | "context"> | null | undefined,
+): string | null {
+  const source = steeringActorIdentity(prompt?.source ?? {});
+  const context = steeringActorIdentity(prompt?.context ?? {});
+  const actorType = source.actorType || context.actorType;
+  const principal =
+    source.contactId ||
+    context.contactId ||
+    source.actorAgentId ||
+    context.actorAgentId ||
+    source.automationId ||
+    context.automationId ||
+    source.platformIdentityId ||
+    context.platformIdentityId ||
+    source.normalizedSenderId ||
+    context.normalizedSenderId ||
+    source.rawSenderId ||
+    context.rawSenderId ||
+    prompt?.context?.senderId;
+  if (actorType === "unknown" && !principal) return null;
+  return JSON.stringify([actorType, principal]);
 }
 
 export function hasDeliverableRuntimeMessages(sessionName: string, session: RuntimeHostStreamingSession): boolean {

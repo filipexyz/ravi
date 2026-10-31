@@ -3330,6 +3330,8 @@ function getDb(): Database {
   ensureColumn(db, "slack_thread_lifecycle", "provider_override", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "effort_override", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "thinking_level", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "initiator_context_id", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "close_context_id", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
   migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
@@ -3372,6 +3374,7 @@ function getDb(): Database {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN owner_principal TEXT");
     log.info("Added owner_principal column to cron_jobs table");
   }
+  ensureColumn(db, "cron_jobs", "creator_chat", "TEXT");
 
   // Migration: add heartbeat_account_id column to agents
   if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {
@@ -7332,6 +7335,15 @@ export function dbListChatIdsByContactIds(input: {
   return result;
 }
 
+/** Drop a removed platform identity from chat participant rows (they keep the raw sender ids). */
+export function dbDetachChatParticipantIdentity(platformIdentityId: string): number {
+  return getDb()
+    .prepare(
+      "UPDATE chat_participants SET contact_id = NULL, platform_identity_id = NULL, updated_at = ? WHERE platform_identity_id = ?",
+    )
+    .run(Date.now(), platformIdentityId).changes;
+}
+
 export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {
   return upsertChatParticipant(getDb(), input);
 }
@@ -9547,6 +9559,8 @@ export function dbDeleteAgent(id: string): boolean {
   for (const { key } of modeKeys) {
     if (key.startsWith(modePrefix) && !key.slice(modePrefix.length).includes(".")) s.deleteSetting.run(key);
   }
+  // And its Library listing: a same-id recreation starts unlisted and closed to requests.
+  getDb().prepare("DELETE FROM library_agents WHERE agent_id = ?").run(id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
@@ -10516,10 +10530,13 @@ export function dbPruneContexts(options: { apply?: boolean; olderThanMs?: number
   const db = getDb();
   const now = Date.now();
   const cutoff = options.olderThanMs != null ? now - Math.max(0, options.olderThanMs) : now;
+  // A revoked row stays until it also expires: a running turn may still hold a
+  // cached copy without revokedAt, and the stored row is what tells it apart
+  // (see isRuntimeContextLive).
   const where = `
     created_at <= ?
     AND (
-      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ?)
+      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ? AND (expires_at IS NULL OR expires_at = 0))
       OR (expires_at IS NOT NULL AND expires_at != 0 AND expires_at <= ?)
     )
   `;

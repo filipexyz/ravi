@@ -106,12 +106,16 @@ export interface SessionFollowupRunResult {
 export interface SessionFollowupListInput {
   includeDisabled?: boolean;
   targetType?: SessionFollowupTargetType;
+  /** Only cadences of this owner. */
+  owner?: { type: string; id: string };
   limit?: number | string | null;
   offset?: number | string | null;
 }
 
 export interface SessionFollowupRunListInput {
   cadenceId?: string;
+  /** Only runs of cadences of this owner. */
+  owner?: { type: string; id: string };
   status?: SessionFollowupStatus;
   limit?: number | string | null;
   offset?: number | string | null;

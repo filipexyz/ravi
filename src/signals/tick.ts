@@ -114,14 +114,23 @@ export async function tickSignals(deps: SignalTickDependencies = {}): Promise<Ti
 
   try {
     if (deps.runWatchers !== false) {
-      const watcher = runDiskWatcher({
-        now,
-        execute,
-        ...(deps.probe ? { probe: (probeId: string) => deps.probe!(probeId) } : {}),
-      });
-      result.watchers.push(watcher);
-      if (watcher.error) {
-        result.errors.push({ id: watcher.id, error: watcher.error });
+      // One watcher failing must not stop the sweep: the clear, TTL and
+      // out-of-band delivery passes below still run.
+      try {
+        const watcher = runDiskWatcher({
+          now,
+          execute,
+          ...(deps.probe ? { probe: (probeId: string) => deps.probe!(probeId) } : {}),
+        });
+        result.watchers.push(watcher);
+        if (watcher.error) {
+          result.errors.push({ id: watcher.id, error: watcher.error });
+        }
+      } catch (error) {
+        result.errors.push({
+          id: "signals.watch.disk",
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 

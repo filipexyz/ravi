@@ -51,8 +51,9 @@ mock.module("../decorators.js", () => ({
   Option: () => () => {},
 }));
 
+let mockToolContext: unknown;
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
+  getContext: () => mockToolContext,
   // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
   // ContractError instead of process.exit, which is what tests need.
   hasContext: () => true,
@@ -846,6 +847,39 @@ describe("triggers cross-agent access", () => {
     expect(recordedResourceDenials).toEqual([
       expect.objectContaining({ resourceAgentId: "owner", mode: "mutate", command: `triggers ${op}` }),
     ]);
+  });
+
+  it("triggers add cannot aim a trigger at another agent without modify agent:<target>", async () => {
+    const error = await captureContractError(() =>
+      new TriggersCommands().add("aimed", "ravi.external.topic", "hello", "owner"),
+    );
+    expect(error.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "owner", command: "triggers add" });
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("triggers set cannot retarget an own trigger to another agent", async () => {
+    triggerRecord = { ...buildTriggerRecord(), id: "trg_viewer", name: "viewer trigger", agentId: "viewer" };
+    const error = await captureContractError(() => new TriggersCommands().set("trg_viewer", "agent", "owner", true));
+    expect(error.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "owner", command: "triggers set" });
+    expect(updatedTriggers).toEqual([]);
+  });
+
+  it.each([
+    ["set", (c: InstanceType<typeof TriggersCommands>) => c.set("trg_viewer", "message", "new prompt", true)],
+    ["enable", (c: InstanceType<typeof TriggersCommands>) => c.enable("trg_viewer", true)],
+    ["test", (c: InstanceType<typeof TriggersCommands>) => c.test("trg_viewer", true, true)],
+  ])("triggers %s on an own trigger is refused in a contact-narrowed turn", async (_op, invoke) => {
+    triggerRecord = { ...buildTriggerRecord(), id: "trg_viewer", name: "viewer trigger", agentId: "viewer" };
+    mockToolContext = { agentId: "viewer", context: { metadata: { actorAuthorizationMode: "user-overlay" } } };
+    try {
+      await expect(invoke(new TriggersCommands())).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    } finally {
+      mockToolContext = undefined;
+    }
+    expect(updatedTriggers).toEqual([]);
+    expect(emitMock).not.toHaveBeenCalled();
   });
 
   it("disable succeeds across agents with modify agent:<owner>", async () => {

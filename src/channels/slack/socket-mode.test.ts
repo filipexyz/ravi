@@ -12,6 +12,7 @@ import {
   listAccountPendingChats,
   listAccountPendingContacts,
   resolvePlatformIdentity,
+  unlinkContactIdentity,
   upsertAgentPlatformIdentity,
 } from "../../contacts.js";
 import { dbGetCloudChatApproval, dbRecordCloudChatApproval } from "../../cloud-agents/chat-db.js";
@@ -32,6 +33,7 @@ import {
   dbLegacySessionChatBindingsTableExists,
   dbListChatParticipants,
   dbUpsertChat,
+  dbUpsertChatParticipant,
   dbUpsertInstance,
   getDb,
 } from "../../router/router-db.js";
@@ -385,6 +387,59 @@ describe("Slack Socket Mode routing", () => {
     expect(
       resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U555" }),
     ).toMatchObject({ ownerType: "contact", platformDisplayName: "Ana" });
+  });
+
+  it("stops admitting a channel through routing's own subscription once groupPolicy is closed", async () => {
+    dbUpsertInstance({ name: "slack-main", instanceId: "slack-main", channel: "slack", groupPolicy: "open" });
+    const instance = {
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "open" as const,
+      groupPolicy: "open" as "open" | "closed",
+      contactIntakeMode: "off" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [{ pattern: "*", accountId: "slack-main", agent: "ravi-hil", priority: 0, channel: "slack" }],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: { "slack-main": instance },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+    const message = (id: string, ts: string) => ({
+      envelope_id: id,
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: id,
+        event_time: 1_713_000_000,
+        event: { type: "message", channel: "C100", channel_type: "channel", user: "U100", text: "oi", ts },
+      },
+    });
+
+    await service.handleEnvelope(message("Ev-open", "1713000000.000600"));
+    expect(published).toHaveLength(1);
+
+    instance.groupPolicy = "closed";
+    dbUpsertInstance({ name: "slack-main", instanceId: "slack-main", channel: "slack", groupPolicy: "closed" });
+    await service.handleEnvelope(message("Ev-closed", "1713000001.000600"));
+    expect(published).toHaveLength(1);
   });
 
   it("intakes a routed Slack channel sender without requiring a prior DM", async () => {
@@ -5003,6 +5058,43 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
     expect(participants[0]).toMatchObject({ contactId: identity.contact!.id });
 
     expect(actorResolutionForSource(source, context)).toBe("resolved");
+  });
+
+  it("never resolves a Slack sender from a stale chat participant row", async () => {
+    const identity = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: UUID,
+      platformSenderId: "U123",
+      contactIdentity: "U123",
+      displayName: "Luis",
+      intakeMode: "pending",
+      source: "test",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-s1", eventId: "EvS1", user: "U123", ts: "1713000040.000100" }),
+    );
+    const canonicalChatId = (published[0]!.payload.source as MessageTarget).canonicalChatId!;
+
+    unlinkContactIdentity(identity.platformIdentity!.id);
+    // A participant row written before the unlink still names the old contact.
+    dbUpsertChatParticipant({
+      chatId: canonicalChatId,
+      contactId: identity.contact!.id,
+      normalizedPlatformUserId: "U123",
+      role: "member",
+      status: "active",
+      source: "inbound_message",
+    });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-s2", eventId: "EvS2", user: "U123", ts: "1713000041.000100" }),
+    );
+    expect(published).toHaveLength(2);
+    const source = published[1]!.payload.source as MessageTarget;
+    expect(source.contactId).not.toBe(identity.contact!.id);
+    expect(source.identityProvenance).not.toMatchObject({ source: "chat_participants" });
   });
 
   it("resolves an identity stored under the configured slug when Slack addresses the UUID", async () => {

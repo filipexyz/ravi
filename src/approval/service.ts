@@ -17,6 +17,7 @@ import {
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { buildAuthorizationGuidance, formatCanonicalCapability } from "../permissions/authorization-guidance.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
+import { isRuntimeContextLive } from "../runtime/context-liveness.js";
 import { updateSlackText } from "../channels/slack/text-send.js";
 import { respondToSlackInteraction } from "../channels/slack/interactions.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
@@ -514,6 +515,11 @@ export async function requestCascadingApproval(
 
 export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions): Promise<ContextAuthorizationResult> {
   const { context, permission, objectType, objectId } = opts;
+
+  if (!isRuntimeContextLive(context)) {
+    const reason = `Permission denied: runtime context ${context.contextId} is revoked or expired`;
+    return denyRuntimeContext(opts, reason, "runtime_context_not_live");
+  }
 
   if (isChatOnlyAgent(context.agentId) && isToolOrExecCapability({ permission, objectType })) {
     const reason = `Permission denied: agent:${context.agentId ?? "unknown"} is chat-only and cannot use ${permission} ${objectType}:${objectId}`;

@@ -223,6 +223,12 @@ Console credits the write to that person through this installation's
 - The operator's own turns, routines the operator owns, turns Ravi cannot
   attribute and calls outside a runtime turn MUST send no header: Console
   then acts as the `ravi login` user.
+- A turn another turn produced (a session relay, a Slack thread bootstrap,
+  report or return) whose producing turn acted for a contact MUST send that
+  contact, read from the daemon's record of the producing context
+  (`relayCallerContactId`), even though the relayed turn itself names an
+  agent. A contact's request never goes out as the operator alone by being
+  relayed.
 - `/api/cli/auth/**` and `/api/cli/me` MUST NOT carry it.
 - A failure to classify the turn MUST NOT fail the call; it sends no header.
 

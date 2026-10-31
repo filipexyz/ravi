@@ -71,6 +71,17 @@ function defaultCooldown(severity: SignalSeverity): number {
   return DEFAULT_COOLDOWN_MS[severity];
 }
 
+/** Key namespaces owned by Ravi's own producers (watchers and task producers). */
+const PRODUCER_OWNED_KEY_PREFIXES = ["host.", "task.stalled.", "task.orphaned."];
+
+/**
+ * An agent turn may not raise on a key Ravi's producers own: its judgment would
+ * hold the key, and the cross-kind guard would then block the producer's fact.
+ */
+export function isProducerOwnedSignalKey(key: string): boolean {
+  return PRODUCER_OWNED_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
+}
+
 export function raiseSignal(input: RaiseSignalInput): RaiseSignalResult {
   ensureSignalSchema();
   const now = input.now ?? Date.now();

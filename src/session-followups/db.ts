@@ -203,6 +203,10 @@ export function listSessionFollowupCadences(input: SessionFollowupListInput = {}
     where.push("target_type = ?");
     params.push(requireTargetType(input.targetType));
   }
+  if (input.owner) {
+    where.push("owner_type = ? AND owner_id = ?");
+    params.push(input.owner.type, input.owner.id);
+  }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const total = countRows({ db: getDb(), table: "session_followup_cadences", where, params });
   const rows = getDb()
@@ -438,6 +442,10 @@ export function listSessionFollowupRuns(input: SessionFollowupRunListInput = {})
   if (input.status) {
     where.push("status = ?");
     params.push(requireRunStatus(input.status));
+  }
+  if (input.owner) {
+    where.push("cadence_id IN (SELECT id FROM session_followup_cadences WHERE owner_type = ? AND owner_id = ?)");
+    params.push(input.owner.type, input.owner.id);
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const total = countRows({ db: getDb(), table: "session_followup_runs", where, params });

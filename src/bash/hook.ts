@@ -15,7 +15,7 @@
 
 import {
   checkDangerousPatterns,
-  findOutputRedirectTargets,
+  analyzeOutputRedirects,
   parseBashCommand,
   stripShellQuoting,
   UNCONDITIONAL_BLOCKS,
@@ -30,6 +30,7 @@ import {
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
+import { fileWriteToolTargets, providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
 import type { ContextCapability, ContextRecord, ContextSource } from "../router/router-db.js";
 
 const log = logger.child("bash:hook");
@@ -99,6 +100,8 @@ interface PreToolUseHookInput {
   hook_event_name: string;
   tool_name: string;
   tool_input: Record<string, unknown>;
+  /** The session's working directory; relative tool paths resolve against it. */
+  cwd?: string;
 }
 
 /**
@@ -282,6 +285,8 @@ export interface BashPermissionContext {
   source?: ContextSource;
   capabilities?: ContextCapability[];
   metadata?: Record<string, unknown> | null;
+  /** The shell's starting directory, which relative redirect targets resolve against. */
+  cwd?: string;
 }
 
 export interface BashPermissionDecision {
@@ -371,6 +376,7 @@ function isUserOverlayTurn(ctx: Pick<BashPermissionContext, "metadata">): boolea
 }
 
 function hasTurnCapabilityNarrowing(ctx: Pick<BashPermissionContext, "metadata">): boolean {
+  if (ctx.metadata?.relayNarrowing === true) return true;
   const count = ctx.metadata?.turnCapabilityCount;
   if (typeof count === "number" && count > 0) return true;
   return Array.isArray(ctx.metadata?.turnCapabilities) && ctx.metadata.turnCapabilities.length > 0;
@@ -431,11 +437,40 @@ function checkExecutablePermissionsForContext(
 
   // An allowed executable plus `> file` is a file write: `ravi crypto status > ~/.ravi/crypto.db`
   // would wipe the ledger. Restricted agents may only discard output unless they can write files anyway.
-  const fileWrites = findOutputRedirectTargets(command).filter((target) => !HARMLESS_REDIRECT_TARGETS.has(target));
+  const redirects = analyzeOutputRedirects(command, ctx.cwd);
+  if (redirects.error) {
+    return {
+      allowed: false,
+      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot redirect output to files: ${redirects.error}`,
+      deniedCapabilities: canWithBashContext(ctx, "use", "tool", "Write")
+        ? [{ relation: "execute", objectType: "executable", objectId: "*" }]
+        : [{ relation: "use", objectType: "tool", objectId: "Write" }],
+    };
+  }
+  const fileWrites = redirects.writes.filter((write) => !HARMLESS_REDIRECT_TARGETS.has(write.target));
+  const configWriteDenial = fileWrites
+    .flatMap((write) =>
+      write.cwds.map((cwd) =>
+        providerConfigWriteDenial({
+          can: (permission, objectType, objectId) => canWithBashContext(ctx, permission, objectType, objectId),
+          agentId: ctx.agentId,
+          targets: [write.target],
+          cwd,
+        }),
+      ),
+    )
+    .find(Boolean);
+  if (configWriteDenial) {
+    return {
+      allowed: false,
+      reason: configWriteDenial,
+      deniedCapabilities: [{ relation: "execute", objectType: "executable", objectId: "*" }],
+    };
+  }
   if (fileWrites.length > 0 && !canWithBashContext(ctx, "use", "tool", "Write")) {
     return {
       allowed: false,
-      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot redirect output to files (${fileWrites.join(", ")})`,
+      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot redirect output to files (${fileWrites.map((write) => write.target).join(", ")})`,
       deniedCapabilities: [{ relation: "use", objectType: "tool", objectId: "Write" }],
     };
   }
@@ -627,6 +662,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
       source: scopeCtx.source,
       capabilities: scopeCtx.context?.capabilities,
       metadata: scopeCtx.context?.metadata,
+      ...(typeof input.cwd === "string" && input.cwd ? { cwd: input.cwd } : {}),
     };
     const decision = evaluateBashPermission(command, bashContext);
 
@@ -764,6 +800,24 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
           permissionDecisionReason: reason,
+        },
+      };
+    }
+
+    const configWriteDenial = providerConfigWriteDenial({
+      can: (permission, objectType, objectId) => canWithBashContext(bashContext, permission, objectType, objectId),
+      agentId,
+      targets: fileWriteToolTargets(toolName, input.tool_input),
+      cwd: input.cwd,
+    });
+    if (configWriteDenial) {
+      log.warn("Tool blocked: provider settings write", { agentId, tool: toolName });
+      emitPermissionDeniedAudit({ type: "tool", agentId, denied: `tool:${toolName}`, reason: configWriteDenial });
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: configWriteDenial,
         },
       };
     }

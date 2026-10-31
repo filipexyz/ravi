@@ -3,6 +3,7 @@
 // is the semantic `chats.id` of ravi.db, so the two are matched through the
 // `chats` rows, never by a direct join.
 
+import { contactOwnsChatPeer } from "../contacts.js";
 import { dbListChatParticipants, dbListChats, dbListChatsByRef, type ChatRecord } from "../router/router-db.js";
 
 /**
@@ -19,17 +20,29 @@ export function dmContactForChat(input: { chatId: string; channel: string | null
     const contacts = new Set<string>();
     for (const chat of chats) {
       if (chat.chatType !== "dm") return null;
+      const participants = dbListChatParticipants(chat.id);
+      let contactId: string | null = null;
       if (chat.normalizedChatId.startsWith("contact:")) {
-        contacts.add(chat.normalizedChatId.slice("contact:".length));
-        continue;
+        contactId = chat.normalizedChatId.slice("contact:".length);
+      } else {
+        const members = new Set(
+          participants
+            .map((participant) => participant.contactId)
+            .filter((memberId): memberId is string => Boolean(memberId)),
+        );
+        if (members.size !== 1) return null;
+        contactId = [...members][0] ?? null;
       }
-      const members = new Set(
-        dbListChatParticipants(chat.id)
-          .map((participant) => participant.contactId)
-          .filter((contactId): contactId is string => Boolean(contactId)),
+      if (!contactId) return null;
+      // The chat key and participant rows are copies: once the chat has seen a
+      // person, the contact must still own that person's platform identity (an
+      // unlinked number keeps its chat and its participant rows).
+      const people = participants.filter(
+        (participant) =>
+          !participant.agentId && (participant.platformIdentityId || participant.normalizedPlatformUserId),
       );
-      if (members.size !== 1) return null;
-      for (const contactId of members) contacts.add(contactId);
+      if (people.length > 0 && !contactOwnsChatPeer(contactId, chat.channel, people)) return null;
+      contacts.add(contactId);
     }
     return contacts.size === 1 ? ([...contacts][0] ?? null) : null;
   } catch {

@@ -31,6 +31,7 @@ import type {
   RuntimeTurnOriginPrincipal,
 } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin, type SessionRelayOriginContext } from "../../runtime/turn-origin.js";
+import { getContext } from "../../cli/context.js";
 import { applyProviderModelRule } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import { logger } from "../../utils/logger.js";
@@ -152,6 +153,7 @@ export async function finalizeSlackThreadCreation(
           record.initiatorSessionKey ?? record.parentSessionKey,
           materialized.agentId,
         ),
+        callerContextId: record.initiatorContextId,
         payload: buildSlackThreadInitialPrompt(record, materialized),
         options: {
           messageId: `slack-thread-start:${record.requestId}`,
@@ -333,6 +335,7 @@ export async function closeSlackThread(
   const closed = closeSlackThreadLifecycle({
     childSessionKey: session.sessionKey,
     returnResult,
+    closeContextId: getContext({ localOnly: true })?.contextId,
   });
 
   if (closed.changed) {
@@ -380,6 +383,7 @@ export async function deliverSlackThreadParentReturn(
         sessionName: parent.name ?? parent.sessionKey,
         action: "session.return",
         principal: resolveChannelLifecyclePrincipal("session.return", record.childSessionKey),
+        callerContextId: record.closeContextId,
         payload: {
           prompt: buildSlackThreadParentNotice(record, "concluída.", "Resultado", record.closeResult),
           source: buildSlackThreadParentSource(record, record.providerThreadId),
@@ -638,6 +642,7 @@ export async function reportSlackThreadProgress(
       sessionName: parent.name ?? parent.sessionKey,
       action: "session.return",
       principal: resolveChannelLifecyclePrincipal("session.return", session.sessionKey),
+      callerContextId: getContext({ localOnly: true })?.contextId,
       payload: {
         prompt: buildSlackThreadParentNotice(record, "reporta progresso.", "Progresso", text),
         source: buildSlackThreadParentSource(record, record.providerThreadId),

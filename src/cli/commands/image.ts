@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve, basename } from "node:path";
+import { resolveCallerPath } from "../caller-cwd.js";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail, type ToolContext } from "../context.js";
 import { contractDryRun, contractFail } from "../agent-contract.js";
@@ -278,9 +279,9 @@ export class ImageCommands {
     execute?: boolean,
   ) {
     const ctx = getContext();
-    const sourcePath = source ? resolve(source) : undefined;
+    const sourcePath = source ? resolveCallerPath(source) : undefined;
     if (sourcePath && !existsSync(sourcePath)) fail(`Source image not found: ${sourcePath}`);
-    const outputDir = output ? resolve(output) : undefined;
+    const outputDir = output ? resolveCallerPath(output, "write") : undefined;
     const compressionValue = parseCompression(compression);
     if (asyncMode && syncMode) {
       fail("--async and --sync cannot be used together. Async is already the default; use --sync only when needed.");
@@ -911,9 +912,9 @@ export class ImageAtlasCommands {
     const resolvedCols = parsePositiveInteger(cols, "--cols", 3);
     const resolvedRows = parsePositiveInteger(rows, "--rows", 2);
     const resolvedMode = parseAtlasMode(mode);
-    const inputPath = resolve(input);
+    const inputPath = resolveCallerPath(input);
     if (!existsSync(inputPath)) fail(`Input image not found: ${inputPath}`);
-    const outputDir = output ? resolve(output) : resolve(`/tmp/ravi-image-atlas-${Date.now()}`);
+    const outputDir = output ? resolveCallerPath(output, "write") : resolve(`/tmp/ravi-image-atlas-${Date.now()}`);
     const parentArtifact = parentArtifactId ? getArtifact(parentArtifactId) : null;
     if (parentArtifactId && !parentArtifact) fail(`Parent artifact not found: ${parentArtifactId}`);
     const resolvedNames = parseAtlasNames(names);
