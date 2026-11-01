@@ -470,6 +470,40 @@ describe("agent/session verdicts and code blockers across GitHub surfaces", () =
     expect((await evaluate(api, args)).ok).toBe(false);
   });
 
+  test.each(["APPROVED", "COMMENTED"])(
+    "an edited %s review body blocks again after its finding and native thread were resolved",
+    async (reviewState) => {
+      const { api, state, calls } = fixture();
+      state.reviews[0] = {
+        ...finding,
+        author: reviewer,
+        state: reviewState,
+        body: "The reviewed changes are approved.",
+        submittedAt: "2026-10-31T18:00:00Z",
+        updatedAt: "2026-10-31T18:00:00Z",
+      };
+      state.reviews[1].submittedAt = "2026-10-31T19:00:00Z";
+      state.reviews[1].body = verdict({ resolves: [finding.url] });
+      expect(state.reviewThreads[0].isResolved).toBe(true);
+      expect((await evaluate(api, args)).ok).toBe(true);
+
+      state.reviews[0].body = "blocked-por-código: the original finding.";
+      state.reviews[0].updatedAt = "2026-10-31T18:30:00Z";
+      expect((await evaluate(api, args)).ok).toBe(true);
+
+      state.reviews[0].body += " New finding added after the previous resolution.";
+      state.reviews[0].updatedAt = "2026-10-31T20:00:00Z";
+      const blocked = await evaluate(api, args);
+      expect(blocked.ok).toBe(false);
+      expect(blocked.problems.join("\n")).toContain(finding.url);
+      expect(state.reviewThreads[0].isResolved).toBe(true);
+      expect(calls.some(({ query }) => query.includes("reviews(first:") && query.includes("updatedAt"))).toBe(true);
+
+      state.reviews[1].submittedAt = "2026-10-31T21:00:00Z";
+      expect((await evaluate(api, args)).ok).toBe(true);
+    },
+  );
+
   test("missing author provenance, reader publication and malformed verdicts fail closed", async () => {
     const { api, state } = fixture();
     state.pr.body = "";

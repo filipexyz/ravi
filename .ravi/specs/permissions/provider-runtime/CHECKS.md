@@ -63,10 +63,19 @@ Quoting regressions (`bun test src/bash/`):
   `env -C` MUST deny through the same unconditional pipe rule.
 - Direct `python3 /dev/fd/3 3<&0` and `python3 /dev/stdin` MUST deny by descriptor
   shape. Cover other interpreters, options, arbitrary fds and `/proc/**/fd/N`.
+  Include literal `python3 /dev/fd/4 4<&0` and
+  `python3 /dev/fd/4 4</tmp/x.py`: descriptor form denies independently of origin.
 - Parser and real-hook tests MUST iterate the exported `INTERPRETERS` set and
   deny every member as a bare, quoted and absolute-path pipe receiver. Include
   `printf 'console.log(731)\n' | bun run -` as an explicit regression.
-- Option operands MUST NOT hide a descriptor script: deny
+- Versioned receivers `python3.12 -`, `python3.11 /dev/stdin`, `php8.2 -r`,
+  `perl5.36 -e`, `lua5.4 -`, `ruby3.2 -` and `node20` MUST deny by the same
+  pipe rule. Without pipes, `nodejs build.js`, `Rscript script.R`,
+  `ts-node script.ts` and `python3.12 script.py` MUST pass. Matching remains
+  case-sensitive, and a versioned invocation still needs its own executable grant.
+- Descriptor forms in any argument MUST deny without locating a script: cover
+  `perl -I /tmp /dev/stdin`, `node --conditions testing /dev/stdin`,
+  `bun run /dev/stdin`, `bun --bun run /dev/stdin`, `deno run /dev/stdin`,
   `python3 --check-hash-based-pycs always /dev/stdin`,
   `python3 -X importtime /dev/stdin` and `node --require helper.js /dev/stdin`.
 - Direct `python3 script.py "$INPUT"` and `node build.js *.json` MUST pass;
@@ -75,8 +84,9 @@ Quoting regressions (`bun test src/bash/`):
   `python3 script.py` MUST still deny regardless of later arguments.
 - Without a pipe, `python3 script.py`, `python3 ./a.py arg`,
   `node --no-warnings build.js`, `python3 /abs/script.py` and
-  `python3 /abs/s.py < dados.txt` MUST remain allowed. A descriptor-looking later
-  script argument or known option operand MUST NOT be classified as the script.
+  `python3 /abs/s.py < dados.txt` MUST remain allowed. Descriptor-looking later
+  arguments or option operands MUST deny regardless of their role:
+  `python3 script.py /dev/stdin` and `python3 -W /dev/stdin script.py` are deliberate refusals.
 - `printf data | cat; python3 --version` and `printf data | cat && python3 script.py`
   MUST pass; `printf a | tee x | python3 -u` MUST deny at the later pipe.
 - Single-quoted substitution/backtick/process/heredoc text and escaped dollar

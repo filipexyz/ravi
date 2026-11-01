@@ -65,6 +65,13 @@ export const INTERPRETERS: ReadonlySet<string> = new Set([
   "ts-node",
 ]);
 
+/** Normalize only for interpreter policy; executable grants keep the real name. */
+function interpreterName(executable: string): string | undefined {
+  if (INTERPRETERS.has(executable)) return executable;
+  const unversioned = executable.replace(/[\d.]+$/, "");
+  return INTERPRETERS.has(unversioned) ? unversioned : undefined;
+}
+
 /**
  * Interpreters that are blocked when used with inline code flags.
  */
@@ -75,15 +82,6 @@ const INLINE_CODE_INTERPRETERS: Record<string, string[]> = {
   perl: ["-e"],
   ruby: ["-e"],
   php: ["-r"],
-};
-
-// Known option operands are not positional script paths in direct invocations.
-const INTERPRETER_OPTION_VALUES: Record<string, string[]> = {
-  python: ["-W", "-X", "--check-hash-based-pycs"],
-  python3: ["-W", "-X", "--check-hash-based-pycs"],
-  node: ["-r", "--require"],
-  nodejs: ["-r", "--require"],
-  php: ["-d", "-c"],
 };
 
 // ============================================================================
@@ -115,7 +113,7 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
         const executable = parseSimpleCommand(receiver);
         if (!executable) continue;
         if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
-        if (INTERPRETERS.has(executable)) {
+        if (interpreterName(executable)) {
           return { safe: false, reason: "piping to an interpreter is not allowed" };
         }
         break;
@@ -123,8 +121,9 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
     }
     for (const segment of splitByOperators(inspected.command)) {
       const executable = parseSimpleCommand(segment);
-      if (executable && INTERPRETERS.has(executable) && hasDescriptorScriptArgument(executable, segment)) {
-        return { safe: false, reason: "interpreter descriptor script paths are not allowed" };
+      const interpreter = executable ? interpreterName(executable) : undefined;
+      if (interpreter && hasDescriptorArgument(segment)) {
+        return { safe: false, reason: "interpreter descriptor arguments are not allowed" };
       }
     }
   } catch {
@@ -234,10 +233,10 @@ function parseWords(command: string, env?: Parameters<typeof parseShell>[1]): Pa
 }
 
 // A string marker preserves a word containing an expansion as one token, even
-// with a literal prefix/suffix. Only the script word must resolve literally.
+// with a literal prefix/suffix. Later argument expansions can remain unresolved.
 const UNRESOLVED_EXPANSION = "\0";
 
-/** Yield lazily: later script arguments need no resolution or classification. */
+/** Assignments, comments and redirect operands are not command arguments. */
 function* commandWords(command: string): Generator<ParseEntry> {
   const tokens = parseWords(command, () => UNRESOLVED_EXPANSION);
   let foundExecutable = false;
@@ -265,30 +264,33 @@ function* commandWords(command: string): Generator<ParseEntry> {
   }
 }
 
-function hasDescriptorScriptArgument(executable: string, command: string): boolean {
+function hasDescriptorArgument(command: string): boolean {
   const args = commandWords(command);
   args.next(); // executable (assignments and redirect operands are skipped)
-  const optionValues = INTERPRETER_OPTION_VALUES[executable] ?? [];
   let endOfOptions = false;
+  let hasLiteralPositional = false;
+  let unresolvedLeadingArgument = false;
   for (const arg of args) {
+    // Refuse descriptor forms in every position, including option operands and
+    // data after a script. No option arity or subcommand grammar grants an exception.
+    if (typeof arg === "string") {
+      const path = resolve("/", arg);
+      if (/^\/dev\/(?:std(?:in|out|err)|fd\/\d+)$/.test(path) || /^\/proc\/.*\/fd\/\d+$/.test(path)) return true;
+    }
     if (typeof arg !== "string" || arg.includes(UNRESOLVED_EXPANSION)) {
-      throw new Error("Cannot resolve interpreter script argument");
+      if (!hasLiteralPositional) unresolvedLeadingArgument = true;
+      continue;
     }
     if (!endOfOptions && arg === "--") {
       endOfOptions = true;
       continue;
     }
-    if (!endOfOptions && optionValues.includes(arg)) {
-      args.next(); // consume this option's operand before locating the script
-      continue;
-    }
     if (!endOfOptions && arg.startsWith("-") && arg !== "-") continue;
-    // Only the first positional word is the script. Later descriptor-looking
-    // words may be ordinary arguments to a file script; this is a shape check,
-    // not proof of content provenance, cwd or filesystem identity.
-    const path = resolve("/", arg);
-    return /^\/dev\/(?:std(?:in|out|err)|fd\/\d+)$/.test(path) || /^\/proc\/.*\/fd\/\d+$/.test(path);
+    hasLiteralPositional = true;
   }
+  // Keep dynamic leading script words fail-closed, without rejecting expansions
+  // after a literal positional word or attempting to identify a runtime's script.
+  if (unresolvedLeadingArgument) throw new Error("Cannot resolve leading interpreter argument");
   return false;
 }
 
@@ -348,7 +350,7 @@ function splitByOperators(command: string, receiverOnly = false): string[] {
  * Check if an executable with its arguments represents inline code execution.
  */
 function isInlineCodeExecution(executable: string, command: string): { blocked: boolean; reason?: string } {
-  const flags = INLINE_CODE_INTERPRETERS[executable];
+  const flags = INLINE_CODE_INTERPRETERS[interpreterName(executable) ?? ""];
   if (!flags) return { blocked: false };
 
   // Check if any inline code flag is present in the command

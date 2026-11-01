@@ -587,6 +587,8 @@ describe("pipeline receiver scope and directory changes", () => {
 describe("direct interpreter descriptor paths and named input", () => {
   for (const command of [
     "python3 /dev/fd/3 3<&0",
+    "python3 /dev/fd/4 4<&0",
+    "python3 /dev/fd/4 4</tmp/x.py",
     "python3 /dev/stdin",
     "python3 -u /dev/stdout 1<&0",
     "python3 -W ignore -- /dev/./fd/7 7<&0",
@@ -598,7 +600,7 @@ describe("direct interpreter descriptor paths and named input", () => {
     it(`denies a direct descriptor script: ${command}`, () => {
       expect(checkDangerousPatterns(command)).toEqual({
         safe: false,
-        reason: "interpreter descriptor script paths are not allowed",
+        reason: "interpreter descriptor arguments are not allowed",
       });
       expect(parseBashCommand(command).success).toBe(false);
     });
@@ -611,8 +613,6 @@ describe("direct interpreter descriptor paths and named input", () => {
     "python3 /abs/script.py",
     "python3 /abs/s.py < dados.txt",
     "cd /tmp && python3 /abs/s.py < dados.txt",
-    "python3 script.py /dev/stdin",
-    "python3 -W /dev/stdin script.py",
     "printf data | cat; python3 /abs/s.py < dados.txt",
   ]) {
     it(`preserves direct file execution: ${command}`, () => {
@@ -675,9 +675,7 @@ describe("interpreter registry, option arity and script-only resolution", () => 
     'python3 script.py "$INPUT"',
     "node build.js *.json",
     'python3 --check-hash-based-pycs always script.py "$INPUT"',
-    'python3 --check-hash-based-pycs "$MODE" script.py "$INPUT"',
     "node --require helper.js build.js *.json",
-    'python3 script.py "$INPUT" /dev/stdin',
     "python3 /abs/s.py < dados.txt",
   ]) {
     it(`allows later argument expansion: ${JSON.stringify(command)}`, () => {
@@ -685,4 +683,87 @@ describe("interpreter registry, option arity and script-only resolution", () => 
       expect(parseBashCommand(command).success).toBe(true);
     });
   }
+});
+
+describe("descriptor-shaped arguments are denied even when used as data", () => {
+  for (const command of [
+    "perl -I /tmp /dev/stdin",
+    "node --conditions testing /dev/stdin",
+    "bun run /dev/stdin",
+    "python3 --check-hash-based-pycs always /dev/stdin",
+    "bun --bun run /dev/stdin",
+    "deno run /dev/stdin",
+    "python3 script.py /dev/stdin",
+    'python3 script.py "$INPUT" /dev/stdin',
+    "python3 -W /dev/stdin script.py",
+    "python3 script.py /dev/fd/4",
+    "python3 script.py /proc/self/fd/9",
+    "node build.js /dev/stdout",
+    "node build.js /dev/stderr",
+  ]) {
+    it(`deliberately denies any descriptor argument: ${command}`, () => {
+      expect(checkDangerousPatterns(command)).toEqual({
+        safe: false,
+        reason: "interpreter descriptor arguments are not allowed",
+      });
+      expect(parseBashCommand(command).success).toBe(false);
+    });
+  }
+});
+
+describe("versioned interpreter basenames", () => {
+  for (const receiver of [
+    "python3.12 -",
+    "python3.11 -",
+    "python3.11 /dev/stdin",
+    "php8.2 -r 'echo 1;'",
+    "perl5.36 -e 'print 1'",
+    "lua5.4 -",
+    "ruby3.2 -",
+    "node20 /abs/build.js",
+    "node20 -e 1",
+    '"/usr/bin/python3.12" /abs/script.py',
+  ]) {
+    it(`denies a pipe into ${receiver}`, () => {
+      const command = `printf 'print(1)\\n' | ${receiver}`;
+      expect(checkDangerousPatterns(command)).toEqual({
+        safe: false,
+        reason: "piping to an interpreter is not allowed",
+      });
+      expect(parseBashCommand(command).success).toBe(false);
+    });
+  }
+
+  for (const command of [
+    "python3.11 /dev/stdin",
+    "python3.12 --check-hash-based-pycs always /dev/stdin",
+    "node20 --require helper.js /dev/stdin",
+    "php8.2 -r 'echo 1;'",
+    "perl5.36 -e 'print 1'",
+  ]) {
+    it(`applies direct interpreter rules to ${command}`, () => {
+      expect(parseBashCommand(command).success).toBe(false);
+    });
+  }
+
+  for (const command of [
+    "nodejs build.js",
+    "Rscript script.R",
+    "ts-node script.ts",
+    "python3.12 script.py",
+    'python3.12 script.py "$INPUT"',
+    "printf data | Python3.12 script.py",
+    "printf data | rscript script.R",
+  ]) {
+    it(`preserves direct execution and case-sensitive names: ${command}`, () => {
+      expect(parseBashCommand(command).success).toBe(true);
+    });
+  }
+
+  it("retains the versioned executable as the permission target", () => {
+    expect(parseBashCommand("/usr/bin/python3.12 script.py")).toEqual({
+      executables: ["python3.12"],
+      success: true,
+    });
+  });
 });

@@ -158,15 +158,20 @@ Required capability materializers:
   symlinks MUST NOT grant an exception. No cwd or wrapper model is involved.
   This rule is enumerative: new runtimes MUST enter that single set, and parser
   and real-hook tests MUST iterate every member to enforce pipe refusal.
+  Match basenames case-sensitively: try the exact name first, then remove a
+  final `[\d.]+` version suffix and retry the same set. Apply the matched
+  interpreter's descriptor and inline rules to versioned names too;
+  executable permission checks MUST retain the original basename.
 - Direct file-script invocation (`python3 /abs/script.py`) and named-file input
   (`python3 /abs/script.py < dados.txt`) MAY remain allowed by executable grants.
-  Direct positional script paths shaped as `/dev/fd/N`, `/proc/**/fd/N`,
+  Any argument shaped as `/dev/fd/N`, `/proc/**/fd/N`,
   `/dev/stdin`, `/dev/stdout` or `/dev/stderr` MUST still be refused for every
-  descriptor number. Known option operands, redirect targets and later script
-  arguments MUST NOT be confused with the positional script path.
-  Option arity MUST consume option/value pairs before selecting the script.
-  The script word MUST resolve literally; expansions in later arguments MUST
-  NOT deny an otherwise allowed direct file-script invocation.
+  descriptor number, including option operands and arguments after a script.
+  `python3 script.py /dev/stdin` is deliberately denied even when the descriptor
+  is data: this check does not identify the script or model option arity/subcommands.
+  Redirect operands are separate from command arguments. Unresolved leading
+  interpreter arguments MUST deny; variable/glob arguments after a literal
+  positional word, such as `python3 script.py "$INPUT"`, MUST remain allowed.
 - Pipeline inspection MUST continue after empty/comment-only receiver segments;
   a whole-line comment MUST NOT hide an interpreter on the next line. Each pipe
   stops at its effective receiver and MUST NOT cross `;`, `&&` or `||`; other
