@@ -21,7 +21,6 @@ import type {
   OptionRegistryEntry,
   RegistrySnapshot,
 } from "../../cli/registry-snapshot.js";
-import type { ScopeType } from "../../cli/decorators.js";
 import { sortKeysDeep, stableStringify } from "./stable-stringify.js";
 import type {
   JsonSchema,
@@ -48,9 +47,56 @@ const DEFAULT_DESCRIPTION =
   "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.";
 const DEFAULT_SERVERS = [{ url: "http://localhost:3000", description: "Local Ravi gateway (default)" }];
 
+/** Shared `components.schemas` collected while emitting one document. */
+type SchemaComponents = Record<string, JsonSchema>;
+
+const LOCAL_DEF_REF = "#/$defs/";
+const COMPONENT_REF = "#/components/schemas/";
+
+/** Replace every `#/$defs/<key>` ref in `value` using `names` (key → component name). */
+function rewriteDefRefs(value: unknown, names: Map<string, string>): unknown {
+  if (Array.isArray(value)) return value.map((item) => rewriteDefRefs(item, names));
+  if (value === null || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "$ref" && typeof child === "string" && child.startsWith(LOCAL_DEF_REF)) {
+      const name = names.get(child.slice(LOCAL_DEF_REF.length));
+      out[key] = name === undefined ? child : `${COMPONENT_REF}${name}`;
+    } else {
+      out[key] = rewriteDefRefs(child, names);
+    }
+  }
+  return out;
+}
+
+/**
+ * Move the `$defs` Zod emits for recursive or reused schemas into
+ * `components.schemas`. Inside an OpenAPI document `#/$defs/...` resolves
+ * against the document root, where nothing lives, so the spec fails
+ * validation (Mintlify refuses to build docs.ravi.bot on it). Component
+ * names hash the whole `$defs` block, so identical definitions dedupe and
+ * the output stays deterministic.
+ */
+function hoistDefs(json: JsonSchema, components: SchemaComponents): JsonSchema {
+  const defs = json.$defs as Record<string, JsonSchema> | undefined;
+  if (defs === undefined) return json;
+  delete json.$defs;
+  const digest = createHash("sha256").update(stableStringify(defs, 0)).digest("hex").slice(0, 12);
+  const names = new Map<string, string>();
+  for (const key of Object.keys(defs)) {
+    // Zod names anonymous definitions `__schema0`, `__schema1`, ...
+    const base = key.replace(/^__schema(\d+)$/, "Schema$1").replace(/[^A-Za-z0-9._-]/g, "_");
+    names.set(key, `${base}_${digest}`);
+  }
+  for (const [key, def] of Object.entries(defs)) {
+    components[names.get(key) as string] = rewriteDefRefs(def, names) as JsonSchema;
+  }
+  return rewriteDefRefs(json, names) as JsonSchema;
+}
+
 /** Convert a Zod schema to JSON Schema and strip the `$schema` draft marker. */
-function zodToJson(schema: ZodTypeAny, description?: string): JsonSchema {
-  const json = z.toJSONSchema(schema, { unrepresentable: "any" }) as JsonSchema;
+function zodToJson(schema: ZodTypeAny, components: SchemaComponents, description?: string): JsonSchema {
+  const json = hoistDefs(z.toJSONSchema(schema, { unrepresentable: "any" }) as JsonSchema, components);
   delete json.$schema;
   if (description !== undefined && typeof json.description !== "string") {
     json.description = description;
@@ -62,12 +108,13 @@ function zodToJson(schema: ZodTypeAny, description?: string): JsonSchema {
 function buildFlatSchema(
   args: ArgRegistryEntry[],
   options: OptionRegistryEntry[],
+  components: SchemaComponents,
 ): { schema: JsonSchema; hasContent: boolean; hasRequired: boolean } {
   const properties: Record<string, JsonSchema> = {};
   const required: string[] = [];
 
   for (const arg of args) {
-    properties[arg.name] = zodToJson(arg.schema, arg.description);
+    properties[arg.name] = zodToJson(arg.schema, components, arg.description);
     if (arg.required && arg.defaultValue === undefined) {
       required.push(arg.name);
     }
@@ -79,7 +126,7 @@ function buildFlatSchema(
       // schema.
       continue;
     }
-    properties[opt.name] = zodToJson(opt.schema, opt.description);
+    properties[opt.name] = zodToJson(opt.schema, components, opt.description);
   }
 
   const hasContent = Object.keys(properties).length > 0;
@@ -93,8 +140,8 @@ function buildFlatSchema(
 }
 
 /** Build the full request body schema for a command (flat form only). */
-function buildRequestBody(cmd: CommandRegistryEntry): OpenApiRequestBody | undefined {
-  const flat = buildFlatSchema(cmd.args, cmd.options);
+function buildRequestBody(cmd: CommandRegistryEntry, components: SchemaComponents): OpenApiRequestBody | undefined {
+  const flat = buildFlatSchema(cmd.args, cmd.options, components);
   if (!flat.hasContent) return undefined;
   return {
     required: flat.hasRequired,
@@ -102,14 +149,16 @@ function buildRequestBody(cmd: CommandRegistryEntry): OpenApiRequestBody | undef
   };
 }
 
-/** Map registry scope to an OpenAPI security requirement list. */
-function buildSecurity(scope: ScopeType): SecurityRequirement[] | undefined {
-  if (scope === "open") return [];
+/** Map the command's authority boundary to its supported listener credentials. */
+function buildSecurity(cmd: CommandRegistryEntry): SecurityRequirement[] {
+  if (cmd.access?.consoleOnly) return [{ consoleDelegation: [] }];
+  if (cmd.access?.consoleScope) return [{ bearerAuth: [] }, { consoleDelegation: [] }];
+  if (cmd.scope === "open") return [];
   return [{ bearerAuth: [] }];
 }
 
 /** Build the response block for a command. */
-function buildResponses(cmd: CommandRegistryEntry): Record<string, OpenApiResponse> {
+function buildResponses(cmd: CommandRegistryEntry, components: SchemaComponents): Record<string, OpenApiResponse> {
   if (cmd.binary) {
     const responses: Record<string, OpenApiResponse> = {
       "200": {
@@ -128,7 +177,7 @@ function buildResponses(cmd: CommandRegistryEntry): Record<string, OpenApiRespon
   }
 
   const successSchema: JsonSchema = cmd.returns
-    ? zodToJson(cmd.returns)
+    ? zodToJson(cmd.returns, components)
     : { type: "object", additionalProperties: true };
   const successDescription = cmd.returns
     ? "Success — body conforms to the `@Returns` schema."
@@ -151,17 +200,22 @@ function buildResponses(cmd: CommandRegistryEntry): Record<string, OpenApiRespon
 }
 
 /** Build a single OpenAPI operation from a registry command entry. */
-function buildOperation(cmd: CommandRegistryEntry): OpenApiOperation {
+function buildOperation(cmd: CommandRegistryEntry, components: SchemaComponents): OpenApiOperation {
   const tag = cmd.groupSegments[0] ?? "root";
   const operation: OpenApiOperation = {
     operationId: cmd.fullName,
     summary: cmd.description,
     tags: [tag],
-    responses: buildResponses(cmd),
+    responses: buildResponses(cmd, components),
   };
-  const security = buildSecurity(cmd.scope);
+  if (cmd.access?.consoleScope) {
+    operation.description = cmd.access.consoleOnly
+      ? "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation."
+      : "Accepts a runtime context key on the ordinary gateway, or a signed Console delegation on the dedicated Console listener within the declared resource scope.";
+  }
+  const security = buildSecurity(cmd);
   if (security !== undefined) operation.security = security;
-  const requestBody = buildRequestBody(cmd);
+  const requestBody = buildRequestBody(cmd, components);
   if (requestBody) operation.requestBody = requestBody;
   return operation;
 }
@@ -209,8 +263,9 @@ export function emit(registry: RegistrySnapshot, options: EmitOptions = {}): Ope
     .sort((a, b) => (a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0));
 
   const paths: Record<string, OpenApiPathItem> = {};
+  const schemas: SchemaComponents = {};
   for (const cmd of sortedCommands) {
-    paths[commandPath(cmd)] = { post: buildOperation(cmd) };
+    paths[commandPath(cmd)] = { post: buildOperation(cmd, schemas) };
   }
 
   const spec: OpenApiSpec = {
@@ -224,6 +279,7 @@ export function emit(registry: RegistrySnapshot, options: EmitOptions = {}): Ope
     tags: buildTags(registry),
     paths,
     components: {
+      ...(Object.keys(schemas).length > 0 ? { schemas } : {}),
       securitySchemes: {
         bearerAuth: {
           type: "http",
@@ -231,9 +287,18 @@ export function emit(registry: RegistrySnapshot, options: EmitOptions = {}): Ope
           bearerFormat: "rctx",
           description:
             "Runtime context-key (`rctx_*`) issued by the Ravi gateway. " +
-            "Required for every non-`open` scope. Bootstrap the first key with " +
+            "Used by ordinary gateway operations; not accepted by Console-only operations. Bootstrap the first key with " +
             "`ravi daemon init-admin-key`; rotate, derive, and revoke via the " +
             "`ravi context` family. Specs: `runtime/context-keys`, `sdk/auth`.",
+        },
+        consoleDelegation: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description:
+            "Signed Console delegation, valid for at most 30 seconds and bound to the exact HTTP request, " +
+            "resource scope and pinned connection. Accepted only on the dedicated Console listener over private SSH, " +
+            "never on the ordinary gateway. Spec: `sdk/console-authority`.",
         },
       },
     },

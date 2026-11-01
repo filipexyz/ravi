@@ -6,17 +6,43 @@ import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import {
   CONTRACT_EXIT_ERROR,
+  CONTRACT_EXIT_POLICY,
   CONTRACT_EXIT_USAGE,
   contractDryRun,
   contractFail,
   pickFields,
   suggestSimilar,
 } from "../agent-contract.js";
-import { getCallerCwd } from "../caller-cwd.js";
+import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
+import { hasCloudLogin, runtimeLibraryCaller, skillContractIssues, withLibraryContract } from "../library-contract.js";
+import { isLibrarySlug, isReservedLibrarySlug, looksLikeLibraryRef, parseLibraryRef } from "../../library/refs.js";
+import {
+  executeLibraryProposal,
+  executeLibraryPublish,
+  LIBRARY_AGENT_CANNOT_PUBLISH,
+  listLibraryProposals,
+  prepareLibraryProposal,
+  prepareLibraryPublish,
+  searchSkills,
+  showLibraryProposal,
+  showLibrarySkill,
+  type LibraryProposalState,
+  type LibraryShowOutcome,
+} from "../../library/service.js";
+import {
+  executeLibraryPin,
+  executeLibraryUnpin,
+  LIBRARY_AGENT_CANNOT_PIN,
+  listLibraryItemPins,
+  listLocalLibraryPins,
+  prepareLibraryPin,
+} from "../../library/pins.js";
+import type { LibraryProposal, LibraryProposalComment } from "../../library/types.js";
 import { fail, getContext, hasRuntimeInvocationContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
 import { discoverPlugins } from "../../plugins/index.js";
+import { libraryUnionPlugins } from "../../library/session-plugins.js";
 import {
   getAgent,
   getAllAgents,
@@ -62,7 +88,15 @@ import {
   skillShowReturnSchema,
   skillsInstallReturnSchema,
   skillsListReturnSchema,
+  skillsPinReturnSchema,
+  skillsPinsReturnSchema,
+  skillsProposalReturnSchema,
+  skillsProposalsReturnSchema,
+  skillsProposeReturnSchema,
+  skillsPublishReturnSchema,
+  skillsSearchReturnSchema,
   skillsSyncReturnSchema,
+  skillsUnpinReturnSchema,
 } from "./operational-return-schemas.js";
 
 function printJson(payload: unknown): void {
@@ -82,7 +116,9 @@ function serializeSkill(skill: RaviSkill, options: { includeContent?: boolean } 
 }
 
 function syncCodex(): string[] {
-  return syncCodexSkills(discoverPlugins());
+  // Codex sessions copy the installation's pinned Library skills too; a sync
+  // without them would delete those copies until the next session starts.
+  return syncCodexSkills([...discoverPlugins(), ...libraryUnionPlugins()]);
 }
 
 // ============================================================
@@ -108,22 +144,6 @@ interface SkillNotFoundOptions {
   asJson?: boolean;
   candidates?: string[];
   suggestedAction?: string;
-}
-
-/**
- * The remote gateway client renders issues[] but replaces suggestedAction with
- * generic copy, so the remediation also travels as a trailing issue.
- */
-function skillContractIssues(
-  path: string[],
-  code: string,
-  message: string,
-  suggestedAction?: string,
-): Array<{ path: string[]; code: string; message: string }> {
-  return [
-    { path, code, message },
-    ...(suggestedAction ? [{ path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction }] : []),
-  ];
 }
 
 function failSkillNotFound(op: string, skillName: string, options: SkillNotFoundOptions = {}): never {
@@ -276,6 +296,83 @@ function failSkillFile(skill: RaviSkill, file: string, files: readonly string[],
   });
 }
 
+export interface SkillShowPayload {
+  skill: Record<string, unknown>;
+  files: string[];
+  file?: RaviSkillFile;
+  ref?: string;
+  scope?: "org" | "project";
+  project?: string | null;
+  version?: number;
+  externalAllowed?: boolean;
+  stale?: boolean;
+}
+
+/** Print a resolved skill (local or Library) the way `skills show` always has. */
+function printSkillShow(
+  skill: RaviSkill,
+  options: {
+    fileArg?: string;
+    raw?: boolean;
+    asJson?: boolean;
+    sourceFiles?: SkillFileView | null;
+    library?: LibraryShowOutcome;
+  },
+): SkillShowPayload {
+  const { fileArg, raw, asJson, library } = options;
+  const { files, selected } = options.sourceFiles ?? inspectSkillFiles(skill, fileArg);
+  if (fileArg !== undefined && !selected) {
+    failSkillFile(skill, fileArg, files, asJson);
+  }
+  const libraryFields = library
+    ? {
+        ref: library.ref.ref,
+        scope: library.ref.scope,
+        project: library.ref.project,
+        version: library.version.number,
+        externalAllowed: library.item.externalAllowed,
+        stale: library.stale,
+      }
+    : null;
+  const payload: SkillShowPayload = {
+    skill: {
+      ...serializeSkill(skill, { includeContent: true }),
+      ...(libraryFields ? { ...libraryFields, slug: library?.item.slug, displayName: library?.item.name } : {}),
+    },
+    files,
+    ...(selected ? { file: selected } : {}),
+    ...(libraryFields ?? {}),
+  };
+  const libraryLine = library
+    ? `Library: ${library.ref.ref} version ${library.version.number} (${library.ref.scope === "org" ? "organization" : `project ${library.ref.project}`})${library.stale ? " — offline copy from the local cache" : ""}`
+    : null;
+  if (asJson) {
+    printJson(payload);
+  } else if (raw === true && selected) {
+    process.stdout.write(selected.content);
+  } else if (selected) {
+    // The `# <name>` header comes first: loaded-skill detection reads it from
+    // the output, and a reference file starts with a heading of its own.
+    console.log(`# ${skill.name}`);
+    console.log(`File: ${selected.path}`);
+    console.log(`Path: ${skill.path}`);
+    if (libraryLine) console.log(libraryLine);
+    console.log("");
+    console.log(selected.content.trimEnd());
+    console.log("");
+    console.log(skillFileListLine(files));
+  } else {
+    console.log(`# ${skill.name}`);
+    if (skill.description) console.log(`\n${skill.description}\n`);
+    console.log(`Path: ${skill.path}`);
+    if (libraryLine) console.log(libraryLine);
+    console.log("");
+    console.log(skill.content);
+    if (files.length > 1) console.log(skillFileListLine(files));
+  }
+  return payload;
+}
+
 function withSkillSourceContract<T>(op: string, asJson: boolean | undefined, run: () => T): T {
   try {
     return run();
@@ -283,6 +380,169 @@ function withSkillSourceContract<T>(op: string, asJson: boolean | undefined, run
     if (error instanceof SkillSourceError) failSkillSource(op, error, { asJson });
     throw error;
   }
+}
+
+// ============================================================
+// Library (spec skills/library): refs `org/<slug>` and `<project>/<slug>`.
+// ============================================================
+
+/** A Library version as a RaviSkill, so `show` prints it exactly like a local skill. */
+function libraryOutcomeAsSkill(outcome: LibraryShowOutcome): RaviSkill {
+  const entry = outcome.version.files.find((file) => file.path === "SKILL.md");
+  const path = outcome.cacheDir ?? `library:${outcome.ref.ref}@${outcome.version.number}`;
+  return {
+    name: outcome.ref.ref,
+    ...(outcome.item.description ? { description: outcome.item.description } : {}),
+    path,
+    skillFilePath: outcome.cacheDir ? `${outcome.cacheDir}/SKILL.md` : `${path}/SKILL.md`,
+    content: entry?.content ?? "",
+    source: "library",
+    files: outcome.version.files.map((file) => ({ path: file.path, content: file.content })),
+  };
+}
+
+/** "agent X for Y", or the member's name. */
+function proposalAuthorLabel(author: LibraryProposal["author"]): string {
+  const name = author.name ?? (author.self ? "you" : "a member");
+  return author.agentId
+    ? `agent ${author.agentId} for ${name}`
+    : `${name}${author.self && author.name ? " (you)" : ""}`;
+}
+
+function formatBytes(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KiB`;
+}
+
+const PROPOSAL_STATUS_COPY: Record<string, string> = {
+  draft: "draft, not submitted",
+  proposed: "waiting for review",
+  published: "published",
+  superseded: "published, since superseded",
+  rejected: "rejected",
+  withdrawn: "withdrawn",
+};
+
+/** The text form of `skills proposal`: what an author needs to answer the review. */
+function proposalShowLines(view: {
+  ref: string;
+  proposal: LibraryProposal;
+  files: Array<{ path: string; bytes: number }>;
+  base: { number: number } | null;
+  comments: LibraryProposalComment[];
+}): string[] {
+  const { proposal } = view;
+  const lines = [
+    `${view.ref} proposal ${proposal.number}: ${proposal.status} (${PROPOSAL_STATUS_COPY[proposal.status] ?? proposal.status}), round ${proposal.round}`,
+    `Author: ${proposalAuthorLabel(proposal.author)}`,
+    `Base version: ${proposal.baseVersion || "none (new skill)"} · published now: ${proposal.currentVersion || "none"}${proposal.publishedVersion ? ` · published as version ${proposal.publishedVersion}` : ""}`,
+  ];
+  if (proposal.stale) {
+    lines.push(
+      `Stale: version ${proposal.currentVersion} was published after this proposal was written. Read it (ravi skills show ${view.ref}), bring its changes into your folder, then update with --update ${proposal.number} --rebase.`,
+    );
+  }
+  if (proposal.note) lines.push(`Note: ${proposal.note}`);
+  if (proposal.reviewUrl) lines.push(`Review: ${proposal.reviewUrl}`);
+  if (proposal.decisionReason || proposal.decidedBy) {
+    lines.push(
+      `Decision: ${proposal.status}${proposal.decidedBy?.name ? ` by ${proposal.decidedBy.name}` : ""}${proposal.decisionReason ? `: ${proposal.decisionReason}` : ""}`,
+    );
+  }
+  lines.push(`Files (${view.files.length}, ${formatBytes(proposal.totalBytes)}):`);
+  for (const file of view.files) lines.push(`  ${file.path}  ${formatBytes(file.bytes)}`);
+  const topLevel = view.comments.filter((comment) => !comment.parentId);
+  const open = topLevel.filter((comment) => !comment.resolvedAt).length;
+  lines.push(view.comments.length === 0 ? "Comments: none" : `Comments (${open} open):`);
+  for (const comment of topLevel) {
+    lines.push(`  ${commentLine(comment)}`);
+    for (const reply of view.comments.filter((entry) => entry.parentId === comment.id)) {
+      lines.push(`    ↳ ${commentLine(reply)}`);
+    }
+  }
+  if (proposal.can.edit) {
+    lines.push(
+      `Answer the review by updating it: ravi skills propose <dir> --scope ${view.ref.split("/")[0]} --update ${proposal.number} --execute`,
+    );
+  }
+  return lines;
+}
+
+function commentLine(comment: LibraryProposalComment): string {
+  const where = comment.path ? `${comment.path}${comment.line ? `:${comment.line}` : ""} ` : "";
+  const marks = [comment.outdated ? `[outdated, round ${comment.round}]` : "", comment.resolvedAt ? "[resolved]" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const body = comment.body.replace(/\s+/g, " ").trim();
+  return `${where}${marks ? `${marks} ` : ""}${proposalAuthorLabel(comment.author)}: ${body}`;
+}
+
+function failAgentCannotPin(op: string, asJson?: boolean): never {
+  const message =
+    "Agents do not pin or unpin Library skills: a person pins a skill to an agent in the Console or from the operator's terminal.";
+  const suggestedAction = "Ask the operator to run: ravi skills pin <ref> --agent <agent> --execute";
+  contractFail(op, LIBRARY_AGENT_CANNOT_PIN, message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_POLICY,
+    details: {
+      suggestedAction,
+      issues: skillContractIssues([], LIBRARY_AGENT_CANNOT_PIN, message, suggestedAction),
+    },
+  });
+}
+
+/** `--agent <id>`: required, and (for pin) a local agent. */
+function requirePinAgent(
+  op: string,
+  agent: string | undefined,
+  asJson: boolean | undefined,
+  options: { mustExist?: boolean } = {},
+): string {
+  const agentId = agent?.trim();
+  if (!agentId) {
+    const message = "Pass --agent <id>: the local agent the pin is for.";
+    contractFail(op, "USAGE_ERROR", message, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: "List agents with: ravi agents list --json",
+        issues: skillContractIssues(["agent"], "required", message),
+      },
+    });
+  }
+  if (options.mustExist !== false && !getAgent(agentId)) failAgentNotFound(op, agentId, asJson);
+  return agentId;
+}
+
+function failLibraryRefInvalid(op: string, value: string, asJson?: boolean): never {
+  const message = `Not a valid Library ref: ${value.slice(0, 120)}. Use org/<slug> or <project>/<slug> (a-z, 0-9 and -).`;
+  const suggestedAction = "Copy the ref from: ravi skills search <words> --json";
+  contractFail(op, "LIBRARY_REF_INVALID", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction,
+      issues: skillContractIssues(["skill"], "LIBRARY_REF_INVALID", message, suggestedAction),
+    },
+  });
+}
+
+/**
+ * A Library ref or id for grant/revoke/who, normalized to its id
+ * (`org:<slug>`, `project:<project>:<slug>`); null when the input is not one.
+ */
+function libraryGrantId(op: string, value: string, asJson?: boolean): string | null {
+  if (!looksLikeLibraryRef(value)) return null;
+  const ref = parseLibraryRef(value);
+  if (!ref) failLibraryRefInvalid(op, value, asJson);
+  if (isReservedLibrarySlug(ref.slug)) {
+    const message = `'${ref.slug}' is reserved (a skill that ships with Ravi or a Library route word), so no Library skill can use it. Grant a Ravi skill by its name.`;
+    contractFail(op, "LIBRARY_SLUG_RESERVED", message, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: `ravi skills grant <agent> ${ref.slug}` },
+    });
+  }
+  return ref.id;
 }
 
 /** Remote dispatch runs in the daemon: relative `--source` paths belong to the caller's cwd. */
@@ -386,6 +646,14 @@ EXAMPLES
   ravi skills show pages --file references/esqueletos/_client.js.txt --raw > site/client.js
   ravi skills show emissao-nf-sde --installed --json
   ravi skills show minha-skill --source ./local/path
+  ravi skills show org/agenda-semanal           # skill da Biblioteca (organização)
+  ravi skills show clinica/triagem --json       # skill da Biblioteca (projeto clinica)
+
+BIBLIOTECA
+  Ref org/<slug> ou <projeto>/<slug> vai direto à Biblioteca do Console. Nome
+  sem barra resolve primeiro nas skills locais; só sem match local busca na
+  Biblioteca (org + projeto do agente). Dentro de um agente use o ref completo
+  que \`ravi skills search\` devolve. Sem rede, serve a cópia do cache (stale: true).
 
 FORMATO
   --json traz { skill, files[] } (files: caminhos relativos, SKILL.md primeiro);
@@ -397,12 +665,240 @@ ON ERROR (reason → fix)
                     (+ --installed/--source conforme o caso) pra achar o nome canônico.
   SKILL_FILE_NOT_FOUND → caminho fora da lista da skill; o erro lista os arquivos.
   SKILL_FILE_INVALID   → caminho absoluto ou com ".."; passe um caminho relativo da lista.
+  LIBRARY_SKILL_EXTERNAL_DENIED (exit 3) → skill da Biblioteca não liberada para
+                    conversa com gente de fora da organização: responda sem ela.
 
 SEE ALSO
-  ravi skills list · ravi skills guard (editar) · ravi skills inspect
+  ravi skills search · ravi skills list · ravi skills guard (editar) · ravi skills inspect
 
 FONTES
   src/cli/commands/skills.ts · 2026-07-10
+`;
+
+const SKILLS_SEARCH_HELP_AFTER = `
+LEITURA — busca skills por palavras: as locais (catálogo do Ravi + instaladas) e as
+da Biblioteca do Console (skills da organização e do projeto do agente). Busca
+ignora maiúsculas e acentos. Sem login (\`ravi login\`) a Biblioteca é pulada com
+um aviso; sem rede, a Biblioteca responde do cache local com stale: true.
+
+USE
+  ✓ achar a skill certa antes de carregar (o campo next traz o comando exato)
+  ✓ descobrir skills da organização/projeto que não vêm com o Ravi
+
+EXAMPLES
+  ravi skills search agenda
+  ravi skills search "nota fiscal" --json
+  ravi skills search relatorio --limit 20
+  ravi skills search bases --local          # só skills locais, sem Console
+
+FORMATO
+  --json: { query, total, stale, library{status, project, hint?}, items[] }.
+  Cada item: ref, source (system|installed|library), scope (org|project|null),
+  description, version (Biblioteca), authorized (dentro de um agente) e next.
+  Skill da Biblioteca: use SEMPRE o ref completo (org/<slug> ou <projeto>/<slug>).
+
+SEE ALSO
+  ravi skills show <ref> · ravi skills publish <dir> --scope org
+
+FONTES
+  src/cli/commands/skills.ts · src/library/service.ts · 2026-10-13
+`;
+
+const SKILLS_PUBLISH_HELP_AFTER = `
+MUTA (FREIO) — publica uma pasta de skill (SKILL.md + references/) na Biblioteca
+do Console: --scope org (todos os agentes da organização) ou --scope <projeto>
+(só os agentes daquele projeto). Sem --execute: valida a pasta, lê a versão
+publicada atual e devolve o plano (exit 3). Com --execute: publica com
+baseVersion = versão atual (0 se nova). Conteúdo idêntico não cria versão.
+
+REGRAS HARD (o comando bloqueia antes de qualquer request)
+  • SKILL.md na raiz com description no frontmatter.
+  • Até 100 arquivos de texto UTF-8, 256 KiB cada, 1 MiB no total.
+  • Caminhos relativos com A-Z a-z 0-9 . _ - / (dotfiles e node_modules ficam fora).
+  • Slug = --slug, senão o name do frontmatter, senão o nome da pasta.
+  • Nomes das skills do Ravi e o prefixo ravi- são reservados.
+  • --external permite carregar a skill em conversas com pessoas de fora da org.
+
+EXAMPLES
+  ravi skills publish ./agenda-semanal --scope org                  # plano (exit 3)
+  ravi skills publish ./agenda-semanal --scope org --execute
+  ravi skills publish ./agenda-semanal --scope clinica --note "horários novos" --execute --json
+
+AGENTES NÃO PUBLICAM
+  Dentro de um agente o comando recusa antes de qualquer request
+  (LIBRARY_AGENT_CANNOT_PUBLISH, exit 3): o agente propõe com
+  \`ravi skills propose\` e uma pessoa revisa e publica no Console.
+
+ON ERROR (reason → fix)
+  exit 3 WRITE_REQUIRES_EXECUTE   → revise o plano e repita com --execute.
+  exit 3 LIBRARY_AGENT_CANNOT_PUBLISH → dentro de um agente: use ravi skills propose.
+  LIBRARY_PACKAGE_INVALID (2)     → a pasta falhou numa regra acima.
+  LIBRARY_SLUG_RESERVED (2)       → escolha outro --slug.
+  CONFLICT reason=stale_base      → alguém publicou antes: rode sem --execute de novo.
+  AUTH_REQUIRED                   → rode \`ravi login\`.
+
+FONTES
+  src/cli/commands/skills.ts · src/library/package.ts · 2026-10-16
+`;
+
+const SKILLS_PROPOSE_HELP_AFTER = `
+MUTA (FREIO) — propõe uma versão nova de uma skill da Biblioteca sem publicar:
+uma pessoa revisa (comenta por arquivo e linha) e publica ou rejeita no Console.
+É assim que um agente muda uma skill da Biblioteca. A pasta é lida e checada
+como no publish. Sem --execute devolve o plano (exit 3): ref, se o item existe,
+versão publicada, baseVersion, arquivos, hash, submit e, com --update, a proposta
+e se ela está stale. Com --execute cria a proposta (ou o rascunho, com --draft).
+
+PROPOSTA NOVA
+  baseVersion = versão publicada agora (0 se não há). submit = true, salvo --draft
+  (rascunho: só você e os revisores do escopo veem). O plano lista em
+  openProposals as suas propostas abertas no item: atualize uma em vez de abrir outra.
+
+ATUALIZAR (--update <n>)
+  Manda o conteúdo inteiro de novo (pasta e flags). Um rascunho passa a esperar
+  revisão, salvo --draft. Uma proposta já em revisão abre uma rodada nova; os
+  comentários antigos ficam marcados como outdated. Sem --rebase a proposta mantém
+  a base. Se alguém publicou uma versão nova, ela fica stale: leia a versão nova
+  (\`ravi skills show <ref>\`), traga as mudanças para a pasta e rode com --rebase.
+
+EXAMPLES
+  ravi skills propose ./agenda-semanal --scope org                           # plano (exit 3)
+  ravi skills propose ./agenda-semanal --scope org --note "horários novos" --execute
+  ravi skills propose ./triagem --scope clinica --draft --execute            # rascunho
+  ravi skills propose ./agenda-semanal --scope org --update 3 --execute
+  ravi skills propose ./agenda-semanal --scope org --update 3 --rebase --execute
+
+ON ERROR (reason → fix)
+  exit 3 WRITE_REQUIRES_EXECUTE     → revise o plano e repita com --execute.
+  exit 3 LIBRARY_PROPOSAL_NOT_YOURS → só o autor atualiza: comente no Console ou abra outra.
+  CONFLICT reason=stale_base        → a versão publicada mudou: leia, ajuste e repita (--rebase no --update).
+  CONFLICT reason=unchanged         → igual à versão publicada: nada a propor.
+  CONFLICT reason=proposal_closed   → a proposta já foi decidida: abra outra sem --update.
+  CONFLICT reason=slug_taken_in_org|slug_taken_in_project|slug_reserved → outro --slug.
+  LIBRARY_PACKAGE_INVALID (2)       → a pasta falhou numa regra do publish.
+  AUTH_REQUIRED                     → rode \`ravi login\`.
+
+SEE ALSO
+  ravi skills proposals · ravi skills proposal <ref> <n> · ravi skills show <ref>
+
+FONTES
+  src/cli/commands/skills.ts · src/library/service.ts · 2026-10-16
+`;
+
+const SKILLS_PROPOSALS_HELP_AFTER = `
+LEITURA — lista propostas de skills da Biblioteca. Com <ref> (org/<slug> ou
+<projeto>/<slug>): as propostas daquele item. Sem ref: todas as que você vê
+(dentro de um agente: as da organização e do projeto do agente).
+
+EXAMPLES
+  ravi skills proposals                       # abertas (rascunhos e em revisão)
+  ravi skills proposals org/agenda-semanal --state all
+  ravi skills proposals --mine --json         # as suas (dentro de um agente: as deste agente)
+  ravi skills proposals --project clinica --state closed
+
+FORMATO
+  Cada linha: ref, número, status, stale, autor ("agent X for Y") e comentários
+  abertos; next traz o comando que mostra a proposta.
+
+SEE ALSO
+  ravi skills proposal <ref> <n> · ravi skills propose
+
+FONTES
+  src/cli/commands/skills.ts · src/library/service.ts · 2026-10-16
+`;
+
+const SKILLS_PROPOSAL_HELP_AFTER = `
+LEITURA — mostra uma proposta: status, base e versão publicada, stale, nota,
+motivo da decisão, arquivos e os comentários da revisão (arquivo:linha,
+outdated, resolvido, autor). É onde o autor lê o que pediram e responde
+atualizando a proposta com \`ravi skills propose <dir> --scope ... --update <n> --execute\`.
+
+EXAMPLES
+  ravi skills proposal org/agenda-semanal 3
+  ravi skills proposal clinica/triagem 1 --json     # inclui o conteúdo dos arquivos
+
+FORMATO
+  --json: { ref, number, item, proposal, files[{path, bytes, sha256, content?}],
+  base{number, files[{path, bytes, sha256}]}|null, comments[], contentsVisible }.
+  Dentro de um agente o conteúdo dos arquivos só vem nas propostas que ele
+  escreveu ou em skills que ele pode carregar (contentsVisible).
+
+FONTES
+  src/cli/commands/skills.ts · src/library/service.ts · 2026-10-16
+`;
+
+const SKILLS_PIN_HELP_AFTER = `
+MUTA (FREIO) — fixa (pin) uma skill da Biblioteca num agente DESTA instalação:
+o agente passa a carregar a skill nativamente em toda sessão nova (plugin
+ravi-library, como as skills do sistema), sempre na última versão publicada, e
+a skill fica autorizada para ele (não precisa de grant). Quem pode fixar é o
+Console (admin do escopo da skill). Sem --execute: lê o item e devolve o plano
+(exit 3). Com --execute: reporta os agentes locais (pins/sync), fixa e já
+atualiza o estado local (sem esperar o runner do daemon).
+
+REGRAS
+  • Ref completo: org/<slug> ou <projeto>/<slug>.
+  • Skill sem externalAllowed só carrega nos turnos do próprio operador.
+  • Skill de projeto só fixa em agente daquele projeto (agent_out_of_scope).
+  • Agentes não fixam: dentro de um agente o comando recusa antes de qualquer
+    request (LIBRARY_AGENT_CANNOT_PIN, exit 3).
+
+EXAMPLES
+  ravi skills pin org/tom-de-voz --agent main                 # plano (exit 3)
+  ravi skills pin org/tom-de-voz --agent main --execute
+  ravi skills pin clinica/triagem --agent atendente --execute --json
+
+ON ERROR (reason → fix)
+  exit 3 WRITE_REQUIRES_EXECUTE   → revise o plano e repita com --execute.
+  exit 3 LIBRARY_AGENT_CANNOT_PIN → peça a uma pessoa (Console ou terminal do operador).
+  CONFLICT reason=not_published   → publique uma versão antes de fixar.
+  CONFLICT reason=agent_out_of_scope → o agente não está no projeto da skill.
+  CONFLICT reason=no_installation → rode \`ravi login\` neste daemon.
+  ORG_ACCESS_DENIED               → só admin do escopo fixa.
+  AGENT_NOT_FOUND                 → confira com ravi agents list.
+
+SEE ALSO
+  ravi skills unpin · ravi skills pins · ravi skills pins <ref>
+
+FONTES
+  src/cli/commands/skills.ts · src/library/pins.ts · 2026-10-16
+`;
+
+const SKILLS_UNPIN_HELP_AFTER = `
+MUTA — desfixa uma skill da Biblioteca de um agente desta instalação. Reduz
+autoridade, então executa direto (sem --execute) e atualiza o estado local na
+hora: novas sessões do agente deixam de carregar a skill. Sem rede depois do
+unpin, o pin sai do estado local mesmo assim.
+
+EXAMPLES
+  ravi skills unpin org/tom-de-voz --agent main
+  ravi skills unpin clinica/triagem --agent atendente --json
+
+FONTES
+  src/cli/commands/skills.ts · src/library/pins.ts · 2026-10-16
+`;
+
+const SKILLS_PINS_HELP_AFTER = `
+LEITURA — sem ref: as skills da Biblioteca fixadas nos agentes desta instalação
+(atualiza do Console com GET /pins quando há login; sem rede responde o último
+sync com stale: true). Com ref: onde aquele item está fixado (instalações e
+agentes) e se você pode fixar (can.pin).
+
+EXAMPLES
+  ravi skills pins
+  ravi skills pins --agent main --json
+  ravi skills pins org/tom-de-voz
+
+FORMATO
+  --json sem ref: { installation{id,name}, revision, syncedAt, stale, agent,
+  total, pins[{agent, ref, id, skill, name, description, version,
+  externalAllowed}], unavailable[] }. skill é o nome no plugin
+  (ravi-library:<skill> no Claude, ravi-library-<skill> no Codex).
+  --json com ref: { ref, installationId, pins[{id, installation, agent,
+  pinnedBy, createdAt}], can{pin} }.
+
+FONTES
+  src/cli/commands/skills.ts · src/library/pins.ts · 2026-10-16
 `;
 
 const SKILLS_INSTALL_HELP_AFTER = `
@@ -512,6 +1008,13 @@ REGRAS HARD (o comando bloqueia)
 EXAMPLES
   ravi skills grant ravi-dev cli-creator --note "core dev skill"
   ravi skills grant jarvis-fiscal emissao-nf-sde --json
+  ravi skills grant atendente org/agenda-semanal        # skill da Biblioteca (org)
+  ravi skills grant atendente clinica/triagem           # skill da Biblioteca (projeto)
+
+BIBLIOTECA
+  Ref org/<slug> ou <projeto>/<slug> é gravado como id org:<slug> ou
+  project:<projeto>:<slug> (o mesmo id de use:skill:<id>; use:skill:org:* cobre
+  todas da organização). O grant não consulta o Console nem amplia o catálogo local.
 
 ON ERROR (reason → fix)
   AGENT_NOT_FOUND (exit 1) → error.suggestions traz ids parecidos; confira \`ravi agents list\`.
@@ -807,13 +1310,17 @@ export class SkillsCommands {
 
   @Command({
     name: "show",
-    description: "Show a Ravi catalog skill, installed skill or source skill",
+    description:
+      "Show a Ravi catalog skill, installed skill, source skill or Library skill (org/<slug> or <project>/<slug>)",
     helpAfter: SKILLS_SHOW_HELP_AFTER,
   })
   @CommandAccess({ kind: "read", resource: "skills", action: "show", risk: "low" })
   @Returns(skillShowReturnSchema)
   show(
-    @Arg("name", { description: "Catalog skill name, installed skill name, or source skill name" }) name: string,
+    @Arg("name", {
+      description: "Catalog or installed skill name, source skill name, or Library ref (org/<slug>, <project>/<slug>)",
+    })
+    name: string,
     @Option({ flags: "--source <source>", description: "Inspect skill from a GitHub URL, git URL or local path" })
     source?: string,
     @Option({ flags: "--installed", description: "Inspect only operator-installed/materialized skills" })
@@ -829,9 +1336,21 @@ export class SkillsCommands {
       description: "Print only the file's bytes (SKILL.md without --file), e.g. to copy a skeleton with > client.js",
     })
     raw?: boolean,
-  ) {
+    @Option({
+      flags: "--project <ref>",
+      description: "Console project whose Library skills a bare slug may name (default: resolved project)",
+    })
+    project?: string,
+  ): SkillShowPayload | Promise<SkillShowPayload> {
     // --raw prints exactly one file; without --file that file is SKILL.md.
     const fileArg = file ?? (raw === true ? "SKILL.md" : undefined);
+    const localOnly = Boolean(source) || installed === true;
+    // A Library ref never resolves against local skills (`org/x` vs `org-x`).
+    if (!localOnly && looksLikeLibraryRef(name)) {
+      const ref = parseLibraryRef(name);
+      if (!ref) failLibraryRefInvalid("skills show", name, asJson);
+      return this.showLibrary({ ref, project, fileArg, raw, asJson });
+    }
     let skill: RaviSkill | null;
     let candidates: string[];
     let sourceFiles: SkillFileView | null = null;
@@ -865,7 +1384,22 @@ export class SkillsCommands {
     }
 
     if (!skill) {
-      failSkillNotFound("skills show", name, { asJson, candidates });
+      const slug = name.trim().toLowerCase();
+      // Local skills always win; a bare slug with no local match may name a
+      // Library skill in the caller's view (org + its Console project).
+      if (!localOnly && isLibrarySlug(slug) && !isReservedLibrarySlug(slug) && hasCloudLogin()) {
+        return this.showLibrary({ slug, project, fileArg, raw, asJson, candidates });
+      }
+      failSkillNotFound("skills show", name, {
+        asJson,
+        candidates,
+        ...(!localOnly && isLibrarySlug(slug)
+          ? {
+              suggestedAction:
+                "Check the skill name (see suggestions; list with: ravi skills list --json). Library skills need a Ravi Cloud login ('ravi login'); find their refs with: ravi skills search <words>",
+            }
+          : {}),
+      });
     }
 
     const runtimeAgentId = hasRuntimeInvocationContext() ? getContext()?.agentId?.trim() : undefined;
@@ -889,39 +1423,539 @@ export class SkillsCommands {
       }
     }
 
-    const { files, selected } = sourceFiles ?? inspectSkillFiles(skill, fileArg);
-    if (fileArg !== undefined && !selected) {
-      failSkillFile(skill, fileArg, files, asJson);
-    }
+    return printSkillShow(skill, { fileArg, raw, asJson, sourceFiles });
+  }
 
+  /** `skills show` for a Library ref or a bare slug with no local match. */
+  private showLibrary(input: {
+    ref?: NonNullable<ReturnType<typeof parseLibraryRef>>;
+    slug?: string;
+    project?: string;
+    fileArg?: string;
+    raw?: boolean;
+    asJson?: boolean;
+    candidates?: string[];
+  }): Promise<SkillShowPayload> {
+    return withLibraryContract("skills show", input.asJson, async () => {
+      const outcome = await showLibrarySkill({
+        ...(input.ref ? { ref: input.ref } : { slug: input.slug }),
+        project: input.project?.trim() || null,
+        caller: runtimeLibraryCaller(),
+      });
+      if (!outcome) {
+        failSkillNotFound("skills show", input.slug ?? "<skill>", {
+          asJson: input.asJson,
+          candidates: input.candidates,
+          suggestedAction:
+            "No local skill and no Library skill in this view has that name. Search with: ravi skills search <words> --json",
+        });
+      }
+      return printSkillShow(libraryOutcomeAsSkill(outcome), {
+        fileArg: input.fileArg,
+        raw: input.raw,
+        asJson: input.asJson,
+        library: outcome,
+      });
+    });
+  }
+
+  @Command({
+    name: "search",
+    description: "Search local skills and the Console Library by words (case and accent insensitive)",
+    helpAfter: SKILLS_SEARCH_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "search", risk: "low" })
+  @Returns(skillsSearchReturnSchema)
+  async search(
+    @Arg("query", { description: "Words to look for in skill names and descriptions" }) query: string,
+    @Option({ flags: "--limit <n>", description: "Maximum results (default: 10, max: 50)" }) limit?: string,
+    @Option({ flags: "--project <ref>", description: "Console project whose Library skills to include" })
+    project?: string,
+    @Option({ flags: "--local", description: "Search only local skills (catalog and installed); skip the Console" })
+    local?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const parsedLimit = limit === undefined ? undefined : Number(limit);
+    if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1)) {
+      contractFail("skills search", "USAGE_ERROR", "--limit must be a whole number from 1 to 50.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "Pass --limit between 1 and 50" },
+      });
+    }
+    const payload = await withLibraryContract("skills search", asJson, () =>
+      searchSkills({
+        query: query ?? "",
+        ...(parsedLimit !== undefined ? { limit: parsedLimit } : {}),
+        project: project?.trim() || null,
+        local: local === true,
+        caller: runtimeLibraryCaller(),
+      }),
+    );
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (payload.items.length === 0) console.log(`No skills match "${payload.query}".`);
+    for (const item of payload.items) {
+      const scope =
+        item.source === "library" ? ` [library ${item.scope}${item.version ? ` v${item.version}` : ""}]` : "";
+      const denied = item.authorized === false ? " (not authorized for this agent)" : "";
+      const description = item.description ? ` — ${item.description.split("\n")[0]}` : "";
+      console.log(`${item.ref}${scope}${denied}${description}`);
+      console.log(`  ${item.next}`);
+    }
+    if (payload.library.hint) console.log(`\n${payload.library.hint}`);
+    if (payload.library.status === "error" && payload.library.error) {
+      console.log(`\nLibrary unavailable (${payload.library.error.code}): ${payload.library.error.message}`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "publish",
+    description:
+      "Publish a skill folder to the Console Library for the organization (--scope org) or one project. Requires --execute.",
+    helpAfter: SKILLS_PUBLISH_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "publish", risk: "high", requiresConfirmation: true })
+  @Returns(skillsPublishReturnSchema)
+  async publish(
+    @Arg("dir", { description: "Skill folder holding SKILL.md (relative to your current directory)" }) dir: string,
+    @Option({ flags: "--scope <scope>", description: "org, or the Console project slug the skill belongs to" })
+    scope?: string,
+    @Option({ flags: "--slug <slug>", description: "Library slug (default: SKILL.md name, else the folder name)" })
+    slug?: string,
+    @Option({ flags: "--name <name>", description: "Display name (default: SKILL.md name, else the slug)" })
+    name?: string,
+    @Option({ flags: "--note <text>", description: "Version note, at most 500 characters" }) note?: string,
+    @Option({
+      flags: "--external",
+      description: "Allow loading this skill in conversations with people outside the organization",
+    })
+    external?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Confirm the publish (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    // Agents never publish: a person reviews what they propose. Refused before any request.
+    if (runtimeLibraryCaller()) {
+      const scopeHint = scope?.trim() ? scope.trim().toLowerCase() : "org|<project-slug>";
+      const message =
+        "Agents do not publish Library skills: propose the change and a person reviews and publishes it in the Console.";
+      const suggestedAction = `ravi skills propose <dir> --scope ${scopeHint} --execute`;
+      contractFail("skills publish", LIBRARY_AGENT_CANNOT_PUBLISH, message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_POLICY,
+        details: {
+          suggestedAction,
+          issues: skillContractIssues([], LIBRARY_AGENT_CANNOT_PUBLISH, message, suggestedAction),
+        },
+      });
+    }
+    if (!scope?.trim()) {
+      const message = "Pass --scope org or --scope <project-slug>.";
+      contractFail("skills publish", "USAGE_ERROR", message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Choose who gets the skill: --scope org (every project) or --scope <project-slug>",
+          issues: skillContractIssues(["scope"], "required", message),
+        },
+      });
+    }
+    return withLibraryContract("skills publish", asJson, async () => {
+      const prepared = await prepareLibraryPublish({
+        dir: resolveCallerPath(dir ?? ""),
+        scope,
+        ...(slug?.trim() ? { slug: slug.trim() } : {}),
+        ...(name?.trim() ? { name: name.trim() } : {}),
+        ...(note !== undefined ? { note } : {}),
+        external: external === true,
+      });
+      if (!execute) contractDryRun("skills publish", { ...prepared.plan }, { asJson });
+      const result = await executeLibraryPublish(prepared);
+      const payload = {
+        success: true as const,
+        ref: result.ref,
+        version: result.version.number,
+        contentHash: result.version.contentHash,
+        unchanged: result.unchanged,
+        item: result.item,
+      };
+      if (asJson) {
+        printJson(payload);
+      } else if (result.unchanged) {
+        console.log(`= ${result.ref} unchanged (version ${result.version.number} already has this content)`);
+      } else {
+        console.log(`✓ Published ${result.ref} version ${result.version.number}`);
+        console.log(`  Agents load it with: ravi skills show ${result.ref}`);
+      }
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "propose",
+    description:
+      "Propose a new version of a Library skill for review instead of publishing it (agents use this). Requires --execute.",
+    helpAfter: SKILLS_PROPOSE_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "propose", risk: "medium", requiresConfirmation: true })
+  @Returns(skillsProposeReturnSchema)
+  async propose(
+    @Arg("dir", { description: "Skill folder holding SKILL.md (relative to your current directory)" }) dir: string,
+    @Option({ flags: "--scope <scope>", description: "org, or the Console project slug the skill belongs to" })
+    scope?: string,
+    @Option({ flags: "--slug <slug>", description: "Library slug (default: SKILL.md name, else the folder name)" })
+    slug?: string,
+    @Option({ flags: "--name <name>", description: "Display name (default: SKILL.md name, else the slug)" })
+    name?: string,
+    @Option({ flags: "--note <text>", description: "Note for the reviewers, at most 500 characters" }) note?: string,
+    @Option({
+      flags: "--external",
+      description: "Allow loading this skill in conversations with people outside the organization",
+    })
+    external?: boolean,
+    @Option({ flags: "--draft", description: "Save a draft only you and the scope's reviewers see; do not submit" })
+    draft?: boolean,
+    @Option({ flags: "--update <number>", description: "Replace the content of your open proposal with this number" })
+    update?: string,
+    @Option({
+      flags: "--rebase",
+      description: "With --update: move the proposal onto the version published now (read it first)",
+    })
+    rebase?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Confirm the proposal (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    if (!scope?.trim()) {
+      const message = "Pass --scope org or --scope <project-slug>.";
+      contractFail("skills propose", "USAGE_ERROR", message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Name the skill's scope: --scope org or --scope <project-slug>",
+          issues: skillContractIssues(["scope"], "required", message),
+        },
+      });
+    }
+    const updateNumber = update === undefined ? undefined : Number(update);
+    if (updateNumber !== undefined && (!Number.isInteger(updateNumber) || updateNumber < 1)) {
+      const message = "--update takes a proposal number (1, 2, 3...).";
+      contractFail("skills propose", "USAGE_ERROR", message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "List your proposals with: ravi skills proposals --mine",
+          issues: skillContractIssues(["update"], "USAGE_ERROR", message),
+        },
+      });
+    }
+    return withLibraryContract("skills propose", asJson, async () => {
+      const prepared = await prepareLibraryProposal({
+        dir: resolveCallerPath(dir ?? ""),
+        scope,
+        ...(slug?.trim() ? { slug: slug.trim() } : {}),
+        ...(name?.trim() ? { name: name.trim() } : {}),
+        ...(note !== undefined ? { note } : {}),
+        external: external === true,
+        draft: draft === true,
+        ...(updateNumber !== undefined ? { update: updateNumber } : {}),
+        rebase: rebase === true,
+        caller: runtimeLibraryCaller(),
+      });
+      if (!execute) contractDryRun("skills propose", { ...prepared.plan }, { asJson });
+      const result = await executeLibraryProposal(prepared);
+      const { proposal } = result;
+      const next = `ravi skills proposal ${result.ref} ${proposal.number}`;
+      const payload = {
+        success: true as const,
+        ref: result.ref,
+        number: proposal.number,
+        status: proposal.status,
+        round: proposal.round,
+        baseVersion: proposal.baseVersion,
+        currentVersion: proposal.currentVersion,
+        stale: proposal.stale,
+        created: result.created,
+        next,
+        proposal,
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      const label = `${result.ref} (proposal ${proposal.number}${result.created ? "" : `, round ${proposal.round}`})`;
+      if (proposal.status === "draft") {
+        console.log(`✓ Saved draft ${label}; only you and the scope's reviewers see it`);
+      } else {
+        console.log(`✓ ${result.created ? "Proposed" : "Updated"} ${label}, waiting for review`);
+      }
+      if (proposal.stale) {
+        console.log(
+          `  Stale: written against version ${proposal.baseVersion}, version ${proposal.currentVersion} is published. Read it, then run again with --update ${proposal.number} --rebase.`,
+        );
+      }
+      if (proposal.reviewUrl) console.log(`  Review: ${proposal.reviewUrl}`);
+      console.log(`  Follow it with: ${next}`);
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "proposals",
+    description: "List proposals of Library skills: one item's (<ref>) or every one you can see",
+    helpAfter: SKILLS_PROPOSALS_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "proposals", risk: "low" })
+  @Returns(skillsProposalsReturnSchema)
+  async proposals(
+    @Arg("ref", { required: false, description: "Library ref (org/<slug> or <project>/<slug>) to list one item's" })
+    ref?: string,
+    @Option({ flags: "--project <ref>", description: "Only this Console project's proposals (and the org's)" })
+    project?: string,
+    @Option({ flags: "--state <state>", description: "open (drafts and proposed, default), closed or all" })
+    state?: string,
+    @Option({ flags: "--mine", description: "Only your proposals (inside an agent: the ones this agent wrote)" })
+    mine?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const parsedState = (state?.trim().toLowerCase() || "open") as LibraryProposalState;
+    if (!["open", "closed", "all"].includes(parsedState)) {
+      contractFail("skills proposals", "USAGE_ERROR", "--state is open, closed or all.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "Pass --state open, --state closed or --state all" },
+      });
+    }
+    const parsedRef = ref?.trim() ? parseLibraryRef(ref) : null;
+    if (ref?.trim() && !parsedRef) failLibraryRefInvalid("skills proposals", ref, asJson);
+    const outcome = await withLibraryContract("skills proposals", asJson, () =>
+      listLibraryProposals({
+        ...(parsedRef ? { ref: parsedRef } : {}),
+        project: project?.trim() || null,
+        state: parsedState,
+        mine: mine === true,
+        caller: runtimeLibraryCaller(),
+      }),
+    );
     const payload = {
-      skill: serializeSkill(skill, { includeContent: true }),
-      files,
-      ...(selected ? { file: selected } : {}),
+      ...outcome,
+      proposals: outcome.proposals.map((entry) => ({
+        ...entry,
+        next: `ravi skills proposal ${entry.ref} ${entry.number}`,
+      })),
     };
     if (asJson) {
       printJson(payload);
-    } else if (raw === true && selected) {
-      process.stdout.write(selected.content);
-    } else if (selected) {
-      // The `# <name>` header comes first: loaded-skill detection reads it from
-      // the output, and a reference file starts with a heading of its own.
-      console.log(`# ${skill.name}`);
-      console.log(`File: ${selected.path}`);
-      console.log(`Path: ${skill.path}`);
-      console.log("");
-      console.log(selected.content.trimEnd());
-      console.log("");
-      console.log(skillFileListLine(files));
-    } else {
-      console.log(`# ${skill.name}`);
-      if (skill.description) console.log(`\n${skill.description}\n`);
-      console.log(`Path: ${skill.path}`);
-      console.log("");
-      console.log(skill.content);
-      if (files.length > 1) console.log(skillFileListLine(files));
+      return payload;
+    }
+    if (payload.proposals.length === 0) {
+      console.log(
+        `No ${parsedState === "all" ? "" : `${parsedState} `}proposals${payload.ref ? ` for ${payload.ref}` : ""}.`,
+      );
+    }
+    for (const entry of payload.proposals) {
+      const stale = entry.stale ? " [stale]" : "";
+      const comments =
+        entry.openComments > 0 ? ` — ${entry.openComments} open comment${entry.openComments === 1 ? "" : "s"}` : "";
+      console.log(
+        `${entry.ref} #${entry.number} ${entry.status}${stale} — ${proposalAuthorLabel(entry.author)}${comments}`,
+      );
+      console.log(`  ${entry.next}`);
     }
     return payload;
+  }
+
+  @Command({
+    name: "proposal",
+    description: "Show one proposal of a Library skill: status, files and review comments",
+    helpAfter: SKILLS_PROPOSAL_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "proposal", risk: "low" })
+  @Returns(skillsProposalReturnSchema)
+  async proposal(
+    @Arg("ref", { description: "Library ref (org/<slug> or <project>/<slug>)" }) ref: string,
+    @Arg("number", { description: "Proposal number" }) number: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const parsedRef = parseLibraryRef(ref);
+    if (!parsedRef) failLibraryRefInvalid("skills proposal", ref ?? "", asJson);
+    const parsedNumber = Number(number);
+    if (!Number.isInteger(parsedNumber) || parsedNumber < 1) {
+      const message = "The proposal number is a whole number (1, 2, 3...).";
+      contractFail("skills proposal", "USAGE_ERROR", message, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: `List them with: ravi skills proposals ${parsedRef.ref}`,
+          issues: skillContractIssues(["number"], "USAGE_ERROR", message),
+        },
+      });
+    }
+    const outcome = await withLibraryContract("skills proposal", asJson, () =>
+      showLibraryProposal({ ref: parsedRef, number: parsedNumber, caller: runtimeLibraryCaller() }),
+    );
+    const { proposal } = outcome;
+    const payload = {
+      ref: outcome.ref.ref,
+      number: proposal.number,
+      item: outcome.item,
+      proposal,
+      files: outcome.files.map((file) => ({
+        path: file.path,
+        bytes: file.bytes,
+        sha256: file.sha256,
+        ...(outcome.contentsVisible ? { content: file.content } : {}),
+      })),
+      base: outcome.base
+        ? {
+            number: outcome.base.number,
+            files: outcome.base.files.map((file) => ({ path: file.path, bytes: file.bytes, sha256: file.sha256 })),
+          }
+        : null,
+      comments: outcome.comments,
+      contentsVisible: outcome.contentsVisible,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    for (const line of proposalShowLines(payload)) console.log(line);
+    return payload;
+  }
+
+  @Command({
+    name: "pin",
+    description:
+      "Pin a Library skill to an agent of this installation: it loads natively and is authorized for it. Requires --execute.",
+    helpAfter: SKILLS_PIN_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "pin", risk: "high", requiresConfirmation: true })
+  @Returns(skillsPinReturnSchema)
+  async pin(
+    @Arg("ref", { description: "Library ref (org/<slug> or <project>/<slug>)" }) ref: string,
+    @Option({ flags: "--agent <id>", description: "Local agent that loads the skill" }) agent?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Confirm the pin (without it, print the plan and exit 3)" })
+    execute?: boolean,
+  ) {
+    // Agents never pin: a pin widens what an agent loads and may read. Refused before any request.
+    if (runtimeLibraryCaller()) failAgentCannotPin("skills pin", asJson);
+    const parsedRef = parseLibraryRef(ref);
+    if (!parsedRef) failLibraryRefInvalid("skills pin", ref ?? "", asJson);
+    const agentId = requirePinAgent("skills pin", agent, asJson);
+    return withLibraryContract("skills pin", asJson, async () => {
+      const prepared = await prepareLibraryPin({ ref: parsedRef, agentId });
+      if (!execute) contractDryRun("skills pin", { ...prepared.plan }, { asJson });
+      const result = await executeLibraryPin(prepared);
+      const payload = { success: true as const, ...result };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(
+        result.created
+          ? `✓ Pinned ${result.ref} to agent ${result.agent}`
+          : `= ${result.ref} was already pinned to agent ${result.agent}`,
+      );
+      if (result.local.pinned && result.local.skill) {
+        console.log(`  New sessions of ${result.agent} load it as ravi-library:${result.local.skill}`);
+      } else if (!result.local.refreshed) {
+        console.log("  The local pins could not be refreshed now; the daemon loads it at its next pin sync.");
+      }
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "unpin",
+    description: "Unpin a Library skill from an agent of this installation (runs immediately: it reduces authority)",
+    helpAfter: SKILLS_UNPIN_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "unpin", risk: "medium" })
+  @Returns(skillsUnpinReturnSchema)
+  async unpin(
+    @Arg("ref", { description: "Library ref (org/<slug> or <project>/<slug>)" }) ref: string,
+    @Option({ flags: "--agent <id>", description: "Local agent to unpin it from" }) agent?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (runtimeLibraryCaller()) failAgentCannotPin("skills unpin", asJson);
+    const parsedRef = parseLibraryRef(ref);
+    if (!parsedRef) failLibraryRefInvalid("skills unpin", ref ?? "", asJson);
+    const agentId = requirePinAgent("skills unpin", agent, asJson, { mustExist: false });
+    return withLibraryContract("skills unpin", asJson, async () => {
+      const result = await executeLibraryUnpin({ ref: parsedRef, agentId });
+      const payload = { success: true as const, ...result };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(
+        result.removed
+          ? `✓ Unpinned ${result.ref} from agent ${result.agent}`
+          : `= ${result.ref} was not pinned to agent ${result.agent}`,
+      );
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "pins",
+    description: "List Library skills pinned to this installation's agents, or (<ref>) where one item is pinned",
+    helpAfter: SKILLS_PINS_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "pins", risk: "low" })
+  @Returns(skillsPinsReturnSchema)
+  async pins(
+    @Arg("ref", { required: false, description: "Library ref (org/<slug> or <project>/<slug>) to list its pins" })
+    ref?: string,
+    @Option({ flags: "--agent <id>", description: "Only this agent's pins" }) agent?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (ref?.trim()) {
+      const parsedRef = parseLibraryRef(ref);
+      if (!parsedRef) failLibraryRefInvalid("skills pins", ref, asJson);
+      const outcome = await withLibraryContract("skills pins", asJson, () => listLibraryItemPins(parsedRef));
+      const filtered = agent?.trim()
+        ? { ...outcome, pins: outcome.pins.filter((pin) => pin.agent.id === agent.trim()) }
+        : outcome;
+      if (asJson) {
+        printJson(filtered);
+        return filtered;
+      }
+      if (filtered.pins.length === 0) console.log(`${filtered.ref} is not pinned to any agent.`);
+      for (const pin of filtered.pins) {
+        const here = pin.installation.id === filtered.installationId ? " (this installation)" : "";
+        const by = pin.pinnedBy?.name ? ` — pinned by ${pin.pinnedBy.name}` : "";
+        const gone = pin.agent.reported ? "" : " [agent no longer reported]";
+        console.log(
+          `${filtered.ref} → ${pin.agent.id}@${pin.installation.name ?? pin.installation.id}${here}${gone}${by}`,
+        );
+      }
+      return filtered;
+    }
+    const outcome = await withLibraryContract("skills pins", asJson, () =>
+      listLocalLibraryPins({ agentId: agent?.trim() || null, inRuntime: runtimeLibraryCaller() !== null }),
+    );
+    if (asJson) {
+      printJson(outcome);
+      return outcome;
+    }
+    if (outcome.pins.length === 0) {
+      console.log(outcome.agent ? `No Library skills pinned to agent ${outcome.agent}.` : "No Library skills pinned.");
+    }
+    for (const pin of outcome.pins) {
+      const external = pin.externalAllowed ? "" : " (operator's own turns only)";
+      console.log(`${pin.agent}: ${pin.ref} v${pin.version} as ravi-library:${pin.skill}${external}`);
+    }
+    for (const missing of outcome.unavailable) {
+      console.log(`${missing.agentId}: ${missing.ref} pinned but not loaded (this login cannot read it)`);
+    }
+    if (outcome.hint) console.log(`\n${outcome.hint}`);
+    return outcome;
   }
 
   @Command({
@@ -1115,14 +2149,15 @@ export class SkillsCommands {
   @Command({
     name: "grant",
     description:
-      "Grant a catalog or installed skill to an agent (per-agent visibility). Catalog skills need no install; use:skill:<name> capabilities work too.",
+      "Grant a catalog, installed or Library skill (org/<slug>, <project>/<slug>) to an agent (per-agent visibility). Catalog skills need no install; use:skill:<name> capabilities work too.",
     helpAfter: SKILLS_GRANT_HELP_AFTER,
   })
   @CommandAccess({ kind: "mutate", resource: "skills", action: "grant", risk: "medium" })
   @Returns(skillGrantMutationReturnSchema)
   grant(
     @Arg("agent", { description: "Agent id (immutable)" }) agent: string,
-    @Arg("skill", { description: "Skill name (matches SKILL.md name)" }) skill: string,
+    @Arg("skill", { description: "Skill name (matches SKILL.md name) or Library ref (org/<slug>, <project>/<slug>)" })
+    skill: string,
     @Option({ flags: "--note <text>", description: "Optional operator note" }) note?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -1133,18 +2168,22 @@ export class SkillsCommands {
     if (!getAgent(agentId)) {
       failAgentNotFound("skills grant", agentId, asJson);
     }
-    const resolved =
-      findSkillByName(listCatalogSkills(), skillName) ??
-      findSkillByName(listInstalledSkills({ includeCodex: false }), skillName);
-    if (!resolved) {
+    // A Library ref (`org/x`, `clinica/x`) is stored as its id (`org:x`,
+    // `project:clinica:x`); it never resolves against local skills.
+    const libraryId = libraryGrantId("skills grant", skillName, asJson);
+    const resolved = libraryId
+      ? null
+      : (findSkillByName(listCatalogSkills(), skillName) ??
+        findSkillByName(listInstalledSkills({ includeCodex: false }), skillName));
+    if (!libraryId && !resolved) {
       failSkillNotFound("skills grant", skillName, {
         asJson,
         candidates: knownSkillNames({ includeCodex: false }),
-        suggestedAction: SKILL_GRANT_REQUIRES_INSTALL_ACTION,
+        suggestedAction: `${SKILL_GRANT_REQUIRES_INSTALL_ACTION}. For a Library skill, pass its ref (org/<slug> or <project>/<slug>; find it with: ravi skills search <words>)`,
       });
     }
 
-    const canonicalSkillName = resolved.name;
+    const canonicalSkillName = libraryId ?? resolved!.name;
     const grant = dbUpsertSkillGrant({
       agentId,
       skillName: canonicalSkillName,
@@ -1174,25 +2213,26 @@ export class SkillsCommands {
   @Returns(skillGrantMutationReturnSchema)
   revoke(
     @Arg("agent", { description: "Agent id (immutable)" }) agent: string,
-    @Arg("skill", { description: "Skill name" }) skill: string,
+    @Arg("skill", { description: "Skill name or Library ref (org/<slug>, <project>/<slug>)" }) skill: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const agentId = agent?.trim();
     const skillName = skill?.trim();
     if (!agentId) fail("Agent id is required.");
     if (!skillName) fail("Skill name is required.");
-    const removed = dbDeleteSkillGrant(agentId, skillName);
+    const storedName = libraryGrantId("skills revoke", skillName, asJson) ?? skillName;
+    const removed = dbDeleteSkillGrant(agentId, storedName);
     const payload = {
       success: removed,
       agentId,
-      skillName,
+      skillName: storedName,
     };
     if (asJson) {
       printJson(payload);
     } else if (removed) {
-      console.log(`✓ Revoked ${skillName} from ${agentId}`);
+      console.log(`✓ Revoked ${storedName} from ${agentId}`);
     } else {
-      console.log(`No grant found for ${skillName} on ${agentId}.`);
+      console.log(`No grant found for ${storedName} on ${agentId}.`);
     }
     return payload;
   }
@@ -1403,6 +2443,7 @@ export class SkillsCommands {
       agentId,
       hasConfiguration: resolved.hasConfiguration,
       allowlist: resolved.allowlist,
+      libraryGrants: resolved.libraryGrants,
       provenance: resolved.provenance,
     };
     if (asJson) {
@@ -1415,6 +2456,10 @@ export class SkillsCommands {
       console.log(`from baseline (${resolved.provenance.baseline.length})`);
       console.log(`from capabilities (${resolved.provenance.fromCapabilities.length})`);
       console.log(`from grants (${resolved.provenance.fromGrants.length})`);
+      if (resolved.libraryGrants.length > 0) {
+        console.log(`library grants (${resolved.libraryGrants.length}):`);
+        for (const id of resolved.libraryGrants) console.log(`  - ${id}`);
+      }
     }
     return payload;
   }
@@ -1434,7 +2479,8 @@ export class SkillsCommands {
     fields?: string,
   ) {
     const agentId = agentFilter?.trim();
-    const skillName = skill?.trim();
+    const rawSkill = skill?.trim();
+    const skillName = rawSkill ? (libraryGrantId("skills who", rawSkill, asJson) ?? rawSkill) : undefined;
     let grants: DbSkillGrant[] = [];
     let scopeLabel = "";
     if (agentId) {

@@ -1,3 +1,4 @@
+import { migrateDecisions } from "../decisions/schema.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
 /**
  * Router Database - SQLite-backed configuration storage
@@ -15,6 +16,8 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
+import { getCredentialConnection } from "../credentials/store.js";
+import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
@@ -1131,6 +1134,14 @@ export interface ListContextsOptions {
 const SLOW_QUERY_WARN_MS = Number(process.env.RAVI_DB_SLOW_QUERY_WARN_MS ?? 250);
 const SLOW_QUERY_ERROR_MS = Number(process.env.RAVI_DB_SLOW_QUERY_ERROR_MS ?? 5000);
 const SLOW_QUERY_DISABLED = process.env.RAVI_DB_SLOW_QUERY_DISABLE === "1";
+/**
+ * A read that stays open (an iterator that is never finalized) pins the WAL
+ * snapshot even though no query is slow. Watchdogs report it with the call
+ * site so the holder can be named instead of guessed from shm marks.
+ */
+const READ_WATCHDOG_WARN_MS = Number(process.env.RAVI_DB_READ_WATCHDOG_MS ?? 5_000);
+const READ_WATCHDOG_INTERVAL_MS = Number(process.env.RAVI_DB_READ_WATCHDOG_INTERVAL_MS ?? 5_000);
+const READ_WATCHDOG_DISABLED = process.env.RAVI_DB_READ_WATCHDOG_DISABLE === "1";
 
 function shortSql(sql: string): string {
   const collapsed = sql.replace(/\s+/g, " ").trim();
@@ -1149,8 +1160,121 @@ function reportSlowQuery(elapsed: number, method: string, sql: string): void {
   }
 }
 
-function instrumentSlowQueries(db: Database): void {
+export interface LongReadReport {
+  ms: number;
+  state: "open" | "closed";
+  sql: string;
+  caller: string;
+}
+
+function readWatchdogCaller(): string {
+  return (new Error().stack ?? "")
+    .split("\n")
+    .slice(3, 6)
+    .map((line) => line.trim().replace(/^at\s+/, ""))
+    .join(" <- ");
+}
+
+/**
+ * Wrap a statement iterator so a read snapshot that stays open past the
+ * threshold is logged with its duration and call site (and again, once, when it
+ * closes). The proxy preserves the iterator protocol.
+ */
+export function trackReadIterator<T extends object>(
+  iterator: T,
+  options: {
+    sql: string;
+    caller: string;
+    warnMs?: number;
+    intervalMs?: number;
+    onLongRead?: (report: LongReadReport) => void;
+  },
+): T {
+  const warnMs = options.warnMs ?? READ_WATCHDOG_WARN_MS;
+  const intervalMs = options.intervalMs ?? READ_WATCHDOG_INTERVAL_MS;
+  const startedAt = Date.now();
+  let reported = false;
+  const report = (state: "open" | "closed") => {
+    if (reported) return;
+    reported = true;
+    const payload: LongReadReport = {
+      ms: Date.now() - startedAt,
+      state,
+      sql: shortSql(options.sql),
+      caller: options.caller,
+    };
+    if (options.onLongRead) {
+      options.onLongRead(payload);
+    } else if (state === "open") {
+      log.warn("long db read iterator (still open)", payload);
+    } else {
+      log.warn("long db read iterator", payload);
+    }
+  };
+  const timer = setInterval(() => {
+    if (Date.now() - startedAt >= warnMs) report("open");
+  }, intervalMs);
+  timer.unref?.();
+  const finish = () => {
+    clearInterval(timer);
+    if (Date.now() - startedAt >= warnMs) report("closed");
+  };
+
+  const proxy: T = new Proxy(iterator, {
+    get(target, property, receiver) {
+      if (property === Symbol.iterator) {
+        return () => proxy;
+      }
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== "function") return value;
+      if (property === "next") {
+        return (...args: unknown[]) => {
+          const result = value.apply(target, args) as IteratorResult<unknown>;
+          if (result.done) finish();
+          return result;
+        };
+      }
+      if (property === "return" || property === "throw") {
+        return (...args: unknown[]) => {
+          try {
+            return value.apply(target, args);
+          } finally {
+            finish();
+          }
+        };
+      }
+      return value.bind(target);
+    },
+  });
+  return proxy;
+}
+
+function instrumentSlowQueries(db: Database, dbPath?: string): void {
   if (SLOW_QUERY_DISABLED) return;
+
+  // In-flight registry + WAL pin dump: a reader that never returns pins the
+  // snapshot without ever reaching the slow-query logger.
+  const watchdog = createReadWatchdog({
+    dbPath,
+    checkpointProbe: () => {
+      try {
+        const row = db.query("PRAGMA wal_checkpoint(PASSIVE)").get() as {
+          busy?: number;
+          log?: number;
+          checkpointed?: number;
+        } | null;
+        if (!row) return null;
+        return {
+          busy: Number(row.busy ?? 0),
+          log: Number(row.log ?? 0),
+          checkpointed: Number(row.checkpointed ?? 0),
+        };
+      } catch {
+        return null;
+      }
+    },
+  });
+  let openTransaction: number | undefined;
 
   const originalPrepare = db.prepare.bind(db);
   // @ts-expect-error: replacing method with a wrapper of identical signature
@@ -1159,15 +1283,23 @@ function instrumentSlowQueries(db: Database): void {
     const proxy = new Proxy(stmt, {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver);
-        if (
-          typeof value === "function" &&
-          (prop === "run" || prop === "get" || prop === "all" || prop === "iterate" || prop === "values")
-        ) {
+        if (typeof value === "function" && prop === "iterate") {
           return (...args: unknown[]) => {
             const start = Date.now();
+            const caller = readWatchdogCaller();
+            const iterator = (value as (...a: unknown[]) => object).apply(target, args);
+            reportSlowQuery(Date.now() - start, "iterate", sql);
+            return READ_WATCHDOG_DISABLED ? iterator : trackReadIterator(iterator, { sql, caller });
+          };
+        }
+        if (typeof value === "function" && (prop === "run" || prop === "get" || prop === "all" || prop === "values")) {
+          return (...args: unknown[]) => {
+            const start = Date.now();
+            const operation = watchdog.begin("statement", shortSql(sql));
             try {
               return (value as (...a: unknown[]) => unknown).apply(target, args);
             } finally {
+              watchdog.finish(operation);
               reportSlowQuery(Date.now() - start, String(prop), sql);
             }
           };
@@ -1181,9 +1313,19 @@ function instrumentSlowQueries(db: Database): void {
   const originalExec = db.exec.bind(db);
   db.exec = (sql: string, ...rest: unknown[]) => {
     const start = Date.now();
+    const head = sql.trim().slice(0, 20).toUpperCase();
+    const isBegin = head.startsWith("BEGIN");
+    const isEnd = head.startsWith("COMMIT") || head.startsWith("ROLLBACK") || head.startsWith("END");
+    if (isBegin && openTransaction === undefined) {
+      openTransaction = watchdog.begin("transaction", shortSql(sql));
+    }
     try {
       return originalExec(sql, ...(rest as []));
     } finally {
+      if (isEnd && openTransaction !== undefined) {
+        watchdog.finish(openTransaction);
+        openTransaction = undefined;
+      }
       reportSlowQuery(Date.now() - start, "exec", sql);
     }
   };
@@ -1220,6 +1362,18 @@ function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
  * Get database connection with lazy initialization.
  * Creates database and schema on first access.
  */
+/**
+ * `library_agent_requests` was first keyed by `request_id` alone, before any
+ * release. It is a local record of Console state, so that shape is dropped and
+ * created again keyed by (request_id, direction).
+ */
+function dropPreviewLibraryRequestsTable(db: Database): void {
+  const columns = db.prepare("PRAGMA table_info(library_agent_requests)").all() as Array<{ name: string; pk: number }>;
+  if (columns.length === 0) return;
+  if (columns.some((column) => column.name === "direction" && column.pk > 0)) return;
+  db.exec("DROP TABLE library_agent_requests");
+}
+
 function getDb(): Database {
   const nextDbPath = resolveDbPath();
   if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
@@ -1246,7 +1400,7 @@ function getDb(): Database {
   }
 
   const db = new Database(nextDbPath);
-  instrumentSlowQueries(db);
+  instrumentSlowQueries(db, nextDbPath);
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
@@ -1270,6 +1424,7 @@ function getDb(): Database {
 
   // Enable foreign keys before schema creation
   db.exec("PRAGMA foreign_keys = ON");
+  dropPreviewLibraryRequestsTable(db);
 
   // Initialize schema
   db.exec(`
@@ -1346,6 +1501,76 @@ function getDb(): Database {
     );
     CREATE INDEX IF NOT EXISTS idx_skill_grants_skill ON skill_grants(skill_name);
 
+    -- Library pins (spec skills/library): the Console's pins for this
+    -- installation, as the last successful sync returned them. Replaced as a
+    -- whole on each sync; never cleared by a failed one.
+    CREATE TABLE IF NOT EXISTS library_pins (
+      agent_id         TEXT NOT NULL,
+      library_id       TEXT NOT NULL,
+      ref              TEXT NOT NULL,
+      skill_name       TEXT NOT NULL,
+      version          INTEGER NOT NULL,
+      content_hash     TEXT,
+      external_allowed INTEGER NOT NULL DEFAULT 0 CHECK(external_allowed IN (0,1)),
+      item_json        TEXT NOT NULL,
+      synced_at        INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, library_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_pins_library ON library_pins(library_id);
+
+    CREATE TABLE IF NOT EXISTS library_pin_state (
+      id                INTEGER PRIMARY KEY CHECK(id = 1),
+      console_url       TEXT,
+      organization_id   TEXT,
+      installation_id   TEXT,
+      installation_name TEXT,
+      revision          TEXT,
+      fingerprint       TEXT,
+      plugin_dir        TEXT,
+      synced_at         INTEGER,
+      checked_at        INTEGER,
+      last_error_code   TEXT,
+      last_error_at     INTEGER
+    );
+
+    -- Library agents (spec skills/library): whether its operator listed a
+    -- local agent in the org directory, what the directory shows for it,
+    -- whether it is open to requests, and the Library definition it was
+    -- installed from.
+    CREATE TABLE IF NOT EXISTS library_agents (
+      agent_id             TEXT PRIMARY KEY,
+      description          TEXT,
+      listed               INTEGER NOT NULL DEFAULT 0 CHECK(listed IN (0,1)),
+      accepts_requests     INTEGER NOT NULL DEFAULT 0 CHECK(accepts_requests IN (0,1)),
+      origin_ref           TEXT,
+      origin_version       INTEGER,
+      origin_content_hash  TEXT,
+      agents_md_sha256     TEXT,
+      heartbeat_md_sha256  TEXT,
+      origin_profile       TEXT,
+      origin_skills_json   TEXT,
+      installed_at         INTEGER,
+      updated_at           INTEGER NOT NULL
+    );
+
+    -- Requests between agents of different installations, as this side knows
+    -- them: the asking session (sent) or the turn that answers (received).
+    CREATE TABLE IF NOT EXISTS library_agent_requests (
+      request_id     TEXT NOT NULL,
+      direction      TEXT NOT NULL CHECK(direction IN ('sent','received')),
+      agent_id       TEXT,
+      peer           TEXT,
+      session_key    TEXT,
+      session_name   TEXT,
+      status         TEXT NOT NULL,
+      error          TEXT,
+      reply          TEXT,
+      created_at     INTEGER NOT NULL,
+      updated_at     INTEGER NOT NULL,
+      PRIMARY KEY (request_id, direction)
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_agent_requests_status ON library_agent_requests(direction, status);
+
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
       name TEXT,
@@ -1353,6 +1578,7 @@ function getDb(): Database {
       runtime_provider TEXT,
       runtime_provider_override TEXT,
       runtime_session_json TEXT,
+      history_reset_after_id INTEGER,
       runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
       agent_cwd TEXT NOT NULL,
@@ -1689,7 +1915,11 @@ function getDb(): Database {
       provider_thread_id TEXT,
       canonical_root_message_id TEXT,
       initial_prompt TEXT,
+      requested_by TEXT,
       model_override TEXT,
+      provider_override TEXT,
+      effort_override TEXT,
+      thinking_level TEXT,
       creation_claim_id TEXT,
       creation_claim_expires_at INTEGER,
       prompt_published_at INTEGER,
@@ -1995,8 +2225,6 @@ function getDb(): Database {
       created_at INTEGER NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_session_events_key_time
-      ON session_events(session_key, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_key_time_seq_id
       ON session_events(session_key, timestamp, seq, id);
     CREATE INDEX IF NOT EXISTS idx_session_events_visible_key_time_seq_id
@@ -2008,8 +2236,24 @@ function getDb(): Database {
           OR event_type LIKE '%.delta'
           OR event_type LIKE '%provider_event%'
         );
-    CREATE INDEX IF NOT EXISTS idx_session_events_name_time
-      ON session_events(session_name, timestamp);
+    -- Legacy trace fallback: session-trace/query.ts builds
+    -- (session_key IN (?) OR session_name IN (?)) with ORDER BY timestamp DESC
+    -- when the caller passes a name that has no sessions row. The OR cannot use
+    -- any of the key-leading indexes, so SQLite walked idx_session_events_timestamp
+    -- and fetched the whole row for every candidate: a client polling a stale
+    -- session name produced 8-25s reads and ~1GB RSS (2026-10-25). A covering
+    -- partial index ordered by timestamp lets that scan read session_key and
+    -- session_name from the index instead of the table (8.6s -> 0.25s measured
+    -- on the same 1.5M-row database).
+    CREATE INDEX IF NOT EXISTS idx_session_events_visible_order_cover
+      ON session_events(timestamp DESC, session_key, session_name)
+      WHERE event_group != 'stream'
+        AND NOT (
+          event_type = 'adapter.raw'
+          OR event_type LIKE '%.stream%'
+          OR event_type LIKE '%.delta'
+          OR event_type LIKE '%provider_event%'
+        );
     CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
       ON session_events(run_id, seq);
     -- Hot path: SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_key = ?
@@ -2024,19 +2268,12 @@ function getDb(): Database {
       ON session_events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_turn_seq
       ON session_events(turn_id, seq);
-    CREATE INDEX IF NOT EXISTS idx_session_events_type_time
-      ON session_events(event_type, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns
-      ON session_events(timestamp, agent_id, model, event_type)
-      WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
     CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns_cover
       ON session_events(timestamp, agent_id, model, event_type, duration_ms)
       WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
     CREATE INDEX IF NOT EXISTS idx_session_events_rollup_tools
       ON session_events(timestamp, agent_id, event_type, status)
       WHERE event_type IN ('tool.start', 'tool.end');
-    CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
-      ON session_events(source_chat_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_contact_time
       ON session_events(contact_id, timestamp);
 
@@ -2090,6 +2327,7 @@ function getDb(): Database {
       cost_usd REAL DEFAULT 0,
       error TEXT,
       abort_reason TEXT,
+      output_state TEXT,
       started_at INTEGER NOT NULL,
       completed_at INTEGER,
       updated_at INTEGER NOT NULL
@@ -2487,6 +2725,31 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_cloud_link_requests_contact
       ON cloud_link_requests(contact_id, status);
 
+    -- People who must link their Console account before Ravi writes for them
+    -- (ravi link). On WhatsApp the person starts the private chat, so a group
+    -- refusal waits here for their DM ('awaiting_dm'); the daemon then sends
+    -- the approval link in that DM ('link_sent'). One row per contact.
+    CREATE TABLE IF NOT EXISTS contact_link_states (
+      contact_id          TEXT PRIMARY KEY,
+      status              TEXT NOT NULL CHECK(status IN ('awaiting_dm','link_sent')),
+      channel             TEXT NOT NULL,
+      account_id          TEXT NOT NULL,
+      agent_id            TEXT,
+      display_name        TEXT,
+      origin_channel      TEXT,
+      origin_account_id   TEXT,
+      origin_chat_id      TEXT,
+      origin_thread_id    TEXT,
+      origin_message_id   TEXT,
+      dm_chat_id          TEXT,
+      route_pattern       TEXT,
+      request_id          TEXT,
+      request_expires_at  INTEGER,
+      created_at          INTEGER NOT NULL,
+      updated_at          INTEGER NOT NULL,
+      expires_at          INTEGER NOT NULL
+    );
+
     -- Local-first sync: optional, best-effort replication ledger.
     -- SQLite remains the local source of truth; these tables are durable queues
     -- for remote bridge delivery and cursor-based remote intake.
@@ -2749,6 +3012,16 @@ function getDb(): Database {
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
 
+  // Migration: turn-output marker (`final` | `incomplete`) on session_turns.
+  const sessionTurnColumns = db.prepare("PRAGMA table_info(session_turns)").all() as Array<{ name: string }>;
+  if (!sessionTurnColumns.some((c) => c.name === "output_state")) {
+    try {
+      db.exec("ALTER TABLE session_turns ADD COLUMN output_state TEXT");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+    }
+  }
+
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
   if (!sessionColumns.some((c) => c.name === "effort_override")) {
@@ -2801,6 +3074,9 @@ function getDb(): Database {
   if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");
     log.info("Added runtime_session_json column to sessions table");
+  }
+  if (!sessionColumns.some((c) => c.name === "history_reset_after_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN history_reset_after_id INTEGER");
   }
   if (!sessionColumns.some((c) => c.name === "runtime_session_display_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_display_id TEXT");
@@ -2974,6 +3250,20 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
 
+    -- Run identity and admitted notification owner survive job edits/deletion.
+    CREATE TABLE IF NOT EXISTS cron_runs (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      admitted_at INTEGER NOT NULL,
+      notification_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'ok', 'error')),
+      finished_at INTEGER,
+      error TEXT,
+      reported INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_id);
+
     -- Durable idempotency ledger for reactions whose target may later be deleted.
     CREATE TABLE IF NOT EXISTS reaction_actions (
       idempotency_key_hash TEXT PRIMARY KEY,
@@ -3066,7 +3356,15 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN on_error TEXT");
     log.info("Added on_error column to triggers table");
   }
+  migrateDecisions(db);
+  ensureColumn(db, "slack_thread_lifecycle", "requested_by", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "provider_override", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "effort_override", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "thinking_level", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "initiator_context_id", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "close_context_id", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
+  migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);
 
@@ -3107,6 +3405,7 @@ function getDb(): Database {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN owner_principal TEXT");
     log.info("Added owner_principal column to cron_jobs table");
   }
+  ensureColumn(db, "cron_jobs", "creator_chat", "TEXT");
 
   // Migration: add heartbeat_account_id column to agents
   if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {
@@ -3302,7 +3601,9 @@ function getDb(): Database {
   ensureColumn(db, "daemon_restart_resume_deliveries", "delivery_kind", "TEXT NOT NULL DEFAULT 'resume'");
   ensureColumn(db, "daemon_restart_resume_deliveries", "decision_reason", "TEXT");
   ensureIdentityChatMigrations(db);
+  dropRedundantSessionEventIndexes(db);
   ensureAgentVisibilityMigration(db);
+  ensureLibraryAgentListedMigration(db);
   ensureCliCommandAccessKindGrantMigration(db);
   backfillChatModelOnce(db);
   ensureSessionGoalBlockedMigration(db);
@@ -3554,6 +3855,25 @@ function migrateChannelOutboundReceiptSchema(
   });
 }
 
+/**
+ * The directory used to report every local agent; now an agent is reported
+ * only once its operator lists it (`ravi agents listing <id> on`). An agent
+ * already open to requests was opened on purpose, so it stays listed.
+ */
+function ensureLibraryAgentListedMigration(database: Database): void {
+  if (tableHasColumn(database, "library_agents", "listed")) return;
+  // One write transaction: a crash between the column and the backfill rolls
+  // both back, and a second process sees the column only once it is filled.
+  database
+    .transaction(() => {
+      if (tableHasColumn(database, "library_agents", "listed")) return;
+      database.exec("ALTER TABLE library_agents ADD COLUMN listed INTEGER NOT NULL DEFAULT 0 CHECK(listed IN (0,1))");
+      database.exec("UPDATE library_agents SET listed = 1 WHERE accepts_requests = 1");
+      log.info("Added schema column", { table: "library_agents", column: "listed" });
+    })
+    .immediate();
+}
+
 function ensureColumn(database: Database, table: string, column: string, definition: string): void {
   if (!tableHasColumn(database, table, column)) {
     try {
@@ -3599,22 +3919,56 @@ function backfillLegacySlackInstancesToChannels(database: Database): void {
      VALUES (?, 'slack', ?, ?, NULL, ?, ?, NULL)`,
   );
 
-  let migrated = 0;
+  const inserted: Array<{ name: string; credentialConnection: string; enabled: boolean }> = [];
   database.transaction(() => {
     for (const instance of legacyInstances) {
-      migrated += insertChannel.run(
+      const credentialConnection = legacySlackCredentialConnection(instance.name, instance.defaults);
+      const enabled = instance.enabled !== 0;
+      const changes = insertChannel.run(
         instance.name,
-        instance.enabled === 0 ? 0 : 1,
-        legacySlackCredentialConnection(instance.name, instance.defaults),
+        enabled ? 1 : 0,
+        credentialConnection,
         instance.created_at,
         instance.updated_at,
       ).changes;
+      if (changes > 0) inserted.push({ name: instance.name, credentialConnection, enabled });
     }
   })();
 
-  if (migrated > 0) {
-    log.info("Backfilled Slack channel configs from legacy instances", { count: migrated });
+  if (inserted.length > 0) {
+    log.info("Backfilled Slack channel configs from legacy instances", { count: inserted.length });
+    warnBackfilledSlackChannelsWithoutConnection(inserted);
   }
+}
+
+/**
+ * The backfill names a broker connection after the instance without checking
+ * it exists. Say so when it does not: `ravi-channels` cannot start that Slack
+ * adapter, so its replies stay queued until `ravi credentials add` adds one.
+ */
+export function warnBackfilledSlackChannelsWithoutConnection(
+  channels: ReadonlyArray<{ name: string; credentialConnection: string; enabled: boolean }>,
+  lookup: (provider: string, connection: string) => { status: string } | null = getCredentialConnection,
+): string[] {
+  const missing: string[] = [];
+  for (const channel of channels) {
+    if (!channel.enabled) continue;
+    let found: { status: string } | null;
+    try {
+      found = lookup("slack", channel.credentialConnection);
+    } catch {
+      found = null;
+    }
+    if (found?.status === "active") continue;
+    missing.push(channel.name);
+    log.warn("Backfilled Slack channel has no active broker connection; its replies cannot be delivered", {
+      channel: channel.name,
+      credentialConnection: channel.credentialConnection,
+      connectionStatus: found?.status ?? "not_found",
+      hint: "add it with `ravi credentials add`, then restart `ravi-channels`; `ravi doctor --domain channels` lists it",
+    });
+  }
+  return missing;
 }
 
 function legacySlackCredentialConnection(instanceName: string, defaultsJson: string | null): string {
@@ -3833,6 +4187,42 @@ function normalizeAgentDefaultsCapability(value: unknown): {
   };
 }
 
+/**
+ * Drop session_events indexes that stopped paying for themselves.
+ *
+ * Every index on this table is maintained on each event INSERT, and this is the
+ * hottest write path in the daemon, so a redundant index costs twice: disk and
+ * a B-tree write per event. These six were an exact prefix of a wider index, a
+ * subset of a wider partial index, or only served a one-time backfill:
+ *
+ * - idx_session_events_key_time: exact prefix of idx_session_events_key_time_seq_id.
+ * - idx_session_events_name_time: nothing filters session_name on this table
+ *   except the legacy OR fallback in session-trace/query.ts.
+ * - idx_session_events_type_time: every event_type query also carries
+ *   session_key, which idx_session_events_key_type_id already covers.
+ * - idx_session_events_chat_time: only served backfillChatModel, which is
+ *   guarded by a router_meta marker and never re-runs.
+ * - idx_session_events_rollup_turns: same WHERE as ..._cover, which also carries
+ *   duration_ms; the rollup queries use ..._cover by name.
+ * - idx_session_events_canonical_chat: only served the rare chat-merge UPDATE.
+ *
+ * Together they were ~360MB of the 1.3GB index footprint (audit 2026-10-20).
+ * Dropping is idempotent and safe to repeat on every boot.
+ */
+export function dropRedundantSessionEventIndexes(database: Database): void {
+  const redundant = [
+    "idx_session_events_key_time",
+    "idx_session_events_name_time",
+    "idx_session_events_type_time",
+    "idx_session_events_chat_time",
+    "idx_session_events_rollup_turns",
+    "idx_session_events_canonical_chat",
+  ];
+  for (const name of redundant) {
+    database.exec(`DROP INDEX IF EXISTS ${name}`);
+  }
+}
+
 function ensureIdentityChatMigrations(database: Database): void {
   ensureColumn(database, "message_metadata", "canonical_chat_id", "TEXT");
   ensureColumn(database, "message_metadata", "actor_type", "TEXT");
@@ -3866,7 +4256,6 @@ function ensureIdentityChatMigrations(database: Database): void {
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
   );
-  database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
   database.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_actor_agent ON chats(actor_id, agent_id) WHERE actor_id IS NOT NULL AND agent_id IS NOT NULL",
   );
@@ -6977,6 +7366,15 @@ export function dbListChatIdsByContactIds(input: {
   return result;
 }
 
+/** Drop a removed platform identity from chat participant rows (they keep the raw sender ids). */
+export function dbDetachChatParticipantIdentity(platformIdentityId: string): number {
+  return getDb()
+    .prepare(
+      "UPDATE chat_participants SET contact_id = NULL, platform_identity_id = NULL, updated_at = ? WHERE platform_identity_id = ?",
+    )
+    .run(Date.now(), platformIdentityId).changes;
+}
+
 export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {
   return upsertChatParticipant(getDb(), input);
 }
@@ -9192,6 +9590,8 @@ export function dbDeleteAgent(id: string): boolean {
   for (const { key } of modeKeys) {
     if (key.startsWith(modePrefix) && !key.slice(modePrefix.length).includes(".")) s.deleteSetting.run(key);
   }
+  // And its Library listing: a same-id recreation starts unlisted and closed to requests.
+  getDb().prepare("DELETE FROM library_agents WHERE agent_id = ?").run(id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
@@ -10161,10 +10561,13 @@ export function dbPruneContexts(options: { apply?: boolean; olderThanMs?: number
   const db = getDb();
   const now = Date.now();
   const cutoff = options.olderThanMs != null ? now - Math.max(0, options.olderThanMs) : now;
+  // A revoked row stays until it also expires: a running turn may still hold a
+  // cached copy without revokedAt, and the stored row is what tells it apart
+  // (see isRuntimeContextLive).
   const where = `
     created_at <= ?
     AND (
-      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ?)
+      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ? AND (expires_at IS NULL OR expires_at = 0))
       OR (expires_at IS NOT NULL AND expires_at != 0 AND expires_at <= ?)
     )
   `;
@@ -11164,6 +11567,14 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
     actor: r.actor,
     ts: r.ts,
   }));
+}
+
+/**
+ * Debounce window per trigger (ms; 0 = fire per event). Existing triggers get 0,
+ * so they keep firing exactly as before.
+ */
+export function migrateTriggerDebounce(database: Database): void {
+  ensureColumn(database, "triggers", "debounce_ms", "INTEGER DEFAULT 0");
 }
 
 const LEGACY_TRIGGER_SESSION_CHECK = /\s*CHECK\s*\(\s*session\s+IN\s*\(\s*'main'\s*,\s*'isolated'\s*\)\s*\)/;

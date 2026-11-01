@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
+import { isInsideLibraryPluginsRoot, LIBRARY_PLUGIN_NAME } from "../library/plugin.js";
 import {
   codexSkillsDir,
   findInstalledSkill,
@@ -832,6 +833,9 @@ const SHELL_SEGMENT_SEPARATOR = /\|\||&&|[;&|\r\n]/;
 const SHELL_EXPANSION_OR_REDIRECT = /[`$<>]/;
 const RAVI_SKILLS_SOURCE_COMMAND =
   /^\s*(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+(?:install|list)\s[^\n]*--source\b/;
+/** `ravi skills publish|propose <dir>` sends a folder to the Library and never prints a skill body. */
+const RAVI_SKILLS_PUBLISH_COMMAND =
+  /^\s*(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+(?:publish|propose)\s/;
 const RAVI_SKILLS_SHOW_COMMAND = /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b/;
 const RAVI_SKILLS_SHOW_RAW =
   /(?:^|[\s"'`])(?:\.\/)?(?:bin\/ravi|ravi|\/[^\s"'`]+\/bin\/ravi)\s+skills\s+show\b[^;&|\n\r]*\s--raw\b/;
@@ -842,7 +846,8 @@ const SKILL_SHOW_FILE_OPTION = /\s--file(?:=|\s+)("[^"]*"|'[^']*'|\S+)/g;
  * segment and per `SKILL.md` token. A shell line cannot be partially executed,
  * so the gate stays line-scoped, but it names the exact skill it denies.
  *
- * `ravi skills install|list --source <path>` only names a source (the CLI never
+ * `ravi skills install|list --source <path>` only names a source and
+ * `ravi skills publish|propose <dir>` only sends a folder to the Library (the CLI never
  * prints a skill body), so those paths are not skill loads — unless the segment
  * also expands or redirects, which could read the file some other way.
  */
@@ -854,7 +859,12 @@ export function extractRequestedSkillsFromCommandLine(command: string): string[]
   for (const segment of command.replace(SHELL_FD_DUPLICATION, " ").split(SHELL_SEGMENT_SEPARATOR)) {
     if (!segment.trim()) continue;
     add(extractRaviSkillShowNameFromCommand(segment));
-    if (RAVI_SKILLS_SOURCE_COMMAND.test(segment) && !SHELL_EXPANSION_OR_REDIRECT.test(segment)) continue;
+    if (
+      (RAVI_SKILLS_SOURCE_COMMAND.test(segment) || RAVI_SKILLS_PUBLISH_COMMAND.test(segment)) &&
+      !SHELL_EXPANSION_OR_REDIRECT.test(segment)
+    ) {
+      continue;
+    }
     // `skills show <skill> --file <path>` reads a file of the skill it names;
     // the path is relative to that skill, so it never names another one. A
     // value that expands could read anything, so that one is still scanned.
@@ -893,6 +903,11 @@ export function extractSkillNameFromFilesystemPath(value: string): string | null
   if (!/(?:^|\/)skills\/[^/]+/i.test(normalized) && !/SKILL\.md$/i.test(normalized)) {
     return null;
   }
+  // A pinned Library skill in the generated plugin is known by its plugin
+  // name (`ravi-library-<name>`), never by the bare directory name, which a
+  // local skill could share.
+  const library = librarySkillNameFromPluginPath(value);
+  if (library) return library;
   const known = resolveSkillNameFromKnownSkillPaths(normalized);
   if (known) {
     return known;
@@ -1021,6 +1036,10 @@ function parseSkillFromShowOutput(output: unknown): ShowSkillDescriptor | null {
     return null;
   }
   const path = /^Path:\s+(.+)$/m.exec(text)?.[1]?.trim();
+  // A piped `--json` result may contain only SKILL.md bytes. Its heading is
+  // prose (e.g. "Sessions Manager"), not CLI identity metadata. In that case
+  // use the skill named by the command, as we do for explicit --raw reads.
+  if (!path) return null;
   const resolved = resolveLocalSkill(header);
   return {
     name: resolved?.name ?? header,
@@ -1253,4 +1272,12 @@ const EVIDENCE_KINDS: readonly RuntimeSkillVisibilityEvidenceKind[] = [
 
 function isEvidenceKind(value: string): value is RuntimeSkillVisibilityEvidenceKind {
   return (EVIDENCE_KINDS as readonly string[]).includes(value);
+}
+
+/** `ravi-library-<name>` for a SKILL.md inside a generated Library plugin; null otherwise. */
+function librarySkillNameFromPluginPath(value: string): string | null {
+  const path = value.trim();
+  if (!path.startsWith("/") || !isInsideLibraryPluginsRoot(path)) return null;
+  const match = new RegExp(`/${LIBRARY_PLUGIN_NAME}/skills/([^/]+)/SKILL\\.md$`, "i").exec(normalizePathForMatch(path));
+  return match?.[1] ? `${LIBRARY_PLUGIN_NAME}-${match[1]}` : null;
 }

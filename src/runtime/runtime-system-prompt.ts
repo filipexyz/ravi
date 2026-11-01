@@ -3,6 +3,7 @@ import {
   renderPromptSections,
   type PromptContextSection,
   type PromptSection,
+  type SlackThreadsPlacement,
 } from "../prompt-builder.js";
 import type { AgentConfig } from "../router/types.js";
 import type { ChannelContext } from "./message-types.js";
@@ -20,6 +21,13 @@ import {
   selectGroupCaps,
 } from "./skill-capability-implication.js";
 import { skillNameMatchesAllowlist } from "./skill-visibility.js";
+import {
+  KNOWLEDGE_SECTION_ID,
+  KNOWLEDGE_SECTION_PRIORITY,
+  KNOWLEDGE_SECTION_TITLE,
+  buildKnowledgeSystemSection,
+  capabilityToString,
+} from "../knowledge/prompt-section.js";
 
 export interface RuntimeSystemPromptInput {
   agent: AgentConfig;
@@ -48,8 +56,10 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
       agentMode: input.agent.mode,
       buildingSolutions: shouldMountBuildingSolutions(input),
       pagesLinks: shouldMountPagesLinks(input),
+      slackThreads: resolveSlackThreadsPlacement(input),
     }),
     buildRuntimeOperationalContextSection(input),
+    ...buildKnowledgePromptSections(input),
     ...buildSessionGoalPromptSections(input),
     ...buildStickerPromptSectionsForRuntime(input.agent, input.ctx, input.sessionRuntimeParams),
     ...(await buildWorkspacePromptSections(input.cwd)),
@@ -85,7 +95,12 @@ function shouldMountBuildingSolutions(input: RuntimeSystemPromptInput): boolean 
 }
 
 function canRunBuildingSolutionsGroup(capabilities: readonly ContextCapability[]): boolean {
-  return canRunAnyGroup(capabilities, BUILDING_SOLUTIONS_GROUP_RULE_IDS);
+  // Reading Bases (in the bootstrap floor since B4) builds nothing: only a
+  // capability beyond `read:bases*` counts toward this section.
+  const building = capabilities.filter(
+    (cap) => !(cap.permission === "read" && (cap.objectType === "bases" || cap.objectType.startsWith("bases."))),
+  );
+  return canRunAnyGroup(building, BUILDING_SOLUTIONS_GROUP_RULE_IDS);
 }
 
 const PAGES_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["pages"]);
@@ -97,6 +112,44 @@ const PAGES_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["pages"]);
 function shouldMountPagesLinks(input: RuntimeSystemPromptInput): boolean {
   if (input.agent.mode === "sentinel") return false;
   return canRunAnyGroup(input.runtimeContext?.capabilities ?? [], PAGES_GROUP_RULE_IDS);
+}
+
+const SESSIONS_GROUP_RULE_IDS: ReadonlySet<string> = new Set(["sessions"]);
+
+/**
+ * "Slack Threads" tells the agent to open a Slack thread with
+ * `ravi sessions create-thread` for off-topic work: mount it only for a
+ * non-sentinel agent that can run the sessions group. A session key with
+ * `:thread:` is a thread child and gets the in-thread variant.
+ */
+function resolveSlackThreadsPlacement(input: RuntimeSystemPromptInput): SlackThreadsPlacement | undefined {
+  if (input.agent.mode === "sentinel") return undefined;
+  if (!canRunAnyGroup(input.runtimeContext?.capabilities ?? [], SESSIONS_GROUP_RULE_IDS)) return undefined;
+  const sessionKey = input.sessionKey ?? input.runtimeContext?.sessionKey ?? "";
+  return sessionKey.includes(":thread:") ? "thread" : "channel";
+}
+
+/**
+ * "Knowledge" tells the agent how to use `ravi knowledge` on the operator's
+ * own turns: mount it only for a non-sentinel agent whose context can run
+ * that group (the CLI rechecks the turn on every call).
+ */
+function buildKnowledgePromptSections(input: RuntimeSystemPromptInput): PromptContextSection[] {
+  if (input.agent.mode === "sentinel") return [];
+  const content = buildKnowledgeSystemSection({
+    agentId: input.agent.id,
+    capabilities: (input.runtimeContext?.capabilities ?? []).map(capabilityToString),
+  });
+  if (!content) return [];
+  return [
+    {
+      id: KNOWLEDGE_SECTION_ID,
+      title: KNOWLEDGE_SECTION_TITLE,
+      priority: KNOWLEDGE_SECTION_PRIORITY,
+      source: "knowledge",
+      content,
+    },
+  ];
 }
 
 function canRunAnyGroup(capabilities: readonly ContextCapability[], ruleIds: ReadonlySet<string>): boolean {

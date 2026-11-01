@@ -19,6 +19,9 @@ applies_to:
   - src/channels/slack/thread-lifecycle-store.ts
   - src/router/resolver.ts
   - src/runtime/runtime-session-continuity.ts
+  - src/prompt-builder.ts
+  - src/runtime/runtime-system-prompt.ts
+  - src/cli/commands/sessions.ts
 owners:
   - dev
 status: active
@@ -75,6 +78,33 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
   it MUST NOT create a replacement fork.
 - Reopening a thread MUST preserve any parent completion that is still pending
   delivery.
+- A non-sentinel Slack session whose context can run the `sessions` group MUST
+  get the "Slack Threads" system prompt section. A channel-root or DM session
+  MUST be told to open a thread with `thread.create` for work that strays from
+  the conversation, and to fall back to the current conversation when
+  `thread.create` fails or is unavailable. A thread child session (key with
+  `:thread:`) MUST be told to keep its work in the thread, to open a sibling
+  thread for a different subject, and how to close with or without `--return`.
+- The channel-root session MUST be able to orchestrate its threads:
+  `thread.list` lists the threads whose parent is that session (open by
+  default), and `thread.send` publishes new instructions to one of them as a
+  `[System] Execute: [from: <parent>]` turn sourced in the Slack thread.
+  `thread.send` MUST be refused from a thread child and for a thread whose
+  first turn has not started, and MUST reopen a closed thread without dropping a
+  pending parent completion.
+- A thread child MUST be able to send progress to its parent with
+  `thread.report` without closing the thread. No `access session` grant is
+  needed for `thread.report` or `thread.send`: the parent/child relation is the
+  authority, and both stay within one agent.
+- Every parent notice (report or close return) MUST name the thread by the first
+  line of its initial message, when it has one, and its child session name, and
+  MUST include a Slack link when the workspace id is known. The link MUST be a
+  `slack://channel?team=<team>&id=<channel>&thread_ts=<ts>` app link, since
+  `https://app.slack.com` links always open the browser. It MUST be sourced
+  at the channel root, never inside the thread.
+
+- A programmatic thread requested by a human turn MUST use interactive admission via `_interactiveStart`. This fact MUST come from the persisted initiating context's canonical turn provenance, never its requester display name. Cron, observer and agent turns MUST retain background admission; bootstrap actor authority and turn origin MUST remain unchanged.
+- `sessions create-thread --provider <provider> --model <model>` MUST validate the effective pair before creating lifecycle or outbound records. Known incompatible models MUST fail with `THREAD_MODEL_PROVIDER_MISMATCH` and an explicit provider hint. Bare Codex model selectors on Pi MUST be refused; explicit Pi `provider/model` selectors remain available.
 
 ## Route Semantics
 
@@ -101,15 +131,56 @@ channel-root parent.
 ## Session Actions
 
 ```bash
-ravi sessions create-thread "<initial message>" [--model <model>]
+ravi sessions create-thread "<initial message>" [--provider <provider>] [--model <model>]
 ravi sessions close-thread [--return "<result>"]
+ravi sessions report "<progress>"
+ravi sessions threads [--all] [--json]
+ravi sessions thread-send <thread> "<instructions>"
 ```
 
 - Both commands infer the current session and Slack surface from tool context.
 - `create-thread` is available only when an executable Slack surface exists.
-- `close-thread` is available only inside an open Slack thread child session.
+- `close-thread` is available inside an open Slack thread child session or through the authorized explicit orphan-close path below.
 - `--return` opts into the parent completion event; omission is intentionally
   silent.
+- `report` is available only inside a Slack thread child session.
+- `threads` lists the channel-root session's threads, from the root or any of
+  its children. `thread-send` names a thread by child session name or key,
+  request id or Slack `thread_ts`, and works only from the channel-root session.
+- `report`, `close-thread` and `thread-send` refuse with typed codes, never a
+  bare command failure: `THREAD_NOT_THREAD_CHILD`, `THREAD_IDENTITY_MISMATCH`
+  (the session has an open thread's name under another key), and for
+  `thread-send` `THREAD_NOT_CHANNEL_ROOT`, `THREAD_NOT_FOUND`,
+  `THREAD_NOT_STARTED`, `THREAD_SESSION_MISSING`; also
+  `THREAD_PARENT_MISSING` and `THREAD_PARENT_RETURN_PENDING`. The remote relay
+  renders local copy for each code.
+- A thread record can outlive its child session. `threads` MUST mark that
+  thread with `childSessionMissing: true` and MUST NOT report it as unstarted.
+- Renaming a session MUST update the thread registry's saved child and parent
+  names, so an open thread stays bound to its child's current name.
+  A rename MUST refuse a name that an open thread saves for another child
+  session, even when that child session no longer exists.
+
+## Root Card
+
+The root of a programmatic thread is one Slack `card` block, not the initial
+message as plain text: the first line is the title, the latest progress or
+result the subtitle, a summary of the rest of at most 200 characters the body,
+and a status line (status, who asked, when it changed, whether the brief was
+cut) the subtext. When Slack rejects the `card` block (`invalid_blocks`), the
+same content is sent once more as classic blocks (header, sections, context).
+
+Who asked is the contact who wrote the turn running `create-thread`, from the
+daemon's record of the turn; the operator's own turns (and the terminal) fall
+back to the `permission-owner` contact; agents, routines and unknown turns
+name no one.
+
+When the summary leaves part of the message out, the whole message is posted
+as the first reply inside the thread. `report` (latest progress),
+`close-thread` (closed, with the `--return` result) and a `thread-send` that
+reopens the thread update the card in place. The card shows only text that
+passed the outbound Knowledge guard, plus who asked. A thread a person started
+keeps their message as root; Ravi never edits it.
 
 ## Acceptance Criteria
 
@@ -122,5 +193,21 @@ ravi sessions close-thread [--return "<result>"]
 - Responses from the child stay inside the Slack thread.
 - Programmatic creation posts exactly one Slack root and starts exactly one
   child turn.
+- The programmatic root is a status card; report, close and reopen update it.
 - The selected model is visible on the child session before the child turn.
 - Internal close is durable and an optional parent return is delivered once.
+
+## Generic decisions
+
+Managed threads consume `decisions`. `ravi decisions ask --thread <child> --key <key> --ask <question> --execute` binds the question to the lifecycle id, canonical chat and waiting session key. The explicit authorized parent/operator answers by decision id; ordinary conversation is not an answer protocol and the waiting worker cannot answer itself.
+
+Every open question and every answer not yet admitted MUST prevent close atomically with `THREAD_DECISIONS_PENDING`. No silent discard or force-close is provided. Root cards prioritize the oldest question as `Aguardando decisão`; text fallback includes that question and state. `openDecisionCount` is part of the thread summary. Full questions appear inside the thread via durable outbound intent. The pending cue disappears after answer, with delivery feedback separate from work completion. A human-authored root is untouched.
+
+The existing thread reconciler also drains decision effects. Exact origin binding and durable consumer receipts protect retries; uncertain admission requires local operator resolution as specified in `decisions`.
+
+## Closing after runtime pruning
+
+- The durable lifecycle/card MUST remain closable after the child session is pruned. `close-thread --session` resolves its exact child name, key or lifecycle request id without recreating runtime state.
+- An orphan close MUST require modify authority over the child or its recorded parent. Missing, ambiguous and unauthorized references MUST be cloaked as `SESSION_NOT_FOUND`; public copy MUST distinguish this condition from an execution failure without revealing private names.
+- Closing an orphan uses the same card update, pending-decision guard, close sequence, parent-return delivery and idempotency as a live child.
+- Existing orphan cards are reconciled by this same close command; no deployment-time destructive cleanup or recreation is authorized by this fix.

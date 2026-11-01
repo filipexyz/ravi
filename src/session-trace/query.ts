@@ -63,6 +63,7 @@ interface SessionTurnRow {
   cost_usd: number | null;
   error: string | null;
   abort_reason: string | null;
+  output_state?: string | null;
   started_at: number;
   completed_at: number | null;
   updated_at: number;
@@ -237,13 +238,15 @@ function rowToSessionTurn(row: SessionTurnRow): SessionTurnRecord {
     userPromptSha256: row.user_prompt_sha256,
     systemPromptSha256: row.system_prompt_sha256,
     requestBlobSha256: row.request_blob_sha256,
-    inputTokens: row.input_tokens ?? 0,
-    outputTokens: row.output_tokens ?? 0,
-    cacheReadTokens: row.cache_read_tokens ?? 0,
-    cacheCreationTokens: row.cache_creation_tokens ?? 0,
-    costUsd: row.cost_usd ?? 0,
+    // NULL is "the provider reported no usage", never zero (sessions/turn-output inv. 7).
+    inputTokens: row.input_tokens ?? null,
+    outputTokens: row.output_tokens ?? null,
+    cacheReadTokens: row.cache_read_tokens ?? null,
+    cacheCreationTokens: row.cache_creation_tokens ?? null,
+    costUsd: row.cost_usd ?? null,
     error: row.error,
     abortReason: row.abort_reason,
+    outputState: row.output_state === "final" || row.output_state === "incomplete" ? row.output_state : null,
     startedAt: row.started_at,
     completedAt: row.completed_at,
     updatedAt: row.updated_at,
@@ -322,9 +325,10 @@ function addSessionFilter(
   const rawSession = compactText(session);
 
   // Fast path: caller already supplied a session_key (production CLI does this
-  // via resolveTraceTarget). Skip the OR — uses idx_session_events_key_time
-  // directly. With ~800k rows in session_events the OR fallback was scanning
-  // the whole table and producing 10s+ peaks.
+  // via resolveTraceTarget). Skip the OR — uses
+  // idx_session_events_key_time_seq_id directly. With ~800k rows in
+  // session_events the OR fallback was scanning the whole table and producing
+  // 10s+ peaks.
   if (resolvedSessionKey) {
     where.push(`session_key = ?`);
     params.push(resolvedSessionKey);

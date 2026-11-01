@@ -598,6 +598,23 @@ describe("skill visibility policy", () => {
 
     expect(loaded.loadedSkills).toEqual(["ravi-system-pages"]);
   });
+
+  it("does not poison resume state with the heading of a piped skill body", () => {
+    const snapshot = buildSkillVisibilitySnapshot([
+      { id: "ravi-system-sessions", provider: "codex", state: "advertised", confidence: "declared", lastSeenAt: 1 },
+    ]);
+    const loaded = markLoadedFromRaviSkillToolCall(snapshot, {
+      provider: "codex",
+      toolName: "exec_command",
+      toolInput: {
+        command: "ravi skills show sessions --json | bun -e 'console.log((await Bun.stdin.json()).skill.content)'",
+      },
+      output: "---\nname: sessions\n---\n\n# Sessions Manager\n\nConversation tools.",
+      now: 2,
+    });
+    expect(loaded.loadedSkills).toEqual(["ravi-system-sessions"]);
+    expect(isStoredSkillVisibilityCompatible({ skillVisibility: loaded }, ["ravi-system-sessions"])).toBe(true);
+  });
 });
 
 describe("skill invocation extraction", () => {
@@ -671,6 +688,19 @@ describe("skill invocation extraction", () => {
         'ravi skills show bases --file "$(cat /tmp/p/skills/whatsapp-manager/SKILL.md)"',
       ),
     ).toEqual(["bases", "whatsapp-manager"]);
+  });
+
+  it("does not treat the folder of ravi skills publish|propose as a skill load unless the segment expands", () => {
+    expect(
+      extractRequestedSkillsFromCommandLine("ravi skills propose /tmp/p/skills/image --scope org --execute"),
+    ).toEqual([]);
+    expect(extractRequestedSkillsFromCommandLine("ravi skills propose ./skills/minha/SKILL.md --scope org")).toEqual(
+      [],
+    );
+    expect(extractRequestedSkillsFromCommandLine("ravi skills proposal org/agenda 3 --json")).toEqual([]);
+    expect(
+      extractRequestedSkillsFromCommandLine("ravi skills propose $(cat /tmp/p/skills/image/SKILL.md) --scope org"),
+    ).toEqual(["image"]);
   });
 
   it("does not treat a ravi skills install/list --source path as a skill load unless the segment expands", () => {

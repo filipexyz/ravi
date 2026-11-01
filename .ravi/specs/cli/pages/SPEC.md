@@ -17,6 +17,7 @@ applies_to:
   - src/cli/agent-contract.ts
   - src/pages/client.ts
   - src/pages/ship.ts
+  - src/pages/kit.ts
   - src/pages/chat.ts
   - src/artifacts/publish-client.ts
   - src/plugins/internal/ravi-system/skills/pages/SKILL.md
@@ -93,34 +94,114 @@ contract errors rethrow first, recognizable Console not-found failures map to
     MUST NOT become a host slug. `--route` defaults to `/`. A positional slug
     is a legacy extra host: it MAY create or reuse that slug and MUST warn.
     Host slugs `ravi` and `ravi-*` MUST NOT be created.
+    Every source (`--body`, `--html` and `--dir`) is materialized as a private
+    temp copy; ship MUST NOT write to the caller's `--dir`. A `--dir` that
+    contains the system temp dir MUST NOT copy the temp copy into itself
+    (the copy walks the real source path and skips its own root).
+    The `--body` wrapper's `<html>` has no `lang`, so the page kit sets the
+    theme's locale; when the entry file still has none after the kit
+    (skipped, unavailable, or no theme and no tags), ship sets
+    `lang="pt-BR"` on that wrapper before upload. Ship MUST NOT add or change
+    `lang` in `--html` or `--dir` files.
 12. `pages domains --execute` MUST be one idempotent setup command. When
     ownership or Pages DNS is not ready, the CLI MUST recognize
     `DOMAIN_SETUP_REQUIRED`, surface the Console-authored DNS instruction, exit
     1, and tell the operator to rerun the same command after propagation. This
     is the only cloud error whose authenticated Console message may cross the
     generic provider-message redaction boundary; terminal control characters
-    MUST be stripped and output MUST be length-bounded.
+    MUST be stripped and output MUST be length-bounded. The same message MUST
+    cross the CLI remote gateway for `pages domains` (agent turns run the CLI
+    through it). Console's `details.setups` MUST be projected field by field
+    (hostnames, step ids and statuses, DNS-shaped records) into
+    `error.domainSetup`; nothing else from it may cross. The dry-run (no
+    `--execute`) MUST print the CNAME each hostname needs, plus the ownership
+    TXT, global host (`*.<domain>`) and root-domain notes, before any
+    credential or Console call, and carry the CNAMEs in `plan.dnsSetup`.
 
 13. `pages chat show <site>` MUST `GET` and `pages chat set <site>` MUST
     `PATCH` `/api/cli/projects/:projectRef/pages/:siteRef/chat`. `siteRef`
     accepts a host slug, site id or hostname and is passed through. The PATCH
     body MUST carry only the fields the caller set (`enabled`,
-    `assistantName`, `voice`, `language`, `instructions`); `--clear-name` and
-    `--clear-instructions` send `null`. Unknown voices, non-BCP-47 languages,
-    `assistantName` over 60 or `instructions` over 2000 characters, set+clear
-    conflicts and an empty change set are `PAYLOAD_INVALID` (exit 2) before
-    the brake and before any Console call. `set` with `--enabled true` MUST
-    dry-run (exit 3) before credential reads, project resolution or Console
-    calls unless `--execute` is passed; its plan reports instructions by length
-    only. Every other `set` applies immediately. Success JSON MUST allowlist
-    `projectRef`, `siteRef`, `siteId`, `host`, `featureEnabled`, `settings`
-    and `voices` (plus `changed` on `set`).
+    `assistantName`, `voice`, `language`, `instructions`, `text`,
+    `replyPolicy`, `textModel`, `raviAgent`); `--clear-name`,
+    `--clear-instructions`, `--clear-text-model` and `--clear-ravi-agent` send
+    `null`. `--text <true|false>` is the text chat (bar panel and
+    `<ravi-chat>`), `--reply-policy <mention|always>` when the agent answers in
+    a shared room, `--text-model <id>` an AI Gateway model id (lowercased,
+    `^[a-z0-9][a-z0-9-]{0,40}/[a-z0-9][a-z0-9.:-]{0,80}$`) and
+    `--ravi-agent <installationId>/<agentId>` (a UUID, then an agent id of at
+    most 120 characters without spaces or slashes) is sent as
+    `{installationId, agentId}`. Unknown voices or policies, non-BCP-47
+    languages, malformed model ids or agent targets, `assistantName` over 60
+    or `instructions` over 2000 characters, set+clear conflicts and an empty
+    change set are `PAYLOAD_INVALID` (exit 2) before the brake and before any
+    Console call. `set` with `--enabled true`, `--text true`,
+    `--reply-policy always` or `--ravi-agent` MUST dry-run (exit 3) before
+    credential reads, project resolution or Console calls unless `--execute`
+    is passed; its plan names each widening effect and reports instructions by
+    length only (the text switch appears as `textChat`). Every other `set`
+    applies immediately. Success JSON MUST allowlist `projectRef`, `siteRef`,
+    `siteId`, `host`, `featureEnabled`, `settings` (`enabled`,
+    `assistantName`, `voice`, `language`, `instructions`, `text`,
+    `replyPolicy`, `textModel`, `raviAgent` as `{installationId, agentId}`;
+    fields an older Console omits read as `true`, `"mention"`, `null`,
+    `null`) and `voices` (plus `changed` on `set`).
+
+14. Page kit step of `pages ship`: after the source copy and before upload,
+    ship MUST `POST /api/cli/pages/kit` with `{project, site, route,
+    visibility, theme, files: [{path, html}]}`, where `files` are the copy's
+    `.html`/`.htm` files (no symlinks, dot paths or `_ravi`). A file over
+    2 MiB or a request over 4 MiB (the Console's body limit) skips the kit
+    with warning `KIT_TOO_LARGE`; no HTML file skips it silently. Ship MUST
+    write back only files it sent and the Console marks `changed`; the
+    Console omits `html` for `changed: false` files, which keep their local
+    bytes, and a `changed: true` file without `html` fails the ship
+    (`SERVER_UNAVAILABLE`, nothing uploaded). Ship MUST merge the returned
+    `uses` after `--uses` (normalized, deduplicated), re-run the invariant-4
+    public live-data refusal on the merged list before upload, and forward
+    `presentation` unchanged as `publish.presentation`. The OSS transports only: it never
+    compiles themes or widgets, resolves refs or derives `uses`.
+15. Kit failures: a bare 404 or a 405 (an older Console without the route;
+    a coded `NOT_FOUND` is a real error) MUST ship the HTML unchanged with
+    warning `KIT_UNAVAILABLE`. A 422 MUST exit 2 with `KIT_INVALID`, upload
+    nothing, and list each diagnostic as an issue line
+    `path:line:column severity code message` (diagnostics read from the body
+    top level or from `error.details.diagnostics`; the Console's
+    `KIT_TOO_LARGE` error, for a rewritten page over its limit, is one of
+    them). When every error diagnostic is `KIT_WIDGET_UNAUDITED` (a widget
+    whose `widget.js` has no passing Console accessibility audit; also read
+    from a Console answer coded `KIT_WIDGET_UNAUDITED` with `details.url`),
+    ship MUST exit 2 with code `KIT_WIDGET_UNAUDITED`, upload nothing, and
+    put the diagnostic's Console URL (`url`, `auditUrl` or `consoleUrl`,
+    `http(s)` only) in `suggestedAction` and at the end of its issue line;
+    mixed with other errors it stays `KIT_INVALID`. Any other Console or
+    network failure fails like other Console calls. The kit never brakes
+    ship (invariant 4).
+16. `pages ship --theme <ref|none>` is declared before `--execute`. Without
+    it the request sends `theme: null` (the effective project, else org,
+    theme pointer); `none` sends `"none"`; any other value is the ref. An
+    empty value is `PAYLOAD_INVALID` before any Console call. Success JSON
+    adds `presentation` (object or null) and `kit: {status, changedFiles,
+    warnings, theme, widgets}`; kit warnings also appear in `warnings` and
+    text output prints them. A kit answer never loses a warning: every
+    diagnostic of a 200 answer (any severity, any code, also codes this CLI
+    does not know such as `KIT_THEME_DEFAULT` or `KIT_ACTIONS_NEED_VIEW`) is
+    one `path:line:column severity code message` warning, a `warnings[]`
+    entry may be a string or a `{code, message, path?, line?, column?}`
+    object, and an entry missing its code or its message keeps the other.
+17. `pages outdated [--project] [--json]` MUST `GET
+    /api/cli/pages/outdated?project=<ref>` and return `{projectRef, total,
+    items}`, each item `{siteSlug, hostname, route, releaseId, publishedAt,
+    theme, widgets, runtime}` as the Console sent them. Text output is a
+    host / route / behind table (`theme org/acme v2→v3`, `widget <ref>
+    v1→v2`, `runtime 1.0.0→1.1.0`). Read-only, never braked.
 
 ## Write classification (brake decision per op)
 
 | op | class | brake |
 |---|---|---|
-| ship | publishes a route on the project default host (creates that one host when missing). A positional slug is a legacy extra host | not braked / executes immediately (`--execute` unused no-op) |
+| ship | publishes a route on the project default host (creates that one host when missing). A positional slug is a legacy extra host. The page kit call writes nothing in Console | not braked / executes immediately (`--execute` unused no-op) |
+| outdated | reads which active routes are behind on theme, widgets or runtime | not braked |
 | publish | uploads bytes and (default) activates a hosted route | dry-run + `--execute` |
 | password set | flips the route access policy on a live site (high) | dry-run + `--execute`, braked before the secret prompt |
 | password remove | widens who can reach the route, up to fully public (high) | dry-run + `--execute`, visibility validated first |
@@ -134,7 +215,10 @@ contract errors rethrow first, recognizable Console not-found failures map to
 | assertion audiences list | reads the host allowlist | not braked |
 | chat show | reads one site's Page Chat settings and the org feature flag | not braked |
 | chat set → `--enabled true` | turns on a metered voice agent for every signed-in viewer of the site | conditional dry-run + `--execute` |
-| chat set → other fields, `--enabled false` | reversible Console settings change; turning off reduces exposure | not braked (declared) |
+| chat set → `--text true` | turns on the metered text chat agent for every member and guest who can open the site | conditional dry-run + `--execute` |
+| chat set → `--reply-policy always` | the agent answers every message of the page's shared rooms | conditional dry-run + `--execute` |
+| chat set → `--ravi-agent` | lets the Page agent send Library requests to an agent of a Ravi machine for the people chatting | conditional dry-run + `--execute` |
+| chat set → other fields, `--enabled false`, `--text false`, `--reply-policy mention`, `--text-model`, the clear flags | reversible Console settings change; turning off or clearing reduces exposure | not braked (declared) |
 
 There is no `pages remove`/route-removal command on this surface today; if one
 is added it MUST arrive braked. Viewer-assertion audience removal is
@@ -148,6 +232,10 @@ route.
 | Console site not found | `SITE_NOT_FOUND` + listing suggestedAction | 1 |
 | Console route not found | `ROUTE_NOT_FOUND` + listing suggestedAction | 1 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+| ship with `ravi.bases.*` (declared or kit-derived) on a public route | `LIVE_DATA_PUBLIC_ROUTE` | 2 |
+| page kit rejects the HTML (422) | `KIT_INVALID` + one issue per diagnostic | 2 |
+| page kit: only widgets with code and no passing audit | `KIT_WIDGET_UNAUDITED` + audit URL in `suggestedAction` | 2 |
+| Console without the page kit route | success + warning `KIT_UNAVAILABLE` | 0 |
 | domain setup saved but waiting for DNS/provider readiness | `DOMAIN_SETUP_REQUIRED` + exact safe DNS action | 1 |
 | Console HTTPS failed from a provider sandbox | `HOST_UNREACHABLE` + host CLI suggestedAction | 1 |
 | other Console failures (auth, payload, rate limit) | stable CloudAuthError code | `2` for `PAYLOAD_INVALID`; otherwise `1` |

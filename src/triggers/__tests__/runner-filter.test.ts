@@ -283,18 +283,70 @@ describe("TriggerRunner filter reject diagnostics", () => {
   });
 });
 
+describe("Bases subscription triggers", () => {
+  it("wake only for their own subscription and events, and a draft never fires", async () => {
+    const { subscriptionTriggerFilter } = await import("../../cli/commands/bases.js");
+    const topic = "ravi.console.inbox.item";
+    const all = createTrigger({
+      name: "bases all",
+      topic,
+      filter: subscriptionTriggerFilter({ baseId: "base_1", subscriptionId: "sub_all", filtered: false }),
+    });
+    const decided = createTrigger({
+      name: "bases decided",
+      topic,
+      filter: subscriptionTriggerFilter({
+        baseId: "base_1",
+        subscriptionId: "sub_f",
+        filtered: true,
+        events: ["approval.decided"],
+      }),
+    });
+    const draft = createTrigger({
+      name: "bases draft",
+      topic,
+      filter: subscriptionTriggerFilter({ baseId: "base_1", subscriptionId: "sub_d", filtered: true }),
+    });
+    dbUpdateTrigger(draft.id, { enabled: false });
+
+    await startRunner();
+    const item = (eventId: string, eventType: string, payload: Record<string, unknown>) => ({
+      eventId,
+      eventType,
+      category: "bases",
+      payload: { baseId: "base_1", rowId: "row_1", ...payload },
+    });
+    emit(topic, item("evt-row", "bases.row.updated", {}));
+    emit(topic, item("evt-requested", "bases.approval.requested", { subscriptionId: "sub_f" }));
+    emit(topic, item("evt-decided", "bases.approval.decided", { subscriptionId: "sub_f" }));
+    emit(topic, item("evt-draft", "bases.row.created", { subscriptionId: "sub_d" }));
+    emit(topic, item("evt-other-base", "bases.row.updated", { baseId: "base_2" }));
+
+    await waitFor(() => publishCalls.length >= 2);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(
+      publishCalls.map((call) => [call.payload._triggerId, String(call.payload.prompt).match(/evt-[a-z-]+/)?.[0]]),
+    ).toEqual([
+      [all.id, "evt-row"],
+      [decided.id, "evt-decided"],
+    ]);
+    expect(dbGetTrigger(draft.id)?.fireCount).toBe(0);
+  });
+});
+
 describe("page comment wake", () => {
   it("wakes the bound creator and does not open a session for a deleted agent", async () => {
     const { ensurePageCommentTrigger, pageCommentFilter } = await import("../../pages/comment-follow.js");
     const { watchEventFromInboxPayload } = await import("../../watch/events.js");
     dbCreateAgent({ id: "page-creator", cwd: "/tmp/page-creator-home" });
     const live = await ensurePageCommentTrigger(
-      { pageId: "site_live", orgId: "org_1", projectId: "proj_1" },
+      { pageId: "site_live", routePath: "/", orgId: "org_1", projectId: "proj_1" },
       { agentId: "page-creator" },
       { emitTriggersRefresh: async () => {}, agentExists: () => true },
     );
     const gone = await ensurePageCommentTrigger(
-      { pageId: "site_gone", orgId: "org_1", projectId: "proj_1" },
+      { pageId: "site_gone", routePath: "/", orgId: "org_1", projectId: "proj_1" },
       { agentId: "gone-creator" },
       { emitTriggersRefresh: async () => {}, agentExists: () => false },
     );
@@ -307,10 +359,12 @@ describe("page comment wake", () => {
     const liveEvent = watchEventFromInboxPayload(pageCommentInbox("site_live", "ship the chart"));
     const goneEvent = watchEventFromInboxPayload(pageCommentInbox("site_gone", "ghost"));
     const otherEvent = watchEventFromInboxPayload(pageCommentInbox("site_other", "nope"));
-    if (!liveEvent || !goneEvent || !otherEvent) throw new Error("expected watch events");
+    const otherRouteEvent = watchEventFromInboxPayload(pageCommentInbox("site_live", "another route", "/weekly"));
+    if (!liveEvent || !goneEvent || !otherEvent || !otherRouteEvent) throw new Error("expected watch events");
 
     emit(topic, goneEvent);
     emit(topic, otherEvent);
+    emit(topic, otherRouteEvent);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(publishCalls).toEqual([]);
     expect(
@@ -330,14 +384,16 @@ describe("page comment wake", () => {
       ),
     ).toBe(true);
     expect(listSessions().some((session) => session.agentCwd.includes("/tmp/ravi-"))).toBe(false);
-    expect(live.trigger.filter).toBe(pageCommentFilter({ pageId: "site_live", orgId: "org_1", projectId: "proj_1" }));
+    expect(live.trigger.filter).toBe(
+      pageCommentFilter({ pageId: "site_live", routePath: "/", orgId: "org_1", projectId: "proj_1" }),
+    );
   });
 });
 
-function pageCommentInbox(pageId: string, body: string) {
+function pageCommentInbox(pageId: string, body: string, routePath = "/") {
   return {
     version: 1 as const,
-    eventId: `item_${pageId}`,
+    eventId: `item_${pageId}${routePath}`,
     sequence: 1,
     dedupeKey: `page-comment:${pageId}`,
     eventType: "page.comment.created",
@@ -351,7 +407,7 @@ function pageCommentInbox(pageId: string, body: string) {
     source: { type: "console" },
     actor: { type: "user", id: "user_1" },
     target: { type: "page", id: pageId },
-    payload: { pageId, orgId: "org_1", projectId: "proj_1", body, url: `https://${pageId}.ravi.page/` },
+    payload: { pageId, routePath, orgId: "org_1", projectId: "proj_1", body, url: `https://${pageId}.ravi.page/` },
     links: [],
     delivery: {
       subscriptionId: "sub_1",

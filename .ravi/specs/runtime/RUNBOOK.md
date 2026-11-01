@@ -41,6 +41,7 @@ ravi events stream --only runtime
 - `tool.end failed` followed by no terminal event points to provider recovery/normalization issues.
 - `session.stalled` is a historical trace row from the removed stalled-turn recovery path. New traces should not emit it.
 - Repeated `dispatch.queued_busy` can mean the generator is waiting on terminal completion or a delivery barrier.
+- For a shared session with messages from different chats or threads, inspect `dispatch.interrupt_requested.payload.continuationPendingId`. A non-null id means the physical turn yielded and the original request remains queued as a fresh continuation. Expect an interrupted physical turn, the queued channel's adapter request, then the continuation under the original source. The logical channel request must stay open until its resumed response is delivered.
 - `dispatch.queued_busy` with `reason=concurrency_limit` means the runtime pool was full when the start was attempted.
 - `dispatch.queued_busy` with `reason=pending_start_backpressure` means another start was already waiting for capacity; inspect the pool snapshot and pending-start order.
 - `dispatch.queued_busy` with `reason=interactive_reserved_capacity` means a background start was held so reserved interactive capacity remains available.

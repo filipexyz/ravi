@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isPermissionPolicyTag } from "../permissions/permission-tags.js";
 
 const DurationOperatorSchema = z.enum([">", "<", ">=", "<=", "="]);
 export type DurationOperator = z.infer<typeof DurationOperatorSchema>;
@@ -134,6 +135,15 @@ export const TagRuleSchema = z
           message: "Each apply action MUST set at least one of 'tag' or 'removeTag'",
           path: ["apply", index],
         });
+      }
+      for (const slug of [action.tag ?? [], action.removeTag ?? []].flat()) {
+        if (isPermissionPolicyTag(slug)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Tag '${slug}' is a provider-owned permission tag; grant it with 'ravi permissions allow'`,
+            path: ["apply", index],
+          });
+        }
       }
       if (action.target !== rule.scope) {
         ctx.addIssue({

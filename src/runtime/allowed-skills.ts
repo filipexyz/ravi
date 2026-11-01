@@ -1,5 +1,8 @@
 import { listGroupSkillRules } from "../cli/skill-gates.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import { readAgentLibraryPins } from "../library/pins-db.js";
+import { LIBRARY_PLUGIN_NAME } from "../library/plugin.js";
+import { isLibrarySkillId, normalizeLibrarySkillId } from "../library/refs.js";
 import { dbListSkillGrantsForAgent, type ContextCapability } from "../router/router-db.js";
 import {
   hasSkillUseCapability,
@@ -68,10 +71,25 @@ export interface ResolvedAgentSkills {
    * A turn that supplies its own capabilities re-checks them against the turn.
    */
   fromSkillCapabilitiesOnly: string[];
+  /**
+   * Library grants (`org:<slug>`, `project:<projectSlug>:<slug>`). Kept out of
+   * the allowlist: they authorize only the Library skill they name, never a
+   * local skill, never the provider catalog, and do not configure the agent.
+   * spec: skills/library
+   */
+  libraryGrants: string[];
+  /**
+   * Library ids pinned to this agent in the Console (spec skills/library).
+   * A pin authorizes its item like a grant and puts the generated plugin
+   * skill (`ravi-library:<name>`) on the allowlist, but, like Library grants,
+   * does not configure the agent.
+   */
+  libraryPins: string[];
   provenance: {
     baseline: string[];
     fromCapabilities: string[];
     fromGrants: string[];
+    fromPins: string[];
   };
 }
 
@@ -114,7 +132,9 @@ export function resolveAgentSkills(
       hasConfiguration: false,
       allowlist: [],
       fromSkillCapabilitiesOnly: [],
-      provenance: { baseline: [], fromCapabilities: [], fromGrants: [] },
+      libraryGrants: [],
+      libraryPins: [],
+      provenance: { baseline: [], fromCapabilities: [], fromGrants: [], fromPins: [] },
     };
   }
 
@@ -137,7 +157,15 @@ export function resolveAgentSkills(
   }
   const derivedNames = [...derivedSlugs].flatMap(expandSkillNames);
 
-  const grants = dbListSkillGrantsForAgent(trimmed);
+  const allGrants = dbListSkillGrantsForAgent(trimmed);
+  const grants = allGrants.filter((grant) => !isLibrarySkillId(grant.skillName));
+  const libraryGrants = [
+    ...new Set(
+      allGrants
+        .filter((grant) => isLibrarySkillId(grant.skillName))
+        .map((grant) => normalizeLibrarySkillId(grant.skillName)),
+    ),
+  ];
   const grantNames = grants.flatMap((grant) => expandSkillNames(grant.skillName));
   // Grants remain authoritative against a generic `execute:group:*` dump.
   // Admin break-glass and specific command capabilities still surface their
@@ -162,17 +190,27 @@ export function resolveAgentSkills(
     grants.length > 0 ||
     hasSpecificCommandCaps ||
     hasSkillUseCapability(capabilities);
-  const allowlist = [...new Set([...baselineNames, ...fromCapabilities, ...grantNames])];
-  const otherNames = new Set([...baselineNames, ...effectiveDerivedNames, ...grantNames]);
+  // Pinned Library skills, by their plugin-qualified names only: a bare name
+  // could match a local skill the pin never named.
+  const pins = readAgentLibraryPins(trimmed);
+  const pinNames = pins.skillNames.flatMap((name) => [
+    `${LIBRARY_PLUGIN_NAME}:${name}`,
+    `${LIBRARY_PLUGIN_NAME}-${name}`,
+  ]);
+  const allowlist = [...new Set([...baselineNames, ...fromCapabilities, ...grantNames, ...pinNames])];
+  const otherNames = new Set([...baselineNames, ...effectiveDerivedNames, ...grantNames, ...pinNames]);
 
   return {
     hasConfiguration,
     allowlist,
     fromSkillCapabilitiesOnly: [...new Set(skillCapabilityNames)].filter((name) => !otherNames.has(name)),
+    libraryGrants,
+    libraryPins: pins.libraryIds,
     provenance: {
       baseline: baselineNames,
       fromCapabilities,
       fromGrants: grantNames,
+      fromPins: pinNames,
     },
   };
 }

@@ -4,9 +4,12 @@
   Pasta com index.html (este arquivo) e client.js (cópia de _client.js.txt). Ship:
     ravi pages ship --project <p> --title "<título>" --route /<rota> --dir <pasta> \
       --uses ravi.bases.views.describe,ravi.bases.views.rows.create --json
-  Outras páginas de dados no host? O --uses leva a união dos ids de todas.
+  O --uses leva só os ids desta rota; as outras páginas do host ficam com os delas.
   Rota private; quem preenche é membro; gente de fora usa a conversa.
   Dono e status inicial vêm do write.set da view: o formulário não desenha nem envia.
+  Antes: <ravi-form view="<uuid>"></ravi-form> já faz este formulário com o tema e o --uses derivado
+  (references/widgets.md). Use este esqueleto quando a tag não basta (campo body, validação própria).
+  Cores, fontes e espaços: variáveis do tema com fallback (references/theme.md), nunca literais.
   Zonas: CONFIG (troque), FIXO (mude só com motivo), LIVRE (estilo e textos).
 -->
 <html lang="pt-BR">
@@ -16,12 +19,18 @@
 <title>Formulário</title>
 <!-- LIVRE: estilo -->
 <style>
-  body { font: 14px/1.45 system-ui, sans-serif; margin: 16px auto; max-width: 560px; padding: 0 16px; color: #1f2328; background: #fff; }
-  label { display: block; margin: 12px 0; }
-  input, select, textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; }
+  body { font: var(--font-text-sm-size, 0.875rem)/1.45 var(--font-sans, system-ui, sans-serif); margin: var(--ravi-space-4, 1rem) auto;
+    max-width: 560px; padding: 0 var(--ravi-space-4, 1rem); color: var(--color-text-primary, #17202a); background: var(--color-background-primary, #fbfcfd); }
+  label { display: block; margin: var(--ravi-space-3, 0.75rem) 0; }
+  input, select, textarea { display: block; width: 100%; box-sizing: border-box; margin-top: var(--ravi-space-1, 0.25rem); font: inherit;
+    color: inherit; background: var(--color-background-primary, #fbfcfd); border: var(--border-width-regular, 1px) solid var(--color-border-primary, #838f9c);
+    border-radius: var(--border-radius-md, 6px); padding: var(--ravi-space-1, 0.25rem) var(--ravi-space-2, 0.5rem); min-height: var(--ravi-touch-target, 24px); }
   input[type=checkbox] { display: inline; width: auto; }
-  .err { color: #b42318; }
-  .ok { color: #067647; }
+  button[type=submit] { font: inherit; background: var(--ravi-color-accent, #14635a); color: var(--ravi-color-on-accent, #ffffff); border: 0;
+    border-radius: var(--border-radius-md, 6px); padding: var(--ravi-space-2, 0.5rem) var(--ravi-space-4, 1rem); }
+  :focus-visible { outline: var(--ravi-focus-width, 2px) solid var(--color-ring-primary, #14635a); outline-offset: 2px; }
+  .err { color: var(--color-text-danger, #a1262b); }
+  .ok { color: var(--color-text-success, #1d6537); }
   [hidden] { display: none !important; }
 </style>
 </head>

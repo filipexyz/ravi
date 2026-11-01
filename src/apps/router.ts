@@ -465,6 +465,36 @@ async function runCliOperation(
   };
 }
 
+function declaresOperationHelp(help: Record<string, unknown>): boolean {
+  const hasText = ["usage", "routedUsage", "summary", "backingRequest"].some((key) => {
+    const value = help[key];
+    return typeof value === "string" && value.trim() !== "";
+  });
+  const hasList = ["arguments", "options", "examples", "sections"].some((key) => {
+    const value = help[key];
+    return Array.isArray(value) && value.length > 0;
+  });
+  return hasText || hasList;
+}
+
+function cliPassthroughHelpCommand(operation: RaviAppOperationDeclaration): string | null {
+  if (operation.interface !== "cli") return null;
+  const command = typeof operation.command === "string" ? operation.command.trim() : "";
+  if (!command || !command.includes("{args}")) return null;
+  return command.replace("{args}", "--help");
+}
+
+function undeclaredOperationHelpHint(
+  app: RaviAppManifestRecord,
+  operationId: string,
+  appHelpCommand: string | null,
+): string {
+  if (appHelpCommand) {
+    return `Este app nao declara ajuda para ${operationId}. A operacao repassa para o comando do app: rode ${appHelpCommand} para ler a ajuda dele.`;
+  }
+  return `Este app nao declara ajuda para ${operationId}. Rode ravi apps show ${app.id} --json para ver o manifesto.`;
+}
+
 function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: string[] = []): unknown {
   if (handler === "apps.help") {
     const operationIds = visibleOperationIdsForHelp(app);
@@ -478,6 +508,8 @@ function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: st
         const operation = (operations[match] ?? {}) as RaviAppOperationDeclaration & Record<string, unknown>;
         const help = (operation.help ?? {}) as Record<string, unknown>;
         const safety = operation.safety as Record<string, unknown> | undefined;
+        const helpDeclared = declaresOperationHelp(help);
+        const appHelpCommand = cliPassthroughHelpCommand(operation);
         return {
           app: app.id,
           operation: match,
@@ -502,6 +534,13 @@ function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: st
           inputSchema: operation.inputSchema,
           summary: help.summary,
           sections: help.sections ?? [],
+          helpDeclared,
+          ...(helpDeclared
+            ? {}
+            : {
+                hint: undeclaredOperationHelpHint(app, match, appHelpCommand),
+                ...(appHelpCommand ? { appHelpCommand } : {}),
+              }),
           dica: perOpHint,
         };
       }

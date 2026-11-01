@@ -10,8 +10,8 @@ Toda tela é uma Ravi Page gerada (guia:
 do gráfico como constantes, `ravi pages ship --uses <ids>` e
 verificação. `<site-id>` é o site default do projeto (`ravi pages list
 --project <p> --json`). Views com `project_role` servem agents no CLI, não
-telas. Várias páginas no mesmo host: todo ship declara a união dos ids que
-elas chamam. Abaixo, os ids de `--uses` aparecem sem o prefixo `ravi.bases.`;
+telas. Várias páginas no mesmo host: cada ship declara os ids que a própria
+página chama, e o host libera a união. Abaixo, os ids de `--uses` aparecem sem o prefixo `ravi.bases.`;
 no ship, passe o id completo (`ravi.bases.views.describe`).
 
 ## Projetos de um estúdio (dono + supervisão)
@@ -43,9 +43,9 @@ no ship, passe o id completo (`ravi.bases.views.describe`).
 - View "Carga agregada": `page_viewer` com `"mode": "aggregate"`, sem filtro.
   Gráfico sobre ela: barra `entrega` por mês × `sum(horas)`, cor por `fase`.
 - Página `/projetos`: kanban de "Meus projetos" com arrastar entre fases e
-  projeto novo. Página `/carga`: dashboard com o gráfico. As duas estão no mesmo
-  host, então todo ship leva a união
-  `--uses views.describe,views.query,views.rows.update,views.rows.create,charts.data`.
+  projeto novo (`--uses views.describe,views.query,views.rows.update,views.rows.create`).
+  Página `/carga`: dashboard com o gráfico (`--uses charts.data`). As duas
+  moram no mesmo host, e cada ship declara só os ids da própria rota.
 - Trigger: eventos da base com `data.actor.type == "user"` e `--cooldown 5s` →
   agent drena "fase Entregue e `avisado` desmarcado", avisa o canal do estúdio e
   marca `avisado` com `--expected-version` (`events-triggers.md`). `avisado`

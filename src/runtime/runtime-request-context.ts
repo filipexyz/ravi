@@ -1,4 +1,6 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
+import { resolveBridgeInvocation } from "../bridge/authority.js";
+import { assertBridgeProvider, isBridgeSessionRef } from "../bridge/isolation.js";
 import {
   dbGetContext,
   dbUpdateContextCapabilities,
@@ -27,7 +29,7 @@ import {
   type ContactChatOverlay,
 } from "../permissions/contact-policy-permissions-provider.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
-import { consoleIdentityFromBinding, readCachedActorBinding } from "../cloud-auth/actor-bindings.js";
+import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../cloud-auth/actor-bindings.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
@@ -43,6 +45,7 @@ import {
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
+import { readCronRunAuthority } from "../cron/authority.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 
 export interface RuntimeRequestContextOptions {
@@ -72,6 +75,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
+  if (prompt._bridgeTurnId || isBridgeSessionRef(dbSessionKey)) assertBridgeProvider(runtimeProviderId);
   const capabilities = buildRuntimeContextCapabilities(agent.id, sessionName, prompt);
   // A fresh runtime launch owns the session's authority slot. Any turn-scoped
   // context still live here belongs to a runtime that is already gone: idle
@@ -149,6 +153,8 @@ export function refreshRuntimeRequestContextForTurn(options: {
   /** Where this turn's answer goes, as the runtime bound it for the turn. */
   replyTarget?: TurnReplyTarget;
 }): ContextRecord {
+  if (options.prompt._bridgeTurnId || isBridgeSessionRef(options.dbSessionKey))
+    assertBridgeProvider(options.runtimeProviderId);
   const derived = deriveRuntimeContextForPrompt({
     agentId: options.agent.id,
     sessionKey: options.dbSessionKey,
@@ -286,6 +292,11 @@ function deriveRuntimeContextForPrompt(options: {
   metadata: Record<string, unknown>;
   source: ContextSource | undefined;
 } {
+  if (options.prompt._bridgeTurnId || /^agent:[^:]+:console:[0-9a-f-]{36}$/.test(options.sessionKey)) {
+    if (!options.prompt._bridgeTurnId) throw new Error("Console turns require a fresh human delegation");
+    const bridge = resolveBridgeInvocation(options.prompt._bridgeTurnId, options.sessionKey, options.agentId);
+    return { ...bridge, metadata: { ...options.metadata, ...bridge.metadata } };
+  }
   const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
   return {
     capabilities: identity.capabilities,
@@ -343,7 +354,9 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     actorPrincipal,
     hasPromptExternalAuthoritySurface(options.prompt),
   );
-  const userOverlay = resolveUserOverlay(actorPrincipal, surfacePrincipal, actorMetadata);
+  const userOverlay =
+    resolveStoredAutomationCreatorOverlay(options.prompt) ??
+    resolveUserOverlay(actorPrincipal, surfacePrincipal, actorMetadata);
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
@@ -357,6 +370,21 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     consoleBinding,
     userOverlay,
   });
+}
+
+/**
+ * A job a contact wrote from a turn narrowed to their chat grants runs every
+ * turn under those grants as they are now: none left means no capabilities.
+ * The runner captured owner/chat with the prompt; queued work must not adopt
+ * a new owner or lose its overlay after an edit or one-shot deletion.
+ */
+function resolveStoredAutomationCreatorOverlay(prompt: RuntimeLaunchPrompt): ContactChatOverlay | null {
+  if (!prompt._cron || !prompt._jobId) return null;
+  const job = readCronRunAuthority(prompt._cronAuthority, prompt._jobId);
+  const owner = job?.ownerPrincipal ?? "";
+  if (!job?.creatorChat || !owner.startsWith("contact:")) return null;
+  const overlay = resolveContactChatOverlay({ contactId: owner.slice("contact:".length), chatId: job.creatorChat });
+  return { ...overlay, active: true };
 }
 
 function resolveUserOverlay(
@@ -410,11 +438,15 @@ function buildAgentIdentityRuntimeContextInput(options: {
   // In a chat governed by contact grants the sender's chat caps replace the
   // agent identity as the actor branch: agent_ceiling ∩ contact_chat_caps.
   const userOverlay = shouldMaterializeIdentity && options.userOverlay?.active ? options.userOverlay : null;
+  const relayCaller = resolveRelayCaller(options.prompt);
+  const relayNarrowing = relayCaller.narrowing;
+  const turnCapabilities =
+    relayNarrowing ?? (hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined);
   const effectiveCapabilities = buildEffectiveCapabilities({
     agentCapabilities: agentIdentityCapabilities,
     actorCapabilities: userOverlay ? userOverlay.capabilities : agentIdentityCapabilities,
     ...(userOverlay ? { actorOverrideCapabilities: options.capabilities.filter(isTaskSelfCapability) } : {}),
-    turnCapabilities: hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined,
+    turnCapabilities,
   });
 
   return {
@@ -442,13 +474,42 @@ function buildAgentIdentityRuntimeContextInput(options: {
       ...(taskSelfTaskId ? { taskSelfTaskId } : {}),
       actorCapabilityCount: userOverlay ? userOverlay.capabilities.length : 0,
       surfaceCapabilityCount: 0,
-      turnCapabilityCount: observationCapabilities.length,
-      ...(observationCapabilities.length > 0 ? { turnCapabilities: observationCapabilities } : {}),
+      turnCapabilityCount: turnCapabilities?.length ?? 0,
+      ...(turnCapabilities && turnCapabilities.length > 0 ? { turnCapabilities } : {}),
+      ...(relayNarrowing ? { relayNarrowing: true } : {}),
+      ...(relayCaller.contactId ? { relayCallerContactId: relayCaller.contactId } : {}),
       effectiveCapabilityCount: effectiveCapabilities.length,
       ...(options.consoleBinding?.consoleUserId ? { consoleUserId: options.consoleBinding.consoleUserId } : {}),
       ...(options.consoleBinding?.consoleOrgId ? { consoleOrgId: options.consoleBinding.consoleOrgId } : {}),
     },
   };
+}
+
+/**
+ * A turn another turn produced (a session relay, a Slack thread bootstrap,
+ * report or return) never holds more than that turn when it was narrowed to a
+ * contact's chat grants. The caller context is looked up in ravi.db; one that
+ * no longer exists narrows to nothing.
+ */
+function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
+  narrowing?: ContextCapability[];
+  /** The contact the producing turn acted for, so Console calls stay attributed to them. */
+  contactId?: string;
+} {
+  const callerContextId = resolveRuntimeTurnOrigin(prompt._turnOrigin)?.callerContextId;
+  if (!callerContextId) return {};
+  const caller = dbGetContext(callerContextId);
+  if (!caller) return { narrowing: [] };
+  const metadata = caller.metadata ?? {};
+  const narrowed =
+    metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE || metadata.relayNarrowing === true;
+  const actorPrincipal = typeof metadata.actorPrincipal === "string" ? metadata.actorPrincipal : "";
+  const contactId = actorPrincipal.startsWith("contact:")
+    ? actorPrincipal.slice("contact:".length)
+    : typeof metadata.relayCallerContactId === "string"
+      ? metadata.relayCallerContactId
+      : undefined;
+  return { ...(narrowed ? { narrowing: caller.capabilities } : {}), ...(contactId ? { contactId } : {}) };
 }
 
 function buildUserOverlayMetadata(overlay: ContactChatOverlay, applied: boolean): Record<string, unknown> {
@@ -469,7 +530,7 @@ function resolveConsoleBindingMetadata(actorPrincipal: AuthorityPrincipal | null
 } {
   if (actorPrincipal?.subjectType !== "contact") return {};
   try {
-    return consoleIdentityFromBinding(readCachedActorBinding(actorPrincipal.subjectId));
+    return consoleIdentityFromBinding(readActorBindingForActiveLogin(actorPrincipal.subjectId));
   } catch {
     return {};
   }
@@ -681,6 +742,9 @@ function buildRuntimeContextMetadata(options: {
     ...(options.replyTarget ? { [TURN_REPLY_TARGET_METADATA_KEY]: options.replyTarget } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
     ...(turnOrigin ? { turnOrigin } : {}),
+    ...(options.prompt._cron && options.prompt._jobId
+      ? { cronRunAuthority: readCronRunAuthority(options.prompt._cronAuthority, options.prompt._jobId) }
+      : {}),
     ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),
   };
@@ -760,6 +824,11 @@ function resolveAutomationPromptPrincipal(
     if (hasResolvedExternalActor(source) || hasResolvedExternalActor(context)) {
       return null;
     }
+    // An interrupted turn from a sender Ravi could not resolve stays unresolved:
+    // the restart must not lift it to the daemon's own authority.
+    if (hasRecordedExternalSender(source) || hasRecordedExternalSender(context)) {
+      return null;
+    }
     return { subjectType: "automation", subjectId: "daemon-restart" };
   }
   return null;
@@ -781,6 +850,27 @@ function hasResolvedExternalActor(
   return Boolean(
     (metadata?.actorType === "contact" && cleanStringValue(metadata.contactId)) ||
       (metadata?.actorType === "agent" && cleanStringValue(metadata.actorAgentId)),
+  );
+}
+
+function hasRecordedExternalSender(
+  metadata:
+    | {
+        actorType?: string;
+        rawSenderId?: string;
+        normalizedSenderId?: string;
+        platformIdentityId?: string;
+        senderId?: string;
+      }
+    | undefined,
+): boolean {
+  return Boolean(
+    metadata &&
+      (metadata.actorType === "unknown" ||
+        cleanStringValue(metadata.rawSenderId) ||
+        cleanStringValue(metadata.normalizedSenderId) ||
+        cleanStringValue(metadata.platformIdentityId) ||
+        cleanStringValue(metadata.senderId)),
   );
 }
 
@@ -873,6 +963,9 @@ function refreshManagedRaviRuntimeEnv(runtimeEnv: Record<string, string>, raviEn
   Object.assign(runtimeEnv, raviEnv);
 }
 
+export const OBSERVER_NO_TOOLS_GRANT = "none";
+export const OBSERVER_NO_TOOLS_OBJECT_ID = "observer:none";
+
 function parseObservationPermissionGrants(values?: string[]): ContextCapability[] {
   return (values ?? []).flatMap((value) => parseObservationPermissionGrant(value));
 }
@@ -880,6 +973,12 @@ function parseObservationPermissionGrants(values?: string[]): ContextCapability[
 function parseObservationPermissionGrant(value: string): ContextCapability[] {
   const grant = value.trim();
   if (!grant) return [];
+
+  // `none` keeps the turn constrained to a capability nothing matches, so the observer
+  // gets no tools. An empty grant list would instead leave the agent's own ceiling.
+  if (grant === OBSERVER_NO_TOOLS_GRANT) {
+    return [{ permission: "use", objectType: "tool", objectId: OBSERVER_NO_TOOLS_OBJECT_ID, source: "observer-rule" }];
+  }
 
   const direct = /^([^:\s]+):([^:\s]+):(.+)$/.exec(grant);
   if (direct) {

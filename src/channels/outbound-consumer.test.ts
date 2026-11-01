@@ -9,8 +9,11 @@ import {
   type ChannelOutboundConsumerOptions,
   acknowledgeChannelOutboundMessage,
   channelOutboundRequestFingerprint,
+  guardChannelOutboundJob,
   missingAdapterRetryDelayMs,
   persistDeliveredMessage,
+  resetMissingAdapterWarningsForTests,
+  warnMissingAdapter,
   persistDeliveredChatAction,
   processChannelOutboundJob as processChannelOutboundJobWithNats,
 } from "./outbound-consumer.js";
@@ -21,6 +24,9 @@ import {
   type ChannelOutboundReceiptStore,
 } from "./outbound-receipts.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
+import { upsertGuardedSession } from "../knowledge/egress/guard.js";
+import { closeKnowledgeDb, getKnowledgeDbPath } from "../knowledge/store/db.js";
+import { existsSync } from "node:fs";
 
 function processChannelOutboundJob(job: ChannelOutboundJob, options: ChannelOutboundConsumerOptions) {
   return processChannelOutboundJobWithNats(job, {
@@ -148,6 +154,16 @@ describe("channel outbound consumer", () => {
     expect(ack).not.toHaveBeenCalled();
     expect(nak).toHaveBeenCalledWith(120_000);
     expect(missingAdapterRetryDelayMs(10)).toBe(300_000);
+  });
+
+  it("warns about a reply with no adapter at most once a minute per channel", () => {
+    resetMissingAdapterWarningsForTests();
+    const fields = { jobId: "job-1", deliveryAttempt: 1, retryDelayMs: 30_000 };
+    expect(warnMissingAdapter("slack", fields, 1_000)).toBe(true);
+    expect(warnMissingAdapter("slack", { ...fields, jobId: "job-2" }, 30_000)).toBe(false);
+    expect(warnMissingAdapter("example", fields, 30_000)).toBe(true);
+    expect(warnMissingAdapter("slack", fields, 61_001)).toBe(true);
+    resetMissingAdapterWarningsForTests();
   });
 
   it("naks retryable adapter send failures", async () => {
@@ -1787,3 +1803,109 @@ function makeJob(): ChannelOutboundJob {
     },
   };
 }
+
+describe("channel outbound consumer knowledge egress", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-outbound-knowledge-egress-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function textDelivery() {
+    return {
+      channelId: "slack",
+      supports: (target: { channel: string }) => target.channel === "slack",
+      deliverText: mock(async (_request: { text: string }) => ({ provider: "slack", messageId: "m1" })),
+    } as NativeTextDelivery & { deliverText: ReturnType<typeof mock> };
+  }
+
+  it("guards the text of a job bound for a guarded chat, even when the session path was bypassed", async () => {
+    upsertGuardedSession({
+      sessionName: "kagent-dm-1",
+      agentId: "kagent",
+      instanceId: "T1",
+      channel: "slack",
+      chatId: "C123",
+      normalizedChatId: "C123",
+      contactId: "contact-1",
+      guardedUntil: Date.now() + 60_000,
+    });
+    closeKnowledgeDb();
+    const job = makeJob();
+    job.request.content = { type: "text", text: "veja https://acme.ravi.page/segredo" };
+    const delivery = textDelivery();
+    const result = await processChannelOutboundJob(job, {
+      deliveries: [delivery],
+      emitEvent: mock(async () => {}),
+      persistDelivery: false,
+    });
+    expect(result.status).toBe("delivered");
+    expect(delivery.deliverText.mock.calls[0]?.[0]).toMatchObject({ text: "veja [link removido]" });
+  });
+
+  it("guards chat_action text and keeps the published fingerprint", () => {
+    const job = makeJob();
+    job.request.content = { type: "chat_action", actionId: "thread.create", text: "https://acme.ravi.page/x" };
+    const guarded = guardChannelOutboundJob(job, {
+      knowledgeGuard: () => ({
+        sessionName: "s",
+        agentId: "a",
+        instanceId: "T1",
+        channel: "slack",
+        chatId: "C123",
+        normalizedChatId: "C123",
+        contactId: "c",
+        guardedUntil: Date.now() + 60_000,
+      }),
+      guardKnowledgeText: () => "[link removido]",
+    });
+    expect((guarded.request.content as { text: string }).text).toBe("[link removido]");
+    expect((job.request.content as { text: string }).text).toBe("https://acme.ravi.page/x");
+  });
+
+  it("guards a thread card's note along with its brief", () => {
+    const job = makeJob();
+    job.request.content = {
+      type: "chat_action",
+      actionId: "message.edit",
+      providerMessageId: "1713000000.000100",
+      text: "Brief https://acme.ravi.page/a",
+      threadCard: { status: "closed", note: "Result https://acme.ravi.page/b", updatedAt: 1 },
+    };
+    const guarded = guardChannelOutboundJob(job, {
+      knowledgeGuard: () => ({
+        sessionName: "s",
+        agentId: "a",
+        instanceId: "T1",
+        channel: "slack",
+        chatId: "C123",
+        normalizedChatId: "C123",
+        contactId: "c",
+        guardedUntil: Date.now() + 60_000,
+      }),
+      guardKnowledgeText: (text) => text.replace(/https:\/\/\S+/g, "[link removido]"),
+    });
+    expect(guarded.request.content).toMatchObject({
+      text: "Brief [link removido]",
+      threadCard: { status: "closed", note: "Result [link removido]", updatedAt: 1 },
+    });
+  });
+
+  it("delivers unchanged and never creates knowledge.db when the file does not exist (ravi-channels)", async () => {
+    const job = makeJob();
+    job.request.content = { type: "text", text: "veja https://acme.ravi.page/x" };
+    const delivery = textDelivery();
+    await processChannelOutboundJob(job, {
+      deliveries: [delivery],
+      emitEvent: mock(async () => {}),
+      persistDelivery: false,
+    });
+    expect(delivery.deliverText.mock.calls[0]?.[0]).toMatchObject({ text: "veja https://acme.ravi.page/x" });
+    expect(existsSync(getKnowledgeDbPath())).toBe(false);
+  });
+});

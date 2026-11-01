@@ -14,6 +14,9 @@ import {
   type ContractErrorDetails,
 } from "./agent-contract.js";
 import { getContext } from "./context.js";
+import { projectPageDomainSetups } from "../pages/domain-setup.js";
+import { turnLinkContract } from "../identity-link/turn-link-copy.js";
+import { TurnRefusalError, turnRefusalDetails } from "../cloud-auth/turn-refusal.js";
 import { payloadInvalidIssues, sanitizePayloadInvalidMessage } from "./payload-error-message.js";
 
 export function commandOperation(group: string, command: string): string {
@@ -25,10 +28,14 @@ export function commandOperation(group: string, command: string): string {
 export function cloudErrorToContractError(op: string, error: CloudAuthError): ContractError {
   const issues = error.code === "PAYLOAD_INVALID" ? payloadInvalidIssues(error.message, error.issues) : error.issues;
   const connectorTurn = connectorTurnCopy(error);
+  const domainSetup =
+    error.code === "DOMAIN_SETUP_REQUIRED" ? projectPageDomainSetups(error.details?.setups) : undefined;
+  const turnLink = turnLinkErrorCopy(error);
+  const turnRefusal = turnRefusalErrorCopy(error);
   return new ContractError(
     op,
     error.code,
-    connectorTurn?.message ?? publicMessage(error.code, error.message),
+    turnRefusal?.message ?? turnLink?.message ?? connectorTurn?.message ?? publicMessage(error.code, error.message),
     error.code === "PAYLOAD_INVALID"
       ? CONTRACT_EXIT_USAGE
       : isConnectorPolicyCode(error.code) || connectorTurn?.policy
@@ -39,9 +46,34 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
       ...(error.status !== undefined ? { status: error.status } : {}),
       ...(issues ? { issues } : {}),
       suggestedAction: suggestedAction(error.code),
+      ...(domainSetup ? { domainSetup } : {}),
       ...(connectorTurn?.details ?? {}),
+      ...(turnLink?.details ?? {}),
+      ...(turnRefusal?.details ?? {}),
     },
   );
+}
+
+/**
+ * `ACTOR_UNKNOWN` this side built (a {@link TurnRefusalError}): its reason
+ * and the copy for that reason. The class is the mark: a Console response is
+ * never one, so a remote `ACTOR_UNKNOWN` keeps the catalog copy whatever its
+ * details say.
+ */
+function turnRefusalErrorCopy(error: CloudAuthError): { message: string; details: ContractErrorDetails } | null {
+  if (!(error instanceof TurnRefusalError)) return null;
+  const message = sanitizePublicContractMessage(error.message);
+  if (!message) return null;
+  return { message, details: { ...turnRefusalDetails(error.reason), suggestedAction: error.suggestedAction } };
+}
+
+/**
+ * `ACTOR_NOT_LINKED` after the client started the person's link: local copy
+ * for what was set in motion (a "message me in private" on WhatsApp, a link
+ * sent on Slack), with the line to say in the chat.
+ */
+function turnLinkErrorCopy(error: CloudAuthError): { message: string; details: ContractErrorDetails } | null {
+  return error.code === "ACTOR_NOT_LINKED" ? turnLinkContract(error.details?.linkFlow) : null;
 }
 
 /** Details a locally built connector-turn error may carry into the public envelope. */
@@ -166,6 +198,14 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "Only the owner of this connection can do that.";
     case "ACTOR_NOT_LINKED":
       return "The person asking is not linked to a Console user on this Ravi.";
+    case "ACTOR_UNKNOWN":
+      return "Ravi could not tell who is asking in this turn, so it will not act on anyone's behalf.";
+    case "KNOWLEDGE_TURN_NOT_OPERATOR":
+      return "Knowledge answers only the operator's own turns.";
+    case "KNOWLEDGE_DISABLED":
+      return "Knowledge is not enabled for this organization.";
+    case "KNOWLEDGE_UNAVAILABLE":
+      return "This Console does not serve Knowledge yet.";
   }
 }
 
@@ -262,6 +302,12 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "send the consent link to that person privately, then retry after they approve";
     case "CONNECTOR_NOT_LINKED":
       return "run `ravi link` from the person's own chat turn; Ravi sends them a private approval link";
+    case "KNOWLEDGE_TURN_NOT_OPERATOR":
+      return "ask in the operator's private chat or terminal";
+    case "KNOWLEDGE_DISABLED":
+      return "ask an org owner or admin to enable Knowledge in the Console";
+    case "KNOWLEDGE_UNAVAILABLE":
+      return "update Ravi Console, then retry";
     case "CONNECTOR_CONNECTION_REQUIRED":
       return "ask the account owner to connect one on the Console Connectors page (`ravi connectors connect google`)";
     case "CONNECTOR_REAUTH_REQUIRED":
@@ -274,10 +320,12 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "ask the connection's owner to make this change";
     case "ACTOR_NOT_LINKED":
       return "run `ravi link` from the person's own chat turn; Ravi sends them a private approval link";
+    case "ACTOR_UNKNOWN":
+      return "do not retry from this turn; the person can ask from their own chat, or the operator can run the command in the terminal";
   }
 }
 
-function safeDomainSetupMessage(message: string): string {
+export function safeDomainSetupMessage(message: string): string {
   const sanitized = stripVTControlCharacters(message)
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .trim();

@@ -600,7 +600,7 @@ function parseSkillDirectory(skillDir: string, source: string): RaviSkill | null
   return parseSkillContent(content, source, skillFilePath, skillDir);
 }
 
-function parseSkillContent(
+export function parseSkillContent(
   content: string,
   source: string,
   skillFilePath: string,

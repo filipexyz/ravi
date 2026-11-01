@@ -10,6 +10,7 @@ import {
   slugifySkillName,
   type RaviSkill,
 } from "../skills/manager.js";
+import { isLibrarySkillId, normalizeLibrarySkillId } from "../library/refs.js";
 import { skillIdentifiersMatch } from "./skill-visibility.js";
 
 /**
@@ -99,13 +100,43 @@ export function officialSkillImpliedByCapabilities(
 /** Object type of `use:skill:<id>` capabilities. */
 export const SKILL_CAPABILITY_OBJECT_TYPE = "skill";
 
-function isSkillUseCapability(capability: ContextCapability): boolean {
+function isAnySkillUseCapability(capability: ContextCapability): boolean {
   return capability.permission === "use" && capability.objectType === SKILL_CAPABILITY_OBJECT_TYPE;
 }
 
-/** Whether any `use:skill:<id>` capability (wildcards included) is present. */
+/**
+ * `use:skill:<id>` capabilities about local skills. Library ids (`org:<slug>`,
+ * `project:<project>:<slug>`, and their globs) only ever name Library skills
+ * (`librarySkillCoveredBySkillCapability`), so they neither reach a local
+ * skill by slug (`org:x` vs `org-x`) nor configure the local catalog.
+ */
+function isSkillUseCapability(capability: ContextCapability): boolean {
+  return isAnySkillUseCapability(capability) && !isLibrarySkillId(capability.objectId);
+}
+
+/** Whether any local `use:skill:<id>` capability (wildcards included) is present. */
 export function hasSkillUseCapability(capabilities: readonly ContextCapability[]): boolean {
   return capabilities.some(isSkillUseCapability);
+}
+
+/**
+ * Whether `admin:system:*` or a `use:skill:<id>` capability covers the Library
+ * skill `libraryId` (`org:<slug>` or `project:<projectSlug>:<slug>`), with the
+ * same matcher as every capability: exact id, trailing glob
+ * (`use:skill:org:*`, `use:skill:project:clinica:*`) or `use:skill:*`.
+ * Ids are compared lowercase and never slugified.
+ */
+export function librarySkillCoveredBySkillCapability(
+  capabilities: readonly ContextCapability[],
+  libraryId: string,
+): boolean {
+  if (isAdminAll(capabilities)) return true;
+  const id = normalizeLibrarySkillId(libraryId);
+  if (!isLibrarySkillId(id)) return false;
+  const normalized = capabilities
+    .filter(isAnySkillUseCapability)
+    .map((capability) => ({ ...capability, objectId: normalizeLibrarySkillId(capability.objectId) }));
+  return canWithCapabilities(normalized, "use", SKILL_CAPABILITY_OBJECT_TYPE, id);
 }
 
 /**

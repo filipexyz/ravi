@@ -41,7 +41,11 @@ import {
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import { parseCallerCwd } from "../../cli/caller-cwd.js";
+import { enforceWriteAfterRead, writeAfterReadContractError } from "../../knowledge/safety/write-after-read.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
+
+import { withGatewayRequest } from "./request-context.js";
+import { logGatewayFailure } from "./diagnostics.js";
 
 export interface DispatchOptions {
   /** Allow `superadmin`-scoped commands. Off by default. */
@@ -98,6 +102,27 @@ export async function dispatch(
   scopeContext: ScopeContext,
   opts: DispatchOptions = {},
 ): Promise<DispatchResult> {
+  return withGatewayRequest(commandOperation(cmd.groupSegments.join("_"), cmd.command), async () => {
+    try {
+      return await dispatchCommand(cmd, body, scopeContext, opts);
+    } catch (error) {
+      const contract =
+        error instanceof ContractError
+          ? error
+          : mapExecutionErrorToContractError(commandOperation(cmd.groupSegments.join("_"), cmd.command), error);
+      const status = error instanceof ContractError ? undefined : 500;
+      if (status === 500) logGatewayFailure(error, contract.code);
+      return { response: contractErrorResponse(contract, status), audit: null };
+    }
+  });
+}
+
+async function dispatchCommand(
+  cmd: CommandRegistryEntry,
+  body: unknown,
+  scopeContext: ScopeContext,
+  opts: DispatchOptions,
+): Promise<DispatchResult> {
   const tool = `${cmd.groupSegments.join("_")}_${cmd.command}`;
   const group = cmd.groupSegments.join("_");
   const lineage = extractLineage(opts.contextRecord);
@@ -107,6 +132,7 @@ export async function dispatch(
     const error = permissionDeniedToContractError(
       commandOperation(group, cmd.command),
       "Gateway access to this command was denied.",
+      { stage: "command_access" },
     );
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, {}, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
@@ -133,6 +159,7 @@ export async function dispatch(
   const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null, opts.cwd ?? protocol.cwd);
   const accessResult = runWithContext(toolContext, () =>
     enforceCliCommandAuthorization({
+      canonicalName: cmd.fullName,
       group,
       command: cmd.command,
       access: cmd.access,
@@ -142,9 +169,27 @@ export async function dispatch(
     }),
   );
   if (!accessResult.allowed) {
-    const error = permissionDeniedToContractError(commandOperation(group, cmd.command), accessResult.errorMessage);
+    // Structured denial for the CLI: the same details the tool and local CLI
+    // surfaces carry, so op/code/details/outcome stay in parity.
+    const error = permissionDeniedToContractError(
+      commandOperation(group, cmd.command),
+      accessResult.errorMessage,
+      accessResult.denialDetails ?? {},
+    );
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, auditInput, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
+    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    return { response, audit: auditEmitted ? audit : null };
+  }
+
+  // Inside the tool context: outside it the turn looks like the terminal.
+  const writeGate = runWithContext(toolContext, () =>
+    enforceWriteAfterRead({ group, command: cmd.command, options: validation.inputForAudit, access: cmd.access }),
+  );
+  if (!writeGate.allowed) {
+    const error = writeAfterReadContractError(commandOperation(group, cmd.command), writeGate);
+    const response = contractErrorResponse(error);
+    const audit = buildAuditEvent(cmd, tool, auditInput, "blocked", startedAt, lineage, error.exitCode, error.code);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
   }
@@ -180,6 +225,7 @@ export async function dispatch(
       outcome = contractFailureOutcome(appError);
       auditExitCode = appError.exitCode;
       auditErrorCode = appError.code;
+      if (err.status >= 500) logGatewayFailure(err, appError.code);
       response = contractErrorResponse(appError, err.status);
     } else {
       const knownContractError =
@@ -201,6 +247,7 @@ export async function dispatch(
           : undefined;
       const isUnexpected =
         !(err instanceof ContractError) && !isCloudAuthError(err) && knownContractError.code === "UNHANDLED_ERROR";
+      if (isUnexpected || (cloudStatus && cloudStatus >= 500)) logGatewayFailure(err, knownContractError.code);
       response = contractErrorResponse(knownContractError, cloudStatus ?? (isUnexpected ? 500 : undefined));
     }
     const audit = buildAuditEvent(cmd, tool, auditInput, outcome, startedAt, lineage, auditExitCode, auditErrorCode);
@@ -225,6 +272,7 @@ export async function dispatch(
       const error = binaryResponseToContractError(commandOperation(group, cmd.command), returnValue.status);
       const binaryOutcome = error.code === "PERMISSION_DENIED" ? "denied" : contractFailureOutcome(error);
       const responseStatus = returnValue.status >= 400 ? returnValue.status : 502;
+      if (responseStatus >= 500) logGatewayFailure(error, error.code);
       response = contractErrorResponse(error, responseStatus, binaryOutcome);
       const audit = buildAuditEvent(
         cmd,

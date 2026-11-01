@@ -34,6 +34,7 @@ interface TriggerRow {
   reply_source: string | null;
   enabled: number;
   cooldown_ms: number;
+  debounce_ms?: number | null;
   filter: string | null;
   last_fired_at: number | null;
   fire_count: number;
@@ -95,6 +96,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
     session: row.session as SessionTarget,
     enabled: row.enabled === 1,
     cooldownMs: row.cooldown_ms,
+    debounceMs: row.debounce_ms ?? 0,
     fireCount: row.fire_count,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -134,8 +136,8 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     INSERT INTO triggers (
       id, name, agent_id, account_id, topic, message, execution_type, shell_command, shell_timeout_ms,
       shell_env_file, on_error, message_source, message_template_id, session, reply_session,
-      reply_source, enabled, cooldown_ms, filter, fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      reply_source, enabled, cooldown_ms, debounce_ms, filter, fire_count, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -157,6 +159,7 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     serializeReplySource(input.replySource),
     input.enabled !== false ? 1 : 0,
     input.cooldownMs ?? 5000,
+    input.debounceMs ?? 0,
     input.filter ?? null,
     0,
     now,
@@ -288,6 +291,10 @@ export function dbUpdateTrigger(
   if (updates.cooldownMs !== undefined) {
     fields.push("cooldown_ms = ?");
     values.push(updates.cooldownMs);
+  }
+  if (updates.debounceMs !== undefined) {
+    fields.push("debounce_ms = ?");
+    values.push(updates.debounceMs);
   }
   if (updates.filter !== undefined) {
     fields.push("filter = ?");

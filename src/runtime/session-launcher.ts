@@ -40,10 +40,12 @@ import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-
 import { resolveRuntimeSession, resolveRuntimeSessionIdentity } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
-import { isClaudeModelAlias, resolvePreferredRuntimeModel } from "./model-catalog.js";
+import { applyProviderModelRule } from "./model-catalog.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import { reportRuntimePromptIntakeFailure } from "./intake-failure.js";
+import { isSessionRelayTurn } from "./turn-origin.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -51,6 +53,7 @@ export interface PendingRuntimeSessionStart {
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
   resolve: () => void;
+  reject: (error: Error) => void;
   cancelled?: boolean;
   queuedAt?: number;
   lane?: RuntimeSessionStartLane;
@@ -72,7 +75,10 @@ export interface StartRuntimeSessionOptions {
 }
 
 export function updateRuntimeSessionMetadata(sessionKey: string, prompt: RuntimeLaunchPrompt): void {
-  if (prompt.source) {
+  // A relay's source is where that one relay delivers, not a chat the session
+  // talks to: saving it as last_* would let later cron, trigger and heartbeat
+  // turns reply (and send approval cards) there under a real account.
+  if (prompt.source && !isSessionRelayTurn(prompt)) {
     updateSessionSource(sessionKey, prompt.source);
   }
 
@@ -255,10 +261,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     configModel,
   });
   const selectedModel = modelBrokerPlanClaim?.plan.lease.model ?? runtimeResolution.options.model ?? configModel;
-  const model =
-    runtimeProviderId !== "claude" && isClaudeModelAlias(selectedModel)
-      ? resolvePreferredRuntimeModel(runtimeProviderId, selectedModel)
-      : selectedModel;
+  const model = applyProviderModelRule(runtimeProviderId, selectedModel) ?? selectedModel;
   if (model !== selectedModel) {
     log.info("Remapped runtime model to provider catalog", {
       sessionName,
@@ -399,6 +402,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       prompt,
       session,
       agent,
+      configModel,
       runtimeProviderId,
       runtimeProvider,
       runtimeCapabilities,
@@ -409,6 +413,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       storedRuntimeSessionParams,
       storedProviderSessionId,
       canResumeStoredSession,
+      resumeDecision,
       resolvedSource,
       approvalSource,
       streamingSession,
@@ -518,7 +523,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
     await safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "turn.failed",
+      ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
       provider: runtimeProviderId,
+      _turnProvenance: classifyTurnProvenance({ prompt }),
       error: errorMessage,
       recoverable: false,
       ...(resolvedSource ? { _source: resolvedSource } : {}),

@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
-import { Arg, Command, Group, Option, Returns, Scope } from "../../cli/decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../../cli/decorators.js";
 import { buildRegistry, getRegistry } from "../../cli/registry-snapshot.js";
 import { emit, emitJson, commandPath } from "./emit.js";
 import { sortKeysDeep, stableStringify } from "./stable-stringify.js";
@@ -51,7 +51,79 @@ function fixture() {
   return buildRegistry([DemoCommands, NestedDemo]);
 }
 
+type Tree = { name: string; children: Tree[] };
+const treeSchema: z.ZodType<Tree> = z.lazy(() => z.object({ name: z.string(), children: z.array(treeSchema) }));
+
+@Group({ name: "recursive", description: "Recursive schemas", scope: "open" })
+class RecursiveDemo {
+  @Command({ name: "tree", description: "Recursive return" })
+  @Returns(z.object({ root: treeSchema }))
+  tree() {}
+
+  @Command({ name: "forest", description: "Same recursive schema again" })
+  @Returns(z.object({ roots: z.array(treeSchema) }))
+  forest(@Option({ flags: "--seed <json>" }) seed?: string) {
+    void seed;
+  }
+}
+
+/** Every `$ref` string in `value`. */
+function collectRefs(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const item of value) collectRefs(item, out);
+  } else if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (key === "$ref" && typeof child === "string") out.push(child);
+      else collectRefs(child, out);
+    }
+  }
+  return out;
+}
+
+/** Resolve a document-local JSON pointer (`#/a/b`) against `doc`. */
+function resolvePointer(doc: unknown, ref: string): unknown {
+  return ref
+    .slice(2)
+    .split("/")
+    .reduce<unknown>(
+      (node, part) => (node as Record<string, unknown> | undefined)?.[part.replace(/~1/g, "/").replace(/~0/g, "~")],
+      doc,
+    );
+}
+
 describe("openapi emit", () => {
+  it("distinguishes Console-only operations from shared and ordinary runtime authority", () => {
+    @Group({ name: "authority", description: "Authority fixtures", scope: "resource" })
+    class AuthorityCommands {
+      @Command({ name: "private", description: "Private view" })
+      @CommandAccess({
+        kind: "read",
+        resource: "session",
+        action: "view",
+        risk: "low",
+        consoleScope: "session",
+        consoleOnly: true,
+      })
+      privateView() {}
+
+      @Command({ name: "shared", description: "Shared control" })
+      @CommandAccess({ kind: "mutate", resource: "session", action: "configure", risk: "low", consoleScope: "session" })
+      shared() {}
+    }
+    const spec = emit(buildRegistry([AuthorityCommands, NestedDemo]));
+    expect(spec.paths["/api/v1/authority/private"]!.post.security).toEqual([{ consoleDelegation: [] }]);
+    expect(spec.paths["/api/v1/authority/private"]!.post.description).toContain("dedicated Console listener");
+    expect(spec.paths["/api/v1/authority/shared"]!.post.security).toEqual([
+      { bearerAuth: [] },
+      { consoleDelegation: [] },
+    ]);
+    expect(spec.paths["/api/v1/demo/nested/show"]!.post.security).toEqual([{ bearerAuth: [] }]);
+    expect(spec.components!.securitySchemes!.consoleDelegation).toMatchObject({
+      type: "http",
+      scheme: "bearer",
+      bearerFormat: "JWT",
+    });
+  });
   it("produces a 3.1.0 doc with the expected top-level shape", () => {
     const spec = emit(fixture());
     expect(spec.openapi).toBe("3.1.0");
@@ -217,6 +289,28 @@ describe("openapi emit", () => {
   });
 });
 
+describe("openapi emit (recursive schemas)", () => {
+  it("hoists Zod $defs into components.schemas so every $ref resolves", () => {
+    const spec = emit(buildRegistry([RecursiveDemo]));
+    const refs = collectRefs(spec);
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      expect(ref.startsWith("#/components/schemas/")).toBe(true);
+      expect(resolvePointer(spec, ref)).toBeDefined();
+    }
+    expect(JSON.stringify(spec)).not.toContain("$defs");
+  });
+
+  it("dedupes identical definitions across operations", () => {
+    const spec = emit(buildRegistry([RecursiveDemo]));
+    expect(Object.keys(spec.components?.schemas ?? {})).toHaveLength(1);
+  });
+
+  it("omits components.schemas when nothing is hoisted", () => {
+    expect(emit(fixture()).components?.schemas).toBeUndefined();
+  });
+});
+
 describe("openapi emit (live registry)", () => {
   it("matches paths.length to live registry.commands.length (excluding cliOnly)", () => {
     const reg = getRegistry();
@@ -224,6 +318,13 @@ describe("openapi emit (live registry)", () => {
     const nonCliOnlyCommands = reg.commands.filter((cmd) => !cmd.cliOnly).length;
     expect(Object.keys(spec.paths).length).toBe(nonCliOnlyCommands);
     expect(spec.openapi).toBe("3.1.0");
+  });
+
+  it("every $ref in the live spec resolves inside the document", () => {
+    const spec = emit(getRegistry());
+    for (const ref of new Set(collectRefs(spec))) {
+      expect(resolvePointer(spec, ref)).toBeDefined();
+    }
   });
 
   it("every operation has a unique operationId on the live registry", () => {

@@ -8,19 +8,20 @@ At the end of this page you will have a Ravi Console account, an organization, a
 
 ## What the Console is
 
-The Ravi Console at [console.ravi.bot](https://console.ravi.bot) is the hosted side of Ravi. Your daemon, agents and channels stay on your machine. The Console holds what needs a public address or shared storage:
+The Ravi Console at [console.ravi.bot](https://console.ravi.bot) is where your organization lives. Your daemon, agents and channels stay on your machines. The Console holds what people and machines share:
 
-- **Organization.** Owns members and projects. Every member has a role.
+- **Organization.** Owns members, projects and the machines linked with `ravi login`. Every member has a role. See [Ravi for organizations](/organizations/overview).
 - **Project.** Holds your Pages and Bases. Each project has one default Pages host, `<org-slug>-<project-slug>.ravi.page`. Every page you publish is a route on that host, such as `https://acme-website.ravi.page/report`.
+- **Library.** Skills, agent definitions, themes and widgets shared with every machine in the organization or in one project. See [Machines and shared agents](/organizations/machines#share-skills-and-agents-across-the-organization).
 - **Roles.** `owner`, `admin` and `developer` can create projects and publish. `viewer` and `billing` cannot. Only `owner` and `admin` can rename the organization or add members.
 
-`ravi login` links your local CLI to your Console user. It has nothing to do with your model provider: Claude or Codex credentials are configured separately, see [Install Ravi](/start/install).
+`ravi login` links this machine and its CLI to your Console user, in one organization. It has nothing to do with your model provider: Claude or Codex credentials are configured separately, see [Install Ravi](/start/install).
 
 Logging in and publishing from your own terminal do not need the daemon. Agents publishing on your behalf do, see [Let your agent publish](/console/pages#let-your-agent-publish).
 
 ## Create your account and organization
 
-Organizations are created, and members are invited, only in the web Console. The CLI has no command for either.
+Organizations are created only in the web Console. Members are invited there or with `ravi invites create`, see [Share a page with one person](/console/pages#share-a-page-with-one-person).
 
 <Steps>
   <Step title="Sign up">
@@ -32,35 +33,37 @@ Organizations are created, and members are invited, only in the web Console. The
     A new account with no organization sees **Create your organization**. Follow it to finish the organization setup, then come back to `console.ravi.bot`.
   </Step>
   <Step title="Rename the organization slug before anything else">
-    Open `/org/settings`, set **Name** and **Slug** (for example `acme`), and save.
+    Open the organization's settings, `console.ravi.bot/<org>/settings`, set **Name** and **Slug** (for example `acme`), and save. Console URLs inside an organization start with its slug, so a link you share opens that organization for whoever follows it.
 
     <Warning>
     A self-serve organization starts with a slug like `workos-01k7...`. Pages refuses host names built from it, so your first project fails with **This slug is unavailable.** on the *project* slug field, even when the project slug is fine. Rename the organization slug first. This needs the `owner` or `admin` role.
     </Warning>
   </Step>
   <Step title="Check your role">
-    The members list on `/org/settings` shows each member's role. You need `owner`, `admin` or `developer` to create a project and publish.
+    The members list on `/<org>/members` shows each member's role. You need `owner`, `admin` or `developer` to create a project and publish.
 
     <Warning>
     If you are `viewer`, you cannot rename the organization, create a project or publish, and private pages of a project are hidden from you unless you are a member of that project. Ask an `owner` or `admin` of the organization to change your role. If you created the organization yourself and still show as `viewer`, nobody in the organization can fix it from the Console: ask the Console operator to make you an owner.
     </Warning>
   </Step>
   <Step title="Create a project">
-    Open `/projects/new` and fill **Name**, **Slug**, **Description** and **Default visibility** (`private`, `public` or `protected link`; `private` is preselected). The form shows the host it will create, `<org-slug>-<project-slug>.ravi.page`.
+    Open `/<org>/projects/new` and fill **Name**, **Slug**, **Description** and **Default visibility** (`private`, `public` or `protected link`; `private` is preselected). The form shows the host it will create, `<org-slug>-<project-slug>.ravi.page`.
 
     Pick `public` if the first pages on this project are meant for anyone. The host default caps every route on it, so a `private` host keeps even a `public` route private. See [Visibility](/console/pages#visibility).
   </Step>
 </Steps>
 
-To add teammates, an `owner` or `admin` opens `/org/settings`, enters an **Email** and a **Role**, and clicks **Add member**. The person does not need an account yet.
+To add teammates, an `owner` or `admin` opens `/<org>/members`, enters an **Email** and a **Role**, and clicks **Add member**. The person does not need an account yet.
 
 You can also create the project from the terminal once you are logged in (next section):
 
 ```bash
-ravi cloud projects create website --name "Website" --visibility public --default-page-site            # plan only, exit 3
-ravi cloud projects create website --name "Website" --visibility public --default-page-site --execute  # creates it
-ravi cloud projects list
+ravi projects create website --name "Website" --visibility public --default-page-site            # plan only, exit 3
+ravi projects create website --name "Website" --visibility public --default-page-site --execute  # creates it
+ravi projects list
 ```
+
+`ravi cloud projects` is the older name of the same commands and still works.
 
 Pass `--default-page-site` without a value. The host is always `<org-slug>-<project-slug>`, and the Console rejects any other name. Without `--default-page-site`, the first `ravi pages ship` creates the host with the visibility of that ship.
 
@@ -97,11 +100,11 @@ Pass `--default-page-site` without a value. The host is always `<org-slug>-<proj
     ravi whoami
     ```
 
-    It prints `Console`, `User`, `Organization`, `Installation`, `Scopes` and `Access token expires`. It does not show your role or the selected project; use `/org/settings` for the role and `ravi cloud scope show` for the project.
+    It prints `Console`, `User`, `Organization`, `Installation`, `Scopes` and `Access token expires`. It does not show your role or the selected project; use `/<org>/members` for the role and `ravi cloud scope show` for the project.
   </Step>
   <Step title="Choose the default project">
     ```bash
-    ravi cloud projects list
+    ravi projects list
     ravi cloud scope set --global --project website
     ravi cloud scope show
     ```

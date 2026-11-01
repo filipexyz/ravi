@@ -54,6 +54,7 @@ const channelAdapterHealthReturnSchema = z
     channelId: z.string(),
     status: z.enum(["disabled", "starting", "connected", "degraded", "reconnecting", "disconnected", "failed"]),
     reason: z.string().optional(),
+    detail: z.string().optional(),
     connectedAt: z.number().optional(),
     lastPongAt: z.number().optional(),
     reconnectCount: z.number().int().nonnegative().optional(),
@@ -833,7 +834,8 @@ export class ChannelsCommands {
     console.log(`  health: ${String(health.status)}${health.reason ? ` (${String(health.reason)})` : ""}`);
     const runner = payload.runner as ChannelRunnerHealthSnapshot | null;
     for (const adapter of runner?.adapters ?? []) {
-      console.log(`  ${adapter.id}: ${adapter.status}${adapter.reason ? ` (${adapter.reason})` : ""}`);
+      const why = [adapter.reason, adapter.detail].filter(Boolean).join(": ");
+      console.log(`  ${adapter.id}: ${adapter.status}${why ? ` (${why})` : ""}`);
     }
     return payload;
   }

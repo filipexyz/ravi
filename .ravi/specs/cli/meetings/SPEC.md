@@ -17,6 +17,7 @@ applies_to:
   - src/meetings/cloud.ts
   - src/meetings/cloud-finalize.ts
   - src/meetings/inbox-handoff.ts
+  - src/meetings/read.ts
   - src/cli/agent-contract.ts
   - src/plugins/internal/ravi-system/skills/meetings/SKILL.md
 owners:
@@ -39,7 +40,7 @@ documented write-brake equivalent instead of being renamed.
 1. With `--json`, every failure on a migrated op MUST return the envelope
    `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
 2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found) ·
-   `2` usage error · `3` blocked by policy (unused in this domain today; the
+   `2` usage error · `3` blocked by policy (`meetings read` refusals only; the
    `join --dry-run` equivalent exits 0 with the validated invocation).
 3. `meetings profiles show <unknown>` and `meetings join --profile <unknown>`
    MUST exit 1 with `MEETING_PROFILE_NOT_FOUND` and suggestions from the LOCAL
@@ -76,6 +77,24 @@ documented write-brake equivalent instead of being renamed.
    died in between) closes the join and informs the session once.
 9. Nothing in this surface names the Console's bot vendor: media is downloaded
    from Console paths with the CLI credentials.
+10. `meetings read <link|id>` reads one Console meeting through
+    `POST /api/cli/meetings/read` (`{url}` or `{meetingId}`) with the
+    operator's login, and MUST write nothing to disk. It MUST refuse every turn
+    that is not the operator's own (the `pages read` classification; a turn it
+    cannot classify is refused; the operator asking in a group they chose may
+    read, as in `pages read`), with exit 3 `MEETING_ACCESS_DENIED`
+    (`refusal: operator_only`) BEFORE any Console call. Every success, text or
+    JSON, MUST carry the note that the transcript is for this turn only, is not
+    to be saved or shared with other contacts, and, for `crossOrganization`,
+    which organization it came from. Transcript and chat text is fenced as
+    untrusted in the text output. The Console's `details.reason` travels as
+    `refusal`, because the public envelope redacts `reason`. `agenda` still
+    refuses the operator's own turn in a group (`CALENDAR_ACCESS_DENIED`), and
+    that refusal MUST send them to their own chat (`chatLine`, `chatLinePt`,
+    `replyTo: same_chat`) instead of the "other people" next step. The remote
+    gateway relay MUST keep this refusal's
+    message, `suggestedAction`, `refusal`, `turn` and chat lines (and the same
+    for `agenda`'s `CALENDAR_ACCESS_DENIED`) instead of its generic blocked copy.
 
 ## Write classification (brake decision per op)
 
@@ -88,6 +107,7 @@ documented write-brake equivalent instead of being renamed.
 | finalize | local artifact registration from a completed run dir | not braked (declared) |
 | profiles init | local reversible config scaffold (tasks `profiles init` precedent) | not braked (declared) |
 | reads (list/show/validate/voice-runtimes, cloud list/show) | read-only | not braked |
+| read | read-only, nothing stored; operator turns only (policy refusal, not a brake) | not braked |
 
 ## Official error cases
 
@@ -97,6 +117,10 @@ documented write-brake equivalent instead of being renamed.
 | provider executable missing (local only) | legacy text (install/`RAVI_GOOGLE_MEET_RECORDER_BIN`) | 1 |
 | local-recorder option without `--local` | `LOCAL_RECORDER_OPTION` | 2 |
 | cloud join on a link that is not Google Meet | `INVALID_ARGUMENT` | 2 |
+| `meetings read` on a turn that is not the operator's own | `MEETING_ACCESS_DENIED` | 3 |
+| `meetings read` input that is not a Console meeting link or id, bad `--max-chars` | `INVALID_ARGUMENT` | 2 |
+| `meetings read`: other organization does not allow external agents (`refusal: external_agents_disabled`), no org or project read | `ORG_ACCESS_DENIED`, `PROJECT_ACCESS_DENIED` | 3 |
+| `meetings read`: no such meeting or not shared; recording not ready | `NOT_FOUND`; `CONFLICT` | 1 |
 | Console errors (not logged in, feature off, limits) | the cloud error codes (`AUTH_REQUIRED`, `ORG_ACCESS_DENIED`, `RATE_LIMITED`, ...) | 1, 2 or 3 per `cli` |
 
 ## Internal consumers
@@ -108,7 +132,7 @@ with rationale, the not-found envelope and `--fields`.
 
 ## Validation
 
-- `bun test src/cli/commands/meetings.test.ts src/meetings/cloud.test.ts`
+- `bun test src/cli/commands/meetings.test.ts src/meetings/cloud.test.ts src/meetings/read.test.ts`
   green (contract block included). On Windows the recorder stub resolves via
   `RAVI_GOOGLE_MEET_RECORDER_BIN`; the one spawn-dependent test (login) is
   skipped there and runs on POSIX CI.

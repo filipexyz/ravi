@@ -5,8 +5,10 @@ import { enqueueTraceExportBatch } from "../session-trace/cloud-trace-export.js"
 import { recordSessionEvent } from "../session-trace/session-trace-db.js";
 import { getSyncCursor } from "../sync/db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { createReadWatchdog } from "../db/read-watchdog.js";
 import {
   dbCreateAgent,
+  trackReadIterator,
   dbCreateChatReadingList,
   dbCreateContext,
   dbGetContext,
@@ -28,6 +30,7 @@ import {
   dbUpsertInstance,
   closeRouterDb,
   getDb,
+  warnBackfilledSlackChannelsWithoutConnection,
 } from "./router-db.js";
 import { getOrCreateSession } from "./sessions.js";
 import { createRuntimeModelPreset } from "../runtime/model-preset-store.js";
@@ -193,6 +196,10 @@ describe("router context queries", () => {
     expect(sessionEventIndexes).toContain("idx_session_events_visible_key_time_seq_id");
     expect(sessionEventIndexes).toContain("idx_session_events_key_type_id");
     expect(sessionEventIndexes).toContain("idx_session_events_rollup_turns_cover");
+    // Legacy trace fallback: the (session_key IN (?) OR session_name IN (?))
+    // query is ordered by timestamp and cannot use a key-leading index; this
+    // covering index keeps it off the table (8.6s -> 0.25s, measured 2026-10-25).
+    expect(sessionEventIndexes).toContain("idx_session_events_visible_order_cover");
     expect(contextIndexes).toContain("idx_contexts_kind_created");
     expect(triggerColumns).toContain("execution_type");
     expect(triggerColumns).toContain("shell_command");
@@ -237,6 +244,49 @@ describe("router context queries", () => {
       owner_principal: string | null;
     };
     expect(legacy.owner_principal).toBeNull();
+  });
+
+  it("creates the durable cron run ledger on reopen without replaying legacy jobs and retains admitted owners after deletion", () => {
+    const db = getDb();
+    db.exec("DROP TABLE cron_runs");
+    db.query(`INSERT INTO cron_jobs (id, name, schedule_type, schedule_every, payload_text, created_at, updated_at)
+      VALUES ('legacy-ledger-job', 'legacy', 'every', 60000, 'noop', 1, 1)`).run();
+    closeRouterDb();
+    const migrated = getDb();
+    expect(migrated.query("SELECT id FROM cron_jobs WHERE id='legacy-ledger-job'").get()).toEqual({
+      id: "legacy-ledger-job",
+    });
+    expect(migrated.query("SELECT * FROM cron_runs").all()).toEqual([]);
+    const notification = JSON.stringify({
+      id: "legacy-ledger-job",
+      ownerPrincipal: "contact:admitted-owner",
+      runId: "admitted-run",
+    });
+    migrated
+      .query(`INSERT INTO cron_runs (id,job_id,session_name,admitted_at,notification_json,status)
+      VALUES ('admitted-run','legacy-ledger-job','cron-session',42,?,'pending')`)
+      .run(notification);
+    migrated.query("DELETE FROM cron_jobs WHERE id='legacy-ledger-job'").run();
+    closeRouterDb();
+    const reopened = getDb();
+    expect(
+      reopened
+        .query(
+          "SELECT job_id,session_name,admitted_at,notification_json,status,reported FROM cron_runs WHERE id='admitted-run'",
+        )
+        .get(),
+    ).toEqual({
+      job_id: "legacy-ledger-job",
+      session_name: "cron-session",
+      admitted_at: 42,
+      notification_json: notification,
+      status: "pending",
+      reported: 0,
+    });
+    expect(() => reopened.query("UPDATE cron_runs SET status='delivered' WHERE id='admitted-run'").run()).toThrow();
+    expect(
+      (reopened.query("PRAGMA index_list(cron_runs)").all() as Array<{ name: string }>).map((row) => row.name),
+    ).toContain("idx_cron_runs_job");
   });
 
   it("scopes Console inbox item idempotency by Console and organization", () => {
@@ -337,6 +387,37 @@ describe("router context queries", () => {
     expect(
       db.prepare("SELECT marker FROM permission_policy_materializations WHERE id = 'materialization-1'").get(),
     ).toEqual({ marker: "materialization" });
+  });
+
+  it("adds library_agents.listed and keeps listed only the agents already open to requests", () => {
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    legacyDb.exec(`
+      CREATE TABLE library_agents (
+        agent_id             TEXT PRIMARY KEY,
+        description          TEXT,
+        accepts_requests     INTEGER NOT NULL DEFAULT 0 CHECK(accepts_requests IN (0,1)),
+        origin_ref           TEXT,
+        origin_version       INTEGER,
+        origin_content_hash  TEXT,
+        agents_md_sha256     TEXT,
+        heartbeat_md_sha256  TEXT,
+        origin_profile       TEXT,
+        origin_skills_json   TEXT,
+        installed_at         INTEGER,
+        updated_at           INTEGER NOT NULL
+      );
+      INSERT INTO library_agents (agent_id, description, accepts_requests, updated_at)
+      VALUES ('aberto', 'Answers', 1, 100), ('descrito', 'Only described', 0, 100);
+    `);
+    legacyDb.close();
+
+    const rows = getDb()
+      .prepare("SELECT agent_id, listed, accepts_requests FROM library_agents ORDER BY agent_id")
+      .all();
+    expect(rows).toEqual([
+      { agent_id: "aberto", listed: 1, accepts_requests: 1 },
+      { agent_id: "descrito", listed: 0, accepts_requests: 0 },
+    ]);
   });
 
   it("persists native Slack instanceId and canonicalChatId on context source", () => {
@@ -470,6 +551,25 @@ describe("router context queries", () => {
     getDb();
     expect(dbListChannels()).toEqual(firstPass);
   });
+
+  it("names backfilled Slack channels whose broker connection is missing or disabled", () => {
+    const missing = warnBackfilledSlackChannelsWithoutConnection(
+      [
+        { name: "slack-a", credentialConnection: "slack-a", enabled: true },
+        { name: "slack-b", credentialConnection: "slack-b", enabled: true },
+        { name: "slack-c", credentialConnection: "slack-c", enabled: true },
+        { name: "slack-off", credentialConnection: "slack-off", enabled: false },
+        { name: "slack-bad", credentialConnection: "bad id", enabled: true },
+      ],
+      (_provider, connection) => {
+        if (connection === "slack-a") return { status: "active" };
+        if (connection === "slack-b") return { status: "disabled" };
+        if (connection === "bad id") throw new Error("invalid connection");
+        return null;
+      },
+    );
+    expect(missing).toEqual(["slack-b", "slack-c", "slack-bad"]);
+  });
 });
 
 describe("agent model preset persistence", () => {
@@ -553,5 +653,121 @@ describe("canonical message receipts", () => {
       providerMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_999,
     });
+  });
+});
+
+describe("long read watchdog", () => {
+  it("reports an iterator that stays open past the threshold exactly once", async () => {
+    const reports: Array<{ state: string; ms: number; sql: string }> = [];
+    const source = {
+      next: () => ({ done: false, value: 1 }) as IteratorResult<number>,
+      return: () => ({ done: true, value: undefined }) as IteratorResult<number>,
+      [Symbol.iterator]() {
+        return this;
+      },
+    };
+    const tracked = trackReadIterator(source, {
+      sql: "SELECT * FROM tasks",
+      caller: "test-caller",
+      warnMs: 5,
+      intervalMs: 2,
+      onLongRead: (report) => reports.push({ state: report.state, ms: report.ms, sql: report.sql }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.state).toBe("open");
+    expect(reports[0]?.sql).toContain("FROM tasks");
+
+    expect(tracked.next().done).toBe(false);
+    (tracked as { return?: () => unknown }).return?.();
+    expect(reports).toHaveLength(1);
+  });
+
+  it("does not report an iterator that closes before the threshold", async () => {
+    const reports: unknown[] = [];
+    const source = {
+      next: () => ({ done: false, value: 1 }) as IteratorResult<number>,
+      return: () => ({ done: true, value: undefined }) as IteratorResult<number>,
+      [Symbol.iterator]() {
+        return this;
+      },
+    };
+    const tracked = trackReadIterator(source, {
+      sql: "SELECT 1",
+      caller: "test-caller",
+      warnMs: 1_000,
+      intervalMs: 50,
+      onLongRead: (report) => reports.push(report),
+    });
+    tracked.next();
+    (tracked as { return?: () => unknown }).return?.();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(reports).toHaveLength(0);
+  });
+});
+
+describe("read watchdog", () => {
+  it("reports operations still open after the warn threshold", () => {
+    const reports: number[][] = [];
+    const watchdog = createReadWatchdog({
+      warnMs: 0,
+      startTimer: false,
+      onLongOperations: (operations) => reports.push(operations.map((operation) => operation.ms)),
+    });
+    const operation = watchdog.begin("statement", "SELECT 1", "test-caller");
+    watchdog.scan(Date.now() + 30_000);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toHaveLength(1);
+    watchdog.finish(operation);
+    watchdog.scan(Date.now() + 30_000);
+    expect(reports).toHaveLength(1);
+    watchdog.dispose();
+  });
+
+  it("flags a pinned WAL once a mark stalls while the frame count grows", () => {
+    const pinned: Array<{ lagFrames: number; marks: number[] }> = [];
+    let marks = { mxFrame: 100, backfill: 0, marks: [100] };
+    const watchdog = createReadWatchdog({
+      dbPath: "/tmp/fake-read-watchdog.db",
+      marksReader: () => marks,
+      startTimer: false,
+      onLongOperations: () => {},
+      onPinnedWal: (report) => pinned.push({ lagFrames: report.lagFrames, marks: report.marks }),
+    });
+    const start = 1_000_000;
+    watchdog.scan(start);
+    marks = { mxFrame: 700, backfill: 0, marks: [100] };
+    watchdog.scan(start + 5_000);
+    expect(pinned).toHaveLength(0);
+    marks = { mxFrame: 900, backfill: 0, marks: [100] };
+    watchdog.scan(start + 30_000);
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0]?.lagFrames).toBe(800);
+    expect(pinned[0]?.marks).toEqual([100]);
+    watchdog.dispose();
+  });
+});
+
+describe("read watchdog checkpoint probe", () => {
+  it("flags a passive checkpoint that stays busy while the log grows", () => {
+    const pinned: number[] = [];
+    let probe = { busy: 1, log: 1200, checkpointed: 0 };
+    const watchdog = createReadWatchdog({
+      startTimer: false,
+      checkpointProbe: () => probe,
+      onLongOperations: () => {},
+      onPinnedWal: (report) => pinned.push(report.lagFrames),
+    });
+    const start = 1_000_000;
+    watchdog.scan(start);
+    probe = { busy: 1, log: 1400, checkpointed: 0 };
+    watchdog.scan(start + 5_000);
+    expect(pinned).toHaveLength(0);
+    probe = { busy: 0, log: 1700, checkpointed: 0 };
+    watchdog.scan(start + 30_000);
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0]).toBe(1700);
+    watchdog.dispose();
   });
 });

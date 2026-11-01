@@ -106,6 +106,19 @@ export function contractFailureOutcome(error: Pick<ContractError, "code" | "exit
 
 export function expectedErrorToContractError(op: string, error: unknown): ContractError | null {
   if (!(error instanceof CliExpectedError)) return null;
+  // Existing fail() handlers share this grammar. Classify it at the common
+  // boundary so every missing-flag refusal has the same field/exit contract.
+  const required = /^(--[a-z][a-z0-9-]{0,63}) is required\.?$/.exec(error.message.trim());
+  if (error.code === "COMMAND_FAILED" && required) {
+    const argument = required[1]!;
+    const field = argument.slice(2).replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+    return new ContractError(op, "VALIDATION_ERROR", `${argument} is required.`, CONTRACT_EXIT_USAGE, {
+      argument,
+      field,
+      issues: [{ path: [field], code: "required", message: `${argument} is required.` }],
+      suggestedAction: sanitizePublicContractMessage(error.suggestedAction) ?? `Provide ${argument} and retry '${op}'`,
+    });
+  }
   const message = sanitizePublicContractMessage(error.message) ?? GENERIC_COMMAND_FAILED_MESSAGE;
   const suggestedAction =
     sanitizePublicContractMessage(error.suggestedAction) ?? `Inspect the command input and retry '${op}'`;
@@ -115,9 +128,15 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
 }
 
 export function unexpectedErrorToContractError(op: string): ContractError {
-  return new ContractError(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", CONTRACT_EXIT_ERROR, {
-    suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
-  });
+  return new ContractError(
+    op,
+    "UNHANDLED_ERROR",
+    `${op} failed internally. Report the operation to the operator before retrying.`,
+    CONTRACT_EXIT_ERROR,
+    {
+      suggestedAction: "Report the operation to the operator; do not automatically retry the command",
+    },
+  );
 }
 
 export function runtimeContextErrorToContractError(op: string, error: unknown): ContractError | null {
@@ -146,9 +165,14 @@ export function mapExecutionErrorToContractError(op: string, error: unknown): Co
   );
 }
 
-export function permissionDeniedToContractError(op: string, reason: string): ContractError {
+export function permissionDeniedToContractError(
+  op: string,
+  reason: string,
+  details: ContractErrorDetails = {},
+): ContractError {
   return new ContractError(op, "PERMISSION_DENIED", reason, CONTRACT_EXIT_ERROR, {
     suggestedAction: "Request the required provider-owned permission and retry",
+    ...details,
   });
 }
 
@@ -238,6 +262,13 @@ export function sanitizePublicContractMessage(message: string | undefined): stri
     .trim();
   if (!cleaned) return undefined;
   if (looksLikeProviderDump(cleaned)) return undefined;
+  if (/\bctx_[A-Za-z0-9_-]+/.test(cleaned)) return undefined;
+  if (
+    /["']?(?:[A-Za-z0-9_-]*(?:password|secret|token|credential|api[-_]?key|access[-_]?key)[A-Za-z0-9_-]*|authorization|cookie)["']?\s*[:=]/i.test(
+      cleaned,
+    )
+  )
+    return undefined;
   const sanitized = sanitizePublicValue(cleaned);
   if (typeof sanitized !== "string") return undefined;
   const trimmed = sanitized.trim();

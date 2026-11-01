@@ -1,7 +1,16 @@
 import { describe, expect, it, mock } from "bun:test";
-import { handleRuntimeControlRequest } from "./control-host.js";
+import { RUNTIME_CONTROL_PROVIDER_TIMEOUT_MS, handleRuntimeControlRequest } from "./control-host.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeControlRequest, RuntimeControlResult } from "./types.js";
+import {
+  RUNTIME_CONTROL_DISABLED,
+  RUNTIME_CONTROL_DISABLED_REASON,
+  RUNTIME_CONTROL_FAILED,
+  RUNTIME_CONTROL_TIMEOUT,
+  RUNTIME_NO_ACTIVE_TURN,
+  RUNTIME_OPERATION_UNSUPPORTED,
+  RUNTIME_SESSION_NOT_ACTIVE,
+} from "./runtime-control-errors.js";
 
 async function* emptyEvents(): AsyncGenerator<never> {}
 
@@ -71,6 +80,10 @@ describe("runtime control host durable input gate", () => {
             operation,
             state: { provider: "pi", activeTurn: true },
             error,
+            code: RUNTIME_CONTROL_DISABLED,
+            retryable: false,
+            disabledReason: RUNTIME_CONTROL_DISABLED_REASON,
+            suggestedAction: expect.stringContaining("sessions send"),
           },
         },
       });
@@ -82,6 +95,7 @@ describe("runtime control host durable input gate", () => {
           operation,
           ok: false,
           error,
+          code: RUNTIME_CONTROL_DISABLED,
           state: { provider: "pi", activeTurn: true },
           timestamp: expect.any(Number),
         },
@@ -141,5 +155,142 @@ describe("runtime control host durable input gate", () => {
         timestamp: expect.any(Number),
       },
     });
+  });
+});
+
+async function runControl(
+  sessions: Map<string, RuntimeHostStreamingSession>,
+  request: RuntimeControlRequest,
+  sessionName = "session-a",
+): Promise<RuntimeControlResult | undefined> {
+  const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  await handleRuntimeControlRequest(
+    { sessionName, replyTopic: "ravi._reply.control", request },
+    {
+      streamingSessions: sessions,
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+    },
+  );
+  return emitted.find((entry) => entry.topic === "ravi._reply.control")?.data.result as
+    | RuntimeControlResult
+    | undefined;
+}
+
+describe("runtime control host typed refusals", () => {
+  it("answers a session without a live runtime with RUNTIME_SESSION_NOT_ACTIVE", async () => {
+    const result = await runControl(new Map(), { operation: "turn.interrupt" }, "missing-session");
+
+    expect(result).toMatchObject({
+      ok: false,
+      operation: "turn.interrupt",
+      code: RUNTIME_SESSION_NOT_ACTIVE,
+      retryable: false,
+    });
+    expect(JSON.stringify(result)).not.toContain("missing-session");
+  });
+
+  it("answers a provider without control with RUNTIME_OPERATION_UNSUPPORTED", async () => {
+    const session = createStreamingSession(async (request) => ({ ok: true, operation: request.operation }));
+    session.queryHandle.control = undefined;
+
+    const result = await runControl(new Map([["session-a", session]]), { operation: "thread.list" });
+
+    expect(result).toMatchObject({ ok: false, code: RUNTIME_OPERATION_UNSUPPORTED });
+  });
+
+  it("keeps a provider's own code", async () => {
+    const session = createStreamingSession(async (request) => ({
+      ok: false,
+      operation: request.operation,
+      error: "Pi runtime does not support thread.fork",
+      code: RUNTIME_OPERATION_UNSUPPORTED,
+    }));
+
+    const result = await runControl(new Map([["session-a", session]]), { operation: "thread.fork" });
+
+    expect(result).toMatchObject({ ok: false, code: RUNTIME_OPERATION_UNSUPPORTED });
+  });
+
+  it("types a turn control refused while no turn is active as RUNTIME_NO_ACTIVE_TURN", async () => {
+    const session = createStreamingSession(async () => {
+      throw new Error("turn.interrupt requires an active Codex turn.");
+    });
+    session.turnActive = false;
+
+    const result = await runControl(new Map([["session-a", session]]), { operation: "turn.interrupt" });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: RUNTIME_NO_ACTIVE_TURN,
+      error: "turn.interrupt requires an active Codex turn.",
+      state: { provider: "pi", activeTurn: false },
+    });
+  });
+
+  it("types any other provider failure as RUNTIME_CONTROL_FAILED", async () => {
+    const session = createStreamingSession(async (request) => ({
+      ok: false,
+      operation: request.operation,
+      error: "thread not found",
+    }));
+
+    const result = await runControl(new Map([["session-a", session]]), { operation: "thread.read" });
+
+    expect(result).toMatchObject({ ok: false, code: RUNTIME_CONTROL_FAILED, error: "thread not found" });
+  });
+
+  it("removes host-disabled operations from the reported supported operations", async () => {
+    const session = createStreamingSession(async (request) => ({
+      ok: true,
+      operation: request.operation,
+      data: {},
+      state: {
+        provider: "codex",
+        supportedOperations: ["thread.read", "turn.steer", "turn.interrupt"],
+      },
+    }));
+
+    const result = await runControl(new Map([["session-a", session]]), { operation: "thread.read" });
+
+    expect(result?.state).toEqual({
+      provider: "codex",
+      supportedOperations: ["thread.read", "turn.interrupt"],
+      disabledOperations: ["turn.steer"],
+    });
+  });
+
+  it("answers RUNTIME_CONTROL_TIMEOUT when the provider never answers", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+      delays.push(ms ?? 0);
+      return originalSetTimeout(fn, 0);
+    }) as typeof setTimeout;
+    try {
+      const session = createStreamingSession(() => new Promise<RuntimeControlResult>(() => {}));
+
+      const result = await runControl(new Map([["session-a", session]]), { operation: "thread.list" });
+
+      expect(delays).toContain(RUNTIME_CONTROL_PROVIDER_TIMEOUT_MS);
+      expect(result).toMatchObject({ ok: false, code: RUNTIME_CONTROL_TIMEOUT, retryable: true });
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
+
+  it("does not mark a timed-out rollback retryable", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: () => void) => originalSetTimeout(fn, 0)) as typeof setTimeout;
+    try {
+      const session = createStreamingSession(() => new Promise<RuntimeControlResult>(() => {}));
+
+      const result = await runControl(new Map([["session-a", session]]), { operation: "thread.rollback", numTurns: 1 });
+
+      expect(result).toMatchObject({ ok: false, code: RUNTIME_CONTROL_TIMEOUT, retryable: false });
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
   });
 });

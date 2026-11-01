@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, st
 import { join } from "node:path";
 import { CloudAuthError } from "./errors.js";
 import { writeUserOnlyFile } from "./secret-backends.js";
-import { getCloudAuthDir, sanitizeUserId } from "./storage.js";
+import { getCloudAuthDir, readCloudCredentials, sanitizeUserId } from "./storage.js";
 import type { ActorBinding, ActorBindingCacheRecord, ActorPlatformIdentity } from "./types.js";
 
 const STORE_DIR_MODE = 0o700;
@@ -10,6 +10,8 @@ const BINDINGS_DIR = "bindings";
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const ACTOR_BINDING_CACHE_TTL_MS = DEFAULT_TTL_MS;
+/** Clock skew tolerated past the TTL before a cached expiry counts as planted. */
+const FUTURE_EXPIRY_SLACK_MS = 60_000;
 
 export function getActorBindingsDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(getCloudAuthDir(env), BINDINGS_DIR);
@@ -19,10 +21,20 @@ export function getActorBindingCachePath(contactId: string, env: NodeJS.ProcessE
   return join(getActorBindingsDir(env), `${sanitizeBindingKey(contactId)}.json`);
 }
 
+export interface ReadCachedActorBindingOptions {
+  /**
+   * The active login's installation. A binding cached for another
+   * installation is then not this one's: null, and the file stays (another
+   * login on this machine may still use it).
+   */
+  requireInstallationId?: string;
+}
+
 export function readCachedActorBinding(
   contactId: string,
   env: NodeJS.ProcessEnv = process.env,
   now = Date.now(),
+  options: ReadCachedActorBindingOptions = {},
 ): ActorBinding | null {
   const path = getActorBindingCachePath(contactId, env);
   if (!existsSync(path)) return null;
@@ -35,15 +47,44 @@ export function readCachedActorBinding(
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as ActorBindingCacheRecord;
     if (!parsed?.binding?.contactId || !parsed.binding.consoleUserId || !parsed.expiresAt) return null;
-    if (Date.parse(parsed.expiresAt) <= now) {
+    const expiresAt = Date.parse(parsed.expiresAt);
+    // Every writer uses the default TTL, so an expiry beyond it was planted.
+    if (!(expiresAt > now) || expiresAt > now + ACTOR_BINDING_CACHE_TTL_MS + FUTURE_EXPIRY_SLACK_MS) {
       rmSync(path, { force: true });
       return null;
     }
     if (parsed.binding.contactId !== contactId) return null;
+    if (
+      options.requireInstallationId !== undefined &&
+      parsed.binding.installationId !== options.requireInstallationId
+    ) {
+      return null;
+    }
     return parsed.binding;
   } catch {
     return null;
   }
+}
+
+/**
+ * The cached binding, held to the active login's installation when one is
+ * stored locally (no network call). Without a readable login it reads as
+ * `readCachedActorBinding` always did.
+ */
+export function readActorBindingForActiveLogin(
+  contactId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  now = Date.now(),
+  deps: { readCredentials?: (env: NodeJS.ProcessEnv) => { installationId?: string | null } | null } = {},
+): ActorBinding | null {
+  let installationId: string | undefined;
+  try {
+    const value = (deps.readCredentials ?? readCloudCredentials)(env)?.installationId;
+    installationId = typeof value === "string" && value.trim() ? value.trim() : undefined;
+  } catch {
+    installationId = undefined;
+  }
+  return readCachedActorBinding(contactId, env, now, installationId ? { requireInstallationId: installationId } : {});
 }
 
 export function writeCachedActorBinding(

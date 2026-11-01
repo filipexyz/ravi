@@ -23,7 +23,7 @@ applies_to:
   - src/tasks/profile-catalog/system-profiles.json
   - src/cli/commands/tasks-profiles.ts
   - src/tasks/profiles.test.ts
-  - docs/task-profiles-catalog-v1.md
+  - design/task-profiles-catalog-v1.md
 owners:
   - ravi-dev
 status: active
@@ -129,8 +129,10 @@ Profiles declare the artifacts that carry the body of work.
 
 The current system catalog MUST expose these built-in profiles:
 
-- `default`: doc-first profile where `TASK.md` is the primary artifact and the worker synchronizes status with `ravi tasks report|block|done|fail`.
-- `observed-task`: doc-first profile where `TASK.md` is still the primary artifact, but the worker leaves clear progress/blocker/done/failure signals and a sidecar observer is expected to synchronize durable task status.
+- `default`: doc-first profile where `TASK.md` holds the brief and the built-in task observer keeps status (`observer.enabled: true`). The worker gets no status protocol: it works and says plainly what advanced, what blocks it and when it is done.
+- `observed-task`: alias of `default`, kept for tasks and scripts that name it.
+
+A profile MAY declare `observer: { enabled: boolean, model?: string }`. With `enabled: true` the task gets the built-in task observer (see `tasks/reporting`), its dispatch and resume prompts MUST NOT ask the worker to run task commands, and its checkpoint is a silence detector rather than a reminder. Without the field a profile keeps the worker-reported protocol, so custom profiles written before the observer behave as before. Scaffold presets from `ravi tasks profiles init` turn the observer on.
 
 Other profiles MAY exist from plugin, workspace, or user catalogs. They MUST NOT be documented as system built-ins unless the resolved catalog exposes them with `sourceKind=system`.
 
@@ -138,6 +140,7 @@ Other profiles MAY exist from plugin, workspace, or user catalogs. They MUST NOT
 
 - Profile manifests MUST be declarative process contracts, not imperative runtime code.
 - Profile validation MUST reject broken templates, invalid artifact definitions, invalid runtime defaults, and unresolved required inputs.
+- An unknown profile id MUST fail with `TASK_PROFILE_NOT_FOUND` (exit 1 / HTTP 422) before task creation. Its error MUST NOT enumerate other catalog entries; catalog discovery retains its own command authorization.
 - `preset` MUST remain a scaffold helper. Runtime behavior MUST come from the resolved profile manifest.
 - Built-in profiles MUST be covered by tests that assert their ids and critical dispatch behavior.
 - The profile catalog MUST be inspectable through `ravi tasks profiles list|show|preview|validate`.

@@ -161,6 +161,19 @@ export interface SlackFileInfoInput {
   readonly file: string;
 }
 
+export interface SlackUploadTextFileInput {
+  readonly channel: string;
+  readonly threadTs?: string;
+  readonly filename: string;
+  readonly title?: string;
+  readonly content: string;
+}
+
+export interface SlackUploadTextFileResult {
+  readonly fileId: string;
+  readonly raw: Record<string, unknown>;
+}
+
 export interface SlackCanvasCreateInput {
   readonly title?: string;
   readonly markdown?: string;
@@ -675,6 +688,39 @@ export class SlackWebApiClient {
     });
   }
 
+  /** Upload text as a file and share it in `channel` (in `threadTs` when given). */
+  async uploadTextFile(input: SlackUploadTextFileInput): Promise<SlackUploadTextFileResult> {
+    const bytes = Buffer.from(input.content, "utf8");
+    const ticket = await this.apiRequest<SlackApiResponse>("files.getUploadURLExternal", this.botToken, {
+      filename: input.filename,
+      length: String(bytes.byteLength),
+    });
+    const uploadUrl = typeof ticket.upload_url === "string" ? ticket.upload_url : undefined;
+    const fileId = typeof ticket.file_id === "string" ? ticket.file_id : undefined;
+    if (!uploadUrl || !fileId) {
+      throw new Error("Slack files.getUploadURLExternal did not return upload_url and file_id");
+    }
+    const upload = await this.fetchImpl(uploadUrl, {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: bytes,
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!upload.ok) {
+      throw new Error(`Slack file content upload failed: ${upload.status} ${upload.statusText}`.trim());
+    }
+    const raw = await this.apiRequest<SlackApiResponse>(
+      "files.completeUploadExternal",
+      this.botToken,
+      compactBody({
+        files: JSON.stringify([{ id: fileId, title: input.title ?? input.filename }]),
+        channel_id: input.channel,
+        thread_ts: input.threadTs,
+      }),
+    );
+    return { fileId, raw };
+  }
+
   async canvasesCreate(input: SlackCanvasCreateInput): Promise<SlackCanvasCreateResponse> {
     return this.apiJsonRequest<SlackCanvasCreateResponse>(
       "canvases.create",
@@ -860,7 +906,14 @@ export class SlackWebApiClient {
  * expected failure, so CLI and gateway callers get a structured
  * `SLACK_<ERROR>` code instead of an opaque HTTP 500.
  */
-const SLACK_BLOCKS_VALIDATION_ERRORS = ["invalid_blocks", "invalid_blocks_format"] as const;
+// blocks.validate names the rejected target: invalid_blocks, invalid_message or
+// invalid_view, each with an `errors` list pointing at what failed.
+const SLACK_BLOCKS_VALIDATION_ERRORS = [
+  "invalid_blocks",
+  "invalid_blocks_format",
+  "invalid_message",
+  "invalid_view",
+] as const;
 
 export class SlackApiError extends CliExpectedError {
   readonly method: string;

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * docs-list.js — Walk docs/ and list all .md files with frontmatter summary + read_when.
+ * docs-list.js — Walk docs/ and design/ and list all .md files with frontmatter summary + read_when.
  * Usage: bun scripts/docs-list.js
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-const DOCS_DIR = join(import.meta.dirname, "..", "docs");
+const ROOT_DIR = join(import.meta.dirname, "..");
+const DOC_DIRS = [join(ROOT_DIR, "docs"), join(ROOT_DIR, "design")];
 const EXCLUDED = new Set(["assets", ".i18n", "node_modules"]);
 const EXCLUDED_FILES = new Set(["cross-send-acl.md", "plan-instances.md"]);
 
@@ -41,13 +42,13 @@ function extractFrontmatter(content) {
   return fm;
 }
 
-const files = await walk(DOCS_DIR);
+const files = (await Promise.all(DOC_DIRS.map((dir) => walk(dir)))).flat();
 files.sort();
 
 let errors = 0;
 
 for (const file of files) {
-  const rel = relative(DOCS_DIR, file);
+  const rel = relative(ROOT_DIR, file);
   const content = await readFile(file, "utf8");
   const fm = extractFrontmatter(content);
 

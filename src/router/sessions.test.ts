@@ -8,14 +8,20 @@ import {
   getExpiredSessions,
   getOrCreateSession,
   getSession,
+  getSessionTurnUsageSummary,
   listSessionSubscriptions,
+  resetSession,
   setSessionEphemeral,
   updateSessionContext,
+  updateProviderSession,
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverride,
   updateSessionThreadId,
 } from "./sessions.js";
+import { getRecentHistory, saveMessage } from "../db.js";
 import type { MessageContext } from "../runtime/message-types.js";
+import { lowestTierReadInTurn, recordKnowledgeRead } from "../knowledge/store/turn-reads.js";
+import { upsertSessionTurn } from "../session-trace/session-trace-db.js";
 
 let stateDir: string | null = null;
 
@@ -27,6 +33,69 @@ describe("sessions store", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("reports unknown usage as null and counts it apart instead of summing it as zero", () => {
+    const sessionKey = "agent:main:usage-summary";
+    const now = Date.now();
+    upsertSessionTurn({
+      turnId: "turn-known",
+      sessionKey,
+      status: "complete",
+      inputTokens: 100,
+      outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUsd: 0.01,
+      startedAt: now - 2_000,
+      completedAt: now - 1_500,
+      updatedAt: now - 1_500,
+    });
+    upsertSessionTurn({
+      turnId: "turn-unknown",
+      sessionKey,
+      status: "failed",
+      inputTokens: null,
+      outputTokens: null,
+      outputState: "incomplete",
+      startedAt: now - 1_000,
+      completedAt: now - 500,
+      updatedAt: now - 500,
+    });
+
+    const summary = getSessionTurnUsageSummary(sessionKey);
+    expect(summary.lastTurn?.inputTokens).toBeNull();
+    expect(summary.lastTurn?.effectiveContextTokens).toBeNull();
+    expect(summary.lastTurn?.outputState).toBe("incomplete");
+    expect(summary.recent.inputTokensAvg).toBe(100);
+    expect(summary.recent.unknownUsageTurns).toBe(1);
+  });
+
+  it("clears the session's Knowledge reads on reset, so the old context no longer gates writes", () => {
+    const session = getOrCreateSession("agent:dev:reads", "dev", "/tmp/dev");
+    recordKnowledgeRead({ turnKey: null, sessionKey: session.sessionKey }, "said");
+    expect(lowestTierReadInTurn(null, Date.now(), session.sessionKey)).toBe("said");
+
+    resetSession(session.sessionKey);
+    expect(lowestTierReadInTurn(null, Date.now(), session.sessionKey)).toBeNull();
+  });
+
+  it("keeps a durable recovery boundary across explicit reset, provider updates and automatic recovery", () => {
+    const session = getOrCreateSession("agent:main:reset-boundary", "main", "/tmp/main", { name: "reset-boundary" });
+    saveMessage("reset-boundary", "user", "old decision");
+    const boundary = getRecentHistory("reset-boundary", 1)[0]!.id;
+    resetSession(session.sessionKey);
+    expect(getSession(session.sessionKey)?.historyResetAfterId).toBe(boundary);
+    saveMessage("reset-boundary", "user", "new decision");
+    updateProviderSession(session.sessionKey, "codex", "new-provider");
+    resetSession(session.sessionKey, { preserveHistoryContext: true });
+    expect(getSession(session.sessionKey)?.historyResetAfterId).toBe(boundary);
+    expect(
+      getRecentHistory("reset-boundary")
+        .filter((message) => message.id > boundary)
+        .map((message) => message.content),
+    ).toEqual(["new decision"]);
+    expect(getRecentHistory("reset-boundary")).toHaveLength(2);
   });
 
   it("persists effort overrides while preserving default fallback semantics", () => {

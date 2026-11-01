@@ -72,6 +72,69 @@ Checklist antes de responder sobre tasks:
 - `worktree` é metadata/contexto
 - `TASK.md` só deve existir quando o próprio contrato pede isso
 
+## Thread canônica e admissão
+
+Toda task cria uma Thread independente de canal, identificada por `task.threadId`.
+Não é necessário chat, Slack timestamp nem `--report-to` para criar uma task.
+Use `ravi tasks create "Trabalho" --instructions "Resultado esperado" --idempotency-key <operação>`
+para repetir criação com segurança; a mesma chave com entrada diferente falha.
+
+A assignment escolhe o executor. Repetir dispatch para o mesmo destino conserva a assignment
+e o envelope original. `activeAssignment.executionStatus` distingue publicação pendente
+(`pending`), admissão em curso (`accepting`), admitida (`admitted`) e ambígua (`uncertain`).
+Não troque o executor nem repita a execução para resolver incerteza: reconcilie o trace.
+Uma task terminal não admite redispatch. `tasks done` grava task, Thread e resultado juntos,
+e recusa decisões abertas ou respostas ainda não admitidas. Feche pelo runtime da task;
+`threads close` não fecha uma Thread pertencente a task.
+
+## Decisões
+
+A primitiva é genérica: consulte `ravi skills show decisions`. O namespace `decisions` precisa estar autorizado além do acesso à origem; nenhum grant é ampliado automaticamente.
+
+Use uma decisão para registrar uma pergunta pendente com chave e dono na task.
+`blocked` registra um impedimento; a decisão guarda a pergunta e o histórico da resposta.
+
+```bash
+# Registrar a pergunta; --blocks marca espera por esta decisão
+ravi decisions ask --task <task-id> --key janela --ask "Qual janela de execução?" --owner "human:<contact-id>" --blocks --json
+
+# Consultar pendências (mais antigas primeiro) e o histórico de uma task
+ravi tasks attention --owner human --json
+ravi tasks attention --agent <agent-id> --task <task-id> --json
+ravi tasks show <task-id> --json
+
+# Após receber a decisão do dono, registrar pela sessão solicitante autorizada
+ravi decisions answer <decision-id> --text "Após 18h" --json
+```
+
+`decisions ask --task` e `decisions answer` para origem task gravam imediatamente, sem `--execute`. `attention` e `show` só leem.
+
+- `--owner` aceita `human:<contact-id>`, `agent:<agent-id>` ou `unassigned` (default).
+  Em `attention`, `--owner` filtra o **tipo**; `--agent` filtra o agent atribuído à task.
+- `--key` é normalizada para minúsculas: até 64 caracteres de `a-z`, `0-9`, `.`, `_`, `-`,
+  começando por letra ou número. Só existe uma decisão aberta por chave na mesma task.
+- Repetir `decisions ask --task` numa chave aberta atualiza pergunta, dono e `blocks`, preservando id,
+  autor e data originais. Repasse `--owner` e `--blocks` para mantê-los; omiti-los usa os defaults.
+  Após uma resposta, um novo `ask` com a mesma chave cria outro registro, sem alterar o anterior.
+- `parked` é derivado: decisão `open` + `blocks` + dono `human`, em task não terminal
+  e não arquivada. Não é um status nem uma pausa do worker. `attention` exclui tasks
+  arquivadas; decisões abertas de tasks `done|failed` podem aparecer, mas sem `parked`.
+- `waitingFor` prioriza `human`, depois `agent`, depois `unassigned` nas decisões abertas
+  do recorte. `attention` não detecta stalls nem substitui a lista de tasks bloqueadas.
+- Cada mutação emite `task.decision.open` ou `task.decision.answered`, aceitos por
+  `tasks automations add --on`. Sem automação configurada, não há aviso ao dono nem retomada
+  do worker. Status da task, threads, followups e checkpoints continuam independentes;
+  o observer não abre nem responde decisões.
+
+Armadilhas:
+
+- O worker não responde a própria decisão: a sessão da assignment ativa recebe
+  `DECISION_SELF_ANSWER` (exit 1). `--by` registra proveniência, não dá autoridade
+  nem contorna essa proteção. Não invente uma resposta pelo dono.
+- `answer` em id já respondido falha com `DECISION_NOT_OPEN` (exit 1): a resposta
+  é imutável. Id inexistente dá `DECISION_NOT_FOUND` (exit 1).
+  Chave/dono inválidos ou pergunta/resposta vazia são erros de uso (exit 2).
+
 ## Catálogo
 
 Sources:
@@ -141,8 +204,9 @@ ravi settings set tasks.sessionTtl.knowledgeEngineer 5m
 ```
 
 `off`, `false`, `disabled`, `none` ou `0` desativam o TTL automático para novas
-materializações/retomadas de sessão de task. Para continuar uma task cuja sessão
-foi apagada, despache/comente a task de novo para criar uma nova sessão.
+materializações/retomadas de sessão de task. Se a sessão foi apagada, a publicação
+pendente reutiliza a chave congelada no handoff. Dispatch não reexecuta uma assignment
+já admitida; uma continuação explícita pode entrar por comentário dirigido ao assignee.
 
 Sessões de task de agents `knowledge-engineer-*` usam `tasks.sessionTtl.knowledgeEngineer`
 e default `5m`, inclusive ao completar turnos em sessões `task-*-work`, para evitar acúmulo
@@ -152,12 +216,23 @@ de sessões runtime de pesquisa em lote.
 
 - `default`
   - workspace = task workspace
-  - artifact primário = `TASK.md`
+  - `TASK.md` = briefing da task
+  - protocolo = o worker só trabalha e diz claramente o que avançou, o que bloqueia e quando terminou; o observer embutido da task decide o status e o runtime aplica
 - `observed-task`
-  - workspace = task workspace
-  - artifact primário = `TASK.md`
-  - protocolo = worker executa e deixa sinais claros; observer faz `report|block|done|fail`
-  - use com uma observer rule `scope=profile --source-profile observed-task --profile tasks --mode report`
+  - alias de `default`, mantido para tasks e scripts que já usam esse id
+
+## Observer Embutido
+
+Toda task cujo profile tem `observer.enabled: true` (os dois built-ins, e os presets de `ravi tasks profiles init`) ganha uma sessão observer própria, sem regra cadastrada:
+
+- lê o worker no fim de cada turno e a cada 5 min durante um turno longo: prompt, resposta inteira, uma linha por tool
+- roda com o agent do worker num modelo leve (`haiku` no Claude, mini/spark no Codex), ou `observer.model` do profile
+- não tem tools nem grants de task (grant `none`): responde um bloco `<task-verdict>` e o runtime aplica `progress|blocked|done|failed`
+- monta um checklist a partir das instruções e mostra em `ravi tasks show <id>` (seção `Task observer`, campo `observer` no `--json`)
+- quando o worker para sem terminar, manda **um** empurrão dizendo o que falta; se parar de novo, registra `task.stalled` e avisa quem pediu (filtro `blocked` do `--report-events`)
+- o worker não recebe checkpoint overdue; 30 min sem nada visto vira `task.stalled` para quem pediu
+
+`ravi tasks report|block|done|fail` continuam valendo para o operador corrigir o status à mão. Profiles customizados sem o campo `observer` mantêm o protocolo antigo (worker reporta, checkpoint lembra).
 - `devin`
   - workspace = task workspace
   - artifact primário = `TASK.md`
@@ -193,13 +268,14 @@ ravi tasks profiles init <profile-id> --preset <doc-first|brainstorm|runtime-onl
 ## Inputs do Profile
 
 Profiles podem declarar `inputs` estruturados no `profile.json`. Esses valores são
-o contrato de briefing do profile e são passados no create com `--input key=value`:
+o contrato de briefing do profile e são passados no create com `--input key=value`.
+Os nomes dependem do profile: leia `inputs` (com `required`) antes de criar.
 
 ```bash
+ravi tasks profiles show <id> --json
 ravi tasks create "Título" --profile <id> \
   --instructions "Resumo livre para o worker" \
-  --input goal_statement="Outcome final" \
-  --input acceptance_criteria="Como validar done"
+  --input <key>="valor"
 ```
 
 Regras importantes:
@@ -207,7 +283,7 @@ Regras importantes:
 - `--instructions` é texto livre da task; ele não popula `inputs`.
 - `--input` pode ser repetido e fica pinado em `profile_input_json` da task.
 - Templates acessam inputs com `{{input.key}}`.
-- Inputs `required: true` bloqueiam `create|preview|dispatch` quando vazios.
+- Inputs `required: true` bloqueiam `create|preview|dispatch` quando vazios: o comando sai com código 2 (`USAGE_ERROR`) e a mensagem `Missing required input(s) for task profile <id>: ...` lista os que faltam.
 - Inputs opcionais declarados existem como string vazia quando não enviados, então `{{input.optional_key}}` é seguro.
 - Placeholder `{{input.algum_key}}` só deve apontar para um input declarado ou explicitamente passado; placeholders desconhecidos continuam falhando cedo.
 
@@ -265,8 +341,8 @@ ravi tasks create --profile <id>
 -> runtime model/effort/thinking vem da task/profile/dispatch quando definido
 -> agent trabalha no artifact certo
 -> sync de status vem do contrato do profile:
-   - `default`: worker chama `ravi tasks report|block|done|fail`
-   - `observed-task`: observer chama `ravi tasks report|block|done|fail`
+   - `observer.enabled` (`default`, `observed-task`): o observer embutido lê o worker e o runtime aplica o veredito
+   - profile sem `observer`: worker chama `ravi tasks report|block|done|fail`
 -> show/watch expõem profile + workspace + artifacts
 ```
 
@@ -279,18 +355,16 @@ ravi tasks create --profile <id>
 
 Turnos sem `taskBarrierTaskId` não devem receber `RAVI_TASK_*`; isso evita vazar contexto de task para conversas fora da task.
 
-### `default`
+### `default` e `observed-task` (observer embutido)
 
-- trabalhar em `TASK.md`
-- manter frontmatter/corpo coerentes
+- ler o briefing em `TASK.md`
+- não chamar `ravi tasks report|block|done|fail`
+- dizer claramente na resposta normal o que avançou, o que bloqueia e quando terminou, com como validou
+
+### Profile sem `observer`
+
+- trabalhar no artifact do profile
 - sincronizar via `report|block|done|fail`
-
-### `observed-task`
-
-- trabalhar em `TASK.md`
-- não chamar `ravi tasks report|block|done|fail` por padrão
-- declarar progresso, blockers, conclusão e falhas claramente na resposta normal
-- deixar o observer profile `tasks` transformar esses sinais em status durável
 
 Para profiles customizados, siga o contrato pinado no snapshot da task. Não assuma que um preset de scaffold é built-in disponível no catálogo system.
 

@@ -23,9 +23,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    "src/channels/presence-consumer.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
     "src/channels/outbound-consumer.test.ts",
+    // Durable outbound publish outbox: retry/backoff, retention and burst coalescing.
+    "src/channels/outbound-publish-outbox.test.ts",
     "src/channels/runtime-events.test.ts",
     "src/channels/runner.test.ts",
     "src/channels/session-prompt.test.ts",
@@ -39,6 +42,16 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/text-send.test.ts",
     // Slack Web API client: `ok: false` answers become structured SLACK_<ERROR> errors.
     "src/channels/slack/client.test.ts",
+    // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
+    "src/channels/slack/thread-lifecycle.test.ts",
+    // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
+    "src/channels/slack/markdown-layout.test.ts",
+    "src/channels/slack/markdown-delivery.test.ts",
+    // Thread root card and its brief: shell-typed `\n` decoded into line breaks.
+    "src/channels/slack/thread-card.test.ts",
+    "src/channels/slack/thread-text.test.ts",
+    // Native channel readiness: broker connection, backend prerequisites, queued-but-undeliverable warnings.
+    "src/channels/native-readiness.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
@@ -66,8 +79,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/router-db.link-requests.test.ts",
     // Trigger session migration: drops the legacy main|isolated CHECK, keeps rows and indexes.
     "src/router/router-db.trigger-session-check.test.ts",
+    // Open channel threads own their session name: missing child and key mismatch are told apart.
+    "src/router/thread-identity.test.ts",
     // Crash-recovery storage covers both the router schema and its typed runtime DAO.
     "src/runtime/crash-recovery-store.test.ts",
+    // Agent delete: live contexts revoked, Library listing not inherited by a same-id agent.
+    "src/router/agent-delete.test.ts",
     "src/runtime/session-goals.test.ts",
     // Skill-grant store (dbUpsert/List/DeleteSkillGrant*) is exercised here.
     "src/cli/commands/skills.test.ts",
@@ -76,6 +93,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/runtime/": [
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
+    // Signals piggyback: the transformTurnPrompt seam in the delivery queue.
+    "src/signals/delivery-seam.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     "src/runtime/context-registry.test.ts",
@@ -116,6 +135,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/session-dispatcher.test.ts",
     // Dispatch/launch prompt intake failure (no agent): durable trace, turn end, chat notice, held prompts.
     "src/runtime/intake-failure.test.ts",
+    // Host runtime control: typed refusals, provider timeout, per-session lanes.
+    "src/runtime/control-host.test.ts",
+    "src/runtime/host-subscriptions.test.ts",
     // O observer de intenção é chamado de host-services.ts, e o comportamento que
     // ele garante (o que vira acompanhamento e o que não vira) é coberto aqui.
     // O call site em si ainda não tem teste de integração — está declarado como
@@ -127,8 +149,17 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/runtime-system-prompt.test.ts",
     // The Page link guard installed in host-hooks.ts PreToolUse.
     "src/hooks/pages-link-guard.test.ts",
+    // Empty-join mash split: initials such as "R.M." stay inside one reply.
+    "src/runtime/assistant-transcript.test.ts",
   ],
-  "src/jobs/": ["src/jobs/jobs.test.ts", "src/jobs/promotion.test.ts"],
+  "src/jobs/": [
+    "src/jobs/jobs.test.ts",
+    "src/jobs/promotion.test.ts",
+    // Detach por tempo: a decisão pura, o wrapper de shell de verdade (timer,
+    // setsid, registro, exit code, kill) e o kill entregando desfecho.
+    "src/jobs/detach.test.ts",
+    "src/jobs/detach-wrapper.test.ts",
+  ],
   "src/watch/": [
     // Contrato: o que o connector declara suportado localmente é o que o poller
     // consegue produzir. Foi o buraco que deixou `pull_request.merged` declarado e
@@ -154,15 +185,26 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": [
     "src/triggers/triggers.test.ts",
+    // Catalog entries: payload/schema shape for trigger-ready subjects.
+    "src/triggers/__tests__/topic-catalog.test.ts",
     // Runner lifecycle against a mocked NATS stream: filters, refresh, and
     // deleted triggers that must not fire on a removed topic.
     "src/triggers/__tests__/runner-filter.test.ts",
     "src/triggers/__tests__/runner-delete.test.ts",
     // Named/templated trigger sessions: one session per resolved name, skip, per-session cooldown.
     "src/triggers/__tests__/runner-named-session.test.ts",
+    // Cooldown off and debounce: bursts batched into one fire, held (not dropped) during cooldown.
+    "src/triggers/__tests__/runner-debounce.test.ts",
+    "src/triggers/__tests__/debounce.test.ts",
     "src/triggers/__tests__/session-target.test.ts",
   ],
-  "src/approval/": ["src/approval/service.test.ts", "src/approval/grantor.test.ts", "src/approval/decision.test.ts"],
+  "src/approval/": [
+    "src/approval/service.test.ts",
+    "src/approval/grantor.test.ts",
+    "src/approval/decision.test.ts",
+    // A revoked context held in memory no longer authorizes host tools.
+    "src/runtime/context-liveness.test.ts",
+  ],
   "src/apps/": ["src/apps/router.test.ts"],
   "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
 };
@@ -185,10 +227,29 @@ export interface CoverageGateError {
   message: string;
 }
 
+export interface CoverageGateExemption {
+  kind: "revert";
+  reason: string;
+}
+
 export interface CoverageGateResult {
   ok: boolean;
   triggeredPrefixes: string[];
   errors: CoverageGateError[];
+  /**
+   * Present only when the gate was explicitly exempted (for example a revert
+   * PR). Never inferred from the diff shape: the caller must ask for it.
+   */
+  exempted?: CoverageGateExemption;
+}
+
+export interface CoverageGateOptions {
+  /**
+   * Explicit revert signal, supplied by the CI caller (label/title/env).
+   * A revert removes source without adding focused tests, and the deleted
+   * tests are invisible to `git diff --diff-filter=ACMR`.
+   */
+  revert?: boolean;
 }
 
 /**
@@ -385,7 +446,11 @@ export function findTriggeredPrefixes(changedFiles: string[]): string[] {
  * updated or added alongside source). Existence on disk alone is not
  * sufficient — the diff must include the focused test.
  */
-export function runCoverageGate(changedFiles: string[], _cwd?: string): CoverageGateResult {
+export function runCoverageGate(
+  changedFiles: string[],
+  _cwd?: string,
+  opts: CoverageGateOptions = {},
+): CoverageGateResult {
   const triggeredPrefixes = findTriggeredPrefixes(changedFiles);
   const result: CoverageGateResult = {
     ok: true,
@@ -413,6 +478,22 @@ export function runCoverageGate(changedFiles: string[], _cwd?: string): Coverage
     }
   }
 
+  // Revert exemption: explicit opt-in only, and only when the gate actually
+  // failed. A revert deletes the feature and its focused tests, so no test
+  // file ever shows up in the diff (deletions are filtered out upstream).
+  if (!result.ok && opts.revert === true) {
+    const failedPrefixes = result.errors.map((error) => error.prefix);
+    return {
+      ok: true,
+      triggeredPrefixes,
+      errors: [],
+      exempted: {
+        kind: "revert",
+        reason: `Revert PR: ${failedPrefixes.join(", ")} changed without a focused test in the diff; a revert removes source and its tests instead of adding coverage. Exemption requested explicitly by the CI caller.`,
+      },
+    };
+  }
+
   return result;
 }
 
@@ -422,9 +503,10 @@ export function runCoverageGate(changedFiles: string[], _cwd?: string): Coverage
 export function runQualityGate(
   changedFiles: string[],
   cwd?: string,
+  opts: CoverageGateOptions = {},
 ): { spec: SpecGateResult; coverage: CoverageGateResult; ok: boolean } {
   const spec = runSpecGate(changedFiles, cwd);
-  const coverage = runCoverageGate(changedFiles, cwd);
+  const coverage = runCoverageGate(changedFiles, cwd, opts);
   return {
     spec,
     coverage,

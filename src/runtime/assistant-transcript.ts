@@ -21,6 +21,8 @@ export type VisibleAssistantResolution = {
 
 export type ResolveVisibleAssistantOptions = {
   alreadyDeliveredThisTurn?: readonly string[];
+  /** Native bridge events already have a validated turn boundary; text is not a history accumulator. */
+  structuredTurn?: boolean;
 };
 
 const UPPER_START = /^[\p{Lu}]/u;
@@ -102,9 +104,12 @@ export function classifyVisibleAssistantUtterances(
   const trimmed = text.trim();
   if (!trimmed) return { utterances: [], skipReason: "empty" };
 
-  const alreadyDelivered = new Set(
-    (options?.alreadyDeliveredThisTurn ?? []).map((row) => row.trim()).filter(Boolean),
-  );
+  const alreadyDelivered = new Set((options?.alreadyDeliveredThisTurn ?? []).map((row) => row.trim()).filter(Boolean));
+  if (options?.structuredTurn) {
+    return alreadyDelivered.has(trimmed)
+      ? { utterances: [], skipReason: "same_turn_replay" }
+      : { utterances: [trimmed] };
+  }
   const peeled = peelPersistedAssistantPrefix(trimmed, existingAssistantRows);
   if (!peeled) return { utterances: [], skipReason: "mashed_replay" };
 
@@ -162,9 +167,20 @@ function isConversationalEmptyJoin(left: string, right: string): boolean {
   if (!leftBody) return false;
   // Skip abbreviations such as "U." / "S." inside "U.S.Army".
   if (leftBody.length <= 2 && /^[\p{Lu}]+$/u.test(leftBody) && punct === ".") return false;
+  // Skip initials anywhere in the text: "O R.M. tem" is one sentence, not "O R." + "M. tem".
+  if (punct === "." && isInitialsJoin(leftBody, right)) return false;
   if (punct === "?" || punct === "!") return right.length >= 2;
   if (/^[\p{Ll}]+$/u.test(leftBody) && leftBody.length >= 2) return right.length >= 2;
   return leftBody.length >= 4 && right.length >= 2;
+}
+
+function isInitialsJoin(leftBody: string, right: string): boolean {
+  const lastWord = leftBody.split(/\s+/).pop() ?? "";
+  const lastToken = lastWord.replace(/^[^\p{L}]+/u, "");
+  // The letter before the dot is a lone capital ("R" in "R.M.", "U.S" in "U.S.A.").
+  if (/^(?:[\p{Lu}]\.)*[\p{Lu}]$/u.test(lastToken)) return true;
+  // The text after the dot is itself an initial ("M." in "Dr.M. Silva").
+  return /^[\p{Lu}]\./u.test(right);
 }
 
 function looksLikeStandaloneUtteranceToken(text: string): boolean {

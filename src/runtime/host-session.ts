@@ -2,12 +2,14 @@ import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barrier
 import type { SessionEntry } from "../router/index.js";
 import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import type { RuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { SkillGatePersistedListener } from "./skill-gate.js";
 import type {
   ChannelBackendPromptMetadata,
   MessageActorMetadata,
+  ObservationPromptMetadata,
   RaviCommandPromptMetadata,
   RuntimeLaunchPrompt,
 } from "./message-types.js";
@@ -69,6 +71,8 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   launchPrompt?: RuntimeLaunchPrompt;
   pendingId?: string;
   queuedAt?: number;
+  /** Original work for a fresh continuation after yielding to another reply surface. */
+  yieldedRequest?: string;
 }
 
 export function runtimeTurnAttemptTerminalEventType(
@@ -103,6 +107,8 @@ export interface RuntimeHostStreamingSession {
   lastBoundReplyTarget?: RuntimeMessageTarget;
   /** CLI-only or observer turns must not emit to a chat sink. */
   suppressChatEmit?: boolean;
+  /** Authority envelope of the current turn; host-made continuations of the turn inherit it. Set with `currentSource`. */
+  currentTurnAuthority?: RuntimeTurnAuthorityEnvelope;
   /** Provider-neutral channel backend identity for the currently executing turn. */
   currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */
@@ -113,6 +119,12 @@ export interface RuntimeHostStreamingSession {
   currentThinking?: RuntimeThinking;
   /** Explicit task context used to start this runtime process, if any. */
   currentTaskBarrierTaskId?: string;
+  /**
+   * Set by the event loop. Authorization calls `begin` when it starts waiting on
+   * a person (an approval card) and `end` when it returns, so the running tool's
+   * inactivity window covers the approval instead of expiring under it.
+   */
+  externalApprovalWait?: { begin(): void; end(): void };
   /** Tool tracking */
   toolRunning: boolean;
   /** A completed dynamic tool result is still being written to the provider callback. */
@@ -156,6 +168,8 @@ export interface RuntimeHostStreamingSession {
    * compaction observability is unaffected.
    */
   currentTurnProvenance?: TurnProvenance;
+  /** Observation delivery that caused the current turn, when this is an observer session. */
+  currentObservation?: ObservationPromptMetadata;
   /**
    * Tool safety classification. Prompt-lane interrupts (steer/immediate) wait
    * for "unsafe" tools to finish; an explicit abort cancels either kind.
@@ -171,6 +185,8 @@ export interface RuntimeHostStreamingSession {
   currentTurnPendingIds?: string[];
   /** Whether a newer prompt intentionally preempted the active provider turn. */
   currentTurnSuperseded?: boolean;
+  /** Queued continuation owns the logical channel turn after this physical turn yields. */
+  currentTurnYieldContinuationId?: string;
   /** Whether the current provider turn has started at least one tool. Used to block unsafe replay. */
   currentTurnToolStarted?: boolean;
   /** Whether prompt-bearing provider control mutated the physical turn after its immutable handoff. */
@@ -184,6 +200,12 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /**
+   * Last `runtime.status` value already written to the trace for the current
+   * trace turn (`<turnId>\u0000<status>`). Providers repeat an identical status
+   * on every internal step; only transitions are persisted.
+   */
+  currentTraceStatusRecorded?: string;
   /** Whether this physical turn already published a runtime SSE terminal. */
   runtimeTerminalSseEmitted?: boolean;
   /** Durable crash-recovery attempt currently owning the provider turn. */
@@ -205,6 +227,7 @@ export interface RuntimeHostStreamingSession {
    * Native Pi steer must not keep a long-lived turn on a revoked/expired key.
    */
   currentRuntimeContextKey?: string;
+  currentBridgeTurnId?: string;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
   /** Timer that evicts an idle provider process from the runtime pool. */

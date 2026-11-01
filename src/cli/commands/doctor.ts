@@ -53,12 +53,15 @@ import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime
 import {
   dbGetAgent,
   dbListAgents,
+  dbListChannels,
   dbListInstances,
   dbListRoutes,
   getDb,
   getDefaultAgentId,
   getRaviDbPath,
 } from "../../router/router-db.js";
+import { inspectNativeChannelRuntime, type NativeChannelRuntimeSnapshot } from "../../channels/native-readiness.js";
+import { CHANNELS_PM2_PROCESS_NAME, getPm2Process, isPm2Available } from "../../pm2.js";
 import {
   currentCliOnlyCommands,
   currentWeakPublicReturnCommands,
@@ -70,6 +73,11 @@ import { inspectCliRuntimeTarget, type CliRuntimeTargetSummary } from "../runtim
 import { dbListCronJobs } from "../../cron/cron-db.js";
 import { resolveCronTarget, type CronTargetState } from "../../cron/target-resolver.js";
 import { resolveSession } from "../../router/sessions.js";
+import { inspectKnowledgeExposure, agentHasNoExec } from "../../knowledge/safety/exposure.js";
+import { knowledgeSettings } from "../../knowledge/settings.js";
+import { resolveOwnerDirectTarget } from "../../knowledge/owner.js";
+import { codexKnowledgeParityHolds } from "../../permissions/codex-knowledge-parity.js";
+import { listSubscriptions } from "../../inbox/inbox-db.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import {
   isRiskyNatsExposure,
@@ -256,6 +264,13 @@ type DoctorDeps = {
   probeDir: (path: string) => DiskProbeResult;
   probeNatsExposure: () => Promise<NatsExposureReport>;
   inspectStateDirPermissions: typeof inspectStateDirPermissions;
+  inspectKnowledgeExposure: typeof inspectKnowledgeExposure;
+  knowledgeSettings: typeof knowledgeSettings;
+  resolveOwnerDirectTarget: () => ReturnType<typeof resolveOwnerDirectTarget>;
+  agentHasNoExec: (agentId: string) => boolean;
+  codexKnowledgeParityHolds: typeof codexKnowledgeParityHolds;
+  listInboxSubscriptions: (opts?: { enabledOnly?: boolean }) => unknown[];
+  inspectNativeChannelRuntime: () => NativeChannelRuntimeSnapshot;
 };
 
 export interface InspectDoctorOptions {
@@ -319,6 +334,17 @@ const DEFAULT_DEPS: DoctorDeps = {
   probeDir: defaultProbeDir,
   probeNatsExposure: () => probeNatsExposure(resolveNatsUrl()),
   inspectStateDirPermissions,
+  inspectKnowledgeExposure,
+  knowledgeSettings,
+  resolveOwnerDirectTarget: () => resolveOwnerDirectTarget(),
+  agentHasNoExec: (agentId: string) => agentHasNoExec(agentId),
+  codexKnowledgeParityHolds,
+  listInboxSubscriptions: listSubscriptions,
+  inspectNativeChannelRuntime: () =>
+    inspectNativeChannelRuntime({
+      listChannels: dbListChannels,
+      runnerStatus: () => (isPm2Available() ? (getPm2Process(CHANNELS_PM2_PROCESS_NAME)?.status ?? "missing") : null),
+    }),
 };
 
 function defaultStatDisk(path: string): DiskUsageStat | null {
@@ -576,6 +602,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
       return buildInstanceHealthMetadataCheck(instances);
     });
     addCheck(checks, () => buildInboundIdentityResolutionCheck(deps));
+    addCheck(checks, () => buildNativeChannelRuntimeCheck(deps.inspectNativeChannelRuntime()));
     addCheck(checks, () => buildCostPricingCoverageCheck(deps));
     addCheck(checks, () => buildCostCompletenessCheck(deps));
   }
@@ -594,6 +621,8 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildPermissionBootstrapScopeCheck(deps));
   addCheck(checks, () => buildPermissionChatOnlyCeilingCheck(deps));
   addCheck(checks, () => buildPermissionAgentIdentityReadinessCheck(deps));
+  addCheck(checks, () => buildKnowledgeExposureCheck(deps));
+  addCheck(checks, () => buildKnowledgeF2SetupCheck(deps));
   const filtered = filterChecksByDomain(checks, options.domain);
   return buildReport(filtered, {
     generatedAt: deps.now().toISOString(),
@@ -1395,6 +1424,92 @@ function buildRaviDbCheck(dbPath: string, deps: DoctorDeps): LegacyDoctorCheck {
     details: [dbPath],
     fixHint: "restore or initialize ~/.ravi/ravi.db before operating the runtime",
     data: { path: dbPath },
+  };
+}
+
+/**
+ * Native channels (Slack) queue every reply for `ravi-channels`, so a channel
+ * whose broker connection is missing, or a runner that is not online, leaves
+ * replies queued with nothing else in the logs (7984bc41).
+ */
+export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSnapshot): LegacyDoctorCheck {
+  const id = "channels.native_runtime";
+  const title = "Native channel runtime";
+  if (snapshot.channels.length === 0) {
+    return { id, title, status: "ok", summary: "no enabled native channels", data: { channels: 0 } };
+  }
+
+  const details: string[] = [];
+  const problems: string[] = [];
+  for (const channel of snapshot.channels) {
+    if (channel.transport === "hub_gateway_v1") {
+      details.push(`${channel.name}: hub gateway transport (no broker connection needed)`);
+      continue;
+    }
+    const connection = channel.credentialConnection ?? "-";
+    if (channel.issue) {
+      problems.push(channel.name);
+      details.push(`${channel.name}: connection ${connection} ${channel.issue.replaceAll("_", " ")}`);
+    } else if (channel.missingPrerequisites.length > 0) {
+      problems.push(channel.name);
+      details.push(
+        `${channel.name}: ${channel.backend} backend is missing ${channel.missingPrerequisites.join(", ")} in this CLI's environment (the runner's PM2 environment may differ)`,
+      );
+    } else {
+      details.push(`${channel.name}: connection ${connection} active (${channel.backend ?? "unknown"} backend)`);
+    }
+  }
+
+  const runnerOnline = snapshot.runnerStatus === "online";
+  if (snapshot.runnerStatus === null) {
+    details.push(`${CHANNELS_PM2_PROCESS_NAME}: PM2 not available, runner state unknown`);
+  } else {
+    details.push(`${CHANNELS_PM2_PROCESS_NAME}: ${snapshot.runnerStatus}`);
+  }
+  const runnerDown = snapshot.runnerStatus !== null && !runnerOnline;
+
+  const data = {
+    channels: snapshot.channels.length,
+    undeliverable: problems,
+    runnerStatus: snapshot.runnerStatus,
+  };
+  if (problems.length === 0 && snapshot.runnerStatus === null) {
+    return {
+      id,
+      title,
+      status: "skip",
+      severity: "warn",
+      summary: `${snapshot.channels.length} enabled native channel(s) passed the checked prerequisites (an active broker connection, or the hub gateway transport), but ${CHANNELS_PM2_PROCESS_NAME} could not be checked (PM2 not available); live adapter health is in \`ravi channels status\``,
+      details,
+      fixHint: `confirm the runner from a host terminal with \`ravi channels status\``,
+      data,
+    };
+  }
+  if (problems.length === 0 && !runnerDown) {
+    return {
+      id,
+      title,
+      status: "ok",
+      summary: `${snapshot.channels.length} enabled native channel(s) passed the checked prerequisites (an active broker connection, or the hub gateway transport) and ${CHANNELS_PM2_PROCESS_NAME} is online; live adapter health is in \`ravi channels status\``,
+      details,
+      data,
+    };
+  }
+
+  const parts: string[] = [];
+  if (problems.length > 0) parts.push(`${problems.length} native channel(s) cannot start: ${problems.join(", ")}`);
+  if (runnerDown) parts.push(`${CHANNELS_PM2_PROCESS_NAME} is not online`);
+  return {
+    id,
+    title,
+    status: "warn",
+    summary: `${parts.join("; ")}; their replies stay queued and are not delivered`,
+    details,
+    fixHint:
+      problems.length > 0
+        ? "add or enable the broker connection with `ravi credentials add` (keychain needs macOS; elsewhere use vault with VAULT_ADDR and VAULT_TOKEN), then `ravi channels restart`"
+        : "start the runner with `ravi channels start`",
+    data,
   };
 }
 
@@ -3200,5 +3315,129 @@ function readPackageVersion(): string | undefined {
     return typeof pkg.version === "string" ? pkg.version : undefined;
   } catch {
     return undefined;
+  }
+}
+
+const KNOWLEDGE_EXPOSURE_FIX_HINT =
+  "Make these agents chat-only (`ravi agents permissions <id> chat-only`) or close their outside routes before enabling Knowledge.";
+
+/**
+ * Knowledge gate (spec knowledge): no agent reachable by people outside the
+ * org may read files or run code. `ravi knowledge` refuses while this fails.
+ */
+function buildKnowledgeExposureCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  let report: ReturnType<typeof inspectKnowledgeExposure>;
+  try {
+    report = deps.inspectKnowledgeExposure({
+      listAgents: deps.dbListAgents,
+      listInstances: deps.dbListInstances,
+      listRoutes: deps.dbListRoutes,
+    });
+  } catch {
+    // `ravi knowledge` treats unreadable exposure as unsafe; doctor says so.
+    return {
+      id: "permissions.knowledge_exposure",
+      domain: "permissions",
+      title: "Knowledge exposure",
+      status: "fail",
+      severity: "error",
+      summary: "cannot read agents, instances and routes, so Knowledge exposure is unknown",
+      fixHint: KNOWLEDGE_EXPOSURE_FIX_HINT,
+      data: { reason: "exposure_unavailable" },
+    };
+  }
+  if (!report.ok) {
+    return {
+      id: "permissions.knowledge_exposure",
+      domain: "permissions",
+      title: "Knowledge exposure",
+      status: "fail",
+      severity: "error",
+      summary: `${report.offenders.length} agent(s) reachable from outside the org can read files or run code`,
+      details: report.offenders.map(
+        (offender) => `agent:${offender.agentId} (${offender.profile}): ${offender.reasons.join("; ")}`,
+      ),
+      fixHint: KNOWLEDGE_EXPOSURE_FIX_HINT,
+      data: {
+        checkedAgents: report.checkedAgents,
+        offenders: report.offenders.map((offender) => offender.agentId),
+      },
+    };
+  }
+  return {
+    id: "permissions.knowledge_exposure",
+    domain: "permissions",
+    title: "Knowledge exposure",
+    status: "ok",
+    summary: `no outside-reachable agent can read files or run code (${report.checkedAgents} agent(s) checked)`,
+    data: { checkedAgents: report.checkedAgents, offenders: [] },
+  };
+}
+
+/** Knowledge contact memory: misconfigurations that silently disable parts of F2 (warn only). */
+function buildKnowledgeF2SetupCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const base = { id: "knowledge.f2_setup", domain: "knowledge", title: "Knowledge contact memory" };
+  let settings: ReturnType<typeof knowledgeSettings>;
+  try {
+    settings = deps.knowledgeSettings();
+  } catch {
+    return {
+      ...base,
+      status: "skip",
+      severity: "info",
+      summary: "cannot read the knowledge settings",
+      data: { skipped: true, reason: "settings_unavailable" },
+    };
+  }
+  const memoryAgents = settings.contactMemoryAgents;
+  const curator = settings.curatorAgent;
+  if (memoryAgents.length === 0 && !curator) {
+    return { ...base, status: "ok", summary: "contact memory and the curator are off", data: { enabled: false } };
+  }
+
+  const problems: string[] = [];
+  if (memoryAgents.length > 0 && !settings.project) {
+    problems.push("knowledge.contactMemory.agents is set but knowledge.project is not: gaps stay pending");
+  }
+  if (memoryAgents.length > 0 && !safely(() => deps.resolveOwnerDirectTarget(), null)) {
+    problems.push(
+      "no single owner contact (tag permission-owner) with a direct chat: no morning DM and no write-after-read card",
+    );
+  }
+  if (curator && !safely(() => deps.agentHasNoExec(curator), false)) {
+    problems.push(`curator agent ${curator} can run tools or code: the curator is skipped`);
+  }
+  const codexAgents = [...new Set([...memoryAgents, ...(curator ? [curator] : [])])].filter((agentId) => {
+    const agent = safely(() => deps.dbGetAgent(agentId), null);
+    return (agent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID) === "codex";
+  });
+  if (codexAgents.length > 0 && !safely(() => deps.codexKnowledgeParityHolds(), false)) {
+    problems.push(`codex parity fixture fails for ${codexAgents.join(", ")}: the packet and curator refuse codex`);
+  }
+  if (memoryAgents.length > 0 && safely(() => deps.listInboxSubscriptions({ enabledOnly: true }).length, 0) === 0) {
+    problems.push(
+      "no enabled Console inbox subscription: knowledge.gap.answered and knowledge.marks.changed never arrive",
+    );
+  }
+
+  if (problems.length === 0) {
+    return { ...base, status: "ok", summary: "contact memory is configured", data: { enabled: true, problems: 0 } };
+  }
+  return {
+    ...base,
+    status: "warn",
+    severity: "warn",
+    summary: `${problems.length} contact memory setting(s) need attention`,
+    details: problems,
+    fixHint: "Fix the listed knowledge.* settings (`ravi settings set <key> <value>`) and rerun `ravi doctor`.",
+    data: { enabled: true, problems: problems.length },
+  };
+}
+
+function safely<T>(read: () => T, fallback: T): T {
+  try {
+    return read();
+  } catch {
+    return fallback;
   }
 }

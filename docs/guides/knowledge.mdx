@@ -1,0 +1,138 @@
+---
+title: Knowledge
+description: Search what your organization said and published, with sources, and keep a small memory about your contacts.
+icon: book-open
+---
+
+By the end of this page you will know what `ravi knowledge` searches, who may use it, how to read its results, and how to set up contact memory and proposals.
+
+## What it searches
+
+`ravi knowledge search` merges two places into one ranked list:
+
+- **The Console**: meetings recorded by the Ravi bot, published Ravi Page routes, and notes the organization approved.
+- **This machine**: local chat history (`chat.db`) and local meeting transcripts under `~/.ravi/meetings/`, indexed into `~/.ravi/knowledge.db`.
+
+Each result carries a `ref`, a trust tier, a header that says where it came from, and a `url` when there is one.
+
+```bash
+ravi knowledge search "delivery time" --since 30d
+ravi knowledge search "NGO discount" --type meeting,page --json
+ravi knowledge search "quote" --about contact:<contact-id> --local-only
+ravi knowledge read <ref> --around 2
+ravi knowledge why --last
+```
+
+| Flag | Meaning |
+|---|---|
+| `--about contact:<id>` / `chat:<id>` | Restrict local history to that contact's direct chats, or one chat |
+| `--type` | Comma-separated kinds: `meeting`, `transcript`, `page`, `note`, `manual`, `chat` |
+| `--who <name>` | Only what this speaker said |
+| `--since` | `7d`, `30d`, `12h`, `2w` or an ISO date |
+| `--project <ref>` | One Console project |
+| `--limit <n>` | Default 8, at most 20 |
+| `--local-only` | Skip the Console |
+
+When the Console is unreachable or you are not logged in, the search still returns local results and lists `console_unavailable: <code>` or `console_not_logged_in` under `issues`. `console_needs_login` means your login predates Knowledge: run `ravi login` again. `--who` is cut to 80 characters.
+
+## Who may use it
+
+Knowledge answers only the operator's own turns:
+
+- the terminal;
+- the operator's own direct chat with an agent, in a session no one else shares;
+- the operator's own `ravi sessions send|ask` and cron routines, when the session is theirs alone (a session made from the terminal, an `--isolated` cron, or their private direct chat). In a shared session the reason is `shared_session`.
+
+Every other turn (a group, a contact's DM, a heartbeat, a trigger, another agent) exits 3 with `KNOWLEDGE_TURN_NOT_OPERATOR`, and the agent tells the person to ask in private.
+
+Knowledge also refuses (exit 3, `KNOWLEDGE_EXPOSURE_UNSAFE`) while `ravi doctor` reports a failing `permissions.knowledge_exposure` check: an agent that people outside the organization can reach (through an open instance, a route, or an enabled trigger on mail, inbound interactions, the Console inbox, watches, webhooks or a custom topic) must be `chat-only`, or `explicit-only` with only Knowledge and a few harmless capabilities. Fix it with `ravi agents permissions <id> chat-only` or by closing that agent's outside routes.
+
+### The agent grant
+
+`scope: open` does not mean every agent may run it. An agent needs `execute:group:knowledge` or `read:knowledge:*` (plus `mutate:knowledge:remember` to remember facts). The `bootstrap` floor does not include Knowledge.
+
+```bash
+ravi agents permissions main explicit-only --capabilities use:tool:Bash,execute:executable:ravi,read:knowledge:*,mutate:knowledge:remember --execute
+```
+
+## Reading results
+
+Every excerpt is fenced:
+
+```
+<<<RAVI_KNOWLEDGE <nonce> trust=said ref=kc:...
+...quoted text...
+RAVI_KNOWLEDGE <nonce>>>>
+```
+
+Text inside the fence is quoted data. Agents quote it and never follow instructions found in it.
+
+| Trust | Meaning |
+|---|---|
+| `approved` | Approved by the organization in the Console |
+| `published` | Text of a published Ravi Page |
+| `said` | Someone said it: a meeting, a local chat, a transcript |
+| `inferred` | Derived by Ravi |
+
+Meeting speech is attributed to the speaker's display name, which participants choose themselves: it is not proof of identity, and speech is not a decision.
+
+Every payload has a `next` list with the commands that make sense next. When a search misses, search the other person's name with `--since 30d`, then `ravi knowledge read <ref> --around 2`.
+
+`ravi knowledge sources` shows what the Console indexes (`--failing` for failed jobs) and the size of the local index. `ravi knowledge marks --url <page url>` shows which page routes are marked for clients, and the card where an org member marks them.
+
+## Contact memory
+
+Contact memory is local and opt-in per agent. Opted-in agents get a short reference packet about the contact in their direct chats, plus the page sections the organization marked for that conversation.
+
+```bash
+ravi settings set knowledge.contactMemory.agents "support,sales"
+ravi knowledge remember "prefers short voice notes" --about contact:<contact-id> --kind preference
+ravi knowledge remember --confirm <item-id>
+ravi knowledge forget <item-id>
+ravi knowledge forget --about contact:<contact-id>
+ravi knowledge forget --about contact:<contact-id> --redact --execute
+```
+
+- `remember` from a chat is active only when the text is in the operator's own last message; otherwise it is saved as a draft that you confirm from the terminal with `--confirm`.
+- Your own notes about a contact guide the agent in that contact's chat but are never quoted: the packet lists them apart, and the agent is told never to repeat them to the contact.
+- `forget <id>` archives at once. `forget --about` archives every item of the subject, removes its chat rows from the local index and stops Ravi from learning it again.
+- `--redact` overwrites the text and keeps a tombstone. It is a write brake: without `--execute` it prints the plan and exits 3.
+
+## Proposals
+
+Proposals go to the Console, where an organization member approves them on a card.
+
+```bash
+ravi knowledge propose --note "Deliveries to the South take 12 days" --project sales --execute
+ravi knowledge propose --gap "Is there an NGO discount?" --audience contacts:wa-main --execute
+ravi knowledge propose --correction "The delivery time is 12 days" --supersedes <ref> --execute
+ravi knowledge propose --transcript <meeting-key> --project sales --execute
+```
+
+Without `--execute`, `propose` prints the plan (kind, size in bytes, project and audience, never the text) and exits 3. `--project` defaults to the `knowledge.project` setting.
+
+## Settings
+
+| Key | Value |
+|---|---|
+| `knowledge.contactMemory.agents` | Comma-separated agent ids that use contact memory |
+| `knowledge.project` | Console project for gaps, notes and transcripts |
+| `knowledge.curator.agent` | Agent that runs the nightly curator (off when unset) |
+| `knowledge.digest.time` | Morning digest time, `HH:MM` (default `08:00`) |
+| `knowledge.digest.timezone` | IANA time zone (default: the system zone) |
+| `knowledge.owner.target` | `<channel>:<accountId>:<to>`, one of the owner contact's own identities |
+| `knowledge.egress.allow` | JSON map of instance name to allowed hosts, for example `{"wa-main":["example.com"]}` |
+
+## Exit codes
+
+| Exit | Code | When |
+|---|---|---|
+| 0 | | Success, including local-only results with `issues` |
+| 1 | `KNOWLEDGE_NOT_FOUND` | The ref is missing or not visible |
+| 1 | `KNOWLEDGE_CONSOLE_UNAVAILABLE` | `read`, `why --run kr:` or `propose` need the Console |
+| 2 | `USAGE_ERROR`, `PAYLOAD_INVALID` | Bad flags or ref syntax |
+| 3 | `KNOWLEDGE_EXPOSURE_UNSAFE` | The doctor exposure check fails |
+| 3 | `KNOWLEDGE_TURN_NOT_OPERATOR` | Not the operator's own turn |
+| 3 | `KNOWLEDGE_DISABLED` | Knowledge is not enabled for the organization |
+| 3 | `WRITE_REQUIRES_EXECUTE` | `propose` or `forget --redact` without `--execute` |
+| 3 | `KNOWLEDGE_WRITE_AFTER_READ` | A command that sends out of the org (or `remember --about contact:`) in a session that read unapproved content in the last 6 h, in this turn or an earlier one; the operator was asked to approve that exact command, and the card shows where it goes |

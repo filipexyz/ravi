@@ -1,19 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { classifyRuntimeSessionStartLane } from "../../runtime/session-pool.js";
+import { classifyTurnProvenance } from "../../runtime/turn-provenance.js";
+import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import type { PublishSessionPromptOptions } from "../../omni/session-stream.js";
-import { getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
+import type { ChannelOutboundJob } from "../outbound-stream.js";
+import { deleteSession, getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
 import { dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
   closeSlackThread,
+  closeSlackThreadRecord,
   deliverSlackThreadParentReturn,
   finalizeSlackThreadCreation,
+  listSlackThreadsForSession,
   registerSlackThreadInboundLifecycle,
+  reportSlackThreadProgress,
+  sendSlackThreadMessage,
+  slackThreadTitle,
+  summarizeSlackThreadRuntime,
 } from "./thread-lifecycle.js";
 import {
   claimSlackThreadCreation,
   completeSlackThreadCreation,
   createSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
+  findSlackThreadLifecycleByChildRef,
   getSlackThreadLifecycle,
   markSlackThreadRootDelivered,
 } from "./thread-lifecycle-store.js";
@@ -30,6 +42,96 @@ afterEach(async () => {
 });
 
 describe("Slack thread lifecycle", () => {
+  it.each(["human", "cron", "agent", "observer", "unknown"])(
+    "uses the initiating %s turn for bootstrap admission without changing actor provenance",
+    async (origin) => {
+      getOrCreateSession("ravi-parent", "ravi", "/tmp/ravi", { name: "ravi-parent" });
+      const context = createRuntimeContext({
+        kind: "turn-runtime",
+        sessionKey: "ravi-parent",
+        metadata: { turnProvenance: { origin, background: origin !== "human" } },
+      });
+      const fixture = seedPendingCreation({ initiatorContextId: context.contextId });
+      const publishPrompt = mock(async () => {});
+      await finalizeSlackThreadCreation(fixture.requestId, { publishPrompt, publishEvent: mock(async () => {}) });
+      const [sessionName, payload] = publishPrompt.mock.calls[0] as unknown as [string, RuntimeLaunchPrompt];
+      expect(classifyRuntimeSessionStartLane(sessionName, payload)).toBe(
+        origin === "human" ? "interactive" : "background",
+      );
+      expect(classifyTurnProvenance({ prompt: payload }).origin).toBe("agent");
+      expect(payload.source?.actorType).toBe("agent");
+    },
+  );
+
+  it("closes the selected request when two records refer to the same child", async () => {
+    const fixture = seedPendingCreation();
+    const deps = {
+      publishPrompt: mock(async () => {}),
+      publishEvent: mock(async () => {}),
+      publishOutbound: mock(async () => {}),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, deps);
+    const first = getSlackThreadLifecycle(fixture.requestId)!;
+    createSlackThreadLifecycle({
+      requestId: "slack-thread:duplicate-child",
+      parentSessionKey: first.parentSessionKey,
+      parentSessionName: first.parentSessionName,
+      initiatorSessionKey: first.parentSessionKey,
+      initiatorSessionName: first.parentSessionName,
+      accountId: first.accountId,
+      instanceId: first.instanceId,
+      platformChatId: first.platformChatId,
+      rootCanonicalChatId: first.rootCanonicalChatId,
+      initialPrompt: "Second request",
+    });
+    markSlackThreadRootDelivered({
+      requestId: "slack-thread:duplicate-child",
+      providerThreadId: "1713000000.000200",
+      canonicalRootMessageId: "second",
+    });
+    claimSlackThreadCreation({ requestId: "slack-thread:duplicate-child", claimId: "claim-duplicate", leaseMs: 1000 });
+    completeSlackThreadCreation({
+      requestId: "slack-thread:duplicate-child",
+      claimId: "claim-duplicate",
+      childSessionKey: first.childSessionKey!,
+      childSessionName: first.childSessionName!,
+      threadCanonicalChatId: first.threadCanonicalChatId!,
+      promptPublishedAt: Date.now(),
+    });
+    await closeSlackThreadRecord(first, undefined, deps);
+    expect(getSlackThreadLifecycle(first.requestId)?.status).toBe("closed");
+    expect(getSlackThreadLifecycle("slack-thread:duplicate-child")?.status).toBe("open");
+  });
+  it("closes a pruned child's durable card without recreating the session", async () => {
+    const fixture = seedPendingCreation();
+    const jobs: ChannelOutboundJob[] = [];
+    const deps = {
+      publishPrompt: mock(async () => {}),
+      publishEvent: mock(async () => {}),
+      publishOutbound: mock(async (job: ChannelOutboundJob) => {
+        jobs.push(job);
+      }),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, deps);
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    deleteSession(child.sessionKey);
+    const record = findSlackThreadLifecycleByChildRef(child.name!)!;
+    expect(record.childSessionKey).toBe(child.sessionKey);
+    const result = await closeSlackThreadRecord(record, undefined, deps);
+    expect(result.record.status).toBe("closed");
+    expect(getSession(child.sessionKey)).toBeNull();
+    expect(
+      jobs.some(
+        (job) =>
+          job.request.content.type === "chat_action" &&
+          job.request.content.actionId === "message.edit" &&
+          job.request.content.threadCard?.status === "closed",
+      ),
+    ).toBe(true);
+    expect((await closeSlackThreadRecord(record, undefined, deps)).changed).toBe(false);
+    expect(findSlackThreadLifecycleByChildRef("unknown")).toBeNull();
+  });
+
   it("materializes one child turn after durable root delivery and applies its model first", async () => {
     const fixture = seedPendingCreation();
     const prompts: Array<{
@@ -98,6 +200,9 @@ describe("Slack thread lifecycle", () => {
     expect(child).toMatchObject({
       name: "ravi-parent-t-1713000000000100",
       modelOverride: "gpt-5.6",
+      runtimeProviderOverride: "codex",
+      effortOverride: "high",
+      thinkingLevel: "verbose",
       lastChannel: "slack",
       lastTo: "C123",
       lastAccountId: "ravi-slack",
@@ -248,7 +353,7 @@ describe("Slack thread lifecycle", () => {
         isGroup: false,
       },
     });
-    expect((prompts[0]?.payload.context as Record<string, unknown>).groupId).toBeUndefined();
+    expect((prompts[0]?.payload.context as Record<string, unknown> | undefined)?.groupId).toBeUndefined();
   });
 
   it("closes silently or returns one structured completion to the parent, then reopens on inbound", async () => {
@@ -372,6 +477,16 @@ describe("Slack thread lifecycle", () => {
     });
     expect(reopened.parentNotifiedAt).toBeUndefined();
 
+    const failingDependencies = {
+      publishPrompt: mock(async () => {
+        throw new Error("nats down");
+      }),
+      publishEvent: mock(async () => {}),
+    };
+    await expect(closeSlackThread(child, "Second result", failingDependencies)).rejects.toMatchObject({
+      code: "THREAD_PARENT_RETURN_PENDING",
+    });
+
     const parentPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const recoveryDependencies = {
       publishPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
@@ -392,7 +507,288 @@ describe("Slack thread lifecycle", () => {
   });
 });
 
-function seedPendingCreation(input: { channelId?: string; chatType?: "channel" | "dm" } = {}): {
+describe("Slack thread orchestration", () => {
+  function capture() {
+    const prompts: Array<{
+      sessionName: string;
+      payload: Record<string, unknown>;
+      options?: PublishSessionPromptOptions;
+    }> = [];
+    return {
+      prompts,
+      dependencies: {
+        publishPrompt: mock(
+          async (sessionName: string, payload: Record<string, unknown>, options?: PublishSessionPromptOptions) => {
+            prompts.push({ sessionName, payload, options });
+          },
+        ),
+        publishEvent: mock(async () => {}),
+      },
+    };
+  }
+
+  it("names the thread by title, session and link when it returns or reports to the parent", async () => {
+    const fixture = seedPendingCreation({ teamId: "T0123" });
+    const { prompts, dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    prompts.length = 0;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+
+    const report = await reportSlackThreadProgress(child, "Found the failing commit", dependencies);
+    await closeSlackThread(child, "The branch is fixed", dependencies);
+
+    const link = `slack://channel?team=T0123&id=C123&thread_ts=${fixture.threadTs}`;
+    expect(prompts.map((entry) => entry.sessionName)).toEqual(["ravi-parent", "ravi-parent"]);
+    expect(prompts[0]!.payload).toMatchObject({
+      prompt: [
+        `[System] Inform: Slack thread "Investigate the branch" (${child.name}) reporta progresso.`,
+        `Link: ${link}`,
+        "Progresso: Found the failing commit",
+      ].join("\n"),
+      source: { chatId: "C123", actorType: "system" },
+      _slackThreadLifecycle: { eventType: "thread.report", eventId: report.messageId },
+      _turnOrigin: { producer: "channel", action: "session.return" },
+    });
+    expect((prompts[0]!.payload.source as Record<string, unknown>).threadId).toBeUndefined();
+    expect(prompts[0]!.options).toEqual({ messageId: report.messageId });
+    expect(prompts[1]!.payload.prompt).toBe(
+      [
+        `[System] Inform: Slack thread "Investigate the branch" (${child.name}) concluída.`,
+        `Link: ${link}`,
+        "Resultado: The branch is fixed",
+      ].join("\n"),
+    );
+    expect(findSlackThreadLifecycleByChildSession(child.sessionKey)?.status).toBe("closed");
+  });
+
+  it("lists a parent's threads from the parent or a child, open by default", async () => {
+    const fixture = seedPendingCreation();
+    const { dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const parent = getSession("ravi-parent")!;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+
+    const fromParent = listSlackThreadsForSession(parent);
+    expect(fromParent).toMatchObject({
+      parentSessionKey: "ravi-parent",
+      parentSessionName: "ravi-parent",
+      threads: [
+        {
+          requestId: fixture.requestId,
+          title: "Investigate the branch",
+          status: "open",
+          source: "action",
+          childSessionName: child.name,
+          slackThreadTs: fixture.threadTs,
+          link: null,
+          parentReturn: { requested: false, pending: false },
+        },
+      ],
+    });
+    expect(listSlackThreadsForSession(child).threads.map((thread) => thread.requestId)).toEqual([fixture.requestId]);
+
+    await closeSlackThread(child, undefined, dependencies);
+    expect(listSlackThreadsForSession(parent).threads).toEqual([]);
+    expect(listSlackThreadsForSession(parent, { includeClosed: true }).threads[0]?.status).toBe("closed");
+  });
+
+  it("sends parent instructions into the thread, reopening a closed one, and only from the parent", async () => {
+    const fixture = seedPendingCreation();
+    const { prompts, dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const parent = getSession("ravi-parent")!;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    await closeSlackThread(child, undefined, dependencies);
+    prompts.length = 0;
+
+    const sent = await sendSlackThreadMessage(
+      { parentSession: parent, ref: child.name!, message: "Also check the release branch" },
+      dependencies,
+    );
+
+    expect(sent.reopened).toBe(true);
+    expect(sent.record.status).toBe("open");
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]!.sessionName).toBe(child.name!);
+    expect(prompts[0]!.payload).toMatchObject({
+      prompt: "[System] Execute: [from: ravi-parent] Also check the release branch",
+      source: { chatId: "C123", threadId: fixture.threadTs, actorType: "agent", actorAgentId: "ravi" },
+      deliveryBarrier: "after_tool",
+      _slackThreadLifecycle: { eventType: "thread.message", reopened: true },
+      _turnOrigin: {
+        producer: "session-relay",
+        action: "execute",
+        principal: { type: "agent", id: "ravi" },
+        session: { key: "ravi-parent", name: "ravi-parent" },
+      },
+    });
+
+    const byRequest = await sendSlackThreadMessage(
+      { parentSession: parent, ref: fixture.requestId, message: "Status?" },
+      dependencies,
+    );
+    expect(byRequest.reopened).toBe(false);
+    await expect(
+      sendSlackThreadMessage({ parentSession: child, ref: fixture.requestId, message: "Hi" }, dependencies),
+    ).rejects.toThrow("this session is a thread");
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: "unknown-thread", message: "Hi" }, dependencies),
+    ).rejects.toThrow("Slack thread not found for this session: unknown-thread");
+  });
+
+  it("updates the thread's root card on report, close and reopen", async () => {
+    const fixture = seedPendingCreation({ requestedBy: "Ana Souza" });
+    const { dependencies } = capture();
+    const jobs: ChannelOutboundJob[] = [];
+    const withCards = {
+      ...dependencies,
+      publishOutbound: mock(async (job: ChannelOutboundJob) => {
+        jobs.push(job);
+      }),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, withCards);
+    const parent = getSession("ravi-parent")!;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    expect(jobs).toHaveLength(0);
+
+    await reportSlackThreadProgress(child, "Found the failing commit", withCards);
+    await closeSlackThread(child, "The branch is fixed", withCards);
+    await closeSlackThread(child, "The branch is fixed", withCards);
+    await sendSlackThreadMessage({ parentSession: parent, ref: child.name!, message: "Check again" }, withCards);
+    await sendSlackThreadMessage({ parentSession: parent, ref: child.name!, message: "Status?" }, withCards);
+
+    // A repeated close and a send to an open thread leave the card as it is.
+    expect(jobs.map((job) => (job.request.content as { threadCard?: unknown }).threadCard)).toEqual([
+      {
+        status: "open",
+        note: "Found the failing commit",
+        updatedAt: expect.any(Number),
+        requestedBy: "Ana Souza",
+        runtime: "codex · gpt-5.6 · high · verbose",
+      },
+      {
+        status: "closed",
+        note: "The branch is fixed",
+        updatedAt: expect.any(Number),
+        requestedBy: "Ana Souza",
+        runtime: "codex · gpt-5.6 · high · verbose",
+      },
+      {
+        status: "reopened",
+        updatedAt: expect.any(Number),
+        requestedBy: "Ana Souza",
+        runtime: "codex · gpt-5.6 · high · verbose",
+      },
+    ]);
+    expect(jobs[0]!.request).toMatchObject({
+      origin: { sessionName: "ravi-parent", responsePhase: "chat_action" },
+      target: { channel: "slack", accountId: "ravi-slack", instanceId: "slack-instance-1", chatId: "C123" },
+      content: {
+        type: "chat_action",
+        actionId: "message.edit",
+        providerMessageId: fixture.threadTs,
+        text: "Investigate the branch",
+      },
+    });
+    expect(new Set(jobs.map((job) => job.request.idempotencyKey)).size).toBe(3);
+  });
+
+  it("leaves the root of a thread a person started alone", async () => {
+    const { dependencies } = capture();
+    const publishOutbound = mock(async () => {});
+    getOrCreateSession("ravi-parent", "ravi", "/tmp/ravi", { name: "ravi-parent", chatType: "channel" });
+    const child = getOrCreateSession("ravi-parent:thread:1713000000.000900", "ravi", "/tmp/ravi", {
+      name: "ravi-parent-thread",
+      chatType: "channel",
+    });
+    const threadChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-instance-1",
+      platformChatId: "C123#1713000000.000900",
+      chatType: "thread",
+      title: "C123",
+    });
+    registerSlackThreadInboundLifecycle({
+      childSession: child,
+      accountId: "ravi-slack",
+      instanceId: "slack-instance-1",
+      platformChatId: "C123",
+      threadCanonicalChatId: threadChat.id,
+      providerThreadId: "1713000000.000900",
+    });
+
+    await reportSlackThreadProgress(child, "Halfway", { ...dependencies, publishOutbound });
+    await closeSlackThread(child, "Done", { ...dependencies, publishOutbound });
+
+    expect(publishOutbound).not.toHaveBeenCalled();
+  });
+
+  it("refuses to send to a thread whose first turn has not started", async () => {
+    const fixture = seedPendingCreation();
+    const { dependencies } = capture();
+    const parent = getSession("ravi-parent")!;
+
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: fixture.requestId, message: "Hi" }, dependencies),
+    ).rejects.toThrow(`Slack thread has not started yet: ${fixture.requestId}`);
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: fixture.requestId, message: "Hi" }, dependencies),
+    ).rejects.toMatchObject({ code: "THREAD_NOT_STARTED" });
+  });
+
+  it("marks an open thread whose session is gone as missing, not unstarted, and refuses to send to it", async () => {
+    const fixture = seedPendingCreation();
+    const { dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const parent = getSession("ravi-parent")!;
+    const childKey = `ravi-parent:thread:${fixture.threadTs}`;
+    expect(listSlackThreadsForSession(parent).threads[0]?.childSessionMissing).toBe(false);
+
+    deleteSession(childKey);
+
+    const [thread] = listSlackThreadsForSession(parent).threads;
+    expect(thread).toMatchObject({
+      status: "open",
+      childSessionKey: childKey,
+      childSessionMissing: true,
+    });
+    const record = getSlackThreadLifecycle(fixture.requestId)!;
+    expect(
+      summarizeSlackThreadRuntime({ ...record, providerOverride: undefined, effortOverride: undefined }),
+    ).toMatchObject({ providerSource: "child_missing", effortSource: "child_missing" });
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: fixture.requestId, message: "Hi" }, dependencies),
+    ).rejects.toMatchObject({ code: "THREAD_SESSION_MISSING" });
+    await expect(
+      sendSlackThreadMessage({ parentSession: parent, ref: "unknown-thread", message: "Hi" }, dependencies),
+    ).rejects.toMatchObject({ code: "THREAD_NOT_FOUND" });
+    await expect(
+      sendSlackThreadMessage(
+        { parentSession: { ...parent, name: "team's channel" }, ref: "unknown-thread", message: "Hi" },
+        dependencies,
+      ),
+    ).rejects.toMatchObject({
+      code: "THREAD_NOT_FOUND",
+      suggestedAction: "List this session's threads with: ravi sessions threads --all --session 'team'\\''s channel'",
+    });
+  });
+
+  it("titles a thread with the first line of its initial message, trimmed", () => {
+    expect(slackThreadTitle({ initialPrompt: "\n  Fix the deploy  \nDetails follow" })).toBe("Fix the deploy");
+    expect(slackThreadTitle({ initialPrompt: `${"x".repeat(100)}` })).toBe(`${"x".repeat(79)}…`);
+    expect(slackThreadTitle({})).toBeUndefined();
+  });
+});
+
+function seedPendingCreation(
+  input: {
+    channelId?: string;
+    chatType?: "channel" | "dm";
+    teamId?: string;
+    requestedBy?: string;
+    initiatorContextId?: string;
+  } = {},
+): {
   requestId: string;
   threadTs: string;
 } {
@@ -408,6 +804,7 @@ function seedPendingCreation(input: { channelId?: string; chatType?: "channel" |
     platformChatId: channelId,
     chatType,
     title: channelId,
+    ...(input.teamId ? { rawProvenance: { source: "slack.socket_mode", teamId: input.teamId } } : {}),
   });
   const requestId = "slack-thread:req-1";
   const threadTs = "1713000000.000100";
@@ -422,7 +819,12 @@ function seedPendingCreation(input: { channelId?: string; chatType?: "channel" |
     platformChatId: channelId,
     rootCanonicalChatId: rootChat.id,
     initialPrompt: "Investigate the branch",
+    initiatorContextId: input.initiatorContextId,
+    ...(input.requestedBy ? { requestedBy: input.requestedBy } : {}),
     modelOverride: "gpt-5.6",
+    providerOverride: "codex",
+    effortOverride: "high",
+    thinkingLevel: "verbose",
   });
   markSlackThreadRootDelivered({
     requestId,

@@ -29,6 +29,8 @@ import {
 import { flushNats, publish } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { handOffMeetingInboxItem } from "../meetings/inbox-handoff.js";
+import { handleKnowledgeInboxItem, isKnowledgeInboxEvent } from "../knowledge/inbox/handler.js";
+import { acceptCloudInboxItem } from "../cloud-agents/delivery-runner.js";
 import { watchEventFromInboxPayload } from "../watch/events.js";
 import {
   ackInboxItems as ackInboxItemsRemote,
@@ -82,6 +84,10 @@ const POLL_LOCK_RENEW_MS = 30_000;
 interface RunnerOptions {
   /** Called once per newly delivered item; turns cloud meeting events into local artifacts. */
   meetingHandoff?: (payload: InboxNatsPayload) => void;
+  /** Called once per newly delivered item; runs `knowledge.*` items (mirror sync, gap answers) in the background. */
+  knowledgeHandoff?: (payload: InboxNatsPayload) => void;
+  /** Called once per newly delivered item; records `cloud_agents` session deliveries for the cloud delivery runner. */
+  cloudAgentsHandoff?: (payload: InboxNatsPayload) => void;
   intervalMs?: number;
   nats?: InboxNatsPublishDependencies;
 }
@@ -105,6 +111,13 @@ class IncompleteInboxAckError extends Error {
   }
 }
 
+class LocalMailIngestError extends Error {
+  constructor(cause: unknown) {
+    super(`Local mail ingest failed: ${errMessage(cause)}`, { cause });
+    this.name = "LocalMailIngestError";
+  }
+}
+
 interface OrgState {
   localId: string;
   consoleUrl: string;
@@ -125,11 +138,19 @@ export class InboxRunner {
   private readonly natsDependencies: InboxNatsPublishDependencies;
   private tickInFlight: Promise<void> | null = null;
   private readonly meetingHandoff: (payload: InboxNatsPayload) => void;
+  private readonly knowledgeHandoff: (payload: InboxNatsPayload) => void;
+  private readonly cloudAgentsHandoff: (payload: InboxNatsPayload) => void;
 
   constructor(options: RunnerOptions = {}) {
     this.intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.natsDependencies = options.nats ?? { publish, flush: flushNats };
     this.meetingHandoff = options.meetingHandoff ?? ((payload) => void handOffMeetingInboxItem(payload));
+    this.knowledgeHandoff =
+      options.knowledgeHandoff ??
+      ((payload) => {
+        if (isKnowledgeInboxEvent(payload.eventType)) void handleKnowledgeInboxItem(payload);
+      });
+    this.cloudAgentsHandoff = options.cloudAgentsHandoff ?? ((payload) => void acceptCloudInboxItem(payload));
   }
 
   async start(): Promise<void> {
@@ -614,7 +635,19 @@ export class InboxRunner {
       createdAt: input.item.createdAt,
     };
 
-    const enrichedNatsPayload = await this.enrichLocalPayload(input, natsPayload);
+    let enrichedNatsPayload: InboxNatsPayload;
+    try {
+      enrichedNatsPayload = await this.enrichLocalPayload(input, natsPayload);
+    } catch (error) {
+      if (!(error instanceof LocalMailIngestError)) throw error;
+      // One mail that cannot be stored locally must not stall the rest of the
+      // batch: leave it unacked for retry and keep delivering the others.
+      log.error("Failed to ingest inbox mail into local mailbox", {
+        itemId: input.item.itemId,
+        error: errMessage(error.cause),
+      });
+      return { delivered: false };
+    }
     input.assertPollLock();
 
     // 1. Persist locally before publish so a crash leaves a durable replay row.
@@ -669,11 +702,21 @@ export class InboxRunner {
     input.assertPollLock();
     markItemDelivered(localItem.id, Date.now());
     // 4. Side work that must not hold the poll or undo the delivery: cloud
-    // meeting recordings.
+    // meeting recordings and Knowledge items.
     try {
       this.meetingHandoff(enrichedNatsPayload);
     } catch (error) {
       log.warn("Meeting inbox handoff failed", { itemId: input.item.itemId, error: errMessage(error) });
+    }
+    try {
+      this.knowledgeHandoff(enrichedNatsPayload);
+    } catch (error) {
+      log.warn("Knowledge inbox handoff failed", { itemId: input.item.itemId, error: errMessage(error) });
+    }
+    try {
+      this.cloudAgentsHandoff(enrichedNatsPayload);
+    } catch (error) {
+      log.warn("Cloud agents inbox handoff failed", { itemId: input.item.itemId, error: errMessage(error) });
     }
     return { delivered: true };
   }
@@ -747,7 +790,12 @@ export class InboxRunner {
   }
 
   private ingestLocalMailPayload(natsPayload: InboxNatsPayload): InboxNatsPayload {
-    const ingest = ingestConsoleMailReceivedEvent(natsPayload);
+    let ingest: ReturnType<typeof ingestConsoleMailReceivedEvent>;
+    try {
+      ingest = ingestConsoleMailReceivedEvent(natsPayload);
+    } catch (error) {
+      throw new LocalMailIngestError(error);
+    }
     if (ingest.status === "skipped") {
       log.warn("Mail inbox payload was not ingested into local mailbox", {
         itemId: natsPayload.eventId,

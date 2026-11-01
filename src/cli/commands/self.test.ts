@@ -71,7 +71,7 @@ mock.module("../../router/router-db.js", () => ({
   },
 }));
 
-const { SelfCommands } = await import("./self.js");
+const { SelfCommands, selfKnowledgeDeps, resetSelfKnowledgeDeps } = await import("./self.js");
 
 function captureConsole<T>(run: () => T): { output: string; result: T } {
   const lines: string[] = [];
@@ -353,5 +353,101 @@ describe("self agent-first contract", () => {
     for (const key of ["identity", "actor", "session", "chat", "route", "recent", "permissions", "knowledge"]) {
       expect(payload).toHaveProperty(key);
     }
+  });
+});
+
+describe("self knowledge", () => {
+  const operatorVerdict = () =>
+    ({
+      ok: true,
+      turn: {
+        audience: "operator",
+        turnKey: null,
+        sessionName: "main",
+        agentId: "main",
+        execContext: { v: 1 },
+      },
+    }) as never;
+
+  beforeEach(() => {
+    seedLinkedContext();
+    selfKnowledgeDeps.exposure = () => ({ ok: true, offenders: [], checkedAgents: 2 });
+    selfKnowledgeDeps.classify = operatorVerdict;
+    selfKnowledgeDeps.loggedIn = () => true;
+    selfKnowledgeDeps.contactMemoryAgents = () => ["main"];
+  });
+
+  afterEach(() => {
+    resetSelfKnowledgeDeps();
+    inlineContext = undefined;
+    resolvedContext = undefined;
+  });
+
+  function knowledgeData() {
+    const { result } = captureConsole(() => new SelfCommands().knowledge(true));
+    return result as { status: string; reason?: string; data?: Record<string, unknown> };
+  }
+
+  it("reports blocked/exposure_unsafe with an offender, before the turn check", () => {
+    selfKnowledgeDeps.exposure = () => ({
+      ok: false,
+      offenders: [{ agentId: "main", profile: "bootstrap", reasons: ["instance wa-main admits open DMs"] }],
+      checkedAgents: 1,
+    });
+    selfKnowledgeDeps.classify = () => {
+      throw new Error("must not matter");
+    };
+    const section = knowledgeData();
+    expect(section.status).toBe("partial");
+    expect(section.data).toEqual({
+      status: "blocked",
+      audience: "none",
+      reason: "exposure_unsafe",
+      commands: [],
+      contactMemory: true,
+      exposure: { ok: false, offenders: 1 },
+      specIds: ["knowledge"],
+    });
+    expect(JSON.stringify(section)).not.toContain("wa-main");
+  });
+
+  it("reports blocked/turn_not_operator on a turn that is not the operator's", () => {
+    selfKnowledgeDeps.classify = () =>
+      ({ ok: false, code: "KNOWLEDGE_TURN_NOT_OPERATOR", reason: "group", actorPrincipal: "contact:c1" }) as never;
+    const section = knowledgeData();
+    expect(section.data).toMatchObject({
+      status: "blocked",
+      audience: "none",
+      reason: "turn_not_operator",
+      commands: [],
+    });
+  });
+
+  it("reports unavailable/not_logged_in without Console credentials", () => {
+    selfKnowledgeDeps.loggedIn = () => false;
+    const section = knowledgeData();
+    expect(section.status).toBe("unavailable");
+    expect(section.data).toMatchObject({ status: "unavailable", audience: "operator", reason: "not_logged_in" });
+  });
+
+  it("reports available with the usable commands and specIds [knowledge]", () => {
+    selfKnowledgeDeps.contactMemoryAgents = () => ["other"];
+    const section = knowledgeData();
+    expect(section.status).toBe("ok");
+    expect(section.data).toEqual({
+      status: "available",
+      audience: "operator",
+      reason: null,
+      commands: [
+        "ravi knowledge search",
+        "ravi knowledge read",
+        "ravi knowledge why",
+        "ravi knowledge sources",
+        "ravi knowledge marks",
+      ],
+      contactMemory: false,
+      exposure: { ok: true, offenders: 0 },
+      specIds: ["knowledge"],
+    });
   });
 });

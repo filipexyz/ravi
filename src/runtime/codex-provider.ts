@@ -1,10 +1,17 @@
 import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
+import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 import { spawn } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
+import {
+  getAgentRuntimePermissionsConfigFromDefaults,
+  type AgentRuntimePermissionsConfig,
+} from "../permissions/agent-default-capabilities-provider.js";
+import { dbGetAgent } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
+import { prepareBridgeCodexProfile } from "../bridge/codex-profile.js";
 import {
   createCodexTransport,
   resolveCodexTransportKind,
@@ -15,6 +22,7 @@ import {
 
 const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { stripControlCharacters } from "./public-failure.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import {
   buildCodexSkillVisibilitySnapshot,
@@ -67,7 +75,7 @@ const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const CODEX_SUB_AGENT_DIRECT_INPUT_ERROR = "direct app-server input is not allowed for multi-agent v2 sub-agents";
 const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
-const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
+const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH", "BRIDGE_MODEL_API_KEY"]);
 const CODEX_SHELL_ENV_INCLUDE_ONLY = [
   "RAVI_*",
   "CODEX_HOME",
@@ -118,6 +126,8 @@ interface CodexJsonRpcMessage extends Record<string, unknown> {
 
 interface CodexCliTurnRequest {
   cwd: string;
+  /** Sandbox and native tool switches for this agent's thread (contract §13.10). */
+  security?: CodexThreadSecurity;
   env: NodeJS.ProcessEnv;
   model?: string;
   effort?: string;
@@ -129,6 +139,7 @@ interface CodexCliTurnRequest {
   forkFrom?: string;
   systemPromptAppend: string;
   allowedSkills?: string[];
+  hiddenSkills?: string[];
   approveRuntimeRequest?: RuntimeApprovalHandler;
   dynamicTools?: RuntimeDynamicToolSpec[];
   handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
@@ -152,6 +163,104 @@ interface CodexCliTransport {
   startTurn(input: CodexCliTurnRequest): CodexCliTurnHandle;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
   close?(): Promise<void>;
+}
+
+export type CodexSandboxMode = "read-only" | "danger-full-access";
+
+/** What a Codex thread may touch: the sandbox plus native tool switches sent as thread config. */
+export interface CodexThreadSecurity {
+  sandbox: CodexSandboxMode;
+  /** Merged into the thread `config` (app-server) or passed as `-c` overrides (`codex exec`). */
+  config: Record<string, unknown>;
+  /** True for `chat-only` and for `explicit-only` without exec capabilities. */
+  restricted: boolean;
+}
+
+const UNRESTRICTED_CODEX_THREAD_SECURITY: CodexThreadSecurity = Object.freeze({
+  sandbox: CODEX_APP_SERVER_SANDBOX,
+  config: Object.freeze({}) as Record<string, unknown>,
+  restricted: false,
+}) as CodexThreadSecurity;
+
+/**
+ * Restricted agents get the read-only sandbox (so `apply_patch` cannot write)
+ * and no `web_search` or `view_image`. The Bash hook matcher stays global
+ * (`codex-hooks.ts`); `shell` remains gated by it.
+ */
+const RESTRICTED_CODEX_THREAD_SECURITY: CodexThreadSecurity = Object.freeze({
+  sandbox: "read-only",
+  config: Object.freeze({
+    "tools.web_search": false,
+    web_search: "disabled",
+    "tools.view_image": false,
+  }) as Record<string, unknown>,
+  restricted: true,
+}) as CodexThreadSecurity;
+
+/** Capability prefixes that count as exec for `explicit-only` (contract §11.3, `agentHasNoExec`). */
+const CODEX_EXEC_CAPABILITY_PREFIXES = [
+  "use:tool:",
+  "use:toolgroup:",
+  "execute:executable:",
+  "execute:group:",
+  "admin:system:",
+];
+
+function runtimeCapabilityKey(capability: unknown): string | null {
+  if (typeof capability === "string") return capability.trim();
+  const record = asRecord(capability);
+  if (!record) return null;
+  const permission = firstString(record.permission);
+  const objectType = firstString(record.objectType);
+  if (!permission || !objectType) return null;
+  return `${permission}:${objectType}:${firstString(record.objectId) ?? ""}`;
+}
+
+/** `chat-only`, or `explicit-only` holding no tool or exec capability at all. */
+export function isCodexRestrictedRuntimeProfile(config: AgentRuntimePermissionsConfig | null | undefined): boolean {
+  if (config?.profile === "chat-only") return true;
+  if (config?.profile !== "explicit-only") return false;
+  return !(config.capabilities ?? []).some((capability) => {
+    const key = runtimeCapabilityKey(capability);
+    return key === null || CODEX_EXEC_CAPABILITY_PREFIXES.some((prefix) => key.startsWith(prefix));
+  });
+}
+
+/** The thread security for a runtime permissions config. Pure. */
+export function buildCodexThreadSecurity(
+  config: AgentRuntimePermissionsConfig | null | undefined,
+): CodexThreadSecurity {
+  return isCodexRestrictedRuntimeProfile(config)
+    ? RESTRICTED_CODEX_THREAD_SECURITY
+    : UNRESTRICTED_CODEX_THREAD_SECURITY;
+}
+
+/**
+ * The thread security for an agent, read from `agents.defaults.runtimePermissions`.
+ * No agent id keeps today's behaviour; a read that fails twice fails closed.
+ */
+export function resolveCodexThreadSecurity(
+  agentId: string | null | undefined,
+  getAgent: (id: string) => { defaults?: Record<string, unknown> | null } | null = dbGetAgent,
+): CodexThreadSecurity {
+  const id = agentId?.trim();
+  if (!id) return UNRESTRICTED_CODEX_THREAD_SECURITY;
+  const read = () =>
+    buildCodexThreadSecurity(getAgentRuntimePermissionsConfigFromDefaults(getAgent(id)?.defaults ?? null));
+  try {
+    try {
+      return read();
+    } catch {
+      // A busy database fails one read now and then: try once more.
+      return read();
+    }
+  } catch (error) {
+    log.warn("codex runtime profile unreadable; using the read-only sandbox", {
+      agentId: id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return RESTRICTED_CODEX_THREAD_SECURITY;
+  }
 }
 
 function isCodexSubAgentDirectInputError(error: unknown): boolean {
@@ -268,8 +377,12 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       ensureAgentInstructionFiles(input.cwd);
-      const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
-      ensureCodexBashHookConfig(materialized?.configDir);
+      const materialized = input.modelBroker
+        ? materializeRuntimeModelBroker(input.modelBroker)
+        : input.humanBridge
+          ? prepareBridgeCodexProfile(input.cwd)
+          : undefined;
+      ensureCodexBashHookConfig(materialized?.configDir, input.humanBridge);
       const syncedSkills = materialized
         ? syncCodexSkills(input.plugins ?? [], {
             codexSkillsDir: join(materialized.configDir, "skills"),
@@ -279,7 +392,9 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       const syncedSkillNames = Array.isArray(syncedSkills) ? syncedSkills : [];
       skillVisibilityByCwd.set(input.cwd, { syncedSkillNames });
       return {
-        ...(materialized ? { env: materialized.env } : {}),
+        ...(materialized
+          ? { env: { ...materialized.env, ...(input.humanBridge ? { RAVI_BRIDGE_TURN: "1" } : {}) } }
+          : {}),
         ...(input.hostServices ? { startRequest: createCodexRuntimeStartRequest(input.hostServices) } : {}),
       };
     },
@@ -320,9 +435,12 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         interrupted: false,
       };
       const allSyncedSkillNames = skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [];
-      const syncedSkillNames = input.allowedSkills?.length
-        ? filterSkillNamesByAllowlist(allSyncedSkillNames, input.allowedSkills)
-        : allSyncedSkillNames;
+      const hidden = new Set(input.hiddenSkills ?? []);
+      const syncedSkillNames = (
+        input.allowedSkills?.length
+          ? filterSkillNamesByAllowlist(allSyncedSkillNames, input.allowedSkills)
+          : allSyncedSkillNames
+      ).filter((name) => !hidden.has(name));
       const skillVisibility = buildCodexSkillVisibilitySnapshot(syncedSkillNames);
 
       return {
@@ -370,10 +488,16 @@ function createCodexRuntimeStartRequest(
   };
 }
 
+/**
+ * `skills.config` entries disabling every inventory skill outside the
+ * allowlist (when one is given) and every skill named in `hiddenSkills`
+ * (pinned Library skills that are not this session's).
+ */
 export function buildCodexDisabledSkillConfig(
   inventory: unknown,
   cwd: string,
-  allowedSkills: readonly string[],
+  allowedSkills: readonly string[] | undefined,
+  hiddenSkills: readonly string[] = [],
 ): Array<{ path: string; enabled: false }> {
   const root = asRecord(inventory);
   const rows = Array.isArray(root?.data) ? root.data : [];
@@ -394,14 +518,13 @@ export function buildCodexDisabledSkillConfig(
     }
     return { path, identity: basename(dirname(path)) };
   });
-  const selectedNames = new Set(
-    filterSkillNamesByAllowlist(
-      entries.map((entry) => entry.identity),
-      allowedSkills,
-    ),
-  );
+  const identities = entries.map((entry) => entry.identity);
+  const selectedNames = new Set(allowedSkills ? filterSkillNamesByAllowlist(identities, allowedSkills) : identities);
+  const hidden = new Set(hiddenSkills);
   return entries.flatMap((entry) =>
-    selectedNames.has(entry.identity) ? [] : [{ path: entry.path, enabled: false as const }],
+    selectedNames.has(entry.identity) && !hidden.has(entry.identity)
+      ? []
+      : [{ path: entry.path, enabled: false as const }],
   );
 }
 
@@ -646,9 +769,16 @@ async function* normalizeCodexEvents(
 
       const turn = transport.startTurn({
         cwd: input.cwd,
+        security:
+          input.env?.RAVI_BRIDGE_TURN === "1"
+            ? RESTRICTED_CODEX_THREAD_SECURITY
+            : resolveCodexThreadSecurity(input.agentId),
         env: input.env ?? process.env,
-        model: resolveCodexModelArg(input.model, defaultModel),
-        effort,
+        model: resolveCodexModelArg(
+          promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : input.model,
+          defaultModel,
+        ),
+        effort: promptMessage.runtimeOptions ? toCodexRuntimeEffort(promptMessage.runtimeOptions.effort) : effort,
         prompt: promptText,
         clientMessageId: promptMessage.clientMessageId,
         replay: promptMessage.replay,
@@ -657,6 +787,7 @@ async function* normalizeCodexEvents(
         forkFrom: forkFromSessionId,
         systemPromptAppend,
         allowedSkills: input.allowedSkills,
+        ...(input.hiddenSkills?.length ? { hiddenSkills: input.hiddenSkills } : {}),
         approveRuntimeRequest: input.approveRuntimeRequest,
         dynamicTools: undefined,
         handleRuntimeToolCall: undefined,
@@ -859,7 +990,12 @@ async function* normalizeCodexEvents(
           }
 
           if (event.type === "turn.interrupted") {
-            const terminal: RuntimeEvent = { type: "turn.interrupted", rawEvent, metadata };
+            const terminal: RuntimeEvent = {
+              type: "turn.interrupted",
+              usage: event.usage ? mapCliUsage(event.usage) : undefined,
+              rawEvent,
+              metadata,
+            };
             if (terminalTracker.accept(terminal)) {
               yield terminal;
             }
@@ -870,6 +1006,7 @@ async function* normalizeCodexEvents(
             const terminal: RuntimeEvent = {
               type: "turn.failed",
               error: extractCliFailureMessage(event) ?? lastErrorMessage ?? "Codex turn failed",
+              usage: event.usage ? mapCliUsage(event.usage) : undefined,
               recoverable: true,
               rawEvent,
               metadata,
@@ -931,18 +1068,28 @@ async function* normalizeCodexEvents(
           continue;
         }
 
-        const stderrMessage = result.stderr.trim();
-        const missingTerminalEvent = !lastErrorMessage && !stderrMessage;
+        // The native process ended without a terminal event. Its stderr is
+        // tracing output (ANSI colors, Rust module paths, thread ids): it stays
+        // in logs and the trace, never in the turn error a channel may show.
+        const stderrTail = codexStderrTail(result.stderr);
+        const exitDetail = describeCodexExit(result.exitCode, result.signal);
+        log.warn("Codex app-server exited without a terminal event", {
+          threadId: turnSessionId,
+          turnId: activeTurnId,
+          exitCode: result.exitCode,
+          signal: result.signal,
+          ...(lastErrorMessage ? { lastError: lastErrorMessage } : {}),
+          ...(stderrTail ? { stderr: stderrTail } : {}),
+        });
         const metadata = buildCodexEventMetadata(
           { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
           { threadId: turnSessionId, turnId: activeTurnId },
         );
         const terminal = terminalTracker.fail({
-          error:
-            lastErrorMessage ??
-            (stderrMessage || `Codex CLI exited without a terminal event (code ${result.exitCode ?? "unknown"})`),
+          error: lastErrorMessage ?? `Codex CLI exited without a terminal event (${exitDetail})`,
           recoverable: true,
-          failureKind: missingTerminalEvent ? "transport" : undefined,
+          failureKind: lastErrorMessage ? undefined : "transport",
+          rawEvent: buildCodexExitRawEvent(result, stderrTail),
           metadata,
         });
         if (terminal) {
@@ -951,6 +1098,36 @@ async function* normalizeCodexEvents(
       } catch (error) {
         if (outerAbortSignal.aborted && !state.interrupted) {
           break;
+        }
+
+        if (error instanceof CodexAppServerTransportError && !state.interrupted) {
+          // The websocket (or JSON-RPC stream) can drop before the child's exit
+          // is observed. Same outcome as an exit without a terminal event.
+          const result = await turn.result;
+          const stderrTail = codexStderrTail(result.stderr);
+          log.warn("Codex app-server transport failed without a terminal event", {
+            threadId: turnSessionId,
+            turnId: activeTurnId,
+            error: error.message,
+            ...(stderrTail ? { stderr: stderrTail } : {}),
+          });
+          const metadata = buildCodexEventMetadata(
+            { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
+            { threadId: turnSessionId, turnId: activeTurnId },
+          );
+          const terminal = terminalTracker.fail({
+            error: lastErrorMessage ?? "Codex app-server connection closed without a terminal event",
+            recoverable: true,
+            // A Codex error event (an unavailable model, a usage limit) explains the
+            // failure; replaying it would only fail again.
+            failureKind: lastErrorMessage ? undefined : "transport",
+            rawEvent: { ...buildCodexExitRawEvent(result, stderrTail), error: error.message },
+            metadata,
+          });
+          if (terminal) {
+            yield terminal;
+          }
+          continue;
         }
 
         if (state.interrupted || isAbortLikeError(error)) {
@@ -978,6 +1155,36 @@ async function* normalizeCodexEvents(
   } finally {
     await closeTransport();
   }
+}
+
+const CODEX_STDERR_TAIL_MAX = 2_000;
+
+/** A failure of the app-server connection itself, not of the native turn. */
+export class CodexAppServerTransportError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "CodexAppServerTransportError";
+  }
+}
+
+/** The last part of native stderr, without terminal escapes, for logs and traces only. */
+export function codexStderrTail(stderr: string): string | undefined {
+  const clean = stripControlCharacters(stderr).trim();
+  if (!clean) return undefined;
+  return clean.length > CODEX_STDERR_TAIL_MAX ? `...${clean.slice(-CODEX_STDERR_TAIL_MAX)}` : clean;
+}
+
+function describeCodexExit(exitCode: number | null, signal: NodeJS.Signals | null): string {
+  return signal ? `signal ${signal}` : `code ${exitCode ?? "unknown"}`;
+}
+
+function buildCodexExitRawEvent(result: CodexCliTurnResult, stderrTail: string | undefined): Record<string, unknown> {
+  return {
+    type: "process.exit",
+    exitCode: result.exitCode,
+    signal: result.signal,
+    ...(stderrTail ? { message: stderrTail } : {}),
+  };
 }
 
 function createCodexAppServerTransport(options: { command?: string } = {}): CodexCliTransport {
@@ -1014,9 +1221,17 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let forcedKillTimer: ReturnType<typeof setTimeout> | null = null;
   let nextRequestId = 1;
   let currentThreadId: string | undefined;
+  // The security of the thread this transport opened; the control thread.fork reuses it.
+  let currentSecurity: CodexThreadSecurity = UNRESTRICTED_CODEX_THREAD_SECURITY;
   let currentInstructionSources: string[] = [];
   let currentGoalStatus: string | undefined;
   let resolvedModel: string | null = null;
+  // The model the thread runs with: set at thread start/resume, switched per turn by turn/start.
+  let appliedTurnModel: string | null = null;
+  // The model the thread first started with, restored by a turn that names none.
+  // A resume after an app-server restart can report a task turn's model, so it
+  // does not overwrite this.
+  let threadBaseModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
   const pendingDynamicToolResults = new Map<string, PendingDynamicToolResult>();
@@ -1076,6 +1291,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     turn.settled = true;
     if (activeTurn === turn) {
       activeTurn = null;
+      // An interrupt escalation armed for this turn must not outlive it.
+      if (!closePromise) clearForcedKillTimer();
     }
 
     if (options?.failQueue !== undefined) {
@@ -1149,7 +1366,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
   const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
     const hookResult = shouldMaterializeCodexHookForCommand(command)
-      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME, input.env?.RAVI_BRIDGE_TURN === "1")
       : null;
     // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
     // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
@@ -1160,9 +1377,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     };
 
     const transportKind: CodexTransportKind = resolveCodexTransportKind(input.env);
+    // Failures before the channel is ready (spawn errors such as a missing
+    // executable, a listener that never appears) are setup problems and keep
+    // failing the turn as thrown errors; only a ready connection that drops is
+    // a recoverable transport failure.
+    let channelReady = false;
     const newTransport = createCodexTransport(transportKind, {
       command,
-      baseArgs: buildCodexAppServerBaseArgs(),
+      baseArgs: buildCodexAppServerBaseArgs(input.env?.RAVI_BRIDGE_TURN === "1"),
       cwd: input.cwd,
       env: spawnEnv,
       onMessage: (line: string) => {
@@ -1174,7 +1396,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           routeAppServerMessage(parsed);
         } catch (error) {
           if (activeTurn) {
-            settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+            settleTurn(
+              activeTurn,
+              { exitCode: 1, stderr: getStderr().slice(activeTurn.stderrOffset) },
+              { failQueue: new CodexAppServerTransportError(error) },
+            );
           }
           signalCodexTransportProcess(newTransport.child, "SIGKILL");
         }
@@ -1184,7 +1410,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           return;
         }
         if (activeTurn) {
-          settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+          settleTurn(
+            activeTurn,
+            { exitCode: 1, stderr: getStderr().slice(activeTurn.stderrOffset) },
+            { failQueue: channelReady ? new CodexAppServerTransportError(error) : error },
+          );
         }
         signalCodexTransportProcess(newTransport.child, "SIGKILL");
       },
@@ -1214,6 +1444,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     // before any caller attempts writeJsonRpc. Stdio resolves immediately.
     try {
       await newTransport.ready;
+      channelReady = true;
     } catch (error) {
       handleChildTermination(newTransport, 1, null, error instanceof Error ? error : new Error(String(error)));
       throw error;
@@ -1370,14 +1601,26 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           },
           { timeoutMs: INTERRUPT_GRACE_MS },
         );
-      } catch {
-        if (!child || closed) {
+      } catch (error) {
+        // Only escalate against the process that ran this turn, and only while
+        // the turn is still the active one: a late timeout from an earlier
+        // attempt must never signal the process now running the next turn.
+        const targetChild = child;
+        if (!targetChild || closed || turn.settled || activeTurn !== turn) {
           return;
         }
-        signalCodexTransportProcess(child, "SIGINT");
+        log.warn("Codex turn/interrupt did not answer; signalling app-server", {
+          pid: targetChild.pid,
+          threadId,
+          turnId: turn.turnId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        signalCodexTransportProcess(targetChild, "SIGINT");
+        clearForcedKillTimer();
         forcedKillTimer = setTimeout(() => {
-          if (!closed && child) {
-            signalCodexTransportProcess(child, "SIGKILL");
+          forcedKillTimer = null;
+          if (!closed && child === targetChild && !turn.settled && activeTurn === turn) {
+            signalCodexTransportProcess(targetChild, "SIGKILL");
           }
         }, INTERRUPT_GRACE_MS);
         forcedKillTimer.unref?.();
@@ -1553,8 +1796,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             cwd: request.cwd ?? null,
             approvalPolicy: "never",
             approvalsReviewer: null,
-            sandbox: CODEX_APP_SERVER_SANDBOX,
-            config: null,
+            sandbox: currentSecurity.sandbox,
+            config: currentSecurity.restricted ? { ...currentSecurity.config } : null,
             baseInstructions: null,
             developerInstructions: null,
             ephemeral: false,
@@ -1606,7 +1849,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }
 
         default:
-          return buildRuntimeControlError(request, `Unsupported Codex runtime control operation: ${request.operation}`);
+          return {
+            ...buildRuntimeControlError(request, `Unsupported Codex runtime control operation: ${request.operation}`),
+            code: RUNTIME_OPERATION_UNSUPPORTED,
+          };
       }
     } catch (error) {
       return buildRuntimeControlError(request, error);
@@ -1899,6 +2145,15 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             thread_id: threadId,
             turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
+            usage:
+              turn.turnUsage || turn.chainUsage
+                ? {
+                    input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.turnUsage?.input_tokens),
+                    output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.turnUsage?.output_tokens),
+                    cached_input_tokens:
+                      toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.turnUsage?.cached_input_tokens),
+                  }
+                : undefined,
           });
         } else {
           turn.queue.push({
@@ -1908,6 +2163,15 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
             error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
+            usage:
+              turn.turnUsage || turn.chainUsage
+                ? {
+                    input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.turnUsage?.input_tokens),
+                    output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.turnUsage?.output_tokens),
+                    cached_input_tokens:
+                      toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.turnUsage?.cached_input_tokens),
+                  }
+                : undefined,
           });
         }
         pendingDynamicToolResults.clear();
@@ -1932,11 +2196,23 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     forkThreadId: string | null = null,
     forkBeforeTurnId: string | null = null,
   ): Promise<void> {
+    if (input.env?.RAVI_BRIDGE_TURN === "1") {
+      const { ensureBridgeCodexGuard } = await import("../bridge/codex-trust.js");
+      if (!input.env.CODEX_HOME) throw new Error("Missing private bridge profile");
+      await ensureBridgeCodexGuard(sendRequest, input.cwd, input.env.CODEX_HOME);
+    }
     const effort = toCodexRuntimeEffort(input.effort);
-    const config: Record<string, unknown> = { model_reasoning_effort: effort };
-    if (input.allowedSkills?.length) {
+    const security = input.security ?? UNRESTRICTED_CODEX_THREAD_SECURITY;
+    currentSecurity = security;
+    const config: Record<string, unknown> = { model_reasoning_effort: effort, ...security.config };
+    if (input.allowedSkills?.length || input.hiddenSkills?.length) {
       const inventory = await sendRequest("skills/list", { cwds: [input.cwd], forceReload: true });
-      config["skills.config"] = buildCodexDisabledSkillConfig(inventory, input.cwd, input.allowedSkills);
+      config["skills.config"] = buildCodexDisabledSkillConfig(
+        inventory,
+        input.cwd,
+        input.allowedSkills?.length ? input.allowedSkills : undefined,
+        input.hiddenSkills,
+      );
     }
     if (!resumeThreadId && !forkThreadId) {
       // Do not let a rejected resumed thread leak into the fresh-thread fallback.
@@ -1954,7 +2230,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           cwd: input.cwd,
           approvalPolicy: "never",
           approvalsReviewer: null,
-          sandbox: CODEX_APP_SERVER_SANDBOX,
+          sandbox: security.sandbox,
           config,
           baseInstructions: null,
           developerInstructions: null,
@@ -1968,7 +2244,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             modelProvider: null,
             cwd: input.cwd,
             approvalPolicy: "never",
-            sandbox: CODEX_APP_SERVER_SANDBOX,
+            sandbox: security.sandbox,
             config,
             baseInstructions: null,
             developerInstructions: input.systemPromptAppend || null,
@@ -1981,7 +2257,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             modelProvider: null,
             cwd: input.cwd,
             approvalPolicy: "never",
-            sandbox: CODEX_APP_SERVER_SANDBOX,
+            sandbox: security.sandbox,
             config,
             serviceName: null,
             baseInstructions: null,
@@ -2022,13 +2298,17 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
+    threadBaseModel ??= resolvedModel;
+    // thread/fork does not take a model, so a fork runs on the inherited one
+    // until a turn/start switches it.
+    appliedTurnModel = forkThreadId ? resolvedModel : (input.model ?? resolvedModel);
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 
   async function ensureClient(input: CodexCliTurnRequest, controlOnly = false): Promise<void> {
     metadataControlOnly = controlOnly;
     const hookResult = shouldMaterializeCodexHookForCommand(command)
-      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME, input.env?.RAVI_BRIDGE_TURN === "1")
       : null;
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
     const hookChanged =
@@ -2102,6 +2382,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     closePromise = (async () => {
       transport?.closeChannel();
       signalCodexTransportProcess(targetChild, "SIGTERM");
+      clearForcedKillTimer();
       forcedKillTimer = setTimeout(() => {
         if (child === targetChild && !closed) {
           signalCodexTransportProcess(targetChild, "SIGKILL");
@@ -2129,6 +2410,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       if (activeTurn && !activeTurn.settled) {
         throw new Error("Codex app-server transport does not support overlapping turns");
       }
+      // A kill escalation left from an earlier turn's interrupt must not reach this one.
+      if (!closePromise) clearForcedKillTimer();
 
       let resolveResult!: (result: CodexCliTurnResult) => void;
       const queue = createAsyncQueue<CodexCliEvent>();
@@ -2246,6 +2529,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             if (!turn.threadId) {
               throw new Error("Codex app-server did not initialize a thread");
             }
+            // A turn whose model differs from the thread's (entering or leaving a
+            // task with a model override) switches it here, without a relaunch.
+            const turnModel = input.model ?? threadBaseModel;
+            const switchesModel = turnModel !== appliedTurnModel;
             await sendRequest(
               "turn/start",
               {
@@ -2261,7 +2548,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 cwd: null,
                 approvalPolicy: null,
                 sandboxPolicy: null,
-                model: null,
+                model: switchesModel ? turnModel : null,
                 effort: input.effort ?? null,
                 summary: null,
                 personality: null,
@@ -2277,6 +2564,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 },
               },
             );
+            appliedTurnModel = turnModel;
+            if (switchesModel && turnModel) {
+              // Usage and cost are reported against the model the turn ran on.
+              resolvedModel = turnModel;
+            }
           };
 
           try {
@@ -2333,10 +2625,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 }
 
-function buildCodexAppServerBaseArgs(): string[] {
+function buildCodexAppServerBaseArgs(humanBridge = false): string[] {
   return [
     "-c",
-    "features.codex_hooks=true",
+    humanBridge ? "features.hooks=true" : "features.codex_hooks=true",
     "-c",
     "shell_environment_policy.inherit=all",
     "-c",
@@ -2351,7 +2643,7 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
 
   return {
     startTurn(input) {
-      const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort));
+      const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort), input.security);
       const child = spawn(command, args, {
         cwd: input.cwd,
         detached: true,
@@ -2437,10 +2729,37 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
   };
 }
 
-function buildExecArgs(resume: string | undefined, model?: string, effort?: string): string[] {
+/**
+ * `codex exec` arguments. A restricted agent (contract §13.10) gets the
+ * read-only sandbox and the native tool switches instead of the bypass flag.
+ */
+export function buildCodexExecArgs(
+  resume: string | undefined,
+  model?: string,
+  effort?: string,
+  agentId?: string,
+): string[] {
+  return buildExecArgs(resume, model, effort, resolveCodexThreadSecurity(agentId));
+}
+
+function buildExecArgs(
+  resume: string | undefined,
+  model?: string,
+  effort?: string,
+  security: CodexThreadSecurity = UNRESTRICTED_CODEX_THREAD_SECURITY,
+): string[] {
   const args = resume ? ["exec", "resume"] : ["exec"];
 
-  args.push("--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox");
+  args.push("--json", "--skip-git-repo-check");
+  if (security.restricted) {
+    // `-c` overrides apply to `exec` and `exec resume` alike.
+    args.push("-c", `sandbox_mode=${JSON.stringify(security.sandbox)}`);
+    for (const [key, value] of Object.entries(security.config)) {
+      args.push("-c", `${key}=${JSON.stringify(value)}`);
+    }
+  } else {
+    args.push("--dangerously-bypass-approvals-and-sandbox");
+  }
 
   if (model) {
     args.push("--model", model);

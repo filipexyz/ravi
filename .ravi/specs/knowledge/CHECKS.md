@@ -3,69 +3,53 @@ id: knowledge/checks
 title: "Ravi Knowledge Checks"
 kind: domain
 domain: knowledge
-status: draft
+status: active
 normative: false
 ---
 
 # Ravi Knowledge Checks
 
-## Storage and Idempotency
+## Commands
 
-- Ingest the same session twice and verify no duplicate canonical items.
-- Ingest overlapping source windows and verify source links merge.
-- Merge two items and verify all source links remain attached.
-- Mark an item stale and verify it remains visible in history.
+- `ravi knowledge --help` lists exactly 8 commands: search, read, why, sources, marks, remember, forget, propose.
+- Every command calls the gate before any work; a gate refusal exits 3 and makes no Console call (`src/cli/commands/knowledge.test.ts`).
+- `propose` without `--execute` exits 3 `WRITE_REQUIRES_EXECUTE`; the plan has `bytes` and never the body.
+- `forget <id>` without `--redact` runs at once; `forget --redact` without `--execute` exits 3.
+- `search --json` returns a `KnowledgeSearchPayload` that parses with the command's return schema.
+- `--execute` is the last declared option and no knowledge return schema is weak (`confirmation-policy.test.ts`, `return-schema-coverage.test.ts`).
+- The skill gate maps `knowledge.*` to `ravi-system-knowledge` (`skill-gates.test.ts`).
 
-## Thread Semantics
+## Gate and audiences
 
-- Create one thread spanning two sessions, one task, and one artifact.
-- Verify the thread id is stable even when session names change.
-- Verify a runtime session is never used as the canonical thread id.
-- Verify a closed thread can be reopened with a new signal.
+- Owner in a group, heartbeats, triggers, agents and contacts get `KNOWLEDGE_TURN_NOT_OPERATOR` (exit 3).
+- With an outsider-reachable agent on `bootstrap`, every command exits 3 `KNOWLEDGE_EXPOSURE_UNSAFE`, and `ravi doctor` fails `permissions.knowledge_exposure`. An enabled trigger on `ravi.inbox.mail.*`, `ravi.inbound.*`, `ravi.console.inbox.*`, a watch, a webhook or a custom topic makes its agent outsider-reachable.
+- The operator relay or an owner cron in a shared session (`agent:<id>:main`, a group, a session with a route or a trigger) gets reason `shared_session`.
+- A write in a later turn of the same session after an unapproved read is gated; after `sessions reset` it is not.
 
-## Evidence
+## Transport
 
-- Create a fact with direct source evidence.
-- Create an inference with confidence low.
-- Create an absence-based item with inspected time window.
-- Verify canonical items without sources are rejected unless `status=draft`.
+- The exec-context header decodes to v1 without `consoleUserId`.
+- A 404 without an error code on a knowledge path is "unavailable"; a 404 `NOT_FOUND` is exit 1 `KNOWLEDGE_NOT_FOUND`; a search with a bad `--project` does not fall back to local results.
+- Console down gives local results plus `issues: ["console_unavailable: <code>"]` and exit 0.
 
-## Identity Boundary
+## Output
 
-- Ingest a WhatsApp group message and verify the group is modeled as `chat`, not `contact`.
-- Ingest a message with unresolved sender and verify it references `platform_identity`, not a guessed contact.
-- Verify raw channel ids appear only in provenance/debug fields.
+- One nonce per call; text containing `RAVI_KNOWLEDGE` or `>>>` cannot close the fence.
+- `next` is never empty; zero results include the re-search recipe.
 
-## Obsidian Publication
+## Local store and memory
 
-- Publish a thread to Obsidian twice and verify stable output.
-- Add manual text outside the managed block and verify the publisher preserves it.
-- Add manual text inside the managed block and verify dry-run detects drift.
-- Verify frontmatter contains Ravi ids and source references.
-
-## Profiles
-
-- Validate every profile before use.
-- Preview a profile against a small source batch.
-- Verify profiles render Markdown, not raw structured dumps.
-- Verify a profile can omit low-confidence items.
-
-## Curator Agents
-
-- Run two curators on the same source and verify they draft without conflicting writes.
-- Verify only the publisher can mark items canonical by default.
-- Verify curator sessions are bounded and linked to a knowledge thread.
-- Verify curator agents cannot send outbound messages unless explicitly authorized.
-
-## Privacy and Redaction
-
-- Ingest a source containing credentials and verify redaction.
-- Generate an agent brief and verify it includes only allowed sources.
-- Publish to vault and verify sensitive raw payloads are not dumped.
-
-## CLI
-
-- `ravi knowledge threads list` is bounded by default.
-- `ravi knowledge items list` supports cursor pagination.
-- `ravi knowledge publish --dry-run` performs no writes.
-- `ravi knowledge validate` catches orphan sources, duplicate slugs, missing profile templates, and publication drift.
+- Indexing is idempotent; `meetings/cloud/`, curator and Library-request sessions and forgotten subjects are skipped.
+- With FTS5 off, local search still finds rows through `LIKE`.
+- `bun test src/knowledge/store/local-index.test.ts`: in FTS5 and LIKE modes, `--who` finds an accented speaker below more than `limit * 10` unrelated candidates, and fills the limit with the selected speaker's AND matches before OR matches.
+- `bun test src/knowledge/items/propose.test.ts`: retries keep the same idempotency key; changing the audience, evidence hash, superseded ref, transcript title or text/project field boundaries changes the key.
+- `bun test src/knowledge/gaps/store.test.ts`: equal questions from different recipients keep separate rows; retries in one conversation deduplicate, and forgetting one contact preserves the other contact's wait.
+- `bun test src/knowledge/mirror/mirror.test.ts`: simulated Console deduplication links multiple recipients to one proposal; each marked recipient receives one answer, a failed recipient is retried independently, and another instance without the FAQ mark receives nothing.
+- `bun test src/knowledge/mirror/mirror.test.ts`: a later recipient whose upload deduplicates to an already approved answer is notified once through mirror sync, without replaying an answer event.
+- `bun test src/knowledge/gaps/store.test.ts src/knowledge/mirror/mirror.test.ts`: both archive and redact forget operations cancel approved answers waiting for a missing FAQ mirror; mirroring it later notifies only the other waiting contact, once. The store drops pending/uploaded/answered waits, preserves notified history and returns zero changes on a repeated forget.
+- After `forget --about`, a contact with a WhatsApp JID has zero index rows.
+- A `remember` from a channel turn whose text is only in a quote becomes a draft.
+- Guarded sessions rewrite unmarked Ravi links to `[link removido]` on every outbound path; a bare domain is caught whatever precedes it (not an email), with its port and path.
+- After `⟦forget⟧` the session keeps a guard-only row.
+- Operator notes appear in the packet under the private-notes line, never under `[memory]`.
+- A batched turn has exactly one `[knowledge]` line.

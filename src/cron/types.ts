@@ -61,6 +61,11 @@ export interface CronJob {
    * principal of the turn that created it. Unset on legacy rows (= operator).
    */
   ownerPrincipal?: string;
+  /**
+   * The chat whose contact grants narrowed the owner's turn when it wrote the
+   * job. Every turn the job drives runs under that contact's current grants there.
+   */
+  creatorChat?: string;
 
   // State
   nextRunAt?: number;
@@ -103,6 +108,8 @@ export interface CronJobInput {
   onError?: string;
   /** `operator`, or the actor principal of the creating turn. */
   ownerPrincipal?: string;
+  /** Canonical chat id of the contact overlay the creating turn ran under. */
+  creatorChat?: string;
 }
 
 /**

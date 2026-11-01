@@ -68,6 +68,8 @@ export async function connectNats(
   }
 }
 
+export { redactNatsUrl };
+
 /** Whether NATS was explicitly connected (daemon) vs lazy (CLI) */
 export function isExplicitConnect(): boolean {
   return explicitConnect;

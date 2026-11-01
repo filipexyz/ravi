@@ -337,6 +337,25 @@ describe("createClaudeRuntimeProvider", () => {
     cache_creation_input_tokens: 0,
   };
 
+  it("keeps measured usage on failed results and leaves unmeasured usage absent", async () => {
+    nextMessages = [
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        errors: ["interrupted"],
+        usage: { input_tokens: 23, output_tokens: 9, cache_read_input_tokens: 4 },
+      },
+    ];
+    const measured = await runSingleTurn();
+    expect(findEventsByType(measured, "turn.failed")[0]?.usage).toMatchObject({
+      inputTokens: 23,
+      outputTokens: 9,
+      cacheReadTokens: 4,
+    });
+    nextMessages = [{ type: "result", subtype: "error_during_execution", errors: ["interrupted"] }];
+    expect(findEventsByType(await runSingleTurn(), "turn.failed")[0]?.usage).toBeUndefined();
+  });
+
   it("fails the turn on Claude assistant error frames instead of delivering them as replies", async () => {
     nextMessages = [
       {
@@ -810,6 +829,42 @@ describe("createClaudeRuntimeProvider", () => {
     expect(secondEnv.RAVI_TASK_ID).toBeUndefined();
     expect(queryCalls[1]?.options.resume).toBe("claude-session-authority");
     expect(secondEnv).not.toBe(firstEnv);
+  });
+
+  it("applies each turn's model, effort and thinking to its own query", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-turn-options" }];
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "task turn" },
+            session_id: "",
+            parent_tool_use_id: null,
+            runtimeOptions: { model: "opus", effort: "low" as const, thinking: "verbose" as const },
+          };
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "normal turn" },
+            session_id: "",
+            parent_tool_use_id: null,
+            runtimeOptions: { model: "sonnet", effort: "xhigh" as const },
+          };
+        })(),
+        { effort: "medium" },
+      ),
+    );
+
+    await collectEvents(session.events);
+    expect(queryCalls).toHaveLength(2);
+    expect(queryCalls[0]?.options.model).toBe("opus");
+    expect(queryCalls[1]?.options.model).toBe("sonnet");
+    expect(queryCalls[0]?.options.effort).toBe("low");
+    expect(queryCalls[0]?.options.thinking).toBeDefined();
+    expect(queryCalls[1]?.options.effort).not.toBe(queryCalls[0]?.options.effort);
+    expect(queryCalls[1]?.options.thinking).toBeUndefined();
+    expect(queryCalls[1]?.options.resume).toBe("claude-session-turn-options");
   });
 
   it("does not let inherited process auth shadow a selected auth profile", async () => {

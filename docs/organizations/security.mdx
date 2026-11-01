@@ -1,0 +1,353 @@
+---
+title: Security model
+description: Who can reach an agent and what it may do. How Ravi checks commands, approvals, credentials and app keys, what it records, and its limits.
+icon: shield-check
+---
+
+By the end of this page you will know every check between a message and the work an agent does. You will also know what Ravi records, how to add your own authority, and which limits exist today.
+
+<Note>
+This page describes `ravi.bot@next`. Command counts and defaults come from that branch.
+</Note>
+
+## How it fits together
+
+The checks on this page run on the machine, in the daemon or the CLI. The Console checks only the calls made to it, such as member roles, page access and connector approvals.
+
+1. **Entry.** Instance policies and routes decide who reaches an agent.
+2. **Ceiling.** A runtime profile and a list of capabilities cap what an agent may do.
+3. **Turn.** Each turn gets its own authority, from the ceiling and from who sent the message.
+4. **Commands.** Every `ravi` command declares its risk. Commands with outside or irreversible effects wait for `--execute`.
+5. **Record.** Denials are stored and published, and each command publishes an audit event.
+
+## Who can reach an agent
+
+Entry policies decide who reaches an agent. Each instance has one policy for direct messages and one for groups, and a route can override them.
+
+| `dmPolicy` | Direct messages |
+|---|---|
+| `open` (default) | Anyone reaches the agent |
+| `pairing` | Only contacts with status `allowed`. Everyone else is saved as pending. |
+| `closed` | No direct messages |
+
+| `groupPolicy` | Groups and channels |
+|---|---|
+| `open` (default) | Every group the account is in |
+| `allowlist` | Only approved groups. Others are saved as pending. |
+| `closed` | No groups, except those with an explicit route |
+
+- The policy comes from the matching route's `--policy` first, then the instance, then `open`.
+- An explicit route admits its group under every group policy, `closed` included. Any pattern other than `*` is explicit.
+- `ravi instances pending approve` on a chat creates that route. On a contact, it sets the contact to `allowed`.
+- A sender who gets in without a contact receives text replies only. The turn has no tools and no commands.
+
+```bash
+ravi instances set wa-main dmPolicy pairing
+ravi instances set wa-main groupPolicy allowlist
+ravi instances routes add wa-main group:120363012345678901 main
+ravi instances target wa-main --pattern group:120363012345678901
+```
+
+<Warning>
+Both policies default to `open`. `ravi instances connect` rewrites the instance record each time it runs, so the policies go back to `open`. Set `pairing` and `allowlist` again after every connect.
+</Warning>
+
+Members of your organization see an agent in the directory only after its operator lists it (`ravi agents listing <agent> on --execute`), and reach it from another machine only after the operator opens it with `ravi agents requests <agent> on --execute`. Those turns run as the person who asked, with no capabilities. See [Machines](/organizations/machines#let-other-machines-ask-an-agent).
+
+Channel details, such as how Slack differs from WhatsApp, are in [Instances and routing](/guides/routing).
+
+## What an agent may do
+
+Each agent has a **ceiling**: a runtime profile plus an optional list of capabilities. Each turn gets its own authority under that ceiling.
+
+| Profile | What the agent holds |
+|---|---|
+| `bootstrap` | A birth floor of tools, a few CLI groups and a set of executables, plus its listed capabilities. New agents start here. |
+| `chat-only` | Nothing. Conversation only. |
+| `explicit-only` | Exactly the listed capabilities, with no birth floor |
+| `full-access` | `admin:system:*`, every executable, every tool and every skill |
+
+The authority of a turn depends on who sent it:
+
+| Sender | Authority of the turn |
+|---|---|
+| You at the terminal, cron jobs, triggers and other automations | The agent's ceiling |
+| A sender who resolves to a contact, in a chat with no grants | The agent's ceiling, whatever the contact's status |
+| A sender who resolves to a contact, in a governed chat | The ceiling intersected with that contact's grants for the chat |
+| A sender with no contact | No capabilities. The agent can still reply in text. |
+
+A chat becomes governed as soon as one contact holds a grant scoped to it. Set a narrow ceiling, grant each person what they need in the chat, and check the result:
+
+```bash
+ravi agents permissions support explicit-only --capabilities use:tool:Bash,read:contacts:list --execute
+ravi permissions allow helper --to contact:<contact-id> --chat <chat-id> --capabilities use:tool:Bash,read:contacts:list --apply
+ravi permissions list --chat <chat-id>
+```
+
+Console access calls made from a chat, such as `ravi pages share`, `ravi invites` and `ravi access request`, act for the person who wrote. The Console resolves that person through their `ravi link`. A turn that cannot be attributed is refused and never falls back to your login.
+
+Other Console writes made in a chat, such as `ravi pages ship` and `ravi bases rows`, are credited to the person who wrote when they have linked their account with `ravi link` and are an active member of your organization. The Console then acts with the lesser of their role and yours, and records both of you in the audit log. Without that link the write is refused, and Ravi starts the link for them: on WhatsApp the agent asks them to message it in private (it never starts the conversation), and Ravi answers that message with their approval link. Once they approve, their private chat reaches the agent even if it had no route. Reads still use your login.
+
+See [Permissions](/guides/permissions) for capabilities, the bootstrap floor, governed chats and admin tags.
+
+## Every command declares its risk
+
+Every `ravi` command declares a kind (`read` or `mutate`), a resource, an action and a risk. A command without that declaration is denied, whoever runs it. The counts below are from 18 October 2026 and grow as commands are added.
+
+| Risk | Commands |
+|---|---|
+| `low` | 388 |
+| `medium` | 269 |
+| `high` | 165 |
+| `destructive` | 36 |
+| Total | 858 |
+
+The kind, resource and action form the capability the command checks, such as `mutate:agents:permissions`. The older `execute:group:<group>` form also works, except on a few commands that need an exact resource. To read any command's declaration:
+
+```bash
+ravi tools show agents_permissions --json
+```
+
+The `access` block shows `kind`, `resource`, `action`, `risk` and `requiresConfirmation`.
+
+### Exit codes and the write brake
+
+| Exit code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Execution error or not found. A missing capability exits `1` with `PERMISSION_DENIED`. |
+| `2` | Usage error, such as an unknown flag |
+| `3` | Blocked by policy. Usually the write brake: the plan was printed and nothing was written. |
+
+157 commands carry the write brake. Without `--execute` they print the plan and exit `3`. Some brake only when the change adds authority: `ravi agents permissions` applies a reduction at once.
+
+```bash
+ravi agents permissions main full-access             # plan only, exit 3
+ravi agents permissions main full-access --execute   # applies it
+ravi agents permissions support chat-only            # reduces authority, applies at once
+```
+
+Shell commands get one more check. Shells, string execution, command substitution and inline code for `python`, `node`, `perl`, `ruby` and `php` are always blocked, under every profile. `bun -e` is not blocked. See [The Bash check](/guides/permissions#the-bash-check).
+
+## Approvals
+
+When a turn lacks a capability, Ravi can ask a trusted person in the chat. Today only the Pi and Grok providers ask for capabilities.
+
+| Provider | When a turn lacks a capability |
+|---|---|
+| Pi, Grok | Ravi posts an approval request in the chat the turn came from. Approving a shell command does not make it run today. |
+| Claude Code | Built-in tools and shell commands are refused at once. The chat gets approval requests only for plans and for leaving spec mode. |
+| Codex | Shell commands are refused at once. Nothing is asked in the chat. |
+
+On every provider, a `ravi` command outside the ceiling is refused without asking.
+
+- **Who can approve:** a person whose chat identity links to a contact or agent. Its global capabilities must include the requested one, or `admin:system:*`. Plans and specs need `admin:system:*`, and chat-scoped grants do not count.
+- **Slack:** the **Approve** and **Reject** buttons. Reactions and replies are ignored.
+- **WhatsApp and other channels:** react with 👍 or ❤️ to approve. Any other reaction, or a reply to the request, rejects it.
+- **Timeout:** after 5 minutes without a decision, the request is denied.
+- **Scope:** an approval covers the current runtime context only. For lasting access, use `ravi permissions allow` or `ravi permissions resolve`.
+
+Ravi never asks in three cases, and denies at once:
+
+- The turn has no chat, such as `ravi sessions send` from your terminal.
+- The sender has no contact. The request would go back to that same sender, who could approve it.
+- The agent is `chat-only` and the request is for a tool, a CLI group or an executable.
+
+Connector writes, such as `ravi gmail send --execute`, follow a separate path. The account owner approves on a Console page, and the command runs again with `--approval <id>`. See [Connect your accounts](/console/connectors).
+
+## Credentials
+
+The credential broker keeps provider secrets out of Ravi's database. Ravi stores the connection and a reference, and the secret stays in macOS Keychain or in Vault.
+
+| Part | Where it lives |
+|---|---|
+| Connections, scopes and secret references | `~/.ravi/credentials.db` (`RAVI_CREDENTIALS_DB_PATH` moves it) |
+| Secret values, `keychain` backend | macOS Keychain, through the `security` tool |
+| Secret values, `vault` backend | Vault KV v2. Needs `VAULT_ADDR` and `VAULT_TOKEN`. |
+| Each secret read | A row in the `credential_audit_events` table of the same database |
+
+```bash
+ravi credentials connections add --provider slack --connection main --backend keychain --secret-stdin < slack-tokens.json
+ravi credentials connections list
+ravi credentials policies explain --provider slack --connection main --action messages.send
+ravi credentials broker exec --provider slack --connection main --action auth.check   # plan only, exit 3
+```
+
+- Each `ravi credentials` command checks its own capability, such as `mutate:credentials.broker:exec`. No profile below `full-access` holds these by default.
+- Adding a connection, removing one and running the broker are CLI-only. A `ravi` command from an agent turn is refused for them.
+- `broker exec` is braked. With `--execute` it resolves the secret inside the process and never prints it.
+- Native Slack reads its tokens from the broker when its channel names a connection. Its secret holds `appToken` and `botToken`, as JSON or as env lines.
+
+`policies explain` prints the policy the broker declares for an action. Using a connection needs `use:credential:<provider>:<connection>` and `execute:<provider>:<action>`. Every action except a short list of reads, such as `auth.check` and `users.list`, is marked as needing approval.
+
+<Warning>
+Today the broker declares this policy but does not enforce it when it resolves a secret. The audit row records the approval as `not_requested`. Treat the command capabilities and the CLI-only rule as the real boundary. They do not stop an agent that can run any code, such as a `bootstrap` agent through `bun -e`.
+</Warning>
+
+## Keys for apps
+
+Apps, scripts and external CLIs call Ravi with a context key (`rctx_...`). A key is a lease of named capabilities, and it never holds more than the context that issued it.
+
+```bash
+ravi daemon init-admin-key
+ravi context issue dashboard --ttl 2h --allow view:system:audit,access:session:main --json
+ravi context list
+ravi context revoke <context-id>
+```
+
+| Rule | What it means |
+|---|---|
+| A key holds only what its issuer holds | Each `--allow` entry is checked against the issuing context. An entry the issuer lacks fails the command. |
+| A key expires | `--ttl` defaults to `1h` and is capped by the issuer's expiry |
+| Revoking cascades | `ravi context revoke` also revokes every key issued from that one. `--no-cascade` keeps them. |
+| Keys are never listed | `ravi context list` and `ravi context info` show ids, never keys |
+| Identity flags are admin-only | `--as-agent`, `--as-session-key`, `--as-session-name` and `--with-session-actor` |
+
+### Isolated CLIs never run locally
+
+A process that carries `RAVI_CONTEXT_KEY` sends every command to the daemon's gateway. It uses `RAVI_GATEWAY_URL` when set, otherwise the daemon's socket at `~/.ravi/cli-gateway.sock`. The daemon that owns the key authorizes the command.
+
+If no gateway is reachable, the command fails with `GATEWAY_REQUIRED`. It never falls back to running locally against another database. CLI-only commands are refused in this mode.
+
+### The HTTP gateway
+
+- The gateway binds to `127.0.0.1` by default. The daemon refuses to start on any other host unless `RAVI_GATEWAY_NETWORK_AUTHORIZED=1` is set.
+- Superadmin commands are refused through the gateway unless `RAVI_SDK_GATEWAY_ALLOW_SUPERADMIN=1` is set.
+- CLI-only commands are not exposed through the gateway at all.
+
+See [SDKs and HTTP gateway](/guides/sdk) to turn it on and issue keys.
+
+## Plug in your own authority
+
+The `external-authority` provider lets an outside issuer cap what agents may do. The issuer signs an assertion, and Ravi verifies it locally, with no network call. Any doubt is a denial.
+
+**How it combines.** Ravi asks every provider in the chain, and any denial wins. With `external-authority` added, a request must pass the agent's ceiling and match the assertion. The provider never grants a capability on its own.
+
+**What it covers.** Checks that carry the agent's identity: every `ravi` command an agent runs, and tool and shell requests on Pi and Grok. Your own terminal commands stay with `operator-control`, which is always in the chain.
+
+**What it does not cover yet.** Outside governed chats, Claude Code and Codex check built-in tools and shell commands against the agent's ceiling directly. The assertion does not apply to those checks.
+
+<Steps>
+  <Step title="Write and sign the assertion">
+    ```json
+    {
+      "iss": "acme-authority",
+      "sub": "agent:support",
+      "aud": "support-server",
+      "iat": 1792281600,
+      "exp": 1792886400,
+      "scope": [
+        { "permission": "use", "objectType": "tool", "objectId": "*" },
+        { "permission": "read", "objectType": "contacts", "objectId": "list" }
+      ],
+      "sig": "<base64 signature>"
+    }
+    ```
+
+    `sub` is the subject, such as `agent:<id>`. `iat` and `exp` are seconds since the epoch, and `exp` is required. In a scope entry, `*` matches any value of that whole field.
+
+    To sign, remove `sig` and serialize the rest as JSON with keys sorted at every level and no spaces. Sign those bytes with an Ed25519 private key and put the base64 signature in `sig`.
+
+    A matching entry with `"requiresApproval": true` answers "needs approval" instead of "allow". A `ravi` command has no way to ask, so it is refused.
+  </Step>
+  <Step title="Point Ravi at the assertion and the public key">
+    ```bash
+    ravi settings set permissions.external_authority.assertion /etc/ravi/assertion.json
+    ravi settings set permissions.external_authority.pubkey /etc/ravi/authority.pub.pem
+    ravi settings set permissions.external_authority.audience support-server
+    ```
+
+    The public key is an inline PEM or a path to a PEM file. Ravi refuses a key file that its group or other users can write. Keep both files out of reach of the agents.
+
+    Changing a setting under `permissions.` needs `admin:system:*`. You hold it at your terminal. Inside an agent turn, only an agent that holds it, such as a `full-access` agent, passes.
+  </Step>
+  <Step title="Add the provider to the chain">
+    ```bash
+    ravi settings set permissions.provider_ids operator-control,context-capabilities,external-authority
+    ```
+
+    <Warning>
+    Keep `context-capabilities` in the list. Without it, the assertion alone decides the checks it covers, and the agents' ceilings stop applying there. Most tool and shell checks of Claude Code and Codex are then denied.
+    </Warning>
+  </Step>
+  <Step title="Check the chain">
+    ```bash
+    ravi permissions status
+    ```
+
+    The `authorization providers` line must list `external-authority`. Ravi reads the setting and the assertion file on every check, so no restart is needed. To rotate, replace the assertion file.
+  </Step>
+</Steps>
+
+Every one of these cases is a denial, recorded like any other:
+
+| Case | Reason code |
+|---|---|
+| The assertion or public key setting is missing | `external_authority_not_configured` |
+| The key cannot be read, or its file is writable by its group or other users | `external_authority_pubkey_unreadable`, `external_authority_pubkey_insecure` |
+| The assertion is missing, unreadable or malformed, or has no numeric `exp` | `external_assertion_missing`, `external_assertion_unreadable`, `external_assertion_malformed` |
+| The signature does not verify | `external_assertion_invalid_signature` |
+| `sub` or `aud` does not match | `external_assertion_subject_mismatch`, `external_assertion_audience_mismatch` |
+| The assertion has expired | `external_assertion_expired` |
+| No scope entry covers the request | `external_assertion_scope_empty`, `external_authority_not_in_scope` |
+
+To turn it off, remove the setting. The command is braked:
+
+```bash
+ravi settings delete permissions.provider_ids            # plan only, exit 3
+ravi settings delete permissions.provider_ids --execute
+```
+
+## Audit
+
+Denials are stored and published, and each command publishes an audit event. Apps can watch the audit topics live over the SDK.
+
+| Record | Where | What it holds |
+|---|---|---|
+| Permission denials | The `permission_denials` table in `ravi.db`, and the NATS topic `ravi.audit.denied` | Subject, capability, agent, session, context, reason and command. Reason and command are cut to 500 characters. |
+| Commands from your terminal or through the gateway. This includes the `ravi` commands an agent runs from its shell. | `ravi._cli.cli.<group>.<command>` | Tool, sanitized input, outcome, exit code and duration. Also the context id and agent, when there is one. |
+| Commands run as in-process tools of a session | `ravi.<sessionKey>.cli.<group>.<command>` | The same fields, plus sanitized output |
+| Secret reads | `credential_audit_events` in `credentials.db` | Provider, connection, action, decision and result |
+
+```bash
+ravi events stream --only audit
+ravi events stream --only cli
+ravi triggers add "Permission alert" --topic ravi.audit.denied \
+  --message "A permission was denied. Explain what happened and whether I need to act." --cooldown 1m
+ravi permissions resolve <denial-id>
+```
+
+An app with a key holding `view:system:audit` can stream every `ravi.audit.>` event from `GET /api/v1/_stream/audit`, or with `audit()` in the SDKs.
+
+- `ravi.audit.>` and `ravi._cli.cli.>` are kept in the `RAVI_EVENTS` JetStream stream for 7 days, up to 512 MB. It is a replay buffer, not an archive.
+- Events on `ravi.<sessionKey>.cli.*` topics are published live only. The denials table is the lasting record.
+- Ravi has no sync that sends the denials table or the audit topics to the Console. See [What leaves your machines](/organizations/data-flow) for what does reach it.
+- `RAVI_SUPPRESS_AUDIT_EVENTS=1` in a process's environment, the daemon or the CLI, stops that process from publishing audit events. Denial rows are still written. Keep it out of `~/.ravi/.env`.
+
+## Known limits
+
+These limits exist today. Plan around them.
+
+| Limit | What to do |
+|---|---|
+| Ravi does not check tools from MCP servers that a runtime loads from its own configuration, such as a Claude `.mcp.json`. They run without approval, from any chat. | Add only MCP servers you would let everyone who reaches the agent use. |
+| On Codex, Ravi checks shell commands per turn. Codex's other built-in tools, such as file edits, follow the agent's profile instead. | Use `chat-only`, or `explicit-only` without tool or exec capabilities. Those run Codex in a read-only sandbox with web search and image viewing off. |
+| Chat approvals for capabilities exist only on Pi and Grok. On Claude Code and Codex, a missing capability is refused. | Raise the ceiling, or grant per chat, ahead of time. |
+| Outside governed chats, any sender who resolves to a contact gets the full ceiling, whatever the contact's status. | Use `pairing` and `allowlist`, and govern group chats that include other people. |
+| Policies default to `open`, and `ravi instances connect` resets them to `open`. | Set them again after every connect. |
+| The credential broker declares its policy but does not enforce it on a secret read. | Rely on the command capabilities and the CLI-only rule. Use `chat-only` or `explicit-only` for agents that untrusted people reach. |
+| The external authority reads one assertion, and an assertion names one subject. While it is in the chain, the checks it covers deny every other agent with `external_assertion_subject_mismatch`. Apps whose keys come from `ravi daemon init-admin-key` act as `agent:bootstrap`, so they are denied too. | Enable it on a machine that runs the one agent you want to cap. |
+| The external authority does not cover the built-in tool and shell checks of Claude Code and Codex outside governed chats. | Cap those agents with their ceiling as well. |
+| A machine is linked by whichever Console user runs `ravi login` on it. `ravi logout` asks the Console to revoke that login, but a new `ravi login` links the machine again. | Control who can log in to your organization. See [Machines](/organizations/machines#remove-a-machine). |
+
+### Not built yet
+
+| Capability | Status |
+|---|---|
+| Machine identity owned by the organization: an install code, admin approval, removal that survives a new login | Not yet |
+| A Console view of every machine's health, denials or audit | Not yet. Each machine keeps its own. |
+| Enforcement of the credential broker's declared policy | Not yet |
+
+## Report a vulnerability
+
+Report security issues privately through a [GitHub security advisory](https://github.com/filipexyz/ravi/security/advisories/new). If GitHub does not offer the form, open an issue that asks for a private security contact, without any details. Please do not put details in a public issue.

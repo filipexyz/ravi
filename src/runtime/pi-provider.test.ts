@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,9 +7,15 @@ import {
   buildPiRpcProcessArgs,
   buildPiSkillCatalogSystemPrompt,
   buildPiRpcSpawnEnv,
+  buildPiDynamicToolsEnv,
   createPiRpcSubprocessTransport,
   createPiRuntimeProvider,
   listPiManagedRuntimeEnvKeys,
+  PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT,
+  PI_INLINE_PROMPT_BYTE_LIMIT,
+  applyPiDynamicToolsEnv,
+  spillPiDynamicToolsToFile,
+  spillPiSystemPromptAppend,
   type PiRpcCommand,
   type PiRpcEvent,
   type PiRpcResponse,
@@ -21,6 +27,7 @@ import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
 import {
   createPiPermissionHooksReadyEvent,
   formatPiPermissionUiDecisionValue,
+  PI_DYNAMIC_TOOL_UI_TITLE,
   PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
   PI_PERMISSION_UI_TITLE,
 } from "./pi-tool-permissions.js";
@@ -333,13 +340,29 @@ describe("Pi runtime provider", () => {
     ).toThrow(/refuses upstream credential environment variable OPENAI_API_KEY/);
     expect(transport.starts).toHaveLength(0);
   });
+  it("serializes the host tool catalog into the bridge env", () => {
+    const env = buildPiDynamicToolsEnv([
+      { name: "tasks_show", description: "Show a task", inputSchema: { type: "object", properties: {} } },
+    ]);
+    expect(JSON.parse(env ?? "null")).toEqual([
+      {
+        name: "tasks_show",
+        label: "tasks_show",
+        description: "Show a task",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
+    expect(buildPiDynamicToolsEnv([])).toBeUndefined();
+    expect(buildPiDynamicToolsEnv(undefined)).toBeUndefined();
+  });
+
   it("advertises an explicit subprocess RPC capability matrix", () => {
     expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
       runtimeControl: {
         supported: true,
       },
       dynamicTools: {
-        mode: "none",
+        mode: "host",
       },
       execution: {
         mode: "subprocess-rpc",
@@ -369,6 +392,77 @@ describe("Pi runtime provider", () => {
     expect(buildPiRpcProcessArgs(transport.starts[0]!)).toEqual(
       expect.arrayContaining(["--mode", "rpc", "--extension", extensionPath]),
     );
+  });
+
+  it("spills an oversized system prompt append to a shared, atomically published file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-pi-prompt-"));
+    const args = ["--mode", "rpc", "--append-system-prompt", "x".repeat(PI_INLINE_PROMPT_BYTE_LIMIT + 1)];
+    const release = spillPiSystemPromptAppend(args, { dir });
+    const path = args[args.indexOf("--append-system-prompt") + 1] ?? "";
+
+    expect(path.startsWith(dir)).toBe(true);
+    expect(path).toMatch(/prompt-[0-9a-f]{16}\.md$/);
+    expect(readFileSync(path, "utf8").length).toBe(PI_INLINE_PROMPT_BYTE_LIMIT + 1);
+    expect(readdirSync(dir).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
+
+    release();
+    // Another transport may still be starting with the same path; the file is
+    // reclaimed by the age-based prune, not by the first transport that closes.
+    expect(existsSync(path)).toBe(true);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("points the pi process at exactly one dynamic tools source", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-pi-tools-env-"));
+    const env: NodeJS.ProcessEnv = { RAVI_PI_DYNAMIC_TOOLS_FILE: "/stale/catalog.json" };
+
+    applyPiDynamicToolsEnv(env, JSON.stringify([{ name: "small" }]), { dir });
+    expect(env.RAVI_PI_DYNAMIC_TOOLS).toBeTruthy();
+    expect(env.RAVI_PI_DYNAMIC_TOOLS_FILE).toBeUndefined();
+
+    const big = JSON.stringify([{ name: "big", description: "y".repeat(PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT) }]);
+    applyPiDynamicToolsEnv(env, big, { dir });
+    expect(env.RAVI_PI_DYNAMIC_TOOLS).toBeUndefined();
+    expect(env.RAVI_PI_DYNAMIC_TOOLS_FILE).toMatch(/tools-[0-9a-f]{16}\.json$/);
+
+    applyPiDynamicToolsEnv(env, undefined, { dir });
+    expect(env.RAVI_PI_DYNAMIC_TOOLS).toBeUndefined();
+    expect(env.RAVI_PI_DYNAMIC_TOOLS_FILE).toBeUndefined();
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps a small system prompt append inline", () => {
+    const args = ["--mode", "rpc", "--append-system-prompt", "prompt curto"];
+    const release = spillPiSystemPromptAppend(args);
+
+    expect(args[3]).toBe("prompt curto");
+    release();
+  });
+
+  it("spills an oversized dynamic tools catalog to a file instead of one giant env var", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-pi-tools-"));
+    const payload = JSON.stringify([{ name: "big", description: "y".repeat(PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT) }]);
+
+    const path = spillPiDynamicToolsToFile(payload, { dir });
+    expect(path).toBeTruthy();
+    expect(path).toMatch(/tools-[0-9a-f]{16}\.json$/);
+    expect(readFileSync(path!, "utf8")).toBe(payload);
+
+    // Same payload reuses the content-addressed file.
+    expect(spillPiDynamicToolsToFile(payload, { dir })).toBe(path);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps a small dynamic tools catalog inline", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-pi-tools-small-"));
+    const payload = JSON.stringify([{ name: "small", description: "ok" }]);
+
+    expect(spillPiDynamicToolsToFile(payload, { dir })).toBeNull();
+
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("disables Pi native skill discovery only when a skill allowlist is enforced", async () => {
@@ -447,6 +541,76 @@ describe("Pi runtime provider", () => {
         value: formatPiPermissionUiDecisionValue({ allowed: true }),
       },
     ]);
+  });
+
+  it("runs a Pi dynamic tool request end to end and answers it with the host result", async () => {
+    const transport = new FakePiRpcTransport();
+    // Pi RPC encodes ctx.ui.input(title, payload) with the payload in placeholder.
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-dyn",
+      method: "input",
+      title: PI_DYNAMIC_TOOL_UI_TITLE,
+      placeholder: JSON.stringify({
+        version: 1,
+        toolName: "tasks_show",
+        toolCallId: "call-1",
+        arguments: { taskId: "task-1" },
+      }),
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+    const calls: unknown[] = [];
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("observa", {
+          handleRuntimeToolCall: async (call) => {
+            calls.push(call);
+            return { success: true, contentItems: [{ type: "inputText", text: "task-1 in_progress" }] };
+          },
+        }),
+      ).events,
+    );
+
+    expect(calls).toEqual([{ toolName: "tasks_show", callId: "call-1", arguments: { taskId: "task-1" } }]);
+    expect(transport.writes).toEqual([
+      {
+        type: "extension_ui_response",
+        id: "ui-dyn",
+        value: JSON.stringify({ success: true, contentItems: [{ type: "inputText", text: "task-1 in_progress" }] }),
+      },
+    ]);
+  });
+
+  it("answers an unreadable Pi dynamic tool request with a failure instead of cancelling it", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "extension_ui_request",
+      id: "ui-dyn-bad",
+      method: "input",
+      title: PI_DYNAMIC_TOOL_UI_TITLE,
+      placeholder: "not json",
+    });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+    let called = false;
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("observa", {
+          handleRuntimeToolCall: async () => {
+            called = true;
+            return { success: true, contentItems: [] };
+          },
+        }),
+      ).events,
+    );
+
+    expect(called).toBe(false);
+    expect(transport.writes).toHaveLength(1);
+    const write = transport.writes[0] as { id: string; value: string; cancelled?: boolean };
+    expect(write.id).toBe("ui-dyn-bad");
+    expect(write.cancelled).toBeUndefined();
+    expect(JSON.parse(write.value)).toMatchObject({ success: false, reason: expect.stringContaining("dynamic tool") });
   });
 
   it("answers queued parallel permission UI requests with matching ids and host reasons", async () => {
@@ -1029,6 +1193,49 @@ describe("Pi runtime provider", () => {
     );
   });
 
+  it.each(["Connection error.", "read ECONNRESET", "socket hang up", "fetch failed", "network error"])(
+    "marks a Pi provider transport drop as a recoverable transport failure: %s",
+    async (errorMessage) => {
+      const transport = new FakePiRpcTransport();
+      transport.pushEvent({
+        type: "turn_end",
+        message: assistantMessage("", { stopReason: "error", errorMessage }),
+        toolResults: [],
+      });
+
+      const events = await collectRuntimeEvents(
+        createPiRuntimeProvider({ transport }).startSession(createStartRequest("queda de rede")).events,
+      );
+
+      expect(events.filter((event) => event.type === "turn.failed")).toEqual([
+        expect.objectContaining({
+          type: "turn.failed",
+          recoverable: true,
+          failureKind: "transport",
+          error: errorMessage,
+        }),
+      ]);
+    },
+  );
+
+  it("leaves a non-transport Pi turn error without a failureKind", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "error", errorMessage: "Pi turn failed" }),
+      toolResults: [],
+    });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("falha seca")).events,
+    );
+
+    const failures = events.filter((event) => event.type === "turn.failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ type: "turn.failed", recoverable: true });
+    expect(failures[0]?.failureKind).toBeUndefined();
+  });
+
   it("maps Pi aborted turns to a single interrupted terminal event", async () => {
     const transport = new FakePiRpcTransport();
     transport.pushEvent({
@@ -1109,6 +1316,169 @@ describe("Pi runtime provider", () => {
     });
 
     expect(transport.commands).toEqual([expect.objectContaining({ type: "set_thinking_level", level: "xhigh" })]);
+  });
+
+  it("switches the live Pi model per turn with set_model", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        const setModel = [...transport.commands].reverse().find((sent) => sent.type === "set_model");
+        return piResponse(command, {
+          model: { provider: "openai", id: (setModel?.modelId as string | undefined) ?? "gpt-5.5" },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok", { model: "gpt-5.5" })] });
+      }
+      return defaultResponse(command);
+    };
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      ...promptMessage(text),
+      runtimeOptions: { model, effort: "high" },
+    });
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("unused", {
+          prompt: (async function* () {
+            yield turn("agent turn", "openai/gpt-5.5");
+            yield turn("task turn", "openai/gpt-4.1");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(transport.starts).toHaveLength(1);
+    expect(transport.starts[0]?.modelArg).toBe("openai/gpt-5.5");
+    const types = transport.commands.map((command) => command.type);
+    expect(transport.commands.filter((command) => command.type === "set_model")).toEqual([
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-4.1" }),
+    ]);
+    expect(types.indexOf("set_model")).toBeGreaterThan(types.indexOf("prompt"));
+    expect(types.indexOf("set_model")).toBeLessThan(types.lastIndexOf("prompt"));
+  });
+
+  it("switches back after a handle setModel moved the live Pi process off the turn's model", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        const setModel = [...transport.commands].reverse().find((sent) => sent.type === "set_model");
+        return piResponse(command, {
+          model: { provider: "openai", id: (setModel?.modelId as string | undefined) ?? "gpt-5.5" },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok", { model: "gpt-5.5" })] });
+      }
+      return defaultResponse(command);
+    };
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      ...promptMessage(text),
+      runtimeOptions: { model },
+    });
+    const session: { handle?: RuntimeSessionHandle } = {};
+    session.handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("unused", {
+        prompt: (async function* () {
+          yield turn("first turn", "openai/gpt-5.5");
+          await session.handle?.setModel?.("openai/gpt-4.1");
+          yield turn("second turn", "openai/gpt-5.5");
+        })(),
+      }),
+    );
+    await collectRuntimeEvents(session.handle!.events);
+
+    expect(transport.commands.filter((command) => command.type === "set_model")).toEqual([
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-4.1" }),
+      expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-5.5" }),
+    ]);
+  });
+
+  it("fails a turn whose model switch is rejected and retries the switch on the next turn", async () => {
+    const transport = new FakePiRpcTransport();
+    let setModelAttempts = 0;
+    transport.responseFor = (command) => {
+      if (command.type === "set_model") {
+        setModelAttempts += 1;
+        if (setModelAttempts === 1) {
+          return { id: command.id, type: "response", command: "set_model", success: false, error: "unknown model" };
+        }
+      }
+      if (command.type === "get_state") {
+        const setModel = [...transport.commands].reverse().find((sent) => sent.type === "set_model");
+        return piResponse(command, {
+          model: {
+            provider: "openai",
+            id: setModelAttempts > 1 ? ((setModel?.modelId as string | undefined) ?? "gpt-5.5") : "gpt-5.5",
+          },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok", { model: "gpt-5.5" })] });
+      }
+      return defaultResponse(command);
+    };
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      ...promptMessage(text),
+      runtimeOptions: { model, effort: "high" },
+    });
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("unused", {
+          prompt: (async function* () {
+            yield turn("agent turn", "openai/gpt-5.5");
+            yield turn("task turn", "openai/gpt-4.1");
+            yield turn("task turn retry", "openai/gpt-4.1");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.failed")).toEqual([
+      expect.objectContaining({ rawEvent: expect.objectContaining({ type: "model.switch_failed" }) }),
+    ]);
+    expect(transport.commands.filter((command) => command.type === "set_model")).toHaveLength(2);
+    expect(transport.commands.filter((command) => command.type === "prompt")).toHaveLength(2);
+  });
+
+  it("does not prompt when the session is aborted during a model switch", async () => {
+    const transport = new FakePiRpcTransport();
+    const abortController = new AbortController();
+    transport.responseFor = (command) => {
+      if (command.type === "set_model") {
+        abortController.abort();
+      }
+      if (command.type === "get_state") {
+        const setModel = [...transport.commands].reverse().find((sent) => sent.type === "set_model");
+        return piResponse(command, {
+          model: { provider: "openai", id: (setModel?.modelId as string | undefined) ?? "gpt-5.5" },
+        });
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok", { model: "gpt-5.5" })] });
+      }
+      return defaultResponse(command);
+    };
+
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      ...promptMessage(text),
+      runtimeOptions: { model, effort: "high" },
+    });
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("unused", {
+          abortController,
+          prompt: (async function* () {
+            yield turn("agent turn", "openai/gpt-5.5");
+            yield turn("task turn", "openai/gpt-4.1");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(transport.commands.filter((command) => command.type === "prompt")).toHaveLength(1);
   });
 
   it("applies setModel before the first Pi prompt via spawn model without session reset", async () => {

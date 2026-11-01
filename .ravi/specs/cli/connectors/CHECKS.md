@@ -163,17 +163,36 @@
 
 ### Cron owner
 
+- From a turn that is not the operator, `cron add --shell`, `cron set <id>
+  shell` (on any job, contact-owned included) and a `cron set` of an operator
+  shell job's `env-file`/`on-error` MUST fail `CRON_SHELL_NOT_OPERATOR`
+  (exit 3) with no write (`src/cli/commands/cron-commands.test.ts`); the
+  runner MUST NOT spawn a contact-owned shell job and MUST record the error
+  (`src/cron/runner.test.ts`). An operator `cron set <id> shell` on a
+  contact-owned job MUST succeed and move the job to the operator.
+
 - `cron add` from the terminal MUST store `owner_principal = operator`;
   `cron show` MUST report a legacy NULL as `operator` ("Runs as" and
   `ownerPrincipal`).
 - Opening a database whose `cron_jobs` lacks `owner_principal` MUST add the
   column and keep existing rows NULL.
-- `cron set <id> <key> ...` from a turn that is not the operator MUST make
-  that turn's principal the job's owner, in the same write, for every key but
-  `name`, `description`, `cron`, `every`, `tz`, `timezone`, `timeout` and
-  `delete-after`.
+- `cron set <id> <key> ...` from a turn whose principal is not the job's
+  owner, the operator included, MUST make that turn's principal the job's
+  owner, in the same write, for every key but `description`, `cron`, `every`,
+  `tz`, `timezone`, `timeout` and `delete-after`. The operator MUST NOT take
+  over someone else's job through any key but `message`, `shell` or `exec`.
 - `cron add` with an idempotency key MUST deduplicate across owners: the
   owner is not part of the fingerprint.
+- `cron add` from a contact's turn MUST return `runsAsOperator: false`, a
+  `Runs as:` line and a warning worded by owner and `executionType` (a contact owner acts as that person through their link); from the terminal
+  or with a legacy NULL owner, `runsAsOperator: true` and no warning.
+  `cron set` that re-owns a job to a contact MUST warn the same way; an
+  operator `cron set` of a contact-owned job's `message`, `shell` or `exec`
+  MUST move it to the operator, and any other operator edit MUST keep it with the contact and
+  keep warning
+  (`src/cli/commands/cron-commands.test.ts`). `cronOwnerActsAsOperator` MUST
+  agree with the `automation:cron:<id>` classification
+  (`src/link/connector-turn.test.ts`).
 
 ### Agent-first contract
 
@@ -282,3 +301,8 @@
   `/connectors/consent/<token>` page) and `expiresAt` of a consent answer,
   and the chat lines of the not-linked and connection-required answers with
   exit 3.
+
+- `bun test src/link/connector-turn.test.ts src/cron/runner.test.ts` MUST show
+  that changing cron ownership or linking its contact to the operator after
+  admission cannot promote a running turn, while blocking/removing its captured
+  owner refuses subsequent protected calls.

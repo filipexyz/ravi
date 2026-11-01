@@ -1,5 +1,6 @@
 import type { RuntimeEffort } from "./effort.js";
 import type { RuntimeModelBrokerBinding, RuntimeModelBrokerCapabilities } from "./model-broker.js";
+import type { RuntimeControlErrorCode } from "./runtime-control-errors.js";
 
 export type { RuntimeEffort } from "./effort.js";
 
@@ -73,6 +74,13 @@ export interface RuntimePromptMessage {
   replay?: boolean;
   /** Whether reconciliation may retry after the provider reports a failed or interrupted terminal turn. */
   terminalReplayAllowed?: boolean;
+  /**
+   * This turn's model, effort and thinking (task, profile, session or agent).
+   * When present it replaces the start request's values for this turn,
+   * including an absent effort or thinking, so leaving a task drops its
+   * overrides without a relaunch. A model broker session keeps its leased model.
+   */
+  runtimeOptions?: { model?: string; effort?: RuntimeEffort; thinking?: RuntimeThinking };
 }
 
 export interface RuntimeToolUse {
@@ -270,6 +278,8 @@ export interface RuntimeControlState {
   turnId?: string;
   activeTurn?: boolean;
   supportedOperations?: RuntimeControlOperation[];
+  /** Operations the provider implements but the host refuses (see runtime-control-errors.ts). */
+  disabledOperations?: RuntimeControlOperation[];
 }
 
 export interface RuntimeControlRequest {
@@ -301,6 +311,11 @@ export interface RuntimeControlResult {
   goal?: RuntimeGoal | null;
   state?: RuntimeControlState;
   error?: string;
+  /** Typed refusal code (RUNTIME_*), set on every host refusal. */
+  code?: RuntimeControlErrorCode;
+  retryable?: boolean;
+  suggestedAction?: string;
+  disabledReason?: string;
 }
 
 export interface RuntimeControlCapabilities {
@@ -385,6 +400,7 @@ export interface RuntimePlugin {
 }
 
 export interface RuntimePrepareSessionRequest {
+  humanBridge?: boolean;
   agentId: string;
   cwd: string;
   plugins?: RuntimePlugin[];
@@ -479,6 +495,19 @@ export interface RuntimeStartRequest {
    */
   allowedSkills?: string[];
   /**
+   * Hard tool allowlist for this turn. Providers that can narrow their tool
+   * catalog expose only these names. Observation turns use it so an observer
+   * grant cannot be bypassed with a native tool (bash/edit) from the agent
+   * ceiling.
+   */
+  allowedTools?: string[];
+  /**
+   * Skills a provider with one shared skills directory (Codex) must disable
+   * for this session even without an allowlist: pinned Library skills that
+   * are not this agent's, or not for this turn (spec skills/library).
+   */
+  hiddenSkills?: string[];
+  /**
    * CLI-only bootstrap: skip the advertised skill-name catalog. The Ravi system
    * prompt remains large; this does not claim a 23k-token reduction.
    */
@@ -567,10 +596,12 @@ export type RuntimeEvent =
     } & RuntimeEventBase)
   | ({
       type: "turn.interrupted";
+      usage?: RuntimeUsage;
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
       type: "turn.failed";
+      usage?: RuntimeUsage;
       error: string;
       recoverable?: boolean;
       /** Canonical failure class used by the host to apply bounded, replay-safe recovery. */

@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
+import { canAccessResource, canAccessSession, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   declareCommandReturns,
@@ -150,6 +151,42 @@ function failObserverSessionNotFound(op: string, sessionRef: string, asJson?: bo
   });
 }
 
+function callerCanReachSession(session: { name?: string; sessionKey: string }): boolean {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return true;
+  return [session.name, session.sessionKey].some((ref) => ref && canAccessSession(scopeCtx, ref));
+}
+
+/**
+ * An observer rule copies a source session's events to the observer agent. An
+ * agent may only observe one session it can access, with itself (or an agent it
+ * may mutate) as the observer. Wider scopes need admin authority.
+ */
+function assertObserverRuleWithinCallerScope(
+  op: string,
+  rule: { scope?: ObserverScope; sourceSession?: string; observerAgentId: string },
+  asJson?: boolean,
+): void {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return;
+  const deny = (message: string): never =>
+    contractFail(op, "PERMISSION_DENIED", `Permission denied: ${message}`, {
+      asJson,
+      details: { suggestedAction: "Scope the rule to one of your own sessions, or ask an operator" },
+    });
+  const scope = rule.scope ?? "global";
+  if (scope !== "session" || !rule.sourceSession) {
+    deny(`observer scope ${scope} requires admin authority; use --scope session --source-session <your session>`);
+  }
+  const source = getSessionByName(rule.sourceSession!) ?? getSession(rule.sourceSession!);
+  if (!(source ? callerCanReachSession(source) : canAccessSession(scopeCtx, rule.sourceSession!))) {
+    failObserverSessionNotFound(op, rule.sourceSession!, asJson);
+  }
+  if (rule.observerAgentId !== scopeCtx.agentId && !canAccessResource(scopeCtx, rule.observerAgentId, "mutate")) {
+    deny(`observer agent must be the calling agent, not ${rule.observerAgentId}`);
+  }
+}
+
 function sessionKeyForNameOrKey(
   op: string,
   value?: string,
@@ -161,7 +198,7 @@ function sessionKeyForNameOrKey(
   const target = value?.trim();
   if (!target) return {};
   const session = getSessionByName(target) ?? getSession(target);
-  if (!session) failObserverSessionNotFound(op, target, asJson);
+  if (!session || !callerCanReachSession(session)) failObserverSessionNotFound(op, target, asJson);
   return {
     sessionKey: session.sessionKey,
     sessionName: session.name ?? session.sessionKey,
@@ -408,7 +445,8 @@ export class ObserverCommands {
     asJson?: boolean,
   ) {
     const session = getSessionByName(sessionName) ?? getSession(sessionName);
-    if (!session) failObserverSessionNotFound("observers refresh", sessionName, asJson);
+    if (!session || !callerCanReachSession(session))
+      failObserverSessionNotFound("observers refresh", sessionName, asJson);
     const allowedModes = new Set<ObserverReconcileMode>([
       "attach-missing",
       "detach-disabled",
@@ -657,6 +695,17 @@ export class ObserverRuleCommands {
       ...(parsedMetadata ? { metadata: parsedMetadata } : {}),
       ...(disabled === true ? { enabled: false } : {}),
     };
+    const existing = id ? dbGetObserverRule(id) : null;
+    if (existing) assertObserverRuleWithinCallerScope("observers rules set", existing, asJson);
+    assertObserverRuleWithinCallerScope(
+      "observers rules set",
+      {
+        scope: input.scope ?? existing?.scope,
+        sourceSession: input.sourceSession ?? existing?.sourceSession,
+        observerAgentId: input.observerAgentId,
+      },
+      asJson,
+    );
     const rule = dbUpsertObserverRule(input);
     const payload = { success: true, rule: serializeRule(rule) };
     if (asJson) {
@@ -676,7 +725,9 @@ export class ObserverRuleCommands {
   ) {
     // dbSetObserverRuleEnabled throws on unknown ids; pre-check to keep the
     // not-found path on the contract envelope.
-    if (!dbGetObserverRule(id)) failObserverRuleNotFound("observers rules enable", id, asJson);
+    const existing = dbGetObserverRule(id);
+    if (!existing) failObserverRuleNotFound("observers rules enable", id, asJson);
+    assertObserverRuleWithinCallerScope("observers rules enable", existing, asJson);
     const rule = dbSetObserverRuleEnabled(id, true);
     const payload = { success: true, rule: serializeRule(rule) };
     if (asJson) printJson(payload);
@@ -789,6 +840,10 @@ export class ObserverRuleCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    const explained = getSessionByName(sessionName) ?? getSession(sessionName);
+    if (explained && !callerCanReachSession(explained)) {
+      failObserverSessionNotFound("observers rules explain", sessionName, asJson);
+    }
     const explanation = explainObserverRulesForSession(sessionName);
     if (!explanation.source) failObserverSessionNotFound("observers rules explain", sessionName, asJson);
     const payload = {

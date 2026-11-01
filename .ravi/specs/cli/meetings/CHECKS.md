@@ -31,3 +31,12 @@
   recorded artifact with the join still open MUST close it and inform once.
 - The inbox runner MUST hand each newly delivered `meetings.recording.*` item to
   `meetings fetch` exactly once, after the item is delivered locally.
+- `meetings read <id> --json` on a turn that is not the operator's own MUST
+  exit 3 with `MEETING_ACCESS_DENIED` and MUST NOT call the Console; on the
+  operator's turn it MUST POST `{meetingId}` (or `{url}` for a link), print the
+  payload with `success: true` and `note`, and write nothing to disk.
+- `meetings read` MUST map Console `ORG_ACCESS_DENIED` and
+  `PROJECT_ACCESS_DENIED` to exit 3, `NOT_FOUND` and `CONFLICT` to exit 1.
+- `meetings read` lets the operator read in a group they chose, as `pages read` does; the calendar (`refuseGroup`) refuses that turn (`turn: group`) (`src/meetings/read.test.ts`).
+- The calendar's group refusal carries `ownerAsked`, and its next step sends the operator to their private chat with `chatLine`/`chatLinePt`; anyone else gets the "other people" step (`src/meetings/read.test.ts`).
+- Over the remote gateway, `MEETING_ACCESS_DENIED` (`meetings read`) and `CALENDAR_ACCESS_DENIED` (`agenda *`) keep the daemon's message, next step, `refusal`, `turn` and chat lines, never "Remote command was blocked by policy." (`src/cli/remote-gateway.test.ts`).

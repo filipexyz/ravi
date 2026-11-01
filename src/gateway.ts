@@ -21,6 +21,18 @@
  *   ravi.config.changed        -> reload router config
  */
 
+import { LIBRARY_REQUEST_CHANNEL } from "./library/request-channel.js";
+import {
+  type GuardedSession,
+  guardedSessionForChat,
+  guardTextForChat,
+  guardTextForGuardedSession,
+  isGuardedSession,
+  normalizeOutboundJid,
+} from "./knowledge/egress/guard.js";
+import { extractKnowledgeMarkers, handleKnowledgeMarkers } from "./knowledge/markers.js";
+import { KNOWLEDGE_CURATOR_CHANNEL } from "./knowledge/types.js";
+import { isEmptyOrExactSilentText, isExactSilentTokenText, isSilentTokenText, SILENT_TOKEN } from "./silent-token.js";
 import { unlink } from "node:fs/promises";
 import { nats } from "./nats.js";
 import type { ResponseContentPart, ResponseMediaAttachment, ResponseMessage } from "./runtime/message-types.js";
@@ -39,6 +51,7 @@ import {
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
 import type { ChannelChatActionContent } from "./channels/chat-actions.js";
 import { publishChannelOutboundJobDurably } from "./channels/outbound-publish-outbox.js";
+import { warnIfNativeOutboundUndeliverable } from "./channels/native-readiness.js";
 import { buildChannelChatActionJob, buildChannelOutboundJobFromResponse } from "./channels/outbound-stream.js";
 import { subjectForChannelPresence } from "./channels/presence-consumer.js";
 import type { StickerSendEvent } from "./stickers/send.js";
@@ -57,7 +70,8 @@ import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
-import { sendSlackText } from "./channels/slack/text-send.js";
+import { sendSlackPrivateCards, sendSlackText } from "./channels/slack/text-send.js";
+import { SessionResponseQueue } from "./gateway-response-order.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -88,7 +102,15 @@ export function resolveTargetInstanceId(target: { accountId?: string; instanceId
 }
 
 // Outcomes that are intended, or already logged where they happen.
-const QUIET_DELIVERY_REASONS = new Set(["silent", "silent_response", "duplicate_media", "send_error"]);
+const QUIET_DELIVERY_REASONS = new Set([
+  "silent",
+  "silent_response",
+  "duplicate_media",
+  "send_error",
+  "library_request",
+  "knowledge_curator",
+  "knowledge_egress",
+]);
 
 export function logUndeliveredResponse(delivery: Record<string, unknown>): void {
   const target = delivery.target as { channel?: string } | undefined;
@@ -112,20 +134,30 @@ export function logUndeliveredResponse(delivery: Record<string, unknown>): void 
   }
 }
 
-/**
- * Normalize a chatId to a valid WhatsApp JID for the omni API.
- *
- * Handles ravi-internal formats:
- *   "group:120363407390920496"  → "120363407390920496@g.us"
- *   "120363407390920496@g.us"   → unchanged
- *   "178035101794451@lid"       → unchanged
- *   "5511999@s.whatsapp.net"    → unchanged
- */
-function normalizeOutboundJid(chatId: string): string {
-  if (chatId.startsWith("group:")) {
-    return chatId.slice(6) + "@g.us";
+/** Strips the Knowledge reply markers (⟦gap⟧, ⟦forget⟧) from every text of a response. */
+function stripKnowledgeMarkers(response: ResponseMessage): {
+  response: ResponseMessage;
+  gap: boolean;
+  forget: boolean;
+} {
+  let gap = false;
+  let forget = false;
+  const strip = (text: string): string => {
+    const extracted = extractKnowledgeMarkers(text);
+    gap ||= extracted.gap;
+    forget ||= extracted.forget;
+    return extracted.text;
+  };
+  const next: ResponseMessage = { ...response };
+  if (typeof response.response === "string") next.response = strip(response.response);
+  if (Array.isArray(response.content)) {
+    next.content = response.content.map((part) =>
+      part && typeof part === "object" && part.type === "text" && typeof part.text === "string"
+        ? { ...part, text: strip(part.text) }
+        : part,
+    );
   }
-  return chatId;
+  return { response: gap || forget ? next : response, gap, forget };
 }
 
 function isWhatsAppGroupJid(chatId: string): boolean {
@@ -263,8 +295,8 @@ function withOutboundStatusAnchor(target: PresenceTarget, data: Record<string, u
   };
 }
 
-/** Silent reply token — when response contains this, don't send to channel */
-export const SILENT_TOKEN = "@@SILENT@@";
+/** Silent reply token — a response that is only this marker is not sent. */
+export { SILENT_TOKEN };
 
 export interface GatewayOptions {
   logLevel?: "debug" | "info" | "warn" | "error";
@@ -324,6 +356,23 @@ type DirectSendRequest = {
   replyTopic?: string;
   threadId?: string;
   blocks?: readonly Record<string, unknown>[];
+  /**
+   * Slack only: send the card privately to these people (ephemeral in `to`, or
+   * their DM with the app when they are not in it) instead of posting it.
+   */
+  privateTo?: readonly string[];
+};
+
+type MediaSendRequest = {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  filePath: string;
+  mimetype: string;
+  type: "image" | "video" | "audio" | "document";
+  filename: string;
+  caption?: string;
+  voiceNote?: boolean;
 };
 
 type ReactionRequest = {
@@ -340,6 +389,7 @@ export class Gateway {
   private omniConsumer: OmniConsumer;
   private emitEvent: typeof nats.emit;
   private activeSubscriptions = new Set<string>();
+  private responseQueue = new SessionResponseQueue();
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
   private runtimeActivitySequences = new Map<string, number>();
@@ -1020,6 +1070,7 @@ export class Gateway {
       // dropped); no further runtime event will arrive to end it.
       type === "dispatch.restart_suppressed" ||
       type === "dispatch.dropped" ||
+      type === "dispatch.start_rejected" ||
       (!type &&
         (nativeEvent === "turn.complete" ||
           nativeEvent === "turn.completed" ||
@@ -1037,7 +1088,13 @@ export class Gateway {
   }
 
   private isPresenceStartEvent(type: string | undefined, nativeEvent?: string): boolean {
-    if (type === "prompt.published" || type === "turn.started" || type === "thread.started") return true;
+    if (
+      type === "prompt.received" ||
+      type === "prompt.published" ||
+      type === "turn.started" ||
+      type === "thread.started"
+    )
+      return true;
     if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
     return false;
   }
@@ -1076,6 +1133,16 @@ export class Gateway {
     await this.emitEvent(`ravi.session.${sessionName}.delivery`, delivery);
   }
 
+  /** The session's Knowledge guard row (packet conversations only); lookup errors read as unguarded. */
+  private knowledgeGuardForSession(sessionName: string): GuardedSession | null {
+    try {
+      return isGuardedSession(sessionName);
+    } catch (error) {
+      log.warn("Knowledge guard lookup failed", { sessionName, error });
+      return null;
+    }
+  }
+
   private async handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void> {
     this.recordResponseTrace(sessionName, response);
 
@@ -1086,6 +1153,28 @@ export class Gateway {
       await emitDelivery({ status: "dropped", reason: "missing_target" });
       return;
     }
+    if (target.channel === LIBRARY_REQUEST_CHANNEL) {
+      // The Library request runner reads this reply from the session's events
+      // and returns it through the Console; there is no chat to deliver to.
+      await emitDelivery({ status: "dropped", reason: "library_request", target });
+      return;
+    }
+    if (target.channel === KNOWLEDGE_CURATOR_CHANNEL) {
+      // The curator reads its JSON reply from the session; nothing goes to a chat.
+      await emitDelivery({ status: "dropped", reason: "knowledge_curator", target });
+      return;
+    }
+
+    // Packet conversations (Knowledge contact memory): strip the reply
+    // markers and run them, before the reply is split into parts.
+    const guarded = this.knowledgeGuardForSession(sessionName);
+    if (guarded) {
+      const stripped = stripKnowledgeMarkers(response);
+      response = stripped.response;
+      if (stripped.gap || stripped.forget) {
+        await handleKnowledgeMarkers({ sessionName, target, gap: stripped.gap, forget: stripped.forget });
+      }
+    }
 
     const fallbackText = response.error ? `Error: ${response.error}` : response.response;
     const parts = normalizeResponseContentParts(response, fallbackText);
@@ -1094,11 +1183,19 @@ export class Gateway {
       .filter((part): part is Extract<ResponseContentPart, { type: "text" }> => part.type === "text")
       .reduce((total, part) => total + part.text.length, 0);
 
-    if (
-      !hasMedia &&
+    const textParts = parts.filter(
+      (part): part is Extract<ResponseContentPart, { type: "text" }> => part.type === "text",
+    );
+    // Silence is a delivery state, not a substring edit: drop the delivery when
+    // every text part is the marker/empty, or when the parts joined together
+    // form the marker (a marker split across content parts). A sentence that
+    // cites the marker stays deliverable.
+    const allTextPartsSilent =
       parts.length > 0 &&
-      parts.every((part) => part.type === "text" && (!part.text.trim() || part.text.trim() === SILENT_TOKEN))
-    ) {
+      textParts.length === parts.length &&
+      textParts.every((part) => isEmptyOrExactSilentText(part.text));
+    const joinedPartsSilent = textParts.length > 0 && isSilentTokenText(textParts.map((part) => part.text).join(""));
+    if (!hasMedia && (allTextPartsSilent || joinedPartsSilent)) {
       log.debug("Silent response, not sending to channel", { sessionName });
       await this.stopPresenceForSession(sessionName, target);
       await emitDelivery({ status: "dropped", reason: "silent", target });
@@ -1106,7 +1203,7 @@ export class Gateway {
     }
 
     const deliverableParts = parts.filter(
-      (part) => part.type === "media" || (part.text.trim() && part.text.trim() !== SILENT_TOKEN),
+      (part) => part.type === "media" || (!joinedPartsSilent && part.text.trim() && !isExactSilentTokenText(part.text)),
     );
     if (deliverableParts.length === 0) {
       await emitDelivery({ status: "dropped", reason: "empty_response", target });
@@ -1125,9 +1222,21 @@ export class Gateway {
     for (let index = 0; index < deliverableParts.length; index++) {
       const part = deliverableParts[index]!;
       if (part.type === "media") {
-        await this.deliverResponseMediaPart(sessionName, response, target, part.media, index);
+        const media =
+          guarded && part.media.caption
+            ? { ...part.media, caption: guardTextForGuardedSession(part.media.caption, guarded).text }
+            : part.media;
+        await this.deliverResponseMediaPart(sessionName, response, target, media, index);
       } else {
-        await this.deliverResponseTextPart(sessionName, response, target, part.text, index, deliverableParts.length);
+        await this.deliverResponseTextPart(
+          sessionName,
+          response,
+          target,
+          part.text,
+          index,
+          deliverableParts.length,
+          guarded,
+        );
       }
     }
   }
@@ -1165,8 +1274,14 @@ export class Gateway {
     text: string,
     partIndex: number,
     totalParts: number,
+    knowledgeGuard?: GuardedSession | null,
   ): Promise<void> {
-    const partResponse = this.buildTextPartResponse(response, text, partIndex, totalParts);
+    // Knowledge egress guard, first: before the native queue and before TTS.
+    const guarded = knowledgeGuard !== undefined ? knowledgeGuard : this.knowledgeGuardForSession(sessionName);
+    const unguardedText = text;
+    if (guarded) text = guardTextForGuardedSession(text, guarded).text;
+    const builtPart = this.buildTextPartResponse(response, text, partIndex, totalParts);
+    const partResponse = text === unguardedText ? builtPart : { ...builtPart, response: text, error: undefined };
     const emitDelivery = (data: Record<string, unknown>) =>
       this.emitDeliveryEvent(sessionName, partResponse, {
         ...data,
@@ -1175,7 +1290,15 @@ export class Gateway {
         partCount: totalParts,
       });
 
+    if (guarded && !text.trim()) {
+      await emitDelivery({ status: "dropped", reason: "knowledge_egress", target });
+      return;
+    }
+
     if (this.shouldQueueNativeOutbound(target)) {
+      // Queue even when nothing can deliver yet (the job waits for the
+      // channel), but say so at warn level instead of only "queued" at info.
+      warnIfNativeOutboundUndeliverable(target);
       const built = buildChannelOutboundJobFromResponse(sessionName, partResponse);
       if (!built.ok) {
         await emitDelivery({ status: "dropped", reason: built.reason, target, textLen: text.length });
@@ -1602,7 +1725,8 @@ export class Gateway {
       async (event) => {
         const sessionName = event.topic.split(".")[2];
         const response = event.data as unknown as ResponseMessage;
-        await this.handleResponseEvent(sessionName, response);
+        // One session's parts must reach the chat in emit order.
+        await this.responseQueue.run(sessionName, () => this.handleResponseEvent(sessionName, response));
       },
       { queue: "ravi-gateway" },
     );
@@ -1717,9 +1841,22 @@ export class Gateway {
   }
 
   private async handleDirectSendEvent(data: DirectSendRequest): Promise<void> {
+    // Knowledge egress guard for packet conversations, text and poll alike.
+    const guarded = guardedSessionForChat(data.channel, data.to);
+    if (guarded) {
+      const guard = (text: string) => guardTextForGuardedSession(text, guarded).text;
+      data = {
+        ...data,
+        ...(data.text !== undefined ? { text: guard(data.text) } : {}),
+        ...(data.poll
+          ? { poll: { ...data.poll, name: guard(data.poll.name), values: data.poll.values.map(guard) } }
+          : {}),
+        blocks: undefined,
+      };
+    }
     const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
     if (resolved.kind === "native") {
-      await this.deliverNativeDirectSend(resolved, data);
+      await this.deliverNativeDirectSend(resolved, data, Boolean(guarded));
       return;
     }
     if (resolved.kind !== "omni") {
@@ -1806,6 +1943,7 @@ export class Gateway {
   private async deliverNativeDirectSend(
     resolved: Extract<OutboundAccountResolution, { kind: "native" }>,
     data: DirectSendRequest,
+    knowledgeGuarded = false,
   ): Promise<void> {
     const reply = async (payload: Record<string, unknown>) => {
       if (!data.replyTopic) return;
@@ -1830,6 +1968,44 @@ export class Gateway {
       return;
     }
 
+    if (data.privateTo) {
+      try {
+        const result = await sendSlackPrivateCards({
+          accountId: resolved.accountId,
+          chatId: data.to,
+          text,
+          userIds: data.privateTo,
+          blocks: data.blocks ?? [],
+          ...(data.threadId ? { threadId: data.threadId } : {}),
+        });
+        log.info("Native private cards delivered", {
+          accountId: resolved.accountId,
+          delivered: result.deliveries.length,
+          failed: result.failures.length,
+        });
+        if (result.failures.length > 0) {
+          log.warn("Some private Slack cards were not delivered", { failures: result.failures });
+        }
+        if (result.deliveries.length === 0) {
+          await reply({
+            success: false,
+            error: result.failures[0]?.error ?? "No private card could be delivered",
+          });
+          return;
+        }
+        await reply({
+          success: true,
+          messageId: result.deliveries[0]?.messageId,
+          deliveries: result.deliveries,
+          failures: result.failures,
+        });
+      } catch (err) {
+        log.error("Failed to deliver native private cards", { accountId: resolved.accountId, error: err });
+        await reply({ success: false, error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
     try {
       const delivered = await sendSlackText({
         accountId: resolved.accountId,
@@ -1837,6 +2013,7 @@ export class Gateway {
         text,
         ...(data.threadId ? { threadId: data.threadId } : {}),
         ...(data.blocks ? { blocks: data.blocks } : {}),
+        ...(knowledgeGuarded ? { unfurlLinks: false } : {}),
       });
       log.info("Native direct send delivered", {
         accountId: resolved.accountId,
@@ -1979,7 +2156,7 @@ export class Gateway {
     };
 
     const messageId = data.messageId?.trim();
-    const text = data.text?.trim();
+    const text = guardTextForChat(data.channel ?? "", data.chatId, data.text ?? "").text.trim();
     if (!messageId || !text) {
       await emitReply({
         success: false,
@@ -2153,50 +2330,43 @@ export class Gateway {
       "mediaSend",
       ["ravi.media.send"],
       async (event) => {
-        const data = event.data as {
-          channel: string;
-          accountId: string;
-          chatId: string;
-          filePath: string;
-          mimetype: string;
-          type: "image" | "video" | "audio" | "document";
-          filename: string;
-          caption?: string;
-          voiceNote?: boolean;
-        };
-
-        try {
-          const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
-          if (resolved.kind === "native") {
-            if (resolved.provider !== "slack" || !resolved.credentialConfigured) return;
-            await sendSlackMedia({
-              accountId: data.accountId,
-              chatId: data.chatId,
-              filePath: data.filePath,
-              filename: data.filename,
-              ...(data.caption ? { caption: data.caption } : {}),
-            });
-            log.info("Native media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
-            return;
-          }
-          if (resolved.kind !== "omni") return;
-          const mediaChatId = normalizeOutboundJid(data.chatId);
-          await this.omniSender.sendMedia(
-            resolved.instanceId,
-            mediaChatId,
-            data.filePath,
-            data.type,
-            data.filename,
-            data.caption,
-            data.voiceNote,
-          );
-          log.info("Media sent", { chatId: mediaChatId, type: data.type, filename: data.filename });
-        } catch (err) {
-          log.error("Failed to send media", { error: err });
-        }
+        await this.handleMediaSendEvent(event.data as MediaSendRequest);
       },
       { queue: "ravi-gateway" },
     );
+  }
+
+  private async handleMediaSendEvent(data: MediaSendRequest): Promise<void> {
+    try {
+      if (data.caption) data = { ...data, caption: guardTextForChat(data.channel, data.chatId, data.caption).text };
+      const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
+      if (resolved.kind === "native") {
+        if (resolved.provider !== "slack" || !resolved.credentialConfigured) return;
+        await sendSlackMedia({
+          accountId: data.accountId,
+          chatId: data.chatId,
+          filePath: data.filePath,
+          filename: data.filename,
+          ...(data.caption ? { caption: data.caption } : {}),
+        });
+        log.info("Native media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
+        return;
+      }
+      if (resolved.kind !== "omni") return;
+      const mediaChatId = normalizeOutboundJid(data.chatId);
+      await this.omniSender.sendMedia(
+        resolved.instanceId,
+        mediaChatId,
+        data.filePath,
+        data.type,
+        data.filename,
+        data.caption,
+        data.voiceNote,
+      );
+      log.info("Media sent", { chatId: mediaChatId, type: data.type, filename: data.filename });
+    } catch (err) {
+      log.error("Failed to send media", { error: err });
+    }
   }
 
   /**
@@ -2208,7 +2378,7 @@ export class Gateway {
       "tts",
       [RAVI_TTS_TOPIC],
       async (event) => {
-        await handleRaviTtsRequest(event.data, (topic, payload) =>
+        await handleRaviTtsRequest(guardKnowledgeTtsRequest(event.data), (topic, payload) =>
           this.emitEvent(topic, payload as Record<string, unknown>),
         );
       },
@@ -2280,6 +2450,26 @@ export class Gateway {
     this.subscribe("config", ["ravi.config.changed"], async () => {
       log.info("Runtime config change observed");
     });
+  }
+}
+
+/** Knowledge egress guard on a TTS request bound to a guarded session or chat. */
+export function guardKnowledgeTtsRequest(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const request = payload as { text?: unknown; sessionName?: unknown; target?: unknown };
+  if (typeof request.text !== "string" || !request.text) return payload;
+  try {
+    const target = request.target as { channel?: unknown; chatId?: unknown } | undefined;
+    const guarded =
+      (typeof request.sessionName === "string" ? isGuardedSession(request.sessionName) : null) ??
+      (typeof target?.chatId === "string"
+        ? guardedSessionForChat(typeof target.channel === "string" ? target.channel : "", target.chatId)
+        : null);
+    if (!guarded) return payload;
+    return { ...request, text: guardTextForGuardedSession(request.text, guarded).text };
+  } catch (error) {
+    log.warn("Knowledge guard on TTS request failed", { error });
+    return payload;
   }
 }
 

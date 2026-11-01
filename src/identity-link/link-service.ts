@@ -9,9 +9,13 @@
 
 import type { resolveOutboundAccount } from "../channels/account-resolution.js";
 import { ConsoleApiClient, getMeWithAutoRefresh, refreshCredentialsForStore } from "../cloud-auth/client.js";
-import { deleteCachedActorBinding, writeCachedActorBinding } from "../cloud-auth/actor-bindings.js";
+import {
+  deleteCachedActorBinding,
+  readActorBindingForActiveLogin,
+  writeCachedActorBinding,
+} from "../cloud-auth/actor-bindings.js";
 import { CloudAuthError, isCloudAuthError } from "../cloud-auth/errors.js";
-import { resolveLinkRequester } from "../cloud-auth/link-identity.js";
+import { resolveLinkRequester, type LinkRequester } from "../cloud-auth/link-identity.js";
 import {
   deleteCloudCredentials,
   persistMeIntoCredentials,
@@ -19,16 +23,23 @@ import {
   shouldPersistHydratedIdentity,
   writeCloudCredentials,
 } from "../cloud-auth/storage.js";
-import type { CloudCredentials } from "../cloud-auth/types.js";
+import type { ActorBinding, CloudCredentials } from "../cloud-auth/types.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { dbGetContext, dbUpdateContextRuntimeState } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
-import { createChannelLinkMessenger, linkRequestDmText, resolveLinkDmRoute, type LinkMessenger } from "./link-dm.js";
+import {
+  createChannelLinkMessenger,
+  linkRequestDmText,
+  resolveLinkDmRoute,
+  type LinkDmRoute,
+  type LinkMessenger,
+} from "./link-dm.js";
 import {
   completeLocalLinkRequest,
   insertLocalLinkRequest,
   listPendingLocalLinkRequestsForContact,
 } from "./link-requests-db.js";
+import { clearContactLinkState, enterAwaitingDm } from "./link-states-db.js";
 
 const log = logger.child("identity:link");
 
@@ -46,7 +57,18 @@ export interface IdentityLinkDeps {
 
 export type IdentityLinkResult =
   | { success: true; status: "already_linked"; linked: true }
-  | { success: true; status: "dm_sent"; linked: false; expiresAt: string };
+  | { success: true; status: "dm_sent"; linked: false; expiresAt: string }
+  /** WhatsApp from a group: the person must write to the agent in private, where Ravi sends the link. */
+  | { success: true; status: "awaiting_dm"; linked: false };
+
+export interface IdentityLinkOptions {
+  /**
+   * Console just refused a write for this person (`ACTOR_NOT_LINKED`), so a
+   * cached binding is stale: it is dropped instead of answering
+   * `already_linked`.
+   */
+  refusedByConsole?: boolean;
+}
 
 export interface IdentityUnlinkResult {
   success: true;
@@ -57,9 +79,55 @@ export interface IdentityUnlinkResult {
 export async function requestIdentityLink(
   context: ContextRecord | null | undefined,
   deps: IdentityLinkDeps = {},
+  options: IdentityLinkOptions = {},
 ): Promise<IdentityLinkResult> {
   const requester = resolveLinkRequester(context);
   const route = resolveLinkDmRoute(requester, deps.resolveAccount);
+  const env = deps.env ?? process.env;
+  const now = deps.now ?? Date.now;
+
+  if (route.startsConversation) {
+    // On WhatsApp the agent never starts a conversation: the person writes in
+    // private, and the daemon answers that message with the link.
+    if (options.refusedByConsole) {
+      deleteCachedActorBinding(requester.contactId, env);
+    } else if (readActorBindingForActiveLogin(requester.contactId, env)) {
+      return { success: true, status: "already_linked", linked: true };
+    }
+    enterAwaitingDm({
+      contactId: requester.contactId,
+      channel: route.channel,
+      accountId: route.accountId,
+      agentId: context?.agentId ?? null,
+      displayName: requester.displayName,
+      origin: requester.origin,
+      now: now(),
+    });
+    return { success: true, status: "awaiting_dm", linked: false };
+  }
+
+  const sent = await sendLinkRequest(requester, route, deps);
+  if (sent.status === "already_linked") applyBindingToContext(context, sent.binding.consoleUserId, sent.binding.orgId);
+  return sent.status === "already_linked"
+    ? { success: true, status: "already_linked", linked: true }
+    : { success: true, status: "dm_sent", linked: false, expiresAt: sent.expiresAt };
+}
+
+export type SentLinkRequest =
+  | { status: "already_linked"; binding: ActorBinding }
+  | { status: "dm_sent"; requestId: string; expiresAt: string; expiresAtMs: number; dmChatId: string };
+
+/**
+ * Ask the Console for a link request for `requester` and deliver its approval
+ * link privately on `route`. A person already linked gets their binding
+ * cached instead.
+ */
+export async function sendLinkRequest(
+  requester: LinkRequester,
+  route: LinkDmRoute,
+  deps: IdentityLinkDeps = {},
+  options: { answeringDm?: boolean } = {},
+): Promise<SentLinkRequest> {
   const messenger = deps.messenger ?? createChannelLinkMessenger();
   const env = deps.env ?? process.env;
   const now = deps.now ?? Date.now;
@@ -79,8 +147,7 @@ export async function requestIdentityLink(
     if (created.status === "already_linked") {
       writeCachedActorBinding(created.binding, env);
       supersedeLocalRequests(requester.contactId, "cancelled");
-      applyBindingToContext(context, created.binding.consoleUserId, created.binding.orgId);
-      return { success: true, status: "already_linked", linked: true };
+      return { status: "already_linked", binding: created.binding };
     }
 
     const expiresAtMs = Date.parse(created.request.expiresAt);
@@ -94,6 +161,7 @@ export async function requestIdentityLink(
           channel: route.channel,
           displayName: requester.displayName,
           expiresInMinutes,
+          ...(options.answeringDm ? { answeringDm: true } : {}),
         }),
         { privateLink: true },
       );
@@ -128,7 +196,13 @@ export async function requestIdentityLink(
       await client.cancelLinkRequest(created.request.id, credentials.accessToken).catch(() => undefined);
       throw error;
     }
-    return { success: true, status: "dm_sent", linked: false, expiresAt: created.request.expiresAt };
+    return {
+      status: "dm_sent",
+      requestId: created.request.id,
+      expiresAt: created.request.expiresAt,
+      expiresAtMs: Number.isFinite(expiresAtMs) ? expiresAtMs : now() + 10 * 60_000,
+      dmChatId,
+    };
   });
 }
 
@@ -148,6 +222,7 @@ export async function unlinkIdentity(
 
     const result = await client.unlinkActorBinding({ contactId: requester.contactId }, credentials.accessToken);
     deleteCachedActorBinding(requester.contactId, env);
+    clearContactLinkState(requester.contactId);
     clearBindingFromContext(context);
     return { success: true, status: result.binding ? "unlinked" : "not_linked", linked: false };
   });
@@ -207,9 +282,7 @@ function applyBindingToContext(
   try {
     const current = dbGetContext(context.contextId);
     if (!current) return;
-    dbUpdateContextRuntimeState(context.contextId, {
-      metadata: { ...(current.metadata ?? {}), consoleUserId, consoleOrgId },
-    });
+    updateContextMetadata(current, { ...(current.metadata ?? {}), consoleUserId, consoleOrgId });
   } catch {
     // Best effort: the next turn reads the binding cache anyway.
   }
@@ -223,10 +296,24 @@ function clearBindingFromContext(context: ContextRecord | null | undefined): voi
     const next = { ...current.metadata };
     delete next.consoleUserId;
     delete next.consoleOrgId;
-    dbUpdateContextRuntimeState(context.contextId, { metadata: next });
+    updateContextMetadata(current, next);
   } catch {
     // Best effort: the cache entry is already gone.
   }
+}
+
+/**
+ * Replace only the context's metadata. The runtime-state update writes
+ * session name and source too, clearing whichever is omitted, and the live
+ * turn context needs both: without its session name, the private-DM check
+ * fails and the rest of the turn reads Pages as public only.
+ */
+function updateContextMetadata(current: ContextRecord, metadata: Record<string, unknown>): void {
+  dbUpdateContextRuntimeState(current.contextId, {
+    sessionName: current.sessionName,
+    source: current.source,
+    metadata,
+  });
 }
 
 function errorText(error: unknown): string {

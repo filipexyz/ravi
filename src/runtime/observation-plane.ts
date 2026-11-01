@@ -4,14 +4,11 @@ import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateSerializedCapabilityArray,
 } from "../permissions/command-access-kind-migration.js";
-import { getProjectSurfaceByWorkflowRunId } from "../projects/service.js";
 import { getSession, getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetAgent, dbListSessionParticipants, getDb, getRaviDbPath } from "../router/router-db.js";
 import { canonicalTagSlugsForAsset, dbGetTagDefinition } from "../tags/index.js";
 import type { TagAssetType } from "../tags/types.js";
-import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
-import { dbGetTaskWorkflowSurface } from "../workflows/index.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { validateRuntimeModelSelector } from "./model-validation.js";
 import {
@@ -47,6 +44,25 @@ const OBSERVER_TAG_TARGET_TYPES = new Set<ObserverTagTargetType>([
 ]);
 const DEFAULT_EVENT_TYPES = ["message.user", "message.assistant", "turn.complete", "turn.failed", "turn.interrupt"];
 const DEFAULT_DEBOUNCE_MS = 1000;
+
+/**
+ * Hard tool allowlist for one observation turn.
+ *
+ * Observer rules grant exact tools (`use:tool:tasks_show`, ...). The capability
+ * gate alone is not enough: a provider with native tools (Pi: bash/edit) can
+ * still call them when the agent ceiling allows it, which is how the task
+ * observer ended up shelling out instead of calling its granted tools.
+ * Returning the granted tool names lets the provider narrow its catalog.
+ */
+export function resolveObservationAllowedTools(permissionGrants: readonly string[] | undefined): string[] | undefined {
+  const tools = (permissionGrants ?? [])
+    .map((grant) => grant.trim())
+    .filter((grant) => grant.startsWith("use:tool:"))
+    .map((grant) => grant.slice("use:tool:".length).trim())
+    .filter((tool) => tool.length > 0 && !tool.includes("*"));
+  if (tools.length === 0) return undefined;
+  return [...new Set(tools)].sort();
+}
 
 export interface ObserverRule {
   id: string;
@@ -1112,10 +1128,8 @@ export function buildObservationSourceDescriptor(input: {
   prompt?: RuntimeLaunchPrompt;
 }): ObservationSourceDescriptor {
   const sourceSessionName = input.session.name ?? input.sessionName;
-  const activeTask = dbResolveActiveTaskBindingForSession(sourceSessionName, input.prompt?.taskBarrierTaskId);
-  const task = activeTask?.task;
-  const workflow = task?.id ? dbGetTaskWorkflowSurface(task.id) : null;
-  const project = workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null;
+  // The task id is provenance carried by the prompt; the observer plane does not read task state.
+  const taskId = input.prompt?.taskBarrierTaskId?.trim() || undefined;
   const contactIds = resolveSessionContactIds(input.session);
   const promptSource = input.prompt?.source;
   const promptContext = input.prompt?.context;
@@ -1125,12 +1139,6 @@ export function buildObservationSourceDescriptor(input: {
       ? collectTagsForTarget("session", input.session.sessionKey)
       : []),
     ...collectTagsForTarget("agent", input.agentId ?? input.session.agentId, true),
-    ...collectTagsForTarget("task", task?.id, true),
-    ...collectTagsForTarget("profile", task?.profileId, true),
-    ...collectTagsForTarget("project", project?.projectId, true),
-    ...(project?.projectSlug && project.projectSlug !== project.projectId
-      ? collectTagsForTarget("project", project.projectSlug, true)
-      : []),
     ...contactIds.flatMap((contactId) => collectTagsForTarget("contact", contactId)),
   ]);
 
@@ -1138,10 +1146,7 @@ export function buildObservationSourceDescriptor(input: {
     sessionKey: input.session.sessionKey,
     sessionName: sourceSessionName,
     agentId: input.agentId ?? input.session.agentId,
-    ...(task?.id ? { taskId: task.id } : {}),
-    ...(task?.profileId ? { profileId: task.profileId } : {}),
-    ...(project?.projectId ? { projectId: project.projectId } : {}),
-    ...(project?.projectSlug ? { projectSlug: project.projectSlug } : {}),
+    ...(taskId ? { taskId } : {}),
     ...(contactIds.length > 0 ? { contactIds } : {}),
     ...((promptSource?.channel ?? input.session.channel ?? input.session.lastChannel)
       ? { channel: promptSource?.channel ?? input.session.channel ?? input.session.lastChannel }
@@ -1343,6 +1348,14 @@ export function ensureObserverBindingsForSession(input: {
   return { source, bindings, created, skipped };
 }
 
+/** Disable every binding a rule created, e.g. when an observed task reaches a terminal state. */
+export function dbDisableObserverBindingsForRule(ruleId: string): number {
+  ensureObservationSchema();
+  return getDb()
+    .prepare("UPDATE observer_bindings SET enabled = 0, updated_at = ? WHERE rule_id = ? AND enabled = 1")
+    .run(Date.now(), ruleId.trim()).changes;
+}
+
 /** Reconcile durable bindings against the current rule/profile desired state. */
 export function reconcileObserverBindingsForSession(input: {
   sessionName: string;
@@ -1451,6 +1464,8 @@ function composeObservationPrompt(input: {
   source: ObservationSourceDescriptor;
   events: ObservationEvent[];
   runId?: string;
+  deliveryId?: string;
+  input?: Record<string, unknown>;
 }): string {
   const profile = input.binding.observerProfileSnapshotMarkdown
     ? resolveObserverProfileFromSnapshotMarkdown(input.binding.observerProfileSnapshotMarkdown)
@@ -1461,8 +1476,43 @@ function composeObservationPrompt(input: {
     binding: input.binding,
     events: input.events,
     deliveryPolicy: input.binding.deliveryPolicy,
-    runId: input.runId,
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
+    ...(input.input ? { input: input.input } : {}),
   });
+}
+
+/** Full text and tool input ride on events as `payload.detail`; only bindings that ask for them read them. */
+function bindingReadsDetail(binding: ObserverBinding): boolean {
+  return binding.metadata?.observationDetail === true;
+}
+
+function stripObservationDetail(events: ObservationEvent[]): ObservationEvent[] {
+  return events.map((event) => {
+    if (!event.payload || !("detail" in event.payload)) return event;
+    const { detail: _detail, ...payload } = event.payload;
+    return { ...event, payload };
+  });
+}
+
+function bindingPulseMs(binding: ObserverBinding): number | null {
+  const value = binding.metadata?.pulseMs;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export type ObservationDeliveryTrigger = "end_of_turn" | "pulse" | "realtime" | "debounce";
+
+function resolveDeliveryTrigger(
+  binding: ObserverBinding,
+  deliveryPolicies: Set<ObservationDeliveryPolicy> | undefined,
+  pulse: boolean,
+): ObservationDeliveryTrigger {
+  if (pulse) return "pulse";
+  if (deliveryPolicies?.size === 1) {
+    const [policy] = [...deliveryPolicies];
+    if (policy && policy !== "manual") return policy;
+  }
+  return binding.deliveryPolicy === "manual" ? "end_of_turn" : binding.deliveryPolicy;
 }
 
 function claimObservationEvents(bindingId: string, events: ObservationEvent[]): ObservationEvent[] {
@@ -1485,6 +1535,8 @@ export async function deliverObservationEvents(input: {
   events: ObservationEvent[];
   deliveryPolicies?: ObservationDeliveryPolicy[];
   runId?: string;
+  /** Mid-turn read: only bindings with `metadata.pulseMs` receive the events gathered so far. */
+  pulse?: boolean;
 }): Promise<{
   delivered: Array<{
     bindingId: string;
@@ -1512,8 +1564,13 @@ export async function deliverObservationEvents(input: {
   }> = [];
   const skipped: Array<{ bindingId: string; reason: string }> = [];
   const deliveryPolicies = input.deliveryPolicies ? new Set(input.deliveryPolicies) : undefined;
+  const pulse = input.pulse === true;
 
   for (const binding of bindings) {
+    if (pulse && bindingPulseMs(binding) === null) {
+      skipped.push({ bindingId: binding.id, reason: "no_pulse" });
+      continue;
+    }
     const exclusionReason = sourceExclusionReason(binding.metadata, source);
     if (exclusionReason) {
       skipped.push({ bindingId: binding.id, reason: exclusionReason });
@@ -1534,11 +1591,14 @@ export async function deliverObservationEvents(input: {
       continue;
     }
 
+    const trigger = resolveDeliveryTrigger(binding, deliveryPolicies, pulse);
+    const deliveryId = `od_${hashParts([binding.id, trigger, input.runId, ...claimed.map((event) => event.id)], 24)}`;
     const prompt = composeObservationPrompt({
       binding,
       source,
-      events: claimed,
-      runId: input.runId,
+      events: bindingReadsDetail(binding) ? claimed : stripObservationDetail(claimed),
+      ...(input.runId ? { runId: input.runId } : {}),
+      deliveryId,
     });
     const sourceTurnIds = [
       ...new Set(claimed.map((event) => event.turnId).filter((id): id is string => Boolean(id))),
@@ -1561,6 +1621,9 @@ export async function deliverObservationEvents(input: {
           ...(binding.permissionGrants.length > 0 ? { permissionGrants: binding.permissionGrants } : {}),
           eventIds: claimed.map((event) => event.id),
           ...(sourceTurnIds.length > 0 ? { sourceTurnIds } : {}),
+          ...(source.taskId ? { taskId: source.taskId } : {}),
+          deliveryId,
+          trigger,
         },
         deliveryBarrier: "after_response",
       });
@@ -1617,6 +1680,18 @@ export function getObservationDebounceMs(input: {
     )
     .map((binding) => binding.debounceMs ?? DEFAULT_DEBOUNCE_MS);
   return delays.length > 0 ? Math.min(...delays) : null;
+}
+
+/** Shortest pulse among the session's bindings, or null when none reads mid-turn. */
+export function getObservationPulseMs(input: {
+  sourceSessionName: string;
+  sourceSession: SessionEntry;
+  agentId: string;
+}): number | null {
+  if (isObserverSessionName(input.sourceSessionName)) return null;
+  const bindings = dbListObserverBindings({ sourceSessionKey: input.sourceSession.sessionKey, enabled: true });
+  const pulses = bindings.map(bindingPulseMs).filter((value): value is number => value !== null);
+  return pulses.length > 0 ? Math.min(...pulses) : null;
 }
 
 export function validateObserverRules(): {

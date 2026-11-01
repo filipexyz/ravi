@@ -29,8 +29,7 @@ normative: true
 Make `ravi workflows` (`specs` and `runs` groups) reliable for agent consumers
 under the agent-first contract defined by `cli`: typed error envelopes, the
 0/1/2/3 exit taxonomy, a write brake on the two riskiest mutations, and compact
-discovery. `runs start` instantiates a live run that gates coordinated work
-(the direct analog of `projects workflows start`), and `runs archive-node` is
+discovery. `runs start` instantiates a live run that gates coordinated work, and `runs archive-node` is
 irreversible — those two are the braked ops.
 
 ## Invariants
@@ -91,10 +90,8 @@ irreversible — those two are the braked ops.
 ## Internal consumers
 
 There is NO shipped `workflows` skill — a registered gap: agents currently
-learn this surface only from `docs/workflow-substrate-v0.md` (which documents
-`--execute` on both braked ops) and from `projects workflows start`, the braked
-project-level wrapper in `cli/projects`. `src/projects/fixtures.ts` only prints
-`workflows runs show` hints (read-only). SDK/openapi surfaces call the service
+learn this surface only from `design/workflow-substrate-v0.md` (which documents
+`--execute` on both braked ops). SDK/openapi surfaces call the service
 layer, not the CLI brake. Parser-level usage errors use the global exit-2
 `USAGE_ERROR` envelope with `acceptedFlags`.
 

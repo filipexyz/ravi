@@ -37,6 +37,7 @@ src/plugins/internal/ravi-system/skills/   system skills (SKILL.md + references/
 src/plugins/internal/ravi-dev/skills/      skills for developing Ravi itself
 .ravi/specs/        normative specs (SPEC.md + WHY, CHECKS, RUNBOOK); repo-only, not shipped
 docs/               Mintlify source of docs.ravi.bot (docs.json is the navigation)
+design/             internal design notes and contracts; repo-only, not published
 bin/ravi            wrapper; rebuilds dist/bundle when src/ or package.json is newer
 ```
 
@@ -123,7 +124,7 @@ agent:main:trigger:<triggerId>[:key:<hash>]           # legacy isolated / named 
 
 ## Message Queue
 
-A message for a busy session is queued with a delivery barrier (`src/delivery-barriers.ts`, `docs/ravi-delivery-barriers-v0.md`). Chat messages default to `after_tool`: they wait for the running tool, then steer the turn. `>>message` waits for the current reply and `!!message` is recorded without a turn. Cron, hooks and `[System] Inform/Ask/Answer` wait for the reply; triggers, heartbeats and `[System] Execute` wait for the task. `ravi sessions send --barrier followup|steer|p0|p1|p2|p3` sets it explicitly.
+A message for a busy session is queued with a delivery barrier (`src/delivery-barriers.ts`, `design/ravi-delivery-barriers-v0.md`). Chat messages default to `after_tool`: they wait for the running tool, then steer the turn. `>>message` waits for the current reply and `!!message` is recorded without a turn. Cron, hooks and `[System] Inform/Ask/Answer` wait for the reply; triggers, heartbeats and `[System] Execute` wait for the task. `ravi sessions send --barrier followup|steer|p0|p1|p2|p3` sets it explicitly.
 
 ## Ravi Pages Publishing
 
@@ -167,7 +168,9 @@ To show a private page to one person, share it by email; never make it public or
 add a password for that. To bring someone into the organization, invite them. When
 a page is denied, ask its managers (the printed approval link may be forwarded;
 only the page's managers approve). Chat turns from someone else act for that
-person through their `ravi link` (`ACTOR_NOT_LINKED`: send them `ravi link`).
+person through their `ravi link`. Without one, writes (and Bases reads) fail with `ACTOR_NOT_LINKED`
+and Ravi starts the link itself: relay the error's `chatLinePt` (on WhatsApp,
+"me chama na DM"; Ravi answers their private message with the approval link).
 
 ```bash
 ravi pages share <url> --with <email> --execute
@@ -215,13 +218,15 @@ lives in the `bases` and `pages` skills.
 
 ```bash
 ravi skills show solucoes   # who sees what, the six-verb sheet, the eight rules
-ravi skills show bases      # schema, views as access contracts, rows, row events
-ravi skills show pages      # ship, host-wide --uses, data pages
+ravi skills show bases      # schema, views as access contracts, rows, approvals, agent columns, events
+ravi skills show pages      # ship, per-route --uses, data pages
 ```
 
 - Live data pages are for signed-in org members, on `private` or `protected_link` routes. Outsiders use a channel and get messages or snapshots. `ravi pages ship` refuses `ravi.bases.*` in `--uses` on a public route unless `--members-best-effort` is passed on purpose.
-- `--uses` covers the whole host: every ship lists the union of the ids all data pages on that host call.
-- Row changes arrive as `ravi.console.inbox.item` (`category: "bases"`) after `ravi bases subscribe <base>`. A trigger whose agent writes the same base filters `data.actor.type == "user"`.
+- Each ship declares in `--uses` the ids its own route calls; the host allows the union over its active routes, so shipping one route never removes another route's ids.
+- Base events (rows, approvals, agent columns) arrive as `ravi.console.inbox.item` (`category: "bases"`) after `ravi bases subscribe <base>`; `--events`, `--props` and `--view` filter them, and `--trigger --agent <id>` also creates the trigger (a disabled draft when run from an agent turn). A trigger whose agent writes the same base filters `data.actor.type == "user"`.
+- Agents read Bases through views and charts by default (`bases list|show`, `bases views list|show|query`, `bases charts list|show|data`); writes, `rows query` and `aggregate` stay opt-in. In a linked person's turn, Bases reads and writes act as that person; in an unlinked person's turn both fail with `ACTOR_NOT_LINKED` (relay `chatLinePt`), and a turn Ravi cannot attribute (another agent's turn, an unknown speaker) is refused locally with `ACTOR_UNKNOWN` (exit 3); neither falls back to the operator.
+- Org themes and widgets are Library items (`ravi themes`, `ravi widgets`); `pages ship` applies the active theme and turns `<ravi-view>`, `<ravi-widget>` and `<ravi-form>` tags into pages. Agents read `ravi skills show pages --file references/widgets.md` and `--file references/theme.md`, propose (`ravi widgets propose <dir> --scope org --execute`) and never publish or run `themes use`.
 
 ## Cloud Sandbox Tasks (E2B)
 
@@ -260,10 +265,13 @@ Operating Ravi is documented in the system skills (`ravi skills show <skill>`) a
 | Instances, policies, routes, pending, DM scopes | `instances`, `routes` | `guides/routing` |
 | Agent keys, settings, `~/.ravi/.env`, files, PM2 | `agents`, `settings`, `daemon` | `reference/configuration` |
 | Contacts and sessions (send, ask, inform, reset, trace) | `contacts`, `sessions` | `guides/contacts`, `guides/sessions` |
+| Knowledge: search with sources, contact memory, proposals | `knowledge` | `guides/knowledge` |
 | Cron, triggers, heartbeat | `cron`, `triggers`, `heartbeat` | `guides/cron-jobs`, `guides/triggers`, `guides/heartbeat` |
 | Logs, doctor, events, JetStream | `daemon`, `events` | `guides/troubleshooting`, `reference/nats-events` |
 | Console login, Pages | `pages` | `console/login`, `console/pages` |
+| Calendar, meeting briefings and follow-ups | `agenda`, `meetings` | `console/calendar`, `console/meetings` |
 | Bases and data pages | `solucoes`, `bases` | `console/bases` |
+| Cloud agents: Library agents on Anthropic managed agents, runs, approvals, schedules | `cloud-agents` | `console/cloud-agents` |
 | Media, artifacts, skills | `audio`, `image`, `video`, `artifacts`, `skills` | `reference/media`, `reference/artifacts`, `reference/skills` |
 | Tasks, CLI conventions, SDK and HTTP gateway | `tasks` | `cli/overview`, `guides/sdk` |
 

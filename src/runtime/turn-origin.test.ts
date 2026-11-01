@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildChannelTurnOrigin,
+  buildSignalTurnOrigin,
   buildRuntimeCallerPrincipal,
   buildSessionRelayTurnOrigin,
   isSessionRelayTurn,
@@ -11,6 +12,14 @@ import {
 } from "./turn-origin.js";
 
 describe("runtime turn origin", () => {
+  it("recognizes a signal escalation only through its typed automation envelope", () => {
+    const origin = buildSignalTurnOrigin("sig_test");
+    expect(resolveRuntimeTurnOrigin(origin)).toEqual(origin);
+    expect(origin.principal).toEqual({ type: "automation", id: "signal:sig_test" });
+    expect(resolveRuntimeTurnOrigin({ ...origin, principal: { type: "agent", id: "signal:sig_test" } })).toBeNull();
+    expect(resolveRuntimeTurnOrigin({ ...origin, action: "grant" })).toBeNull();
+    expect(resolveRuntimeTurnOrigin({ _signal: { id: "sig_test" } })).toBeNull();
+  });
   it("builds an agent-authenticated session relay envelope", () => {
     expect(
       buildSessionRelayTurnOrigin("ask", {

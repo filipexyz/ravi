@@ -1,16 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { withoutRaviRuntimeContextEnv } from "../test/ravi-state.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext, dbUpdateAgent } from "../router/router-db.js";
+import {
+  dbCreateAgent,
+  dbCreateContext,
+  dbDeleteContext,
+  dbGetContext,
+  dbUpdateAgent,
+  dbUpsertChat,
+  dbUpsertChatParticipant,
+  getDb,
+} from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
+  DEFAULT_APPROVAL_TIMEOUT_MS,
   emitApprovalResponseOnce,
   setApprovalServiceDependenciesForTest,
   type ApprovalFinalizeSlackInput,
+  type ApprovalRespondSlackInput,
   type ApprovalServiceDependencies,
 } from "./service.js";
 import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
-import { SLACK_APPROVAL_ACTION_APPROVE, SLACK_APPROVAL_ACTION_REJECT } from "./slack-blocks.js";
+import {
+  SLACK_APPROVAL_ACTION_APPROVE,
+  SLACK_APPROVAL_ACTION_REJECT,
+  SLACK_PERMISSION_GRANT_ACTION_EXACT,
+  SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS,
+  SLACK_PERMISSION_GRANT_ACTION_SCOPE,
+} from "./slack-blocks.js";
+import { attachApprovalRequestMessageId, createApprovalRequest } from "./store.js";
+import { sameGrantTuple } from "./grant-metadata.js";
+import { dbGetContactChatGrant, dbListContactChatGrants } from "../permissions/contact-chat-grants.js";
+import { getContact } from "../contacts.js";
+import { readAgentRuntimePermissionsConfig } from "../permissions/agent-default-capabilities-provider.js";
+import { recordPermissionDenial } from "../permissions/denials.js";
+import { dbCreateTagDefinition } from "../tags/index.js";
+import { DEFAULT_APPROVAL_TIMEOUT_MS as APPROVAL_TIMEOUT_FROM_TIMEOUTS } from "./timeouts.js";
+import { APPROVAL_GATED_TOOL_TIMEOUT_MS } from "../runtime/tool-liveness.js";
 import {
   flushPermissionAuditEvents,
   listPermissionDenials,
@@ -28,12 +56,13 @@ import {
   seedApprovalContact,
 } from "./test-support.js";
 
-let requestReplyResult: { messageId?: string } = { messageId: "msg_1" };
+let requestReplyResult: { messageId?: string; deliveries?: Array<Record<string, unknown>> } = { messageId: "msg_1" };
 let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let auditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let deliveredRequests: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let finalizedSlack: ApprovalFinalizeSlackInput[] = [];
+let respondedSlack: ApprovalRespondSlackInput[] = [];
 let externalOrder: string[] = [];
 let stateDir: string | null = null;
 let nowMs = APPROVAL_TEST_NOW_MS;
@@ -58,8 +87,8 @@ function seedWhatsAppOwner(): void {
   });
 }
 
-function seedSlackOwner(instanceId = "main"): void {
-  seedApprovalContact({
+function seedSlackOwner(instanceId = "main"): ReturnType<typeof seedApprovalContact> {
+  const contact = seedApprovalContact({
     phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
     name: "Slack Owner",
     tags: ["permission.admin"],
@@ -74,6 +103,48 @@ function seedSlackOwner(instanceId = "main"): void {
     objectType: "group",
     objectId: "daemon",
   });
+  return contact;
+}
+
+function createSlackApprovalContext(id: string, chatId = "C123") {
+  const context = dbCreateContext({
+    contextId: id,
+    contextKey: `r${id}`,
+    kind: "agent-runtime",
+    sessionName: "dev-main",
+    capabilities: [],
+    metadata: {
+      approvalSource: {
+        channel: "slack",
+        accountId: "main",
+        chatId,
+        threadId: "1784000000.000001",
+      },
+    },
+    createdAt: 1000,
+  });
+  createdContextIds.add(context.contextId);
+  return context;
+}
+
+function slackClick(input: { userId: string; channelId?: string; messageTs?: string; actionId?: string }): {
+  topic: string;
+  data: Record<string, unknown>;
+} {
+  return {
+    topic: "ravi.inbound.interaction",
+    data: {
+      provider: "slack",
+      accountId: "main",
+      instanceId: "main",
+      channelId: input.channelId ?? "C123",
+      messageTs: input.messageTs ?? "eph_1",
+      userId: input.userId,
+      actionId: input.actionId ?? SLACK_APPROVAL_ACTION_APPROVE,
+      value: "$requestId",
+      responseUrlId: "resp_1",
+    },
+  };
 }
 
 function extractDeliveredRequestId(): string {
@@ -86,7 +157,7 @@ function extractDeliveredRequestId(): string {
     for (const element of elements) {
       if (!element || typeof element !== "object") continue;
       const value = (element as { value?: unknown }).value;
-      if (typeof value === "string" && value.trim()) return value.trim();
+      if (typeof value === "string" && value.trim()) return value.trim().split("|")[0];
     }
   }
   return "";
@@ -96,8 +167,12 @@ function hydrateEvent(event: { topic: string; data: Record<string, unknown> }): 
   topic: string;
   data: Record<string, unknown>;
 } {
-  if (event.data.value !== "$requestId") return event;
-  return { topic: event.topic, data: { ...event.data, value: extractDeliveredRequestId() } };
+  const value = event.data.value;
+  if (typeof value !== "string" || !value.startsWith("$requestId")) return event;
+  return {
+    topic: event.topic,
+    data: { ...event.data, value: `${extractDeliveredRequestId()}${value.slice("$requestId".length)}` },
+  };
 }
 
 describe("approval service", () => {
@@ -110,6 +185,7 @@ describe("approval service", () => {
     auditEvents = [];
     deliveredRequests = [];
     finalizedSlack = [];
+    respondedSlack = [];
     externalOrder = [];
     nowMs = APPROVAL_TEST_NOW_MS;
     setPermissionAuditPublisherForTest(async (topic, data) => {
@@ -124,6 +200,9 @@ describe("approval service", () => {
       }) satisfies ApprovalServiceDependencies["requestReply"],
       finalizeSlackApproval: async (input) => {
         finalizedSlack.push(input);
+      },
+      respondSlackInteraction: async (input) => {
+        respondedSlack.push(input);
       },
       nats: {
         emit: async (topic: string, data: Record<string, unknown>) => {
@@ -154,6 +233,12 @@ describe("approval service", () => {
     createdContextIds.clear();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("keeps the approval timeout inside the lease of tools that wait on it", () => {
+    expect(DEFAULT_APPROVAL_TIMEOUT_MS).toBe(APPROVAL_TIMEOUT_FROM_TIMEOUTS);
+    // requestApproval waits up to the timeout to deliver, then up to the timeout for the answer.
+    expect(APPROVAL_GATED_TOOL_TIMEOUT_MS).toBeGreaterThan(2 * DEFAULT_APPROVAL_TIMEOUT_MS);
   });
 
   it("returns inherited access when the context already has the capability", async () => {
@@ -585,6 +670,150 @@ describe("approval service", () => {
     expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
   });
 
+  it("sends the Slack card privately, only to the people who can grant it", async () => {
+    seedSlackOwner();
+    seedApprovalContact({
+      phone: APPROVAL_TEST_STRANGER_PHONE,
+      name: "Stranger",
+      tags: ["lead"],
+      slack: { userId: APPROVAL_TEST_SLACK_STRANGER_USER, instanceId: "main" },
+    });
+    requestReplyResult = {
+      messageId: "eph_1",
+      deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+    };
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER, messageTs: "eph_seen_by_slack" })];
+
+    const result = await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_slack_private"),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+    });
+
+    expect(result).toMatchObject({ allowed: true, approved: true });
+    const delivered = deliveredRequests[0]?.data;
+    expect(delivered?.privateTo).toEqual([OWNER_SLACK_USER]);
+    expect(delivered?.threadId).toBe("1784000000.000001");
+    // The clicker's own card loses its buttons through the click's response_url.
+    expect(respondedSlack).toHaveLength(1);
+    expect(respondedSlack[0]?.responseUrlId).toBe("resp_1");
+    expect(respondedSlack[0]?.payload.replace_original).toBe(true);
+    expect(String(respondedSlack[0]?.payload.text)).toContain(`Approved by <@${OWNER_SLACK_USER}>`);
+    expect(JSON.stringify(respondedSlack[0]?.payload.blocks)).not.toContain('"type":"actions"');
+    expect(finalizedSlack).toHaveLength(0);
+  });
+
+  it("attributes the approval request to the single human in the chat", async () => {
+    const owner = seedSlackOwner();
+    const chat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "main",
+      platformChatId: "D-approval-owner",
+      chatType: "dm",
+    });
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      contactId: owner.id,
+      platformIdentityId: "pi_slack_owner",
+      rawPlatformUserId: OWNER_SLACK_USER,
+      role: "member",
+      source: "inbound_message",
+    });
+    requestReplyResult = {
+      messageId: "eph_1",
+      deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: chat.id, messageId: "eph_1" }],
+    };
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER, messageTs: "eph_seen_by_slack" })];
+
+    await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_approval_subject", chat.id),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+    });
+
+    const row = getDb()
+      .prepare(
+        "SELECT subject_kind, subject_contact_id, subject_identity_id, subject_channel, subject_raw_id FROM approval_requests",
+      )
+      .get() as Record<string, string | null> | undefined;
+
+    expect(row?.subject_kind).toBe("contact");
+    expect(row?.subject_contact_id).toBe(owner.id);
+    expect(row?.subject_identity_id).toBe("pi_slack_owner");
+    expect(row?.subject_channel).toBe("slack");
+    expect(row?.subject_raw_id).toBe(OWNER_SLACK_USER);
+  });
+
+  it("denies at once, without sending any card, when nobody in the Slack can grant it", async () => {
+    seedApprovalContact({
+      phone: APPROVAL_TEST_STRANGER_PHONE,
+      name: "Stranger",
+      tags: ["lead"],
+      slack: { userId: APPROVAL_TEST_SLACK_STRANGER_USER, instanceId: "main" },
+    });
+
+    const startedAt = Date.now();
+    const result = await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_slack_no_grantor"),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: 60_000,
+    });
+
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(result).toMatchObject({ allowed: false, approved: false });
+    expect(result.reason ?? "").toContain("Ninguém neste Slack pode aprovar execute:executable:curl");
+    expect(deliveredRequests).toHaveLength(0);
+    expect(dbGetContext("ctx_slack_no_grantor")?.capabilities).toEqual([]);
+  });
+
+  it("edits a DM approval card in place after the decision", async () => {
+    seedSlackOwner();
+    requestReplyResult = {
+      messageId: "dm_1",
+      deliveries: [{ userId: OWNER_SLACK_USER, kind: "dm", chatId: "D777", messageId: "dm_1" }],
+    };
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER, channelId: "D777", messageTs: "dm_1" })];
+
+    const result = await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_slack_dm"),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+    });
+
+    expect(result.approved).toBe(true);
+    expect(finalizedSlack).toHaveLength(1);
+    expect(finalizedSlack[0]).toMatchObject({ chatId: "D777", messageId: "dm_1" });
+    expect(respondedSlack).toHaveLength(0);
+  });
+
+  it("ignores a click from a grantor the private card was not sent to", async () => {
+    seedSlackOwner();
+    requestReplyResult = {
+      messageId: "eph_1",
+      deliveries: [{ userId: "USOMEONE1", kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+    };
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER })];
+
+    const result = await authorizeRuntimeContext({
+      context: createSlackApprovalContext("ctx_slack_not_recipient"),
+      permission: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+    });
+
+    expect(result.approved).toBe(false);
+    expect(result.reason ?? "").toMatch(/Timeout/);
+  });
+
   it("rejects when a matching inbound WhatsApp reply arrives from an authorized grantor", async () => {
     seedWhatsAppOwner();
     subscribeEvents = [
@@ -693,6 +922,42 @@ describe("approval service", () => {
     expect(emitted.filter((entry) => entry.topic === "ravi.approval.response")).toHaveLength(1);
     expect(emitted[0]?.data._emitId).toBeTruthy();
     expect(emitted[0]?.data.messageId).toBe("msg_approval_1");
+  });
+
+  it("applies a Console bridge grant before the local chat-only profile, while revoked contexts still deny", () => {
+    // A separate process owns the singleton bridge store; no shared runtime state.
+    execFileSync(
+      process.execPath,
+      [
+        "--eval",
+        `
+      import assert from "node:assert/strict";
+      import { randomUUID } from "node:crypto";
+      import { getBridgeStore } from "./src/bridge/store.ts";
+      import { getOrCreateSession } from "./src/router/sessions.ts";
+      import { dbCreateAgent, dbUpdateAgent, dbCreateContext } from "./src/router/router-db.ts";
+      import { authorizeRuntimeContext } from "./src/approval/service.ts";
+      const store = getBridgeStore(), id = randomUUID(), turn = randomUUID(), enrollment = randomUUID();
+      const sessionKey = "agent:bridge-test:console:" + id;
+      const cap = {permission:"execute", objectType:"executable", objectId:"printf"};
+      dbCreateAgent({id:"bridge-test",cwd:"/tmp/bridge-fixture"});
+      dbUpdateAgent("bridge-test",{defaults:{runtimePermissions:{profile:"chat-only"}}});
+      store.putEnrollment({id:enrollment,orgId:randomUUID(),installationId:randomUUID(),runtimeId:randomUUID(),issuer:"https://issuer.test",issuerPublicKey:"synthetic",issuerKeyId:"test",epoch:1,active:true});
+      const subject=randomUUID(),project=randomUUID();
+      store.db.query("INSERT INTO conversations(id,enrollment_id,subject,project_id,agent_id,session_name,session_key,title,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(id,enrollment,subject,project,"bridge-test","console-"+id,sessionKey,"Synthetic",Date.now());
+      const grant={enrollmentId:enrollment,epoch:1,exp:Math.floor(Date.now()/1000)+30,canSend:true,sub:subject,projectId:project,agents:[{id:"bridge-test",capabilities:[cap],approvalCapabilities:[]}]};
+      store.db.query("INSERT INTO turns(id,conversation_id,status,lease_until,authority,created_at) VALUES(?,?,?,?,?,?)").run(turn,id,"running",Date.now()+30000,JSON.stringify(grant),Date.now());
+      getOrCreateSession(sessionKey,"bridge-test","/tmp/bridge-fixture",{name:"console-"+id});
+      const context=dbCreateContext({contextId:randomUUID(),contextKey:randomUUID(),kind:"turn-runtime",agentId:"bridge-test",sessionKey,sessionName:"console-"+id,capabilities:[],metadata:{bridgeTurnId:turn},createdAt:Date.now()});
+      assert.equal((await authorizeRuntimeContext({context,...cap})).allowed,true);
+      assert.equal((await authorizeRuntimeContext({context:{...context,revokedAt:Date.now()-1},...cap})).allowed,false);
+      store.db.query("UPDATE turns SET lease_until=0 WHERE id=?").run(turn);
+      assert.equal((await authorizeRuntimeContext({context,...cap})).allowed,false);
+      store.close();
+    `,
+      ],
+      { env: { ...withoutRaviRuntimeContextEnv(), RAVI_STATE_DIR: stateDir! }, stdio: "pipe", timeout: 20000 },
+    );
   });
 
   it("denies chat-only tool and exec requests before approval escalation", async () => {
@@ -952,5 +1217,515 @@ describe("approval service", () => {
     expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })[0]?.notifiedAt).toEqual(
       expect.any(Number),
     );
+  });
+
+  describe("permission grant card", () => {
+    const REQUESTER_SLACK_USER = "UREQTEST9";
+
+    function seedGrantChat() {
+      return dbUpsertChat({
+        channel: "slack",
+        instanceId: "main",
+        platformChatId: "C123",
+        chatType: "group",
+        title: "ops",
+      });
+    }
+
+    function seedRequester() {
+      return seedApprovalContact({
+        phone: APPROVAL_TEST_STRANGER_PHONE,
+        name: "Requester",
+        tags: ["lead"],
+        slack: { userId: REQUESTER_SLACK_USER, instanceId: "main" },
+      });
+    }
+
+    function seedDeniedContext(input: { contextId: string; contactId: string; chatId: string }) {
+      try {
+        dbCreateAgent({ id: "dev", cwd: "/tmp/dev" });
+      } catch {
+        // The agent already exists in this isolated state.
+      }
+      const context = dbCreateContext({
+        contextId: input.contextId,
+        contextKey: `r${input.contextId}`,
+        kind: "agent-runtime",
+        agentId: "dev",
+        sessionName: "dev-main",
+        capabilities: [],
+        source: {
+          channel: "slack",
+          accountId: "main",
+          instanceId: "main",
+          chatId: "C123",
+          canonicalChatId: input.chatId,
+        },
+        metadata: {
+          authorityMode: "agent-identity",
+          actorPrincipal: `contact:${input.contactId}`,
+          actorResolution: "resolved",
+          actorAuthorizationMode: "user-overlay",
+          executorAgentId: "dev",
+          userOverlay: "active",
+          userOverlayChat: `chat:${input.chatId}`,
+        },
+        createdAt: 1000,
+      });
+      createdContextIds.add(context.contextId);
+      return context;
+    }
+
+    it("sends the card to the admin and applies the grant the admin clicked", async () => {
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      const denial = recordPermissionDenial({
+        subjectType: "agent",
+        subjectId: "dev",
+        relation: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        agentId: "dev",
+        sessionKey: "agent:dev:dev-main",
+        sessionName: "dev-main",
+        contextId: "ctx_prior",
+        reason: "Permission denied: use tool:Bash",
+      });
+      expect(denial?.id).toBeGreaterThan(0);
+
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({ contextId: "ctx_grant_apply", contactId: requester.id, chatId: chat.id });
+
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: true, approved: true });
+      // The card went only to the admin, not to the requester.
+      expect(deliveredRequests[0]?.data.privateTo).toEqual([OWNER_SLACK_USER]);
+      expect(JSON.stringify(deliveredRequests[0]?.data.blocks)).toContain("<@" + OWNER_SLACK_USER + ">");
+      expect(JSON.stringify(deliveredRequests[0]?.data.blocks)).toContain("<@" + REQUESTER_SLACK_USER + ">");
+      expect(JSON.stringify(deliveredRequests[0]?.data.blocks)).toContain(SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS);
+      // The click carried no scope, so the recorded default (this chat) applied.
+      expect(
+        dbGetContactChatGrant({
+          contactId: requester.id,
+          profileSlug: "permission-use-tool-bash",
+          scopeType: "chat",
+          scopeId: chat.id,
+        }),
+      ).not.toBeNull();
+      expect(readAgentRuntimePermissionsConfig("dev")?.capabilities).toEqual([
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+      ]);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toEqual([]);
+      await flushPermissionAuditEvents();
+      expect(auditEvents.map((entry) => entry.topic)).toContain("ravi.audit.permission_grant");
+      const audit = auditEvents.find((entry) => entry.topic === "ravi.audit.permission_grant");
+      expect(audit?.data).toMatchObject({
+        requestId: expect.any(String),
+        capability: "use:tool:Bash",
+        intent: "exact",
+        scope: "chat",
+        profile: "permission-use-tool-bash",
+        applied: true,
+        changed: true,
+        resolvedDenials: 1,
+      });
+    });
+
+    it("does not resolve an open denial from another chat when the grant is chat scoped", async () => {
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      dbUpsertChat({
+        channel: "slack",
+        instanceId: "main",
+        platformChatId: "C999",
+        chatType: "group",
+        title: "other",
+      });
+      const denialInChat = recordPermissionDenial({
+        subjectType: "agent",
+        subjectId: "dev",
+        relation: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        agentId: "dev",
+        contextId: "ctx_prior_chat_a",
+        detail: { context: { source: { chatId: "C123" } } },
+      });
+      const denialOtherChat = recordPermissionDenial({
+        subjectType: "agent",
+        subjectId: "dev",
+        relation: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        agentId: "dev",
+        contextId: "ctx_prior_chat_b",
+        detail: { context: { source: { chatId: "C999" } } },
+      });
+      const otherChatDenialId = denialOtherChat?.id ?? -1;
+      expect(otherChatDenialId).toBeGreaterThan(0);
+
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({
+        contextId: "ctx_grant_chat_scope",
+        contactId: requester.id,
+        chatId: chat.id,
+      });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: true, approved: true });
+      const open = listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false });
+      expect(open.map((denial) => denial.id)).toEqual([otherChatDenialId]);
+      expect(open.map((denial) => denial.id)).not.toContain(denialInChat?.id);
+      await flushPermissionAuditEvents();
+      expect(auditEvents.find((entry) => entry.topic === "ravi.audit.permission_grant")?.data).toMatchObject({
+        resolvedDenials: 1,
+      });
+    });
+
+    it("resolves every open denial for the subject and capability, not only the newest one", async () => {
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      const denials = [1, 2, 3].map((index) =>
+        recordPermissionDenial({
+          subjectType: "agent",
+          subjectId: "dev",
+          relation: "use",
+          objectType: "tool",
+          objectId: "Bash",
+          agentId: "dev",
+          contextId: `ctx_prior_all_${index}`,
+          detail: { context: { source: { chatId: "C123" } } },
+        }),
+      );
+      expect(denials.every((denial) => typeof denial?.id === "number")).toBe(true);
+
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({
+        contextId: "ctx_grant_all_denials",
+        contactId: requester.id,
+        chatId: chat.id,
+      });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: true, approved: true });
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toEqual([]);
+    });
+
+    it("offers Full access to an admin even when the requester is the admin", async () => {
+      const owner = seedApprovalContact({
+        phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+        name: "Admin requester",
+        tags: ["permission.admin"],
+        slack: { userId: OWNER_SLACK_USER, instanceId: "main" },
+      });
+      const chat = seedGrantChat();
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS,
+        }),
+      ];
+
+      const context = seedDeniedContext({ contextId: "ctx_grant_admin", contactId: owner.id, chatId: chat.id });
+
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: true, approved: true });
+      expect(deliveredRequests[0]?.data.privateTo).toEqual([OWNER_SLACK_USER]);
+      expect(JSON.stringify(deliveredRequests[0]?.data.blocks)).toContain(SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS);
+      expect(
+        dbGetContactChatGrant({
+          contactId: owner.id,
+          profileSlug: "permission-admin",
+          scopeType: "chat",
+          scopeId: chat.id,
+        }),
+      ).not.toBeNull();
+    });
+
+    it("hides Full access when no admin exists, falling back to the exact grantor", async () => {
+      dbCreateTagDefinition({
+        slug: "permission-use-tool-bash",
+        label: "Use Bash",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["use:tool:Bash"] } },
+      });
+      seedApprovalContact({
+        phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+        name: "Exact grantor",
+        tags: ["lead", "permission.use-tool-bash"],
+        slack: { userId: OWNER_SLACK_USER, instanceId: "main" },
+      });
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({ contextId: "ctx_grant_no_admin", contactId: requester.id, chatId: chat.id });
+
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: true, approved: true });
+      const blocks = JSON.stringify(deliveredRequests[0]?.data.blocks);
+      expect(blocks).not.toContain(SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS);
+      expect(blocks).toContain(SLACK_PERMISSION_GRANT_ACTION_EXACT);
+      expect(blocks).toContain("Full access is not offered here");
+    });
+
+    it("waits on the open card for the same chat, subject and capability instead of sending another", async () => {
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      createApprovalRequest({
+        id: "req_existing_grant",
+        type: "permission",
+        channel: "slack",
+        accountId: "main",
+        chatId: "C123",
+        instanceId: "main",
+        sessionName: "dev-main",
+        agentId: "dev",
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        grant: {
+          capability: { permission: "use", objectType: "tool", objectId: "Bash" },
+          targets: { contactId: requester.id, chatId: chat.id, chatTags: [], agentId: "dev" },
+          adminUserIds: [OWNER_SLACK_USER],
+          allowed: ["full-access", "exact"],
+          scopes: ["chat", "contact"],
+        },
+        createdAt: APPROVAL_TEST_NOW_MS,
+        expiresAt: APPROVAL_TEST_NOW_MS + 9_000,
+      });
+      attachApprovalRequestMessageId("req_existing_grant", "eph_existing");
+
+      const context = seedDeniedContext({ contextId: "ctx_grant_dedupe", contactId: requester.id, chatId: chat.id });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: 120,
+      });
+
+      expect(deliveredRequests).toEqual([]);
+      expect(result).toMatchObject({ allowed: false, approved: false });
+      expect(result.reason ?? "").toMatch(/Timeout/);
+    });
+
+    it("persists the picked scope and applies the button that follows it", async () => {
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        // The select sends its own interaction; the buttons that follow carry no scope.
+        {
+          topic: "ravi.inbound.interaction",
+          data: {
+            provider: "slack",
+            accountId: "main",
+            instanceId: "main",
+            channelId: "C123",
+            messageTs: "eph_seen_by_slack",
+            userId: OWNER_SLACK_USER,
+            actionId: SLACK_PERMISSION_GRANT_ACTION_SCOPE,
+            value: "$requestId|contact",
+            responseUrlId: "resp_scope",
+          },
+        },
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({ contextId: "ctx_grant_scope", contactId: requester.id, chatId: chat.id });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: true, approved: true });
+      // The card was re-rendered with the picked scope before the button was used.
+      expect(respondedSlack.length).toBeGreaterThanOrEqual(1);
+      expect(respondedSlack[0]?.responseUrlId).toBe("resp_scope");
+      expect(respondedSlack[0]?.payload.replace_original).toBe(true);
+      expect(JSON.stringify(respondedSlack[0]?.payload.blocks)).toContain("This contact (all chats)");
+      // The decision itself then finalized the clicker's card too.
+      expect(respondedSlack[respondedSlack.length - 1]?.payload.text).toContain("Approved by");
+      // Contact scope means the global contact tag, not a chat grant.
+      expect(getContact(requester.id)?.tags).toContain("permission-use-tool-bash");
+      expect(dbListContactChatGrants({ contactId: requester.id })).toEqual([]);
+    });
+
+    it("applies the grant once when the same click arrives twice", async () => {
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      const click = slackClick({
+        userId: OWNER_SLACK_USER,
+        messageTs: "eph_seen_by_slack",
+        actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+      });
+      subscribeEvents = [click, click];
+
+      const context = seedDeniedContext({ contextId: "ctx_grant_once", contactId: requester.id, chatId: chat.id });
+      await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      const rows = getDb().prepare("SELECT COUNT(*) AS count FROM permission_grant_applications").get() as {
+        count: number;
+      };
+      expect(rows.count).toBe(1);
+      await flushPermissionAuditEvents();
+      expect(auditEvents.filter((entry) => entry.topic === "ravi.audit.permission_grant")).toHaveLength(1);
+    });
+
+    it("does not let the blocked call through when the grant cannot be written", async () => {
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      // A tag with the derived profile name that permissions does not own.
+      dbCreateTagDefinition({ slug: "permission-use-tool-bash", label: "Bash fans", kind: "user", source: "manual" });
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "C123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          messageTs: "eph_seen_by_slack",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+
+      const context = seedDeniedContext({ contextId: "ctx_grant_fails", contactId: requester.id, chatId: chat.id });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({ allowed: false, approved: false });
+      expect(respondedSlack[respondedSlack.length - 1]?.payload.text ?? "").toContain("grant failed");
+    });
+
+    it("keeps one card per agent when two agents serve the same contact", () => {
+      const base = {
+        capability: { permission: "use", objectType: "tool", objectId: "Bash" },
+        adminUserIds: [OWNER_SLACK_USER],
+        allowed: ["exact"] as const,
+        scopes: ["chat"] as const,
+      };
+      const forAgent = (agentId: string) =>
+        ({ ...base, targets: { contactId: "c1", chatId: "chat1", chatTags: [], agentId } }) as never;
+      expect(sameGrantTuple(forAgent("dev"), forAgent("dev"))).toBe(true);
+      expect(sameGrantTuple(forAgent("dev"), forAgent("ops"))).toBe(false);
+    });
   });
 });

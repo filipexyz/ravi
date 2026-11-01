@@ -20,7 +20,6 @@ applies_to:
   - src/session-trace
   - src/insights
   - src/tasks
-  - src/projects
   - src/cli/commands
 owners:
   - ravi-dev
@@ -38,7 +37,7 @@ The domain exists because raw observability is not enough. A trace says what hap
 
 ## Boundaries
 
-- Quality MUST observe Ravi-owned runtime data: sessions, traces, events, tasks, artifacts, projects, daemon logs, cron runs, and channel metadata.
+- Quality MUST observe Ravi-owned runtime data: sessions, traces, events, tasks, artifacts, daemon logs, cron runs, and channel metadata.
 - Quality MUST NOT replace the runtime event loop, session trace store, task runtime, or project model.
 - Quality MUST NOT treat every exception as a product failure. It classifies behavior against explicit failure modes.
 - Quality MUST NOT alert on every occurrence. It deduplicates, groups, and escalates only when the signal is material.

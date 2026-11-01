@@ -42,15 +42,69 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
   };
 }
 
+/** Who a turn acts for: what turn-scoped authority is derived from, apart from `source`. */
+export type RuntimeTurnAuthorityEnvelope = Pick<
+  RuntimeLaunchPrompt,
+  | "context"
+  | "_bridgeTurnId"
+  | "_approvalSource"
+  | "_turnOrigin"
+  | "_heartbeat"
+  | "_cron"
+  | "_jobId"
+  | "_cronRunId"
+  | "_cronAuthority"
+  | "_trigger"
+  | "_triggerId"
+  | "_sessionFollowup"
+  | "_sessionFollowupCadenceId"
+  | "_sessionFollowupRunId"
+>;
+
+/**
+ * Copy the authority envelope of a turn so a host-made continuation of that
+ * same turn (inactivity or context recovery) acts for the same actor. Without
+ * it the continuation carries the chat surface but no actor, resolves as
+ * `missing_contact` and runs with zero capabilities.
+ */
+export function pickRuntimeTurnAuthorityEnvelope(
+  prompt: Partial<RuntimeLaunchPrompt> | null | undefined,
+): RuntimeTurnAuthorityEnvelope {
+  if (!prompt) return {};
+  const envelope: RuntimeTurnAuthorityEnvelope = {};
+  if (prompt._bridgeTurnId) envelope._bridgeTurnId = prompt._bridgeTurnId;
+  if (prompt.context) envelope.context = { ...prompt.context };
+  if (prompt._approvalSource) envelope._approvalSource = { ...prompt._approvalSource };
+  if (prompt._turnOrigin) envelope._turnOrigin = prompt._turnOrigin;
+  if (prompt._heartbeat) envelope._heartbeat = prompt._heartbeat;
+  if (prompt._cron) {
+    envelope._cron = prompt._cron;
+    if (prompt._jobId) envelope._jobId = prompt._jobId;
+    if (prompt._cronRunId) envelope._cronRunId = prompt._cronRunId;
+    if (prompt._cronAuthority) envelope._cronAuthority = { ...prompt._cronAuthority };
+  }
+  if (prompt._trigger) {
+    envelope._trigger = prompt._trigger;
+    if (prompt._triggerId) envelope._triggerId = prompt._triggerId;
+  }
+  if (prompt._sessionFollowup) {
+    envelope._sessionFollowup = prompt._sessionFollowup;
+    if (prompt._sessionFollowupCadenceId) envelope._sessionFollowupCadenceId = prompt._sessionFollowupCadenceId;
+    if (prompt._sessionFollowupRunId) envelope._sessionFollowupRunId = prompt._sessionFollowupRunId;
+  }
+  return envelope;
+}
+
 export function hasIsolatedRuntimeTurnEnvelope(
-  prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin"> | null | undefined,
+  prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin" | "_cronRunId"> | null | undefined,
 ): boolean {
-  return prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined;
+  return prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined || prompt?._cronRunId !== undefined;
 }
 
 export interface RuntimeInterruptSuccessorPreparation {
   message: RuntimeUserMessage;
   coalescedMessages: RuntimeUserMessage[];
+  continuation?: RuntimeUserMessage;
 }
 
 /**
@@ -63,6 +117,7 @@ export function prepareRuntimeInterruptSuccessor(
   sessionName: string,
   session: RuntimeHostStreamingSession,
 ): RuntimeInterruptSuccessorPreparation | null {
+  if (session.currentTurnSuperseded || session.interrupted) return null;
   const activePendingIds = new Set(session.currentTurnPendingIds ?? []);
   if (activePendingIds.size === 0) return null;
 
@@ -75,8 +130,12 @@ export function prepareRuntimeInterruptSuccessor(
       (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
     )?.launchPrompt?.source ??
     (session.suppressChatEmit ? undefined : session.currentReplyTarget);
+  const nextSource = successors[0]?.launchPrompt?.source;
+  const yielding = !isSameRuntimeTurnSurface(activeSource, nextSource);
+  // Source-less/CLI turns must not acquire a chat destination through a yield.
+  if (yielding && (!activeSource || !nextSource || session.suppressChatEmit)) return null;
   const nextSurfaceIndex = successors.findIndex(
-    (message) => !isSameRuntimeTurnSurface(activeSource, message.launchPrompt?.source),
+    (message) => !isSameRuntimeTurnSurface(nextSource, message.launchPrompt?.source),
   );
   const sameSurfaceSuccessors = nextSurfaceIndex < 0 ? successors : successors.slice(0, nextSurfaceIndex);
   const eligible = sameSurfaceSuccessors.filter(
@@ -112,15 +171,48 @@ export function prepareRuntimeInterruptSuccessor(
   const active = session.pendingMessages.filter(
     (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
   );
+  if (yielding && active.length === 0) return null;
   const remaining = session.pendingMessages.filter(
     (message) => !cohortSet.has(message) && (!message.pendingId || !activePendingIds.has(message.pendingId)),
   );
-  session.pendingMessages = [...active, merged, ...remaining];
+  const continuation = yielding ? createYieldContinuation(session, active, activeSource ?? undefined) : undefined;
+  session.pendingMessages = [...active, merged, ...remaining, ...(continuation ? [continuation] : [])];
 
   return {
     message: merged,
     coalescedMessages: cohort.filter((message) => message !== interrupting),
+    ...(continuation ? { continuation } : {}),
   };
+}
+
+function createYieldContinuation(
+  session: RuntimeHostStreamingSession,
+  active: RuntimeUserMessage[],
+  source: RuntimeLaunchPrompt["source"],
+): RuntimeUserMessage {
+  const original = active[active.length - 1]?.launchPrompt;
+  const request = active.map((message) => message.yieldedRequest ?? message.message.content).join("\n\n");
+  const continuation = createQueuedRuntimeUserMessage({
+    ...original,
+    ...session.currentTurnAuthority,
+    source,
+    prompt: [
+      "[System] Resume the unfinished request below after yielding to another chat or thread.",
+      "Continue from the existing conversation and tool results. Do not repeat completed actions.",
+      "If a command was interrupted, verify its outcome before retrying it.",
+      "",
+      request,
+    ].join("\n"),
+    _runtimePrompt: undefined,
+    _modelBrokerTurnId: undefined,
+    _resumeStashedMessages: undefined,
+    _daemonRestartResume: undefined,
+    commands: undefined,
+    deliveryBarrier: "after_response",
+    deliveryBarrierSource: "inferred",
+  });
+  continuation.yieldedRequest = request;
+  return continuation;
 }
 
 function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): RuntimeLaunchPrompt {
@@ -321,8 +413,8 @@ export function getDeliverableRuntimeMessages(
   );
   // These envelopes bind authority to one logical turn. Never let adjacent
   // messages borrow their channel binding or validated internal origin.
-  const firstIsolatedTurnIndex = deliverable.findIndex((message) =>
-    hasIsolatedRuntimeTurnEnvelope(message.launchPrompt),
+  const firstIsolatedTurnIndex = deliverable.findIndex(
+    (message) => message.yieldedRequest !== undefined || hasIsolatedRuntimeTurnEnvelope(message.launchPrompt),
   );
   const envelopeBounded =
     firstIsolatedTurnIndex === 0
@@ -356,7 +448,46 @@ export function getDeliverableRuntimeMessages(
   const nextSurfaceIndex = replayBounded.findIndex(
     (message, index) => index > 0 && runtimeTurnSurfaceKey(message.launchPrompt?.source) !== firstSurface,
   );
-  return nextSurfaceIndex < 0 ? replayBounded : replayBounded.slice(0, nextSurfaceIndex);
+  const surfaceBounded = nextSurfaceIndex < 0 ? replayBounded : replayBounded.slice(0, nextSurfaceIndex);
+
+  // One physical provider turn also has one authority: the turn context is
+  // built for a single actor, so a message from another sender waits for the
+  // following turn instead of running under this one's identity.
+  const firstActor = runtimeTurnActorKey(surfaceBounded[0]?.launchPrompt);
+  if (firstActor === null) return surfaceBounded.slice(0, 1);
+  const nextActorIndex = surfaceBounded.findIndex(
+    (message, index) => index > 0 && runtimeTurnActorKey(message.launchPrompt) !== firstActor,
+  );
+  return nextActorIndex < 0 ? surfaceBounded : surfaceBounded.slice(0, nextActorIndex);
+}
+
+/**
+ * The identity a turn's authority is built for. Two messages may share a
+ * provider turn only when their keys are equal. An explicitly unknown sender
+ * with no identifier at all (null) never shares a turn.
+ */
+export function runtimeTurnActorKey(
+  prompt: Pick<RuntimeLaunchPrompt, "source" | "context"> | null | undefined,
+): string | null {
+  const source = steeringActorIdentity(prompt?.source ?? {});
+  const context = steeringActorIdentity(prompt?.context ?? {});
+  const actorType = source.actorType || context.actorType;
+  const principal =
+    source.contactId ||
+    context.contactId ||
+    source.actorAgentId ||
+    context.actorAgentId ||
+    source.automationId ||
+    context.automationId ||
+    source.platformIdentityId ||
+    context.platformIdentityId ||
+    source.normalizedSenderId ||
+    context.normalizedSenderId ||
+    source.rawSenderId ||
+    context.rawSenderId ||
+    prompt?.context?.senderId;
+  if (actorType === "unknown" && !principal) return null;
+  return JSON.stringify([actorType, principal]);
 }
 
 export function hasDeliverableRuntimeMessages(sessionName: string, session: RuntimeHostStreamingSession): boolean {
@@ -446,11 +577,27 @@ export function wakeRuntimeSessionIfDeliverable(
   resolver(null);
 }
 
+/**
+ * A prompt transform whose additions must be settled with the turn: `commit`
+ * runs once the augmented prompt is handed to the provider, `release` when
+ * the turn fails to start (signals/delivery: reserve, send, confirm).
+ */
+export interface RuntimeTurnPromptTransform {
+  prompt: string;
+  commit?: () => void;
+  release?: (reason: string) => void;
+}
+
 export interface RuntimeMessageGeneratorOptions {
   sessionName: string;
   session: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   beforeTurnStart?: (input: { deliverableMessages: RuntimeUserMessage[]; combinedPrompt: string }) => void;
+  transformTurnPrompt?: (input: {
+    sessionName: string;
+    deliverableMessages: RuntimeUserMessage[];
+    combinedPrompt: string;
+  }) => string | RuntimeTurnPromptTransform | Promise<string | RuntimeTurnPromptTransform>;
   traceTurnStart?: (input: {
     combinedPrompt: string;
     deliverableMessages: RuntimeUserMessage[];
@@ -461,11 +608,27 @@ export interface RuntimeMessageGeneratorOptions {
     | undefined;
 }
 
+function settlePromptTransform(
+  sessionName: string,
+  transform: RuntimeTurnPromptTransform | undefined,
+  outcome: "commit" | "release",
+  reason = "",
+): void {
+  if (!transform) return;
+  try {
+    if (outcome === "commit") transform.commit?.();
+    else transform.release?.(reason);
+  } catch (error) {
+    log.warn("Turn prompt transform settlement failed", { sessionName, outcome, error });
+  }
+}
+
 export async function* createRuntimeMessageGenerator({
   sessionName,
   session,
   stashedMessages,
   beforeTurnStart,
+  transformTurnPrompt,
   traceTurnStart,
 }: RuntimeMessageGeneratorOptions): AsyncGenerator<RuntimePromptMessage> {
   const stashed = stashedMessages.get(sessionName);
@@ -512,6 +675,7 @@ export async function* createRuntimeMessageGenerator({
     }
     session.currentTurnPendingIds = [...yieldedIds];
     session.currentTurnSuperseded = false;
+    session.currentTurnYieldContinuationId = undefined;
     const combined = combineSessionSurfacePromptContents(deliverable.map((message) => message.message.content));
     log.info("Generator: yielding", {
       sessionName,
@@ -538,15 +702,35 @@ export async function* createRuntimeMessageGenerator({
     session.currentTraceTurnTerminalRecorded = false;
     session.runtimeTerminalSseEmitted = false;
 
+    let promptContent = combined;
+    let promptTransform: RuntimeTurnPromptTransform | undefined;
     try {
       beforeTurnStart?.({
         combinedPrompt: combined,
         deliverableMessages: deliverable.map((message) => ({ ...message })),
       });
 
+      if (transformTurnPrompt) {
+        try {
+          const transformed = await transformTurnPrompt({
+            sessionName,
+            deliverableMessages: deliverable.map((message) => ({ ...message })),
+            combinedPrompt: combined,
+          });
+          if (typeof transformed === "string") {
+            promptContent = transformed;
+          } else {
+            promptTransform = transformed;
+            promptContent = transformed.prompt;
+          }
+        } catch (error) {
+          log.warn("Turn prompt transform failed; continuing without it", { sessionName, error });
+        }
+      }
+
       if (traceTurnStart) {
         const traceTurn = await traceTurnStart({
-          combinedPrompt: combined,
+          combinedPrompt: promptContent,
           deliverableMessages: deliverable.map((message) => ({ ...message })),
         });
         if (traceTurn) {
@@ -559,6 +743,7 @@ export async function* createRuntimeMessageGenerator({
         }
       }
     } catch (error) {
+      settlePromptTransform(sessionName, promptTransform, "release", "turn preparation failed");
       session.durableTurnPreparationFailed = true;
       session.turnActive = false;
       session.currentTurnPendingIds = undefined;
@@ -577,14 +762,20 @@ export async function* createRuntimeMessageGenerator({
       throw error;
     }
 
+    settlePromptTransform(sessionName, promptTransform, "commit");
     yield {
       type: "user" as const,
-      message: { role: "user" as const, content: combined },
+      message: { role: "user" as const, content: promptContent },
       session_id: "",
       parent_tool_use_id: null,
       clientMessageId,
       replay,
       terminalReplayAllowed,
+      runtimeOptions: {
+        model: session.currentModel,
+        effort: session.currentEffort,
+        thinking: session.currentThinking,
+      },
     };
 
     await turnCompleted;
@@ -616,5 +807,6 @@ export async function* createRuntimeMessageGenerator({
     }
     session.currentTurnPendingIds = undefined;
     session.currentTurnSuperseded = false;
+    session.currentTurnYieldContinuationId = undefined;
   }
 }

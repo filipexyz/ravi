@@ -1,5 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { basename, dirname } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdirSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { logger } from "../utils/logger.js";
 import type {
@@ -7,6 +10,7 @@ import type {
   RuntimeControlRequest,
   RuntimeControlResult,
   RuntimeControlState,
+  RuntimeDynamicToolCallResult,
   RuntimeEvent,
   RuntimeEventMetadata,
   RuntimeExecutionMetadata,
@@ -21,6 +25,7 @@ import type {
   RuntimeUsage,
   SessionRuntimeProvider,
 } from "./types.js";
+import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
@@ -37,6 +42,9 @@ import {
   isPiPermissionBridgeError,
   isPiPermissionHooksReadyEvent,
   materializePiPermissionExtensionFile,
+  formatPiDynamicToolUiResponse,
+  isPiDynamicToolUiTitle,
+  parsePiDynamicToolUiRequest,
   PI_PERMISSION_BRIDGE_UNAVAILABLE_MESSAGE,
   PI_PERMISSION_EXTENSION_FILENAME,
   PiPermissionBridgeError,
@@ -58,6 +66,7 @@ import {
   type PiContextSaturation,
   type PiContextSaturationLevel,
 } from "./pi-context-saturation.js";
+import { classifyTransportFailureKind } from "./transport-failure.js";
 
 const log = logger.child("runtime:pi");
 const DEFAULT_PI_COMMAND = "pi";
@@ -143,6 +152,8 @@ export interface PiRpcStartInput {
    * never told about skills the permission gate would deny.
    */
   disableNativeSkillDiscovery?: boolean;
+  /** Hard allowlist of tool names for this turn (Pi `--tools`). */
+  allowedTools?: string[];
 }
 
 export interface PiRpcCommand extends Record<string, unknown> {
@@ -200,6 +211,8 @@ interface PiSessionRuntimeState {
   currentState?: PiRpcSessionState;
   started: boolean;
   requestedModel?: string;
+  /** The model the live Pi process runs with, set after a spawn or a successful `set_model`. */
+  appliedModel?: string;
   transport?: PiRpcTransport;
   pendingSteers: string[];
   /** Latest context fill, used to rewrite a prompt timeout that is really saturation. */
@@ -237,7 +250,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           operations: PI_RUNTIME_CONTROL_OPERATIONS,
         },
         dynamicTools: {
-          mode: "none",
+          mode: "host",
         },
         execution: {
           mode: "subprocess-rpc",
@@ -568,6 +581,7 @@ export function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTra
       }
 
       const args = buildPiRpcProcessArgs(input, commandArgs);
+      const releaseSpilledPrompt = spillPiSystemPromptAppend(args);
       stderr = "";
       closeFailure = null;
       closed = false;
@@ -586,11 +600,13 @@ export function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTra
       child.once("error", (error) => {
         closed = true;
         closeFailure = error;
+        releaseSpilledPrompt();
         queue.fail(error);
         failPending(error);
       });
       child.once("close", (code, signal) => {
         closed = true;
+        releaseSpilledPrompt();
         if (intentionalClose) {
           queue.end();
           failPending(new Error("Pi RPC process closed"));
@@ -684,9 +700,125 @@ export function buildPiRpcSpawnEnv(input: Pick<PiRpcStartInput, "env">): NodeJS.
 }
 
 function resolvePiRpcProcessEnv(input: RuntimeStartRequest): NodeJS.ProcessEnv {
-  return buildPiRpcSpawnEnv({
+  const env = buildPiRpcSpawnEnv({
     env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
   });
+  const dynamicToolsEnv = buildPiDynamicToolsEnv(input.dynamicTools);
+  applyPiDynamicToolsEnv(env, dynamicToolsEnv);
+  return env;
+}
+
+/**
+ * Point the Pi process at exactly one catalog source. Never leave both selectors
+ * set: the extension prefers the file, so an inherited RAVI_PI_DYNAMIC_TOOLS_FILE
+ * from the parent env would silently win over this turn's inline catalog.
+ */
+export function applyPiDynamicToolsEnv(
+  env: NodeJS.ProcessEnv,
+  dynamicToolsEnv: string | undefined,
+  options: { limit?: number; dir?: string } = {},
+): void {
+  if (!dynamicToolsEnv) {
+    delete env.RAVI_PI_DYNAMIC_TOOLS;
+    delete env.RAVI_PI_DYNAMIC_TOOLS_FILE;
+    return;
+  }
+  const spilledPath = spillPiDynamicToolsToFile(dynamicToolsEnv, options);
+  if (spilledPath) {
+    env.RAVI_PI_DYNAMIC_TOOLS_FILE = spilledPath;
+    delete env.RAVI_PI_DYNAMIC_TOOLS;
+  } else {
+    env.RAVI_PI_DYNAMIC_TOOLS = dynamicToolsEnv;
+    delete env.RAVI_PI_DYNAMIC_TOOLS_FILE;
+  }
+}
+
+/**
+ * The host tool catalog is a single JSON env var. Linux caps one argv/env string
+ * at 128 KiB, so a large catalog (the full CLI surface is >500 KiB) makes
+ * posix_spawn fail with E2BIG. Above the inline budget we write the catalog to a
+ * content-addressed file and let the permission extension read it from disk.
+ */
+export const PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT = 60_000;
+const PI_SPILL_FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+/**
+ * Publish a spill file atomically: write a restrictive temp file in the same
+ * directory, then rename it over the destination. Readers either see the whole
+ * previous file or the whole new one, never a truncated catalog.
+ */
+function publishSpillFile(path: string, contents: string): void {
+  const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    writeFileSync(tmp, contents, { encoding: "utf8", mode: 0o600 });
+    renameSync(tmp, path);
+  } catch (error) {
+    // The prune only matches published names, so a failed write must not leave
+    // partial prompt or catalog content lying around.
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // Nothing was written.
+    }
+    throw error;
+  }
+}
+
+function pruneSpillFiles(dir: string, prefix: string, suffix: string): void {
+  try {
+    const cutoff = Date.now() - PI_SPILL_FILE_TTL_MS;
+    for (const entry of readdirSync(dir)) {
+      if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) continue;
+      const path = join(dir, entry);
+      try {
+        if (statSync(path).mtimeMs < cutoff) unlinkSync(path);
+      } catch {
+        // Another process may have pruned it already.
+      }
+    }
+  } catch {
+    // Pruning is best-effort.
+  }
+}
+
+export function spillPiDynamicToolsToFile(
+  payload: string,
+  options: { limit?: number; dir?: string } = {},
+): string | null {
+  const limit = options.limit ?? PI_DYNAMIC_TOOLS_INLINE_BYTE_LIMIT;
+  if (Buffer.byteLength(payload, "utf8") <= limit) return null;
+
+  try {
+    const dir = options.dir ?? join(homedir(), ".ravi", "pi-tools");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const digest = createHash("sha256").update(payload).digest("hex").slice(0, 16);
+    const path = join(dir, `tools-${digest}.json`);
+    publishSpillFile(path, payload);
+    pruneSpillFiles(dir, "tools-", ".json");
+    return path;
+  } catch (error) {
+    log.warn("Pi dynamic tools catalog too large for env and could not be spilled to disk", {
+      error: error instanceof Error ? error.message : error,
+      bytes: Buffer.byteLength(payload, "utf8"),
+    });
+    return null;
+  }
+}
+/** Serialize the host tool catalog the Pi bridge registers as custom tools. */
+export function buildPiDynamicToolsEnv(
+  dynamicTools: RuntimeStartRequest["dynamicTools"] | undefined,
+): string | undefined {
+  if (!dynamicTools || dynamicTools.length === 0) {
+    return undefined;
+  }
+  return JSON.stringify(
+    dynamicTools.map((tool) => ({
+      name: tool.name,
+      label: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema ?? { type: "object", properties: {}, additionalProperties: true },
+    })),
+  );
 }
 
 /** Snapshot of managed Ravi authority env that must stay live in the Pi process. */
@@ -724,6 +856,7 @@ async function* runPiTurns(
     systemPromptAppend: input.systemPromptAppend,
     extensionPath: materializePiPermissionExtensionFile(),
     ...(input.allowedSkills && input.allowedSkills.length > 0 ? { disableNativeSkillDiscovery: true } : {}),
+    ...(input.allowedTools && input.allowedTools.length > 0 ? { allowedTools: input.allowedTools } : {}),
   };
   refreshPiStartInputModel(startInput, state.requestedModel ?? input.model, input.modelBroker);
   let transport = state.transport ?? createTransport();
@@ -733,6 +866,8 @@ async function* runPiTurns(
   // Last env that actually reached a live Pi process. Do not update this until
   // start/handshake succeeds — a failed respawn must retry the new key.
   let appliedManagedEnvSignature: string | undefined;
+  // Thinking level the live Pi process runs with.
+  let appliedThinkingLevel = startInput.thinkingLevel;
 
   const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
     if (pendingStartupEvents.length > 0) {
@@ -828,11 +963,60 @@ async function* runPiTurns(
         continue;
       }
 
+      // Effort and thinking are per turn: a (re)spawn starts with this turn's
+      // level, a live process switches with `set_thinking_level`.
+      const turnThinkingLevel = promptMessage.runtimeOptions
+        ? toPiThinkingLevel(promptMessage.runtimeOptions.effort, promptMessage.runtimeOptions.thinking)
+        : undefined;
+      if (turnThinkingLevel) {
+        startInput.thinkingLevel = turnThinkingLevel;
+      }
+      // The model is per turn too, unless a model broker leases it. A (re)spawn
+      // starts with it, a live process switches with `set_model`.
+      const turnModel =
+        promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : undefined;
+      if (turnModel && turnModel !== (state.requestedModel ?? input.model)) {
+        state.requestedModel = turnModel;
+        input.model = turnModel;
+        refreshPiStartInputModel(startInput, turnModel, input.modelBroker);
+      }
+
       // Start (or respawn) after the host has applied this turn's runtime env.
       // Eager spawn at session open would bake the pre-rotation context key,
       // which refreshRuntimeRequestContextForTurn then revokes.
       try {
-        await ensurePiRpcReady();
+        const spawned = await ensurePiRpcReady();
+        if (spawned) {
+          state.appliedModel = state.requestedModel ?? input.model;
+        } else if (turnModel && turnModel !== state.appliedModel) {
+          // A turn must not run on a model it did not ask for: a failed switch
+          // fails the turn and the next turn with this model retries it.
+          try {
+            await applyPiSetModel(transport, state, turnModel, input.modelBroker, { verify: true });
+          } catch (error) {
+            log.warn("pi model switch failed; failing the turn", { model: turnModel, error });
+            yield {
+              type: "turn.failed",
+              error: `Pi could not switch to ${turnModel}: ${error instanceof Error ? error.message : String(error)}`,
+              recoverable: true,
+              rawEvent: { type: "model.switch_failed", model: turnModel },
+            };
+            continue;
+          }
+        }
+        if (spawned) {
+          appliedThinkingLevel = startInput.thinkingLevel;
+        } else if (turnThinkingLevel && turnThinkingLevel !== appliedThinkingLevel) {
+          try {
+            await sendPiCommand(transport, { type: "set_thinking_level", level: turnThinkingLevel });
+            appliedThinkingLevel = turnThinkingLevel;
+          } catch (error) {
+            log.warn("pi thinking level switch failed; keeping the current level", {
+              level: turnThinkingLevel,
+              error,
+            });
+          }
+        }
       } catch (error) {
         const firstStart = !state.started;
         if (!isPiPermissionBridgeError(error) && firstStart) {
@@ -853,6 +1037,10 @@ async function* runPiTurns(
           return;
         }
         continue;
+      }
+      // An abort during the switch above must not start this turn.
+      if (abortSignal.aborted) {
+        break;
       }
 
       const terminalTracker = createRuntimeTerminalEventTracker();
@@ -1195,9 +1383,16 @@ async function maybeBuildPiTerminalEvent(
       });
     }
     if (stopReason === "error") {
+      const errorMessage = firstString(message?.errorMessage) ?? "Pi turn failed";
+      // OpenAI-compatible clients (pi with DeepSeek/OpenRouter/...) report a
+      // transport drop as a plain turn_error with a provider-generated message
+      // and zeroed usage. Without the transport kind the host treats it as a
+      // fatal visible failure and never runs the silent stash + restart path.
+      const failureKind = classifyTransportFailureKind(errorMessage);
       return terminalTracker.fail({
-        error: firstString(message?.errorMessage) ?? "Pi turn failed",
+        error: errorMessage,
         recoverable: true,
+        ...(failureKind ? { failureKind } : {}),
         rawEvent,
         metadata: buildPiEventMetadata(rawEvent, context),
       });
@@ -1312,11 +1507,9 @@ async function controlPiRuntime(
             buildState(),
           );
         }
-        return okControl(
-          request,
-          await sendPiCommand(transport, resolvePiSetModelCommand(model, modelBroker)),
-          buildState(),
-        );
+        const response = await sendPiCommand(transport, resolvePiSetModelCommand(model, modelBroker));
+        state.appliedModel = model;
+        return okControl(request, response, buildState());
       }
       case "thinking.set": {
         const level = normalizePiThinkingLevel(firstString(request.params?.level, request.text));
@@ -1361,7 +1554,10 @@ async function controlPiRuntime(
           );
         }
       default:
-        return failControl(request, `Pi runtime does not support ${request.operation}`, buildState());
+        return {
+          ...failControl(request, `Pi runtime does not support ${request.operation}`, buildState()),
+          code: RUNTIME_OPERATION_UNSUPPORTED,
+        };
     }
   } catch (error) {
     return failControl(request, error instanceof Error ? error.message : String(error), buildState());
@@ -1636,6 +1832,7 @@ async function applyPiSetModel(
   ) {
     throw new Error(`Pi set_model did not apply ${model}`);
   }
+  state.appliedModel = model;
 }
 
 async function applyPiRequestedModelAfterStart(
@@ -1780,6 +1977,44 @@ async function safePiCommand(transport: PiRpcTransport, command: PiRpcCommand): 
   }
 }
 
+/**
+ * Linux caps a single argv/env string at 128 KiB (MAX_ARG_STRLEN) and the whole
+ * argv+env block at 128 KiB (MAX_ARG_PAGES). A large system-prompt append — the
+ * tool catalog advertised on CLI turns can push it past half a megabyte — makes
+ * posix_spawn fail with E2BIG before Pi ever starts. Pi accepts a path for
+ * --append-system-prompt and reads the file contents, so above this budget we
+ * spill the append to disk and keep only the path in argv.
+ */
+export const PI_INLINE_PROMPT_BYTE_LIMIT = 60_000;
+
+export function spillPiSystemPromptAppend(args: string[], options: { limit?: number; dir?: string } = {}): () => void {
+  const noop = () => undefined;
+  const limit = options.limit ?? PI_INLINE_PROMPT_BYTE_LIMIT;
+  const index = args.indexOf("--append-system-prompt");
+  if (index < 0 || index + 1 >= args.length) return noop;
+  const prompt = args[index + 1] ?? "";
+  if (Buffer.byteLength(prompt, "utf8") <= limit) return noop;
+
+  try {
+    const dir = options.dir ?? join(homedir(), ".ravi", "pi-prompts");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const digest = createHash("sha256").update(prompt).digest("hex").slice(0, 16);
+    const path = join(dir, `prompt-${digest}.md`);
+    publishSpillFile(path, prompt);
+    pruneSpillFiles(dir, "prompt-", ".md");
+    args[index + 1] = path;
+    // Content-addressed: another transport may be spawning with the same path,
+    // so the file is kept until the age-based prune reclaims it.
+    return noop;
+  } catch (error) {
+    log.warn("Pi system prompt append too large for argv and could not be spilled to disk", {
+      error: error instanceof Error ? error.message : error,
+      bytes: Buffer.byteLength(prompt, "utf8"),
+    });
+    return noop;
+  }
+}
+
 export function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: string[] = []): string[] {
   const args = [...commandArgs, "--mode", "rpc"];
   const modelArg = input.modelArg ?? input.model;
@@ -1802,6 +2037,9 @@ export function buildPiRpcProcessArgs(input: PiRpcStartInput, commandArgs: strin
   }
   if (input.disableNativeSkillDiscovery) {
     args.push("--no-skills");
+  }
+  if (input.allowedTools && input.allowedTools.length > 0) {
+    args.push("--tools", input.allowedTools.join(","));
   }
 
   return args;
@@ -1875,6 +2113,60 @@ async function answerPiExtensionUiRequest(
   event: PiRpcEvent,
   input: RuntimeStartRequest,
 ): Promise<void> {
+  const dynamicRequest = parsePiDynamicToolUiRequest(event);
+  if (dynamicRequest) {
+    if (!transport.writeMessage) {
+      throw new Error("Pi RPC transport cannot answer extension UI dynamic tool requests");
+    }
+    let result: RuntimeDynamicToolCallResult;
+    try {
+      result = input.handleRuntimeToolCall
+        ? await input.handleRuntimeToolCall({
+            toolName: dynamicRequest.toolName,
+            callId: dynamicRequest.toolCallId,
+            arguments: dynamicRequest.arguments,
+          })
+        : {
+            success: false,
+            contentItems: [],
+            reason: "Ravi host tool execution is unavailable for this turn.",
+          };
+    } catch (error) {
+      result = {
+        success: false,
+        contentItems: [],
+        reason: error instanceof Error ? error.message : "Ravi host tool execution failed.",
+      };
+    }
+    log.info("Answered Pi dynamic tool request", {
+      toolName: dynamicRequest.toolName,
+      success: result.success,
+    });
+    await transport.writeMessage(formatPiDynamicToolUiResponse(dynamicRequest, result));
+    return;
+  }
+  if (isPiDynamicToolUiTitle(event) && typeof event.id === "string" && event.id) {
+    // A host-tool request we cannot read must still get an answer the bridge
+    // understands; cancelling it reads as "bridge did not answer" in the turn.
+    if (!transport.writeMessage) {
+      throw new Error("Pi RPC transport cannot answer extension UI dynamic tool requests");
+    }
+    log.warn("Unreadable Pi dynamic tool request", {
+      method: typeof event.method === "string" ? event.method : undefined,
+      fields: Object.keys(event).filter((key) => key !== "type" && key !== "id"),
+    });
+    await transport.writeMessage(
+      formatPiDynamicToolUiResponse(
+        { id: event.id, toolName: "unknown", arguments: {} },
+        {
+          success: false,
+          contentItems: [],
+          reason: "Ravi could not read this dynamic tool request (no toolName in the bridge payload).",
+        },
+      ),
+    );
+    return;
+  }
   const response = await resolvePiExtensionUiResponse(event, {
     canUseTool: input.canUseTool,
     approveRuntimeRequest: input.approveRuntimeRequest,

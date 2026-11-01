@@ -462,6 +462,58 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     examples: ['ravi triggers add "Permission alert" --topic "ravi.audit.denied" --message "..."'],
   },
   {
+    id: "audit.permission_grant",
+    category: "audit",
+    pattern: "ravi.audit.permission_grant",
+    title: "Permission granted",
+    description: "Provider-owned permission grant applied from an approval card.",
+    payload:
+      "{ type, agentId, requestId, denialId?, capability, intent, scope, clicker, profile, capabilities, agentCeiling, changed, replay, applied, resolvedDenials, operations, error?, timestamp }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "type", type: "string", required: true, description: "Audit event type." },
+        { path: "agentId", type: "string", required: true, description: "Agent whose call was denied." },
+        { path: "requestId", type: "string", required: true, description: "Approval request the click belongs to." },
+        { path: "denialId", type: "number", description: "Optional permission_denials ledger id." },
+        { path: "capability", type: "string", required: true, description: "Capability the grant covers." },
+        {
+          path: "intent",
+          type: "string",
+          required: true,
+          description: "full-access or exact, as chosen on the card.",
+        },
+        {
+          path: "scope",
+          type: "string",
+          required: true,
+          description: "Validated scope: chat, contact, chat-tag:<slug>, or agent.",
+        },
+        {
+          path: "clicker",
+          type: "object",
+          required: true,
+          description: "Who clicked: channel, Slack user id and resolved actor id. Never a context key.",
+        },
+        {
+          path: "profile",
+          type: ["string", "null"],
+          description: "Provider-owned profile applied; null when the grant was not applied.",
+        },
+        { path: "capabilities", type: "array", description: "Capabilities the profile carries." },
+        { path: "agentCeiling", type: "object", description: "Executor agent ceiling change: agentId and changed." },
+        { path: "changed", type: "boolean", description: "Whether anything was written." },
+        { path: "replay", type: "boolean", description: "True when an idempotent replay returned a stored result." },
+        { path: "applied", type: "boolean", description: "False when the grant failed and nothing was written." },
+        { path: "resolvedDenials", type: "number", description: "Open denial rows closed by this grant." },
+        { path: "operations", type: "array", description: "Applied/unchanged provider-owned operations." },
+        { path: "error", type: "string", description: "Failure reason when applied is false." },
+        { path: "timestamp", type: "string", description: "Event timestamp." },
+      ],
+    },
+    examples: ['ravi triggers add "Permission grants" --topic "ravi.audit.permission_grant" --message "..."'],
+  },
+  {
     id: "contacts.pending",
     category: "approval",
     pattern: "ravi.contacts.pending",
@@ -723,22 +775,73 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     category: "watch",
     pattern: "ravi.console.inbox.item",
     title: "Console inbox item",
-    description: "Delivered Console inbox item, including watch events.",
-    payload: "{ eventId, eventType, source, payload, links, occurredAt, createdAt, ... }",
+    description: "Delivered Console inbox item, including watch events and Bases events (category bases).",
+    payload: "{ eventId, eventType, category, actor, source, payload, links, occurredAt, createdAt, ... }",
     schema: {
       version: 1,
       fields: [
         { path: "eventId", type: "string", required: true, description: "Console event id." },
         { path: "eventType", type: "string", required: true, description: "Console event type." },
+        { path: "category", type: "string", description: "Console category, e.g. bases." },
+        {
+          path: "actor",
+          type: "object",
+          description: "Who caused the event: { type, id } (Bases: user, cli, system).",
+        },
         { path: "source", type: "object", description: "Console source metadata." },
         { path: "payload", type: "object", description: "Console-delivered payload." },
+        {
+          path: "payload.baseId",
+          type: "string",
+          description: "Bases: base id (also baseSlug, projectId, rowId, version, surface).",
+        },
+        {
+          path: "payload.propertyId",
+          type: "string",
+          description: "Bases approval.* and agent.*: the approval or agent property.",
+        },
+        {
+          path: "payload.state",
+          type: "string",
+          description: "Bases approval.*: pending, approved or rejected (never the note).",
+        },
+        { path: "payload.inputsHash", type: "string", description: "Bases agent.requested: hash of the agent inputs." },
+        {
+          path: "payload.subscriptionId",
+          type: "string",
+          description: "Bases: present only for a filtered subscription (bases subscribe --view/--props/--events).",
+        },
+        {
+          path: "payload.row",
+          type: "object",
+          description:
+            "Bases items about one row: { rowId, version, values, archivedAt } read locally at delivery (no body).",
+        },
+        {
+          path: "payload.rowEnrichment",
+          type: "object",
+          description: "Bases: { status: ok } or { status: failed, code } when the local row read failed.",
+        },
         { path: "links", type: "object", description: "Console link metadata." },
         { path: "occurredAt", type: "string", description: "ISO occurrence timestamp." },
         { path: "createdAt", type: "string", description: "ISO creation timestamp." },
       ],
     },
-    examples: ['ravi triggers add "Console watch item" --topic "ravi.console.inbox.item" --message "..."'],
-    notes: ["For local email, listen to ravi.inbox.mail.received instead."],
+    examples: [
+      'ravi triggers add "Console watch item" --topic "ravi.console.inbox.item" --message "..."',
+      "ravi bases subscribe <base> --events approval.requested --trigger --agent <agentId> --session <name>",
+    ],
+    filters: [
+      'data.category == "bases" && data.payload.baseSlug == "<base>" && data.actor.type == "user"',
+      'data.category == "bases" && data.eventType == "bases.approval.decided"',
+      'data.category == "bases" && data.eventType == "bases.agent.requested" && data.payload.subscriptionId == "<subscription>"',
+    ],
+    notes: [
+      "For local email, listen to ravi.inbox.mail.received instead.",
+      "Bases event types: bases.row.created, bases.row.updated, bases.row.archived, bases.row.restored, bases.rows.bulk_changed, bases.approval.requested, bases.approval.decided, bases.agent.requested, bases.agent.backfill.",
+      "Bases items about one row (row.*, approval.*, agent.requested) carry payload.row; bulk_changed and agent.backfill name no row.",
+      "Turn delivery on per base with ravi bases subscribe; --trigger also creates this trigger (a disabled draft from an agent session).",
+    ],
   },
   {
     id: "watch.console.bug.status",
@@ -778,7 +881,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     description:
       "Normalized watch event after Console delivers page.comment.created through the Agent Inbox for a shipped page.",
     payload:
-      "{ version, eventId, connector, eventType, subject, payload: { pageId, orgId, projectId, body, url }, pageId, orgId, projectId, occurredAt }",
+      "{ version, eventId, connector, eventType, subject, payload: { pageId, siteId, routePath, path, orgId, projectId, commentId, parentId, body, url, author }, pageId, routePath, orgId, projectId, occurredAt }",
     schema: {
       version: 1,
       fields: [
@@ -791,6 +894,16 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
           description: "Stable page id. Pages ship binds this to the site id Console returned.",
         },
         { path: "payload.siteId", type: "string", description: "Site id when Console sends it beside pageId." },
+        {
+          path: "payload.routePath",
+          type: "string",
+          description:
+            "Path of the published route the comment is on, e.g. / or /weekly. Pages ship binds one trigger per route.",
+        },
+        { path: "payload.path", type: "string", description: "Page path the comment was left on (under routePath)." },
+        { path: "payload.commentId", type: "string", description: "Console comment id." },
+        { path: "payload.parentId", type: ["string", "null"], description: "Parent comment id when this is a reply." },
+        { path: "payload.author.displayName", type: ["string", "null"], description: "Who commented." },
         { path: "payload.orgId", type: "string", description: "Console organization id." },
         { path: "payload.organizationId", type: "string", description: "Organization id when Console uses that name." },
         { path: "payload.projectId", type: "string", description: "Console project id. Slugs are not project ids." },
@@ -802,6 +915,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
             "Page URL. Console payload.url when set; otherwise the Page link, else the first http(s) link, else the Console link.",
         },
         { path: "pageId", type: "string", description: "pageId hoisted to the event root for filters." },
+        { path: "routePath", type: "string", description: "routePath hoisted to the event root for filters." },
         { path: "orgId", type: "string", description: "orgId hoisted to the event root for filters." },
         { path: "projectId", type: "string", description: "projectId hoisted to the event root for filters." },
       ],
@@ -810,16 +924,18 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
       id: "page-comment-created-default",
       description: "Default agent-facing notice for a new page comment.",
       template: PAGE_COMMENT_CREATED_MESSAGE,
-      variables: ["data.payload.pageId", "data.payload.body", "data.payload.url"],
+      variables: ["data.payload.routePath", "data.payload.body", "data.payload.url"],
     },
     examples: [
-      `ravi triggers add "Page comment" --topic "${PAGE_COMMENT_CREATED_TOPIC}" --filter '(data.payload.pageId == "<pageId>" || data.pageId == "<pageId>" || data.payload.siteId == "<pageId>" || data.siteId == "<pageId>") && (data.payload.orgId == "<orgId>" || data.orgId == "<orgId>") && (data.payload.projectId == "<projectId>" || data.projectId == "<projectId>")' --session main --cooldown 30s`,
+      `ravi triggers add "Page comment" --topic "${PAGE_COMMENT_CREATED_TOPIC}" --filter '(data.payload.pageId == "<pageId>" || data.pageId == "<pageId>" || data.payload.siteId == "<pageId>" || data.siteId == "<pageId>") && (data.payload.routePath == "/" || data.routePath == "/") && (data.payload.orgId == "<orgId>" || data.orgId == "<orgId>") && (data.payload.projectId == "<projectId>" || data.projectId == "<projectId>")' --session main --cooldown 0s`,
     ],
     filters: [
       'data.payload.pageId == "<pageId>"',
       'data.pageId == "<pageId>"',
       'data.payload.siteId == "<pageId>"',
       'data.siteId == "<pageId>"',
+      'data.payload.routePath == "/weekly"',
+      'data.routePath == "/weekly"',
       'data.payload.orgId == "<orgId>"',
       'data.orgId == "<orgId>"',
       'data.payload.projectId == "<projectId>"',
@@ -827,7 +943,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     ],
     notes: [
       "Console Agent Inbox eventType is page.comment.created. Local NATS after the inbox bridge is ravi.watch.console.page.comment.created.",
-      "pages ship creates or reuses one trigger per stable page id, bound to the creator agent. Fanout and history stay in Console.",
+      "pages ship creates or reuses one trigger per shipped route (site id + route path) that wakes the session that shipped it last. Console sends the event only to the installation that published the commented version. Fanout and history stay in Console.",
       "Always filter by this page id. Do not create a broad all-pages trigger. Invalid filters fail closed and are not saved.",
       "payload.url comes from Console when present. Older inbox items only have links; the bridge copies Page, else the first http(s) link, else Console.",
       "Comment anchors are not part of v0. A comment written by the creator still wakes that agent.",
@@ -841,7 +957,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     description:
       "Reserved normalized watch event after Console delivers page.comment.resolved through the Agent Inbox. v0 ship does not arm this topic.",
     payload:
-      "{ version, eventId, connector, eventType, subject, payload: { pageId, orgId, projectId, body, url }, pageId, orgId, projectId, occurredAt }",
+      "{ version, eventId, connector, eventType, subject, payload: { pageId, siteId, routePath, path, orgId, projectId, commentId, parentId, body, url, author }, pageId, routePath, orgId, projectId, occurredAt }",
     schema: {
       version: 1,
       fields: [
@@ -856,6 +972,7 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
             "Page URL. Console payload.url when set; otherwise the Page link, else the first http(s) link, else the Console link.",
         },
         { path: "pageId", type: "string", description: "pageId hoisted to the event root for filters." },
+        { path: "routePath", type: "string", description: "routePath hoisted to the event root for filters." },
       ],
     },
     messageTemplate: {

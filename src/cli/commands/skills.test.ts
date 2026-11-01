@@ -77,6 +77,12 @@ function expectContractError(run: () => unknown): InstanceType<typeof ContractEr
  */
 const KNOWN_CATALOG_SKILL = "agents-manager";
 
+/** `skills show` of a local skill answers synchronously; a Library skill returns a Promise. */
+function syncShow<T>(result: T | Promise<T>): T {
+  if (result instanceof Promise) throw new Error("expected a local (synchronous) skills show result");
+  return result;
+}
+
 describe("SkillsCommands — grant/revoke/who/inspect", () => {
   describe("grant", () => {
     it("fail-fasts when the agent id does not exist", () => {
@@ -720,9 +726,11 @@ describe("skills agent-first contract", () => {
       );
     expect(deniedSkill).toBeDefined();
 
-    const allowed = withoutLogs(() =>
-      runWithContext({ transport: "tool", agentId }, () =>
-        commands.show(KNOWN_CATALOG_SKILL, undefined, undefined, true),
+    const allowed = syncShow(
+      withoutLogs(() =>
+        runWithContext({ transport: "tool", agentId }, () =>
+          commands.show(KNOWN_CATALOG_SKILL, undefined, undefined, true),
+        ),
       ),
     );
     expect(allowed.skill.name).toBe(KNOWN_CATALOG_SKILL);
@@ -1247,16 +1255,20 @@ describe("skills show --file", () => {
 
   it("adds files[] to --json and file{} with --file, keeping the skill record", () => {
     const bases = catalogBases();
-    const plain = withoutLogs(() =>
-      runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, true)),
+    const plain = syncShow(
+      withoutLogs(() => runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, true))),
     );
     expect(plain.skill.content).toBe(bases.content);
     expect(plain.files[0]).toBe("SKILL.md");
     expect(plain.files).toContain(BASES_REFERENCE);
     expect(plain).not.toHaveProperty("file");
 
-    const payload = withoutLogs(() =>
-      runWithContext({}, () => new SkillsCommands().show("bases", undefined, undefined, true, `./${BASES_REFERENCE}`)),
+    const payload = syncShow(
+      withoutLogs(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().show("bases", undefined, undefined, true, `./${BASES_REFERENCE}`),
+        ),
+      ),
     );
     expect(payload.skill).toMatchObject({ name: "bases", content: bases.content });
     expect(payload.files).toEqual(plain.files);
@@ -1306,8 +1318,10 @@ describe("skills show --file", () => {
       writeFileSync(join(root, "outside.md"), "outside\n");
       symlinkSync(join(root, "outside.md"), join(dir, "references", "fora.md"));
 
-      const payload = withoutLogs(() =>
-        runWithContext({}, () => new SkillsCommands().show("demo-files", dir, undefined, true, "references/guia.md")),
+      const payload = syncShow(
+        withoutLogs(() =>
+          runWithContext({}, () => new SkillsCommands().show("demo-files", dir, undefined, true, "references/guia.md")),
+        ),
       );
       expect(payload.files).toEqual(["SKILL.md", "references/guia.md"]);
       expect(payload.file).toEqual({ path: "references/guia.md", content: "# Guia\n\nconteudo\n" });
@@ -1331,16 +1345,20 @@ describe("skills show --file", () => {
       runWithContext({}, () => new SkillsCommands().grant(agentId, KNOWN_CATALOG_SKILL, undefined, true)),
     );
 
+    // Not `bases`: the bootstrap floor reads Bases views, and whoever runs a
+    // bases command can read its skill.
     const denied = expectContractError(() =>
       runWithContext({ transport: "tool", agentId }, () =>
-        new SkillsCommands().show("bases", undefined, undefined, true, "references/nao-existe.md"),
+        new SkillsCommands().show("cron", undefined, undefined, true, "references/nao-existe.md"),
       ),
     );
     expect(denied.code).toBe("SKILL_NOT_AUTHORIZED");
 
-    const solucoes = withoutLogs(() =>
-      runWithContext({ transport: "tool", agentId }, () =>
-        new SkillsCommands().show("solucoes", undefined, undefined, true, "references/casos.md"),
+    const solucoes = syncShow(
+      withoutLogs(() =>
+        runWithContext({ transport: "tool", agentId }, () =>
+          new SkillsCommands().show("solucoes", undefined, undefined, true, "references/casos.md"),
+        ),
       ),
     );
     expect(solucoes.file?.path).toBe("references/casos.md");

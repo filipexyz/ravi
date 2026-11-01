@@ -20,6 +20,7 @@ afterAll(() => mock.restore());
 const removeWatchCalls: string[] = [];
 const setEnabledCalls: Array<{ id: string; enabled: boolean }> = [];
 const createTriggerCalls: Array<Record<string, unknown>> = [];
+const emitCalls: Array<{ topic: string; data: unknown }> = [];
 
 interface MockWatch {
   id: string;
@@ -109,6 +110,23 @@ mock.module("../../triggers/index.js", () => ({
   },
 }));
 
+mock.module("../../nats.js", () => ({
+  connectNats: async () => {},
+  closeNats: async () => {},
+  ensureConnected: async () => ({}),
+  getNats: () => ({}),
+  isExplicitConnect: () => false,
+  publish: async () => {},
+  subscribe: () => (async function* () {})(),
+  nats: {
+    emit: async (topic: string, data: unknown) => {
+      emitCalls.push({ topic, data });
+    },
+    subscribe: () => (async function* () {})(),
+    close: async () => {},
+  },
+}));
+
 mock.module("../../watch/index.js", () => ({
   isWatchApiError: (error: unknown) =>
     Boolean(error && typeof error === "object" && (error as Record<string, unknown>).__watchApi === true),
@@ -187,6 +205,7 @@ beforeEach(() => {
   removeWatchCalls.length = 0;
   setEnabledCalls.length = 0;
   createTriggerCalls.length = 0;
+  emitCalls.length = 0;
   watchStore = [buildWatch()];
   watchOperationError = null;
 });
@@ -263,6 +282,7 @@ describe("watch write brake", () => {
     expect(JSON.stringify(error.details.plan)).not.toContain(sensitiveMessage);
     expect(JSON.stringify(error.details.plan)).not.toContain("C:/sentinel/private");
     expect(createTriggerCalls).toHaveLength(0);
+    expect(emitCalls).toHaveLength(0);
   });
 
   it("trigger with --execute creates the trigger scoped to the watch", async () => {
@@ -294,6 +314,28 @@ describe("watch write brake", () => {
     expect(payload).toMatchObject({ status: "created" });
   });
 
+  it("trigger with --execute tells the daemon to load it, so the first watch event fires it", async () => {
+    // Regression: `watch trigger` saved the trigger but never sent the refresh,
+    // so the running trigger runner never subscribed to the watch subject.
+    const commands = new WatchCommands();
+    await silenced(() =>
+      commands.trigger(
+        "watch-gh-1",
+        "Resume o evento.",
+        undefined,
+        "main",
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+
+    expect(createTriggerCalls).toHaveLength(1);
+    expect(emitCalls).toEqual([{ topic: "ravi.triggers.refresh", data: {} }]);
+  });
+
   it("trigger validates --message BEFORE the brake: missing message fails without a dry-run and creates nothing", async () => {
     const commands = new WatchCommands();
     await silenced(async () => {
@@ -309,7 +351,7 @@ describe("watch write brake", () => {
           undefined,
           undefined,
         ),
-      ).rejects.toMatchObject({ code: "COMMAND_FAILED", exitCode: 1 });
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR", exitCode: 2 });
     });
 
     expect(createTriggerCalls).toHaveLength(0);

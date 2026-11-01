@@ -12,6 +12,7 @@ import {
   upsertDeliveredItem,
 } from "./inbox-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { listMailAccounts, listMailMessages } from "../mailbox/index.js";
 import type { ConsoleInboxItem, InboxNatsPayload } from "./types.js";
 import {
   InboxRunner,
@@ -256,6 +257,53 @@ describe("inbox runner pending lease recovery", () => {
     expect(handedOff).toEqual(["meetings.recording.ready:6f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f"]);
   });
 
+  it("hands knowledge items to the knowledge handoff once, after delivery, and still acks when it throws", async () => {
+    writeCloudCredentials(makeCredentials());
+    let acks = 0;
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      if (url.pathname === "/api/cli/inbox/subscriptions/global") {
+        return jsonResponse({ subscription: makeSubscription() });
+      }
+      if (url.pathname === "/api/cli/inbox/pulse") {
+        return jsonResponse(makePendingPulse({ latestSequence: 1, subscription: makeSubscription() }));
+      }
+      if (url.pathname === "/api/cli/inbox/poll") {
+        return jsonResponse(
+          makePoll({
+            items: [
+              makeInboxItem(1, {
+                eventType: "knowledge.gap.answered",
+                category: "knowledge",
+                payload: { proposalId: "prop_1", projectId: "proj_1" },
+              }),
+            ],
+          }),
+        );
+      }
+      if (url.pathname === "/api/cli/inbox/ack") {
+        acks += 1;
+        return jsonResponse({ acked: 1 });
+      }
+      throw new Error(`Unexpected inbox request: ${url.pathname}`);
+    }) as unknown as typeof fetch;
+
+    const handedOff: string[] = [];
+    const runner = new InboxRunner({
+      nats: { publish: async () => {}, flush: async () => {} },
+      meetingHandoff: () => {},
+      knowledgeHandoff: (payload) => {
+        expect(getItemByItemId("https://console.ravi.bot", "org_1", payload.eventId)?.deliveredAt).not.toBeNull();
+        handedOff.push(`${payload.eventType}:${(payload.payload as { proposalId?: string } | null)?.proposalId}`);
+        throw new Error("knowledge failed");
+      },
+    });
+    await runner.tickOnce();
+
+    expect(handedOff).toEqual(["knowledge.gap.answered:prop_1"]);
+    expect(acks).toBe(1);
+  });
+
   it("still acks a delivered item when the meetings handoff throws", async () => {
     writeCloudCredentials(makeCredentials());
     let acks = 0;
@@ -286,6 +334,64 @@ describe("inbox runner pending lease recovery", () => {
     await runner.tickOnce();
 
     expect(acks).toBe(1);
+  });
+
+  it("delivers two mails that share an RFC Message-ID and keeps one local message", async () => {
+    writeCloudCredentials(makeCredentials());
+    const ackedItemIds: string[] = [];
+    globalThis.fetch = makeMailInboxFetch({
+      items: [makeMailInboxItem(1, "console_msg_a"), makeMailInboxItem(2, "console_msg_b")],
+      onAck: (itemIds) => ackedItemIds.push(...itemIds),
+    });
+
+    const runner = new InboxRunner({ nats: { publish: async () => {}, flush: async () => {} } });
+    await runner.tickOnce();
+
+    expect(ackedItemIds).toEqual(["item_1", "item_2"]);
+    expect(listMailMessages()).toHaveLength(1);
+    expect(getSubscriptionByOrg("https://console.ravi.bot", "org_1")).toMatchObject({
+      status: "active",
+      lastSequence: 2,
+    });
+  });
+
+  it("keeps delivering later items when one mail fails local ingest", async () => {
+    writeCloudCredentials(makeCredentials());
+    listMailAccounts();
+    getDb().exec(`
+      CREATE TRIGGER test_fail_mail_insert BEFORE INSERT ON mail_messages
+      WHEN NEW.provider_message_id = 'console_msg_bad'
+      BEGIN SELECT RAISE(ABORT, 'local mailbox write failed'); END;
+    `);
+    const ackedItemIds: string[] = [];
+    const handedOff: string[] = [];
+    globalThis.fetch = makeMailInboxFetch({
+      items: [
+        makeMailInboxItem(1, "console_msg_bad"),
+        makeInboxItem(2, {
+          eventType: "meetings.recording.ready",
+          category: "meetings",
+          payload: { meetingId: "meeting_1" },
+        }),
+      ],
+      onAck: (itemIds) => ackedItemIds.push(...itemIds),
+    });
+
+    const runner = new InboxRunner({
+      nats: { publish: async () => {}, flush: async () => {} },
+      meetingHandoff: (payload) => handedOff.push(payload.eventId),
+    });
+    await runner.tickOnce();
+
+    expect(handedOff).toEqual(["item_2"]);
+    expect(ackedItemIds).toEqual(["item_2"]);
+    expect(getItemByItemId("https://console.ravi.bot", "org_1", "item_1")).toBeNull();
+    expect(getItemByItemId("https://console.ravi.bot", "org_1", "item_2")?.deliveredAt).not.toBeNull();
+    // The failed mail stays unacked and the cursor stays before it, so it is retried.
+    expect(getSubscriptionByOrg("https://console.ravi.bot", "org_1")).toMatchObject({
+      status: "active",
+      lastSequence: 0,
+    });
   });
 
   it("heals a delivered row from an advanced Console cursor after a partial ack response", async () => {
@@ -365,64 +471,73 @@ describe("inbox runner pending lease recovery", () => {
     });
   });
 
-  it("publishes bases.row.* items with the row values read through the Bases API", async () => {
-    writeCloudCredentials(makeCredentials());
-    const rowReads: string[] = [];
-    const published: Array<Record<string, unknown>> = [];
-    globalThis.fetch = mock(async (input: string | URL | Request) => {
-      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-      if (url.pathname === "/api/cli/inbox/subscriptions/global") {
-        return jsonResponse({ subscription: makeSubscription() });
-      }
-      if (url.pathname === "/api/cli/inbox/pulse") {
-        return jsonResponse(
-          makePendingPulse({ latestSequence: 1, subscription: makeSubscription({ lastDeliveredSequence: 0 }) }),
-        );
-      }
-      if (url.pathname === "/api/cli/inbox/poll") {
-        return jsonResponse(
-          makePoll({
-            items: [
-              makeInboxItem(1, {
-                eventType: "bases.row.created",
-                category: "bases",
-                payload: { baseId: "base_1", projectId: "proj_1", rowId: "row_c1", version: 1, surface: "page" },
-              }),
-            ],
-          }),
-        );
-      }
-      if (url.pathname === "/api/cli/projects/proj_1/bases/base_1/rows/row_c1") {
-        rowReads.push(url.pathname + url.search);
-        return jsonResponse({
-          row: { rowId: "row_c1", version: 1, values: { topic_id: ["row_t1"] }, body: "x", archivedAt: null },
-          users: {},
-          idempotentReplay: false,
-        });
-      }
-      if (url.pathname === "/api/cli/inbox/ack") return jsonResponse({ acked: 1 });
-      throw new Error(`Unexpected inbox request: ${url.pathname}`);
-    }) as unknown as typeof fetch;
+  for (const eventType of ["bases.row.created", "bases.approval.decided", "bases.agent.requested"]) {
+    it(`publishes ${eventType} items with the row values read through the Bases API`, async () => {
+      writeCloudCredentials(makeCredentials());
+      const rowReads: string[] = [];
+      const published: Array<Record<string, unknown>> = [];
+      globalThis.fetch = mock(async (input: string | URL | Request) => {
+        const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+        if (url.pathname === "/api/cli/inbox/subscriptions/global") {
+          return jsonResponse({ subscription: makeSubscription() });
+        }
+        if (url.pathname === "/api/cli/inbox/pulse") {
+          return jsonResponse(
+            makePendingPulse({ latestSequence: 1, subscription: makeSubscription({ lastDeliveredSequence: 0 }) }),
+          );
+        }
+        if (url.pathname === "/api/cli/inbox/poll") {
+          return jsonResponse(
+            makePoll({
+              items: [
+                makeInboxItem(1, {
+                  eventType,
+                  category: "bases",
+                  payload: {
+                    baseId: "base_1",
+                    projectId: "proj_1",
+                    rowId: "row_c1",
+                    version: 1,
+                    surface: "page",
+                    ...(eventType === "bases.row.created" ? {} : { propertyId: "prop_1" }),
+                  },
+                }),
+              ],
+            }),
+          );
+        }
+        if (url.pathname === "/api/cli/projects/proj_1/bases/base_1/rows/row_c1") {
+          rowReads.push(url.pathname + url.search);
+          return jsonResponse({
+            row: { rowId: "row_c1", version: 1, values: { topic_id: ["row_t1"] }, body: "x", archivedAt: null },
+            users: {},
+            idempotentReplay: false,
+          });
+        }
+        if (url.pathname === "/api/cli/inbox/ack") return jsonResponse({ acked: 1 });
+        throw new Error(`Unexpected inbox request: ${url.pathname}`);
+      }) as unknown as typeof fetch;
 
-    const runner = new InboxRunner({
-      nats: {
-        publish: async (_subject, payload) => {
-          published.push(payload as Record<string, unknown>);
+      const runner = new InboxRunner({
+        nats: {
+          publish: async (_subject, payload) => {
+            published.push(payload as Record<string, unknown>);
+          },
+          flush: async () => {},
         },
-        flush: async () => {},
-      },
-    });
-    await runner.tickOnce();
+      });
+      await runner.tickOnce();
 
-    expect(rowReads).toEqual(["/api/cli/projects/proj_1/bases/base_1/rows/row_c1"]);
-    expect(published[0]?.payload).toMatchObject({
-      rowId: "row_c1",
-      row: { rowId: "row_c1", version: 1, values: { topic_id: ["row_t1"] }, archivedAt: null },
-      rowEnrichment: { status: "ok" },
+      expect(rowReads).toEqual(["/api/cli/projects/proj_1/bases/base_1/rows/row_c1"]);
+      expect(published[0]?.payload).toMatchObject({
+        rowId: "row_c1",
+        row: { rowId: "row_c1", version: 1, values: { topic_id: ["row_t1"] }, archivedAt: null },
+        rowEnrichment: { status: "ok" },
+      });
+      const publishedPayload = published[0]?.payload as { row: Record<string, unknown> } | undefined;
+      expect(publishedPayload?.row).not.toHaveProperty("body");
     });
-    const publishedPayload = published[0]?.payload as { row: Record<string, unknown> } | undefined;
-    expect(publishedPayload?.row).not.toHaveProperty("body");
-  });
+  }
 
   it("retries only the ack for an already-delivered item without rewriting or enriching it", async () => {
     writeCloudCredentials(makeCredentials());
@@ -977,6 +1092,54 @@ function makeInboxItem(sequence: number, overrides: Partial<ConsoleInboxItem> = 
     },
     ...overrides,
   };
+}
+
+function makeMailInboxItem(sequence: number, consoleMessageId: string): ConsoleInboxItem {
+  return makeInboxItem(sequence, {
+    eventType: "mail.message.received",
+    category: "mail",
+    target: { type: "mailbox", id: "mailbox_remote_1" },
+    payload: {
+      messageId: consoleMessageId,
+      mailboxId: "mailbox_remote_1",
+      mailboxAddress: "team@example.com",
+    },
+  });
+}
+
+function makeMailInboxFetch(input: { items: ConsoleInboxItem[]; onAck: (itemIds: string[]) => void }): typeof fetch {
+  const latestSequence = Math.max(...input.items.map((item) => item.sequence));
+  return mock(async (request: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof request === "string" || request instanceof URL ? request : request.url);
+    if (url.pathname === "/api/cli/inbox/subscriptions/global") {
+      return jsonResponse({ subscription: makeSubscription() });
+    }
+    if (url.pathname === "/api/cli/inbox/pulse") {
+      return jsonResponse(makePendingPulse({ latestSequence, subscription: makeSubscription() }));
+    }
+    if (url.pathname === "/api/cli/inbox/poll") return jsonResponse(makePoll({ items: input.items }));
+    if (url.pathname === "/api/cli/inbox/ack") {
+      const body = JSON.parse(String(init?.body)) as { acks: Array<{ itemId: string }> };
+      input.onAck(body.acks.map((ack) => ack.itemId));
+      return jsonResponse({ acked: body.acks.length });
+    }
+    if (url.pathname.endsWith("/attachments")) return jsonResponse({ attachments: [] });
+    if (url.pathname.endsWith("/read")) {
+      const { payloadKind } = JSON.parse(String(init?.body)) as { payloadKind?: string };
+      if (payloadKind === "subject") return jsonResponse({ plaintext: "Same mail" });
+      if (payloadKind === "address_summary") {
+        return jsonResponse({
+          plaintext: JSON.stringify({
+            internetMessageId: "<same-rfc@example.com>",
+            from: [{ address: "alice@example.com" }],
+            to: [{ address: "team@example.com" }],
+          }),
+        });
+      }
+      return jsonResponse({ plaintext: JSON.stringify({ text: "Body" }) });
+    }
+    throw new Error(`Unexpected inbox request: ${url.pathname}`);
+  }) as unknown as typeof fetch;
 }
 
 function seedExistingSubscription(input: { subscriptionId: string; generation: number; sequence: number }): void {

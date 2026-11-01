@@ -107,7 +107,7 @@ instead of inventing local suggestions that would require extra remote calls.
 | The same owner in a `dm:` compartment whose session other people's chats share (`dmScope: main`, a route by session name, another person's chat attached), or whose session is unknown | blocked `CONNECTOR_GROUP_BLOCKED` (`speakerIsOwner`, `sharedSession`) |
 | `contact:<id>` linked to another Console user, not linked, `missing_contact`, or `unknown` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `agent:<id>` (relay from another agent), `automation:session:*` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
-| `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only when the job's `owner_principal` is NULL (legacy), `operator`, or a contact linked to the active Console user and org: speaker `automation`, routine `cron`; otherwise, or when the job is missing, blocked |
+| `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only with a valid admission snapshot eligible for operator authority, whose captured owner is `operator` (including normalized legacy NULL) or an existing, unblocked contact still linked to the active Console user and org: speaker `automation`, routine `cron`; missing snapshots and revoked owners block. Live ownership transfers never reclassify the run (see `cron`) |
 | `automation:heartbeat` | allowed: speaker `automation`, routine `heartbeat` |
 | `automation:trigger:*`, `automation:job:*`, `automation:observer:*`, `session-followup`, `daemon-restart`, any other principal | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | Compartment `chat:<id>` (group) for a contact turn, the owner included | blocked `CONNECTOR_GROUP_BLOCKED` |
@@ -323,15 +323,55 @@ instead of inventing local suggestions that would require extra remote calls.
     creating turn's `actorPrincipal` (`unknown` when it cannot be resolved).
     NULL means a legacy job and runs as the operator. `cron show`/`list` JSON
     expose it as `ownerPrincipal`, and `cron show` prints it as "Runs as".
-    When a turn that is not the operator changes a job with `cron set`, any
-    key except `description`,
+    When a turn whose principal is not the job's owner (the operator
+    included) changes a job with `cron set`, any key except `description`,
     `cron`, `every`, `tz`/`timezone`, `timeout` and `delete-after` (so
     `name`, which the runner puts in the prompt, `message`, `shell`, `exec`,
     `agent`, `session`, `reply-session`, `env-file`, `on-error`, `account`
     and any key added later), the job takes
     that turn's principal as its owner, in the same write as the edit. The
+    one exception: the operator takes over someone else's job only with
+    `message`, `shell` or `exec`, never by editing `agent`, `name`,
+    `reply-session`, `env-file`, `on-error` or another key around a prompt
+    or command it did not write (that would run them with its authority);
+    a
+    `shell`/`exec` edit that changes the owner MUST clear the job's
+    `env-file` (loaded over the command's environment) and `on-error`
+    (the session that receives the command's output when it fails), both
+    chosen by the previous owner. The
     owner is not part of the `cron add` idempotency fingerprint, so a key
     recorded before owners existed, or an observer replay, still matches.
+13a. Every serialized job (`cron add`, `set`, `show`, `list` JSON) MUST carry
+    `runsAsOperator`: true when the owner acts as the operator (NULL,
+    `operator`, or a contact bound to the active Console user, the same test
+    the turn classifier applies to `automation:cron:<id>`), else false. When
+    it is false, `cron add` and `cron set` MUST print a `Runs as:` line and
+    MUST add a warning to `warnings` (also printed in text output) that names
+    the owner and what its runs can do, worded by owner and `executionType`.
+    A contact owner: Bases and Pages access act as that person through their
+    own `ravi link` and refuse while they have not linked
+    (`ACTOR_NOT_LINKED`); personal connectors (and Knowledge, for an agent
+    job) refuse (`CONNECTOR_SPEAKER_NOT_OWNER`, `KNOWLEDGE_TURN_NOT_OPERATOR`),
+    since they are the operator's own accounts. Any other owner: an agent
+    job's Bases, personal connector, Pages share/invite and Knowledge calls
+    refuse (`ACTOR_UNKNOWN`, `CONNECTOR_SPEAKER_NOT_OWNER`,
+    `KNOWLEDGE_TURN_NOT_OPERATOR`); a shell or exec job's Bases, personal
+    connector and Pages access calls. The warning MUST say that the
+    operator's `ravi login` never lends its authority to a job someone else
+    created. For a shell job (only a legacy row or an edit 13b allows) it
+    says the job does not run. It is a warning, not a refusal: the write
+    still happens.
+13b. A shell or exec job runs as the machine's user, with the
+    installation's credentials, and its command controls its own
+    environment, so no owner can be enforced inside it: only an owner that
+    acts as the operator (`runsAsOperator`) may have one. `cron add
+    --shell|--exec` from a turn whose owner would not act as the operator,
+    `cron set <id> shell|exec` on a job whose owner would not, and a
+    `cron set` that would move a shell job to such an owner MUST fail
+    `CRON_SHELL_NOT_OPERATOR` (exit 3, policy) with no write, suggesting an
+    agent job (`--message`, which acts as its creator) or the operator
+    creating it. The runner MUST NOT spawn a shell job whose owner does not
+    act as the operator: it records `lastStatus: error` with that reason.
 
 ### Agent-first contract
 
@@ -617,8 +657,9 @@ for the row (empty for connections made with the current connect flow).
   run` jobs ran without any runtime env (PM2 strips it) and classified as the
   terminal. The marker closes that path, but a shell command written by a
   contact can still unset it itself (`env -u`, a script file); the bash hook
-  only blocks literal `RAVI_*` overrides. Closing this fully means refusing
-  shell automations created from non-operator turns.
+  only blocks literal `RAVI_*` overrides. Rule 13b closes it for crons by
+  refusing shell jobs that do not act as the operator; shell triggers and
+  `ravi jobs run` still have no owner model.
 - Before the origin check, the session-goal wake (`execute`, no caller)
   looked like the operator's own `ravi sessions send`.
 - Open policy gaps: heartbeat turns have no owner (HEARTBEAT.md can be edited

@@ -2,7 +2,13 @@
 
 Parte da skill pages. Pressupõe `data-pages.md` (connectors, valores, erros) e
 o cliente `esqueletos/_client.js.txt`, publicado como `client.js`. Cada layout
-diz de qual esqueleto partir.
+diz se uma tag cobre e, se não, de qual esqueleto partir.
+
+Tabela, board, lista, galeria, calendário, formulário e gráfico saem prontos
+com `<ravi-view>`, `<ravi-form>` e `<ravi-chart>` (`widgets.md`): tema, campos
+por tipo, edição, teclado e `--uses` derivado. Escreva à mão só o que a tag
+não cobre. No HTML à mão, cor, fonte e espaço vêm das variáveis do tema com
+fallback (`theme.md`), nunca literais.
 
 ## Padrões por layout
 
@@ -13,7 +19,8 @@ view.
 
 ### Tabela
 
-Esqueleto: `exemplo-board.md` (tabela com edição e formulário); troque o cliente inline por `client.js`.
+Tag: `<ravi-view view="<uuid>" layout="table" columns="a,b,c" sort="-b"></ravi-view>`.
+À mão (ordenação por clique no cabeçalho): `exemplo-board.md` (tabela com edição e formulário); troque o cliente inline por `client.js`. Filtro na tela não pede isso: mude o `where` da tag por JS (`widgets.md`).
 
 - Cabeçalhos: `columns` do describe, na ordem. Pule `body` (a query não traz).
 - Paginação: `limit` de 50 a 100 e "Carregar mais" com `nextCursor`. Não
@@ -28,7 +35,8 @@ Esqueleto: `exemplo-board.md` (tabela com edição e formulário); troque o clie
 
 ### Board
 
-Esqueleto: `esqueletos/board.html.txt`.
+Tag: `<ravi-view view="<uuid>" layout="board" widget="<ref>"></ravi-view>` (move por arrasto e pelo menu "Mover para…").
+À mão: `esqueletos/board.html.txt`.
 
 - `layout.groupBy` é `select` ou `status`. Uma coluna do board por opção de
   `config.options`, na ordem, mais "Sem valor". Opção arquivada só vira coluna
@@ -46,7 +54,8 @@ Esqueleto: `esqueletos/board.html.txt`.
 
 ### Lista e galeria
 
-Esqueleto: `esqueletos/board.html.txt`; mantenha `load()` e troque `render()` por itens ou cartões.
+Tag: `<ravi-view view="<uuid>" layout="list"></ravi-view>` ou `layout="gallery"`.
+À mão: `esqueletos/board.html.txt`; mantenha `load()` e troque `render()` por itens ou cartões.
 
 - Lista: um item por linha; título = primeira coluna `text`; o resto como
   chips; clique abre o detalhe.
@@ -56,7 +65,8 @@ Esqueleto: `esqueletos/board.html.txt`; mantenha `load()` e troque `render()` po
 
 ### Calendário
 
-Esqueleto: `esqueletos/board.html.txt`; troque `load()` pela consulta do mês e `render()` por uma grade de dias.
+Tag: `<ravi-view view="<uuid>" layout="calendar"></ravi-view>` (grade do mês, item no dia de início abre o registro).
+À mão (arrastar para outro dia, intervalo ocupando vários dias, semana): `esqueletos/board.html.txt`; troque `load()` pela consulta do mês e `render()` por uma grade de dias.
 
 - `layout.dateProp` é `date`, `created_time` ou `updated_time`.
 - Consulte o mês visível: `filter: { "prop": <dateProp>, "op": "between",
@@ -70,7 +80,8 @@ Esqueleto: `esqueletos/board.html.txt`; troque `load()` pela consulta do mês e 
 
 ### Formulário
 
-Esqueleto: `esqueletos/formulario.html.txt`.
+Tag: `<ravi-form view="<uuid>"></ravi-form>` (com `body` quando a view deixa escrever), ou `<ravi-view view="<uuid>" layout="form"></ravi-view>` com os textos do layout da view.
+À mão (`person`, `ref`, validação própria): `esqueletos/formulario.html.txt`.
 
 - `layout.type: "form"` traz `title`, `description`, `submitLabel` e
   `successMessage`. Em geral `read` é falso: não chame `query`.
@@ -85,7 +96,8 @@ Esqueleto: `esqueletos/formulario.html.txt`.
 
 ### Detalhe e arquivar
 
-Esqueleto: nenhum; `client.js` não tem helper para `rows.get` e `rows.archive`, chame `exec("ravi.bases.views.rows.get", { viewId, rowId })`.
+Tag: "Abrir" no cartão padrão e na tabela, ou um widget com `<ravi-button action="open">` (diálogo que lê e edita o registro); arquivar com `action="archive"` ou, no cartão padrão, `<ravi-view ... archive>`.
+À mão (detalhe em página própria): nenhum esqueleto; `client.js` não tem helper para `rows.get` e `rows.archive`, chame `exec("ravi.bases.views.rows.get", { viewId, rowId })`.
 
 - Detalhe: `rows.get { viewId, rowId }` traz a linha com `body` (se
   projetado) e `users`. `rowId` na URL (`#row=<id>`) é seguro; valores não.
@@ -98,7 +110,12 @@ Esqueleto: nenhum; `client.js` não tem helper para `rows.get` e `rows.archive`,
 
 ### Gráficos e dashboards
 
-Esqueleto: nenhum de página; cole o código abaixo depois de `client.js`.
+Tag: `<ravi-chart chart="<uuid>"></ravi-chart>`, uma por gráfico (todos os marks, legenda, tabela acessível e grupos ocultos; `widgets.md`). Dashboard = seu HTML com várias tags.
+À mão (cores ou marks próprios, clique que filtra): nenhum esqueleto de página; cole o código abaixo depois de `client.js`.
+
+Para quem não pode ver linhas, a view do gráfico usa `"mode": "aggregate"` no
+`page_viewer`. Uma view com `layout.type: "chart"` aponta o gráfico em
+`layout.chartId`.
 
 `charts.data` devolve `groups`: um objeto por grupo, com chaves de canal
 (`x`, `y`, `color`, `theta`, `text`). Canal de dimensão traz id de opção, user
@@ -110,18 +127,20 @@ não pelo `sort` do spec nem pela ordem das opções: aplique os dois no cliente
 `suppressedGroups > 0`: diga que grupos com menos de 5 linhas ficaram
 ocultos.
 
-Dashboard = um `charts.data` por gráfico. Para quem não pode ver linhas, a
-view do gráfico usa `"mode": "aggregate"` no `page_viewer`. Uma view com
-`layout.type: "chart"` aponta o gráfico em `layout.chartId`.
+À mão, um `charts.data` por gráfico.
 
 SVG puro, sem biblioteca: barras (por `color`, conforme `stack` da medida:
 `zero` empilha, `normalize` 100%, `null` lado a lado), linha, área (sem
 empilhar), pizza ou donut e número único; gráfico só com medida vira uma barra.
 Os outros marks viram tabela. Usa `exec`, `el` e `showError` do cliente (`esqueletos/_client.js.txt`).
+As séries usam as cores de opção do tema (`theme.md`) em `style`, então
+seguem o claro e o escuro; o SVG leva `aria-label` com o título.
 
 ```js
 const SVG_NS = "http://www.w3.org/2000/svg";
-const PALETTE = ["#4269d0", "#efb118", "#ff725c", "#6cc5b0", "#3ca951", "#ff8ab7", "#a463f2", "#97bbf5"];
+// Cores de opção do tema, com o fallback do tema padrão.
+const PALETTE = [["blue", "#1d4f8f"], ["orange", "#8a4210"], ["green", "#1d6537"], ["purple", "#5b3497"], ["red", "#a1262b"], ["pink", "#8c2557"], ["yellow", "#72520a"], ["brown", "#6b4428"]]
+  .map(([name, fallback]) => `var(--ravi-option-${name}-text, ${fallback})`);
 function svg(tag, attrs = {}, text) {
   const node = document.createElementNS(SVG_NS, tag);
   for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
@@ -189,7 +208,7 @@ function seriesChart(groups, enc, label, kind, fieldOf) {
   const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img" });
   const step = (W - P * 2) / Math.max(cats.length, 1);
   cats.forEach((cat, i) => {
-    root.append(svg("text", { x: P + i * step + step / 2, y: H - P + 16, "text-anchor": "middle", "font-size": 11 }, catLabel(cat)));
+    root.append(svg("text", { x: P + i * step + step / 2, y: H - P + 16, "text-anchor": "middle", "font-size": 11, fill: "currentColor" }, catLabel(cat)));
   });
   series.forEach((s, j) => {
     const color = PALETTE[j % PALETTE.length];
@@ -199,7 +218,7 @@ function seriesChart(groups, enc, label, kind, fieldOf) {
         const g = at(cat, s);
         const below = side ? 0 : series.slice(0, j).reduce((sum, prev) => sum + share(cat, at(cat, prev)), 0);
         const height = scale(share(cat, g));
-        const rect = svg("rect", { x: P + i * step + 4 + (side ? j * width : 0), y: H - P - scale(below) - height, width, height, fill: color });
+        const rect = svg("rect", { x: P + i * step + 4 + (side ? j * width : 0), y: H - P - scale(below) - height, width, height, style: `fill: ${color}` });
         rect.append(svg("title", {}, tip(cat, s, g)));
         root.append(rect);
       });
@@ -212,9 +231,9 @@ function seriesChart(groups, enc, label, kind, fieldOf) {
     });
     const line = points.map(([x, y], i) => `${i ? "L" : "M"}${x},${y}`).join("");
     if (kind === "area" && points.length) {
-      root.append(svg("path", { d: `${line}L${points[points.length - 1][0]},${H - P}L${points[0][0]},${H - P}Z`, fill: color, "fill-opacity": 0.2 }));
+      root.append(svg("path", { d: `${line}L${points[points.length - 1][0]},${H - P}L${points[0][0]},${H - P}Z`, style: `fill: ${color}`, "fill-opacity": 0.2 }));
     }
-    root.append(svg("path", { d: line, fill: "none", stroke: color, "stroke-width": 2 }));
+    root.append(svg("path", { d: line, fill: "none", style: `stroke: ${color}`, "stroke-width": 2 }));
   });
   return root;
 }
@@ -233,7 +252,7 @@ function arcChart(groups, enc, label, innerRadius, fieldOf) {
     const d = r
       ? `M${point(R, start)}A${R},${R} 0 ${large} 1 ${point(R, end)}L${point(r, end)}A${r},${r} 0 ${large} 0 ${point(r, start)}Z`
       : `M${C},${C}L${point(R, start)}A${R},${R} 0 ${large} 1 ${point(R, end)}Z`;
-    const slice = svg("path", { d, fill: PALETTE[j % PALETTE.length] });
+    const slice = svg("path", { d, style: `fill: ${PALETTE[j % PALETTE.length]}` });
     slice.append(svg("title", {}, `${label("color", g.color)}: ${measureText(g.theta)}`));
     root.append(slice);
     start = end;
@@ -261,6 +280,7 @@ async function renderChart(chartId, mount) {
     body = el("table", {}, el("tr", {}, ...channels.map((c) => el("th", { textContent: enc[c].title || (fields[enc[c].field] || {}).name || c }))),
       ...groups.map((g) => el("tr", {}, ...channels.map((c) => el("td", { textContent: enc[c].aggregate ? measureText(g[c]) : label(c, g[c]) })))));
   }
+  if (body instanceof SVGElement) body.setAttribute("aria-label", chart.spec.title || chart.name);
   mount.replaceChildren(
     el("h3", { textContent: chart.spec.title || chart.name }),
     body,

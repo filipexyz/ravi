@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 import { analyzeVideo, type VideoAnalyzeStrategy } from "../../video/gemini.js";
@@ -73,7 +74,7 @@ export class VideoCommands {
     // Determine output path
     const slug = slugify(result.title);
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const filename = output || join(process.cwd(), `${slug}-${timestamp}.md`);
+    const filename = resolveCallerPath(output || join(getCallerCwd(), `${slug}-${timestamp}.md`), "write");
 
     writeFileSync(filename, result.markdown);
 

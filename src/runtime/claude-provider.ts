@@ -247,11 +247,26 @@ async function* runClaudeTurns(
     const env = buildClaudeCodeEnvironment(input.env);
     const queryResult = query({
       prompt,
-      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, env, {
-        resumeSessionId,
-        forkSession: useForkSession,
-        pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
-      }),
+      options: buildClaudeQueryOptions(
+        {
+          ...input,
+          model: runtime.getModel(),
+          // Model, effort and thinking are per turn; a new query applies them without a relaunch.
+          ...(message.runtimeOptions
+            ? {
+                ...(message.runtimeOptions.model && !input.modelBroker ? { model: message.runtimeOptions.model } : {}),
+                effort: message.runtimeOptions.effort,
+                thinking: message.runtimeOptions.thinking,
+              }
+            : {}),
+        },
+        env,
+        {
+          resumeSessionId,
+          forkSession: useForkSession,
+          pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
+        },
+      ),
     });
     runtime.setActiveQuery(queryResult);
 
@@ -808,9 +823,18 @@ export async function* normalizeClaudeEvents(
     }
 
     if (message.type === "result") {
+      const usage = message.usage
+        ? {
+            inputTokens: message.usage.input_tokens ?? 0,
+            outputTokens: message.usage.output_tokens ?? 0,
+            cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,
+            cacheCreationTokens: message.usage.cache_creation_input_tokens ?? 0,
+          }
+        : undefined;
       if (message.subtype && message.subtype !== "success") {
         yield {
           type: "turn.failed",
+          usage,
           error:
             Array.isArray(message.errors) && message.errors.length > 0
               ? message.errors.join("; ")
@@ -839,6 +863,7 @@ export async function* normalizeClaudeEvents(
             errors: message.errors,
           }),
           recoverable: apiErrorStatus !== undefined ? isRecoverableClaudeApiStatus(apiErrorStatus) : true,
+          usage,
           rawEvent,
         };
         continue;

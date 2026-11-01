@@ -42,7 +42,8 @@ An agent MUST create or suggest a background cron **only** when **all** of the f
 ## MUST Rules
 
 - Agents MUST create a cron only when all six checklist items are satisfied.
-- Agents MUST run `ravi cron show <id>` after creating a cron and verify: agent, account, session/reply-session, schedule, and `delete-after` (when applicable).
+- Agents MUST run `ravi cron show <id>` after creating a cron and verify: agent, account, session/reply-session, schedule, `delete-after` (when applicable), and "Runs as".
+- A cron runs with the authority of whoever created it ("Runs as"; `ownerPrincipal`, `runsAsOperator` in `--json`), never with the operator's `ravi login`. A job a contact's turn creates acts as that contact: its Bases and Pages access calls need that person's `ravi link` (`ACTOR_NOT_LINKED` until then) and their own Console role, and personal connectors and Knowledge refuse it. A cron whose work needs the operator's connectors or Knowledge MUST act as the operator (`runsAsOperator: true`), which only a turn the operator writes creates. Agents MUST NOT consider a recurring cron of this kind done until one `ravi cron run <id> --execute` (the scheduled path) produced the intended outcome. A one-shot cron (`--at`, `--delete-after`) MUST NOT be run early, since the run deletes it: check its configuration and confirm after the scheduled run. `lastStatus: ok` alone does not prove it.
 - Agents MUST use `--delete-after` for one-shot reminders and checks.
 - Agents MUST keep cron prompts short and actionable. Recurring behavior with policy MUST reference a routine or spec instead of embedding the full behavior in the cron prompt.
 
@@ -55,6 +56,8 @@ An agent MUST create or suggest a background cron **only** when **all** of the f
 - Agents MUST NOT create speculative automations for things that might be needed.
 - Agents MUST NOT use cron for inactivity-based follow-up. Those belong to `ravi sessions followups`.
 - Agents MUST NOT encode recurring behavior with policy as a long cron prompt. It MUST have or reference a routine/spec.
+- Agents MUST NOT try to switch a job to `--shell` to get around its owner: only the operator can own a shell job (`CRON_SHELL_NOT_OPERATOR` for anyone else), and the runner never runs one someone else owns.
+- Agents MUST NOT disable a refused or failing cron silently; they report the job and the refusal to the operator.
 
 ## SHOULD Rules
 
@@ -88,4 +91,4 @@ Sentinel agents MUST NOT receive the Background Followup Automation prompt secti
 - Cron is a scheduler, not the semantic definition of recurring behavior.
 - Inactivity belongs to session followups, not cron.
 - Shell cron is preferred over agent cron when no judgment is needed.
-- Created crons must be inspected before being considered done.
+- Created crons must be inspected before being considered done, including who they run as.

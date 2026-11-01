@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 
 afterAll(() => mock.restore());
 
@@ -84,6 +84,13 @@ mock.module("../../channels/outbound-publish-outbox.js", () => ({
       record: { status: "published" },
     };
   }),
+}));
+
+// getContext is mocked, so caller paths only resolve; the file-authority check
+// lives in caller-cwd.test.ts.
+mock.module("../caller-cwd.js", () => ({
+  getCallerCwd: () => process.cwd(),
+  resolveCallerPath: (path: string) => resolve(path),
 }));
 
 mock.module("../../audio/generator.js", () => ({

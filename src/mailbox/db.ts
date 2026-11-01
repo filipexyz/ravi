@@ -537,10 +537,22 @@ export function importMailMessage(input: ImportMailMessageInput): MailMessageWit
     : {};
   const participants = summarizeParticipants(input.addresses ?? []);
   const messageId = resolveMessageId(input, accountId, mailbox.id);
+  const rfcMessageId = nullableText(input.rfcMessageId);
 
   return executeWrite(
     getDb(),
     (db) => {
+      // Read inside the write transaction (BEGIN IMMEDIATE) so another process
+      // importing the same RFC message cannot slip in between check and write.
+      const rfcDuplicate = rfcMessageId ? findMessageRowByRfcMessageId(mailbox.id, rfcMessageId) : null;
+      if (rfcDuplicate && rfcDuplicate.id !== messageId) {
+        // Same RFC message already stored in this mailbox under another local id
+        // (another provider id for the same mail): keep the first row and only
+        // remember the new provider id, so ingest dedupes instead of failing.
+        return recordRfcDuplicateProviderMessage(rfcDuplicate, nullableText(input.providerMessageId), now);
+      }
+      const previousDuplicateIds = readDuplicateProviderMessageIds(getMessageRow(messageId));
+
       upsertThread({
         id: threadId,
         subjectNormalized,
@@ -622,6 +634,7 @@ export function importMailMessage(input: ImportMailMessageInput): MailMessageWit
           providerThreadId: input.providerThreadId ?? null,
           providerHistoryId: input.providerHistoryId ?? null,
           ...(input.providerProvenance ?? {}),
+          ...(previousDuplicateIds.length ? { duplicateProviderMessageIds: previousDuplicateIds } : {}),
         }),
       );
 
@@ -1072,6 +1085,37 @@ function resolveThreadId(input: {
   if (input.rfcMessageId) return semanticId("mail_thr", ["rfc", input.mailboxId, input.rfcMessageId]);
   if (input.subjectNormalized) return semanticId("mail_thr", ["subject", input.mailboxId, input.subjectNormalized]);
   return uniqueId("mail_thr");
+}
+
+function findMessageRowByRfcMessageId(mailboxId: string, rfcMessageId: string): MailMessageRow | null {
+  return (
+    (getDb()
+      .prepare(`SELECT * FROM mail_messages WHERE mailbox_id = ? AND rfc_message_id = ? LIMIT 1`)
+      .get(mailboxId, rfcMessageId) as MailMessageRow | undefined) ?? null
+  );
+}
+
+function readDuplicateProviderMessageIds(row: MailMessageRow | null): string[] {
+  const value = parseJsonObject(row?.provider_provenance_json).duplicateProviderMessageIds;
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function recordRfcDuplicateProviderMessage(
+  row: MailMessageRow,
+  providerMessageId: string | null,
+  now: number,
+): MailMessageWithAddresses {
+  // Callers run this inside executeWrite, so `row` is the latest committed state.
+  const known = readDuplicateProviderMessageIds(row);
+  if (providerMessageId && providerMessageId !== row.provider_message_id && !known.includes(providerMessageId)) {
+    const provenance = parseJsonObject(row.provider_provenance_json);
+    getDb()
+      .prepare(`UPDATE mail_messages SET provider_provenance_json = ?, updated_at = ? WHERE id = ?`)
+      .run(stableJson({ ...provenance, duplicateProviderMessageIds: [...known, providerMessageId] }), now, row.id);
+  }
+  const current = getMessageRow(row.id);
+  if (!current) throw new Error("Failed to import mail message.");
+  return messageWithAddresses(rowToMessage(current));
 }
 
 function findThreadIdByRfcMessageId(mailboxId: string, rfcMessageId: string): string | null {

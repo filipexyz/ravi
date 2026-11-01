@@ -57,4 +57,12 @@ describe("dbPruneContexts", () => {
     expect(pruned).toMatchObject({ matched: 2, pruned: 2 });
     expect(dbListContexts({ includeInactive: true }).map((c) => c.contextId)).toEqual(["active"]);
   });
+
+  it("keeps a revoked context until it expires, so a cached copy cannot outlive its row", () => {
+    const now = Date.now();
+    makeContext("revoked-live-ttl", { createdAt: now - 30 * DAY, revokedAt: now - 10 * DAY, expiresAt: now + DAY });
+
+    expect(dbPruneContexts({ apply: true })).toMatchObject({ matched: 0, pruned: 0 });
+    expect(dbListContexts({ includeInactive: true }).map((c) => c.contextId)).toEqual(["revoked-live-ttl"]);
+  });
 });

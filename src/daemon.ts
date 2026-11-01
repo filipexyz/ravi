@@ -49,9 +49,19 @@ import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link/link-watcher.js";
+import { startSlackApprovalClickFeedback, stopSlackApprovalClickFeedback } from "./approval/slack-click-feedback.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
+import { startSignalsRunner, stopSignalsRunner } from "./signals/index.js";
+import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
+import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
+import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
+import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
+import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/worker-runner.js";
+import { startCloudApprovalClicks, stopCloudApprovalClicks } from "./cloud-agents/chat-routing.js";
+import { startCloudDeliveryRunner, stopCloudDeliveryRunner } from "./cloud-agents/delivery-runner.js";
+import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
@@ -206,6 +216,7 @@ process.on("unhandledRejection", (reason, promise) => {
   log.error("Unhandled rejection", { reason, stack, promise });
 });
 
+let humanBridge: { stop(): Promise<void> } | null = null;
 let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
 let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
@@ -233,17 +244,32 @@ async function shutdown(signal: string, exitCode = 0) {
   }, 15_000);
 
   try {
-    const restartInfo = readRestartReasonInfo({ ensureEpoch: true });
-    if (restartInfo) {
-      dbUpsertDaemonRestartEpoch({
-        restartEpoch: restartInfo.restartEpoch,
-        reason: restartInfo.reason,
-        callerSessionName: restartInfo.sessionName,
-        createdAt: restartInfo.createdAt,
-        updatedAt: Date.now(),
-      });
-    }
+    // A restart must always be immediate: never drain in-flight turns. What we
+    // do instead is leave a restart intent behind so the next boot can tell the
+    // interrupted sessions to continue. When nothing wrote a reason file (plain
+    // `pm2 restart`, deploy, supervised bounce), synthesize one here and pass it
+    // to bot.stop so the per-session snapshots are recorded.
+    const restartInfo =
+      readRestartReasonInfo({ ensureEpoch: true }) ??
+      (() => {
+        const info: RestartReasonInfo = {
+          reason: "supervised_restart",
+          restartEpoch: newRestartEpoch(),
+          createdAt: Date.now(),
+        };
+        writeRestartReasonInfo(info);
+        return info;
+      })();
 
+    dbUpsertDaemonRestartEpoch({
+      restartEpoch: restartInfo.restartEpoch,
+      reason: restartInfo.reason,
+      callerSessionName: restartInfo.sessionName,
+      createdAt: restartInfo.createdAt,
+      updatedAt: Date.now(),
+    });
+
+    await humanBridge?.stop();
     // Stop bot FIRST to abort SDK subprocesses
     if (bot) {
       log.info("Stopping bot (aborting SDK subprocesses)...");
@@ -263,7 +289,15 @@ async function shutdown(signal: string, exitCode = 0) {
     // Stop runners and release leadership so another daemon can take over
     await stopInboxRunner();
     await stopLinkRequestWatcher();
+    stopSlackApprovalClickFeedback();
     await stopSyncRunner();
+    await stopLibraryPinRunner();
+    await stopLibraryRequestRunner();
+    await stopCloudTaskWatcher();
+    await stopCloudWorkerRunner();
+    await stopCloudDeliveryRunner();
+    stopCloudApprovalClicks();
+    await stopCalendarAssistantRunner();
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
@@ -274,6 +308,8 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopGhFollowMaintenanceRunner();
     await stopJobsRunner();
     await stopTaskCheckpointRunner();
+    await stopSignalsRunner();
+    stopKnowledgeLeaderRunners();
     await releaseLeadership("runners");
 
     // Stop gateway
@@ -415,6 +451,12 @@ export async function startDaemon() {
   bot = new RaviBot({ config, onFatalRuntimeError: restartAfterFatalRuntimeError });
   await bot.start();
   log.info("Bot started");
+  if (process.env.RAVI_HUMAN_BRIDGE === "1") {
+    const { startHumanBridge } = await import("./bridge/socket.js");
+    const { nativeBridgeRuntime } = await import("./bridge/native.js");
+    humanBridge = await startHumanBridge(nativeBridgeRuntime(bot));
+    log.info("Human bridge listening on its local socket");
+  }
 
   // Step 6: Set up omni sender + consumer + gateway
   if (omniApiUrl && omniApiKey) {
@@ -480,8 +522,15 @@ export async function startDaemon() {
     log.info("Session followup runner started (leader)");
     await startTaskCheckpointRunner({
       canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+      getSessionRuntimeState: (sessionName) => bot?.getSessionRuntimeState(sessionName) ?? null,
     });
     log.info("Task checkpoint runner started (leader)");
+    await startSignalsRunner();
+    log.info("Signals runner started (leader)");
+    startKnowledgeLeaderRunners();
+    log.info("Knowledge runners started (leader)");
+    await startCalendarAssistantRunner();
+    log.info("Meeting assistant runner started (leader)");
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
     watchForLeadershipVacancy("runners", async () => {
@@ -494,7 +543,11 @@ export async function startDaemon() {
       await startJobsRunner();
       await startTaskCheckpointRunner({
         canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+        getSessionRuntimeState: (sessionName) => bot?.getSessionRuntimeState(sessionName) ?? null,
       });
+      await startSignalsRunner();
+      startKnowledgeLeaderRunners();
+      await startCalendarAssistantRunner();
       log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));
   }
@@ -514,8 +567,27 @@ export async function startDaemon() {
   await startLinkRequestWatcher();
   log.info("Link request watcher started");
 
+  await startSlackApprovalClickFeedback();
+  log.info("Slack approval click feedback started");
+
   await startSyncRunner();
   log.info("Sync runner started");
+
+  await startLibraryPinRunner();
+  log.info("Library pin runner started");
+
+  await startLibraryRequestRunner();
+  log.info("Library request runner started");
+
+  await startCloudTaskWatcher();
+  log.info("Cloud task watcher started");
+
+  // Idle until `ravi cloud worker enable --execute` (F4 self-hosted environments).
+  await startCloudWorkerRunner();
+  log.info("Cloud worker runner started");
+  await startCloudDeliveryRunner();
+  await startCloudApprovalClicks();
+  log.info("Cloud delivery runner started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
@@ -584,12 +656,19 @@ function createStubSender(): OmniSender {
 
 /**
  * Check if there's a restart reason file and notify the originating session.
+ *
+ * A plain `pm2 restart` (deploy, supervised bounce, crash) never writes
+ * `restart-reason.txt`, so this used to return early and the sessions were
+ * never told the daemon had restarted. Synthesize a boot reason instead and
+ * let the notice path run: without a snapshot the delivery fences into a
+ * `Daemon reiniciou` notice, which is exactly what the operator needs to see.
  */
 async function notifyRestartReason() {
-  const restartInfo = readRestartReasonInfo({ consume: true });
-  if (!restartInfo) {
-    return;
-  }
+  const restartInfo = readRestartReasonInfo({ consume: true }) ?? {
+    reason: "supervised_restart",
+    restartEpoch: newRestartEpoch(),
+    createdAt: Date.now(),
+  };
 
   dbUpsertDaemonRestartEpoch({
     restartEpoch: restartInfo.restartEpoch,

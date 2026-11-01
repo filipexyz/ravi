@@ -61,6 +61,74 @@ function getDenyReason(result: Record<string, unknown>): string {
 // Bash Permission Hook Tests
 // ============================================================================
 
+describe("Bash quoting permission boundary", () => {
+  it("allows literal search/JSON data with only the named executable grant", () => {
+    for (const command of [
+      "rg -F '$(whoami)' file",
+      'grep -F "\\$(whoami)" file',
+      "printf '%s' '{\"pattern\":\"$(id) `id` <(id) <<EOF\"}'",
+      "printf '%s' 'it'\\''s $(id)'",
+      'printf "%s" "<(id) >(id) <<EOF"',
+    ]) {
+      const executable = command.split(" ")[0]!;
+      const decision = evaluateBashPermission(command, {
+        agentId: "test-agent",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: executable }],
+      });
+      expect(decision.allowed).toBe(true);
+    }
+  });
+
+  it("keeps active syntax, quoted shells and inline interpreters blocked with wildcard execute", () => {
+    for (const command of [
+      'printf "%s" "$(whoami)"',
+      'printf "%s" "$\\\n(whoami)"',
+      'printf "%s" "`whoami`"',
+      "cat <<'EOF'\nliteral\nEOF",
+      "cat <(printf ok)",
+      'ba"sh" -c "echo ok"',
+      'sudo "bash" -c "echo ok"',
+      'python3 "-c" "print(1)"',
+      'py"thon3" -c "print(1)"',
+      'node -e"console.log(1)"',
+      'cat script | "python3"',
+      "X=a#b bash -c id",
+      "python3 -W ignore#x -c code",
+      "X=a#b sudo bash -c id",
+      "printf code | python3 # comment",
+      "printf code | python3 2>/dev/null",
+      "printf code | X=a#b python3 2>/dev/null",
+    ]) {
+      const decision = evaluateBashPermission(command, {
+        agentId: "test-agent",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      });
+      expect(decision.allowed).toBe(false);
+    }
+  });
+
+  it("does not turn literal data into permission to run a different executable", () => {
+    const decision = evaluateBashPermission("grep '$(id)' file; ba'sh' script", {
+      agentId: "test-agent",
+      kind: "test-runtime",
+      capabilities: [{ permission: "execute", objectType: "executable", objectId: "grep" }],
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toContain("bash");
+  });
+
+  it("documents the file-script limit: interpreter permission does not inspect script content", () => {
+    const decision = evaluateBashPermission("python3 ./script.py", {
+      agentId: "test-agent",
+      kind: "test-runtime",
+      capabilities: [{ permission: "execute", objectType: "executable", objectId: "python3" }],
+    });
+    expect(decision.allowed).toBe(true);
+  });
+});
+
 describe("createBashPermissionHook", () => {
   it("has matcher set to 'Bash'", () => {
     const hook = createBashPermissionHook({ getAgentId: () => undefined });
@@ -291,6 +359,7 @@ describe("createBashPermissionHook", () => {
         "env -u {RAVI_CONTEXT_KEY,} ravi crypto balance",
         "env -u R{A,}VI_CONTEXT_KEY ravi crypto balance",
         "X=RAVI_CONTEXT_KEY; env -u $X ravi crypto balance",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell expansion under test
         "X=RAVI_CONTEXT_KEY; env -u ${X} ravi crypto balance",
         // Shell tricks around the env name.
         "/usr/bin/ENV -u RAVI_CONTEXT_KEY ravi crypto balance",
@@ -583,6 +652,24 @@ describe("turn-runtime executor ceiling", () => {
 
     const decision = evaluateBashPermission("ssh host uptime", whatsappTurn(bootstrapCaps));
     expect(decision.allowed).toBe(true);
+  });
+
+  it("runs an executable a grantor approved for this turn, even outside the agent's ceiling", () => {
+    expect(evaluateBashPermission("curl https://example.com", whatsappTurn(bootstrapCaps)).allowed).toBe(false);
+
+    const approved = whatsappTurn([
+      ...bootstrapCaps,
+      { permission: "execute", objectType: "executable", objectId: "curl", source: "approval" },
+    ]);
+    expect(evaluateBashPermission("curl https://example.com", approved).allowed).toBe(true);
+    // The approval covers what was approved, nothing more.
+    expect(evaluateBashPermission("wget https://example.com", approved).allowed).toBe(false);
+    // A capability that merely sits in the snapshot is still bounded by the ceiling.
+    const unapproved = whatsappTurn([
+      ...bootstrapCaps,
+      { permission: "execute", objectType: "executable", objectId: "curl" },
+    ]);
+    expect(evaluateBashPermission("curl https://example.com", unapproved).allowed).toBe(false);
   });
 
   it("picks up a mid-turn runtimePermissions expansion without resetting the session", () => {

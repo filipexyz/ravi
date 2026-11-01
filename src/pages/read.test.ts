@@ -1,5 +1,6 @@
-import { describe, expect, it, mock } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
+import { runWithContext } from "../cli/context.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConsoleApiClient } from "../cloud-auth/client.js";
@@ -13,8 +14,13 @@ import {
   normalizePageReadNumber,
   normalizePageReadUrl,
   pageReadIsPublicOnly,
+  pageReadTurnBlock,
   readPage,
 } from "./read.js";
+import type { ContextRecord } from "../router/router-db.js";
+import { getOrCreateSession } from "../router/sessions.js";
+import { createRuntimeContext } from "../runtime/context-registry.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 describe("normalizePageReadUrl", () => {
   it("accepts *.ravi.page links with or without a scheme and drops the fragment", () => {
@@ -70,6 +76,83 @@ describe("pageReadIsPublicOnly", () => {
         turn: { runtimeContext: { present: false, record: null }, env: {} },
       }),
     ).toBe(false);
+  });
+});
+
+describe("pageReadTurnBlock on real turn contexts", () => {
+  let stateDir: string | null = null;
+  const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" };
+  const OWNER_DM = "agent:main:whatsapp:wa-main:dm:5511999999999";
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-read-turn-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function turnContext(metadata: Record<string, unknown>, sessionKey: string, sessionName: string): ContextRecord {
+    getOrCreateSession(sessionKey, "main", stateDir ?? "/tmp");
+    return createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "main",
+      sessionKey,
+      sessionName,
+      metadata: { actorResolution: "resolved", executorAgentId: "main", ...metadata },
+    });
+  }
+
+  function deps(context: ContextRecord, isPrivateDirectSession?: () => boolean) {
+    return {
+      readCredentials: () => makeCredentials(),
+      turn: {
+        ...OWNER,
+        env: { RAVI_CONTEXT_KEY: context.contextKey },
+        ...(isPrivateDirectSession ? { isPrivateDirectSession } : {}),
+      },
+    };
+  }
+
+  const ownerDm = {
+    actorPrincipal: "contact:c_luis",
+    consoleUserId: "user_luis",
+    consoleOrgId: "org_1",
+    agentIdentityCompartment: "dm:5511999999999@s.whatsapp.net",
+  };
+
+  it("counts the linked owner's own direct chat in a session of its own as the operator's turn", () => {
+    const context = turnContext(ownerDm, OWNER_DM, "luis-dm");
+    expect(pageReadIsPublicOnly(deps(context))).toBe(false);
+    expect(pageReadTurnBlock(deps(context))).toBeNull();
+  });
+
+  it("names the shared-session rule when the owner's direct chat shares its session", () => {
+    const context = turnContext(ownerDm, OWNER_DM, "luis-dm");
+    const shared = deps(context, () => false);
+    expect(pageReadIsPublicOnly(shared)).toBe(true);
+    expect(pageReadTurnBlock(shared)).toMatchObject({ turn: "shared_session" });
+    const main = turnContext(ownerDm, "agent:main:main", "main");
+    expect(pageReadTurnBlock(deps(main))).toMatchObject({ turn: "shared_session" });
+  });
+
+  it("names the link rule when the owner writes from an account not linked to this login", () => {
+    const unlinked = turnContext({ ...ownerDm, consoleUserId: undefined }, OWNER_DM, "luis-dm");
+    expect(pageReadIsPublicOnly(deps(unlinked))).toBe(true);
+    const block = pageReadTurnBlock(deps(unlinked));
+    expect(block).toMatchObject({ turn: "not_owner" });
+    expect(block?.why).toContain("ravi link");
+  });
+
+  it("explains nothing on the terminal or when a test fixes publicOnly", () => {
+    expect(
+      pageReadTurnBlock({
+        readCredentials: () => makeCredentials(),
+        turn: { runtimeContext: { present: false, record: null }, env: {} },
+      }),
+    ).toBeNull();
+    expect(pageReadTurnBlock({ publicOnly: true })).toBeNull();
   });
 });
 
@@ -289,3 +372,105 @@ function makeCredentials(): CloudCredentials {
     updatedAt: "2026-05-09T00:00:00.000Z",
   };
 }
+
+describe("Page download provider-settings boundary", () => {
+  let stateDir: string | null = null;
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-page-settings-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function download(paths: string[], out: string, format: "files" | "zip" = "files", hostExecution = false) {
+    const fetchFile = mock(async () => new Response("hello"));
+    const client = makeClient(async () => ({
+      ...consoleResponse(),
+      files: paths.map((path) => ({
+        path,
+        contentType: "text/plain",
+        sizeBytes: 5,
+        sha256: null,
+        url: "https://files.example/content",
+      })),
+    }));
+    const capabilities = [{ permission: "use", objectType: "tool", objectId: "Write" }];
+    if (hostExecution) capabilities.push({ permission: "execute", objectType: "executable", objectId: "*" });
+    const promise = runWithContext(
+      {
+        agentId: "page-reader",
+        cwd: stateDir!,
+        context: {
+          contextId: "test-page-reader",
+          contextKey: "test-page-key",
+          kind: "test-runtime",
+          agentId: "page-reader",
+          capabilities,
+          createdAt: 0,
+        },
+      },
+      () =>
+        readPage(
+          { url: "https://acme.ravi.page/", format, out },
+          {
+            client,
+            readCredentials: () => makeCredentials(),
+            publicOnly: true,
+            fetchFile,
+          },
+        ),
+    );
+    return { promise, fetchFile };
+  }
+
+  for (const path of [
+    ".claude/settings.json",
+    ".codex/config.toml",
+    ".mcp.json",
+    ".pi/settings.json",
+    "assets/.codex/config.toml",
+    ".CoDeX/config.toml",
+    ".MCP.JSON",
+  ]) {
+    it(`refuses ${path} before fetching or writing even an earlier safe file`, async () => {
+      const out = join(stateDir!, "download");
+      const { promise, fetchFile } = download(["index.html", path], out);
+      await expect(promise).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+      expect(fetchFile).not.toHaveBeenCalled();
+      expect(existsSync(out)).toBe(false);
+    });
+  }
+
+  it("follows an output-directory symlink before authorizing child settings", async () => {
+    mkdirSync(join(stateDir!, ".codex"));
+    symlinkSync(".codex", join(stateDir!, "ordinary"));
+    const { promise, fetchFile } = download(["config.toml"], join(stateDir!, "ordinary"));
+    await expect(promise).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(fetchFile).not.toHaveBeenCalled();
+    expect(existsSync(join(stateDir!, ".codex/config.toml"))).toBe(false);
+  });
+
+  it("keeps ordinary assets and literal filenames intact for a restricted writer", async () => {
+    const out = join(stateDir!, "safe");
+    await download(["index.html", "assets/styles.css", "notes.txt "], out).promise;
+    expect(readFileSync(join(out, "assets/styles.css"), "utf8")).toBe("hello");
+    expect(readFileSync(join(out, "notes.txt "), "utf8")).toBe("hello");
+  });
+
+  it("allows settings only for an already host-authorized writer", async () => {
+    const out = join(stateDir!, "authorized");
+    await download([".codex/config.toml"], out, "files", true).promise;
+    expect(readFileSync(join(out, ".codex/config.toml"), "utf8")).toBe("hello");
+  });
+
+  it("treats ZIP members as data but authorizes the ZIP destination", async () => {
+    const out = join(stateDir!, "bundle.zip");
+    await download([".codex/config.toml"], out, "zip").promise;
+    expect(existsSync(out)).toBe(true);
+    expect(existsSync(join(stateDir!, ".codex"))).toBe(false);
+    const { promise, fetchFile } = download(["index.html"], join(stateDir!, ".mcp.json"), "zip");
+    await expect(promise).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(fetchFile).not.toHaveBeenCalled();
+  });
+});

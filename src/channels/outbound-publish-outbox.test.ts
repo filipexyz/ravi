@@ -5,6 +5,7 @@ import {
   getChannelOutboundPublishJob,
   markChannelOutboundPublishJobPublished,
   prunePublishedChannelOutboundPublishJobs,
+  reconcileDueChannelOutboundPublishes,
   saveChannelOutboundPublishJob,
 } from "./outbound-publish-outbox.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
@@ -58,7 +59,12 @@ describe("channel outbound publish outbox retention", () => {
   });
 });
 
-function makeJob(idempotencyKey: string, emitId: string): ChannelOutboundJob {
+function makeJob(
+  idempotencyKey: string,
+  emitId: string,
+  options: { text?: string; chatId?: string; threadId?: string; accountId?: string } = {},
+): ChannelOutboundJob {
+  const accountId = options.accountId ?? "T1";
   return {
     jobId: `runtime:ravi-channels:${emitId}`,
     status: "queued",
@@ -69,23 +75,205 @@ function makeJob(idempotencyKey: string, emitId: string): ChannelOutboundJob {
       requestId: `runtime:ravi-channels:${emitId}`,
       channelId: "slack",
       instanceId: "slack-main",
-      accountId: "T1",
-      targetChatId: "C123",
+      accountId,
+      targetChatId: options.chatId ?? "C123",
+      ...(options.threadId ? { targetThreadId: options.threadId } : {}),
       origin: {
         sessionName: "ravi-channels",
         emitId,
       },
       content: {
         type: "text",
-        text: "hello Slack",
+        text: options.text ?? "hello Slack",
       },
       idempotencyKey,
       target: {
         channel: "slack",
-        accountId: "T1",
+        accountId,
         instanceId: "slack-main",
-        chatId: "C123",
+        chatId: options.chatId ?? "C123",
+        ...(options.threadId ? { threadId: options.threadId } : {}),
       },
     },
   };
 }
+
+describe("channel outbound publish outbox coalescing", () => {
+  const unavailableText = "Error: The agent is temporarily unavailable. Please try again later.";
+
+  it("discards duplicate provider-unavailable notices for the same channel and chat", async () => {
+    const now = Date.UTC(2026, 9, 27, 13, 36);
+    const keys = [1, 2, 3].map((n) => `runtime:ravi-channels:burst-${n}:slack:T1:C123:root`);
+    keys.forEach((key, index) => {
+      saveChannelOutboundPublishJob(makeJob(key, `burst-${index + 1}`, { text: unavailableText }), now - 1_000 + index);
+    });
+
+    const published: string[] = [];
+    const result = await reconcileDueChannelOutboundPublishes({
+      now: () => now + 60_000,
+      publisher: async (job) => {
+        published.push(job.request.requestId);
+      },
+      emitEvent: async () => {},
+    });
+
+    expect(published).toEqual(["runtime:ravi-channels:burst-1"]);
+    expect(result).toEqual({ attempted: 1, published: 1, failed: 0, coalesced: 2 });
+    expect(getChannelOutboundPublishJob(keys[0]!)).toMatchObject({ status: "published" });
+    for (const key of keys.slice(1)) {
+      expect(getChannelOutboundPublishJob(key!)).toMatchObject({
+        status: "published",
+        supersededBy: keys[0]!,
+      });
+    }
+  });
+
+  it("never coalesces ordinary chat text that happens to repeat", async () => {
+    const now = Date.UTC(2026, 9, 27, 13, 36);
+    const keys = [1, 2].map((n) => `runtime:ravi-channels:same-${n}:slack:T1:C123:root`);
+    keys.forEach((key, index) => {
+      saveChannelOutboundPublishJob(makeJob(key, `same-${index + 1}`, { text: "oi" }), now - 1_000 + index);
+    });
+
+    const published: string[] = [];
+    const result = await reconcileDueChannelOutboundPublishes({
+      now: () => now + 60_000,
+      publisher: async (job) => {
+        published.push(job.request.requestId);
+      },
+      emitEvent: async () => {},
+    });
+
+    expect(published).toHaveLength(2);
+    expect(result).toEqual({ attempted: 2, published: 2, failed: 0, coalesced: 0 });
+  });
+
+  it("keeps provider-unavailable notices for different chats and different texts", async () => {
+    const now = Date.UTC(2026, 9, 27, 13, 36);
+    saveChannelOutboundPublishJob(
+      makeJob("runtime:ravi-channels:chat-a:slack:T1:C123:root", "chat-a", { text: unavailableText, chatId: "C123" }),
+      now - 1_000,
+    );
+    saveChannelOutboundPublishJob(
+      makeJob("runtime:ravi-channels:chat-b:slack:T1:C999:root", "chat-b", { text: unavailableText, chatId: "C999" }),
+      now - 999,
+    );
+    saveChannelOutboundPublishJob(
+      makeJob("runtime:ravi-channels:other-text:slack:T1:C123:root", "other-text", {
+        text: "outra falha",
+        chatId: "C123",
+      }),
+      now - 998,
+    );
+
+    const published: string[] = [];
+    const result = await reconcileDueChannelOutboundPublishes({
+      now: () => now + 60_000,
+      publisher: async (job) => {
+        published.push(job.request.requestId);
+      },
+      emitEvent: async () => {},
+    });
+
+    expect(published).toHaveLength(3);
+    expect(result).toEqual({ attempted: 3, published: 3, failed: 0, coalesced: 0 });
+  });
+
+  it("keeps provider-unavailable notices for different threads of the same chat", async () => {
+    const now = Date.UTC(2026, 9, 27, 13, 36);
+    saveChannelOutboundPublishJob(
+      makeJob("runtime:ravi-channels:thread-a:slack:T1:C123:root", "thread-a", {
+        text: unavailableText,
+        threadId: "1111.2222",
+      }),
+      now - 1_000,
+    );
+    saveChannelOutboundPublishJob(
+      makeJob("runtime:ravi-channels:thread-b:slack:T1:C123:root", "thread-b", {
+        text: unavailableText,
+        threadId: "3333.4444",
+      }),
+      now - 999,
+    );
+
+    const published: string[] = [];
+    const result = await reconcileDueChannelOutboundPublishes({
+      now: () => now + 60_000,
+      publisher: async (job) => {
+        published.push(job.request.requestId);
+      },
+      emitEvent: async () => {},
+    });
+
+    expect(published).toHaveLength(2);
+    expect(result).toEqual({ attempted: 2, published: 2, failed: 0, coalesced: 0 });
+  });
+
+  it("keeps provider-unavailable notices for different Slack accounts sharing a chat id", async () => {
+    const now = Date.UTC(2026, 9, 27, 13, 36);
+    saveChannelOutboundPublishJob(
+      makeJob("runtime:ravi-channels:account-a:slack:T1:C123:root", "account-a", {
+        text: unavailableText,
+        accountId: "T1",
+      }),
+      now - 1_000,
+    );
+    saveChannelOutboundPublishJob(
+      makeJob("runtime:ravi-channels:account-b:slack:T2:C123:root", "account-b", {
+        text: unavailableText,
+        accountId: "T2",
+      }),
+      now - 999,
+    );
+
+    const published: string[] = [];
+    const result = await reconcileDueChannelOutboundPublishes({
+      now: () => now + 60_000,
+      publisher: async (job) => {
+        published.push(job.request.requestId);
+      },
+      emitEvent: async () => {},
+    });
+
+    expect(published).toHaveLength(2);
+    expect(result).toEqual({ attempted: 2, published: 2, failed: 0, coalesced: 0 });
+  });
+
+  it("coalesces a notice backlog larger than one due batch across two reconciles", async () => {
+    const now = Date.UTC(2026, 9, 27, 13, 36);
+    const keys = Array.from(
+      { length: 26 },
+      (_, index) => `runtime:ravi-channels:backlog-${index + 1}:slack:T1:C123:root`,
+    );
+    keys.forEach((key, index) => {
+      saveChannelOutboundPublishJob(
+        makeJob(key, `backlog-${index + 1}`, { text: unavailableText }),
+        now - 1_000 + index,
+      );
+    });
+
+    const published: string[] = [];
+    const publisher = async (job: ChannelOutboundJob) => {
+      published.push(job.request.requestId);
+    };
+
+    const first = await reconcileDueChannelOutboundPublishes({
+      now: () => now + 60_000,
+      publisher,
+      emitEvent: async () => {},
+    });
+    const second = await reconcileDueChannelOutboundPublishes({
+      now: () => now + 120_000,
+      publisher,
+      emitEvent: async () => {},
+    });
+
+    expect(published).toEqual(["runtime:ravi-channels:backlog-1"]);
+    expect(first).toEqual({ attempted: 1, published: 1, failed: 0, coalesced: 25 });
+    expect(second).toEqual({ attempted: 0, published: 0, failed: 0, coalesced: 0 });
+    expect(getChannelOutboundPublishJob(keys[25]!)).toMatchObject({
+      status: "published",
+      supersededBy: keys[0]!,
+    });
+  });
+});

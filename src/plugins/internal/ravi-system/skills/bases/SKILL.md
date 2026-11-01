@@ -6,8 +6,10 @@ description: |
   - criar views como contrato de acesso: filtro com $viewer, colunas editáveis, write.set, formulário
   - consultar, criar, atualizar ou arquivar linhas com --idempotency-key e --expected-version; ver histórico
   - criar gráficos, agregar, importar ou exportar CSV/JSON
-  - assinar eventos de linha (`ravi bases subscribe`) para um trigger
-  base, bases, tabela, planilha, banco de dados, schema, coluna, view, linha, gráfico, CSV
+  - pedir e decidir aprovações por linha; coluna que um agente preenche
+  - assinar eventos de linha, com filtro e trigger (`ravi bases subscribe <base> --trigger`)
+  - dar a um site do Pages acesso a uma view (`ravi bases views share`)
+  base, bases, tabela, planilha, banco de dados, schema, coluna, view, linha, gráfico, CSV, aprovação
   Solução com tela, canal ou automação? Leia antes a skill solucoes.
   Não use para o CRM local (`ravi crm`) nem para HTML sem dados (skill pages).
 ---
@@ -25,7 +27,9 @@ houver mais de um projeto (`ravi cloud scope show`).
 
 - Quem vê o quê e quem acorda quem se decide na skill `solucoes`, antes do primeiro comando.
 - Tela: a view é o contrato (`views-access-forms.md`); a página sai da skill `pages`. Nunca mande alguém "abrir a base no Console".
-- Reagir a mudança de linha: `ravi bases subscribe` + trigger (`events-triggers.md`).
+- Reagir a mudança de linha: `ravi bases subscribe <base> --trigger` (`events-triggers.md`).
+- Aprovação e coluna de agente: `approvals-agent-columns.md`.
+- Agentes leem Bases por padrão (listar e ver bases, ler views e gráficos); `rows query`, `aggregate` e toda escrita são concessão do operador (skill permissions). No turno de outra pessoa, ler também exige o `ravi link` dela (veja Autoria).
 
 ## Contrato do CLI
 
@@ -37,21 +41,26 @@ houver mais de um projeto (`ravi cloud scope show`).
 | `VERSION_CONFLICT` | alguém mudou a linha antes. Releia (`rows get`) e decida de novo; num horário, ofereça outro |
 | `CONFLICT` (`idempotency_conflict`) | chave já usada com outro conteúdo (24 h). Use uma chave nova para esta ação |
 | `WRITE_REQUIRES_EXECUTE` (exit 3) | dry-run, não política. Leia o plano e repita com `--execute` no fim |
-| `connector_not_allowlisted` (na página) | o último ship do host não listou o id. Refaça o ship com a união (skill pages) |
+| `connector_not_allowlisted` (na página) | nenhuma rota ativa do host declarou o id. Refaça o ship da rota com o id no `--uses` (skill pages) |
+| `PROJECT_ACCESS_DENIED` + `approval_forbidden` | quem decide não é aprovador dessa coluna. Não contorne: peça a quem aprova |
+| `CONFLICT` (`agent_stale`) | os inputs da coluna de agente mudaram. Releia a linha, calcule de novo a partir dos inputs atuais e preencha com o `inputsHash` que leu; nunca grave o resultado antigo com o hash novo |
 | `SERVER_UNAVAILABLE` | timeout. Repita com a mesma `--idempotency-key`, nunca como escrita nova |
 | "Presets cannot be empty." | `write.set` vazio, quase sempre `false` em checkbox. Tire o preset: checkbox nasce desmarcado |
 | "Pages viewer principals must name a Ravi Pages site" | o site não existe. Ship de esqueleto, depois `siteId` em `ravi pages list --json` |
 | `PROJECT_ACCESS_DENIED` + `missingScopes` | login anterior às Bases: `ravi login` de novo |
 
-Freios: `bases archive|restore`, `rows purge`, `views archive`, `charts archive`,
-`props update --type`, `props delete` e `rows import` param no plano (exit 3).
+Autoria: num turno que outra pessoa escreveu, leituras e escritas de Bases (e o `$viewer`) são dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador (views com `$viewer` mostram as linhas dela). Sem link, leitura e escrita são recusadas com `ACTOR_NOT_LINKED` (exit 3) e o Ravi já começa o vínculo: repasse o `chatLinePt` do erro ("me chama na DM" no WhatsApp), não contorne e não leia pelo operador. Turno que o Ravi não consegue atribuir (turno de outro agente, quem fala não identificado) é recusado antes de qualquer chamada com `ACTOR_UNKNOWN` (exit 3): não repita desse turno; a pessoa pede da conversa dela ou o operador roda no terminal. Nos turnos do próprio operador (terminal, a DM dele, as rotinas dele), tudo é do operador. Um cron que outra pessoa criou (`ownerPrincipal: contact:<id>` em `ravi cron show <id> --json`) age como essa pessoa, nunca como o operador: leituras e escritas vão pelo `ravi link` dela. Sem link, o run recebe `ACTOR_NOT_LINKED` com `linkFlow: routine` e o Ravi não manda DM (ninguém está pedindo num run agendado): não repita, não desative o job e reporte ao operador que a pessoa precisa vincular a conta. Um cron sem pessoa dona (`unknown`) recebe `ACTOR_UNKNOWN` com `refusalReason: routine_not_operator_owned`: reporte ao operador, que revisa e recria o job do turno de quem deve agir. Antes de dar por pronto um cron recorrente que usa Bases, rode um `ravi cron run <id> --execute` real (um one-shot não: o run manual consome o job); só o operador pode ter job `--shell` (`CRON_SHELL_NOT_OPERATOR` para os outros). O ledger guarda a pessoa responsável e, ao lado, o agente (`rows history`).
+
+Freios: `bases archive|restore`, `rows purge`, `rows approve|reject`, `views archive`,
+`views share` (quando amplia o acesso), `charts archive`, `props update --type`,
+`props delete` e `rows import` param no plano (exit 3).
 
 ## Do pedido ao schema
 
 1. Uma base por entidade, ligadas por `ref` ou `person`.
-2. O tipo mais estrito: fluxo → `status` (grupos `todo|in_progress|done`); categoria → `select`; tags → `multi_select`; dono → `person` (ids de membro em `views-access-forms.md`); valor → `number`; prazo → `date`; link → `url`; contato, artifact ou outra linha → `ref`; texto longo → corpo (`--body`). Não há tipo arquivo, fórmula, relação nem chave única: arquivo vira `url` de um artifact.
+2. O tipo mais estrito: fluxo → `status` (grupos `todo|in_progress|done`); categoria → `select`; tags → `multi_select`; dono → `person` (ids de membro em `views-access-forms.md`); valor → `number`; prazo → `date`; link → `url`; contato, artifact ou outra linha → `ref`; decisão de alguém → `approval`; valor que um agente calcula das outras colunas → `agent` (`approvals-agent-columns.md`); texto longo → corpo (`--body`). Não há tipo arquivo, fórmula, relação nem chave única: arquivo vira `url` de um artifact.
 3. Chaves `^[a-z][a-z0-9_]{0,62}$` e estáveis, porque filtros, views e páginas usam a chave. Reservadas: `row_id`, `version`, `created_time`, `created_by`, `updated_time`, `updated_by`, `archived_at`, `body`, `id`.
-4. Crie com o schema inteiro; depois as views.
+4. Crie com o schema inteiro; depois as views. `bases create`, `props add`, `views create` e `charts create` aceitam `--idempotency-key`: repetir com a mesma chave e o mesmo pedido devolve o que já foi criado. Em `props add` a chave exige `--expected-schema-version` (o `schemaVersion` de `bases show`), para o retry ser o mesmo pedido.
 
 ```bash
 ravi bases create "Tarefas" --slug tarefas --timezone America/Sao_Paulo --schema @tarefas.json --project escritorio --json
@@ -84,7 +93,7 @@ ravi bases rows history tarefas <row> --json
 - `update`, `archive` e `restore` pedem `--expected-version` (a que você leu) ou `--last-write-wins` explícito. A versão é da linha inteira: qualquer escrita a sobe, mesmo em outra coluna.
 - Chave: `<origem>:<id>:<ação>`, só `A-Za-z0-9._:-`, 8 a 128 caracteres. Uma chave por escrita: duas escritas da mesma mensagem levam ações diferentes (`wa:<mid>:criar`, `wa:<mid>:avisar`). A chave que o CLI gera sozinho não sobrevive a um retry: passe a sua e repita com a mesma após timeout.
 - `--view <id>` escreve pela view: só colunas graváveis, e a linha fica no filtro (`write_escapes_view`).
-- Escrita pelo CLI entra no ledger como `actor.type = cli`, em nome do humano logado.
+- Escrita pelo CLI entra no ledger como `actor.type = cli`, em nome da pessoa responsável (quem fez `ravi link`, no turno dela; no turno do operador, o operador logado), com o agente ao lado.
 
 ## Consultas
 
@@ -101,8 +110,9 @@ ravi bases aggregate tarefas --group-by status,prazo:month --agg count sum:horas
 
 Abra só o que precisar: `ravi skills show bases --file references/<arquivo>`.
 
-- `views-access-forms.md`: view como contrato, dono + supervisão, aprovador, ids de membro, presets, formulários.
-- `events-triggers.md`: eventos de linha, trigger que drena a fila, anti-loop, varredura.
+- `views-access-forms.md`: view como contrato, `views share`, dono + supervisão, aprovador, ids de membro, presets, formulários.
+- `events-triggers.md`: eventos, assinatura filtrada, `--trigger` (rascunho num turno de agente), fila, anti-loop, varredura.
+- `approvals-agent-columns.md`: coluna `approval` (pedir, aprovar, recusar) e coluna `agent` (`rows fill`, `rows rerun`).
 - `query-ast.md`: filtros, operadores, variáveis, limites. `charts.md`: gráficos.
 - `import-export.md`: CSV em lotes idempotentes. `recipes.md`: bases prontas com views e páginas.
 - Página de dados (cliente, layouts, esqueletos): skill pages, `ravi skills show pages --file references/data-pages.md`.

@@ -6,6 +6,10 @@
   call.
 - A turn with a runtime context the classifier refuses reads with
   `publicOnly: true`; the terminal reads with `publicOnly: false`.
+- The linked owner's direct chat in a session of its own reads with
+  `publicOnly: false`; the same chat in a shared session (or `dmScope main`)
+  and an owner account not linked to the login read public-only, and the
+  refusal names the rule (`details.turn` `shared_session` / `not_owner`).
 - A 403 with reason `public_only` maps to `PAGE_ACCESS_DENIED` exit 3; other
   reasons exit 1; 404 maps to `PAGE_NOT_FOUND`; 413/415 to
   `PAGE_CONTENT_UNSUPPORTED`.
@@ -23,3 +27,11 @@
   usage errors before any Console call.
 - A tampered file (sha256 mismatch), an unsafe path, a non-empty target
   directory and an existing zip file are refused.
+- `bun test src/pages/read.test.ts src/pages/read-download.test.ts` verifies a
+  restricted writer cannot plant provider settings through a manifest; denial
+  happens before file fetches or partial writes, even if a safe file comes first.
+- Nested settings, case variants and output symlinks retain the settings guard.
+  Ordinary assets and filenames containing trailing spaces retain their bytes
+  and names. An already host-authorized writer can write settings.
+- A ZIP may contain settings as inert members, but its own destination cannot
+  overwrite provider settings without the required host authority.

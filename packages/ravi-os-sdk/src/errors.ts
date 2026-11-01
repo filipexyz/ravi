@@ -34,6 +34,10 @@ export interface RaviErrorBody {
 export type RaviContractOutcome = "blocked" | "usage_error" | "denied" | "failed";
 
 export interface RaviContractErrorPayload {
+  requestId?: string;
+  diagnosticRequestId?: string;
+  field?: string;
+  argument?: string;
   code: string;
   message: string;
   retryable: boolean;
@@ -288,6 +292,12 @@ function projectContractErrorBody(body: RaviContractErrorBody): RaviContractErro
   }
   if (typeof remote.dryRun === "boolean") error.dryRun = remote.dryRun;
   if (typeof remote.status === "number" && Number.isFinite(remote.status)) error.status = remote.status;
+  for (const key of ["requestId", "diagnosticRequestId"] as const) {
+    const value = remote[key];
+    if (typeof value === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) error[key] = value;
+  }
+  if (typeof remote.field === "string" && /^[a-z][A-Za-z0-9_]{0,63}$/.test(remote.field)) error.field = remote.field;
+  if (typeof remote.argument === "string" && /^--[a-z][a-z0-9-]{0,63}$/.test(remote.argument)) error.argument = remote.argument;
   const issues = projectContractIssues(remote.issues);
   if (issues) error.issues = issues;
   if (isRecord(remote.plan)) {

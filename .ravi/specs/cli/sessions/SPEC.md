@@ -60,6 +60,16 @@ triggered runtime execution use risk-based confirmation.
    require `--execute`: they queue work, alter history or create a new runtime
    branch. `interrupt` and `steer` remain immediate because delaying emergency
    containment or active correction can increase harm.
+   While host `turn.steer`/`turn.follow_up` are disabled (daemon/restart/crash-recovery),
+   `steer` and `follow-up --execute` MUST fail with the typed code
+   `RUNTIME_CONTROL_DISABLED` (exit 1) and a next step pointing at
+   `sessions send --steer`/`--immediate`; every `sessions runtime` refusal MUST
+   carry a `RUNTIME_*` code (`RUNTIME_SESSION_NOT_ACTIVE`,
+   `RUNTIME_OPERATION_UNSUPPORTED`, `RUNTIME_NO_ACTIVE_TURN`,
+   `RUNTIME_CONTROL_TIMEOUT`, `RUNTIME_CONTROL_UNAVAILABLE`,
+   `RUNTIME_CONTROL_FAILED`), or `SESSION_NOT_FOUND` for a session that is
+   missing or outside the caller's read/modify scope, and the remote relay MUST
+   render local catalog copy for that code instead of "Remote command failed.".
 9. Unbraked writes (send/ask/answer/inform/execute, rename, set-*, ttl ops,
    attach/detach and threads) keep immediate behavior and MUST be
    listed as unbraked in the shipped skill.
@@ -121,3 +131,11 @@ triggered runtime execution use risk-based confirmation.
 - Hint builders are asserted literally in `sessions.test.ts`; changing a taught
   command without updating the test (and vice versa) breaks the suite — this is
   intentional drift protection between hints and the real contract.
+
+## Private Console sessions
+
+`sessions conversations` declares the private conversation command family in
+this same registry. Ordinary callers cannot substitute local wildcard or admin
+grants for Console ownership. The existing set-model, set-thinking and
+set-display handlers support an exact durable session delegation; propagate
+is outside that scope. Their structured results are returned over the gateway.

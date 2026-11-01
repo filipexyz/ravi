@@ -13,6 +13,9 @@ import { resolveSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeHostStreamingSession } from "../runtime/host-session.js";
 import { runRuntimeEventLoop } from "../runtime/host-event-loop.js";
+import { RuntimeSessionDispatcher } from "../runtime/session-dispatcher.js";
+import { createQueuedRuntimeUserMessage } from "../runtime/delivery-queue.js";
+import type { RuntimeCrashRecoveryCoordinator } from "../runtime/crash-recovery.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
 import type { RuntimeCapabilities, RuntimeEvent, RuntimeSessionHandle } from "../runtime/types.js";
 import {
@@ -29,6 +32,7 @@ import {
   CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
   ChannelRuntimeEventSinkRegistry,
   channelRuntimeEventSinks,
+  classifyChannelRuntimeFailure,
   projectChannelRuntimeEvent,
   readChannelRuntime,
   requestChannelRuntimeInterrupt,
@@ -381,6 +385,85 @@ describe("channel runtime event projection", () => {
     expect(readback.terminalEvent).toEqual(lastTerminalEvent(events));
   });
 
+  it("reports a provider billing failure by class without its text", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    await projectChannelRuntimeEvent({
+      metadata,
+      event: { type: "turn.failed", error: "402 Insufficient Balance", recoverable: true },
+      sinks: runtimeSinks(metadata, events),
+    });
+
+    expect(JSON.stringify([events, outputs])).not.toContain("Insufficient");
+    expect(outputs).toEqual([
+      expect.objectContaining({
+        kind: "safe_error",
+        error: expect.objectContaining({ code: "UNAVAILABLE", category: "availability", retryable: false }),
+      }),
+    ]);
+  });
+
+  it("classifies runtime failure text into channel-safe codes", () => {
+    expect(classifyChannelRuntimeFailure("402 Insufficient Balance", true)).toEqual({
+      code: "UNAVAILABLE",
+      category: "availability",
+      retryable: false,
+    });
+    expect(
+      classifyChannelRuntimeFailure("Claude provider error (billing_error): credit balance is too low", true),
+    ).toEqual({
+      code: "UNAVAILABLE",
+      category: "availability",
+      retryable: false,
+    });
+    expect(classifyChannelRuntimeFailure("401 Incorrect API key provided", true)).toMatchObject({
+      code: "UNAVAILABLE",
+      retryable: false,
+    });
+    expect(
+      classifyChannelRuntimeFailure("No managed runtime credential could be resolved for agent main", true),
+    ).toMatchObject({
+      code: "UNAVAILABLE",
+      retryable: false,
+    });
+    expect(classifyChannelRuntimeFailure("429 Rate limit reached for requests", false)).toEqual({
+      code: "RATE_LIMITED",
+      category: "capacity",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("Claude provider error (overloaded)", false)).toEqual({
+      code: "OVERLOADED",
+      category: "capacity",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("503 Service Unavailable", false)).toMatchObject({
+      code: "OVERLOADED",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("Claude provider error (http_502)", false)).toEqual({
+      code: "UNAVAILABLE",
+      category: "availability",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("TypeError: Cannot read properties of undefined", true)).toEqual({
+      code: "INTERNAL",
+      category: "internal",
+      retryable: true,
+    });
+    expect(classifyChannelRuntimeFailure("Pi turn failed", false)).toEqual({
+      code: "INTERNAL",
+      category: "internal",
+      retryable: false,
+    });
+  });
+
   it("distinguishes a nonterminal turn left by an earlier runtime generation", async () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];
@@ -686,6 +769,54 @@ describe("channel runtime event projection", () => {
     expect(readback.terminalEvent).toBeUndefined();
   });
 
+  it("suppresses a truncated silence marker but delivers commentary that cites the marker", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(metadata, [
+        {
+          type: "assistant.message",
+          text: "@@SILEN",
+          metadata: { item: { id: "truncated-silent", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "Para silenciar, responda @@SILENT@@ no fim.",
+          metadata: { item: { id: "cited-marker", phase: "commentary" } },
+        },
+        {
+          type: "turn.complete",
+          usage: { inputTokens: 2, outputTokens: 1 },
+        },
+      ]);
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(events.filter((event) => event.kind === "turn.assistant_message")).toEqual([
+      expect.objectContaining({
+        payload: {
+          phase: "commentary",
+          content: [{ type: "text", text: "Para silenciar, responda @@SILENT@@ no fim." }],
+        },
+      }),
+    ]);
+    expect(outputs).toHaveLength(0);
+  });
+
   it("keeps suppressed non-commentary outcomes off the channel and off durable chat.db rows", async () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];
@@ -788,6 +919,128 @@ describe("channel runtime event projection", () => {
       kind: "turn.terminal_output",
       payload: { state: "interrupted" },
     });
+  });
+
+  for (const terminalType of ["turn.interrupted", "turn.complete"] as const) {
+    it(`keeps a yielded channel request open across ${terminalType} until its continuation replies`, async () => {
+      const metadata = await acceptedMetadata();
+      const events: KnownChannelRuntimeEvent[] = [];
+      const outputs: ChannelOutputEnvelope[] = [];
+      const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+      unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+        async emit(event) {
+          events.push(event);
+        },
+      });
+      unregisterOutput = channelOutputSinks.register(metadata.target, {
+        async emit(output) {
+          outputs.push(output);
+        },
+      });
+      try {
+        await runAcceptedHostRuntime(
+          metadata,
+          [
+            { type: "tool.started", toolUse: { id: "yield-tool", name: "read", input: {} } },
+            { type: "tool.completed", toolUseId: "yield-tool", toolName: "read", content: "done" },
+            terminalType === "turn.complete"
+              ? { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 0 } }
+              : { type: "turn.interrupted" },
+          ],
+          (streaming) => {
+            streaming.currentTurnSuperseded = true;
+            streaming.currentTurnYieldContinuationId = "pending-continuation";
+            streaming.interrupted = true;
+          },
+        );
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("running");
+        expect(events.some((event) => event.kind === "turn.terminal_output")).toBe(false);
+        expect(outputs).toHaveLength(0);
+
+        await runAcceptedHostRuntime(metadata, [
+          { type: "assistant.message", text: "Original work completed after yielding." },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]);
+      } finally {
+        emitSpy.mockRestore();
+      }
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("completed");
+      expect(events.filter((event) => event.kind === "turn.terminal_output")).toHaveLength(1);
+      expect(outputs).toHaveLength(1);
+    });
+  }
+
+  for (const deferred of [false, true]) {
+    it(`closes a waiting continuation's channel request on ${deferred ? "deferred" : "immediate"} session abort`, async () => {
+      const metadata = await acceptedMetadata();
+      const events: KnownChannelRuntimeEvent[] = [];
+      unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+        async emit(event) {
+          events.push(event);
+        },
+      });
+      await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "tool.started", toolUse: { id: "original-tool", name: "read", input: {} } },
+      });
+      const session = resolveSession(metadata.binding.sessionId)!;
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "test",
+        maxConcurrentSessions: 2,
+        interactiveReservedSessions: 0,
+        safeEmit: async () => {},
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "test-model",
+        crashRecovery: { acceptingDeliveries: true } as RuntimeCrashRecoveryCoordinator,
+      });
+      const continuation = {
+        ...createQueuedRuntimeUserMessage({
+          prompt: "resume the original work",
+          _channelBackend: metadata,
+          deliveryBarrier: "after_response",
+        }),
+        yieldedRequest: "original work",
+      };
+      const streaming = streamingSession(metadata, runtimeHandle([]));
+      streaming.currentSource = {
+        channel: "slack",
+        accountId: "slack-account",
+        chatId: "other-chat",
+        threadId: "other-thread",
+      };
+      streaming.currentChannelBackend = undefined;
+      streaming.pendingMessages = [continuation];
+      streaming.toolResultDeliveryPending = deferred;
+      dispatcher.streamingSessions.set(session.name!, streaming);
+      dispatcher.stashedMessages.set(session.name!, [{ ...continuation }]);
+
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("running");
+      expect(dispatcher.abortSession(session.name!)).toBe(true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("interrupted");
+      expect(events.filter((event) => event.kind === "turn.terminal_output")).toHaveLength(1);
+      expect(streaming.pendingMessages).toEqual([]);
+      expect(dispatcher.stashedMessages.has(session.name!)).toBe(false);
+      expect(streaming.pendingAbort).toBe(deferred);
+      expect(streaming.abortController.signal.aborted).toBe(!deferred);
+    });
+  }
+
+  it("still terminalizes an explicitly aborted channel turn while a yield is pending", async () => {
+    const metadata = await acceptedMetadata();
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    try {
+      await runAcceptedHostRuntime(metadata, [{ type: "turn.interrupted" }], (streaming) => {
+        streaming.currentTurnSuperseded = true;
+        streaming.currentTurnYieldContinuationId = "pending-continuation";
+        streaming.internalAbortReason = "explicit_abort";
+        streaming.interrupted = true;
+      });
+    } finally {
+      emitSpy.mockRestore();
+    }
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("interrupted");
   });
 
   it("keeps sentinel assistant content off the channel output path", async () => {

@@ -6,8 +6,10 @@
  */
 
 import type { Statement } from "bun:sqlite";
+import { getRecentHistory } from "../db.js";
 import { toPersistedChannelContext, type ChannelContext } from "../channels/context.js";
 import type { SessionEntry } from "./types.js";
+import { findOpenThreadIdentity, renameThreadSessionNames } from "./thread-identity.js";
 import {
   dbCreateSessionChatSubscription,
   dbDetachSessionChatSubscription,
@@ -28,6 +30,7 @@ import {
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
+import { clearSessionReads } from "../knowledge/store/turn-reads.js";
 
 const log = logger.child("router:sessions");
 
@@ -44,6 +47,7 @@ interface SessionRow {
   runtime_provider: string | null;
   runtime_provider_override: string | null;
   runtime_session_json: string | null;
+  history_reset_after_id: number | null;
   runtime_session_display_id: string | null;
   agent_id: string;
   agent_cwd: string;
@@ -90,6 +94,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     runtimeProvider: row.runtime_provider ?? undefined,
     runtimeProviderOverride: row.runtime_provider_override ?? undefined,
     runtimeSessionParams,
+    historyResetAfterId: row.history_reset_after_id ?? undefined,
     runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
     providerSessionId,
     sdkSessionId: row.sdk_session_id ?? undefined,
@@ -168,12 +173,15 @@ export interface SessionTurnUsage {
   startedAt: number;
   completedAt: number | null;
   durationMs: number | null;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  effectiveContextTokens: number;
-  costUsd: number;
+  /** `null` = the provider reported no usage for this turn: render `unknown`, never `0`. */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  effectiveContextTokens: number | null;
+  costUsd: number | null;
+  /** `incomplete` when the turn ended with commentary and no final utterance. */
+  outputState: string | null;
 }
 
 export interface SessionRecentTurnUsage {
@@ -185,6 +193,8 @@ export interface SessionRecentTurnUsage {
   effectiveContextTokensMax: number;
   durationMsAvg: number | null;
   costUsdTotal: number;
+  /** Finished turns in the window (any status) with no reported usage; never summed as zero. */
+  unknownUsageTurns: number;
 }
 
 export interface SessionTurnUsageSummary {
@@ -543,9 +553,9 @@ function nullableNumberFromRow(value: unknown): number | null {
 
 function turnUsageFromRow(row: Record<string, unknown> | null): SessionTurnUsage | null {
   if (!row) return null;
-  const inputTokens = numberFromRow(row.input_tokens);
-  const cacheReadTokens = numberFromRow(row.cache_read_tokens);
-  const cacheCreationTokens = numberFromRow(row.cache_creation_tokens);
+  const inputTokens = nullableNumberFromRow(row.input_tokens);
+  const cacheReadTokens = nullableNumberFromRow(row.cache_read_tokens);
+  const cacheCreationTokens = nullableNumberFromRow(row.cache_creation_tokens);
   return {
     runId: typeof row.run_id === "string" ? row.run_id : null,
     status: typeof row.status === "string" ? row.status : "unknown",
@@ -553,11 +563,13 @@ function turnUsageFromRow(row: Record<string, unknown> | null): SessionTurnUsage
     completedAt: nullableNumberFromRow(row.completed_at),
     durationMs: nullableNumberFromRow(row.duration_ms),
     inputTokens,
-    outputTokens: numberFromRow(row.output_tokens),
+    outputTokens: nullableNumberFromRow(row.output_tokens),
     cacheReadTokens,
     cacheCreationTokens,
-    effectiveContextTokens: inputTokens + cacheReadTokens + cacheCreationTokens,
-    costUsd: numberFromRow(row.cost_usd),
+    effectiveContextTokens:
+      inputTokens === null ? null : inputTokens + (cacheReadTokens ?? 0) + (cacheCreationTokens ?? 0),
+    costUsd: nullableNumberFromRow(row.cost_usd),
+    outputState: typeof row.output_state === "string" ? row.output_state : null,
   };
 }
 
@@ -592,7 +604,8 @@ export function getSessionTurnUsageSummary(
           output_tokens,
           cache_read_tokens,
           cache_creation_tokens,
-          cost_usd
+          cost_usd,
+          output_state
         FROM session_turns
         WHERE session_key = ?
         ORDER BY started_at DESC
@@ -610,17 +623,25 @@ export function getSessionTurnUsageSummary(
         COUNT(*) AS complete_turns,
         AVG(input_tokens) AS input_tokens_avg,
         AVG(output_tokens) AS output_tokens_avg,
-        AVG(input_tokens + cache_read_tokens + cache_creation_tokens) AS effective_context_tokens_avg,
-        MAX(input_tokens + cache_read_tokens + cache_creation_tokens) AS effective_context_tokens_max,
+        -- NULL usage is unknown, not zero: AVG/MAX/SUM skip it and it is counted apart.
+        AVG(input_tokens + COALESCE(cache_read_tokens, 0) + COALESCE(cache_creation_tokens, 0)) AS effective_context_tokens_avg,
+        MAX(input_tokens + COALESCE(cache_read_tokens, 0) + COALESCE(cache_creation_tokens, 0)) AS effective_context_tokens_max,
         AVG(completed_at - started_at) AS duration_ms_avg,
-        SUM(cost_usd) AS cost_usd_total
+        SUM(cost_usd) AS cost_usd_total,
+        (
+          SELECT COUNT(*) FROM session_turns unknown_usage
+          WHERE unknown_usage.session_key = ?
+            AND unknown_usage.started_at >= ?
+            AND unknown_usage.input_tokens IS NULL
+            AND unknown_usage.completed_at IS NOT NULL
+        ) AS unknown_usage_turns
       FROM session_turns
       WHERE session_key = ?
         AND status = 'complete'
         AND started_at >= ?
     `,
       )
-      .get(sessionKey, since) as Record<string, unknown> | null) ?? {};
+      .get(sessionKey, since, sessionKey, since) as Record<string, unknown> | null) ?? {};
 
   return {
     lastTurn,
@@ -633,6 +654,7 @@ export function getSessionTurnUsageSummary(
       effectiveContextTokensMax: numberFromRow(recentRow.effective_context_tokens_max),
       durationMsAvg: nullableNumberFromRow(recentRow.duration_ms_avg),
       costUsdTotal: numberFromRow(recentRow.cost_usd_total),
+      unknownUsageTurns: numberFromRow(recentRow.unknown_usage_turns),
     },
   };
 }
@@ -650,8 +672,12 @@ export function deleteSession(sessionKey: string): boolean {
  * Reset a session — clears conversation state but keeps the session entry
  * (name, agent, routing, display name, etc. are preserved).
  */
-export function resetSession(sessionKey: string): boolean {
+export function resetSession(sessionKey: string, options: { preserveHistoryContext?: boolean } = {}): boolean {
   const db = getDb();
+  const session = getSession(sessionKey);
+  const historyResetAfterId = options.preserveHistoryContext
+    ? (session?.historyResetAfterId ?? null)
+    : (getRecentHistory(session?.name ?? sessionKey, 1).at(-1)?.id ?? 0);
   db.prepare(
     `
     UPDATE sessions SET
@@ -659,6 +685,7 @@ export function resetSession(sessionKey: string): boolean {
       runtime_provider = NULL,
       runtime_session_json = NULL,
       runtime_session_display_id = NULL,
+      history_reset_after_id = ?,
       system_sent = 0,
       aborted_last_run = 0,
       compaction_count = 0,
@@ -669,8 +696,15 @@ export function resetSession(sessionKey: string): boolean {
       updated_at = ?
     WHERE session_key = ?
   `,
-  ).run(Date.now(), sessionKey);
-  return getDbChanges() > 0;
+  ).run(historyResetAfterId, Date.now(), sessionKey);
+  const changed = getDbChanges() > 0;
+  try {
+    // What the old context read no longer gates writes (Knowledge §11.4).
+    clearSessionReads(sessionKey);
+  } catch (error) {
+    log.warn("knowledge session reads not cleared", { sessionKey, error: String(error) });
+  }
+  return changed;
 }
 
 function parseRuntimeSessionParams(raw: string | null): Record<string, unknown> | undefined {
@@ -846,6 +880,19 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
   if (existing && existing.sessionKey !== sessionKey) {
     throw new Error(`Session name already exists: ${newName}`);
   }
+  // Names and keys share one namespace: runners resolve both by name first, so
+  // a name equal to another session's key would capture that session's prompts.
+  const keyHolder = getSession(newName);
+  if (keyHolder && keyHolder.sessionKey !== sessionKey) {
+    throw new Error(`Session name collides with a session key: ${newName}`);
+  }
+  if (newName.toLowerCase().startsWith("agent:") && newName !== sessionKey) {
+    throw new Error(`Session names starting with 'agent:' are reserved for session keys: ${newName}`);
+  }
+  const reservedBy = findOpenThreadIdentity(newName);
+  if (reservedBy && reservedBy.childSessionKey !== sessionKey) {
+    throw new Error(`Session name is reserved by an open channel thread: ${newName}`);
+  }
 
   const oldName = before.name ?? null;
   if (oldName === newName) {
@@ -865,6 +912,21 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
     () => {
       const s = getStatements();
       s.updateName.run(newName, Date.now(), sessionKey);
+      renameThreadSessionNames(db, sessionKey, newName);
+      // Task assignments still store a session name. Keep active bindings attached
+      // to this runtime so renaming cannot bypass decision self-answer protection.
+      // Task tables are lazily initialized; do not create them just for a rename.
+      if (oldName && db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_assignments'").get()) {
+        db.query(`UPDATE tasks SET assignee_session_name=? WHERE assignee_session_name=? AND id IN
+          (SELECT task_id FROM task_assignments WHERE session_name=? AND status IN ('assigned','accepted','blocked'))`).run(
+          newName,
+          oldName,
+          oldName,
+        );
+        db.query(
+          "UPDATE task_assignments SET session_name=? WHERE session_name=? AND status IN ('assigned','accepted','blocked')",
+        ).run(newName, oldName);
+      }
       return oldName ? dbRenameRouteSessionName(oldName, newName) : 0;
     },
     { label: "router:renameSessionCanonical" },
@@ -1037,6 +1099,11 @@ export function getMainSession(agentId: string): SessionEntry | null {
  * This allows CLI commands to accept either format.
  */
 export function resolveSession(nameOrKey: string): SessionEntry | null {
+  // A key-shaped ref is a key: a name may not shadow another session's key.
+  if (nameOrKey.startsWith("agent:")) {
+    const byKey = getSession(nameOrKey);
+    if (byKey) return byKey;
+  }
   // Try name first
   const byName = getSessionByName(nameOrKey);
   if (byName) return byName;

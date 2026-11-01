@@ -1,14 +1,19 @@
 import { homedir } from "node:os";
+import { getRecentHistory } from "../db.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
-import type { AgentConfig, SessionEntry } from "../router/index.js";
+import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
+import { applyProviderModelRule } from "./model-catalog.js";
+import { validateRuntimeModelSelector } from "./model-validation.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
   recordAdapterRequestTrace,
   recordTerminalTurnTrace,
+  recordRuntimeTraceEvent,
   summarizeRuntimeCapabilities,
+  type RuntimeTraceAdapterRequestInput,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
@@ -16,7 +21,10 @@ import { isSessionRelayTurn } from "./turn-origin.js";
 import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { createRuntimeMessageGenerator } from "./delivery-queue.js";
+import { createRuntimeMessageGenerator, pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
+import { commitRenderedSignals, releaseRenderedSignals, renderSignalsForTurn } from "../signals/render.js";
+import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
+import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   resolveRuntimeToolEffectFence,
@@ -39,6 +47,7 @@ import {
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
 import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
+import { resolveObservationAllowedTools } from "./observation-plane.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
 import {
   buildRuntimeRequestContext,
@@ -48,6 +57,10 @@ import {
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { isStoredSkillVisibilityCompatible } from "./skill-visibility.js";
+import { buildRuntimeContextRecoveryPrompt } from "./context-window-recovery.js";
+import { resolvePersistedUserText } from "./session-surface-hint.js";
+import { validateRuntimeSessionState } from "./session-state.js";
+import type { RuntimeResumeDecision } from "./session-resolver.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import {
   MODEL_BROKER_REQUIRED_SETTING,
@@ -76,6 +89,7 @@ import type {
   RuntimeCapabilities,
   RuntimeHostServices,
   RuntimeProviderId,
+  RuntimeDynamicToolCallRequest,
   RuntimeStartRequest,
   SessionRuntimeProvider,
 } from "./types.js";
@@ -83,6 +97,12 @@ import type {
 const CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON =
   "Runtime action approval denied because durable turn ownership changed before authorization completed.";
 const runtimeRequestLog = logger.child("runtime-request");
+
+/** Signals render failures since start; each one also logs a warning (runtime/signals CLI contract). */
+let signalRenderFailures = 0;
+export function getSignalRenderFailureCount(): number {
+  return signalRenderFailures;
+}
 
 class RuntimeCrashRecoveryApprovalOwnershipChangedError extends Error {
   constructor() {
@@ -103,10 +123,13 @@ export interface RuntimeStartRequestBuildOptions {
   sessionCwd: string;
   dbSessionKey: string;
   model: string;
+  /** Global default model, the fallback when no layer sets one for a turn. */
+  configModel?: string;
   runtimeResolution: TaskRuntimeResolution;
   storedRuntimeSessionParams: Record<string, unknown> | undefined;
   storedProviderSessionId?: string;
   canResumeStoredSession: boolean;
+  resumeDecision?: RuntimeResumeDecision;
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
   streamingSession: RuntimeHostStreamingSession;
@@ -124,7 +147,10 @@ export interface RuntimeStartRequestBuildResult {
 
 export function installCrashRecoveryApprovalFences(options: {
   hostServices: RuntimeHostServices;
-  streamingSession: Pick<RuntimeHostStreamingSession, "currentCrashRecoveryAttemptId" | "currentTurnToolStarted">;
+  streamingSession: Pick<
+    RuntimeHostStreamingSession,
+    "currentCrashRecoveryAttemptId" | "currentTurnToolStarted" | "externalApprovalWait"
+  >;
   crashRecovery: Pick<RuntimeCrashRecoveryCoordinator, "markTurnAttemptSafety">;
 }): void {
   const { hostServices, streamingSession, crashRecovery } = options;
@@ -144,7 +170,27 @@ export function installCrashRecoveryApprovalFences(options: {
     reason: CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON,
   });
 
-  const createBeforeExternalApprovalFence = (attemptId: string) => () => {
+  /**
+   * One authorization call can ask for several approvals (tool, then
+   * executable). The wait is announced once per call and closed when it returns.
+   */
+  const trackExternalApprovalWait = () => {
+    let waiting = false;
+    return {
+      begin: () => {
+        if (waiting) return;
+        waiting = true;
+        streamingSession.externalApprovalWait?.begin();
+      },
+      end: () => {
+        if (!waiting) return;
+        waiting = false;
+        streamingSession.externalApprovalWait?.end();
+      },
+    };
+  };
+
+  const createBeforeExternalApprovalFence = (attemptId: string, onWait?: () => void) => () => {
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
     }
@@ -152,6 +198,7 @@ export function installCrashRecoveryApprovalFences(options: {
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
     }
+    onWait?.();
   };
 
   const authorizeWithFence = async (
@@ -162,13 +209,16 @@ export function installCrashRecoveryApprovalFences(options: {
       return denyOwnershipChanged();
     }
     let result: RuntimeApprovalResult;
+    const wait = trackExternalApprovalWait();
     try {
-      result = await authorize(createBeforeExternalApprovalFence(attemptId));
+      result = await authorize(createBeforeExternalApprovalFence(attemptId, wait.begin));
     } catch (error) {
       if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
         return denyOwnershipChanged();
       }
       throw error;
+    } finally {
+      wait.end();
     }
 
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
@@ -196,16 +246,19 @@ export function installCrashRecoveryApprovalFences(options: {
     }
 
     let result: Awaited<ReturnType<RuntimeHostServices["authorizeCapability"]>>;
+    const wait = trackExternalApprovalWait();
     try {
       result = await authorizeCapability({
         ...request,
-        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId),
+        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId, wait.begin),
       });
     } catch (error) {
       if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
         return denyCapabilityOwnershipChanged();
       }
       throw error;
+    } finally {
+      wait.end();
     }
     if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
       return denyCapabilityOwnershipChanged();
@@ -383,6 +436,10 @@ async function buildRuntimeStartRequestInternal(
   const toolEffectFence = resolveRuntimeToolEffectFence(runtimeProviderId, runtimeCapabilities.tools.permissionMode);
   streamingSession.toolEffectFence = toolEffectFence;
   const preflightModel = options.modelBrokerPlanClaim?.plan.lease.model ?? model;
+  if (!options.modelBrokerPlanClaim) {
+    const validation = validateRuntimeModelSelector(runtimeProviderId, preflightModel);
+    if (!validation.ok) throw new Error(validation.error ?? "Invalid runtime model configuration");
+  }
 
   const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
     dbSessionKey,
@@ -487,6 +544,7 @@ async function buildRuntimeStartRequestInternal(
     onSkillGatePersisted: (skillVisibility, info) => streamingSession.onSkillGatePersisted?.(skillVisibility, info),
   });
   const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
+  const hiddenSkills = preparedBootstrap.hiddenSkills ?? [];
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
   const providerEnv = mergeProviderCredentialEnv(
     providerBootstrap?.env,
@@ -543,16 +601,26 @@ async function buildRuntimeStartRequestInternal(
     resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
       ? resolvedAllowedSkills.allowlist
       : undefined;
+  const hostDynamicTools = runtimeCapabilities.dynamicTools.mode === "host" ? hostServices.listDynamicTools() : [];
+  const observationAllowedTools = resolveObservationAllowedTools(prompt._observation?.permissionGrants);
   const canResumeSkillSession = isStoredSkillVisibilityCompatible(
     storedRuntimeSessionParams,
     allowedSkills,
     undefined,
     (skillId) => isSkillAuthorizedForAgent(agent.id, skillId, { capabilities: runtimeContext.capabilities }),
   );
-  const canResumeCredentialSession =
-    canResumeStoredSession &&
-    canResumeSkillSession &&
-    isRuntimeCredentialSessionCompatible(storedRuntimeSessionParams, credentialResolution.attemptBinding);
+  const credentialCompatible = isRuntimeCredentialSessionCompatible(
+    storedRuntimeSessionParams,
+    credentialResolution.attemptBinding,
+  );
+  const canResumeCredentialSession = canResumeStoredSession && canResumeSkillSession && credentialCompatible;
+  // The launcher already persisted this input. Exclude that row from the
+  // recovery snapshot; the generator delivers the current input unchanged.
+  const history = canResumeCredentialSession
+    ? []
+    : getRecentHistory(sessionName, 48).filter((message) => message.id > (session.historyResetAfterId ?? 0));
+  const lastMessage = history.at(-1);
+  if (lastMessage?.role === "user" && lastMessage.content === resolvePersistedUserText(prompt)) history.pop();
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({
     dbSessionKey,
     runtimeProviderId,
@@ -561,6 +629,61 @@ async function buildRuntimeStartRequestInternal(
     storedProviderSessionId,
     canResumeStoredSession: canResumeCredentialSession,
     defaultRuntimeProviderId,
+    hasSessionHistory: history.length > 0 || session.historyResetAfterId !== undefined,
+    isParentSessionCompatible: (parent) =>
+      validateRuntimeSessionState({
+        capabilities: runtimeCapabilities,
+        storedProviderSessionId: parent.runtimeSessionDisplayId ?? parent.providerSessionId ?? parent.sdkSessionId,
+        storedRuntimeSessionParams: parent.runtimeSessionParams,
+        sessionCwd,
+      }).valid &&
+      isRuntimeCredentialSessionCompatible(parent.runtimeSessionParams, credentialResolution.attemptBinding) &&
+      isStoredSkillVisibilityCompatible(parent.runtimeSessionParams, allowedSkills, undefined, (skillId) =>
+        isSkillAuthorizedForAgent(agent.id, skillId, { capabilities: runtimeContext.capabilities }),
+      ),
+  });
+  const recovery =
+    !resumeProviderSessionId && history.length > 0
+      ? buildRuntimeContextRecoveryPrompt({
+          sessionName,
+          history,
+          recoveryKind: "cold_start",
+          latestUserRequest: "Use the current request after the recovered context below.",
+        })
+      : undefined;
+  let recoveryPending = Boolean(recovery);
+  recordRuntimeTraceEvent({
+    sessionKey: dbSessionKey,
+    sessionName,
+    agentId: agent.id,
+    runId,
+    provider: runtimeProviderId,
+    model,
+    eventType: "runtime.continuity",
+    eventGroup: "runtime",
+    status: "ready",
+    payloadJson: {
+      strategy: forkFromProviderSessionId
+        ? "parent_fork"
+        : resumeProviderSessionId
+          ? "resume"
+          : recovery
+            ? "durable_history"
+            : "fresh",
+      reason: !canResumeStoredSession
+        ? (options.resumeDecision?.reason ?? "provider_state_unavailable")
+        : !canResumeSkillSession
+          ? "skill_visibility_changed"
+          : !credentialCompatible
+            ? "credential_changed"
+            : "resuming",
+      canResumeStoredSession,
+      skillCompatible: canResumeSkillSession,
+      credentialCompatible,
+      historyMessages: recovery?.messageCount ?? 0,
+      historyChars: recovery?.chars ?? 0,
+      historyTruncated: recovery?.truncated ?? false,
+    },
   });
   const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
@@ -588,6 +711,8 @@ async function buildRuntimeStartRequestInternal(
   let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
   let pendingModelBrokerTurnId = initialModelBrokerTurnId;
   let turnRuntimeContextActivated = false;
+  // The resolution the current turn runs with, recorded on its adapter trace.
+  let currentTurnRuntimeResolution = runtimeResolution;
   const reserveModelBrokerAttemptForTurn = async (
     turnId: string,
     planned?: ClaimedRuntimeModelBrokerPlan,
@@ -686,6 +811,8 @@ async function buildRuntimeStartRequestInternal(
     initialModelBrokerAttemptAvailable = false;
     pendingModelBrokerTurnId = undefined;
   };
+  // Set by transformTurnPrompt and read by the trace of the same turn.
+  let turnSignals: RuntimeTraceAdapterRequestInput["signals"] = null;
   const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     const turnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
     let planned: ClaimedRuntimeModelBrokerPlan | undefined;
@@ -734,11 +861,11 @@ async function buildRuntimeStartRequestInternal(
       turnId,
       provider: runtimeProviderId,
       model: currentModel,
-      effort: runtimeResolution.options.effort ?? null,
-      thinking: runtimeResolution.options.thinking ?? null,
-      modelSource: runtimeResolution.sources.model,
-      effortSource: runtimeResolution.sources.effort,
-      thinkingSource: runtimeResolution.sources.thinking,
+      effort: currentTurnRuntimeResolution.options.effort ?? null,
+      thinking: currentTurnRuntimeResolution.options.thinking ?? null,
+      modelSource: currentTurnRuntimeResolution.sources.model,
+      effortSource: currentTurnRuntimeResolution.sources.effort,
+      thinkingSource: currentTurnRuntimeResolution.sources.thinking,
       prompt: input.combinedPrompt,
       systemPrompt: systemPromptAppend,
       systemPromptSectionMetadata,
@@ -767,7 +894,9 @@ async function buildRuntimeStartRequestInternal(
       commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
       turnProvenance: streamingSession.currentTurnProvenance ?? null,
+      signals: turnSignals,
     });
+    turnSignals = null;
     if (!traceTurn) {
       throw new Error(`Failed to persist the adapter request for runtime turn ${turnId}`);
     }
@@ -841,6 +970,22 @@ async function buildRuntimeStartRequestInternal(
     }
     return { ...traceTurn, crashRecoveryAttemptId: attempt.attemptId };
   };
+  // Each turn resolves its runtime options from the current session row, so
+  // session overrides changed while the session runs apply on the next turn.
+  const resolveTurnRuntimeResolution = (turnPrompt: RuntimeLaunchPrompt): TaskRuntimeResolution => {
+    try {
+      return resolveRuntimeForPrompt({
+        sessionName,
+        prompt: turnPrompt,
+        session: getSessionByName(sessionName) ?? session,
+        agent,
+        configModel: options.configModel,
+      });
+    } catch (error) {
+      runtimeRequestLog.warn("Turn runtime options unavailable; keeping the session's", { sessionName, error });
+      return runtimeResolution;
+    }
+  };
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,
     session: streamingSession,
@@ -867,11 +1012,48 @@ async function buildRuntimeStartRequestInternal(
         streamingSession.lastBoundReplyTarget = { ...replyResolution.target };
       }
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;
+      streamingSession.currentTurnAuthority = pickRuntimeTurnAuthorityEnvelope(turnPrompt);
+      streamingSession.currentObservation = turnPrompt._observation;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,
         source: turnSource,
       });
-      refreshRuntimeRequestContextForTurn({
+      // Task binding, effort and thinking belong to the turn, not to the runtime
+      // process: each turn resolves its own and the provider applies them per
+      // turn, so entering or leaving a task never relaunches the session.
+      // A batched turn keeps the binding of its task atom when a task-less atom owns the envelope.
+      const turnTaskBarrierTaskId =
+        normalizePromptTaskBarrierTaskId(turnPrompt.taskBarrierTaskId) ??
+        [...input.deliverableMessages]
+          .reverse()
+          .map((message) => normalizePromptTaskBarrierTaskId(message.taskBarrierTaskId))
+          .find((taskId): taskId is string => Boolean(taskId));
+      const boundTurnPrompt =
+        turnTaskBarrierTaskId && !turnPrompt.taskBarrierTaskId
+          ? { ...turnPrompt, taskBarrierTaskId: turnTaskBarrierTaskId }
+          : turnPrompt;
+      // The launch turn uses the resolution the launch just made.
+      const turnRuntimeResolution =
+        boundTurnPrompt === prompt ? runtimeResolution : resolveTurnRuntimeResolution(boundTurnPrompt);
+      currentTurnRuntimeResolution = turnRuntimeResolution;
+      // A model broker leases the model; otherwise the model follows the turn too.
+      if (!modelBroker) {
+        // A turn that resolves the launch's model keeps the launch model as given.
+        const turnModel =
+          turnRuntimeResolution.options.model === runtimeResolution.options.model
+            ? model
+            : (turnRuntimeResolution.options.model ?? options.configModel ?? model);
+        streamingSession.currentModel = applyProviderModelRule(runtimeProviderId, turnModel) ?? turnModel;
+      }
+      streamingSession.currentTaskBarrierTaskId = turnTaskBarrierTaskId;
+      streamingSession.currentEffort = turnRuntimeResolution.options.effort;
+      streamingSession.currentThinking = turnRuntimeResolution.options.thinking;
+      if (boundTurnPrompt !== prompt && turnTaskBarrierTaskId) {
+        void markRuntimeTaskAcceptedForPrompt(sessionName, boundTurnPrompt).catch((error) => {
+          runtimeRequestLog.warn("Failed to mark the task accepted for this turn", { sessionName, error });
+        });
+      }
+      const turnContext = refreshRuntimeRequestContextForTurn({
         runtimeContext,
         toolContext,
         runtimeEnv,
@@ -881,10 +1063,10 @@ async function buildRuntimeStartRequestInternal(
         sessionName,
         sessionCwd,
         agent,
-        prompt: turnPrompt,
+        prompt: boundTurnPrompt,
         runtimeProviderId,
-        model: effectiveModel,
-        runtimeResolution,
+        model: streamingSession.currentModel || effectiveModel,
+        runtimeResolution: turnRuntimeResolution,
         resolvedSource: turnSource,
         approvalSource,
         // Recorded so a connector call in this turn knows who reads the
@@ -894,8 +1076,60 @@ async function buildRuntimeStartRequestInternal(
           target: streamingSession.currentReplyTarget,
         }),
       });
+      // Every tool, the Codex hook included, is denied in such a turn; say why in the log.
+      if (turnContext.capabilities.length === 0 && turnContext.metadata?.actorResolution === "missing_contact") {
+        runtimeRequestLog.warn("Turn runs with no capabilities: its actor is not identified", {
+          sessionName,
+          provider: runtimeProviderId,
+          origin: streamingSession.currentTurnProvenance?.origin,
+          reason: streamingSession.currentTurnProvenance?.reason,
+          channel: turnSource?.channel,
+        });
+      }
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
+      streamingSession.currentBridgeTurnId = boundTurnPrompt._bridgeTurnId;
+    },
+    transformTurnPrompt: ({ combinedPrompt }) => {
+      // Only the first physical turn needs the transcript. Keep the original
+      // queued message/authority/delivery id intact, and trace the actual input.
+      if (recoveryPending && recovery) {
+        combinedPrompt = `${recovery.prompt}\n\n# Current Request\n${combinedPrompt}`;
+        recoveryPending = false;
+      }
+      turnSignals = null;
+      try {
+        const rendered = renderSignalsForTurn({ sessionName, sessionKey: dbSessionKey });
+        if (!rendered.suffix) {
+          if (rendered.skipped.length > 0) {
+            turnSignals = { surfaced: [], skipped: rendered.skipped, budget: rendered.budget };
+          }
+          return combinedPrompt;
+        }
+        const signals = { surfaced: rendered.surfacedIds, skipped: rendered.skipped, budget: rendered.budget };
+        turnSignals = signals;
+        return {
+          prompt: `${combinedPrompt}${rendered.suffix}`,
+          // The block reached the provider: the reservations are consumed.
+          commit: () => {
+            commitRenderedSignals(rendered.reservations);
+          },
+          // The turn never started: return the units, no cooldown starts.
+          release: (reason: string) => {
+            signals.budget.released = releaseRenderedSignals(rendered.reservations, reason);
+          },
+        };
+      } catch (error) {
+        // A render failure keeps the original prompt, warns and is counted.
+        signalRenderFailures += 1;
+        runtimeRequestLog.warn("Signals render failed; turn continues without the block", {
+          sessionName,
+          failures: signalRenderFailures,
+          error,
+        });
+        turnSignals = { surfaced: [], skipped: [], budget: null, renderError: String(error) };
+        return combinedPrompt;
+      }
     },
     traceTurnStart,
   });
@@ -918,6 +1152,12 @@ async function buildRuntimeStartRequestInternal(
         : {}),
       ...(forkFromProviderSessionId ? { forkSession: true } : {}),
       abortController: streamingSession.abortController,
+      ...(hostDynamicTools.length > 0
+        ? {
+            dynamicTools: hostDynamicTools,
+            handleRuntimeToolCall: (request: RuntimeDynamicToolCallRequest) => hostServices.executeDynamicTool(request),
+          }
+        : {}),
       permissionOptions: {
         permissionMode: "bypassPermissions",
       },
@@ -931,6 +1171,8 @@ async function buildRuntimeStartRequestInternal(
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       agentId: agent.id,
       ...(allowedSkills ? { allowedSkills } : {}),
+      ...(observationAllowedTools ? { allowedTools: observationAllowedTools } : {}),
+      ...(hiddenSkills.length > 0 ? { hiddenSkills } : {}),
       ...(prompt._cliDestination ? { omitAdvertisedSkillCatalog: true } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
       ...(modelBroker ? { modelBroker } : {}),

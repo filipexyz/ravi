@@ -257,6 +257,21 @@ describe("Gateway native channel outbound queue", () => {
     });
   });
 
+  it("delivers nothing for a Library request turn: the request runner sends its answer back", async () => {
+    const { gateway, emitted, omniSend } = await createGateway();
+
+    await handleResponse(gateway, "main-request-abc", {
+      _emitId: "emit-lr",
+      response: "The close is on the 5th.",
+      target: { channel: "library-request", accountId: "library-request", chatId: "request:abc" },
+    });
+
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(publishedJobs).toHaveLength(0);
+    expect(emitted[0]?.[0]).toBe("ravi.session.main-request-abc.delivery");
+    expect(emitted[0]?.[1]).toMatchObject({ status: "dropped", reason: "library_request" });
+  });
+
   it("delivers response media to the WhatsApp target through Omni media without using session defaults", async () => {
     dbUpsertInstance({
       name: "main",
@@ -317,6 +332,45 @@ describe("Gateway native channel outbound queue", () => {
       mediaType: "image",
       filename: "generated.png",
     });
+  });
+
+  it("delivers media without leaking silent text parts split across content parts", async () => {
+    dbUpsertInstance({
+      name: "main",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      channel: "whatsapp",
+    });
+    configStore.refresh();
+    const { gateway, emitted, omniSend, omniSendMedia } = await createGateway();
+
+    await handleResponse(gateway, "main-whatsapp-silent-media", {
+      _emitId: "emit-silent-media",
+      response: "",
+      content: [
+        {
+          type: "media",
+          media: {
+            type: "image",
+            filePath: "/tmp/generated.png",
+            filename: "generated.png",
+            mimeType: "image/png",
+            idempotencyKey: "media-key-silent",
+          },
+        },
+        { type: "text", text: "@@SIL" },
+        { type: "text", text: "ENT@@" },
+      ],
+      target: {
+        channel: "whatsapp",
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: "group:120363407390920496",
+      },
+    });
+
+    expect(omniSendMedia).toHaveBeenCalledTimes(1);
+    expect(omniSend).not.toHaveBeenCalled();
+    expect(emitted.map((entry) => entry[1].contentType)).toEqual(["media"]);
   });
 
   it("delivers response media to the Slack target natively and queues the Slack text part", async () => {
@@ -530,7 +584,7 @@ describe("Gateway native channel outbound queue", () => {
       },
     });
 
-    expect(reconciled).toEqual({ attempted: 1, published: 1, failed: 0 });
+    expect(reconciled).toEqual({ attempted: 1, published: 1, failed: 0, coalesced: 0 });
     expect(publishedJobs).toHaveLength(1);
     expect(publishedJobs[0]?.jobId).toBe("runtime:main-slack:emit-fail");
     const publishedRecord = await getPublishOutboxJob(idempotencyKey);
@@ -547,7 +601,7 @@ describe("Gateway native channel outbound queue", () => {
     });
 
     const second = await reconcilePublishOutbox({ now: () => Date.now() + 120_000 });
-    expect(second).toEqual({ attempted: 0, published: 0, failed: 0 });
+    expect(second).toEqual({ attempted: 0, published: 0, failed: 0, coalesced: 0 });
     expect(publishedJobs).toHaveLength(1);
   });
 

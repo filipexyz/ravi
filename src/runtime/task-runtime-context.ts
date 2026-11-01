@@ -1,3 +1,4 @@
+import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
 import { resolveTaskProfileForTask } from "../tasks/profiles.js";
 import { resolveTaskRuntimeOptions } from "../tasks/runtime-options.js";
@@ -6,7 +7,6 @@ import { dbMarkTaskAcceptedForSession, dbResolveActiveTaskBindingForSession } fr
 import type { TaskRuntimeOptionsSource, TaskRuntimeResolution } from "../tasks/types.js";
 import { logger } from "../utils/logger.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
-import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { resolveRuntimeDefaults } from "./runtime-defaults.js";
@@ -110,16 +110,33 @@ export function resolveRuntimeForPrompt(options: {
   });
 }
 
-export function runtimePromptRequiresRestart(
-  streaming: RuntimeHostStreamingSession,
-  runtime: TaskRuntimeResolution,
-  prompt: RuntimeLaunchPrompt,
-): boolean {
-  return (
-    streaming.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ||
-    streaming.currentEffort !== runtime.options.effort ||
-    streaming.currentThinking !== runtime.options.thinking
-  );
+/** Task states whose binding a task-less prompt inherits. A blocked task waits for its own resume. */
+const INHERITABLE_TASK_STATUSES = new Set(["dispatched", "in_progress"]);
+
+/**
+ * A prompt without a task binding (inform, send, ask, task comment, checkpoint
+ * reminder) that reaches a session holding a dispatched or in-progress task
+ * runs inside that task's binding (`RAVI_TASK_*`, the task's runtime options
+ * and its capabilities) instead of leaving the task mid-work. `after_task`
+ * prompts keep no binding: they wait for the task to end, and a task id on
+ * them would exempt them from that wait.
+ */
+export function resolveInheritedTaskBindingTaskId(options: {
+  sessionName: string;
+  prompt: RuntimeLaunchPrompt;
+  liveTaskBarrierTaskId?: string;
+}): string | undefined {
+  const { prompt } = options;
+  if (normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId)) return undefined;
+  if (prompt._observation || prompt._resumeStashedMessages || prompt._daemonRestartResume) return undefined;
+  if ((prompt.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER) === "after_task") return undefined;
+
+  const liveTaskId = normalizePromptTaskBarrierTaskId(options.liveTaskBarrierTaskId);
+  const binding = liveTaskId
+    ? dbResolveActiveTaskBindingForSession(options.sessionName, liveTaskId)
+    : dbResolveActiveTaskBindingForSession(options.sessionName);
+  if (!binding || binding.assignment.status === "blocked") return undefined;
+  return INHERITABLE_TASK_STATUSES.has(binding.task.status) ? binding.task.id : undefined;
 }
 
 export async function markRuntimeTaskAcceptedForPrompt(

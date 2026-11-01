@@ -206,8 +206,7 @@ describe("gateway server — dispatch over HTTP", () => {
     });
     expect(bad.status).toBe(400);
     expect(await bad.json()).toMatchObject({
-      error: "BadRequest",
-      message: "Caller cwd must be an absolute path.",
+      error: { code: "BAD_REQUEST", message: "Caller cwd must be an absolute path." },
     });
   });
 
@@ -218,9 +217,9 @@ describe("gateway server — dispatch over HTTP", () => {
       body: JSON.stringify({ name: "luis" }),
     });
     expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: string; reason: string };
-    expect(body.error).toBe("PermissionDenied");
-    expect(body.reason).toContain("runtime principal");
+    const body = (await res.json()) as { error: { code: string; message: string; suggestedAction: string } };
+    expect(body.error.code).toBe("PERMISSION_DENIED");
+    expect(body.error.message).toContain("runtime principal");
   });
 
   it("does not enforce runtime skill gates for API routes", async () => {
@@ -268,8 +267,8 @@ describe("gateway server — dispatch over HTTP", () => {
       body: "{not json",
     });
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("BadRequest");
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("BAD_REQUEST");
   });
 
   it("POST to a missing command returns 404", async () => {
@@ -279,15 +278,15 @@ describe("gateway server — dispatch over HTTP", () => {
       body: "{}",
     });
     expect(res.status).toBe(404);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("NotFound");
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("ROUTE_NOT_FOUND");
   });
 
   it("GET on a command path returns 405", async () => {
     const res = await fetch(`${handle.url}/api/v1/demo/echo`);
     expect(res.status).toBe(405);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("MethodNotAllowed");
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("METHOD_NOT_ALLOWED");
   });
 
   it("unknown root path returns 404", async () => {
@@ -321,9 +320,9 @@ describe("gateway server — SSE streaming namespace", () => {
       headers: { accept: "text/event-stream" },
     });
     expect(res.status).toBe(401);
-    const body = (await res.json()) as { error: string; reason: string };
-    expect(body.error).toBe("Unauthorized");
-    expect(body.reason).toContain("Authorization");
+    const body = (await res.json()) as { error: { code: string; message: string; suggestedAction: string } };
+    expect(body.error.code).toBe("AUTH_REQUIRED");
+    expect(body.error.suggestedAction).toContain("credential");
   });
 
   it("denies streams when context lacks the channel scope", async () => {

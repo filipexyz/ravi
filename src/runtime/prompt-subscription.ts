@@ -1,3 +1,11 @@
+import {
+  findRejectedRuntimeStart,
+  preserveRejectedRuntimeStart,
+  runtimeStartReceiptKey,
+} from "./start-admission-inbox.js";
+import { RuntimeStartCapacityError } from "./start-admission.js";
+import { admitTaskDispatch } from "../tasks/dispatch-admission.js";
+import { admitDecisionAnswer } from "../decisions/delivery.js";
 import { StringCodec, type JsMsg } from "nats";
 import { getNats, nats } from "../nats.js";
 import {
@@ -16,6 +24,7 @@ import { formatUserFacingTurnFailure } from "./public-failure.js";
 const log = logger.child("runtime:prompt-subscription");
 const PROMPT_DISPATCH_RETRY_DELAY_MS = 5_000;
 const PROMPT_ACK_PROGRESS_INTERVAL_MS = 30_000;
+const START_CAPACITY_RETRY_DELAYS_MS = [1_000, 5_000] as const;
 
 export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
@@ -24,6 +33,7 @@ export interface RuntimePromptSubscriptionOptions {
   getRuntimeSessionPoolSnapshot?(): RuntimeSessionPoolSnapshot;
   ensurePromptInfrastructure?(options?: EnsureSessionPromptInfrastructureOptions): Promise<void>;
   promptAckProgressIntervalMs?: number;
+  startCapacityRetryDelaysMs?: readonly number[];
   markConsumerReady(): void;
   handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void>;
 }
@@ -149,10 +159,10 @@ export class RuntimePromptSubscription {
               break;
             }
 
-            // Dispatcher admission can wait indefinitely for a runtime slot.
-            // Keep ordering within one session, but never let that wait block
-            // unrelated interactive sessions behind it in the shared consumer.
-            this.schedulePromptDispatch(sessionName, prompt, msg);
+            // Receipt is independent of both pool capacity and the session dispatch tail.
+            // Keep event publication ordered before a possible immediate rejection.
+            const receipt = this.emitPromptReceipt(sessionName, prompt);
+            this.schedulePromptDispatch(sessionName, prompt, msg, receipt);
           }
 
           if (!this.options.isRunning() || intakeFenced) {
@@ -205,7 +215,12 @@ export class RuntimePromptSubscription {
       });
   }
 
-  private schedulePromptDispatch(sessionName: string, prompt: RuntimeLaunchPrompt, msg: JsMsg): void {
+  private schedulePromptDispatch(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    msg: JsMsg,
+    receipt: Promise<void>,
+  ): void {
     const previous = this.sessionDispatchTails.get(sessionName) ?? Promise.resolve();
     const progressTimer = setInterval(() => {
       try {
@@ -222,8 +237,12 @@ export class RuntimePromptSubscription {
 
     let dispatch!: Promise<void>;
     dispatch = previous
-      .then(() => this.dispatchPrompt(sessionName, prompt, msg))
-      .catch((error) => {
+      .then(async () => {
+        await receipt;
+        await this.dispatchPrompt(sessionName, prompt, msg);
+      })
+      .catch(async (error) => {
+        await this.emitAdmissionRejected(sessionName, prompt, "dispatch_failed");
         log.error("Unexpected prompt dispatch lane failure", {
           sessionName,
           subject: msg.subject,
@@ -249,13 +268,129 @@ export class RuntimePromptSubscription {
     void dispatch;
   }
 
+  private async handlePromptWithCapacityRetry(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+    const delays = this.options.startCapacityRetryDelaysMs ?? START_CAPACITY_RETRY_DELAYS_MS;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.options.handlePrompt(sessionName, prompt);
+        return;
+      } catch (error) {
+        // Only this typed refusal proves that no provider handoff happened.
+        // Decision receipts already have their own durable retry owner.
+        if (
+          !(error instanceof RuntimeStartCapacityError) ||
+          prompt._decisionDeliveryId ||
+          attempt >= delays.length ||
+          !this.options.isRunning()
+        )
+          throw error;
+        const retryDelayMs = delays[attempt]!;
+        log.info("Retrying runtime admission before provider handoff", {
+          sessionName,
+          attempt: attempt + 1,
+          retryDelayMs,
+        });
+        await nats
+          .emit(`ravi.session.${sessionName}.runtime`, {
+            type: "dispatch.start_retry",
+            reason: error.capacity.reason,
+            attempt: attempt + 1,
+            retryDelayMs,
+            providerHandoff: false,
+            ...(prompt.source ? { _source: prompt.source } : {}),
+            timestamp: new Date().toISOString(),
+          })
+          .catch((emitError) => log.warn("Failed to emit admission retry", { sessionName, error: emitError }));
+        await delay(retryDelayMs);
+        if (!this.options.isRunning()) throw error;
+      }
+    }
+  }
+
   private async dispatchPrompt(sessionName: string, prompt: RuntimeLaunchPrompt, msg: JsMsg): Promise<void> {
+    const info = msg.info;
+    const key = runtimeStartReceiptKey(
+      sessionName,
+      prompt,
+      `${info?.stream ?? SESSION_STREAM}:${info?.streamSequence ?? "unknown"}:${info?.timestampNanos ?? "unknown"}`,
+    );
+    // A redelivery after the inbox commit (e.g. a lost ACK) must not execute it.
+    const retained = findRejectedRuntimeStart(key);
+    if (retained) {
+      msg.ack();
+      await this.emitAdmissionRejected(sessionName, prompt, "retained_in_inbox", {
+        receipt: retained.id,
+        retainedBy: "inbox",
+      });
+      return;
+    }
     try {
-      // Keep the JetStream work item durable until the dispatcher has accepted
+      // Keep the transport work item unacknowledged until the dispatcher has accepted
       // it. Provider/bootstrap failures can happen before a turn exists, so
       // acknowledging earlier loses the only retryable copy.
-      await this.options.handlePrompt(sessionName, prompt);
+      if (
+        !(await admitTaskDispatch(sessionName, prompt, (accepted) =>
+          this.handlePromptWithCapacityRetry(sessionName, accepted),
+        )) &&
+        !(await admitDecisionAnswer(sessionName, prompt, (accepted) =>
+          this.options.handlePrompt(sessionName, accepted),
+        ))
+      ) {
+        await this.handlePromptWithCapacityRetry(sessionName, prompt);
+      }
     } catch (error) {
+      if (error instanceof RuntimeStartCapacityError) {
+        if (prompt._decisionDeliveryId) {
+          // Decisions already own a durable, idempotent answer and retry scheduler.
+          // Admission marked it failed before throwing; do not create a second recovery owner.
+          msg.ack();
+          await this.emitAdmissionRejected(sessionName, prompt, error.capacity.reason, {
+            ...error.capacity,
+            receipt: prompt._decisionDeliveryId,
+            retainedBy: "decision",
+            retryDelayMs: 30_000,
+          });
+          return;
+        }
+        const { item, created } = preserveRejectedRuntimeStart({ key, sessionName, prompt, capacity: error.capacity });
+        msg.ack();
+        await this.emitAdmissionRejected(sessionName, prompt, error.capacity.reason, {
+          ...error.capacity,
+          receipt: item.id,
+          retainedBy: "inbox",
+          recovery: "operator_resume_saved_envelope",
+        });
+        if (created) {
+          await nats
+            .emit("ravi.inbox.system.runtime_start_rejected", {
+              inboxItemId: item.id,
+              sessionName,
+              reason: error.capacity.reason,
+              occurredAt: new Date().toISOString(),
+            })
+            .catch((emitError) => log.warn("Failed to emit admission inbox event", { sessionName, error: emitError }));
+        }
+        if (prompt.source && created) {
+          const c = error.capacity;
+          // Occupant identities belong in operator telemetry, never in an unrelated chat.
+          const response =
+            `Sem capacidade agora: ${c.active + c.reserved}/${c.max} sessões ocupadas` +
+            (c.lane === "background" ? ` (limite de background: ${c.backgroundLimit})` : "") +
+            `. Seu pedido foi salvo na caixa de entrada. Recibo: ${item.id}. ` +
+            "O operador precisa liberar capacidade e retomar o pedido salvo; não é necessário reenviar a mensagem.";
+          await nats
+            .emit(`ravi.session.${sessionName}.response`, {
+              response,
+              target: prompt.source,
+              _emitId: `capacity:${item.id}`,
+              _pid: process.pid,
+              _v: 2,
+            })
+            .catch((emitError) => log.warn("Failed to emit capacity receipt", { sessionName, error: emitError }));
+        }
+        return;
+      }
+      await this.emitAdmissionRejected(sessionName, prompt, "dispatch_failed");
       if (isSqliteCapacityError(error)) {
         log.error("Failed to handle prompt because SQLite/process memory (or disk) is exhausted", {
           sessionName,
@@ -275,6 +410,7 @@ export class RuntimePromptSubscription {
           .emit(`ravi.session.${sessionName}.runtime`, {
             type: "turn.failed",
             error: SQLITE_CAPACITY_USER_MESSAGE,
+            _turnProvenance: classifyTurnProvenance({ prompt }),
             recoverable: false,
             sessionName,
             timestamp: new Date().toISOString(),
@@ -326,39 +462,56 @@ export class RuntimePromptSubscription {
       return;
     }
     this.promptsReceived++;
-    // Any runtime event on the session subject counts as presence activity.
-    if (prompt._skipTurn) return;
+  }
 
-    try {
-      nats
-        .emit(`ravi.session.${sessionName}.runtime`, {
-          type: "prompt.received",
-          sessionName,
-          prompt: prompt.prompt,
-          source: prompt.source,
-          context: prompt.context,
-          deliveryBarrier: prompt.deliveryBarrier,
-          deliveryBarrierSource: prompt.deliveryBarrierSource,
-          taskBarrierTaskId: prompt.taskBarrierTaskId,
-          commands: prompt.commands,
-          observation: prompt._observation,
-          turnProvenance: classifyTurnProvenance({ prompt }),
-          thread: prompt._thread,
-          _agentId: prompt._agentId,
-          timestamp: new Date().toISOString(),
-        })
-        .catch((error) => {
-          log.warn("Failed to emit prompt audit event", {
-            sessionName,
-            error,
-          });
-        });
-    } catch (error) {
-      log.warn("Failed to emit prompt audit event", {
+  private async emitPromptReceipt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+    if (prompt._skipTurn) return;
+    const provenance = classifyTurnProvenance({ prompt });
+    await nats
+      .emit(`ravi.session.${sessionName}.runtime`, {
+        type: "prompt.received",
         sessionName,
-        error,
-      });
-    }
+        prompt: prompt.prompt,
+        source: prompt.source,
+        ...(prompt.source
+          ? {
+              _source: {
+                ...prompt.source,
+                suppressPresence: prompt.source.suppressPresence === true || provenance.background,
+              },
+            }
+          : {}),
+        context: prompt.context,
+        deliveryBarrier: prompt.deliveryBarrier,
+        deliveryBarrierSource: prompt.deliveryBarrierSource,
+        taskBarrierTaskId: prompt.taskBarrierTaskId,
+        commands: prompt.commands,
+        observation: prompt._observation,
+        ...(prompt._taskRuntime ? { taskRuntime: prompt._taskRuntime } : {}),
+        turnProvenance: provenance,
+        thread: prompt._thread,
+        _agentId: prompt._agentId,
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => log.warn("Failed to emit prompt receipt", { sessionName, error }));
+  }
+
+  private async emitAdmissionRejected(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    reason: string,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    await nats
+      .emit(`ravi.session.${sessionName}.runtime`, {
+        type: "dispatch.start_rejected",
+        sessionName,
+        reason,
+        ...details,
+        ...(prompt.source ? { _source: prompt.source } : {}),
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => log.warn("Failed to clear rejected prompt presence", { sessionName, error }));
   }
 
   private ensurePromptInfrastructureForHealthCheck(): void {

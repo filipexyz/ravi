@@ -237,6 +237,11 @@ export class RaviBot {
     return this.sessionDispatcher.abortSession(sessionName, provenance);
   }
 
+  public async submitBridgePrompt(sessionName: string, prompt: PromptMessage): Promise<void> {
+    if (!sessionName.startsWith("console-") || !prompt._bridgeTurnId) throw new Error("Invalid bridge dispatch");
+    await this.sessionDispatcher.handlePrompt(sessionName, prompt);
+  }
+
   public isRuntimeSessionActive(sessionName: string): boolean {
     const session = this.streamingSessions.get(sessionName);
     if (!session) return false;
@@ -246,6 +251,17 @@ export class RaviBot {
 
   public canAcceptRuntimePrompt(sessionName?: string): boolean {
     return this.sessionDispatcher.canAcceptRuntimePrompt(sessionName);
+  }
+
+  public getSessionRuntimeState(sessionName: string): { turnActive: boolean; pendingCount: number } {
+    const session = this.streamingSessions.get(sessionName);
+    if (!session || session.done) {
+      return { turnActive: false, pendingCount: 0 };
+    }
+    return {
+      turnActive: session.turnActive,
+      pendingCount: session.pendingMessages?.length ?? 0,
+    };
   }
 
   private async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {

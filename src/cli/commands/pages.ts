@@ -6,8 +6,10 @@ import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/erro
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { resolveConsoleProjectRef, type ConsoleScopeResolverDeps } from "../../console-scope/resolver.js";
 import type { ResolvedConsoleScope } from "../../console-scope/types.js";
+import { ArtifactInputError } from "../../artifacts/store.js";
 import {
   publishArtifactToConsole,
+  validateArtifactPublishSource,
   type ArtifactPublishDeps,
   type ArtifactPublishResult,
 } from "../../artifacts/publish-client.js";
@@ -53,7 +55,9 @@ import {
   PAGE_CHAT_DEFAULT_VOICE,
   PAGE_CHAT_FEATURE,
   PAGE_CHAT_INSTRUCTIONS_MAX,
+  PAGE_CHAT_REPLY_POLICIES,
   PAGE_CHAT_VOICES,
+  pageChatExpandingEffects,
   updatePageChatSettings,
   type PageChatResult,
   type PageChatUpdateResult,
@@ -65,6 +69,7 @@ import {
   normalizePageReadNumber,
   PAGE_READ_MAX_CHARS,
   PAGE_READ_MIN_CHARS,
+  pageReadTurnBlock,
   readPage,
   type PageReadResult,
 } from "../../pages/read.js";
@@ -92,7 +97,20 @@ import {
   type PageCommentFollowResult,
 } from "../../pages/comment-follow.js";
 import {
+  applyPageKit,
+  formatPageKitDiagnostic,
+  KIT_WIDGET_UNAUDITED,
+  listOutdatedPages,
+  mergePageUses,
+  normalizeShipTheme,
+  renderOutdatedTable,
+  type OutdatedPagesResult,
+  type PageKitDiagnostic,
+  type PageKitSummary,
+} from "../../pages/kit.js";
+import {
   checkShipLiveData,
+  ensureShipBodyLang,
   isReservedPageHostSlug,
   materializeShipSource,
   projectOwnedHostSlug,
@@ -103,7 +121,16 @@ import {
   validateShipSourceInput,
 } from "../../pages/ship.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
+import { getContext } from "../context.js";
+import {
+  type PageCustomDomain,
+  pageCustomDomainLines,
+  plannedPageDomainDns,
+  plannedPageDomainDnsLines,
+  projectPageCustomDomains,
+} from "../../pages/domain-setup.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { sanitizePayloadInvalidMessage } from "../payload-error-message.js";
 import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -140,6 +167,17 @@ Happy path:
   --uses ravi.identity.assertion opts the page into the Console viewer assertion.
   It does not embed a JWT. Register audiences with pages assertion audiences.
 
+Theme and widgets (page kit):
+  Before upload, ship sends the HTML files of a private copy (never your own
+  folder) to the Console page kit. It applies the project theme (else the org
+  theme), renders <ravi-view>, <ravi-widget> and <ravi-form> tags, inlines the
+  page runtime, and adds the ravi.bases.* ids those tags need to --uses.
+  --theme <ref> uses that theme instead; --theme none ships without a theme.
+  Kit errors exit 2 with one line per problem (path:line:column severity code
+  message) and nothing is uploaded. An older Console without the kit ships the
+  HTML unchanged with warning KIT_UNAVAILABLE.
+  ravi pages outdated lists routes shipped with an older theme or widget.
+
 Live data (ravi.bases.* in --uses):
   Works only for signed-in org members on private or protected_link routes.
   With --visibility public, ship refuses (exit 2) and publishes nothing.
@@ -154,7 +192,23 @@ Executes immediately:
   it before retrying, and do not probe by re-shipping.
 
 JSON:
-  { url, site, slug, route, visibility, artifactId, uses?, warnings? }
+  { url, site, slug, route, visibility, artifactId, uses?, warnings?,
+    presentation, kit: { status, changedFiles, warnings, theme, widgets } }
+`;
+
+const PAGES_OUTDATED_HELP = `
+Examples:
+  ravi pages outdated
+  ravi pages outdated --project demo --json
+
+Lists active routes shipped with an older theme, widget or page runtime than
+the current one. Ship the route again (ravi pages ship) to pick up the current
+versions.
+
+JSON:
+  { projectRef, total, items: [{ siteSlug, hostname, route, releaseId,
+    publishedAt, theme: { pinned, current } | null, widgets: [{ ref, pinned,
+    current }], runtime: { pinned, current } }] }
 `;
 
 const PAGES_READ_HELP = `
@@ -204,7 +258,8 @@ const ACCESS_WHO_ACTS_HELP = `Who acts:
   the ravi login user acts. When someone else wrote the chat message, Console
   acts for that person through their ravi link, and both they and the ravi
   login user must be allowed. A person without a link gets ACTOR_NOT_LINKED
-  (exit 3): run ravi link in their chat. A turn Ravi cannot attribute is
+  (exit 3) and Ravi starts their link: relay the error's chatLinePt (on
+  WhatsApp, "me chama na DM"). A turn Ravi cannot attribute is
   refused before any Console call (ACTOR_UNKNOWN, exit 3).`;
 
 const PAGES_SHARE_HELP = `
@@ -394,6 +449,26 @@ export class PagesCommands {
     });
   }
 
+  @Command({
+    name: "outdated",
+    description: "List published routes shipped with an older theme, widget or page runtime",
+    helpAfter: PAGES_OUTDATED_HELP,
+  })
+  @CommandAccess({ kind: "read", resource: "pages", action: "list", risk: "low" })
+  async outdated(
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand("pages outdated", asJson, async () => {
+      const resolved = await resolvePagesProject(undefined, projectOption, consoleUrl, this.deps);
+      const result = await listOutdatedPages({ project: resolved.projectRef, console: consoleUrl }, this.deps);
+      printPayload(result, asJson, () => printOutdatedPages(result));
+      return result;
+    });
+  }
+
   @Command({ name: "read", description: "Read a published Ravi Page's content by URL", helpAfter: PAGES_READ_HELP })
   @CommandAccess({ kind: "read", resource: "pages", action: "read", risk: "low" })
   async read(
@@ -440,11 +515,18 @@ export class PagesCommands {
       } catch (error) {
         const failure = describePageReadFailure(error, url);
         if (failure) {
-          contractFail("pages read", failure.code, failure.message, {
-            asJson,
-            exitCode: failure.exitCode,
-            details: failure.details,
-          });
+          // A private Page refused on a turn that is not the operator's own: say which rule decided it.
+          const block = failure.details.reason === "public_only" ? pageReadTurnBlock(this.deps) : null;
+          contractFail(
+            "pages read",
+            failure.code,
+            block ? `${failure.message} This turn is not the operator's own: ${block.why}.` : failure.message,
+            {
+              asJson,
+              exitCode: failure.exitCode,
+              details: block ? { ...failure.details, turn: block.turn } : failure.details,
+            },
+          );
         }
         throw error;
       }
@@ -561,6 +643,11 @@ export class PagesCommands {
     })
     membersBestEffort?: boolean,
     @Option({
+      flags: "--theme <ref|none>",
+      description: "Theme for this ship: a theme ref, or none. Default: the project theme, else the org theme",
+    })
+    theme?: string,
+    @Option({
       flags: "--execute",
       description: "Accepted and ignored for compatibility. pages ship always publishes",
     })
@@ -573,6 +660,7 @@ export class PagesCommands {
       const resolvedEntrypoint = stringValue(entrypoint) ?? "index.html";
       const normalizedVisibility = normalizePageVisibility(visibility) ?? "private";
       const normalizedUses = normalizePageUses(uses);
+      const shipTheme = normalizeShipTheme(theme);
       const legacySlug = parsed.slug;
       if (legacySlug && isReservedPageHostSlug(legacySlug)) {
         throw new CloudAuthError(
@@ -615,6 +703,38 @@ export class PagesCommands {
         title,
       });
       try {
+        // Page kit: the Console rewrites the private copy's HTML (theme,
+        // widgets, runtime) and derives the ids its tags call.
+        const kitOutcome = await applyPageKit(
+          {
+            root: source.path,
+            project: resolved.projectRef,
+            site: slug,
+            route: normalizePageRoutePath(resolvedRoute),
+            visibility: normalizedVisibility,
+            theme: shipTheme,
+            console: consoleUrl,
+          },
+          this.deps,
+        );
+        if (!kitOutcome.ok) failShipKitInvalid(kitOutcome.diagnostics, asJson);
+        const kit = kitOutcome.result;
+        // The --body wrapper has no lang so the kit sets the theme's locale;
+        // when the kit did not, it gets the pt-BR fallback.
+        await ensureShipBodyLang(source, resolvedEntrypoint);
+        const shipUses = mergePageUses(normalizedUses, kit.uses);
+        // Tags can add ravi.bases.* ids, so the public-route refusal runs again
+        // on the merged list, still before any upload.
+        const kitLiveData = checkShipLiveData({
+          membersBestEffort,
+          uses: shipUses,
+          visibility: normalizedVisibility,
+        });
+        if (kitLiveData.status === "refused") failShipLiveDataOnPublicRoute(kitLiveData.basesUses, asJson);
+        if (kitLiveData.status === "overridden" && !warnings.includes(kitLiveData.warning)) {
+          warnings.push(kitLiveData.warning);
+        }
+        warnings.push(...kit.kit.warnings);
         const result = await publishArtifactToConsole(
           source.path,
           {
@@ -623,12 +743,13 @@ export class PagesCommands {
             entrypoint: resolvedEntrypoint,
             json: asJson,
             name: title,
+            ...(kit.presentation ? { presentation: kit.presentation } : {}),
             project: resolved.projectRef,
             publishToPages: true,
             route: resolvedRoute,
             site: slug,
             tool: "ravi pages ship",
-            uses: normalizedUses,
+            uses: shipUses,
             visibility: normalizedVisibility,
           },
           this.deps,
@@ -641,18 +762,21 @@ export class PagesCommands {
             publish: result,
             organizationId: stringValue(resolved.scope.organization?.id),
             projectId: stringValue(resolved.scope.project?.id),
+            route: resolvedRoute,
           },
           this.deps,
         );
         const payload = {
           artifactId: extractPublishedArtifactId(result),
           commentFollow,
+          kit: kit.kit,
+          presentation: kit.presentation,
           route: resolvedRoute,
           site: shippedSite,
           slug,
           success: true as const,
           url: result.url,
-          ...(normalizedUses ? { uses: normalizedUses } : {}),
+          ...(shipUses ? { uses: shipUses } : {}),
           visibility: normalizedVisibility,
           ...(warnings.length > 0 ? { warnings } : {}),
         };
@@ -716,6 +840,9 @@ export class PagesCommands {
       const parsed = parsePublishArgs(args, projectOption, siteOption);
       const normalizedVisibility = normalizePageVisibility(visibility);
       const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+      // Side-effect-free source checks run before the brake, so a dry-run
+      // rejects a missing source or entrypoint instead of approving it.
+      await validateArtifactPublishSource(parsed.source, { entrypoint });
       if (execute !== true) {
         // Write brake (Manual v2 7.8): publishing uploads content and can
         // activate a release on a reachable route. Dry-run by default and exit 3
@@ -726,7 +853,7 @@ export class PagesCommands {
             project: parsed.project ?? "(Console scope default)",
             site: parsed.site ?? "(project Pages host)",
             source: parsed.source,
-            route: route ?? "/",
+            route: normalizePageRoutePath(route),
             visibility: normalizedVisibility ?? "(provider default)",
             entrypoint: entrypoint ?? "index.html",
             artifactVersion: parsedArtifactVersion ?? "latest",
@@ -910,6 +1037,10 @@ export class PagesCommands {
     return runPagesCommand("pages domains", asJson, async () => {
       const parsed = parseDomainsArgs(args, projectOption);
       if (execute !== true) {
+        // The DNS to add is known before anything is written; show it up front.
+        if (!asJson && getContext({ localOnly: true })?.suppressCliOutput !== true) {
+          for (const line of plannedPageDomainDnsLines(parsed.hostnames)) console.log(line);
+        }
         contractDryRun(
           "pages domains",
           {
@@ -917,6 +1048,7 @@ export class PagesCommands {
             site: parsed.site,
             hostnameCount: parsed.hostnames.length,
             readinessCheck: Boolean(check),
+            dnsSetup: plannedPageDomainDns(parsed.hostnames),
           },
           { asJson },
         );
@@ -1478,14 +1610,23 @@ Examples:
 
 <site> is the Pages host slug, site id or hostname.
 
-Page Chat is the voice agent inside a Ravi Page: a signed-in viewer taps
-"Falar" in the Pages bar and talks to an agent that operates the page for them.
-It shows only when the site setting and the org feature console.pages.chat are
-both on. featureEnabled reports the org feature; settings.enabled the site.
+Page Chat is the agent inside a Ravi Page. By voice, a signed-in viewer taps
+"Falar" in the Pages bar (settings.enabled). By text, the bar's "Fale com o
+Ravi" opens a chat panel, and a page can embed the chat with
+<ravi-chat></ravi-chat> (settings.text): one shared room per route plus a
+private room per person. Both show only when the org feature
+console.pages.chat is on too; featureEnabled reports it.
+
+settings.replyPolicy says when the agent answers in a shared room: "mention"
+(when called with @ravi or its name, or while only one person writes there)
+or "always". settings.textModel is the text chat's model (null: platform
+default). settings.raviAgent is the agent of a Ravi machine the text chat may
+ask ({installationId, agentId}, or null).
 
 JSON:
   { projectRef, siteRef, siteId, host, featureEnabled,
-    settings: { enabled, assistantName, voice, language, instructions }, voices }
+    settings: { enabled, assistantName, voice, language, instructions,
+                text, replyPolicy, textModel, raviAgent }, voices }
 `;
 
 const PAGES_CHAT_SET_HELP = `
@@ -1495,21 +1636,42 @@ Examples:
   ravi pages chat set acme-website --clear-name --clear-instructions
   ravi pages chat set acme-website --enabled false
   ravi pages chat set acme-website --enabled true --execute
+  ravi pages chat set acme-website --text true --execute
+  ravi pages chat set acme-website --text false
+  ravi pages chat set acme-website --reply-policy always --execute
+  ravi pages chat set acme-website --reply-policy mention
+  ravi pages chat set acme-website --text-model acme/chat-large-2.1
+  ravi pages chat set acme-website --clear-text-model
+  ravi pages chat set acme-website --ravi-agent 11111111-1111-4111-8111-111111111111/finance --execute
+  ravi pages chat set acme-website --clear-ravi-agent
 
-Only the flags you pass change. --clear-name and --clear-instructions reset
-those fields. Voices: ${PAGE_CHAT_VOICES.join(", ")} (default ${PAGE_CHAT_DEFAULT_VOICE}).
+Only the flags you pass change. --clear-name, --clear-instructions,
+--clear-text-model and --clear-ravi-agent reset those fields. Voices: ${PAGE_CHAT_VOICES.join(", ")} (default ${PAGE_CHAT_DEFAULT_VOICE}).
 Language is a BCP 47 tag (default ${PAGE_CHAT_DEFAULT_LANGUAGE}). --name takes at most
 ${PAGE_CHAT_ASSISTANT_NAME_MAX} characters, --instructions at most ${PAGE_CHAT_INSTRUCTIONS_MAX}.
 
+--text turns the text chat (the bar's chat panel and <ravi-chat>) on or off;
+--enabled stays the voice switch. --reply-policy is when the agent answers in
+a page's shared room: mention (default: when called with @ravi or its name,
+or while only one person writes there) or always. A private room is always
+answered. --text-model is an AI Gateway model id (<provider>/<model>).
+--ravi-agent <installationId>/<agentId> lets the text chat ask that agent of a
+Ravi machine (a Library request; the agent must take requests: ravi agents
+requests <agent> on --execute there). Copy the installation id from
+ravi agents directory --json.
+
 Write brake:
-  --enabled true turns the voice agent on for every signed-in viewer of the
-  site and starts metered voice usage, so it is a dry-run without --execute
-  (exit 3). Every other change, including --enabled false, applies at once.
+  --enabled true, --text true, --reply-policy always and --ravi-agent widen
+  what the Page agent does (a metered agent for every viewer the site lets
+  in, answers to every message, asks to a machine's agent), so they are a
+  dry-run without --execute (exit 3). Every other change, including
+  --enabled false, --text false, --reply-policy mention and the clear flags,
+  applies at once.
 `;
 
 @Group({
   name: "pages.chat",
-  description: "Read and change the Page Chat voice agent settings of a Pages site",
+  description: "Read and change the Page Chat settings (voice and text chat) of a Pages site",
   scope: "open",
 })
 export class PagesChatCommands {
@@ -1543,7 +1705,10 @@ export class PagesChatCommands {
     @Arg("site", { description: "Pages host slug, site id, or hostname" }) site: string,
     @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
     projectOption?: string,
-    @Option({ flags: "--enabled <bool>", description: "Turn Page Chat on (true) or off (false) for this site" })
+    @Option({
+      flags: "--enabled <bool>",
+      description: "Turn the Page Chat voice agent on (true) or off (false) for this site",
+    })
     enabled?: string,
     @Option({ flags: "--voice <voice>", description: `Voice: ${PAGE_CHAT_VOICES.join("|")}` }) voice?: string,
     @Option({
@@ -1561,11 +1726,33 @@ export class PagesChatCommands {
     instructions?: string,
     @Option({ flags: "--clear-instructions", description: "Remove the extra instructions" })
     clearInstructions?: boolean,
+    @Option({
+      flags: "--text <bool>",
+      description: "Turn the text chat (bar panel and <ravi-chat>) on (true) or off (false)",
+    })
+    text?: string,
+    @Option({
+      flags: "--reply-policy <policy>",
+      description: `When the agent answers in a shared room: ${PAGE_CHAT_REPLY_POLICIES.join("|")}`,
+    })
+    replyPolicy?: string,
+    @Option({ flags: "--text-model <id>", description: "Text chat model, an AI Gateway id such as <provider>/<model>" })
+    textModel?: string,
+    @Option({ flags: "--clear-text-model", description: "Use the platform default text chat model" })
+    clearTextModel?: boolean,
+    @Option({
+      flags: "--ravi-agent <installationId/agentId>",
+      description: "Agent of a Ravi machine the text chat may ask (installation id from ravi agents directory --json)",
+    })
+    raviAgent?: string,
+    @Option({ flags: "--clear-ravi-agent", description: "Stop the text chat from asking a Ravi machine's agent" })
+    clearRaviAgent?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Required with --enabled true; every other change applies immediately",
+      description:
+        "Required with --enabled true, --text true, --reply-policy always and --ravi-agent; every other change applies immediately",
     })
     execute?: boolean,
   ) {
@@ -1574,22 +1761,30 @@ export class PagesChatCommands {
       const body = buildPageChatPatchBody({
         clearInstructions,
         clearName,
+        clearRaviAgent,
+        clearTextModel,
         enabled,
         instructions,
         language,
         name,
+        raviAgent,
+        replyPolicy,
+        text,
+        textModel,
         voice,
       });
-      if (body.enabled === true && execute !== true) {
-        // Turning Page Chat on exposes a metered voice agent to every
-        // signed-in viewer of the site. Everything else, including turning it
-        // off, is a reversible settings change and applies immediately.
+      const effects = pageChatExpandingEffects(body);
+      if (effects.length > 0 && execute !== true) {
+        // Turning the voice or text chat on, answering every shared-room
+        // message and asking a machine's agent widen what the Page agent does
+        // for every viewer the site lets in. Everything else, including
+        // turning things off and clearing, applies immediately.
         contractDryRun(
           "pages chat set",
           {
             project: projectOption ?? "(Console scope default)",
             site: siteRef,
-            effect: "enable Page Chat for signed-in viewers of this site (metered voice usage)",
+            effect: effects.join("; "),
             changes: describePageChatPatch(body),
           },
           { asJson },
@@ -1619,7 +1814,7 @@ function requirePageChatSite(site: string | undefined, command: "set" | "show"):
 }
 
 function printPageChat(result: PageChatResult | PageChatUpdateResult, action: "set" | "show"): void {
-  const active = result.featureEnabled && result.settings.enabled;
+  const active = result.featureEnabled && (result.settings.enabled || result.settings.text);
   if (action === "set") {
     const changed = "changed" in result ? result.changed.join(", ") : "";
     console.log(`✓ Page Chat updated${changed ? ` (${changed})` : ""}`);
@@ -1627,15 +1822,22 @@ function printPageChat(result: PageChatResult | PageChatUpdateResult, action: "s
     console.log(`Page Chat for ${result.siteRef}`);
   }
   if (result.host) console.log(`  Host         ${result.host}`);
+  const raviAgent = result.settings.raviAgent;
   console.log(`  Status       ${active ? "on" : "off"}`);
-  console.log(`  Site         ${result.settings.enabled ? "enabled" : "disabled"}`);
+  console.log(`  Voice chat   ${result.settings.enabled ? "enabled" : "disabled"}`);
   console.log(`  Org feature  ${result.featureEnabled ? "on" : "off"} (${PAGE_CHAT_FEATURE})`);
+  console.log(`  Text chat    ${result.settings.text ? "enabled" : "disabled"}`);
+  console.log(
+    `  Replies      ${result.settings.replyPolicy === "always" ? "always (every shared-room message)" : "mention (when called, or one person in the room)"}`,
+  );
+  console.log(`  Text model   ${result.settings.textModel ?? "(platform default)"}`);
+  console.log(`  Ravi agent   ${raviAgent ? `${raviAgent.installationId}/${raviAgent.agentId}` : "(none)"}`);
   console.log(`  Assistant    ${result.settings.assistantName ?? "(default)"}`);
   console.log(`  Voice        ${result.settings.voice}`);
   console.log(`  Language     ${result.settings.language}`);
   console.log(`  Instructions ${result.settings.instructions ?? "(none)"}`);
   if (action === "show") console.log(`  Voices       ${result.voices.join(", ")}`);
-  if (result.settings.enabled && !result.featureEnabled) {
+  if ((result.settings.enabled || result.settings.text) && !result.featureEnabled) {
     console.log(
       `warning: the org feature ${PAGE_CHAT_FEATURE} is off, so viewers do not see Page Chat until it is turned on in Console.`,
     );
@@ -1927,6 +2129,24 @@ const pageDomainBindReturnSchema = z.object({
   total: z.number(),
 });
 
+const consoleScopeNamedRefSchema = z.object({
+  id: z.string().nullable().optional(),
+  slug: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+});
+
+const resolvedConsoleScopeSchema = z.object({
+  consoleUrl: z.string(),
+  organization: consoleScopeNamedRefSchema.nullable().optional(),
+  project: consoleScopeNamedRefSchema.extend({ ref: z.string() }).nullable().optional(),
+  source: z.string(),
+});
+
+// `pages publish` returns the artifact publish result plus the Console scope it
+// resolved. The artifact schema is strict, so the scope must be declared here or
+// the gateway answers a successful publish with RETURN_SHAPE_ERROR.
+const pagePublishReturnSchema = artifactPublishReturnSchema.extend({ scope: resolvedConsoleScopeSchema });
+
 const pagePasswordReturnSchema = z.object({
   success: z.literal(true),
   action: z.enum(["remove", "set", "status"]),
@@ -1951,16 +2171,30 @@ const pageCommentFollowReturnSchema = z.object({
   agentId: z.string().optional(),
   triggerId: z.string().optional(),
   reused: z.boolean().optional(),
+  rebound: z.boolean().optional(),
+  replySession: z.string().optional(),
+  replacedTriggerId: z.string().optional(),
   pageId: z.string().optional(),
+  routePath: z.string().optional(),
   orgId: z.string().nullable().optional(),
   projectId: z.string().nullable().optional(),
   warning: z.string().optional(),
   skipped: z.enum(["missing_page", "missing_creator", "invalid_filter", "unbound_agent"]).optional(),
 });
 
+const pageKitSummarySchema = z.object({
+  status: z.enum(["applied", "unavailable", "skipped"]),
+  changedFiles: z.array(z.string()),
+  warnings: z.array(z.string()),
+  theme: jsonObjectSchema.nullable(),
+  widgets: z.array(jsonObjectSchema),
+});
+
 const pageShipReturnSchema = z.object({
   artifactId: z.string().nullable(),
   commentFollow: pageCommentFollowReturnSchema,
+  kit: pageKitSummarySchema,
+  presentation: jsonObjectSchema.nullable(),
   route: z.string(),
   site: pageSiteSchema,
   slug: z.string(),
@@ -1969,6 +2203,27 @@ const pageShipReturnSchema = z.object({
   uses: z.array(z.string()).optional(),
   visibility: z.string(),
   warnings: z.array(z.string()).optional(),
+});
+
+const outdatedVersionPairSchema = z.object({ pinned: jsonValueSchema, current: jsonValueSchema });
+
+const pagesOutdatedReturnSchema = z.object({
+  success: z.literal(true),
+  consoleUrl: z.string(),
+  projectRef: z.string(),
+  total: z.number(),
+  items: z.array(
+    z.object({
+      siteSlug: z.string().nullable(),
+      hostname: z.string().nullable(),
+      route: z.string(),
+      releaseId: z.string().nullable(),
+      publishedAt: z.string().nullable(),
+      theme: outdatedVersionPairSchema.nullable(),
+      widgets: z.array(outdatedVersionPairSchema.extend({ ref: z.string().nullable() })),
+      runtime: outdatedVersionPairSchema.nullable(),
+    }),
+  ),
 });
 
 const pageAssertionAudienceSchema = z.object({
@@ -2105,10 +2360,11 @@ const pageAccessReturnSchema = z.object({
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   published: publishedPagesListReturnSchema,
+  outdated: pagesOutdatedReturnSchema,
   read: pageReadReturnSchema,
   create: pageSiteCreateReturnSchema,
   ship: pageShipReturnSchema,
-  publish: artifactPublishReturnSchema,
+  publish: pagePublishReturnSchema,
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
   domains: pageDomainBindReturnSchema,
@@ -2142,10 +2398,20 @@ async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: 
     // envelope (or legacy text) and carry the exit taxonomy (1/2/3). Never let
     // the legacy CloudAuthError funnel swallow them (model: mail.ts).
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
+    const cloudError = cloudAuthErrorFromUnknown(artifactInputToCloudError(error));
     failPagesNotFoundFromConsole(op, cloudError, asJson);
     throw cloudError;
   }
+}
+
+/** A bad local source or entrypoint is the caller's input, not a Console outage. */
+function artifactInputToCloudError(error: unknown): unknown {
+  if (!(error instanceof ArtifactInputError)) return error;
+  const message = sanitizePayloadInvalidMessage(error.message);
+  return new CloudAuthError("PAYLOAD_INVALID", error.message, {
+    cause: error,
+    ...(message ? { issues: [{ path: [error.field ?? "source"], code: "invalid", message }] } : {}),
+  });
 }
 
 /**
@@ -2269,6 +2535,13 @@ function printSiteList(
   );
   for (const site of result.sites) {
     console.log(`  - ${siteLabel(site)}`);
+    const slug = stringValue(site.slug);
+    if (!slug) continue;
+    for (const line of pageCustomDomainLines(projectPageCustomDomains(site.customDomains), (hostname) =>
+      domainRecheckCommand(result.projectRef, slug, hostname),
+    )) {
+      console.log(`      ${line}`);
+    }
   }
   if (pagination?.nextCommand) {
     console.log("\nNext page:");
@@ -2294,6 +2567,22 @@ function printPublishedPageList(
     console.log(`  - ${publishedPageLabel(page)}`);
     for (const url of stringArrayValue(page.urls)) {
       console.log(`      ${url}`);
+    }
+  }
+  // A pending domain belongs to the host, not the route: list it once per host.
+  const pendingBySite = new Map<string, PageCustomDomain[]>();
+  for (const page of result.pages) {
+    const slug = stringValue(page.siteSlug);
+    if (!slug || pendingBySite.has(slug)) continue;
+    const pending = projectPageCustomDomains(page.customDomains).filter((domain) => domain.status === "pending");
+    if (pending.length > 0) pendingBySite.set(slug, pending);
+  }
+  for (const [slug, pending] of pendingBySite) {
+    console.log(`\nCustom domains of ${slug} not serving yet:`);
+    for (const line of pageCustomDomainLines(pending, (hostname) =>
+      domainRecheckCommand(result.projectRef, slug, hostname),
+    )) {
+      console.log(`  ${line}`);
     }
   }
   if (pagination?.nextCommand) {
@@ -2384,6 +2673,79 @@ function failShipLiveDataOnPublicRoute(basesUses: string[], asJson: boolean | un
   });
 }
 
+/**
+ * Exit 2 with one issue per kit diagnostic, written `path:line:column severity
+ * code message`, each under the 200-character issue cap. Nothing was uploaded.
+ */
+function failShipKitInvalid(diagnostics: PageKitDiagnostic[], asJson: boolean | undefined): never {
+  const errorDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  if (errorDiagnostics.length > 0 && errorDiagnostics.every((diagnostic) => diagnostic.code === KIT_WIDGET_UNAUDITED)) {
+    failShipKitWidgetUnaudited(errorDiagnostics, asJson);
+  }
+  const errors = errorDiagnostics.length;
+  contractFail(
+    "pages ship",
+    "KIT_INVALID",
+    `Refusing to ship: the page kit found ${errors} error(s) in the HTML. Nothing was uploaded or published.`,
+    {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        retryable: false,
+        suggestedAction:
+          "Fix each listed path:line:column in the HTML (tags, widget refs, field mappings, theme ref), then ship again",
+        issues: diagnostics.slice(0, 50).map((diagnostic) => ({
+          path: [],
+          code: diagnostic.code,
+          message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
+        })),
+      },
+    },
+  );
+}
+
+/**
+ * Exit 2 when the only kit errors are widgets with `widget.js` whose version
+ * has no passing accessibility audit: an org owner or admin opens each Console
+ * URL, the audit runs there, and the same ship then goes through.
+ */
+function failShipKitWidgetUnaudited(diagnostics: PageKitDiagnostic[], asJson: boolean | undefined): never {
+  const widgets = diagnostics.map((diagnostic) => ({
+    widget: diagnostic.widget ?? null,
+    url: diagnostic.url ?? null,
+  }));
+  const urls = [...new Set(widgets.flatMap((item) => (item.url ? [item.url] : [])))];
+  const names = [...new Set(widgets.flatMap((item) => (item.widget ? [item.widget] : [])))];
+  const where =
+    urls.length > 0
+      ? `open ${urls.join(" and ")} in the Console`
+      : "open the widget in the Console (Library > Widgets)";
+  contractFail(
+    "pages ship",
+    KIT_WIDGET_UNAUDITED,
+    `Refusing to ship: ${names.length > 0 ? names.join(", ") : "a widget with code"} has no passing accessibility audit yet. Nothing was uploaded or published.`,
+    {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        retryable: false,
+        suggestedAction: `An org owner or admin must ${where} and run the accessibility audit until it passes, then ship again`,
+        // The URLs stay in suggestedAction and the issue lines: detail values are sanitized to their origin.
+        widgets: names,
+        issues: diagnostics.slice(0, 50).map((diagnostic) => ({
+          path: [],
+          code: diagnostic.code,
+          message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
+        })),
+      },
+    },
+  );
+}
+
+function truncateIssueLine(line: string): string {
+  return line.length > 200 ? `${line.slice(0, 197)}...` : line;
+}
+
 function warnLegacyPageHost(slug: string): void {
   console.error(
     `Legacy Pages host "${slug}": publishing to an extra *.ravi.page host. The happy path publishes a route on the project default host. Do not create one host per page.`,
@@ -2439,6 +2801,7 @@ async function armPageCommentFollow(
 function printShipResult(result: {
   artifactId: string | null;
   commentFollow?: PageCommentFollowResult;
+  kit?: PageKitSummary;
   route: string;
   site: PageSitePayload;
   slug: string;
@@ -2453,10 +2816,34 @@ function printShipResult(result: {
   console.log(`  Route      ${result.route}`);
   console.log(`  Visibility ${result.visibility}`);
   if (result.uses?.length) console.log(`  Uses       ${result.uses.join(", ")}`);
+  if (result.kit?.status === "applied") {
+    console.log(`  Theme      ${presentationRefLabel(result.kit.theme) ?? "none"}`);
+    const widgets = result.kit.widgets.map(presentationRefLabel).filter((label): label is string => Boolean(label));
+    if (widgets.length > 0) console.log(`  Widgets    ${widgets.join(", ")}`);
+    if (result.kit.changedFiles.length > 0) console.log(`  Kit        ${result.kit.changedFiles.join(", ")}`);
+  }
   if (result.artifactId) console.log(`  Artifact   ${result.artifactId}`);
   console.log(`  URL        ${result.url ?? "not returned by Console"}`);
   printCommentFollow(result.commentFollow);
   for (const warning of result.warnings ?? []) console.log(`warning: ${warning}`);
+}
+
+/** `org/acme v3` from a presentation theme or widget entry. */
+function presentationRefLabel(entry: Record<string, unknown> | null): string | null {
+  if (!entry) return null;
+  const ref = stringValue(entry.ref) ?? stringValue(entry.itemId);
+  if (!ref) return null;
+  return typeof entry.version === "number" ? `${ref} v${entry.version}` : ref;
+}
+
+function printOutdatedPages(result: OutdatedPagesResult): void {
+  if (result.items.length === 0) {
+    console.log(`Nothing is outdated in project ${result.projectRef}.`);
+    return;
+  }
+  console.log(`Outdated Pages routes in ${result.projectRef} (${result.total})`);
+  for (const line of renderOutdatedTable(result.items)) console.log(`  ${line}`);
+  console.log("\nShip a route again with ravi pages ship to pick up the current theme, widgets and runtime.");
 }
 
 function printAssertionAudienceList(result: PageAssertionAudienceListResult): void {
@@ -2483,8 +2870,11 @@ function printAssertionAudienceMutation(result: PageAssertionAudienceMutationRes
 function printCommentFollow(follow: PageCommentFollowResult | undefined): void {
   if (!follow) return;
   if (follow.triggerId) {
-    const action = follow.reused ? "reused" : "created";
-    console.log(`  Comments   ${action} trigger ${follow.triggerId} for agent ${follow.agentId ?? "(unbound)"}`);
+    const action = follow.rebound ? "moved" : follow.reused ? "reused" : "created";
+    const target = follow.replySession ? `session ${follow.replySession}` : `agent ${follow.agentId ?? "(unbound)"}`;
+    console.log(
+      `  Comments   ${action} trigger ${follow.triggerId}: comments on ${follow.routePath ?? "/"} wake ${target}`,
+    );
     return;
   }
   if (follow.warning) console.log(`  Comments   ${follow.warning}`);
@@ -2583,6 +2973,10 @@ function printPasswordResult(result: PagePasswordManageResult): void {
   console.log(`  Route      ${result.path}`);
   console.log(`  Visibility ${result.route.effectiveVisibility}`);
   if (result.policy) console.log(`  Policy     ${result.policy.status} · version ${result.policy.version}`);
+}
+
+function domainRecheckCommand(projectRef: string, site: string, hostname: string): string {
+  return `ravi pages domains ${site} ${hostname} --project ${projectRef} --check --execute`;
 }
 
 function siteLabel(site: PageSitePayload): string {

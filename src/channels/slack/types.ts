@@ -121,6 +121,11 @@ export interface SlackNormalizedMessage {
   readonly authorizedTeamIds: readonly string[];
   /** Workspace returned by `auth.test` for the local channel account token. */
   readonly localTeamId?: string;
+  /**
+   * Local bot user id from a cached `auth.test`, used only to mark prompts that
+   * mention this bot. Human intake never waits for it, so it can be absent.
+   */
+  readonly selfUserId?: string;
   readonly channelId: string;
   readonly channelType: string;
   /** Effective sender id: Slack `user` when present, otherwise `bot_id`. */

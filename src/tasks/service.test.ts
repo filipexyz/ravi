@@ -71,7 +71,6 @@ const {
   unarchiveTask,
 } = await import("./index.js");
 const { attachTaskToWorkflowNodeRun, createWorkflowSpec, startWorkflowRun } = await import("../workflows/index.js");
-const { createProject, linkProject } = await import("../projects/index.js");
 import { dbCreateAgent, dbDeleteAgent, dbSetSetting } from "../router/router-db.js";
 import { deleteSession, getOrCreateSession, resolveSession } from "../router/sessions.js";
 import type { ResolvedTaskProfile } from "./types.js";
@@ -647,23 +646,7 @@ describe("task substrate contract", () => {
       runId: "wf-run-task-stream",
       createdBy: "test",
     });
-    const project = createProject({
-      title: "Ops Cadence",
-      summary: "Organize workflow-backed execution",
-      hypothesis: "Workflow is the project attachment",
-      nextStep: "Review workflow release state",
-      createdBy: "test",
-    });
-    linkProject({
-      projectRef: project.id,
-      assetType: "workflow",
-      assetId: run.run.id,
-      role: "primary",
-      createdBy: "test",
-    });
-
     attachTaskToWorkflowNodeRun(run.run.id, "ship", created.task.id);
-    const payload = buildTaskEventPayload(created.task, created.event);
 
     const snapshot = buildTaskStreamSnapshot({
       taskId: created.task.id,
@@ -691,23 +674,6 @@ describe("task substrate contract", () => {
       workflowRunId: run.run.id,
       nodeKey: "ship",
       nodeStatus: "ready",
-    });
-    expect(snapshot.selectedTask?.task.project).toMatchObject({
-      projectId: project.id,
-      projectSlug: "ops-cadence",
-      projectTitle: "Ops Cadence",
-      workflowRunId: run.run.id,
-      workflowLinkRole: "primary",
-      workflowAggregateStatus: "ready",
-    });
-    expect(snapshot.items[0]?.project).toMatchObject({
-      projectSlug: "ops-cadence",
-      workflowRunStatus: "ready",
-    });
-    expect(payload.project).toMatchObject({
-      projectSlug: "ops-cadence",
-      workflowRunId: run.run.id,
-      workflowAggregateStatus: "ready",
     });
   });
 
@@ -1451,6 +1417,7 @@ describe("task substrate contract", () => {
   it("builds a brainstorm resume prompt that points back to the persisted draft artifact", () => {
     const task = {
       id: "task-brainstorm-resume",
+      threadId: "thread-task-brainstorm-resume",
       title: "Brainstorm Session Resume",
       instructions: "Continue refining the idea",
       status: "in_progress" as const,
@@ -1498,6 +1465,7 @@ describe("task substrate contract", () => {
   it("promotes brainstorm design artifacts on done while keeping the jar as supporting state", () => {
     const task = {
       id: "task-brainstorm-done",
+      threadId: "thread-task-brainstorm-done",
       title: "Brainstorm Done Artifact",
       instructions: "Finalize into design and jar",
       status: "done" as const,
@@ -1555,6 +1523,7 @@ describe("task substrate contract", () => {
       isTaskRecoveryFresh(
         {
           id: "task-fresh",
+          threadId: "thread-task-fresh",
           title: "Fresh",
           instructions: "Fresh task",
           status: "in_progress",
@@ -1580,6 +1549,7 @@ describe("task substrate contract", () => {
       isTaskRecoveryFresh(
         {
           id: "task-stale",
+          threadId: "thread-task-stale",
           title: "Stale",
           instructions: "Old task",
           status: "in_progress",
@@ -1885,6 +1855,7 @@ describe("task substrate contract", () => {
   it("derives bootstrap worktree metadata without treating it as the effective session cwd", () => {
     const baseTask = {
       id: "task-bootstrap-worktree",
+      threadId: "thread-task-bootstrap-worktree",
       title: "Bootstrap worktree metadata",
       instructions: "Expose worktree as context only.",
       status: "open",

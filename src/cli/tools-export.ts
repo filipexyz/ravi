@@ -30,6 +30,7 @@ import {
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "./cloud-error-contract.js";
 import { sanitizeCliAuditValue } from "./audit.js";
+import { enforceWriteAfterRead, writeAfterReadContractError } from "../knowledge/safety/write-after-read.js";
 
 // ============================================================================
 // Types
@@ -233,6 +234,7 @@ function buildHandler(
       const contractError = permissionDeniedToContractError(
         commandOperation(group, command),
         accessResult.errorMessage,
+        accessResult.denialDetails ?? {},
       );
       const envelope = JSON.stringify(contractError.envelope());
       nats
@@ -254,6 +256,36 @@ function buildHandler(
         content: [{ type: "text", text: envelope }],
         isError: true,
         outcome: "denied",
+        exitCode: contractError.exitCode,
+      };
+    }
+
+    // Read the turn the way the method will run: in the tool's own context.
+    const writeGateInput = { group, command, options: toolArgs, access };
+    const writeGate = ctx
+      ? runWithContext({ ...ctx, transport: "tool" }, () => enforceWriteAfterRead(writeGateInput))
+      : enforceWriteAfterRead(writeGateInput);
+    if (!writeGate.allowed) {
+      const contractError = writeAfterReadContractError(commandOperation(group, command), writeGate);
+      nats
+        .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
+          tool: toolName,
+          input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
+          output: sanitizeCliAuditValue(contractError.message, "output"),
+          isError: false,
+          outcome: "blocked",
+          exitCode: contractError.exitCode,
+          errorCode: contractError.code,
+          durationMs: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          sessionKey,
+          agentId,
+        })
+        .catch(() => {});
+      return {
+        content: [{ type: "text", text: JSON.stringify(contractError.envelope()) }],
+        isError: true,
+        outcome: "blocked",
         exitCode: contractError.exitCode,
       };
     }

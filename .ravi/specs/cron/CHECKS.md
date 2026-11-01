@@ -1,5 +1,24 @@
 # Cron / CHECKS
 
+- Router migration MUST create `cron_runs` without replaying existing jobs and preserve pending run identity and admitted notification owner across job deletion and DB reopen (`src/router/router.test.ts`).
+
+## Test State MUST Be Isolated
+
+- Every cron database test MUST create and clean its own isolated Ravi state, including
+  `cron-db.test.ts`; a process-level state directory alone is insufficient because
+  cleanup in another test file can remove that override. Tests MUST NOT fall back
+  to the operator installation.
+
+## Invalid Ownership MUST Reconcile Without Executing
+
+- `bun test src/cron/` MUST prove legacy agent-owned shell jobs, including distant
+  and unscheduled jobs, disable at load without executing or updating run history.
+- The same suite MUST prove a second cycle/reload/manual trigger emits no second
+  notice, ownership changes after timer arming are checked, and a failed notice
+  never re-enables the job. Operator shell and agent-owned agent jobs still run.
+- `bun test src/cli/commands/cron-commands.test.ts` MUST distinguish invalid shell,
+  operator shell and agent-owned agent jobs in JSON and text without mutating rows.
+
 ## Distant Jobs MUST NOT Overflow The Timer
 
 - `bun test src/cron/runner.test.ts` MUST prove a job more than 2,147,483,647 ms
@@ -54,3 +73,28 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 - Repeating `cron add` with the same explicit idempotency key and the same normalized input MUST return the original target with `changedCount=0`.
 - Reusing an explicit key for different input MUST fail.
 - Replaying the same observer rule/source-turn/action after a one-shot target was deleted MUST NOT recreate the cron.
+
+## Admission Authority MUST Survive Job Mutation
+
+- `bun test src/cron/runner.test.ts` MUST dispatch a contact job, classify its
+  runtime context, transfer to the operator mid-turn, and still classify as the
+  contact. The next dispatch MUST use the operator. Cover main and isolated
+  sessions, queued consumption, continuations, and the reverse transfer.
+- The same suite MUST refuse owner-attributed calls after the original contact
+  is blocked or removed, even when the job has transferred to the operator.
+- Disabling a job MUST preserve admitted authority while stopping subsequent
+  scheduled dispatch. One-shot auto-deletion MUST preserve admitted authority.
+- Shell execution MUST carry the captured authority after a transfer, overriding
+  an env-file replacement. Missing or malformed prompt snapshots MUST refuse.
+- `bun test src/runtime/runtime-request-context.test.ts` MUST retain the admitted
+  contact/chat overlay when ownership changes before queued consumption.
+- `bun test src/link/connector-turn.test.ts src/cloud-auth/turn-actor.test.ts`
+  MUST prevent promotion through a later operator identity link and prevent a
+  blocked operator-linked contact from falling back to contact/Console authority.
+
+## Failure correlation
+
+- `bun test src/cron/runner.test.ts src/cron/failure-notification.test.ts src/cron/turn-outcome.test.ts` covers failure before publish acknowledgement, recreation, overlapping runs, duplicate terminals, unknown/mismatched provenance, admitted owner after transfer/deletion and one-shot retention. Run files separately if module mocks are shared.
+- Failure delivery rejection/no owner target MUST retain the inbox record without leaking raw provider errors; repeated notices MUST share a run dedupe key.
+- `bun test src/runtime/delivery-queue.test.ts src/runtime/turn-provenance.test.ts src/runtime/prompt-subscription.test.ts` verifies run separation, continuation identity and pre-turn failure provenance.
+- `bun test src/runtime/intake-failure.test.ts` MUST pass a persisted cron run through the real cold launcher with an incompatible model and with a missing agent, then recreate the runner and verify the terminal state and retained one-shot. A permanent intake drop MUST preserve the original run identity.

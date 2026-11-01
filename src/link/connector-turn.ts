@@ -25,16 +25,16 @@
 import { createHash } from "node:crypto";
 
 import { getContext } from "../cli/context.js";
-import { consoleIdentityFromBinding, readCachedActorBinding } from "../cloud-auth/actor-bindings.js";
+import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../cloud-auth/actor-bindings.js";
 import { CloudAuthError, type CloudAuthErrorCode } from "../cloud-auth/errors.js";
 import { readActiveCloudAuthUserId, readCloudCredentials } from "../cloud-auth/storage.js";
-import { dbGetCronJob } from "../cron/cron-db.js";
+import { getContactById } from "../contacts.js";
+import { readCronRunAuthority, readSpawnedCronRunAuthority } from "../cron/authority.js";
+import { dmContactForChat } from "../knowledge/contacts.js";
 import {
   dbGetAgent,
   dbGetContext,
   dbGetSessionOutputAttachment,
-  dbListChatParticipants,
-  dbListChatsByRef,
   dbListRoutesBySessionName,
   dbListSessionChatSubscriptions,
   type ContextRecord,
@@ -106,6 +106,10 @@ export type ConnectorTurnResult =
        * through agent exec.
        */
       candidate?: ConnectorTurn;
+      /** A cron run refused because someone other than the owner owns the job. */
+      routineOwner?: { kind: "cron"; id: string; ownerPrincipal: string };
+      /** The turn (or the turn it was projected from) already ended. */
+      ended?: boolean;
     };
 
 type BlockedTurn = Extract<ConnectorTurnResult, { ok: false }>;
@@ -136,7 +140,8 @@ export interface ConnectorTurnDeps {
   activeOrgId?: string | null;
   /** Name used in chat lines ("I can't use <owner>'s Gmail ..."). */
   ownerName?: string | null;
-  getCronJobOwner?: (jobId: string) => { found: boolean; ownerPrincipal: string | null };
+  /** Live revocation check on the admitted contact, never on a replacement owner. */
+  getContactStatus?: (contactId: string) => string | null;
   /** The contact a direct chat is with, or null when the chat is not a known direct chat. */
   getDmChatContact?: (input: { chatId: string; channel: string | null }) => string | null;
   getContactBinding?: (contactId: string) => ContactConsoleIdentity | null;
@@ -195,7 +200,12 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
   if (!runtime.present) return terminalTurn();
   const owner = resolveOwner(deps, env);
   if (runtime.spawnedPrincipal) {
-    return classifyNonContactPrincipal(runtime.spawnedPrincipal, {}, owner, deps, null);
+    const jobId = runtime.spawnedPrincipal.startsWith("automation:cron:")
+      ? runtime.spawnedPrincipal.slice("automation:cron:".length)
+      : "";
+    return classifyNonContactPrincipal(runtime.spawnedPrincipal, {}, owner, deps, {
+      cronRunAuthority: readSpawnedCronRunAuthority(env, jobId),
+    });
   }
   if (!runtime.record) {
     return notOwner("unknown", unknownTurnMessage(owner));
@@ -205,7 +215,7 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
   const now = deps.now ?? Date.now();
   const lineage = findActorContext(runtime.record, getById, now);
   if (lineage.kind === "operator") return terminalTurn();
-  if (lineage.kind === "ended") return notOwner("unknown", endedTurnMessage(owner));
+  if (lineage.kind === "ended") return { ...notOwner("unknown", endedTurnMessage(owner)), ended: true };
   if (lineage.kind === "none") return notOwner("unknown", unknownTurnMessage(owner));
   const actorContext = lineage.context;
 
@@ -214,7 +224,7 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
   const projectionSourceId = readProjectionSourceId(metadata);
   const projectionSource = projectionSourceId ? getById(projectionSourceId) : null;
   if (projectionSourceId && (!projectionSource || !isContextLive(projectionSource, now))) {
-    return notOwner(actorPrincipal, endedTurnMessage(owner));
+    return { ...notOwner(actorPrincipal, endedTurnMessage(owner)), ended: true };
   }
   const compartment =
     stringField(metadata, "agentIdentityCompartment") ??
@@ -303,7 +313,13 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
     };
   }
 
-  const verdict = classifyNonContactPrincipal(actorPrincipal, base, owner, deps, metadata);
+  const verdict = classifyNonContactPrincipal(actorPrincipal, base, owner, deps, {
+    ...metadata,
+    // CLI children may supply metadata, but only a host-issued turn owns admission.
+    // A normal child inherits the turn through findActorContext; a forged actor
+    // on the child itself must not substitute a new cron snapshot.
+    cronRunAuthority: actorContext.kind === "turn-runtime" ? metadata.cronRunAuthority : undefined,
+  });
   if (!verdict.ok) return verdict;
   const answer = resolveAnswerChat(surface, metadata, verdict.turn, {
     sessionKey: sameSessionKey(actorContext.sessionKey, runtime.record.sessionKey),
@@ -628,18 +644,28 @@ function classifyNonContactPrincipal(
     }
     if (principalId.startsWith("cron:") && principalId.length > "cron:".length) {
       const jobId = principalId.slice("cron:".length);
-      const job = (deps.getCronJobOwner ?? readCronJobOwner)(jobId);
-      if (!job.found) {
+      const job = readCronRunAuthority(metadata?.cronRunAuthority, jobId);
+      if (!job) {
         return notOwner(
           actorPrincipal,
-          `Cron job ${jobId} no longer exists, so Ravi cannot tell who owns this routine and will not use ${owner.label}'s connected accounts.`,
+          `Cron run ${jobId} has no valid admission authority, so Ravi cannot tell who owns this run and will not use ${owner.label}'s connected accounts.`,
         );
       }
-      if (!cronOwnerIsOperator(job.ownerPrincipal, owner, deps)) {
-        return notOwner(
-          actorPrincipal,
-          `Cron job ${jobId} was created by ${job.ownerPrincipal}, not by ${owner.label}, so it cannot use ${owner.label}'s connected accounts.`,
-        );
+      if (job.ownerPrincipal.startsWith("contact:")) {
+        const contactId = job.ownerPrincipal.slice("contact:".length);
+        const status = (deps.getContactStatus ?? readCronContactStatus)(contactId);
+        if (!status || status === "blocked") {
+          return notOwner(actorPrincipal, `Cron run ${jobId}'s admitted owner is removed or blocked.`);
+        }
+      }
+      if (!job.ownerIsOperator || !cronOwnerIsOperator(job.ownerPrincipal, owner, deps)) {
+        return {
+          ...notOwner(
+            actorPrincipal,
+            `Cron run ${jobId} was admitted for ${job.ownerPrincipal}, not by ${owner.label}, so it cannot use ${owner.label}'s connected accounts.`,
+          ),
+          routineOwner: { kind: "cron", id: jobId, ownerPrincipal: job.ownerPrincipal ?? "unknown" },
+        };
       }
       return {
         ok: true,
@@ -683,12 +709,38 @@ function isOperatorRelay(actorPrincipal: string, metadata: Record<string, unknow
   return Boolean(principal && `${principal.type}:${principal.id}` === actorPrincipal);
 }
 
+/**
+ * Whether a cron job with this owner acts as the operator when it runs: the
+ * same test the classification applies to `automation:cron:<id>`. False when
+ * the binding cannot be read.
+ */
+export function cronOwnerActsAsOperator(ownerPrincipal: string | null, deps: ConnectorTurnDeps = {}): boolean {
+  if (ownerPrincipal === null || ownerPrincipal === CRON_OPERATOR_OWNER) return true;
+  try {
+    return cronOwnerIsOperator(ownerPrincipal, resolveOwner(deps, deps.env ?? process.env), deps);
+  } catch {
+    return false;
+  }
+}
+
 /** Legacy NULL and `operator` are the operator; so is a contact bound to the active Console user. */
 function cronOwnerIsOperator(ownerPrincipal: string | null, owner: OwnerIdentity, deps: ConnectorTurnDeps): boolean {
   if (ownerPrincipal === null || ownerPrincipal === CRON_OPERATOR_OWNER) return true;
   if (!ownerPrincipal.startsWith("contact:")) return false;
   const identity = (deps.getContactBinding ?? readContactBinding)(ownerPrincipal.slice("contact:".length));
   return isOwnerUser(owner, cleanString(identity?.consoleUserId), cleanString(identity?.consoleOrgId));
+}
+
+/**
+ * Whether a chat is the owner's own direct chat (the active `ravi login`
+ * user's linked contact). Anything unknown is not.
+ */
+export function isOwnersDirectChat(chatId: string, channel: string | null, deps: ConnectorTurnDeps = {}): boolean {
+  try {
+    return surfaceIsOwnersDirectChat(chatId, channel, resolveOwner(deps, deps.env ?? process.env), deps);
+  } catch {
+    return false;
+  }
 }
 
 function surfaceIsOwnersDirectChat(
@@ -938,33 +990,12 @@ function readLiveContext(contextId: string): ContextRecord | null {
  * a direct chat.
  */
 function readDmChatContact(input: { chatId: string; channel: string | null }): string | null {
-  try {
-    const chats = dbListChatsByRef({ ref: input.chatId, channel: input.channel, limit: 10 });
-    if (chats.length === 0) return null;
-    const contacts = new Set<string>();
-    for (const chat of chats) {
-      if (chat.chatType !== "dm") return null;
-      if (chat.normalizedChatId.startsWith("contact:")) {
-        contacts.add(chat.normalizedChatId.slice("contact:".length));
-        continue;
-      }
-      const members = new Set(
-        dbListChatParticipants(chat.id)
-          .map((participant) => participant.contactId)
-          .filter((contactId): contactId is string => Boolean(contactId)),
-      );
-      if (members.size !== 1) return null;
-      for (const contactId of members) contacts.add(contactId);
-    }
-    return contacts.size === 1 ? ([...contacts][0] ?? null) : null;
-  } catch {
-    return null;
-  }
+  return dmContactForChat(input);
 }
 
 function readContactBinding(contactId: string): ContactConsoleIdentity | null {
   try {
-    return consoleIdentityFromBinding(readCachedActorBinding(contactId));
+    return consoleIdentityFromBinding(readActorBindingForActiveLogin(contactId));
   } catch {
     return null;
   }
@@ -981,12 +1012,11 @@ function readProjectionSourceId(metadata: Record<string, unknown>): string | nul
   return stringField(projection as Record<string, unknown>, "sourceContextId");
 }
 
-function readCronJobOwner(jobId: string): { found: boolean; ownerPrincipal: string | null } {
+function readCronContactStatus(contactId: string): string | null {
   try {
-    const job = dbGetCronJob(jobId);
-    return job ? { found: true, ownerPrincipal: job.ownerPrincipal ?? null } : { found: false, ownerPrincipal: null };
+    return getContactById(contactId)?.status ?? null;
   } catch {
-    return { found: false, ownerPrincipal: null };
+    return null;
   }
 }
 

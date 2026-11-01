@@ -53,6 +53,16 @@ Each check MUST declare:
 
 Checks MUST NOT mutate state.
 
+## NATS Exposure And State Directory
+
+- `runtime.nats_exposure` MUST report network exposure using bounded probes and
+  redact credentials from every NATS URL in its output.
+- Failed interface enumeration MUST remain `unknown`, distinct from a successful
+  enumeration with no external interfaces. Enforced private NATS startup MUST
+  refuse the unknown result instead of treating it as loopback-only.
+- `substrate.state-dir-permissions` MUST inspect ownership and POSIX permissions
+  without changing them. State-directory hardening belongs to startup/setup.
+
 ## Apps, Specs, And Skills
 
 Initial checks:

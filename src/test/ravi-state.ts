@@ -5,6 +5,7 @@ import { close as closeChatDb } from "../db.js";
 import { closeContacts } from "../contacts.js";
 import { closeSessionAdapterStore } from "../adapters/adapter-db.js";
 import { closeDevinDb } from "../devin/store.js";
+import { closeKnowledgeDb } from "../knowledge/store/db.js";
 import { closeRouterDb } from "../router/router-db.js";
 import { closeSessionStore } from "../router/sessions.js";
 import { closeSessionGoalStore } from "../runtime/session-goals.js";
@@ -16,6 +17,7 @@ const RAVI_STATE_LOCK_TIMEOUT_MS = 120_000;
 const pendingStateDirs = new Set<string>();
 let pendingStateCleanupRegistered = false;
 let previousAuditSuppression: string | undefined;
+let previousStateDir: string | undefined;
 
 export const RAVI_RUNTIME_CONTEXT_ENV_KEYS = [
   "RAVI_ACCOUNT_ID",
@@ -103,6 +105,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   closeChatDb();
   closeContacts();
   closeDevinDb();
+  closeKnowledgeDb();
   closeSessionAdapterStore();
   closeSessionStore();
   closeSessionGoalStore();
@@ -110,6 +113,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   const stateDir = mkdtempSync(join(tmpdir(), prefix));
   pendingStateDirs.add(stateDir);
   ensurePendingStateCleanup();
+  previousStateDir = process.env.RAVI_STATE_DIR;
   process.env.RAVI_STATE_DIR = stateDir;
   previousAuditSuppression = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
   process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
@@ -159,11 +163,19 @@ export async function cleanupIsolatedRaviState(stateDir?: string | null): Promis
   closeChatDb();
   closeContacts();
   closeDevinDb();
+  closeKnowledgeDb();
   closeSessionAdapterStore();
   closeSessionStore();
   closeSessionGoalStore();
   closeRouterDb();
-  delete process.env.RAVI_STATE_DIR;
+  // A suite/launcher may already have a sandbox. Unsetting this variable would
+  // send the next DB consumer to ~/.ravi, including its automatic migrations.
+  if (previousStateDir === undefined) {
+    delete process.env.RAVI_STATE_DIR;
+  } else {
+    process.env.RAVI_STATE_DIR = previousStateDir;
+  }
+  previousStateDir = undefined;
   if (previousAuditSuppression === undefined) {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
   } else {

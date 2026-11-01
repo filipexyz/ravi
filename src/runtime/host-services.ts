@@ -1,3 +1,4 @@
+import { authorizeBridgeCommand } from "../bridge/command.js";
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
@@ -44,6 +45,9 @@ import {
   type SkillGatePersistedListener,
 } from "./skill-gate.js";
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { isLibraryPluginSkillAllowedForTurn } from "../library/session-plugins.js";
+import { isOperatorOwnTurn } from "../library/turn.js";
+import { contextCan, fileWriteToolTargets, providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
 import {
   commandLineRunsSkillRemediation,
   extractRequestedSkillsFromCommandLine,
@@ -65,6 +69,8 @@ export interface RuntimeHostServicesOptions {
   approvalSource?: ApprovalTarget;
   toolContext: Record<string, unknown>;
   onSkillGatePersisted?: SkillGatePersistedListener;
+  /** The session's working directory, which the provider resolves relative tool paths against. */
+  cwd?: string;
 }
 
 function hasUnrestrictedToolExecution(agentId: string): boolean {
@@ -145,6 +151,33 @@ function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTo
     default:
       return false;
   }
+}
+
+/**
+ * The first pinned Library skill this turn may not load (spec skills/library).
+ * The session's plugin was chosen for its first turn; the turn asking now may
+ * be someone else's, so each load is checked against the current turn context
+ * (refreshed in place before every turn).
+ */
+function findLibrarySkillDeniedForTurn(
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId">,
+  skills: readonly string[],
+): string | undefined {
+  let ownTurn: boolean | undefined;
+  const isOwnTurn = () =>
+    (ownTurn ??= isOperatorOwnTurn({
+      turn: { runtimeContext: { present: true, record: options.context ?? null } },
+    }));
+  return skills.find(
+    (skill) => !isLibraryPluginSkillAllowedForTurn({ agentId: options.agentId, skill, isOperatorOwnTurn: isOwnTurn }),
+  );
+}
+
+function formatLibrarySkillDeniedForTurnReason(skill: string): string {
+  return (
+    `SKILL_NOT_AUTHORIZED: Library skill '${skill}' does not load in this turn. ` +
+    "It is pinned to another agent, or it is not marked externalAllowed and this turn is not the operator's own."
+  );
 }
 
 function emitRuntimePolicyDenied(
@@ -431,7 +464,7 @@ function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynam
 }
 
 async function authorizeRuntimeCommandExecution(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted" | "cwd">,
   request: RuntimeCommandAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const command = request.command;
@@ -444,6 +477,9 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: "Runtime command approval request did not include a command." };
   }
 
+  if (options.context.metadata?.bridgeTurnId !== undefined)
+    return authorizeBridgeCommand(options.context, command, request.eventData, request.beforeExternalApproval);
+
   const eventData = request.eventData;
   const buildBashContext = () => ({
     agentId: options.agentId,
@@ -451,6 +487,7 @@ async function authorizeRuntimeCommandExecution(
     ...(options.context.sessionKey ? { sessionKey: options.context.sessionKey } : {}),
     sessionName: options.context.sessionName ?? options.sessionName,
     capabilities: options.context.capabilities,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
   });
 
   const preliminary = evaluateBashPermission(command, buildBashContext());
@@ -472,6 +509,22 @@ async function authorizeRuntimeCommandExecution(
       reason,
       command,
       blockType: "runtime_skill_not_authorized",
+    });
+    return { approved: false, reason };
+  }
+
+  const deniedCommandLibrarySkill = findLibrarySkillDeniedForTurn(
+    options,
+    extractRequestedSkillsFromCommandLine(command),
+  );
+  if (deniedCommandLibrarySkill) {
+    const reason = formatLibrarySkillDeniedForTurnReason(deniedCommandLibrarySkill);
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `skill:${deniedCommandLibrarySkill}`,
+      reason,
+      command,
+      blockType: "runtime_library_skill_not_for_turn",
     });
     return { approved: false, reason };
   }
@@ -638,7 +691,7 @@ async function authorizeRuntimeCommandExecution(
 }
 
 async function authorizeRuntimeToolUse(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted" | "cwd">,
   request: RuntimeToolUseAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const result = await authorizeRuntimeContext({
@@ -654,6 +707,23 @@ async function authorizeRuntimeToolUse(
     return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
   }
 
+  const configWriteDenial = providerConfigWriteDenial({
+    can: contextCan(options.context),
+    agentId: options.agentId,
+    targets: fileWriteToolTargets(request.toolName, request.input),
+    cwd: options.cwd,
+  });
+  if (configWriteDenial) {
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `tool:${request.toolName}`,
+      reason: configWriteDenial,
+      blockType: "runtime_provider_config_write",
+      detail: { toolName: request.toolName },
+    });
+    return { approved: false, reason: configWriteDenial };
+  }
+
   const deniedToolSkill = extractRequestedSkillsFromToolCall(request.toolName, request.input).find(
     (skill) => !isSkillAuthorizedForAgent(options.agentId, skill, { capabilities: options.context.capabilities }),
   );
@@ -667,6 +737,22 @@ async function authorizeRuntimeToolUse(
       reason,
       blockType: "runtime_skill_not_authorized",
       detail: { toolName: request.toolName, skill: deniedToolSkill },
+    });
+    return { approved: false, reason };
+  }
+
+  const deniedToolLibrarySkill = findLibrarySkillDeniedForTurn(
+    options,
+    extractRequestedSkillsFromToolCall(request.toolName, request.input),
+  );
+  if (deniedToolLibrarySkill) {
+    const reason = formatLibrarySkillDeniedForTurnReason(deniedToolLibrarySkill);
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `skill:${deniedToolLibrarySkill}`,
+      reason,
+      blockType: "runtime_library_skill_not_for_turn",
+      detail: { toolName: request.toolName, skill: deniedToolLibrarySkill },
     });
     return { approved: false, reason };
   }

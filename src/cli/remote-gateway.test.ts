@@ -10,6 +10,15 @@ import {
   connectorNotLinkedError,
 } from "../link/connectors.js";
 import { cloudErrorToContractError } from "./cloud-error-contract.js";
+import { ContractError } from "./agent-contract.js";
+import { presentationProfile, withPresentationContract } from "./library-contract.js";
+import { LibraryCommandError } from "../library/service.js";
+import {
+  RUNTIME_CONTROL_DISABLED,
+  RUNTIME_CONTROL_DISABLED_REASON,
+  RUNTIME_CONTROL_TIMEOUT,
+  runtimeControlCatalogCopy,
+} from "../runtime/runtime-control-errors.js";
 import {
   FILE_NOT_FOUND_CODE,
   FILE_NOT_FOUND_MESSAGE,
@@ -25,6 +34,7 @@ import {
   CALLER_CWD_HEADER,
   dispatchRemote,
   gatewayRequiredError,
+  remoteNextStepLine,
   getRemoteGatewayConfig,
   requiresRemoteGateway,
   resolveHostCliGatewayStateDirs,
@@ -213,7 +223,7 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
   });
 
-  it("redacts malformed remote failures as retryable server errors", () => {
+  it("redacts malformed remote failures without encouraging retries of an uncertain write", () => {
     const error = remoteGatewayErrorToContractError(
       "commands list",
       result({ status: 503, contentType: "text/plain", body: "private upstream response" }),
@@ -223,9 +233,122 @@ describe("remote gateway exit taxonomy", () => {
       op: "commands list",
       code: "SERVER_UNAVAILABLE",
       exitCode: 1,
-      details: { status: 503, retryable: true },
+      details: { status: 503, retryable: false },
     });
     expect(JSON.stringify(error?.envelope())).not.toContain("private upstream response");
+  });
+
+  it("relays the Pages domain setup instruction and steps instead of the generic failure", () => {
+    const message = [
+      "Pages domain setup was saved but is not ready yet.",
+      "",
+      "nba-ui.rbbt.page (step 2 of 3: DNS): Add or keep these records.",
+      "CNAME nba-ui.rbbt.page = cname.ravi.page",
+    ].join("\n");
+    const error = remoteGatewayErrorToContractError(
+      "pages domains",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages domains",
+          exitCode: 1,
+          outcome: "failed",
+          error: {
+            code: "DOMAIN_SETUP_REQUIRED",
+            message,
+            retryable: false,
+            suggestedAction: "complete the displayed DNS action, wait for propagation, then rerun the same command",
+            domainSetup: [
+              {
+                hostname: "nba-ui.rbbt.page",
+                state: "pages_pending",
+                steps: [
+                  { id: "ownership", status: "done", dnsRecords: [] },
+                  {
+                    id: "dns",
+                    status: "pending",
+                    dnsRecords: [{ type: "CNAME", name: "nba-ui.rbbt.page", value: "cname.ravi.page" }],
+                  },
+                  { id: "certificate", status: "pending", dnsRecords: [] },
+                ],
+                note: "PRIVATE_REMOTE_TEXT",
+              },
+            ],
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "DOMAIN_SETUP_REQUIRED",
+      exitCode: 1,
+      message,
+      details: {
+        suggestedAction: "complete the displayed DNS action, wait for propagation, then rerun the same command",
+        domainSetup: [{ hostname: "nba-ui.rbbt.page", currentStep: { id: "dns", number: 2, total: 3 } }],
+      },
+    });
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_REMOTE_TEXT");
+  });
+
+  it("keeps the generic failure for DOMAIN_SETUP_REQUIRED outside pages domains", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages ship",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages ship",
+          exitCode: 1,
+          outcome: "failed",
+          error: { code: "DOMAIN_SETUP_REQUIRED", message: "PRIVATE_REMOTE_TEXT", retryable: false },
+        }),
+      }),
+    );
+
+    expect(error?.message).toContain("pages ship failed (DOMAIN_SETUP_REQUIRED)");
+  });
+
+  it("shows the DNS to add on a pages domains dry-run through the gateway", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages domains",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages domains",
+          exitCode: 3,
+          outcome: "blocked",
+          error: {
+            code: "WRITE_REQUIRES_EXECUTE",
+            message: "Dry-run: nothing was written. Re-run with --execute to perform the write.",
+            retryable: false,
+            dryRun: true,
+            suggestedAction: "Re-run 'pages domains' adding --execute to perform the write",
+            plan: {
+              site: "briefing",
+              hostnameCount: 2,
+              dnsSetup: [
+                { hostname: "nba.rbbt.page", dnsRecords: [] },
+                { hostname: "bad host; rm -rf", dnsRecords: [] },
+              ],
+            },
+          },
+        }),
+      }),
+    );
+
+    expect(error?.exitCode).toBe(3);
+    expect(error?.message).toContain("CNAME nba.rbbt.page = cname.ravi.page");
+    expect(error?.message).toContain("Global host: CNAME *.<domain> = cname.ravi.page");
+    expect(error?.message).not.toContain("rm -rf");
+    expect(error?.details.plan).toMatchObject({
+      site: "briefing",
+      dnsSetup: [
+        { hostname: "nba.rbbt.page", dnsRecords: [{ type: "CNAME", name: "nba.rbbt.page", value: "cname.ravi.page" }] },
+      ],
+    });
   });
 
   it("preserves a remote PAYLOAD_INVALID issue instead of the generic rejection", () => {
@@ -283,6 +406,68 @@ describe("remote gateway exit taxonomy", () => {
       message: "Missing Console project. Pass --project <project-ref>.",
     });
     expect(JSON.stringify(error?.envelope())).not.toContain("Remote gateway rejected the command input");
+  });
+
+  it("shows which task profile inputs are missing instead of the generic rejection", () => {
+    const message = "Missing required input(s) for task profile input-contract: goal. Pass them with --input goal=...";
+    const error = remoteGatewayErrorToContractError(
+      "tasks create",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "tasks create",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: { code: "USAGE_ERROR", message, retryable: false },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({ op: "tasks create", code: "USAGE_ERROR", exitCode: 2, message });
+  });
+
+  it("preserves a missing task profile error from the gateway", () => {
+    const message = "private profile catalog /runtime/path";
+    const error = remoteGatewayErrorToContractError(
+      "tasks create",
+      result({
+        status: 422,
+        body: JSON.stringify({
+          success: false,
+          op: "tasks create",
+          exitCode: 1,
+          outcome: "failed",
+          error: { code: "TASK_PROFILE_NOT_FOUND", message, retryable: false },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      op: "tasks create",
+      code: "TASK_PROFILE_NOT_FOUND",
+      exitCode: 1,
+      message: "Task profile was not found in this runtime.",
+    });
+    expect(error?.details.suggestedAction).toContain("ravi tasks profiles list --json");
+    expect(JSON.stringify(error?.envelope())).not.toContain(message);
+  });
+
+  it("does not apply the task profile copy to other commands", () => {
+    const error = remoteGatewayErrorToContractError(
+      "demo echo",
+      result({
+        status: 422,
+        body: JSON.stringify({
+          success: false,
+          op: "demo echo",
+          exitCode: 1,
+          outcome: "failed",
+          error: { code: "TASK_PROFILE_NOT_FOUND", message: "Profile lookup failed.", retryable: false },
+        }),
+      }),
+    );
+    expect(error?.message).toBe("Profile lookup failed.");
   });
 
   it("projects 400 validation issues into a usage error", () => {
@@ -434,7 +619,12 @@ describe("remote gateway exit taxonomy", () => {
   });
 
   it.each([
-    [1, "failed", "COMMAND_FAILED", "Remote command failed."],
+    [
+      1,
+      "failed",
+      "COMMAND_FAILED",
+      "commands list failed (COMMAND_FAILED). Check the input with 'commands list --help'; report the requestId if it persists.",
+    ],
     [1, "denied", "PERMISSION_DENIED", "Remote gateway denied the command."],
     [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],
     [
@@ -477,6 +667,119 @@ describe("remote gateway exit taxonomy", () => {
       expect(serialized).not.toContain("metadata");
     },
   );
+
+  it("preserves the canonical capability and denial metadata of a remote denial", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages published",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "pages published",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message:
+              "Permission denied: agent:main cannot execute pages published\nMissing capability: read:pages:list\nInspect: ravi permissions status",
+            retryable: false,
+            stage: "command_access",
+            denialId: 42,
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "PERMISSION_DENIED",
+      exitCode: 1,
+      details: {
+        status: 403,
+        authorizationDecision: "denied",
+        capability: "read:pages:list",
+        stage: "command_access",
+        denialId: 42,
+      },
+    });
+    expect(error?.envelope().error.message).toBe("Remote gateway denied the command.");
+  });
+
+  it("keeps a remote denial without a capability but does not relay raw server copy", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages published",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "pages published",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message: "PRIVATE_REASON_9X2 no missing line here",
+            retryable: false,
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: "PERMISSION_DENIED",
+      details: { status: 403, authorizationDecision: "denied" },
+    });
+    expect(error?.details.capability).toBeUndefined();
+    const serialized = JSON.stringify(error?.envelope());
+    expect(serialized).not.toContain("PRIVATE_REASON_9X2");
+  });
+
+  it("drops a remote capability field that is not a canonical capability", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages published",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "pages published",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message: "denied",
+            retryable: false,
+            capability: "read pages list with PRIVATE_TEXT",
+          },
+        }),
+      }),
+    );
+
+    expect(error?.details.capability).toBeUndefined();
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_TEXT");
+  });
+
+  it("keeps an argument error as a 400 usage_error instead of a permission denial", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pages published",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "pages published",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: {
+            code: "USAGE_ERROR",
+            message: "limit must be a string",
+            retryable: false,
+            issues: [{ path: ["limit"], code: "invalid_type", message: "Expected string" }],
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, details: { status: 400 } });
+    expect(error?.details.authorizationDecision).toBeUndefined();
+    expect(error?.details.issues).toMatchObject([{ path: ["limit"] }]);
+  });
 
   it("tells a remote dry-run to add --execute instead of reporting a policy block", () => {
     // `ravi bug comment <id>` without --execute from an agent session used to print
@@ -730,7 +1033,7 @@ describe("remote gateway exit taxonomy", () => {
     },
   );
 
-  it("keeps generic isolated media send failures as Remote command failed", () => {
+  it("keeps unknown media failures private with operation and code", () => {
     const error = remoteGatewayErrorToContractError(
       "media send",
       result({
@@ -752,7 +1055,7 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({
       op: "media send",
       code: "COMMAND_FAILED",
-      message: "Remote command failed.",
+      message: expect.stringContaining("media send failed (COMMAND_FAILED)"),
       details: { retryable: true },
     });
     expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
@@ -780,7 +1083,7 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({
       op: "transcribe file",
       code: FILE_NOT_FOUND_CODE,
-      message: "Remote command failed.",
+      message: expect.stringContaining("transcribe file failed (FILE_NOT_FOUND)"),
     });
     expect(error?.message).not.toBe(FILE_NOT_FOUND_MESSAGE);
     expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
@@ -856,6 +1159,27 @@ describe("personal connector blocks over the gateway", () => {
       },
     });
     expect(remote?.message).not.toBe("Remote command was blocked by policy.");
+  });
+
+  it("rebuilds the 'message me in private' copy for a write refused for a person with no link", async () => {
+    const { local, remote } = await relay(
+      "pages ship",
+      new CloudAuthError("ACTOR_NOT_LINKED", "remote text is never relayed", {
+        status: 403,
+        details: { linkFlow: "awaiting_dm" },
+      }),
+    );
+
+    expect(local.exitCode).toBe(3);
+    expect(local.message).toContain("message you in private");
+    expect(remote).toMatchObject({
+      op: "pages ship",
+      code: "ACTOR_NOT_LINKED",
+      exitCode: 3,
+      message: local.message,
+      details: { linkFlow: "awaiting_dm", chatLinePt: local.details.chatLinePt },
+    });
+    expect(String(remote?.details.chatLinePt)).toContain("Me chama na DM");
   });
 
   it("keeps the group-blocked line for connectors commands", async () => {
@@ -1242,5 +1566,431 @@ describe("gateway requirement for runtime context keys", () => {
     expect(resolveHostCliGatewayStateDirs({ RAVI_STATE_DIR: "/srv/ravi-state", HOME: "/tmp/x" })).toEqual([
       "/srv/ravi-state",
     ]);
+  });
+});
+
+describe("Library refusals over the gateway", () => {
+  async function relay(op: string, thrown: unknown) {
+    const local = await withPresentationContract(op, presentationProfile("widget"), true, async () => {
+      throw thrown;
+    }).catch((error: unknown) => error as ContractError);
+    expect(local).toBeInstanceOf(ContractError);
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      op,
+      result({ status: response.status, body: await response.text() }),
+    );
+    return { local, remote };
+  }
+
+  it("keeps the code, message, conflict and next step of a Console conflict", async () => {
+    const { local, remote } = await relay(
+      "widgets propose",
+      new CloudAuthError("CONFLICT", "Slug taken.", { status: 409, details: { reason: "slug_taken_in_project" } }),
+    );
+    expect(remote).toMatchObject({
+      code: "CONFLICT",
+      exitCode: 1,
+      message: "A project already has a Library widget with this slug.",
+      details: { conflict: "slug_taken_in_project", suggestedAction: "Pick another slug with --slug" },
+    });
+    expect(remote?.message).toBe(local.message);
+    expect(remote?.details.suggestedAction).not.toContain("Inspect redacted remote logs");
+    expect(remoteNextStepLine(remote!)).toContain("Next: Pick another slug with --slug");
+  });
+
+  it("keeps which item a slug conflict is about (ref, scope, project, archived)", async () => {
+    const { remote } = await relay(
+      "widgets propose",
+      new CloudAuthError("CONFLICT", "Slug taken.", {
+        status: 409,
+        details: {
+          reason: "slug_taken_in_project",
+          conflict: "slug_taken_in_project",
+          ref: "painel/pedido-card",
+          scope: "project",
+          project: "painel",
+          archived: true,
+        },
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "CONFLICT",
+      message:
+        "A project already has a Library widget with this slug (painel/pedido-card, archived: its slug stays taken).",
+      details: {
+        conflict: "slug_taken_in_project",
+        ref: "painel/pedido-card",
+        scope: "project",
+        project: "painel",
+        archived: true,
+      },
+    });
+  });
+
+  it("keeps the versions of a stale_base conflict", async () => {
+    const { remote } = await relay(
+      "widgets propose",
+      new CloudAuthError("CONFLICT", "Stale.", {
+        status: 409,
+        details: { reason: "stale_base", conflict: "stale_base", currentVersion: 3, baseVersion: 2 },
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "CONFLICT",
+      details: { conflict: "stale_base", currentVersion: 3, baseVersion: 2 },
+    });
+    expect(remote?.message).toBe("The published version changed after the plan was read.");
+  });
+
+  it("keeps the Console's own words for a conflict reason this side has no copy for", async () => {
+    const { remote } = await relay(
+      "widgets propose",
+      new CloudAuthError("CONFLICT", "Org proposals from agents need a reviewer group.", {
+        status: 422,
+        details: { reason: "no_reviewers" },
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "CONFLICT",
+      message: "Org proposals from agents need a reviewer group.",
+      details: { conflict: "no_reviewers" },
+    });
+  });
+
+  it("keeps an out-of-view refusal (exit 3) with the session's view instead of a generic policy line", async () => {
+    const message =
+      "Library widget 'outro/card' belongs to project 'outro', which is not this agent's Console project. This session sees org acme and project painel (from agent_default); use --scope painel or --scope org.";
+    const { remote } = await relay(
+      "widgets propose",
+      new LibraryCommandError("LIBRARY_OUT_OF_VIEW", message, 3, {
+        view: { organization: "acme", project: "painel", source: "agent_default" },
+        suggestedAction: "Use --scope painel or --scope org",
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "LIBRARY_OUT_OF_VIEW",
+      exitCode: 3,
+      message,
+      details: {
+        view: { organization: "acme", project: "painel", source: "agent_default" },
+        suggestedAction: "Use --scope painel or --scope org",
+      },
+    });
+    expect(remote?.message).not.toBe("Remote command was blocked by policy.");
+    // The next step already travels as an issue, so text mode does not print it twice.
+    expect(remoteNextStepLine(remote!)).toContain(String(remote?.details.requestId));
+  });
+
+  it("leaves other commands with the generic relay copy", async () => {
+    const local = new ContractError("transcribe file", "CONFLICT", "PRIVATE_MESSAGE_8K2R", 1, {
+      suggestedAction: "PRIVATE_ACTION",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "transcribe file",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote?.message).toContain("transcribe file failed (CONFLICT)");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+    expect(remoteNextStepLine(remote!)).toContain(String(remote?.details.requestId));
+  });
+});
+
+describe("pages read refusals over the gateway", () => {
+  it("keeps the public-only refusal and the turn rule that decided it", async () => {
+    const message =
+      "https://acme.ravi.page/weekly is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the owner's direct chat runs in a session other people's chats share (dmScope main, a route that names the session, or another chat attached to it).";
+    const local = new ContractError("pages read", "PAGE_ACCESS_DENIED", message, 3, {
+      reason: "public_only",
+      turn: "shared_session",
+      suggestedAction: "Tell the person you cannot open this private Page for them.",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "pages read",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote).toMatchObject({
+      code: "PAGE_ACCESS_DENIED",
+      exitCode: 3,
+      details: {
+        turn: "shared_session",
+        suggestedAction: "Tell the person you cannot open this private Page for them.",
+      },
+    });
+    // The relay sanitizes the message again (the URL reads as a path); the rule that decided stays.
+    expect(remote?.message).toContain("This turn is not the operator's own: the owner's direct chat runs in a session");
+    expect(remote?.message).not.toBe("Remote command was blocked by policy.");
+  });
+});
+
+describe("operator-only refusals over the gateway", () => {
+  const chatLine = "Ask me in our private chat and I'll check the calendar there.";
+
+  it("keeps the agenda refusal and the line that sends the operator to their own chat", async () => {
+    const message =
+      "The calendar is used only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the answer would go to a group, where everyone in it would read it.";
+    const local = new ContractError("agenda list", "CALENDAR_ACCESS_DENIED", message, 3, {
+      refusal: "operator_only",
+      turn: "group",
+      suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+      chatLine,
+      chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
+      replyTo: "same_chat",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "agenda list",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote).toMatchObject({
+      code: "CALENDAR_ACCESS_DENIED",
+      exitCode: 3,
+      message,
+      details: {
+        refusal: "operator_only",
+        turn: "group",
+        suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+        chatLine,
+        chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
+        replyTo: "same_chat",
+      },
+    });
+    expect(remoteNextStepLine(remote!)).toContain(
+      `Next: The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+    );
+  });
+
+  it("keeps the meetings read refusal for someone else's turn", async () => {
+    const message =
+      "Meeting transcripts are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: this turn answers into a group or a chat that is not the owner's direct chat.";
+    const local = new ContractError("meetings read", "MEETING_ACCESS_DENIED", message, 3, {
+      refusal: "operator_only",
+      turn: "group",
+      suggestedAction: "Tell the person you cannot read meeting transcripts for other people.",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "meetings read",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote).toMatchObject({
+      code: "MEETING_ACCESS_DENIED",
+      message,
+      details: {
+        refusal: "operator_only",
+        turn: "group",
+        suggestedAction: "Tell the person you cannot read meeting transcripts for other people.",
+      },
+    });
+    expect(remote?.details.chatLine).toBeUndefined();
+  });
+
+  it("does not relay the refusal copy for the same code on another command", async () => {
+    const local = new ContractError("transcribe file", "MEETING_ACCESS_DENIED", "PRIVATE_MESSAGE_8K2R", 3, {
+      suggestedAction: "PRIVATE_ACTION",
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "transcribe file",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote?.message).toBe("Remote command was blocked by policy.");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+});
+
+describe("sessions runtime remote relay", () => {
+  async function relay(op: string, local: ContractError) {
+    const response = contractErrorResponse(local);
+    return remoteGatewayErrorToContractError(op, result({ status: response.status, body: await response.text() }));
+  }
+
+  it("relays a disabled steer with catalog copy and typed details instead of Remote command failed", async () => {
+    const remote = await relay(
+      "sessions runtime steer",
+      new ContractError(
+        "sessions runtime steer",
+        RUNTIME_CONTROL_DISABLED,
+        "PRIVATE_DAEMON_TEXT_8K2R session-private-name",
+        1,
+        {
+          retryable: false,
+          suggestedAction: "PRIVATE_ACTION_8K2R",
+          operation: "turn.steer",
+          activeTurn: true,
+          turnId: "turn_123",
+          disabledReason: RUNTIME_CONTROL_DISABLED_REASON,
+        },
+      ),
+    );
+
+    const catalog = runtimeControlCatalogCopy(RUNTIME_CONTROL_DISABLED);
+    expect(remote).toMatchObject({
+      op: "sessions runtime steer",
+      code: RUNTIME_CONTROL_DISABLED,
+      exitCode: 1,
+      message: catalog?.message,
+      details: {
+        retryable: false,
+        suggestedAction: catalog?.suggestedAction,
+        operation: "turn.steer",
+        activeTurn: true,
+        turnId: "turn_123",
+        disabledReason: RUNTIME_CONTROL_DISABLED_REASON,
+      },
+    });
+    const serialized = JSON.stringify(remote?.envelope());
+    expect(serialized).not.toContain("PRIVATE_DAEMON_TEXT_8K2R");
+    expect(serialized).not.toContain("PRIVATE_ACTION_8K2R");
+    expect(serialized).not.toContain("session-private-name");
+  });
+
+  it("keeps the timeout retryable and drops unbounded details", async () => {
+    const remote = await relay(
+      "sessions runtime read",
+      new ContractError("sessions runtime read", RUNTIME_CONTROL_TIMEOUT, "PRIVATE_8K2R", 1, {
+        retryable: true,
+        suggestedAction: "PRIVATE_ACTION_8K2R",
+        operation: "thread.read",
+        turnId: "turn with spaces and PRIVATE_8K2R",
+        disabledReason: "PRIVATE_REASON_8K2R",
+      }),
+    );
+
+    expect(remote).toMatchObject({
+      code: RUNTIME_CONTROL_TIMEOUT,
+      message: runtimeControlCatalogCopy(RUNTIME_CONTROL_TIMEOUT)?.message,
+      details: { retryable: true },
+    });
+    expect(remote?.details.turnId).toBeUndefined();
+    expect(remote?.details.disabledReason).toBeUndefined();
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+
+  it("does not mark a timed-out rollback retryable", async () => {
+    const remote = await relay(
+      "sessions runtime rollback",
+      new ContractError("sessions runtime rollback", RUNTIME_CONTROL_TIMEOUT, "x", 1, {
+        retryable: true,
+        operation: "thread.rollback",
+      }),
+    );
+
+    expect(remote).toMatchObject({ code: RUNTIME_CONTROL_TIMEOUT, details: { retryable: false } });
+  });
+
+  it("renders missing sessions for info and orphan-close without leaking names", async () => {
+    for (const op of ["sessions info", "sessions close-thread"]) {
+      const remote = await relay(op, new ContractError(op, "SESSION_NOT_FOUND", "private-session-8k2r", 1));
+      expect(remote?.message).toBe("Session not found, or not visible to this context.");
+      expect(JSON.stringify(remote?.envelope())).not.toContain("private-session-8k2r");
+    }
+  });
+
+  it("renders SESSION_NOT_FOUND without echoing the requested session", async () => {
+    const remote = await relay(
+      "sessions runtime steer",
+      new ContractError("sessions runtime steer", "SESSION_NOT_FOUND", "Session not found: private-session-8k2r", 1, {
+        suggestedAction: "List visible sessions with: ravi sessions list --json",
+      }),
+    );
+
+    expect(remote).toMatchObject({
+      code: "SESSION_NOT_FOUND",
+      message: "Session not found, or not visible to this context.",
+    });
+    expect(JSON.stringify(remote?.envelope())).not.toContain("private-session-8k2r");
+  });
+
+  it("does not apply the runtime catalog to other ops", async () => {
+    const remote = await relay(
+      "media send",
+      new ContractError("media send", RUNTIME_CONTROL_DISABLED, "PRIVATE_8K2R", 1, { suggestedAction: "x" }),
+    );
+
+    expect(remote?.message).toContain("media send failed (RUNTIME_CONTROL_DISABLED)");
+  });
+});
+
+describe("thread command remote relay", () => {
+  async function relay(op: string, local: ContractError) {
+    const response = contractErrorResponse(local);
+    return remoteGatewayErrorToContractError(op, result({ status: response.status, body: await response.text() }));
+  }
+
+  it("returns a creation failure for an incompatible model instead of generic remote text", async () => {
+    const remote = await relay(
+      "sessions create-thread",
+      new ContractError("sessions create-thread", "THREAD_MODEL_INVALID", "PRIVATE_MODEL_8K2R", 1),
+    );
+    expect(remote?.message).toContain("Thread was not created");
+    expect(remote?.details.suggestedAction).toContain("--provider codex");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE_MODEL_8K2R");
+  });
+
+  it("relays a report outside a thread with local copy instead of Remote command failed", async () => {
+    const remote = await relay(
+      "sessions report",
+      new ContractError("sessions report", "THREAD_NOT_THREAD_CHILD", "PRIVATE_DAEMON_TEXT_8K2R thread-private", 1, {
+        suggestedAction: "PRIVATE_ACTION_8K2R",
+      }),
+    );
+    expect(remote).toMatchObject({
+      code: "THREAD_NOT_THREAD_CHILD",
+      exitCode: 1,
+      message: "This command is available only inside a Slack thread child session.",
+      details: { suggestedAction: "Run it from the Slack thread's own session, or pass --session <thread session>" },
+    });
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+
+  it("relays the identity mismatch and a missing thread session for close-thread and thread-send", async () => {
+    const mismatch = await relay(
+      "sessions close-thread",
+      new ContractError("sessions close-thread", "THREAD_IDENTITY_MISMATCH", "PRIVATE_8K2R", 1),
+    );
+    expect(mismatch?.message).toContain("lost its session");
+    const missing = await relay(
+      "sessions thread-send",
+      new ContractError("sessions thread-send", "THREAD_SESSION_MISSING", "PRIVATE_8K2R", 1),
+    );
+    expect(missing?.message).toBe("The Slack thread's session no longer exists.");
+    expect(JSON.stringify([mismatch?.envelope(), missing?.envelope()])).not.toContain("PRIVATE");
+  });
+
+  it("relays the task dispatch thread identity conflict", async () => {
+    const remote = await relay(
+      "tasks dispatch",
+      new ContractError("tasks dispatch", "TASK_SESSION_THREAD_IDENTITY_CONFLICT", "PRIVATE_8K2R", 1),
+    );
+    expect(remote?.message).toContain("open Slack thread");
+    expect(remote?.details.suggestedAction).toContain("--session");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+  });
+
+  it("relays decision errors and pending closure with safe local guidance", async () => {
+    for (const [op, code, copy] of [
+      ["decisions answer", "DECISION_SELF_ANSWER", "waiting worker"],
+      ["decisions retry", "DECISION_DELIVERY_UNCERTAIN", "uncertain"],
+      ["sessions close-thread", "THREAD_DECISIONS_PENDING", "open decisions"],
+    ]) {
+      const remote = await relay(op!, new ContractError(op!, code!, "PRIVATE_DECISION_TEXT", 1));
+      expect(remote?.message).toContain(copy!);
+      expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
+    }
+  });
+
+  it("keeps the generic failure for unknown codes, prototype keys and other commands", async () => {
+    for (const [op, code] of [
+      ["sessions report", "COMMAND_FAILED"],
+      ["sessions report", "toString"],
+      ["sessions list", "THREAD_NOT_THREAD_CHILD"],
+    ] as const) {
+      const remote = await relay(op, new ContractError(op, code, "PRIVATE_8K2R", 1));
+      expect(remote?.message).toContain(op);
+      expect(remote?.message).not.toContain("Remote command failed");
+    }
   });
 });

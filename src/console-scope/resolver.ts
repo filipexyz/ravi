@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { resolve as resolvePath } from "node:path";
 import { ConsoleApiClient, normalizeConsoleUrl } from "../cloud-auth/client.js";
 import { CloudAuthError, isCloudAuthError } from "../cloud-auth/errors.js";
@@ -33,6 +34,8 @@ export interface ConsoleScopeResolverDeps {
   deleteCredentials?: typeof deleteCloudCredentials;
   listProjects?: typeof listCloudProjects;
   lookupLocalAgent?: (id: string) => { id: string } | null;
+  /** The configured cwd of a local agent (its workspace), or null. Default: the agent config. */
+  lookupAgentCwd?: (agentId: string) => string | null;
   getContext?: typeof getContext;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
@@ -146,7 +149,7 @@ export async function explainConsoleScope(
     label: "Local Project Console mapping",
     selected: false,
     available: false,
-    reason: "No explicit local Project -> Console project mapping is attached to this runtime context.",
+    reason: "Local Projects were removed; this source is never selected.",
   });
 
   for (const target of scopeTargets(context, deps)) {
@@ -413,6 +416,12 @@ export function scopeTargets(
   if (sessionKey) targets.push({ scopeKind: "session", scopeKey: sessionKey });
   if (sessionName && sessionName !== sessionKey) targets.push({ scopeKind: "session", scopeKey: sessionName });
   if (agentId) targets.push({ scopeKind: "agent", scopeKey: agentId });
+  // An agent's workspace is its configured cwd, the one the pin sync reports
+  // to the Console. A command the daemon gateway runs for the agent has the
+  // daemon's process cwd, so that cwd alone would miss the agent's default
+  // and fall through to the install default.
+  const agentCwd = agentId ? lookupAgentWorkspace(agentId, deps) : null;
+  if (agentCwd && agentCwd !== cwd) targets.push({ scopeKind: "workspace", scopeKey: agentCwd });
   targets.push({ scopeKind: "workspace", scopeKey: cwd });
   targets.push({ scopeKind: "global", scopeKey: "default" });
   return targets;
@@ -628,7 +637,7 @@ function unknownProjectRefError(
     : "";
   const visibleLine = knownRefs.length
     ? `Visible project refs: ${knownRefs.join(", ")}.`
-    : "No visible Console projects were returned. Run `ravi cloud projects list`.";
+    : "No visible Console projects were returned. Run `ravi projects list`.";
   return new CloudAuthError(
     "PAYLOAD_INVALID",
     `Console project "${ref}" was not found.${agentLine} Use an existing Console project ref or set one with:\n  ravi cloud scope set --project <project-ref>\n${visibleLine}`,
@@ -642,6 +651,20 @@ function lookupLocalAgentId(ref: string, deps: ConsoleScopeResolverDeps): string
   } catch {
     return null;
   }
+}
+
+function lookupAgentWorkspace(agentId: string, deps: ConsoleScopeResolverDeps): string | null {
+  try {
+    const cwd = text((deps.lookupAgentCwd ?? defaultLookupAgentCwd)(agentId));
+    return cwd ? normalizeWorkspaceScopeKey(cwd.replace(/^~(?=$|\/)/, homedir())) : null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultLookupAgentCwd(agentId: string): string | null {
+  const { getAgent } = require("../router/config.js") as typeof import("../router/config.js");
+  return getAgent(agentId)?.cwd ?? null;
 }
 
 function defaultLookupLocalAgent(id: string): { id: string } | null {

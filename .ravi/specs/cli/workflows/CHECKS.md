@@ -23,7 +23,7 @@
 - The `task-create` cleanup invariant MUST hold: when attach fails after task
   creation, the created task is deleted before the contract error propagates.
 - The teaching surfaces MUST show `--execute` on both braked ops — today that
-  is `docs/workflow-substrate-v0.md`, because no `workflows` skill exists (gap
+  is `design/workflow-substrate-v0.md`, because no `workflows` skill exists (gap
   registered in the SPEC).
 - `bun test src/cli/commands/workflows.test.ts` SHOULD pass after any change to
   the workflows contract surface.

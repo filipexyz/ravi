@@ -71,3 +71,24 @@ describe("buildTriggerPrompt", () => {
     expect(prompt).toContain("Analise missing_permission");
   });
 });
+
+describe("buildTriggerPrompt with a debounced batch", () => {
+  const trigger = { name: "burst", topic: "x.y", message: "Process {{data.n}}", messageSource: "manual" as const };
+
+  it("lists every event of the burst and resolves the message against the last one", () => {
+    const events = [1, 2, 3].map((n) => ({ topic: "x.y", data: { n } }));
+    const prompt = buildTriggerPrompt(trigger, events[2], { events, omitted: 0 });
+    expect(prompt).toContain("Batch: 3 events debounced into this fire");
+    expect(prompt).toContain('"n": 1');
+    expect(prompt).toContain('"n": 2');
+    expect(prompt).toContain("Process 3");
+    expect(prompt).not.toContain("Data:");
+  });
+
+  it("keeps the single-event shape for a batch of one", () => {
+    const only = { topic: "x.y", data: { n: 7 } };
+    const prompt = buildTriggerPrompt(trigger, only, { events: [only], omitted: 0 });
+    expect(prompt).not.toContain("Batch:");
+    expect(prompt).toContain("Data:");
+  });
+});

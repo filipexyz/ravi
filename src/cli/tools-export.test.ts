@@ -8,6 +8,12 @@ import { ContractError, contractDryRun, contractFail } from "./agent-contract.js
 import { fail, runWithContext } from "./context.js";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "./decorators.js";
 import { extractTools } from "./tools-export.js";
+import { createHash } from "node:crypto";
+import { recordTurnRead } from "../knowledge/store/turn-reads.js";
+import { setWriteAfterReadDefaultsForTests } from "../knowledge/safety/write-after-read.js";
+import { createRuntimeContext } from "../runtime/context-registry.js";
+import { buildSessionRelayTurnOrigin } from "../runtime/turn-origin.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 @Group({ name: "negated", description: "Negated option fixture", scope: "open" })
 class NegatedToolCommands {
@@ -293,8 +299,13 @@ describe("tools export contract errors", () => {
     expect(JSON.parse(text)).toMatchObject({
       success: false,
       op: "contract boom",
-      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+      error: {
+        code: "UNHANDLED_ERROR",
+        message: "contract boom failed internally. Report the operation to the operator before retrying.",
+        retryable: false,
+      },
     });
+    expect(text).not.toContain("requestId");
   });
 
   it("converts a legacy expected failure into one canonical envelope", async () => {
@@ -408,5 +419,60 @@ describe("tools export contract errors", () => {
         },
       },
     });
+  });
+});
+
+@Group({ name: "sessions", description: "Write-after-read fixture", scope: "open" })
+class SessionsRelayFixtureCommands {
+  @Command({ name: "send", description: "Send to a session" })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "send", risk: "medium" })
+  send(@Option({ flags: "--to <session>", description: "Session" }) _to?: string) {
+    console.log(JSON.stringify({ sent: true }));
+  }
+}
+
+describe("tools export knowledge write-after-read", () => {
+  it("blocks a relay from a turn that read unapproved content, and allows it before the read", async () => {
+    const stateDir = await createIsolatedRaviState("tools-write-after-read-");
+    const cards: unknown[] = [];
+    setWriteAfterReadDefaultsForTests({
+      ownerTarget: () => ({ channel: "whatsapp", accountId: "wa-main", to: "o", chatId: "o", contactId: "c_owner" }),
+      requestApproval: ((...args: unknown[]) => {
+        cards.push(args);
+        return new Promise(() => {});
+      }) as never,
+    });
+    try {
+      const turn = createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: "main",
+        sessionName: "main-session",
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "sessions", source: "test" }],
+        metadata: {
+          actorPrincipal: "automation:operator:local",
+          actorResolution: "resolved",
+          executorAgentId: "main",
+          agentIdentityCompartment: "workspace:default",
+          turnOrigin: buildSessionRelayTurnOrigin("send", undefined),
+          turnReplyTarget: { kind: "none" },
+        },
+      });
+      const tool = extractTools([SessionsRelayFixtureCommands]).find((entry) => entry.name === "sessions_send");
+      const run = () => runWithContext({ agentId: "main", context: turn }, () => tool!.handler({ to: "x" }));
+
+      expect((await run()).isError).not.toBe(true);
+
+      recordTurnRead(createHash("sha256").update(turn.contextId).digest("hex"), "said");
+      const blocked = await run();
+      expect(blocked.isError).toBe(true);
+      expect(blocked.outcome).toBe("blocked");
+      expect(blocked.exitCode).toBe(3);
+      expect(blocked.content[0]?.text).toContain("KNOWLEDGE_WRITE_AFTER_READ");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(cards).toHaveLength(1);
+    } finally {
+      setWriteAfterReadDefaultsForTests(null);
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 });

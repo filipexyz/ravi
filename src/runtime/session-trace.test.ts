@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getRecentHistory, saveMessage } from "../db.js";
+import { getRecentHistory, saveMessage, getChatDbPath } from "../db.js";
+import { Database } from "bun:sqlite";
 import { nats } from "../nats.js";
-import { attachChatToSession, detachChatFromSession } from "../router/sessions.js";
+import {
+  attachChatToSession,
+  detachChatFromSession,
+  resetSession,
+  updateProviderSession,
+  clearProviderSession,
+} from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
   getOrCreateSession,
@@ -17,7 +24,8 @@ import {
 import { getSessionTurnUsageSummary } from "../router/sessions.js";
 import { dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
+import { getSessionTraceBlob, getSessionTurn } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import {
   bindRuntimeCredentialAttemptTurn,
@@ -36,6 +44,7 @@ import {
   canReleaseRuntimeDeliveryBarrier,
   createQueuedRuntimeUserMessage,
   createRuntimeMessageGenerator,
+  pickRuntimeTurnAuthorityEnvelope,
 } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import {
@@ -60,6 +69,8 @@ import {
   resolveRuntimeCredentialUpstreamProvider,
   resolveRuntimePromptSource,
 } from "./runtime-request-builder.js";
+import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
+import { resolveRuntimeSession } from "./session-resolver.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { loadedSkillMatchesGate } from "./skill-gate.js";
@@ -539,6 +550,165 @@ describe("runtime session trace instrumentation", () => {
     stateDir = null;
   });
 
+  for (const child of [false, true]) {
+    for (const gate of ["compatible", "skill", "credential", "reset", "missing", "provider"] as const) {
+      it(`cold start after idle eviction preserves context (${child ? "child" : "root"}, ${gate})`, async () => {
+        const sessionKey = child ? `${SESSION_KEY}:thread:continuity` : SESSION_KEY;
+        const sessionName = child ? "cold-child" : SESSION_NAME;
+        const previousTtl = process.env.RAVI_RUNTIME_IDLE_SESSION_TTL_MS;
+        process.env.RAVI_RUNTIME_IDLE_SESSION_TTL_MS = "10";
+        const session = getOrCreateSession(sessionKey, AGENT_ID, stateDir!, { name: sessionName });
+        updateSessionName(sessionKey, sessionName);
+        if (child) updateProviderSession(SESSION_KEY, PROVIDER, "unrelated-parent-state");
+        saveMessage(sessionName, "user", "Implementar apenas o endpoint de status.");
+        saveMessage(sessionName, "assistant", "Decidido: endpoint GET /status, teste focado, sem deploy.");
+        saveMessage("another-session", "assistant", "NEVER IMPORT OTHER SESSION CONTEXT");
+        const params = {
+          sessionId: "previous-provider-session",
+          skillVisibility: gate === "skill" ? makeSkillVisibility("advertised") : makeRaviTaskSkillVisibility(),
+          ...(gate === "credential"
+            ? {
+                runtimeCredential: {
+                  credentialId: "previous-account",
+                  fingerprint: "previous",
+                  runtimeProvider: PROVIDER,
+                },
+              }
+            : {}),
+        };
+        const oldRuntime = makeRuntimeSessionThenHang([
+          {
+            type: "turn.complete",
+            providerSessionId: "previous-provider-session",
+            session: { displayId: "previous-provider-session", params },
+            usage: { inputTokens: 10, outputTokens: 4 },
+          },
+        ]);
+        const oldStreaming = makeStreamingSession({ queryHandle: oldRuntime });
+        const live = new Map([[sessionName, oldStreaming]]);
+        const provider: SessionRuntimeProvider = {
+          id: PROVIDER,
+          getCapabilities: () => capabilities,
+          startSession: () => makeRuntimeSession([]),
+        };
+        registerRuntimeProvider(PROVIDER, () => provider);
+        try {
+          await runTraceLoop(oldStreaming, oldRuntime, { sessionName, session, streamingSessions: live });
+          expect(listSessionEventsForTest(sessionKey).some((event) => event.eventType === "session.idle_evicted")).toBe(
+            true,
+          );
+          expect(live.has(sessionName)).toBe(false);
+          expect(getSession(sessionKey)?.providerSessionId).toBe("previous-provider-session");
+
+          if (gate === "reset") resetSession(sessionKey);
+          if (gate === "missing") clearProviderSession(sessionKey);
+          const prompt = { prompt: "pode implementar" };
+          const stored = getSession(sessionKey)!;
+          if (gate === "provider") {
+            stored.runtimeProvider = "previous-provider";
+            stored.runtimeProviderOverride = PROVIDER;
+          }
+          const resolved = resolveRuntimeSession({
+            sessionName,
+            prompt,
+            defaultRuntimeProviderId: PROVIDER,
+            identity: {
+              sessionEntry: stored,
+              session: stored,
+              agentId: AGENT_ID,
+              agent: makeAgent(),
+              agentCwd: stateDir!,
+              sessionCwd: stateDir!,
+              dbSessionKey: sessionKey,
+            },
+          })!;
+          expect(resolved.canResumeStoredSession).toBe(!["reset", "missing", "provider"].includes(gate));
+          saveMessage(sessionName, "user", prompt.prompt);
+          const streaming = makeStreamingSession({ pendingMessages: [createQueuedRuntimeUserMessage(prompt)] });
+          const { runtimeRequest } = await buildRuntimeStartRequest({
+            runId: "run-cold-start",
+            sessionName,
+            prompt,
+            session: stored,
+            agent: makeAgent(),
+            runtimeProviderId: PROVIDER,
+            runtimeProvider: provider,
+            runtimeCapabilities: capabilities,
+            sessionCwd: stateDir!,
+            dbSessionKey: sessionKey,
+            model: MODEL,
+            runtimeResolution: {
+              options: { model: MODEL },
+              sources: { model: "agent_default", effort: null, thinking: null },
+              hasTaskRuntimeContext: false,
+            },
+            storedRuntimeSessionParams: resolved.storedRuntimeSessionParams,
+            storedProviderSessionId: resolved.storedProviderSessionId,
+            canResumeStoredSession: resolved.canResumeStoredSession,
+            resumeDecision: resolved.resumeDecision,
+            streamingSession: streaming,
+            stashedMessages: new Map(),
+            defaultRuntimeProviderId: PROVIDER,
+            crashRecovery,
+          });
+          try {
+            const yielded = await runtimeRequest.prompt.next();
+            const content = yielded.value!.message.content;
+            expect(content).toContain("pode implementar");
+            expect(content).not.toContain("NEVER IMPORT OTHER SESSION CONTEXT");
+            expect(runtimeRequest.forkSession).toBeUndefined();
+            if (gate === "compatible") {
+              expect(runtimeRequest.resume).toBe("previous-provider-session");
+              expect(content).not.toContain("Runtime Context Recovery");
+            } else if (gate === "reset") {
+              expect(runtimeRequest.resume).toBeUndefined();
+              expect(content).not.toContain("Runtime Context Recovery");
+              expect(content).not.toContain("Decidido:");
+              expect(getRecentHistory(sessionName).some((message) => message.content.startsWith("Decidido:"))).toBe(
+                true,
+              );
+            } else {
+              expect(runtimeRequest.resume).toBeUndefined();
+              expect(runtimeRequest.resumeSession).toBeUndefined();
+              expect(content).toContain("Decidido: endpoint GET /status, teste focado, sem deploy.");
+              expect(content).toContain("# Current Request\npode implementar");
+              expect(
+                listSessionEventsForTest(sessionKey).find((event) => event.eventType === "runtime.continuity")
+                  ?.payloadJson,
+              ).toMatchObject({
+                strategy: "durable_history",
+                reason: {
+                  skill: "skill_visibility_changed",
+                  credential: "credential_changed",
+                  missing: "missing_provider_session",
+                  provider: "provider_mismatch",
+                }[gate],
+              });
+            }
+            expect(getRecentHistory(sessionName).filter((message) => message.content === prompt.prompt)).toHaveLength(
+              1,
+            );
+            // A second turn on this live handle must not repeat the recovery block.
+            streaming.turnActive = false;
+            streaming.pendingMessages = [createQueuedRuntimeUserMessage({ prompt: "segundo turno" })];
+            streaming.onTurnComplete?.();
+            const second = await runtimeRequest.prompt.next();
+            expect(second.value!.message.content).toBe("segundo turno");
+          } finally {
+            streaming.done = true;
+            streaming.onTurnComplete?.();
+            await runtimeRequest.prompt.return(undefined);
+          }
+        } finally {
+          unregisterRuntimeProvider(PROVIDER);
+          oldStreaming.abortController.abort();
+          if (previousTtl === undefined) delete process.env.RAVI_RUNTIME_IDLE_SESSION_TTL_MS;
+          else process.env.RAVI_RUNTIME_IDLE_SESSION_TTL_MS = previousTtl;
+        }
+      });
+    }
+  }
+
   it("records adapter.request with prompt blobs when the runtime prompt generator yields", async () => {
     const rulesDir = join(stateDir ?? "/tmp", ".ravi", "rules");
     mkdirSync(rulesDir, { recursive: true });
@@ -575,13 +745,14 @@ describe("runtime session trace instrumentation", () => {
         deliveryBarrier: "after_tool",
       },
       session: makeSession(),
-      agent: makeAgent({ systemPromptAppend: "Trace agent instruction." }),
+      agent: makeAgent({ systemPromptAppend: "Trace agent instruction.", effort: "high" }),
       runtimeProviderId: PROVIDER,
       runtimeProvider: provider,
       runtimeCapabilities: capabilities,
       sessionCwd: stateDir ?? "/tmp",
       dbSessionKey: SESSION_KEY,
       model: MODEL,
+      configModel: MODEL,
       runtimeResolution: {
         options: { model: MODEL, effort: "high", thinking: "normal" },
         sources: { model: "agent_default", effort: "task_override", thinking: "task_override" },
@@ -624,7 +795,7 @@ describe("runtime session trace instrumentation", () => {
       startedTool: false,
       materializedOutput: false,
     });
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     const adapterRequest = events.find((event) => event.eventType === "adapter.request");
     expect(adapterRequest?.messageId).toBe("wamid-1");
     expect(adapterRequest).toMatchObject({
@@ -642,11 +813,12 @@ describe("runtime session trace instrumentation", () => {
       session_key: SESSION_KEY,
       provider: PROVIDER,
       model: MODEL,
+      // The queued turn records the options it resolved for itself.
       effort: "high",
-      thinking: "normal",
-      model_source: "agent_default",
-      effort_source: "task_override",
-      thinking_source: "task_override",
+      thinking: null,
+      model_source: "global_default",
+      effort_source: "agent_default",
+      thinking_source: null,
       cwd: stateDir,
       delivery_barrier: "after_tool",
       task_barrier_task_id: "task-1",
@@ -797,258 +969,275 @@ describe("runtime session trace instrumentation", () => {
     await runtimeRequest.prompt.return?.(undefined);
   });
 
-  it("keeps a Slack turn ahead of later WhatsApp input while a WhatsApp tool turn is active", async () => {
-    updateSessionName(SESSION_KEY, SESSION_NAME);
-    const whatsappChat = dbUpsertChat({
-      channel: "whatsapp",
-      instanceId: "whatsapp-main",
-      platformChatId: "wa-busy@s.whatsapp.net",
-      chatType: "dm",
-      title: "WhatsApp busy turn",
-    });
-    const slackChat = dbUpsertChat({
-      channel: "slack",
-      instanceId: "slack-main",
-      platformChatId: "D123",
-      chatType: "dm",
-      title: "Slack queued turn",
-    });
-    attachChatToSession({ sessionKey: SESSION_KEY, chatId: whatsappChat.id, setOutputTarget: true });
-    attachChatToSession({ sessionKey: SESSION_KEY, chatId: slackChat.id, setOutputTarget: false });
-
-    const whatsappSource: RuntimeMessageTarget = {
-      channel: "whatsapp",
-      accountId: "whatsapp-main",
-      instanceId: "whatsapp-main",
-      chatId: whatsappChat.platformChatId,
-      canonicalChatId: whatsappChat.id,
-      sourceMessageId: "wamid-active",
-    };
-    const slackSource: RuntimeMessageTarget = {
-      channel: "slack",
-      accountId: "slack-main",
-      instanceId: "slack-main",
-      chatId: slackChat.platformChatId,
-      canonicalChatId: slackChat.id,
-      sourceMessageId: "slack-during-tool",
-    };
-    const laterWhatsappSource: RuntimeMessageTarget = {
-      ...whatsappSource,
-      sourceMessageId: "wamid-later",
-    };
-    const activeWhatsapp = createQueuedRuntimeUserMessage({
-      prompt: "long WhatsApp turn",
-      source: whatsappSource,
-      deliveryBarrier: "after_tool",
-    });
-    const streaming = makeStreamingSession({
-      agentMode: "active",
-      currentSource: whatsappSource,
-      currentEffort: "xhigh",
-      pendingMessages: [activeWhatsapp],
-      turnActive: false,
-    });
-    const provider: SessionRuntimeProvider = {
-      id: "codex",
-      getCapabilities: () => capabilities,
-      startSession: () => makeRuntimeSession([]),
-    };
-    const { runtimeRequest } = await buildRuntimeStartRequest({
-      runId: "run-cross-surface-tool-order",
-      sessionName: SESSION_NAME,
-      prompt: { prompt: "long WhatsApp turn", source: whatsappSource },
-      session: makeSession(),
-      agent: makeAgent({ provider: "codex" }),
-      runtimeProviderId: "codex",
-      runtimeProvider: provider,
-      runtimeCapabilities: capabilities,
-      sessionCwd: stateDir ?? "/tmp",
-      dbSessionKey: SESSION_KEY,
-      model: MODEL,
-      runtimeResolution: {
-        options: { model: MODEL },
-        sources: { model: "agent_default", effort: null, thinking: null },
-        hasTaskRuntimeContext: false,
-      },
-      storedRuntimeSessionParams: undefined,
-      canResumeStoredSession: false,
-      resolvedSource: whatsappSource,
-      streamingSession: streaming,
-      stashedMessages: new Map(),
-      defaultRuntimeProviderId: "codex",
-      crashRecovery,
-    });
-    const providerTurns: Array<{ prompt: string; sourceChatId?: string; replyChatId?: string }> = [];
-    const readProviderTurn = async () => {
-      const next = await runtimeRequest.prompt.next();
-      if (next.done) throw new Error("runtime prompt stream ended before the queued cross-surface turn");
-      providerTurns.push({
-        prompt: next.value.message.content,
-        sourceChatId: streaming.currentSource?.canonicalChatId,
-        replyChatId: streaming.currentReplyTarget?.canonicalChatId,
+  for (const providerId of ["codex", "pi"] as const) {
+    it(`${providerId} yields after a WhatsApp tool, answers queued chats in order and resumes unfinished work`, async () => {
+      updateSessionName(SESSION_KEY, SESSION_NAME);
+      const whatsappChat = dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "whatsapp-main",
+        platformChatId: "wa-busy@s.whatsapp.net",
+        chatType: "dm",
+        title: "WhatsApp busy turn",
       });
-    };
-
-    let interruptCalls = 0;
-    const toolStatesWhenQueued: boolean[] = [];
-    const dispatcher = new RuntimeSessionDispatcher({
-      instanceId: "trace-test",
-      maxConcurrentSessions: 10,
-      interactiveReservedSessions: 0,
-      safeEmit: async () => {},
-      notifyRuntimeRecoveryExhausted: async () => {},
-      getConfigModel: () => MODEL,
-      crashRecovery,
-    });
-    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
-    const runtimeSession: RuntimeSessionHandle = {
-      provider: "codex",
-      interrupt: async () => {
-        interruptCalls++;
-      },
-      events: (async function* () {
-        await readProviderTurn();
-        yield {
-          type: "tool.started",
-          toolUse: { id: "tool-long-whatsapp", name: "Bash", input: { cmd: "true" } },
-        } satisfies RuntimeEvent;
-
-        toolStatesWhenQueued.push(streaming.toolRunning);
-        await dispatcher.handlePromptImmediate(SESSION_NAME, {
-          prompt: "Slack while WhatsApp is busy",
-          source: slackSource,
-          context: {
-            channelId: "slack",
-            channelName: "Slack",
-            accountId: slackSource.accountId,
-            instanceId: slackSource.instanceId,
-            chatId: slackSource.chatId,
-            canonicalChatId: slackSource.canonicalChatId,
-            messageId: slackSource.sourceMessageId!,
-            senderId: "U123",
-            isGroup: false,
-            timestamp: Date.now(),
-          },
-          _agentId: AGENT_ID,
-          deliveryBarrier: "after_tool",
-          deliveryBarrierSource: "default",
-        });
-        await dispatcher.handlePromptImmediate(SESSION_NAME, {
-          prompt: "later WhatsApp direction",
-          source: laterWhatsappSource,
-          context: {
-            channelId: "whatsapp",
-            channelName: "WhatsApp",
-            accountId: laterWhatsappSource.accountId,
-            instanceId: laterWhatsappSource.instanceId,
-            chatId: laterWhatsappSource.chatId,
-            canonicalChatId: laterWhatsappSource.canonicalChatId,
-            messageId: laterWhatsappSource.sourceMessageId!,
-            senderId: "5511999999999",
-            isGroup: false,
-            timestamp: Date.now() + 1,
-          },
-          _agentId: AGENT_ID,
-          deliveryBarrier: "after_tool",
-          deliveryBarrierSource: "default",
-        });
-        yield {
-          type: "tool.completed",
-          toolUseId: "tool-long-whatsapp",
-          toolName: "Bash",
-          content: "ok",
-        } satisfies RuntimeEvent;
-        yield { type: "assistant.message", text: "original WhatsApp response" } satisfies RuntimeEvent;
-        yield {
-          type: "turn.complete",
-          providerSessionId: "provider-after-whatsapp",
-          usage: { inputTokens: 1, outputTokens: 1 },
-        } satisfies RuntimeEvent;
-
-        await readProviderTurn();
-        yield { type: "assistant.message", text: "Slack response" } satisfies RuntimeEvent;
-        yield {
-          type: "turn.complete",
-          providerSessionId: "provider-after-slack",
-          usage: { inputTokens: 1, outputTokens: 1 },
-        } satisfies RuntimeEvent;
-
-        await readProviderTurn();
-        yield { type: "assistant.message", text: "later WhatsApp response" } satisfies RuntimeEvent;
-        yield {
-          type: "turn.complete",
-          providerSessionId: "provider-after-later-whatsapp",
-          usage: { inputTokens: 1, outputTokens: 1 },
-        } satisfies RuntimeEvent;
-      })(),
-    };
-    streaming.queryHandle = runtimeSession;
-
-    const releaseAfterTool = dispatcher as unknown as {
-      releaseQueuedPromptsAfterTool(sessionName: string): Promise<void>;
-    };
-    let toolBarrierReleaseCalls = 0;
-    const responses: Array<{ response?: string; target?: RuntimeMessageTarget }> = [];
-    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
-      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
-        responses.push(data as (typeof responses)[number]);
-      }
-    });
-
-    try {
-      await runTraceLoop(streaming, runtimeSession, {
-        agent: makeAgent({ provider: "codex" }),
-        streamingSessions: dispatcher.streamingSessions,
-        onToolBarrierReleased: (sessionName) => {
-          toolBarrierReleaseCalls++;
-          return releaseAfterTool.releaseQueuedPromptsAfterTool(sessionName);
-        },
+      const slackChat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "slack-main",
+        platformChatId: "D123",
+        chatType: "dm",
+        title: "Slack queued turn",
       });
-    } finally {
-      emitSpy.mockRestore();
-      streaming.done = true;
-      streaming.onTurnComplete?.();
-      await runtimeRequest.prompt.return?.(undefined);
-    }
+      attachChatToSession({ sessionKey: SESSION_KEY, chatId: whatsappChat.id, setOutputTarget: true });
+      attachChatToSession({ sessionKey: SESSION_KEY, chatId: slackChat.id, setOutputTarget: false });
 
-    expect(toolStatesWhenQueued).toEqual([true]);
-    expect(toolBarrierReleaseCalls).toBe(1);
-    expect(interruptCalls).toBe(0);
-    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy")).toHaveLength(
-      2,
-    );
-    expect(providerTurns).toEqual([
-      {
+      const whatsappSource: RuntimeMessageTarget = {
+        channel: "whatsapp",
+        accountId: "whatsapp-main",
+        instanceId: "whatsapp-main",
+        chatId: whatsappChat.platformChatId,
+        canonicalChatId: whatsappChat.id,
+        sourceMessageId: "wamid-active",
+      };
+      const slackSource: RuntimeMessageTarget = {
+        channel: "slack",
+        accountId: "slack-main",
+        instanceId: "slack-main",
+        chatId: slackChat.platformChatId,
+        canonicalChatId: slackChat.id,
+        sourceMessageId: "slack-during-tool",
+      };
+      const laterWhatsappSource: RuntimeMessageTarget = {
+        ...whatsappSource,
+        sourceMessageId: "wamid-later",
+      };
+      const activeWhatsapp = createQueuedRuntimeUserMessage({
         prompt: "long WhatsApp turn",
-        sourceChatId: whatsappChat.id,
-        replyChatId: whatsappChat.id,
-      },
-      {
-        prompt:
-          "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
-          "Slack while WhatsApp is busy",
-        sourceChatId: slackChat.id,
-        replyChatId: slackChat.id,
-      },
-      {
-        prompt:
-          "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\n" +
-          "later WhatsApp direction",
-        sourceChatId: whatsappChat.id,
-        replyChatId: whatsappChat.id,
-      },
-    ]);
-    expect(
-      responses.map((response) => ({
-        response: response.response,
-        targetChatId: response.target?.canonicalChatId,
-      })),
-    ).toEqual([
-      { response: "original WhatsApp response", targetChatId: whatsappChat.id },
-      { response: "Slack response", targetChatId: slackChat.id },
-      { response: "later WhatsApp response", targetChatId: whatsappChat.id },
-    ]);
-  });
+        source: whatsappSource,
+        deliveryBarrier: "after_tool",
+      });
+      const streaming = makeStreamingSession({
+        agentMode: "active",
+        currentSource: whatsappSource,
+        currentEffort: "xhigh",
+        pendingMessages: [activeWhatsapp],
+        turnActive: false,
+      });
+      const provider: SessionRuntimeProvider = {
+        id: providerId,
+        getCapabilities: () => capabilities,
+        startSession: () => makeRuntimeSession([]),
+      };
+      const { runtimeRequest } = await buildRuntimeStartRequest({
+        runId: "run-cross-surface-tool-order",
+        sessionName: SESSION_NAME,
+        prompt: { prompt: "long WhatsApp turn", source: whatsappSource },
+        session: makeSession(),
+        agent: makeAgent({ provider: providerId }),
+        runtimeProviderId: providerId,
+        runtimeProvider: provider,
+        runtimeCapabilities: capabilities,
+        sessionCwd: stateDir ?? "/tmp",
+        dbSessionKey: SESSION_KEY,
+        model: MODEL,
+        runtimeResolution: {
+          options: { model: MODEL },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: whatsappSource,
+        streamingSession: streaming,
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: providerId,
+        crashRecovery,
+      });
+      const providerTurns: Array<{ prompt: string; sourceChatId?: string; replyChatId?: string }> = [];
+      const readProviderTurn = async () => {
+        const next = await runtimeRequest.prompt.next();
+        if (next.done) throw new Error("runtime prompt stream ended before the queued cross-surface turn");
+        providerTurns.push({
+          prompt: next.value.message.content,
+          sourceChatId: streaming.currentSource?.canonicalChatId,
+          replyChatId: streaming.currentReplyTarget?.canonicalChatId,
+        });
+      };
+
+      let interruptCalls = 0;
+      const toolStatesWhenQueued: boolean[] = [];
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "trace-test",
+        maxConcurrentSessions: 10,
+        interactiveReservedSessions: 0,
+        safeEmit: async () => {},
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => MODEL,
+        crashRecovery,
+      });
+      dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+      const runtimeSession: RuntimeSessionHandle = {
+        provider: providerId,
+        interrupt: async () => {
+          interruptCalls++;
+        },
+        events: (async function* () {
+          await readProviderTurn();
+          yield {
+            type: "tool.started",
+            toolUse: { id: "tool-long-whatsapp", name: "Bash", input: { cmd: "true" } },
+          } satisfies RuntimeEvent;
+
+          toolStatesWhenQueued.push(streaming.toolRunning);
+          await dispatcher.handlePromptImmediate(SESSION_NAME, {
+            prompt: "Slack while WhatsApp is busy",
+            source: slackSource,
+            context: {
+              channelId: "slack",
+              channelName: "Slack",
+              accountId: slackSource.accountId,
+              instanceId: slackSource.instanceId,
+              chatId: slackSource.chatId,
+              canonicalChatId: slackSource.canonicalChatId,
+              messageId: slackSource.sourceMessageId!,
+              senderId: "U123",
+              isGroup: false,
+              timestamp: Date.now(),
+            },
+            _agentId: AGENT_ID,
+            deliveryBarrier: "after_tool",
+            deliveryBarrierSource: "default",
+          });
+          await dispatcher.handlePromptImmediate(SESSION_NAME, {
+            prompt: "later WhatsApp direction",
+            source: laterWhatsappSource,
+            context: {
+              channelId: "whatsapp",
+              channelName: "WhatsApp",
+              accountId: laterWhatsappSource.accountId,
+              instanceId: laterWhatsappSource.instanceId,
+              chatId: laterWhatsappSource.chatId,
+              canonicalChatId: laterWhatsappSource.canonicalChatId,
+              messageId: laterWhatsappSource.sourceMessageId!,
+              senderId: "5511999999999",
+              isGroup: false,
+              timestamp: Date.now() + 1,
+            },
+            _agentId: AGENT_ID,
+            deliveryBarrier: "after_tool",
+            deliveryBarrierSource: "default",
+          });
+          yield {
+            type: "tool.completed",
+            toolUseId: "tool-long-whatsapp",
+            toolName: "Bash",
+            content: "ok",
+          } satisfies RuntimeEvent;
+          expect(interruptCalls).toBe(1);
+          expect(streaming.currentSource?.canonicalChatId).toBe(whatsappChat.id);
+          yield { type: "turn.interrupted" } satisfies RuntimeEvent;
+
+          await readProviderTurn();
+          yield { type: "assistant.message", text: "Slack response" } satisfies RuntimeEvent;
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-after-slack",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          } satisfies RuntimeEvent;
+
+          await readProviderTurn();
+          yield { type: "assistant.message", text: "later WhatsApp response" } satisfies RuntimeEvent;
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-after-later-whatsapp",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          } satisfies RuntimeEvent;
+
+          await readProviderTurn();
+          yield { type: "assistant.message", text: "resumed WhatsApp response" } satisfies RuntimeEvent;
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-after-resume",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          } satisfies RuntimeEvent;
+        })(),
+      };
+      streaming.queryHandle = runtimeSession;
+
+      const releaseAfterTool = dispatcher as unknown as {
+        releaseQueuedPromptsAfterTool(sessionName: string): Promise<void>;
+      };
+      let toolBarrierReleaseCalls = 0;
+      const responses: Array<{ response?: string; target?: RuntimeMessageTarget }> = [];
+      const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+        if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+          responses.push(data as (typeof responses)[number]);
+        }
+      });
+
+      try {
+        await runTraceLoop(streaming, runtimeSession, {
+          agent: makeAgent({ provider: providerId }),
+          streamingSessions: dispatcher.streamingSessions,
+          onToolBarrierReleased: (sessionName) => {
+            toolBarrierReleaseCalls++;
+            return releaseAfterTool.releaseQueuedPromptsAfterTool(sessionName);
+          },
+        });
+      } finally {
+        emitSpy.mockRestore();
+        streaming.done = true;
+        streaming.onTurnComplete?.();
+        await runtimeRequest.prompt.next();
+        await runtimeRequest.prompt.return?.(undefined);
+      }
+
+      expect(toolStatesWhenQueued).toEqual([true]);
+      expect(toolBarrierReleaseCalls).toBe(1);
+      expect(interruptCalls).toBe(1);
+      expect(
+        listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
+      ).toHaveLength(2);
+      expect(providerTurns).toEqual([
+        {
+          prompt: "long WhatsApp turn",
+          sourceChatId: whatsappChat.id,
+          replyChatId: whatsappChat.id,
+        },
+        {
+          prompt:
+            "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
+            "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
+            "Slack while WhatsApp is busy",
+          sourceChatId: slackChat.id,
+          replyChatId: slackChat.id,
+        },
+        {
+          prompt:
+            "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\n" +
+            "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
+            "later WhatsApp direction",
+          sourceChatId: whatsappChat.id,
+          replyChatId: whatsappChat.id,
+        },
+        {
+          prompt: expect.stringContaining("Resume the unfinished request"),
+          sourceChatId: whatsappChat.id,
+          replyChatId: whatsappChat.id,
+        },
+      ]);
+      expect(
+        responses.map((response) => ({
+          response: response.response,
+          targetChatId: response.target?.canonicalChatId,
+        })),
+      ).toEqual([
+        { response: "Slack response", targetChatId: slackChat.id },
+        { response: "later WhatsApp response", targetChatId: whatsappChat.id },
+        { response: "resumed WhatsApp response", targetChatId: whatsappChat.id },
+      ]);
+      expect(providerTurns[3]?.prompt).toContain("long WhatsApp turn");
+      expect(streaming.pendingMessages).toEqual([]);
+    });
+  }
 
   it("persists operator/HTTP sessions.send as raw user text and keeps inbound surface hints", async () => {
     const slackSource: RuntimeMessageTarget = {
@@ -1138,9 +1327,13 @@ describe("runtime session trace instrumentation", () => {
     expect(userRows[1]).not.toContain("no inbound chat");
     expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual([
       "active inbound turn",
-      "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\nresponde só: pong",
-      "[session surface] This turn has no inbound chat. A normal reply stays on this session.\nhello from gateway",
-      "[session surface] This turn came from a Slack chat. A normal reply returns there.\nhello from slack",
+      // The operator's own turns, but this agent holds no `ravi knowledge` grant.
+      "[session surface] This turn came from the CLI. A normal reply returns to the waiting CLI.\n" +
+        "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\nresponde só: pong",
+      "[session surface] This turn has no inbound chat. A normal reply stays on this session.\n" +
+        "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\nhello from gateway",
+      "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
+        "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\nhello from slack",
     ]);
     expect(streaming.pendingMessages[1]?.launchPrompt?.prompt).toBe("responde só: pong");
     expect(streaming.pendingMessages[1]?.launchPrompt?._runtimePrompt).toContain("waiting CLI");
@@ -1239,7 +1432,7 @@ describe("runtime session trace instrumentation", () => {
         expect(queuedDuringInFlight).toBe(true);
         expect(interruptCalls).toBe(0);
         expect(
-          listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
+          listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
         ).toHaveLength(1);
 
         yield { type: "assistant.message", text: "first reply" } satisfies RuntimeEvent;
@@ -1301,7 +1494,9 @@ describe("runtime session trace instrumentation", () => {
     const lastTurn = getSessionTurnUsageSummary(SESSION_KEY).lastTurn;
     expect(lastTurn?.status).toBe("complete");
     expect(lastTurn?.completedAt).toBeGreaterThan(0);
-    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(2);
+    expect(listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "turn.complete")).toHaveLength(
+      2,
+    );
   });
 
   it("restarts with the queued send when the runtime loop fails between turns", async () => {
@@ -2002,7 +2197,9 @@ describe("runtime session trace instrumentation", () => {
       expect(attemptRow?.turn_id).toBe(streaming.currentTraceTurnId);
       expect(attemptRow?.status).toBe("started");
 
-      const adapterRequest = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "adapter.request");
+      const adapterRequest = listSessionEventsForTest(SESSION_KEY).find(
+        (event) => event.eventType === "adapter.request",
+      );
       expect(adapterRequest?.payloadJson).toMatchObject({
         runtime_credential: "[REDACTED]",
       });
@@ -2059,7 +2256,7 @@ describe("runtime session trace instrumentation", () => {
       },
     );
 
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     // The provider reported `trace-skill` as loaded for the first time on this
     // terminal, so the vector mutation gets its own telemetry row before the
     // terminal is recorded.
@@ -2273,7 +2470,7 @@ describe("runtime session trace instrumentation", () => {
       ]),
     );
 
-    const statusEvents = listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
+    const statusEvents = listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
     const compactingValues = statusEvents.map((event) => {
       const payload = event.payloadJson;
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
@@ -2282,6 +2479,33 @@ describe("runtime session trace instrumentation", () => {
     expect(compactingValues).toEqual([true, false]);
     expect(streaming.compacting).toBe(false);
     expect(streaming.turnActive).toBe(false);
+  });
+
+  it("persists one runtime.status per transition instead of every provider tick", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "status", status: "thinking" },
+        { type: "status", status: "thinking" },
+        { type: "status", status: "thinking" },
+        { type: "status", status: "compacting" },
+        { type: "status", status: "compacting" },
+        { type: "status", status: "thinking" },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    const statuses = listSessionEventsForTest(SESSION_KEY)
+      .filter((event) => event.eventType === "runtime.status")
+      .map((event) => event.status);
+    expect(statuses).toEqual(["thinking", "compacting", "thinking"]);
   });
 
   it("clears live busy state when the provider emits idle status", async () => {
@@ -2388,7 +2612,7 @@ describe("runtime session trace instrumentation", () => {
   });
 
   function collectRuntimeStatusCompacting(): Array<unknown> {
-    return listSessionEvents(SESSION_KEY)
+    return listSessionEventsForTest(SESSION_KEY)
       .filter((event) => event.eventType === "runtime.status")
       .map((event) => {
         const payload = event.payloadJson;
@@ -2520,7 +2744,7 @@ describe("runtime session trace instrumentation", () => {
       expect(readFileSync(generatedFilePath!).subarray(0, 8)).toEqual(
         Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       );
-      expect(JSON.stringify({ emitted, trace: listSessionEvents(SESSION_KEY) })).not.toContain(imageBase64);
+      expect(JSON.stringify({ emitted, trace: listSessionEventsForTest(SESSION_KEY) })).not.toContain(imageBase64);
     } finally {
       emitSpy.mockRestore();
       if (generatedFilePath) rmSync(generatedFilePath, { force: true });
@@ -2706,7 +2930,9 @@ describe("runtime session trace instrumentation", () => {
       expect(responses.some((text) => text.includes("Compactando") || text.includes("compactada"))).toBe(false);
       // Internal observability MUST be preserved for automation origins.
       expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
-      const statusEvents = listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
+      const statusEvents = listSessionEventsForTest(SESSION_KEY).filter(
+        (event) => event.eventType === "runtime.status",
+      );
       expect(
         statusEvents.every((event) => {
           const payload = event.payloadJson;
@@ -2786,7 +3012,7 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
     expect(emitted.some((event) => event.data.type === "skill.visibility.loaded")).toBe(true);
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.complete");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.complete");
     const terminalPayload = terminal?.payloadJson as
       | { session?: { params?: { skillVisibility?: RuntimeSkillVisibilitySnapshot } } }
       | undefined;
@@ -2915,7 +3141,9 @@ describe("runtime session trace instrumentation", () => {
       true,
     );
     // Nothing re-announced the load, so no duplicate telemetry rows either.
-    expect(listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "skill.visibility.loaded")).toEqual([]);
+    expect(
+      listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "skill.visibility.loaded"),
+    ).toEqual([]);
   }
 
   it("keeps the gate-marked short id loaded across later turns when Claude re-announces its catalog", async () => {
@@ -2970,7 +3198,7 @@ describe("runtime session trace instrumentation", () => {
       },
     });
 
-    const loadedEvents = listSessionEvents(SESSION_KEY).filter(
+    const loadedEvents = listSessionEventsForTest(SESSION_KEY).filter(
       (event) => event.eventType === "skill.visibility.loaded",
     );
     expect(loadedEvents).toHaveLength(1);
@@ -3060,7 +3288,7 @@ describe("runtime session trace instrumentation", () => {
       ]),
     );
 
-    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual([
+    expect(listSessionEventsForTest(SESSION_KEY).map((event) => event.eventType)).toEqual([
       "adapter.request",
       "assistant.message",
       "turn.complete",
@@ -3418,11 +3646,146 @@ describe("runtime session trace instrumentation", () => {
       ]),
     );
 
+    // sessions/turn-output: commentary is materialized as its own row with its
+    // class, never concatenated into the final answer.
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content, utterance_class }) => [content, utterance_class])).toEqual([
+      ["Checking the durable state.", "commentary"],
+      ["Final answer only.", "final"],
+    ]);
+    expect(assistant.every(({ turn_id }) => turn_id === "turn-final-with-commentary")).toBe(true);
+    expect(getSessionTurn("turn-final-with-commentary")?.outputState).toBe("final");
+  });
+
+  it("continues delivery when durable assistant output cannot be written", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-storage-failure");
+    getRecentHistory(SESSION_NAME, 1);
+    const db = new Database(getChatDbPath());
+    db.exec(`CREATE TRIGGER fail_assistant_write BEFORE INSERT ON messages
+      WHEN NEW.role = 'assistant' BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END`);
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "The answer is ready." },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]),
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data: data as Record<string, unknown> });
+          },
+        },
+      );
+      expect(
+        emitted.some(
+          ({ topic, data }) =>
+            topic.endsWith(".runtime") && data.type === "assistant.message" && data.text === "The answer is ready.",
+        ),
+      ).toBe(true);
+      expect(getSessionTurn("turn-storage-failure")?.status).toBe("complete");
+      expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toHaveLength(0);
+    } finally {
+      db.exec("DROP TRIGGER fail_assistant_write");
+      db.close();
+    }
+  });
+
+  it("keeps commentary of a turn that fails without a final utterance and marks it incomplete with NULL usage", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-commentary-then-fail");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Reading the repo.", metadata: { item: { phase: "commentary" } } },
+        { type: "assistant.message", text: "Running the tests.", metadata: { item: { phase: "commentary" } } },
+        { type: "turn.failed", error: "provider_inactive", recoverable: false },
+      ]),
+    );
+
+    const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+    expect(assistant.map(({ content, utterance_class }) => [content, utterance_class])).toEqual([
+      ["Reading the repo.", "commentary"],
+      ["Running the tests.", "commentary"],
+    ]);
+    const turn = getSessionTurn("turn-commentary-then-fail");
+    expect(turn?.status).toBe("failed");
+    expect(turn?.outputState).toBe("incomplete");
+    // No usage was reported: NULL, never 0.
+    expect(turn?.inputTokens).toBeNull();
+    expect(turn?.outputTokens).toBeNull();
+    const summary = getSessionTurnUsageSummary(SESSION_KEY);
+    expect(summary.lastTurn?.inputTokens).toBeNull();
+    expect(summary.lastTurn?.outputState).toBe("incomplete");
+    // The aggregate skips the unknown turn instead of adding zero, and counts it apart.
+    expect(summary.recent.completeTurns).toBe(0);
+    expect(summary.recent.unknownUsageTurns).toBe(1);
+  });
+
+  for (const terminal of ["turn.failed", "turn.interrupted"] as const) {
+    it(`preserves reported usage when a turn ends with ${terminal}`, async () => {
+      const streaming = makeStreamingSession();
+      const turnId = `turn-measured-${terminal}`;
+      seedAdapterTrace(streaming, turnId);
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "Measured work.", metadata: { item: { phase: "commentary" } } },
+          terminal === "turn.failed"
+            ? {
+                type: terminal,
+                error: "provider_inactive",
+                recoverable: false,
+                usage: { inputTokens: 23, outputTokens: 9, cacheReadTokens: 4 },
+              }
+            : { type: terminal, usage: { inputTokens: 23, outputTokens: 9, cacheReadTokens: 4 } },
+        ]),
+      );
+      expect(getSessionTurn(turnId)).toMatchObject({
+        inputTokens: 23,
+        outputTokens: 9,
+        cacheReadTokens: 4,
+        outputState: "incomplete",
+      });
+    });
+  }
+
+  it("writes one row for an exact same-turn commentary replay, and a new row in a later turn", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-replay-a");
+    const commentary = { item: { phase: "commentary" } };
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Looking at the logs.", metadata: commentary },
+        { type: "assistant.message", text: "Looking at the logs.", metadata: commentary },
+        { type: "assistant.message", text: "Done." },
+        { type: "turn.complete", providerSessionId: "provider-after", usage: { inputTokens: 1, outputTokens: 1 } },
+      ]),
+    );
     expect(
       getRecentHistory(SESSION_NAME)
         .filter(({ role }) => role === "assistant")
         .map(({ content }) => content),
-    ).toEqual(["Final answer only."]);
+    ).toEqual(["Looking at the logs.", "Done."]);
+
+    // The same text in another turn is a new utterance, not a replay.
+    expect(
+      saveMessage(SESSION_NAME, "assistant", "Looking at the logs.", null, {
+        utteranceClass: "commentary",
+        turnId: "turn-replay-b",
+      }),
+    ).toBe(true);
+    expect(
+      saveMessage(SESSION_NAME, "assistant", "Looking at the logs.", null, {
+        utteranceClass: "commentary",
+        turnId: "turn-replay-b",
+      }),
+    ).toBe(false);
+    expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toHaveLength(3);
   });
 
   it("persists each visible assistant.message as its own chat.db row in one physical turn", async () => {
@@ -3630,7 +3993,7 @@ describe("runtime session trace instrumentation", () => {
 
     expect(abortedDuringCompaction).toBe(false);
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(hangsAfterCompaction);
-    const terminals = listSessionEvents(SESSION_KEY).filter((event) =>
+    const terminals = listSessionEventsForTest(SESSION_KEY).filter((event) =>
       ["turn.complete", "turn.failed", "turn.interrupted"].includes(event.eventType),
     );
     expect(terminals).toHaveLength(1);
@@ -3694,6 +4057,8 @@ describe("runtime session trace instrumentation", () => {
     process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-mid-then-tool-hang");
+    // A cron turn: its continuation must act for the same automation.
+    streaming.currentTurnAuthority = pickRuntimeTurnAuthorityEnvelope({ _cron: true, _jobId: "job-daily" });
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
     const stashed = new Map<string, RuntimeUserMessage[]>();
     const providerLifecycle: string[] = [];
@@ -3739,6 +4104,11 @@ describe("runtime session trace instrumentation", () => {
     expect(queued).toHaveLength(1);
     expect(queued[0]?.message.content).toContain("Inatividade");
     expect(queued[0]?.message.content).toContain("O turno nao foi encerrado");
+    expect(queued[0]?.launchPrompt).toMatchObject({
+      _cron: true,
+      _jobId: "job-daily",
+      source: streaming.currentSource,
+    });
 
     expect(Date.now() - started).toBeLessThan(8_000);
     expect(providerLifecycle).toEqual(["close"]);
@@ -3757,14 +4127,14 @@ describe("runtime session trace instrumentation", () => {
     expect(lastTurn?.status).toBe("interrupted");
     expect(lastTurn?.completedAt).toBeGreaterThan(0);
     expect(getSessionTurn("turn-mid-then-tool-hang")?.status).toBe("interrupted");
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       abort_reason: "provider_inactive",
       autoRecovered: true,
     });
     // Nothing about this turn is recorded as a failure: it was interrupted and
     // the session continues with a notice.
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
   });
 
   it("stops retrying and says so once inactivity recovery is exhausted", async () => {
@@ -3902,7 +4272,7 @@ describe("runtime session trace instrumentation", () => {
       await runTraceLoop(streaming, hang(), { stashedMessages: new Map() });
     };
     const attempts = () =>
-      listSessionEvents(SESSION_KEY)
+      listSessionEventsForTest(SESSION_KEY)
         .filter((event) => event.eventType === "turn.interrupted")
         .map((event) => {
           const payload = event.payloadJson;
@@ -3948,6 +4318,31 @@ describe("runtime session trace instrumentation", () => {
     );
 
     expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
+  });
+
+  it("suppresses a truncated silence marker and keeps prose that cites the marker", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-silent-truncated-citation");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "@@SILEN" },
+        { type: "assistant.message", text: "Para silenciar, responda @@SILENT@@ no fim." },
+        { type: "assistant.message", text: "@@SILENT@@ Checking the current state." },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 0 },
+        },
+      ]),
+    );
+
+    expect(
+      getRecentHistory(SESSION_NAME)
+        .filter(({ role }) => role === "assistant")
+        .map(({ content }) => content),
+    ).toEqual(["Para silenciar, responda @@SILENT@@ no fim.", "Checking the current state."]);
   });
 
   it("does not persist prompt-too-long assistant text as a durable row", async () => {
@@ -4003,7 +4398,7 @@ describe("runtime session trace instrumentation", () => {
     expect(assistants[0]!.content).not.toContain(assistants[1]!.content);
   });
 
-  it("refuses empty-join mash of assistant history and keeps the new utterance clean", async () => {
+  it("keeps the provider utterance in history independently of delivery cleanup", async () => {
     saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "assistant", "Olá. A conexão foi restabelecida.", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "assistant", "primeiro?", null, { agentId: AGENT_ID });
@@ -4037,14 +4432,12 @@ describe("runtime session trace instrumentation", () => {
       "Olá",
       "ok.",
       "pong",
-      "Oi. No que você quer trabalhar?",
+      "Olá. A conexão foi restabelecida.Olá. A conexão foi restabelecida.primeiro?Oláok.pongOi. No que você quer trabalhar?",
     ]);
-    expect(assistants.some(({ content }) => content.includes("primeiro?Olá"))).toBe(false);
-    expect(assistants.some(({ content }) => content.includes("ok.pong"))).toBe(false);
-    expect(assistants.at(-1)?.content).toBe("Oi. No que você quer trabalhar?");
+    expect(assistants.at(-1)?.turn_id).toBe("turn-empty-join-mash");
   });
 
-  it("splits a first-turn empty-join mash into separate rows", async () => {
+  it("stores a provider text block as one row even when delivery splits it", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-empty-join-first");
     await runTraceLoop(
@@ -4060,9 +4453,8 @@ describe("runtime session trace instrumentation", () => {
     );
 
     const assistants = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
-    expect(assistants.map(({ content }) => content)).toEqual(["primeiro?", "Olá"]);
-    expect(assistants).toHaveLength(2);
-    expect(assistants[0]!.id).not.toBe(assistants[1]!.id);
+    expect(assistants.map(({ content }) => content)).toEqual(["primeiro?Olá"]);
+    expect(assistants).toHaveLength(1);
   });
 
   it("delivers a new-turn exact repeat of an earlier assistant phrase", async () => {
@@ -4115,7 +4507,7 @@ describe("runtime session trace instrumentation", () => {
     ).toBe(true);
   });
 
-  it("skips a pure mashed replay with a warn-visible silent runtime event", async () => {
+  it("keeps a new-turn utterance even when delivery suppresses a suspected mashed replay", async () => {
     saveMessage(SESSION_NAME, "user", "oi", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "assistant", "primeiro?", null, { agentId: AGENT_ID });
     saveMessage(SESSION_NAME, "assistant", "Olá", null, { agentId: AGENT_ID });
@@ -4146,7 +4538,8 @@ describe("runtime session trace instrumentation", () => {
       getRecentHistory(SESSION_NAME)
         .filter(({ role }) => role === "assistant")
         .map(({ content }) => content),
-    ).toEqual(["primeiro?", "Olá"]);
+    ).toEqual(["primeiro?", "Olá", "primeiro?Olá"]);
+    expect(getSessionTurn("turn-mashed-replay-skip")?.outputState).toBe("final");
     expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
     expect(emitted.some((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "silent")).toBe(true);
     expect(emitted.find((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "silent")?.data.reason).toBe(
@@ -4202,9 +4595,9 @@ describe("runtime session trace instrumentation", () => {
     expect(persisted?.runtimeProvider).toBe("codex");
     expect(persisted?.providerSessionId).toBe("codex-thread");
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("failed");
-    expect(getSessionTurn("turn-login-stub")?.status).toBe("failed");
+    expect(getSessionTurn("turn-login-stub")).toMatchObject({ status: "failed", inputTokens: 0, outputTokens: 0 });
   });
 
   it("records provider turn interruptions as terminal interrupted turns", async () => {
@@ -4213,7 +4606,7 @@ describe("runtime session trace instrumentation", () => {
 
     await runTraceLoop(streaming, makeRuntimeSession([{ type: "turn.interrupted" }]));
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({ abort_reason: "provider_interrupted" });
     expect(getSessionTurn("turn-interrupted")?.status).toBe("interrupted");
@@ -4339,7 +4732,7 @@ describe("runtime session trace instrumentation", () => {
     );
     expect(responses).toEqual([]);
     expect(streaming.pendingMessages.map((message) => message.pendingId)).toContain(successor.pendingId);
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.interrupted")).toBe(true);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.interrupted")).toBe(true);
   });
 
   it("refuses Grok turn.complete on the 15:52 open-Bash timeline", async () => {
@@ -4396,8 +4789,8 @@ describe("runtime session trace instrumentation", () => {
       },
     );
 
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       recoverable: true,
@@ -4466,14 +4859,14 @@ describe("runtime session trace instrumentation", () => {
       },
     );
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       recoverable: true,
       suppressedRecoverable: true,
       abort_reason: "recoverable_interrupt_failure",
     });
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
     expect(responses.some((entry) => entry.response === "Vou inspecionar o ambiente.")).toBe(true);
     expect(responses.some((entry) => (entry.response ?? "").includes(providerError))).toBe(false);
     expect(responses.some((entry) => (entry.response ?? "").startsWith("Error:"))).toBe(false);
@@ -4523,7 +4916,12 @@ describe("runtime session trace instrumentation", () => {
       provider: "grok",
     });
 
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
+    expect(getSessionTurn("turn-grok-tools-silence")).toMatchObject({
+      status: "failed",
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "turn.complete")).toBe(false);
     expect(
       responses.some(
         (entry) => entry.response === formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
@@ -4686,7 +5084,7 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.status).toBe("aborted");
     expect(terminal?.payloadJson).toMatchObject({
       abort_reason: "runtime_event_loop_closed",
@@ -4830,7 +5228,7 @@ describe("runtime session trace instrumentation", () => {
       markerSpy.mockRestore();
     }
 
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "assistant.message")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "assistant.message")).toBe(false);
     expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
   });
 
@@ -4950,7 +5348,7 @@ describe("runtime session trace instrumentation", () => {
       status: "running",
       completedAt: null,
     });
-    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual(["adapter.request"]);
+    expect(listSessionEventsForTest(SESSION_KEY).map((event) => event.eventType)).toEqual(["adapter.request"]);
   });
 
   it("does not replay a turn after durable tool authorization without a provider tool event", async () => {
@@ -5128,7 +5526,7 @@ describe("runtime session trace instrumentation", () => {
       emitSpy.mockRestore();
     }
 
-    const suppression = listSessionEvents(SESSION_KEY).find(
+    const suppression = listSessionEventsForTest(SESSION_KEY).find(
       (event) => event.eventType === "dispatch.restart_suppressed",
     );
     expect(starts).toBe(2);
@@ -5220,7 +5618,7 @@ describe("runtime session trace instrumentation", () => {
     expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
     expect(restartRequests).toEqual([]);
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
     expect(terminal?.payloadJson).toMatchObject({
       abort_reason: "runtime_event_loop_closed",
       autoRecovered: false,
@@ -5337,7 +5735,7 @@ describe("runtime session trace instrumentation", () => {
     expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
     expect(providerLifecycle).toContain("close");
 
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     expect(events.some((event) => event.eventType === "session.fatal_tool")).toBe(true);
     const terminal = events.find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("failed");
@@ -5398,7 +5796,7 @@ describe("runtime session trace instrumentation", () => {
 
     expect(outcome).toBe("open");
     expect(restartRequests).toEqual([]);
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "session.fatal_tool")).toBe(false);
+    expect(listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "session.fatal_tool")).toBe(false);
   });
 
   it("records failed turns with error details", async () => {
@@ -5417,7 +5815,7 @@ describe("runtime session trace instrumentation", () => {
       ]),
     );
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("failed");
     expect(terminal?.error).toBe("model unavailable");
     expect(terminal?.payloadJson).toMatchObject({
@@ -5464,7 +5862,7 @@ describe("runtime session trace instrumentation", () => {
       "The agent could not complete this request because of an internal runtime error. Please try again.",
     );
 
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.error).toBe(rawError);
   });
 
@@ -5503,6 +5901,72 @@ describe("runtime session trace instrumentation", () => {
     expect(classifyUserFacingRuntimeLimitFailure(error)).toBeUndefined();
     expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
     expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
+  });
+
+  it("deduplicates provider transport failures inside their own 15 minute window", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+    const error = "Error: Connection error.";
+
+    const classified = classifyUserFacingRuntimeLimitFailure(error, now);
+    expect(classified?.kind).toBe("transport");
+    expect(classified?.expiresAt).toBe(now + 15 * 60_000);
+
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now }).suppressed).toBe(false);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now: now + 60_000 }).suppressed).toBe(true);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now: now + 16 * 60_000 }).suppressed).toBe(
+      false,
+    );
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error,
+        scope: "pi:slack:ravi-hil:C999",
+        now: now + 1_000,
+      }).suppressed,
+    ).toBe(false);
+  });
+
+  it("deduplicates transport failures that differ only in endpoint details", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "Error: connect ECONNREFUSED 127.0.0.1:443",
+        scope,
+        now,
+      }).suppressed,
+    ).toBe(false);
+    // Same outage, different port/endpoint text: still one unavailable notice.
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "Error: connect ECONNREFUSED 127.0.0.1:8443",
+        scope,
+        now: now + 60_000,
+      }).suppressed,
+    ).toBe(true);
+  });
+
+  it("keeps the session-limit window separate from the transport window", () => {
+    const now = new Date("2026-10-27T10:36:00-03:00").getTime();
+    const scope = "pi:slack:ravi-hil:C123";
+
+    const limit = classifyUserFacingRuntimeLimitFailure("You've hit your session limit - resets 4:20pm", now);
+    const transport = classifyUserFacingRuntimeLimitFailure("Error: Connection error.", now);
+
+    expect(limit?.kind).toBe("session_limit");
+    expect(transport?.kind).toBe("transport");
+    expect(transport?.expiresAt ?? 0).toBeLessThan(limit?.expiresAt ?? 0);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({ error: "Error: Connection error.", scope, now }).suppressed,
+    ).toBe(false);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "You've hit your session limit - resets 4:20pm",
+        scope,
+        now: now + 1_000,
+      }).suppressed,
+    ).toBe(false);
   });
 
   it("times out active provider turns that stop emitting runtime events", async () => {
@@ -5562,7 +6026,7 @@ describe("runtime session trace instrumentation", () => {
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
     expect(emitted.some((event) => event.data.type === "turn.failed")).toBe(true);
 
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     expect(events.some((event) => event.eventType === "session.timeout" && event.status === "timeout")).toBe(true);
     const terminal = events.find((event) => event.eventType === "turn.failed");
     expect(terminal?.status).toBe("timeout");
@@ -5614,7 +6078,7 @@ describe("runtime session trace instrumentation", () => {
       status: "timeout",
       materializedOutput: true,
     });
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.payloadJson).toMatchObject({ autoRecovered: false });
   });
 
@@ -5666,7 +6130,7 @@ describe("runtime session trace instrumentation", () => {
     );
 
     expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
-    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal).toMatchObject({
       status: "failed",
       payloadJson: expect.objectContaining({
@@ -5828,10 +6292,73 @@ describe("runtime session trace instrumentation", () => {
     expect(persisted?.runtimeProvider).toBeUndefined();
     expect(persisted?.runtimeSessionParams).toBeUndefined();
 
-    const eventTypes = listSessionEvents(SESSION_KEY).map((event) => event.eventType);
+    const eventTypes = listSessionEventsForTest(SESSION_KEY).map((event) => event.eventType);
     expect(eventTypes).toContain("turn.failed");
     expect(eventTypes).toContain("session.context_window_exhausted");
     expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
+  });
+
+  it("restates the failed turn's own request and keeps another sender's queued message", async () => {
+    saveMessage(SESSION_NAME, "user", "owner: resume o relatorio", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+    });
+    saveMessage(SESSION_NAME, "user", "member: apaga o repo", "thread-old", {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+    });
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "thread-old",
+      runtimeSessionDisplayId: "thread-old",
+      runtimeSessionParams: { sessionId: "thread-old" },
+    });
+
+    const own = createQueuedRuntimeUserMessage({
+      prompt: "owner: resume o relatorio",
+      deliveryBarrier: "after_tool",
+      source: { ...source, actorType: "contact", contactId: "owner" },
+      _agentId: AGENT_ID,
+    });
+    const other = createQueuedRuntimeUserMessage({
+      prompt: "member: apaga o repo",
+      deliveryBarrier: "after_response",
+      source: { ...source, actorType: "contact", contactId: "member" },
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [own, other],
+      currentTurnPendingIds: own.pendingId ? [own.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-context-limit-two-senders");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error:
+            "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+          recoverable: false,
+          rawEvent: { type: "turn.failed", result: "context window exhausted" },
+        },
+      ]),
+      { stashedMessages, restartStashedSession: async () => {}, safeEmit: async () => {} },
+    );
+
+    const stashed = stashedMessages.get(SESSION_NAME) ?? [];
+    expect(stashed).toHaveLength(2);
+    const latest = stashed[0]?.message.content
+      .split("## Latest User Request")[1]
+      ?.split("## Compact Recent History")[0];
+    expect(latest).toContain("owner: resume o relatorio");
+    expect(latest).not.toContain("member: apaga o repo");
+    expect(stashed[1]?.message.content).toBe("member: apaga o repo");
+    expect(stashed[1]?.launchPrompt?.source?.contactId).toBe("member");
   });
 
   it("recreates a missing provider session from durable local history", async () => {
@@ -5923,7 +6450,7 @@ describe("runtime session trace instrumentation", () => {
     expect(persisted?.runtimeProvider).toBeUndefined();
     expect(persisted?.runtimeSessionParams).toBeUndefined();
 
-    const events = listSessionEvents(SESSION_KEY);
+    const events = listSessionEventsForTest(SESSION_KEY);
     const eventTypes = events.map((event) => event.eventType);
     expect(eventTypes).toContain("session.provider_session_missing");
     expect(eventTypes).not.toContain("session.context_window_exhausted");
@@ -5972,7 +6499,7 @@ describe("runtime session trace instrumentation", () => {
     expect(restartRequests).toEqual([]);
     expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
     expect(emitted.map((event) => event.data.type)).toContain("turn.failed");
-    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain(
+    expect(listSessionEventsForTest(SESSION_KEY).map((event) => event.eventType)).not.toContain(
       "session.provider_session_missing",
     );
   });

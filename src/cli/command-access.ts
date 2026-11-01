@@ -1,4 +1,5 @@
 import { getContext } from "./context.js";
+import { currentConsoleInvocation, authorizeConsoleCommand } from "../sdk/gateway/console-context.js";
 import type { CommandAccessOptions, ScopeType } from "./decorators.js";
 import {
   authorizePermission,
@@ -14,6 +15,7 @@ import {
   type AuthorizationCapability,
 } from "../permissions/authorization-guidance.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { isRuntimeContextLive } from "../runtime/context-liveness.js";
 import type {
   CapabilityContextLike,
   PermissionProviderCliCommandOperation,
@@ -24,6 +26,7 @@ import type {
 export type CliCommandAccessSource = "cli" | "tool" | "gateway";
 
 export interface CliCommandAccessInput {
+  canonicalName?: string;
   group: string;
   command: string;
   access?: CommandAccessOptions;
@@ -31,11 +34,19 @@ export interface CliCommandAccessInput {
   source: CliCommandAccessSource;
 }
 
+export interface CliCommandAccessDenialDetails {
+  stage: "command_access";
+  capability?: string;
+  [key: string]: unknown;
+}
+
 export interface CliCommandAccessResult {
   allowed: boolean;
   errorMessage: string;
   decision?: PermissionProviderDecision;
   attempted: PermissionProviderDecision[];
+  /** Structured denial details shared by CLI, tool and gateway surfaces. */
+  denialDetails?: CliCommandAccessDenialDetails;
 }
 
 export interface CliCommandAuthorizationInput extends CliCommandAccessInput {
@@ -68,15 +79,19 @@ export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInp
     errorMessage: boundary.errorMessage,
     decision: accessResult.decision,
     attempted: accessResult.attempted,
+    denialDetails: commandAccessDenialDetails(input),
   };
 }
 
 export function enforceCliCommandAccess(input: CliCommandAccessInput): CliCommandAccessResult {
+  const invocation = currentConsoleInvocation();
+  if (invocation) return authorizeConsoleCommand(invocation, input);
   if (!input.access) {
     return {
       allowed: false,
       errorMessage: `Permission denied: command ${formatCommand(input)} is missing @CommandAccess metadata`,
       attempted: [],
+      denialDetails: commandAccessDenialDetails(input),
     };
   }
   const inputWithAccess: CliCommandAccessInput & { access: CommandAccessOptions } = { ...input, access: input.access };
@@ -87,6 +102,7 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
       allowed: false,
       errorMessage: authority.errorMessage,
       attempted: [],
+      denialDetails: commandAccessDenialDetails(input),
     };
   }
 
@@ -129,6 +145,21 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
     errorMessage,
     decision: last,
     attempted,
+    denialDetails: commandAccessDenialDetails(input),
+  };
+}
+
+/** Structured denial shared by every surface so `details` stays identical. */
+function commandAccessDenialDetails(input: CliCommandAccessInput): CliCommandAccessDenialDetails {
+  if (!input.access) return { stage: "command_access" };
+  return {
+    stage: "command_access",
+    capability: canonicalCommandAccessCapability({
+      group: input.group,
+      command: input.command,
+      access: input.access,
+      input: input.input,
+    }),
   };
 }
 
@@ -169,6 +200,17 @@ export function listCliCommandAccessCandidates(
   return commandAccessCandidates(input);
 }
 
+/** Canonical capability the command access check asks for (the same one the denial message names). */
+export function canonicalCommandAccessCapability(input: {
+  group: string;
+  command: string;
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): string {
+  const capability = commandAccessCapability(input);
+  return `${capability.permission}:${capability.objectType}:${capability.objectId}`;
+}
+
 export function buildCliCommandOperation(input: CliCommandAccessInput): PermissionProviderCliCommandOperation {
   if (!input.access) {
     throw new Error(`Command ${formatCommand(input)} is missing @CommandAccess metadata`);
@@ -193,6 +235,12 @@ function resolveCommandAccessAuthority(
   const ctx = getContext();
   const hasContextKey = Boolean(process.env[RAVI_CONTEXT_KEY_ENV]?.trim());
   const useRuntimeContext = source !== "cli" || hasContextKey;
+  if (useRuntimeContext && ctx?.context && !isRuntimeContextLive(ctx.context)) {
+    return {
+      allowed: false,
+      errorMessage: `Permission denied: runtime context ${ctx.context.contextId} is revoked or expired`,
+    };
+  }
   if (useRuntimeContext && ctx?.context) {
     const agentId = ctx.agentId ?? ctx.context.agentId;
     const context: CapabilityContextLike = {
@@ -260,7 +308,9 @@ function commandAccessCandidates(input: CliCommandAccessInput & { access: Comman
   if (input.access.requireConcreteResource) {
     return concreteResourceCandidates;
   }
-  const legacyCandidates = commandObjectCandidates(input.group, input.command).map((objectId) => ({
+  const retiredGroup = input.access.retiredLegacyGroups?.includes(input.group) ?? false;
+  const legacyObjectIds = retiredGroup ? [] : commandObjectCandidates(input.group, input.command);
+  const legacyCandidates = legacyObjectIds.map((objectId) => ({
     permission: "execute",
     objectType: "group",
     objectId,
@@ -269,9 +319,10 @@ function commandAccessCandidates(input: CliCommandAccessInput & { access: Comman
   return dedupeCandidates([...semanticCandidates, ...concreteResourceCandidates, ...legacyCandidates]);
 }
 
-function commandAccessConcreteResourceCandidates(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-): Array<{
+function commandAccessConcreteResourceCandidates(input: {
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): Array<{
   permission: string;
   objectType: string;
   objectId: string;
@@ -427,9 +478,12 @@ function buildCommandAccessGuidance(
   });
 }
 
-function commandAccessCapability(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-): AuthorizationCapability {
+function commandAccessCapability(input: {
+  group: string;
+  command: string;
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): AuthorizationCapability {
   if (input.access.requireConcreteResource) {
     const [concrete] = commandAccessConcreteResourceCandidates(input);
     if (concrete) return concrete;
@@ -457,6 +511,7 @@ function normalizeAccess(access: CommandAccessOptions): PermissionProviderComman
     ...(access.requiresContext ? { requiresContext: access.requiresContext } : {}),
     ...(access.resourceId ? { resourceId: access.resourceId } : {}),
     ...(access.requireConcreteResource ? { requireConcreteResource: true } : {}),
+    ...(access.retiredLegacyGroups ? { retiredLegacyGroups: access.retiredLegacyGroups } : {}),
     ...(access.resourceIdPattern ? { resourceIdPattern: access.resourceIdPattern } : {}),
     ...(access.input ? { input: access.input } : {}),
     ...(access.redactions ? { redactions: access.redactions } : {}),

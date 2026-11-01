@@ -43,8 +43,17 @@ export interface CommandAccessOptions {
   risk: CommandAccessRisk;
   requiresContext?: CommandAccessContextRequirement[];
   resourceId?: string;
+  /** Reviewed remote execution boundary. Omitted commands are not exposed to Console authority. */
+  consoleScope?: "installation" | "project" | "session";
+  /** Requires signed Console authority; ordinary runtime context keys cannot invoke this command. */
+  consoleOnly?: boolean;
   /** Require the concrete resource candidate; semantic and legacy command grants cannot substitute for it. */
   requireConcreteResource?: boolean;
+  /**
+   * Groups whose legacy `execute:group:<group>` and `<group>_<command>` grants belonged to a removed
+   * command of the same name; those grants must not authorize this one.
+   */
+  retiredLegacyGroups?: string[];
   /** Optional anchored regular-expression source used to reject non-canonical resource refs before authorization. */
   resourceIdPattern?: string;
   input?: string[];

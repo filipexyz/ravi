@@ -1,11 +1,13 @@
 import { emitCliAuditEvent } from "../../../cli/audit.js";
+import { currentConsoleInvocation } from "../console-context.js";
 import { buildAuditContextProvenance } from "../../../permissions/audit-provenance.js";
 import { flushPermissionAuditEvents, recordAndEmitPermissionDenial } from "../../../permissions/denials.js";
 import { canWithCapabilityContext } from "../../../permissions/provider-runtime.js";
 import { publish } from "../../../nats.js";
 import type { ContextRecord } from "../../../router/router-db.js";
 import { methodNotAllowed, notFound, permissionDenied, unauthorized } from "../errors.js";
-import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "../auth.js";
+import { parseBearer, resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "../auth.js";
+import { resolveRuntimeContext } from "../../../runtime/context-registry.js";
 import { API_PREFIX } from "../route-table.js";
 import { createSseResponse, DEFAULT_KEEPALIVE_MS, DEFAULT_MAX_QUEUE } from "./sse.js";
 import { defaultStreamChannels } from "./channels.js";
@@ -13,9 +15,12 @@ import type {
   StreamAuditEvent,
   StreamChannel,
   StreamChannelMatch,
+  StreamEvent,
   StreamRequestContext,
   StreamingGatewayConfig,
 } from "./types.js";
+
+export const DEFAULT_AUTH_RECHECK_MS = 5_000;
 
 export interface StreamingHandlerOptions {
   auth: GatewayAuthConfig;
@@ -32,6 +37,11 @@ export async function handleStreamingRequest(
   if (url.pathname !== streamPrefix && !url.pathname.startsWith(`${streamPrefix}/`)) {
     return null;
   }
+  const invocation = currentConsoleInvocation();
+  const matched = matchStreamChannel(url, options.streaming?.channels ?? defaultStreamChannels);
+  if (invocation)
+    return matched?.channel.consoleHandler?.(request, url, invocation) ?? permissionDenied("Console view required");
+  if (matched?.channel.consoleHandler) return permissionDenied("Console delegation required");
 
   if (request.method !== "GET") {
     return methodNotAllowed(request.method, url.pathname);
@@ -43,7 +53,6 @@ export async function handleStreamingRequest(
   }
   const contextRecord = resolved.contextRecord;
 
-  const matched = matchStreamChannel(url, options.streaming?.channels ?? defaultStreamChannels);
   if (!matched) {
     return notFound(url.pathname);
   }
@@ -79,6 +88,40 @@ export async function handleStreamingRequest(
   const abortFromRequest = () => streamAbort.abort();
   request.signal.addEventListener("abort", abortFromRequest, { once: true });
 
+  // The key and the capability are checked again while the stream is open, so
+  // revoking or expiring the context (or losing the grant) ends the stream.
+  const token = parseBearer(request.headers.get("authorization")) ?? "";
+  const resolveLive = options.auth.resolveContext ?? ((key: string) => resolveRuntimeContext(key, { touch: false }));
+  let authLoss: string | null = null;
+  const checkAuthorization = (): boolean => {
+    if (authLoss) return false;
+    const live = resolveLive(token);
+    const now = Date.now();
+    if (!live || live.contextId !== contextRecord.contextId || (live.revokedAt && live.revokedAt <= now)) {
+      authLoss = "revoked";
+    } else if (live.expiresAt && live.expiresAt <= now) {
+      authLoss = "expired";
+    } else if (
+      !canWithCapabilityContext(
+        live,
+        matched.match.scope.permission,
+        matched.match.scope.objectType,
+        matched.match.scope.objectId,
+      )
+    ) {
+      authLoss = "permission_revoked";
+    }
+    if (authLoss) streamAbort.abort();
+    return !authLoss;
+  };
+  const recheck = setInterval(checkAuthorization, options.streaming?.authRecheckMs ?? DEFAULT_AUTH_RECHECK_MS);
+  async function* whileAuthorized(events: AsyncIterable<StreamEvent>): AsyncIterable<StreamEvent> {
+    for await (const event of events) {
+      if (!checkAuthorization()) return;
+      yield event;
+    }
+  }
+
   const ctx: StreamRequestContext = {
     url,
     signal: streamAbort.signal,
@@ -86,12 +129,13 @@ export async function handleStreamingRequest(
     contextRecord,
   };
 
-  return createSseResponse(matched.channel.subscribe(ctx, matched.match), {
-    signal: request.signal,
+  return createSseResponse(whileAuthorized(matched.channel.subscribe(ctx, matched.match)), {
+    signal: streamAbort.signal,
     keepaliveMs: options.streaming?.keepaliveMs ?? DEFAULT_KEEPALIVE_MS,
     maxQueue: options.streaming?.maxQueue ?? DEFAULT_MAX_QUEUE,
     lastEventId: request.headers.get("last-event-id"),
     onClose: async (reason) => {
+      clearInterval(recheck);
       streamAbort.abort();
       request.signal.removeEventListener("abort", abortFromRequest);
       const closeAudit = buildAuditEvent(
@@ -101,7 +145,7 @@ export async function handleStreamingRequest(
         url,
         contextRecord,
         Date.now() - startedAt,
-        reason,
+        authLoss ?? reason,
       );
       await emitStreamAudit(closeAudit, options.streaming?.emitAudit);
     },

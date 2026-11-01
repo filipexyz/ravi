@@ -31,6 +31,35 @@ const firewallOff = async () => "off" as const;
 const noDns = async () => [] as string[];
 
 describe("probeNatsExposure", () => {
+  it("keeps failed interface enumeration unknown and refuses private boot", async () => {
+    for (const listAddresses of [
+      () => null,
+      () => {
+        throw new Error("interfaces unavailable");
+      },
+    ]) {
+      const { probe, calls } = fakeProbe({});
+      const report = await probeNatsExposure("nats://127.0.0.1:4222", {
+        listAddresses,
+        probe,
+        readFirewallState: firewallOff,
+      });
+      expect(report.status).toBe("unknown");
+      expect(decideNatsExposureBootAction(report, { requirePrivate: true })).toBe("refuse");
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  it("preserves successful enumeration with no external interfaces as loopback only", async () => {
+    const report = await probeNatsExposure("nats://127.0.0.1:4222", {
+      listAddresses: () => [],
+      probe: fakeProbe({}).probe,
+      readFirewallState: firewallOff,
+    });
+    expect(report.status).toBe("loopback_only");
+    expect(decideNatsExposureBootAction(report, { requirePrivate: true })).toBe("none");
+  });
+
   it("reports loopback_only when no non-loopback address accepts a connection", async () => {
     const { probe, calls } = fakeProbe({});
     const report = await probeNatsExposure("nats://127.0.0.1:4222", {
@@ -212,11 +241,13 @@ describe("nats exposure helpers", () => {
   });
 
   it("redacts userinfo from NATS URLs", () => {
-    expect(redactNatsUrl("nats://user:pass@10.0.0.1:4222")).toBe("nats://***@10.0.0.1:4222");
+    expect(redactNatsUrl("nats://user:pass@10.0.0.1:4222")).toBe("nats://[redacted]@10.0.0.1:4222");
     expect(redactNatsUrl("nats://127.0.0.1:4222")).toBe("nats://127.0.0.1:4222");
-    expect(redactNatsUrl("user:secret@10.0.0.5:4222")).toBe("***@10.0.0.5:4222");
-    expect(redactNatsUrl("nats://user:p@ss@host:4222")).toBe("nats://***@host:4222");
-    expect(redactNatsUrl("nats://a:b@h1:4222, tls://tok@h2:4222")).toBe("nats://***@h1:4222, tls://***@h2:4222");
+    expect(redactNatsUrl("user:secret@10.0.0.5:4222")).toBe("[redacted]@10.0.0.5:4222");
+    expect(redactNatsUrl("nats://user:p@ss@host:4222")).toBe("nats://[redacted]@host:4222");
+    expect(redactNatsUrl("nats://a:b@h1:4222, tls://tok@h2:4222")).toBe(
+      "nats://[redacted]@h1:4222, tls://[redacted]@h2:4222",
+    );
   });
 
   it("parses the macOS firewall global state", () => {

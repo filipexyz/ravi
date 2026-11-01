@@ -54,15 +54,15 @@ The MVP MUST use RPC JSONL. The SDK path MAY replace or complement RPC after the
 - Session state: Pi `sessionFile`, `sessionId`, `sessionName`, cwd, model provider/id, thinking level, agent dir, and integration mode stored in `RuntimeSessionState.params`.
 - Display id: `sessionName` when available, otherwise `sessionId`.
 - System prompt mode: append Ravi instructions to Pi's coding-agent prompt; do not replace Pi's base prompt in the MVP.
-- Tool mode: Pi still executes its own built-in tools. Ravi does not inject dynamic tools in this slice.
+- Tool mode: Pi still executes its own built-in tools. Ravi host tools (dynamic tools, such as the task observer's `tasks_*`) are registered as Pi custom tools by the Ravi extension and executed by the host over the RPC extension UI protocol: the extension calls `ctx.ui.input("ravi_dynamic_tool", <json payload>)`, Pi RPC emits it as `extension_ui_request` `method: "input"` with the payload in `placeholder`, and the host answers `extension_ui_response` with `value` = JSON `{success, contentItems, reason?}`.
 - Permission mode: Ravi-hosted. A Pi extension registers the in-process `tool_call` / `tool_result` hooks (Pi's `beforeToolCall` / `afterToolCall` equivalents) and asks the Ravi host over the RPC extension UI protocol before any tool executes. Restricted agents are allowed when this bridge is active.
 
 ## Capability Target
 
 Initial advertised capabilities SHOULD be:
 
-- `runtimeControl`: supported with `turn.steer`, `turn.interrupt`, `turn.follow_up`, `model.set`, `thinking.set`, and read/state operations that are mapped safely.
-- `dynamicTools`: `none` in the MVP.
+- `runtimeControl`: supported with `turn.steer`, `turn.interrupt`, `turn.follow_up`, `model.set`, `thinking.set`, and read/state operations that are mapped safely. Explicit host `turn.steer`/`turn.follow_up` stay disabled (`RUNTIME_CONTROL_DISABLED`) until the durable attempt-input journal exists; only the dispatcher's implicit native steer uses them.
+- `dynamicTools`: `host` (executed through the extension UI bridge above).
 - `execution`: `subprocess-rpc`.
 - `sessionState`: `file-backed` with cwd validation.
 - `usage`: `terminal-event`.
@@ -166,6 +166,7 @@ If usage is missing on an error or abort, terminal events MUST still be emitted.
 - The provider MUST not leak provider stderr to channel responses.
 - The provider MUST terminate the Pi subprocess when the Ravi session handle is interrupted or closed.
 - The provider MUST turn subprocess exit before terminal result into recoverable `turn.failed`.
+- When a Pi `turn_end` carries `stopReason=error`, the provider MUST classify the message against a closed list of transport signatures (`connection error`, `ECONNRESET`, `ECONNREFUSED`, `socket hang up`, `ETIMEDOUT`, `fetch failed`, `operation was terminated`, `network error`). A match MUST set `failureKind=transport` so the host runs the stash + restart path instead of surfacing a fatal chat error; anything else MUST stay without `failureKind` and remain fail-closed. Classification MUST NOT be inferred from free-form text, prompt prefixes or `[System]` markers.
 - The provider MUST NOT translate normal Ravi prompt delivery into `steer` or `follow_up`, including queued channel prompts after an interrupt/requeue.
 - The provider MUST tolerate the race where Pi `isStreaming` lags the `agent_end` event Ravi observes: when `prompt` is rejected with an "already processing" error, the provider MUST retry the same `prompt` with bounded exponential backoff (`100, 250, 500, 1000, 2000` ms — total ≤ 3.85s). If Pi is still busy after that budget, the provider MUST restart the RPC transport when it can and retry the same plain `prompt` once more. Only then MAY it yield `turn.failed`, and that failure MUST set `failureKind=transport` so the host treats the runtime as broken and respawns instead of `dispatch.push_existing` on the stuck process. Retries MUST remain plain `prompt` commands and MUST NOT add `streamingBehavior`, so they cannot be enqueued as `followUp` / `steer` and become orphaned or out-of-order when Pi has already drained its follow-up queue.
 - After interrupt, cancel, reset, or a failed/aborted terminal, the provider MUST drain leftover RPC events, send `abort` again, and re-read `get_state`. If Pi still reports `isStreaming`, `isProcessing`, or `isCompacting`, the provider MUST restart the transport before accepting the next prompt. Leftover `agent_end` / `turn_end` from the previous run MUST NOT be accepted as the next Ravi terminal until a fresh `agent_start` or `turn_start` is observed (or the transport was respawned).
@@ -176,7 +177,7 @@ If usage is missing on an error or abort, terminal events MUST still be emitted.
 - The provider MUST route every Pi tool decision through Ravi host services (`canUseTool`, and for shell `authorizeCommandExecution`) before the tool executes. Missing handlers, thrown authorization, unknown dialogs, and unresolved observation/unconditional Bash denials MUST fail closed.
 - The provider MUST treat `tools.permissionMode=ravi-host` as a live-bridge contract, not a static advertisement. After spawning RPC with `--extension`, it MUST wait for the extension handshake (`extension_ui_request` notify `ravi.permission.hooks.ready` from `session_start`) before sending any `prompt`. Missing handshake, a Ravi-extension `extension_error`, a `tool_execution_start` before handshake, or a transport that cannot write `extension_ui_response` MUST fail closed: no prompt, no tool.started, and a `turn.failed` with `failureKind=transport`. Advertising `ravi-host` while running an ungoverned Pi session is forbidden.
 - The provider MUST keep Pi model/provider secrets out of the tool-sharing RPC process env even after `supportsToolHooks` is true. Secret injection remains a follow-up until Pi can isolate model credentials from tool env.
-- The provider MUST NOT advertise Ravi dynamic tools, parallel tool support, or host-session PreToolUse hooks in this slice. Non-Bash skill allowlist and tool skill-gate checks MUST still run on the permission-extension authorize path (`authorizePiToolCall` → host `canUseTool` / `authorizeToolUse`), not only as catalog advertisement. Unauthorized skill invocation MUST fail closed with `SKILL_NOT_AUTHORIZED`.
+- The provider MUST read a dynamic tool request's payload from `message`, `placeholder` or `prefill` (the same fields as a permission request); Pi RPC uses `placeholder`. A request titled `ravi_dynamic_tool` that cannot be parsed MUST be logged and answered with `{success:false, reason}`, never cancelled: a cancelled dialog reaches the model as "Ravi dynamic tool bridge did not answer" and leaves a task observer blind. The provider MUST NOT advertise parallel tool support or host-session PreToolUse hooks in this slice. Non-Bash skill allowlist and tool skill-gate checks MUST still run on the permission-extension authorize path (`authorizePiToolCall` → host `canUseTool` / `authorizeToolUse`), not only as catalog advertisement. Unauthorized skill invocation MUST fail closed with `SKILL_NOT_AUTHORIZED`.
 - Crash-recovery MUST keep Pi on `toolEffectFence=provider_event_only` until a durable PreToolUse-equivalent ACK is proven. The permission bridge authorizes before execution; it does not yet replace that fence.
 - The provider MUST not save Pi session file paths as user-visible Ravi session names.
 - The provider MUST validate cwd before resuming a Pi session file.
@@ -245,7 +246,7 @@ Provider-native leftovers are execution, session files, and compaction — not p
 
 A later SDK-backed Pi provider MAY replace or complement RPC. SDK integration remains the right place for:
 
-- Ravi dynamic tools as Pi custom tools.
+- Ravi dynamic tools as in-process Pi custom tools, without the extension UI hop.
 - In-process `beforeToolCall` / `afterToolCall` without the extension UI hop.
 - Direct session manager integration.
 - Lower latency and fewer subprocess lifecycle edge cases.

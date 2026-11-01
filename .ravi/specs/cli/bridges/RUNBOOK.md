@@ -8,7 +8,7 @@
 3. `WRITE_REQUIRES_EXECUTE` (exit 3): read `error.plan`, confirm the bridge id,
    re-run with `--execute` (or `--yes`, the legacy equivalent).
 4. `PAYLOAD_INVALID` "Missing --project": pass `--project <ref>` or set
-   `RAVI_PROJECT`; find refs with `ravi cloud projects list --json`.
+   `RAVI_PROJECT`; find refs with `ravi projects list --json`.
 5. `AUTH_REQUIRED`/`AUTH_EXPIRED`: run `ravi login` and retry.
 6. If `revoke` executed without `--yes`/`--execute`, the brake regressed —
    check `contractDryRun` ordering in `src/cli/commands/bridges.ts`.

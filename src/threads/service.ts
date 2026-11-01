@@ -381,6 +381,11 @@ export function updateThreadStatus(
   status: ThreadStatus,
   options: { reason?: string; now?: number } = {},
 ): ThreadRecord {
+  if (
+    getDb().query("SELECT 1 FROM thread_links WHERE thread_id=? AND target_type='task' AND role='work'").get(threadId)
+  ) {
+    throw new Error("Task-owned threads change status through the task runtime");
+  }
   const now = options.now ?? Date.now();
   const closedAt = status === "closed" || status === "resolved" ? now : null;
   getDb()

@@ -505,10 +505,12 @@ describe("Ravi app router", () => {
       app: "khal-tasks",
       operation: "khal-tasks.list",
       found: true,
+      helpDeclared: true,
       usage: "ravi khal-tasks list [--status <s>]",
       description: "List tasks.",
       mutating: false,
     });
+    expect(found.result).not.toHaveProperty("hint");
     expect(found.result).not.toHaveProperty("operations");
 
     const missing = await runAppOperation({
@@ -524,6 +526,51 @@ describe("Ravi app router", () => {
       found: false,
       suggestions: [],
     });
+  });
+
+  it("says an operation declares no help instead of printing empty lists", async () => {
+    const root = makeRepo();
+    const body = manifest("khal-tasks");
+    (body.operations as Record<string, unknown>)["khal-tasks.say"] = {
+      interface: "cli",
+      command: "/opt/fake-voice/bin/voice say {args} --json",
+      mutating: false,
+    };
+    writeManifest(root, "khal-tasks", body);
+
+    const passthrough = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["say"],
+      json: true,
+    });
+
+    expect(passthrough.result).toMatchObject({
+      app: "khal-tasks",
+      operation: "khal-tasks.say",
+      found: true,
+      helpDeclared: false,
+      appHelpCommand: "/opt/fake-voice/bin/voice say --help --json",
+      arguments: [],
+      options: [],
+    });
+    expect(String((passthrough.result as Record<string, unknown>).hint)).toContain("--help");
+  });
+
+  it("points an undeclared builtin operation at the manifest", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    const builtin = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["check"],
+      json: true,
+    });
+
+    expect(builtin.result).toMatchObject({ operation: "khal-tasks.check", helpDeclared: false });
+    expect(builtin.result).not.toHaveProperty("appHelpCommand");
+    expect(String((builtin.result as Record<string, unknown>).hint)).toContain("ravi apps show khal-tasks");
   });
 
   it("keeps global help additive with hint and index when no op is requested", async () => {

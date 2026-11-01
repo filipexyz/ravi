@@ -85,6 +85,12 @@ channels.inbound_contact_unresolved
 
 ## False Positive Guards
 
+- `bun test src/security/nats-exposure.test.ts` MUST distinguish thrown/null
+  enumeration failures from a successful empty list and refuse private startup
+  for the failures.
+- `bun test src/cli/commands/doctor.test.ts` MUST cover NATS exposure and state
+  directory findings with injected dependencies and preserve read-only behavior.
+
 - Verb heuristics MUST NOT be the only evidence for an `error` permission
   finding.
 - Legacy process names MUST be normalized before runtime failures are emitted.

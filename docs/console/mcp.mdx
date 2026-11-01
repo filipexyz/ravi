@@ -1,0 +1,70 @@
+---
+title: Use the Console over MCP
+description: Connect an MCP client such as a desktop assistant or an IDE to the Ravi Console, and work with your projects, Pages, Bases, meetings and cloud agents as yourself.
+icon: server
+---
+
+At the end of this page an MCP client is connected to your organization's Console. It can read your projects, pages, Bases, meetings and cloud agent runs, publish a page, build a Base and add or change rows, always as you and only after you agree to each change.
+
+You need a Console login (see [Log in to the Console](/console/login)).
+
+## What the Console mode is
+
+`mcp.ravi.so` serves two MCP servers on the same bridge URL. The plain one exposes tools from your local Ravi daemon. The **Console mode** exposes the Console's own operations: the same ones the [text chat](/console/pages#text-chat) of a page uses. Each person who connects signs in with their own Console account, and every tool runs as that person, with their memberships and project access. The client cannot do anything that person could not do in the Console.
+
+## Connect a client
+
+1. Create a bridge for a project, if you do not have one:
+
+   ```bash
+   ravi bridges create --project website --name "Console" --json
+   ```
+
+   It prints an MCP URL like `https://mcp.ravi.so/<token>/mcp`. Treat the URL as a secret.
+2. Point your MCP client at the same URL ending in `/console/mcp` instead of `/mcp`:
+
+   ```json
+   { "mcpServers": { "ravi-console": { "url": "https://mcp.ravi.so/<token>/console/mcp" } } }
+   ```
+3. The client opens the Console to sign you in. By default it asks for read access (`mcp.console.tools.read`). The first time you ask for a change, the client asks you again for write access (`mcp.console.tools.write`).
+
+`ravi bridges list` shows your bridges, and `ravi bridges revoke <id> --execute` turns one off together with every client token issued for it.
+
+## Tools
+
+The tools are the Console operations, named after the operation id with `_` instead of `.` (for example `ravi_bases_views_query`). Tools that work inside a project take a `project` argument, a slug or id; list them with the projects tool.
+
+| You can | Kind |
+|---|---|
+| list projects, Pages sites and published pages; read a page's text, its comments and the project's theme | read |
+| publish a page on a route of the project's host (private by default) | write |
+| mark a page's comments as read | write |
+| list Bases, read a Base's columns, its views, charts and a row's history | read |
+| describe and query a Bases view, read a row, read chart data | read |
+| add a row, change a row, archive a row through a view that allows it | write |
+| create a Base; add or change a column; create or change a view or a chart (Bases managers) | write |
+| search the project's Knowledge with sources, list its sources | read |
+| list meetings, read a meeting and its transcript | read |
+| list and read your own calendar events | read |
+| list cloud agents, their runs, a run's events and the schedules | read |
+| start a cloud agent run; send it a message, answer its approval, stop it | write |
+| search and read the Library; propose a new item or version | read / write |
+| list and read your bug reports; open a bug, comment on it, send feedback | read / write |
+
+Reads run at once. There is a limit of 120 calls per minute for each person. Text other people wrote (transcripts, comments, run events, Library items) comes marked as untrusted, so the client should not follow instructions inside it.
+
+A cloud agent run reaches only the tools that stay inside its own project. It cannot read your calendar, open bugs, use the Library, or message, approve or stop runs. You see only the runs that act for you, unless you are an organization owner or admin.
+
+## Changes take two steps
+
+A write tool never changes anything on its first call:
+
+1. The client calls the tool. The answer is a preview of the change and a `confirmationToken`, and nothing has changed yet.
+2. The client shows you the preview and asks whether to go ahead.
+3. Only after you agree, it calls the same tool again with the same arguments plus the `confirmationToken`. The token is valid for 5 minutes and only for those arguments.
+
+A client should never confirm for you. If it does, revoke its bridge.
+
+## What is not available
+
+Changing a page's visibility or password, inviting people, sharing pages and deleting or archiving anything other than a Bases row are not tools here. Neither are mail, sending the recording bot to a meeting, Bases agent columns, deploying cloud agents, publishing in the Library or changing the active theme. A column type change that rewrites every row only returns its report here. Use the Console or the `ravi` commands for those, where they keep their own confirmation.

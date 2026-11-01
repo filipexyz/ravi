@@ -1,7 +1,7 @@
-# Cloud Projects agent-first CLI contract / WHY
+# Projects (Console) agent-first CLI contract / WHY
 
-`cloud projects create` is the only mutation in this domain, and it is a
-textbook brake candidate: it creates a billable, organization-scoped remote
+`projects create` (also reachable as `cloud projects create`) is the only
+mutation in this domain, and it is a textbook brake candidate: it creates a billable, organization-scoped remote
 resource, optionally with a default Pages site, and the RBBT incident recorded
 in `cli/console-scope` shows agents actually reaching for it in the wrong
 organization ("pages list returned 0, so let me create the project"). The

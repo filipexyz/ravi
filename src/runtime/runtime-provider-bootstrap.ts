@@ -1,3 +1,6 @@
+import { resolveLibrarySessionPlugins } from "../library/session-plugins.js";
+import { assertBridgeProvider } from "../bridge/isolation.js";
+import { isOperatorOwnTurn } from "../library/turn.js";
 import { discoverPlugins } from "../plugins/index.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
 import { createRuntimeHostServices } from "./host-services.js";
@@ -32,11 +35,18 @@ export interface RuntimeProviderBootstrap {
   hostServices: RuntimeHostServices;
   providerBootstrap?: RuntimePrepareSessionResult;
   runtimePlugins: RuntimePlugin[];
+  /**
+   * Codex skill names of pinned Library skills this session must not load
+   * (pinned to other agents, or not marked `externalAllowed` in a turn that
+   * is not the operator's own). Spec skills/library.
+   */
+  hiddenSkills: string[];
 }
 
 export async function prepareRuntimeProviderBootstrap(
   options: RuntimeProviderBootstrapOptions,
 ): Promise<RuntimeProviderBootstrap> {
+  if (options.context?.metadata?.bridgeTurnId) assertBridgeProvider(options.runtimeProvider.id);
   const session = options.session;
   const hostServices = createRuntimeHostServices({
     context: options.context,
@@ -45,6 +55,7 @@ export async function prepareRuntimeProviderBootstrap(
     resolvedSource: options.resolvedSource,
     approvalSource: options.approvalSource,
     toolContext: options.toolContext,
+    cwd: options.sessionCwd,
     onSkillGatePersisted:
       session || options.onSkillGatePersisted
         ? (skillVisibility, info) => {
@@ -55,8 +66,20 @@ export async function prepareRuntimeProviderBootstrap(
           }
         : undefined,
   });
-  const discoveredPlugins = discoverPlugins();
+  // Pinned Library skills (spec skills/library): the agent's own generated
+  // plugin, or for Codex's shared skills dir the installation's, with the
+  // skills that are not this session's hidden. Chosen from this first turn;
+  // later turns may be someone else's, so host services check every load of
+  // a pinned skill against the turn asking for it.
+  const library = resolveLibrarySessionPlugins({
+    agentId: options.agent.id,
+    sharedSkillsDir: options.runtimeCapabilities.skillVisibility.availability === "codex-skills",
+    isOperatorOwnTurn: () =>
+      isOperatorOwnTurn({ turn: { runtimeContext: { present: true, record: options.context ?? null } } }),
+  });
+  const discoveredPlugins = [...discoverPlugins(), ...library.plugins];
   const providerBootstrap = await options.runtimeProvider.prepareSession?.({
+    humanBridge: Boolean(options.context?.metadata?.bridgeTurnId),
     agentId: options.agent.id,
     cwd: options.sessionCwd,
     ...(discoveredPlugins.length > 0 ? { plugins: discoveredPlugins } : {}),
@@ -73,5 +96,6 @@ export async function prepareRuntimeProviderBootstrap(
     hostServices,
     ...(providerBootstrap ? { providerBootstrap } : {}),
     runtimePlugins,
+    hiddenSkills: library.hiddenSkills,
   };
 }

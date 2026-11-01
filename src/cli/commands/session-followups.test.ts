@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { runWithContext } from "../context.js";
+import { runWithContext, type ToolContext } from "../context.js";
+import { getOrCreateSession } from "../../router/sessions.js";
 import { SessionFollowupCommands } from "./session-followups.js";
 
 let stateDir: string | null = null;
@@ -258,6 +259,66 @@ describe("sessions followups cli", () => {
           ),
         ),
       ).toThrow("Use --step to replace progressive followup messages.");
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
+describe("sessions followups stay with their owner", () => {
+  const CRM: ToolContext = {
+    contextId: "ctx_crm",
+    agentId: "crm",
+    sessionKey: "agent:crm:main",
+    sessionName: "agent:crm:main",
+    context: {
+      contextId: "ctx_crm",
+      contextKey: "rctx_crm",
+      kind: "agent-runtime",
+      agentId: "crm",
+      sessionKey: "agent:crm:main",
+      sessionName: "agent:crm:main",
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "sessions_followups", source: "test" }],
+      createdAt: 0,
+    },
+  };
+  const add = (target: { session?: string; chat?: string }, owner?: string) =>
+    new SessionFollowupCommands().add(
+      "Nudge",
+      target.session,
+      target.chat,
+      undefined,
+      "30m",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "Ping",
+      undefined,
+      owner,
+      undefined,
+      undefined,
+      true,
+    ) as { followup: { id: string } };
+
+  it("refuses another agent's session, chat targets and a foreign owner, and hides other cadences", () => {
+    getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    getOrCreateSession("agent:main:main", "main", "/tmp/main");
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const operatorCadence = add({ session: "agent:main:main" });
+      runWithContext(CRM, () => {
+        expect(() => add({ session: "agent:main:main" })).toThrow("Session not found");
+        expect(() => add({ chat: "chat_x" })).toThrow("admin-only");
+        expect(() => add({ session: "agent:crm:main" }, "system:ravi")).toThrow("--owner is admin-only");
+        const own = add({ session: "agent:crm:main" });
+        const commands = new SessionFollowupCommands();
+        const listed = commands.list(true, undefined, undefined, undefined, true) as unknown as {
+          items: Array<{ id: string }>;
+        };
+        expect(listed.items.map((item) => item.id)).toEqual([own.followup.id]);
+        expect(() => commands.pause(operatorCadence.followup.id, true)).toThrow("not found");
+      });
     } finally {
       log.mockRestore();
     }

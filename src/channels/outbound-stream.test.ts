@@ -77,7 +77,7 @@ describe("channel outbound jobs", () => {
     );
   });
 
-  it("converts Slack runtime response markdown to mrkdwn and leaves other channels unchanged", () => {
+  it("marks Slack runtime response text as Markdown for delivery and leaves other channels unchanged", () => {
     const slack = buildChannelOutboundJobFromResponse("ravi-channels", {
       response: "See the **guide** at [docs](https://example.com)",
       _emitId: "emit_md",
@@ -91,7 +91,8 @@ describe("channel outbound jobs", () => {
     if (!slack.ok) throw new Error(slack.reason);
     expect(slack.job.request.content).toEqual({
       type: "text",
-      text: "See the *guide* at <https://example.com|docs>",
+      text: "See the **guide** at [docs](https://example.com)",
+      format: "markdown",
     });
 
     const whatsapp = buildChannelOutboundJobFromResponse("ravi-channels", {
@@ -129,6 +130,29 @@ describe("channel outbound jobs", () => {
         target: { channel: "slack", accountId: "a", chatId: "c" },
       }),
     ).toEqual({ ok: false, reason: "silent_response" });
+  });
+
+  it("does not create jobs for silent markers, including spaced and truncated variants", () => {
+    for (const response of ["@@SILENT@@", "@@ SILENT @@", "@@SILEN"]) {
+      expect(
+        buildChannelOutboundJobFromResponse("s", {
+          response,
+          _emitId: "e",
+          target: { channel: "whatsapp", accountId: "a", chatId: "c" },
+        }),
+      ).toEqual({ ok: false, reason: "silent_response" });
+    }
+  });
+
+  it("still builds a job for prose that cites the silent marker", () => {
+    const result = buildChannelOutboundJobFromResponse("s", {
+      response: "Use @@SILENT@@ para não responder.",
+      _emitId: "e",
+      target: { channel: "whatsapp", accountId: "a", chatId: "c" },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.job.request.content).toEqual({ type: "text", text: "Use @@SILENT@@ para não responder." });
   });
 
   it("builds explicitly idempotent text jobs for channel backend projections", () => {

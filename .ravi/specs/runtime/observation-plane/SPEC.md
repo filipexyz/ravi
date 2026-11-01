@@ -118,6 +118,8 @@ Every observation event delivered to an observer MUST include:
 
 Observation payloads SHOULD be compact. Full prompt text, tool outputs, attachments, or channel metadata MUST be redacted or summarized unless the observer binding explicitly permits them.
 
+An event MAY carry `payload.detail`: the full assistant text (up to 12,000 characters) on `message.assistant` and a one-line summary of the tool input (up to 200 characters) on `tool.start`. Only a binding with `metadata.observationDetail: true` reads it; for every other binding the renderer strips `detail` before rendering, and profiles see it as `{{event.detailText}}` (falling back to the preview) and `{{event.toolInput}}`. Tool outputs are never carried.
+
 Observation events MAY be stored, traced, or audited as structured data. The primary observer prompt MUST be rendered into human-readable Markdown through an observer profile. Structured payload dumps MUST NOT be the default observer-facing format.
 
 ## Delivery
@@ -130,6 +132,8 @@ Delivery policies:
 - `debounce`: collect matching events for a configured duration.
 - `end_of_turn`: deliver after source `turn.complete`, `turn.failed`, or `turn.interrupt`.
 - `manual`: materialize binding state but deliver only when explicitly invoked by an operator or scheduler.
+
+A binding with `metadata.pulseMs` also receives the events gathered so far every `pulseMs` while a long source turn runs (trigger `pulse`); the end-of-turn delivery then carries only events the pulses did not. Each delivery's `_observation` metadata carries `deliveryId`, `trigger` and, for a task source, `taskId`.
 
 Each delivery MUST be idempotent. The observer session MUST be able to ignore duplicate event ids.
 
@@ -154,7 +158,9 @@ Observer sessions MUST NOT trigger observer bindings by default. Cascaded observ
 
 ## Task Integration
 
-Task execution SHOULD use observers to remove reporting burden from worker prompts.
+Task execution uses observers to remove reporting burden from worker prompts. Every task whose profile sets `observer.enabled` gets the built-in task observer without a stored rule; its contract (verdict, scoping, nudge, stall) is specified in `tasks/reporting`. The binding has role `task-observer`, rule id `builtin:task-observer`, profile `task-observer`, the worker's agent, the grant `none` (no tools: the turn is constrained to a capability nothing matches), detail on, tool events on and a five-minute pulse. It is skipped when a user rule in `report` mode already observes the session, delivers only while its source session works an observed task, and is disabled at the next launch once the session has no such task.
+
+The section below describes rule-based task observers, which remain supported.
 
 For a task source session:
 

@@ -47,7 +47,7 @@ export interface NatsProbeResult {
 export type NatsProbe = (host: string, port: number, timeoutMs: number) => Promise<NatsProbeResult>;
 
 export interface NatsExposureDeps {
-  listAddresses?: () => string[];
+  listAddresses?: () => string[] | null;
   probe?: NatsProbe;
   readFirewallState?: () => Promise<HostFirewallState>;
   /** Resolve a hostname to its addresses (default: dns lookup, all families). */
@@ -92,7 +92,7 @@ export function resolveNatsUrl(env: NodeJS.ProcessEnv = process.env): string {
 export function redactNatsUrl(natsUrl: string): string {
   return natsUrl
     .split(",")
-    .map((segment) => segment.replace(/^(\s*(?:[a-z][\w+.-]*:\/\/)?)[^/\s]*@/i, "$1***@"))
+    .map((segment) => segment.replace(/^(\s*(?:[a-z][\w+.-]*:\/\/)?)[^/\s]*@/i, "$1[redacted]@"))
     .join(",");
 }
 
@@ -143,7 +143,7 @@ function parseNatsServer(segment: string): ParsedNatsUrl | null {
 }
 
 /** Non-internal IPv4 + IPv6 addresses of this host (link-local IPv6 carries its zone). */
-export function listHostAddresses(): string[] {
+export function listHostAddresses(): string[] | null {
   const addresses: string[] = [];
   try {
     for (const [name, entries] of Object.entries(networkInterfaces())) {
@@ -155,7 +155,7 @@ export function listHostAddresses(): string[] {
       }
     }
   } catch {
-    // best-effort
+    return null;
   }
   return addresses;
 }
@@ -321,13 +321,13 @@ export async function probeNatsExposure(
     };
   }
 
-  let hostAddresses: string[] = [];
+  let hostAddresses: string[] | null = null;
   try {
     hostAddresses = (deps.listAddresses ?? listHostAddresses)();
   } catch {
-    hostAddresses = [];
+    hostAddresses = null;
   }
-  const nonLoopback = hostAddresses.filter((address) => !isLoopbackHost(address));
+  const nonLoopback = (hostAddresses ?? []).filter((address) => !isLoopbackHost(address));
   const isOwnAddress = (address: string) =>
     isLoopbackHost(address) || isWildcardHost(address) || nonLoopback.includes(address);
   const resolveHost = deps.resolveHost ?? defaultResolveHost;
@@ -374,6 +374,18 @@ export async function probeNatsExposure(
   }
 
   const parsed = localServer;
+
+  if (hostAddresses === null) {
+    return {
+      ...base,
+      status: "unknown",
+      host: parsed.host,
+      port: parsed.port,
+      firewall: await firewallPromise,
+      message: "could not list host network interfaces; NATS exposure was not checked",
+      remediation: LOCAL_REMEDIATION,
+    };
+  }
 
   const results = await Promise.all(
     nonLoopback.map(async (address) => ({

@@ -2,10 +2,13 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { recordSessionBlob, recordSessionEvent, upsertSessionTurn } from "../../session-trace/session-trace-db.js";
 
+const actualScopeModule = await import("../../permissions/scope.js");
 mock.module("../../permissions/scope.js", () => ({
+  ...actualScopeModule,
   getScopeContext: () => undefined,
   isScopeEnforced: () => false,
   canAccessSession: () => true,
+  canAccessResource: () => true,
   canModifySession: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
 }));

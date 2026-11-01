@@ -14,6 +14,7 @@ import {
   type UpsertChatMessageResult,
 } from "../router/router-db.js";
 import { recordDeliveryTrace } from "../session-trace/channel-trace.js";
+import { type GuardedSession, guardedSessionForChat, guardTextForGuardedSession } from "../knowledge/egress/guard.js";
 import { logger } from "../utils/logger.js";
 import { markSlackThreadRootDelivered } from "./slack/thread-lifecycle-store.js";
 import type {
@@ -86,6 +87,10 @@ export interface ChannelOutboundConsumerOptions {
   persistDeliveredChatAction?: PersistDeliveredChatAction;
   recordDeliveryTrace?: typeof recordDeliveryTrace;
   claimLeaseMs?: number;
+  /** Knowledge guard row for `(target.channel, target.chatId)`; defaults to the read-only knowledge.db lookup. */
+  knowledgeGuard?: (channel: string, chatId: string) => GuardedSession | null;
+  /** Rewrites a guarded text; defaults to the live allow list and mirror. */
+  guardKnowledgeText?: (text: string, guarded: GuardedSession) => string;
 }
 
 export interface ChannelOutboundConsumerRuntimeStatus {
@@ -228,6 +233,43 @@ function logNativeOutboundSendFailure(
   });
 }
 
+/**
+ * Applies the Knowledge egress guard to the text of a job bound for a guarded
+ * chat (`text` content, `chat_action` text and a thread card's note). Other
+ * jobs are returned as is.
+ */
+export function guardChannelOutboundJob(
+  job: ChannelOutboundJob,
+  options: Pick<ChannelOutboundConsumerOptions, "knowledgeGuard" | "guardKnowledgeText"> = {},
+): ChannelOutboundJob {
+  const content = job.request.content as { type?: unknown; text?: unknown };
+  if ((content.type !== "text" && content.type !== "chat_action") || typeof content.text !== "string") return job;
+  let guarded: GuardedSession | null = null;
+  try {
+    guarded = (options.knowledgeGuard ?? guardedSessionForChat)(job.request.target.channel, job.request.target.chatId);
+  } catch (error) {
+    log.warn("Knowledge guard lookup failed", { jobId: job.jobId, error: errorMessage(error) });
+  }
+  if (!guarded) return job;
+  const guardText = options.guardKnowledgeText ?? ((value, row) => guardTextForGuardedSession(value, row).text);
+  const text = guardText(content.text, guarded);
+  // A thread root card also shows its note (latest progress or result).
+  const threadCard = (content as { threadCard?: { note?: unknown } }).threadCard;
+  const note = typeof threadCard?.note === "string" ? guardText(threadCard.note, guarded) : undefined;
+  if (text === content.text && note === threadCard?.note) return job;
+  return {
+    ...job,
+    request: {
+      ...job.request,
+      content: {
+        ...job.request.content,
+        text,
+        ...(threadCard && note !== undefined ? { threadCard: { ...threadCard, note } } : {}),
+      } as ChannelOutboundJob["request"]["content"],
+    },
+  };
+}
+
 export function acknowledgeChannelOutboundMessage(
   msg: AckableChannelOutboundMessage,
   result: ChannelOutboundProcessingResult,
@@ -240,10 +282,14 @@ export function acknowledgeChannelOutboundMessage(
 }
 
 export async function processChannelOutboundJob(
-  job: ChannelOutboundJob,
+  inputJob: ChannelOutboundJob,
   options: ChannelOutboundConsumerOptions,
 ): Promise<ChannelOutboundProcessingResult> {
   const t0 = Date.now();
+  // Last hop of the Knowledge egress guard. The receipt fingerprint stays on
+  // the job as published, so a redelivery after the mirror changed is not a
+  // fingerprint conflict.
+  const job = guardChannelOutboundJob(inputJob, options);
   const emitEvent = options.emitEvent ?? nats.emit;
   const flushTelemetry = options.flushNats ?? flushNatsConnection;
   const recordTrace = options.recordDeliveryTrace ?? recordDeliveryTrace;
@@ -277,7 +323,7 @@ export async function processChannelOutboundJob(
   const receiptStore = options.receiptStore ?? sqliteChannelOutboundReceiptStore;
   const persistMessage = options.persistDeliveredMessage ?? persistDeliveredMessage;
   const persistChatAction = options.persistDeliveredChatAction ?? persistDeliveredChatAction;
-  const requestFingerprint = channelOutboundRequestFingerprint(job);
+  const requestFingerprint = channelOutboundRequestFingerprint(inputJob);
   let receipt: ChannelOutboundReceipt | null;
 
   try {
@@ -311,6 +357,7 @@ export async function processChannelOutboundJob(
     if (!adapter) {
       if (!receipt) return emitMissingAdapter(emitEvent, recordTrace, job, t0, deliveryAttempt);
       const delayMs = missingAdapterRetryDelayMs(deliveryAttempt);
+      warnMissingAdapter(job.request.channelId, { jobId: job.jobId, deliveryAttempt, retryDelayMs: delayMs });
       try {
         receiptStore.recordError(
           job.request.idempotencyKey,
@@ -604,6 +651,7 @@ async function executeNativeOutbound(
     return adapter.deliverText({
       ...baseRequest,
       text: job.request.content.text,
+      ...(job.request.content.format ? { format: job.request.content.format } : {}),
     });
   }
   if (!("executeChatAction" in adapter)) {
@@ -951,6 +999,7 @@ async function emitMissingAdapter(
 ): Promise<ChannelOutboundProcessingResult> {
   const error = `No native delivery adapter registered for channel: ${job.request.channelId}`;
   const retryDelayMs = missingAdapterRetryDelayMs(deliveryAttempt);
+  warnMissingAdapter(job.request.channelId, { jobId: job.jobId, deliveryAttempt, retryDelayMs });
   await emitDelivery(emitEvent, traceRecorderForAttempt(recordTrace, deliveryAttempt), job, {
     status: "failed",
     reason: "missing_adapter",
@@ -972,6 +1021,36 @@ async function emitMissingAdapter(
     phase: "adapter_lookup",
     nakDelayMs: retryDelayMs,
   };
+}
+
+const MISSING_ADAPTER_WARN_INTERVAL_MS = 60_000;
+const missingAdapterWarnedAt = new Map<string, number>();
+
+/**
+ * A reply with no adapter is NAKed and retried until the stream's max age, so
+ * say so in the log, once a minute per channel. The usual cause is an adapter
+ * that failed to start; `ravi channels status` shows its reason.
+ */
+export function warnMissingAdapter(
+  channelId: string,
+  fields: { jobId: string; deliveryAttempt?: number; retryDelayMs: number },
+  now = Date.now(),
+): boolean {
+  const last = missingAdapterWarnedAt.get(channelId);
+  if (last !== undefined && now - last < MISSING_ADAPTER_WARN_INTERVAL_MS) return false;
+  missingAdapterWarnedAt.set(channelId, now);
+  log.warn("Native outbound has no adapter for its channel; the reply stays queued and is retried", {
+    channelId,
+    jobId: fields.jobId,
+    ...(fields.deliveryAttempt !== undefined ? { deliveryAttempt: fields.deliveryAttempt } : {}),
+    retryDelayMs: fields.retryDelayMs,
+    hint: "run `ravi channels status` for the adapter's failure reason",
+  });
+  return true;
+}
+
+export function resetMissingAdapterWarningsForTests(): void {
+  missingAdapterWarnedAt.clear();
 }
 
 export function missingAdapterRetryDelayMs(deliveryAttempt: number | undefined): number {

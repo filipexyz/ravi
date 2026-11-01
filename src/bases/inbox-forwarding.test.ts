@@ -26,6 +26,38 @@ describe("Bases events on the inbox bridge", () => {
     expect(published[0]?.payload).toEqual(snapshot as unknown as Record<string, unknown>);
     expect(published[0]?.payload).toMatchObject({ category: "bases", eventType: "bases.row.updated" });
   });
+
+  it("forwards approval, agent and filtered-subscription items on the same subject, unchanged", async () => {
+    for (const eventType of [
+      "bases.approval.requested",
+      "bases.approval.decided",
+      "bases.agent.requested",
+      "bases.agent.backfill",
+    ]) {
+      const published: Array<{ subject: string; payload: Record<string, unknown> }> = [];
+      const base = makeBasesPayload();
+      const payload: InboxNatsPayload = {
+        ...base,
+        eventType,
+        dedupeKey: `${base.dedupeKey}:sub_f`,
+        payload: { ...base.payload, propertyId: "prop_1", subscriptionId: "sub_f" },
+      };
+      const snapshot = structuredClone(payload);
+
+      const subjects = await publishInboxNatsEvents(
+        { payload, inboxItemId: 10 },
+        {
+          publish: async (subject, data) => {
+            published.push({ subject, payload: data });
+          },
+          flush: async () => {},
+        },
+      );
+
+      expect(subjects).toEqual([INBOX_NATS_SUBJECT]);
+      expect(published.map((item) => item.payload)).toEqual([snapshot as unknown as Record<string, unknown>]);
+    }
+  });
 });
 
 function makeBasesPayload(): InboxNatsPayload {

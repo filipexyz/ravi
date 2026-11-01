@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
@@ -9,11 +10,11 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ra
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
-import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata } from "../decorators.js";
+import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata, getReturnsMetadata } from "../decorators.js";
 import { dbCreateAgent } from "../../router/router-db.js";
 import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { pageCommentFilter } from "../../pages/comment-follow.js";
-import { SHIP_LIVE_DATA_OVERRIDE_WARNING, SHIP_LIVE_DATA_REFUSAL_LINES } from "../../pages/ship.js";
+import { SHIP_LIVE_DATA_OVERRIDE_WARNING, SHIP_LIVE_DATA_REFUSAL_LINES, wrapHtml5Document } from "../../pages/ship.js";
 import { PagesAssertionAudienceCommands, PagesChatCommands, PagesCommands, PagesPasswordCommands } from "./pages.js";
 
 const tempDirs: string[] = [];
@@ -185,6 +186,72 @@ describe("pages CLI commands", () => {
       },
       sites: [{ slug: "demo", defaultHostname: "demo.ravi.page" }],
     });
+  });
+
+  it("shows a host's pending custom domain with the DNS still missing", async () => {
+    const client = makeClient(async () => [
+      {
+        id: "site_1",
+        slug: "demo",
+        defaultHostname: "demo.ravi.page",
+        defaultVisibility: "public",
+        status: "active",
+        customDomains: [
+          { hostname: "docs.example.com", status: "ready" },
+          {
+            hostname: "example.com",
+            status: "pending",
+            apex: true,
+            nextAction: {
+              code: "configure_pages_dns",
+              message: "Add or keep these records in the hostname's authoritative DNS.",
+              dnsRecords: [{ name: "example.com", type: "CNAME", value: "cname.ravi.page" }],
+            },
+          },
+        ],
+      },
+    ]);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.list("proj"));
+
+    expect(output).toContain("custom domain docs.example.com  ready");
+    expect(output).toContain("custom domain example.com  not serving yet: the DNS below is missing");
+    expect(output).toContain("CNAME example.com = cname.ravi.page");
+    expect(output).toContain("a plain A record does not reach Pages");
+    expect(output).toContain("Check again: ravi pages domains demo example.com --project proj --check --execute");
+  });
+
+  it("lists a host's pending custom domains once below its published Pages", async () => {
+    const pending = {
+      hostname: "www.example.com",
+      status: "pending",
+      nextAction: {
+        code: "wait_for_pages",
+        message: "Ravi Pages is still provisioning this hostname.",
+        dnsRecords: [],
+      },
+    };
+    const client = makeClient(async () => ({
+      pages: ["/", "/docs"].map((path) => ({
+        id: `release_route${path}`,
+        title: path,
+        path,
+        siteSlug: "demo",
+        defaultHostname: "demo.ravi.page",
+        urls: [`https://demo.ravi.page${path}`],
+        customDomains: [pending],
+      })),
+      total: 2,
+    }));
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.published("proj"));
+
+    expect(output).toContain("Custom domains of demo not serving yet");
+    expect(output.match(/custom domain www\.example\.com/g)).toHaveLength(1);
+    expect(output).toContain("Ravi Pages is still provisioning it");
+    expect(output).not.toContain("https://www.example.com");
   });
 
   it("lists published Pages through the versioned Console CLI API", async () => {
@@ -635,6 +702,11 @@ describe("pages CLI commands", () => {
       site: { slug: "demo" },
       release: { id: "rel_123" },
     });
+    // The gateway checks the declared return schema; the resolved scope used to
+    // be rejected as an unrecognized key, turning a completed publish into a 500.
+    expect(payload.scope).toMatchObject({ project: { ref: "proj" } });
+    const publishReturnSchema = getReturnsMetadata(PagesCommands).get("publish");
+    expect(publishReturnSchema?.safeParse(payload).error?.issues).toBeUndefined();
   });
 
   it("publishes to the project Pages host without an explicit site slug", async () => {
@@ -848,6 +920,12 @@ describe("pages agent-first contract", () => {
       site: "demo",
       hostnameCount: 1,
       readinessCheck: true,
+      dnsSetup: [
+        {
+          hostname: "docs.example.com",
+          dnsRecords: [{ type: "CNAME", name: "docs.example.com", value: "cname.ravi.page" }],
+        },
+      ],
     });
     expect(credentialReads).toBe(0);
     expect(calls).toEqual([]);
@@ -927,6 +1005,58 @@ describe("pages agent-first contract", () => {
       success: true,
       url: "https://demo.ravi.page/guide",
     });
+  });
+
+  it("publish dry-run rejects a missing source or entrypoint before the brake", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-publish-dry-run-validation-test-");
+    const dir = await tempDir();
+    await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
+    const client = {
+      me: mock(async () => {
+        throw new Error("dry-run validation must not call Console");
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const dryRun = (source: string, route: string | undefined, entrypoint: string | undefined) =>
+      runWithContext({}, () =>
+        command.publish(
+          ["proj", "demo", source],
+          undefined,
+          route,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          entrypoint,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+
+    const entrypointError = await dryRun(dir, "/guide", "missing.html").catch((error: unknown) => error);
+    expect(entrypointError).toBeInstanceOf(CloudAuthError);
+    expect((entrypointError as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect((entrypointError as CloudAuthError).issues).toEqual([
+      { path: ["entrypoint"], code: "invalid", message: "Package entrypoint is not included in files: missing.html" },
+    ]);
+
+    const sourceError = await dryRun(join(dir, "nope"), "/guide", undefined).catch((error: unknown) => error);
+    expect(sourceError).toBeInstanceOf(CloudAuthError);
+    expect((sourceError as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect((sourceError as CloudAuthError).issues?.[0]?.path).toEqual(["source"]);
+
+    // A valid source still brakes, and the plan shows the route the Console will use.
+    const brake = await expectContractError(() => dryRun(dir, "guide", "index.html"), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(brake.details.plan).toMatchObject({ route: "/guide", entrypoint: "index.html" });
+    expect(client.me).not.toHaveBeenCalled();
   });
 
   it("password set without --execute never prompts for the password nor calls Console", async () => {
@@ -1102,6 +1232,7 @@ describe("pages agent-first contract", () => {
             },
           ];
         }
+        if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
         throw new Error(`unexpected ${method} ${path}`);
       }),
       createPageUploadSession: mock(async () => ({
@@ -1136,12 +1267,16 @@ describe("pages agent-first contract", () => {
         undefined,
         true,
         undefined,
+        undefined,
         execute,
       );
 
     const withoutExecute = await captureConsole(() => ship());
 
-    expect(listAndCreate).toEqual([{ method: "GET", path: "/api/cli/projects/proj/pages", body: undefined }]);
+    expect(listAndCreate).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
+      { method: "POST", path: KIT_PATH, body: kitRequest("acme-proj", "/", "<h1>OK</h1>") },
+    ]);
     expect(JSON.parse(withoutExecute.output)).toMatchObject({
       artifactId: "cloud_art_unbraked_ship",
       slug: "acme-proj",
@@ -1187,6 +1322,7 @@ describe("pages agent-first contract", () => {
             },
           ];
         }
+        if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
         throw new Error(`unexpected ${method} ${path}`);
       }),
       createPageUploadSession: mock(async (input: Record<string, unknown>) => {
@@ -1249,25 +1385,32 @@ describe("pages agent-first contract", () => {
         undefined,
         true,
         undefined,
+        undefined,
         true,
       ),
     );
     const payload = JSON.parse(output);
 
-    expect(listAndCreate).toEqual([{ method: "GET", path: "/api/cli/projects/proj/pages", body: undefined }]);
+    expect(listAndCreate).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
+      { method: "POST", path: KIT_PATH, body: kitRequest("acme-proj", "/", "<h1>OK</h1>") },
+    ]);
     expect(payload).toEqual({
       artifactId: "cloud_art_ship",
       commentFollow: {
-        filter: pageCommentFilter({ pageId: "site_1", orgId: "org_1" }),
+        filter: pageCommentFilter({ pageId: "site_1", routePath: "/", orgId: "org_1" }),
         ok: false,
         orgId: "org_1",
         pageId: "site_1",
         projectId: null,
+        routePath: "/",
         session: "main",
         skipped: "missing_creator",
         topic: "ravi.watch.console.page.comment.created",
         warning: "Page comment trigger skipped: no creator agent in the current session.",
       },
+      kit: { status: "applied", changedFiles: [], warnings: [], theme: null, widgets: [] },
+      presentation: null,
       route: "/",
       site: {
         id: "site_1",
@@ -1281,7 +1424,9 @@ describe("pages agent-first contract", () => {
       url: "https://acme-proj.ravi.page/",
       visibility: "private",
     });
-    expect(listAndCreate.some((call) => call.method === "POST")).toBe(false);
+    expect(listAndCreate.some((call) => call.method === "POST" && call.path === "/api/cli/projects/proj/pages")).toBe(
+      false,
+    );
   });
 
   it("ship --execute creates one page-comment trigger for the creator and reuses it", async () => {
@@ -1292,10 +1437,11 @@ describe("pages agent-first contract", () => {
         user: { email: "alice@example.com" },
         organization: { id: "org_1" },
       })),
-      requestJson: mock(async (method: string, path: string) => {
+      requestJson: mock(async (method: string, path: string, body?: unknown) => {
         if (method === "GET" && path === "/api/cli/projects/proj/pages") {
           return [{ id: "site_1", slug: "acme-proj", isDefault: true, defaultHostname: "acme-proj.ravi.page" }];
         }
+        if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
         throw new Error(`unexpected ${method} ${path}`);
       }),
       createPageUploadSession: mock(async () => ({
@@ -1329,6 +1475,7 @@ describe("pages agent-first contract", () => {
           undefined,
           true,
           undefined,
+          undefined,
           true,
         ),
       );
@@ -1344,10 +1491,12 @@ describe("pages agent-first contract", () => {
       reused: false,
       agentId: "creator",
       pageId: "site_1",
+      routePath: "/",
       orgId: "org_1",
       projectId: "proj_real",
       topic: "ravi.watch.console.page.comment.created",
       session: "main",
+      replySession: "creator-main",
     });
     expect(secondPayload.commentFollow).toMatchObject({
       ok: true,
@@ -1357,12 +1506,14 @@ describe("pages agent-first contract", () => {
     });
     expect(triggers).toHaveLength(1);
     expect(triggers[0]).toMatchObject({
-      name: "page-comment:site_1",
+      name: "page-comment:site_1:/",
       agentId: "creator",
       topic: "ravi.watch.console.page.comment.created",
       replySession: "creator-main",
     });
-    expect(triggers[0]?.filter).toBe(pageCommentFilter({ pageId: "site_1", orgId: "org_1", projectId: "proj_real" }));
+    expect(triggers[0]?.filter).toBe(
+      pageCommentFilter({ pageId: "site_1", routePath: "/", orgId: "org_1", projectId: "proj_real" }),
+    );
   });
 
   it("ship with --execute creates the legacy host when an explicit slug is new", async () => {
@@ -1386,6 +1537,7 @@ describe("pages agent-first contract", () => {
             defaultVisibility: "private",
           };
         }
+        if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
         throw new Error(`unexpected ${method} ${path}`);
       }),
       createPageUploadSession: mock(async () => ({
@@ -1415,6 +1567,7 @@ describe("pages agent-first contract", () => {
         undefined,
         true,
         undefined,
+        undefined,
         true,
       ),
     );
@@ -1427,6 +1580,7 @@ describe("pages agent-first contract", () => {
         path: "/api/cli/projects/proj/pages",
         body: { slug: "docs", defaultVisibility: "private" },
       },
+      { method: "POST", path: KIT_PATH, body: kitRequest("docs", "/", "<h1>Docs</h1>") },
     ]);
     expect(payload).toMatchObject({
       artifactId: "cloud_art_new",
@@ -1459,6 +1613,7 @@ describe("pages agent-first contract", () => {
             },
           ];
         }
+        if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
         throw new Error(`unexpected ${method} ${path}`);
       }),
       createPageUploadSession: mock(async (input: Record<string, unknown>) => {
@@ -1496,11 +1651,15 @@ describe("pages agent-first contract", () => {
         undefined,
         true,
         undefined,
+        undefined,
         true,
       ),
     );
 
-    expect(calls).toEqual([{ method: "GET", path: "/api/cli/projects/proj/pages", body: undefined }]);
+    expect(calls).toEqual([
+      { method: "GET", path: "/api/cli/projects/proj/pages", body: undefined },
+      { method: "POST", path: KIT_PATH, body: kitRequest("acme-proj", "/nome", "<h1>OK</h1>") },
+    ]);
     expect(JSON.parse(output)).toMatchObject({
       route: "/nome",
       slug: "acme-proj",
@@ -1528,6 +1687,7 @@ describe("pages agent-first contract", () => {
             defaultHostname: "acme-proj.ravi.page",
           };
         }
+        if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
         throw new Error(`unexpected ${method} ${path}`);
       }),
       createPageUploadSession: mock(async (input: Record<string, unknown>) => {
@@ -1560,6 +1720,7 @@ describe("pages agent-first contract", () => {
         undefined,
         true,
         undefined,
+        undefined,
         true,
       ),
     );
@@ -1571,6 +1732,7 @@ describe("pages agent-first contract", () => {
         path: "/api/cli/projects/proj/pages",
         body: { slug: "acme-proj", defaultVisibility: "private", isDefault: true },
       },
+      { method: "POST", path: KIT_PATH, body: kitRequest("acme-proj", "/relatorio", "<h1>OK</h1>") },
     ]);
     expect(JSON.parse(output)).toMatchObject({ route: "/relatorio", slug: "acme-proj" });
     expect(JSON.stringify(calls)).not.toContain("relatorio-semanal");
@@ -1589,6 +1751,7 @@ describe("pages agent-first contract", () => {
         if (method === "GET" && path === "/api/cli/projects/proj/pages") {
           return [{ id: "site_extra", slug: "weekly-report", isDefault: false, routeCount: 1 }];
         }
+        if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
         throw new Error(`unexpected ${method} ${path}`);
       }),
       createPageUploadSession: mock(async () => {
@@ -1614,6 +1777,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         undefined,
         true,
       ),
@@ -1647,6 +1811,7 @@ describe("pages agent-first contract", () => {
         undefined,
         undefined,
         true,
+        undefined,
         undefined,
         true,
       ),
@@ -1926,7 +2091,7 @@ describe("pages agent-first contract", () => {
         user: { email: "alice@example.com" },
         organization: { id: "org_1" },
       })),
-      requestJson: mock(async (method: string, path: string) => {
+      requestJson: mock(async (method: string, path: string, body?: unknown) => {
         if (method === "GET" && path === "/api/cli/projects/proj/pages") {
           return [
             {
@@ -1937,6 +2102,7 @@ describe("pages agent-first contract", () => {
             },
           ];
         }
+        if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
         throw new Error(`unexpected ${method} ${path}`);
       }),
       createPageUploadSession: mock(async () => ({
@@ -1969,6 +2135,7 @@ describe("pages agent-first contract", () => {
         undefined,
         true,
         undefined,
+        undefined,
         true,
       ),
     );
@@ -1989,6 +2156,7 @@ describe("pages agent-first contract", () => {
         ["ravi.identity.assertion"],
         undefined,
         true,
+        undefined,
         undefined,
         true,
       ),
@@ -2144,6 +2312,473 @@ describe("pages agent-first contract", () => {
   });
 });
 
+describe("pages ship page kit", () => {
+  type KitBody = {
+    project: string;
+    site: string;
+    route: string;
+    visibility: string;
+    theme: string | null;
+    files: Array<{ path: string; html: string }>;
+  };
+
+  const PRESENTATION = {
+    v: 1,
+    runtime: { version: "1.0.0", sha256: "a".repeat(64) },
+    theme: { itemId: "theme_1", ref: "org/acme", version: 3, hash: "b".repeat(64) },
+    widgets: [{ itemId: "widget_1", ref: "org/pedido-card", version: 2 }],
+  };
+  const THEME_WARNING = "Theme changed since the last publish of /pedidos: org/acme v2 -> v3.";
+
+  function makeKitClient(kit: (body: KitBody) => unknown) {
+    const kitBodies: KitBody[] = [];
+    const manifests: Array<{ files: Array<{ path: string; sha256: string }> }> = [];
+    const finalizeBodies: Array<Record<string, unknown>> = [];
+    const client = {
+      me: mock(async () => ({ user: { email: "alice@example.com" }, organization: { id: "org_1" } })),
+      requestJson: mock(async (method: string, path: string, body?: unknown) => {
+        if (method === "GET" && path === "/api/cli/projects/proj/pages") {
+          return [{ id: "site_1", slug: "acme-proj", isDefault: true, defaultHostname: "acme-proj.ravi.page" }];
+        }
+        if (method === "POST" && path === KIT_PATH) {
+          kitBodies.push(structuredClone(body) as KitBody);
+          return kit(body as KitBody);
+        }
+        throw new Error(`unexpected ${method} ${path}`);
+      }),
+      createPageUploadSession: mock(async (input: Record<string, unknown>) => {
+        manifests.push(input.packageManifest as (typeof manifests)[number]);
+        return { uploadSession: { id: `upl_kit_${manifests.length}` }, uploadPolicy: { directUpload: false } };
+      }),
+      finalizeArtifactPublish: mock(async (input: Record<string, unknown>) => {
+        finalizeBodies.push(input);
+        return {
+          artifact: { id: `cloud_art_kit_${finalizeBodies.length}` },
+          site: { id: "site_1", slug: "acme-proj", defaultHostname: "acme-proj.ravi.page" },
+          url: "https://acme-proj.ravi.page/pedidos",
+        };
+      }),
+    } as unknown as ConsoleApiClient;
+    return { client, kitBodies, manifests, finalizeBodies };
+  }
+
+  function shipKit(
+    command: PagesCommands,
+    options: {
+      asJson?: boolean;
+      body?: string;
+      dir?: string;
+      membersBestEffort?: boolean;
+      theme?: string;
+      uses?: string[];
+      visibility?: string;
+    },
+  ) {
+    return command.ship(
+      [],
+      "proj",
+      "Pedidos",
+      options.dir ? undefined : (options.body ?? '<ravi-view view="v1"></ravi-view>'),
+      undefined,
+      options.dir,
+      options.visibility,
+      "/pedidos",
+      undefined,
+      options.uses,
+      undefined,
+      options.asJson ?? true,
+      options.membersBestEffort,
+      options.theme,
+    );
+  }
+
+  /** Inject a theme block into files with a ravi-view tag, like the Console kit does. */
+  function kitThemed(body: KitBody) {
+    return {
+      files: body.files.map((file) =>
+        file.html.includes("<ravi-view")
+          ? { path: file.path, html: themed(file.html), changed: true }
+          : { ...file, changed: false },
+      ),
+      uses: ["ravi.bases.views.describe", "ravi.bases.views.query"],
+      presentation: PRESENTATION,
+      diagnostics: [],
+      warnings: [THEME_WARNING],
+    };
+  }
+
+  function themed(html: string): string {
+    return html.replace("<head>", '<head><style id="ravi-theme" data-ravi-theme="h">:root{}</style>');
+  }
+
+  function sha256(text: string): string {
+    return createHash("sha256").update(text).digest("hex");
+  }
+
+  it("ships --dir from a private copy, writes kit changes there and never touches the caller's folder", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-dir-");
+    const dir = await tempDir();
+    const index =
+      '<!doctype html><html><head><meta charset="utf-8"></head><body><ravi-view view="v1"></ravi-view></body></html>';
+    await writeFile(join(dir, "index.html"), index);
+    await writeFile(join(dir, "about.htm"), "<head></head><p>Sobre</p>");
+    await writeFile(join(dir, "style.css"), "body{}");
+    await mkdir(join(dir, "docs"));
+    await writeFile(join(dir, "docs", "page.html"), "<head></head><p>Docs</p>");
+    const { client, kitBodies, manifests, finalizeBodies } = makeKitClient(kitThemed);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const first = JSON.parse((await captureConsole(() => shipKit(command, { dir }))).output);
+    await captureConsole(() => shipKit(command, { dir }));
+
+    expect(kitBodies[0]).toMatchObject({
+      project: "proj",
+      site: "acme-proj",
+      route: "/pedidos",
+      visibility: "private",
+      theme: null,
+    });
+    expect(kitBodies[0]?.files.map((file) => file.path)).toEqual(["about.htm", "docs/page.html", "index.html"]);
+    // The caller's folder keeps its bytes, so the second ship sends the same source.
+    expect(await readFile(join(dir, "index.html"), "utf8")).toBe(index);
+    expect(kitBodies[1]?.files.find((file) => file.path === "index.html")?.html).toBe(index);
+    for (const manifest of manifests) {
+      expect(manifest.files.find((file) => file.path === "index.html")?.sha256).toBe(sha256(themed(index)));
+      expect(manifest.files.map((file) => file.path)).toContain("style.css");
+    }
+    expect(finalizeBodies[0]).toMatchObject({
+      publish: { presentation: PRESENTATION, uses: ["ravi.bases.views.describe", "ravi.bases.views.query"] },
+    });
+    expect(first).toMatchObject({
+      kit: {
+        status: "applied",
+        changedFiles: ["index.html"],
+        warnings: [THEME_WARNING],
+        theme: PRESENTATION.theme,
+        widgets: PRESENTATION.widgets,
+      },
+      presentation: PRESENTATION,
+      uses: ["ravi.bases.views.describe", "ravi.bases.views.query"],
+      warnings: [THEME_WARNING],
+    });
+    expect(getReturnsMetadata(PagesCommands).get("ship")?.safeParse(first).success).toBe(true);
+  });
+
+  it("sends --theme none or a ref, and refuses an empty --theme before any Console call", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-theme-");
+    const { client, kitBodies } = makeKitClient(kitUnchanged);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    await captureConsole(() => shipKit(command, { theme: "none" }));
+    await captureConsole(() => shipKit(command, { theme: "org/acme" }));
+    expect(kitBodies.map((body) => body.theme)).toEqual(["none", "org/acme"]);
+
+    const meCalls = (client.me as ReturnType<typeof mock>).mock.calls.length;
+    const error = await expectCloudError(() => shipKit(command, { theme: "  " }));
+    expect(error.code).toBe("PAYLOAD_INVALID");
+    expect((client.me as ReturnType<typeof mock>).mock.calls.length).toBe(meCalls);
+  });
+
+  it("merges kit uses into --uses and re-runs the public live-data refusal before upload", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-uses-");
+    const { client, finalizeBodies } = makeKitClient(kitThemed);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const merged = JSON.parse(
+      (await captureConsole(() => shipKit(command, { uses: ["ravi.identity.assertion,ravi.bases.views.query"] })))
+        .output,
+    );
+    expect(merged.uses).toEqual(["ravi.identity.assertion", "ravi.bases.views.query", "ravi.bases.views.describe"]);
+    expect(finalizeBodies[0]).toMatchObject({ publish: { uses: merged.uses } });
+
+    // No ravi.bases.* in --uses: the first check passes, the tags add them, and
+    // the merged check refuses the public route before any upload.
+    const refused = await expectContractError(
+      () => shipKit(command, { visibility: "public" }),
+      "LIVE_DATA_PUBLIC_ROUTE",
+      2,
+    );
+    expect(refused.details.basesUses).toEqual(["ravi.bases.views.describe", "ravi.bases.views.query"]);
+    expect(client.createPageUploadSession).toHaveBeenCalledTimes(1);
+
+    const overridden = JSON.parse(
+      (await captureConsole(() => shipKit(command, { visibility: "public", membersBestEffort: true }))).output,
+    );
+    expect(overridden.warnings).toEqual([SHIP_LIVE_DATA_OVERRIDE_WARNING, THEME_WARNING]);
+    expect(finalizeBodies[1]).toMatchObject({ publish: { visibility: "public" } });
+  });
+
+  it("exits 2 with KIT_INVALID and one path:line:column line per diagnostic, uploading nothing", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-invalid-");
+    const diagnostics = [
+      {
+        severity: "error",
+        code: "WIDGET_FIELD_MISSING",
+        message: "Widget field valor has no matching column (candidates: total: number).",
+        path: "index.html",
+        line: 12,
+        column: 5,
+      },
+      {
+        severity: "warning",
+        code: "KIT_UNKNOWN_ATTRIBUTE",
+        message: "Unknown attribute foo.",
+        path: "index.html",
+        line: 3,
+      },
+    ];
+    const { client } = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Page kit found errors.", { status: 422, details: { diagnostics } });
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const lines = [
+      "index.html:12:5 error WIDGET_FIELD_MISSING Widget field valor has no matching column (candidates: total: number).",
+      "index.html:3 warning KIT_UNKNOWN_ATTRIBUTE Unknown attribute foo.",
+    ];
+
+    const error = await expectContractError(() => shipKit(command, {}), "KIT_INVALID", 2);
+    expect(error.envelope().error.issues).toEqual(
+      lines.map((message, index) => ({
+        path: [],
+        code: diagnostics[index]?.code,
+        message,
+      })),
+    );
+
+    const text = await captureConsoleError(async () => {
+      await expect(runWithContext({}, () => shipKit(command, { asJson: false }))).rejects.toBeInstanceOf(ContractError);
+    });
+    expect(text.split("\n")).toEqual([
+      "Refusing to ship: the page kit found 1 error(s) in the HTML. Nothing was uploaded or published.",
+      ...lines,
+    ]);
+    expect(client.createPageUploadSession).not.toHaveBeenCalled();
+  });
+
+  it("exits 2 with KIT_WIDGET_UNAUDITED and the Console audit URL in suggestedAction, uploading nothing", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-unaudited-");
+    const url = "https://console.example/library/widgets/org/grafico/versions/2";
+    const diagnostics = [
+      {
+        severity: "error",
+        code: "KIT_WIDGET_UNAUDITED",
+        message: "Widget org/grafico@2 has code and no passing accessibility audit.",
+        path: "index.html",
+        line: 3,
+        column: 1,
+        url,
+        widget: "org/grafico@2",
+      },
+    ];
+    const { client } = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Page kit found errors.", { status: 422, details: { diagnostics } });
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const line = `index.html:3:1 error KIT_WIDGET_UNAUDITED Widget org/grafico@2 has code and no passing accessibility audit. ${url}`;
+
+    const error = await expectContractError(() => shipKit(command, {}), "KIT_WIDGET_UNAUDITED", 2);
+    const envelope = error.envelope().error;
+    expect(envelope.message).toBe(
+      "Refusing to ship: org/grafico@2 has no passing accessibility audit yet. Nothing was uploaded or published.",
+    );
+    expect(envelope.suggestedAction).toBe(
+      `An org owner or admin must open ${url} in the Console and run the accessibility audit until it passes, then ship again`,
+    );
+    expect(envelope.issues).toEqual([{ path: [], code: "KIT_WIDGET_UNAUDITED", message: line }]);
+    expect(error.details.widgets).toEqual(["org/grafico@2"]);
+
+    const text = await captureConsoleError(async () => {
+      await expect(runWithContext({}, () => shipKit(command, { asJson: false }))).rejects.toBeInstanceOf(ContractError);
+    });
+    expect(text).toContain(url);
+    expect(client.createPageUploadSession).not.toHaveBeenCalled();
+
+    // Mixed with another kit error, the ship stays KIT_INVALID and the line keeps the URL.
+    const { client: mixed } = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Page kit found errors.", {
+        status: 422,
+        details: {
+          diagnostics: [
+            ...diagnostics,
+            { severity: "error", code: "WIDGET_UNKNOWN", message: "Widget org/x does not exist.", path: "index.html" },
+          ],
+        },
+      });
+    });
+    const mixedError = await expectContractError(
+      () => shipKit(new PagesCommands({ client: mixed, readCredentials: makeReadCredentials() }), {}),
+      "KIT_INVALID",
+      2,
+    );
+    expect(mixedError.envelope().error.issues).toContainEqual({
+      path: [],
+      code: "KIT_WIDGET_UNAUDITED",
+      message: line,
+    });
+  });
+
+  it("exits 2 with the Console's KIT_TOO_LARGE diagnostic and its message, uploading nothing", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-too-large-");
+    const diagnostics = [
+      { severity: "error", code: "KIT_TOO_LARGE", message: "The page kit output is larger than 4 MiB.", path: null },
+    ];
+    const { client } = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Page kit found errors.", { status: 422, details: { diagnostics } });
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    const line = "- error KIT_TOO_LARGE The page kit output is larger than 4 MiB.";
+
+    const error = await expectContractError(() => shipKit(command, {}), "KIT_INVALID", 2);
+    expect(error.envelope().error.issues).toEqual([{ path: [], code: "KIT_TOO_LARGE", message: line }]);
+    const text = await captureConsoleError(async () => {
+      await expect(runWithContext({}, () => shipKit(command, { asJson: false }))).rejects.toBeInstanceOf(ContractError);
+    });
+    expect(text.split("\n")).toEqual([
+      "Refusing to ship: the page kit found 1 error(s) in the HTML. Nothing was uploaded or published.",
+      line,
+    ]);
+    expect(client.createPageUploadSession).not.toHaveBeenCalled();
+  });
+
+  it("sends --body without lang and uploads the kit's lang, else the pt-BR fallback", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-lang-");
+    const body = '<ravi-view view="v1"></ravi-view>';
+    const wrapped = wrapHtml5Document("Pedidos", body);
+    // The kit sets lang from the theme locale (here an `en` theme) when the page has none.
+    const themedEn = (html: string) => themed(html).replace("<html>", '<html lang="en">');
+    const { client, kitBodies, manifests } = makeKitClient((kitBody) => ({
+      ...kitThemed(kitBody),
+      files: kitBody.files.map((file) => ({ path: file.path, html: themedEn(file.html), changed: true })),
+    }));
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    await captureConsole(() => shipKit(command, { body }));
+    expect(kitBodies[0]?.files[0]?.html).toBe(wrapped);
+    expect(manifests[0]?.files.find((file) => file.path === "index.html")?.sha256).toBe(sha256(themedEn(wrapped)));
+
+    // No theme and no tags: the kit leaves the file as sent, and ship adds pt-BR.
+    const plain = makeKitClient(kitUnchanged);
+    const plainCommand = new PagesCommands({ client: plain.client, readCredentials: makeReadCredentials() });
+    await captureConsole(() => shipKit(plainCommand, { body: "<p>Em construção</p>", theme: "none" }));
+    const plainWrapped = wrapHtml5Document("Pedidos", "<p>Em construção</p>");
+    expect(plain.kitBodies[0]?.files[0]?.html).toBe(plainWrapped);
+    expect(plain.manifests[0]?.files.find((file) => file.path === "index.html")?.sha256).toBe(
+      sha256(plainWrapped.replace("<html>", '<html lang="pt-BR">')),
+    );
+
+    // An older Console without the kit: the same fallback.
+    const older = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "<!DOCTYPE html><h1>404</h1>", { status: 404 });
+    });
+    const olderCommand = new PagesCommands({ client: older.client, readCredentials: makeReadCredentials() });
+    await captureConsole(() => shipKit(olderCommand, { body }));
+    expect(older.manifests[0]?.files.find((file) => file.path === "index.html")?.sha256).toBe(
+      sha256(wrapped.replace("<html>", '<html lang="pt-BR">')),
+    );
+  });
+
+  it("ships the HTML unchanged with KIT_UNAVAILABLE when the Console has no kit route", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-unavailable-");
+    const { client, finalizeBodies } = makeKitClient(() => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "<!DOCTYPE html><h1>404</h1>", { status: 404 });
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const payload = JSON.parse((await captureConsole(() => shipKit(command, { theme: "org/acme" }))).output);
+    expect(payload).toMatchObject({
+      success: true,
+      presentation: null,
+      kit: { status: "unavailable", changedFiles: [], theme: null, widgets: [] },
+    });
+    expect(payload.kit.warnings).toHaveLength(1);
+    expect(payload.kit.warnings[0]).toStartWith("KIT_UNAVAILABLE:");
+    expect(payload.warnings).toEqual(payload.kit.warnings);
+    expect(payload).not.toHaveProperty("uses");
+    expect(finalizeBodies[0]?.publish).not.toHaveProperty("presentation");
+
+    const text = await captureConsole(() => shipKit(command, { asJson: false }));
+    expect(text.output).toContain("warning: KIT_UNAVAILABLE:");
+  });
+
+  it("fails like other Console errors when the kit call cannot reach the Console", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-kit-network-");
+    const { client } = makeKitClient(() => {
+      throw new CloudAuthError("SERVER_UNAVAILABLE", "Console is unavailable. Try again later.");
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectCloudError(() => captureConsole(() => shipKit(command, {})));
+    expect(error.code).toBe("SERVER_UNAVAILABLE");
+    expect(client.createPageUploadSession).not.toHaveBeenCalled();
+  });
+
+  it("declares --theme before the trailing --execute", () => {
+    const flags = getOptionsMetadata(new PagesCommands(), "ship")
+      .sort((left, right) => left.index - right.index)
+      .map((option) => option.flags);
+    expect(flags.slice(-2)).toEqual(["--theme <ref|none>", "--execute"]);
+    const help = getCommandsMetadata(PagesCommands).find((command) => command.name === "ship")?.helpAfter;
+    expect(help).toContain("--theme none");
+    expect(help).toContain("ravi pages outdated");
+  });
+});
+
+describe("pages outdated", () => {
+  it("lists routes behind on theme, widgets or runtime as JSON and as a table", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {
+        items: [
+          {
+            siteSlug: "acme-proj",
+            hostname: "acme-proj.ravi.page",
+            route: "/pedidos",
+            releaseId: "rel_1",
+            publishedAt: "2026-10-15T12:00:00.000Z",
+            theme: { pinned: { ref: "org/acme", version: 2 }, current: { ref: "org/acme", version: 3 } },
+            widgets: [{ ref: "org/pedido-card", pinned: 1, current: 2 }],
+            runtime: { pinned: "1.0.0", current: "1.0.0" },
+          },
+          {
+            siteSlug: "acme-proj",
+            hostname: "acme-proj.ravi.page",
+            route: "/",
+            releaseId: "rel_2",
+            publishedAt: null,
+            theme: null,
+            widgets: [],
+            runtime: { pinned: "1.0.0", current: "1.1.0" },
+          },
+        ],
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() => command.outdated("proj", undefined, true));
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([{ method: "GET", path: "/api/cli/pages/outdated?project=proj" }]);
+    expect(payload).toMatchObject({ success: true, projectRef: "proj", total: 2 });
+    expect(payload.items[0]).toMatchObject({ route: "/pedidos", widgets: [{ ref: "org/pedido-card", pinned: 1 }] });
+    expect(getReturnsMetadata(PagesCommands).get("outdated")?.safeParse(payload).success).toBe(true);
+
+    const text = await captureConsole(() => command.outdated("proj", undefined, false));
+    expect(text.output).toContain("theme org/acme v2→v3; widget org/pedido-card v1→v2");
+    expect(text.output).toContain("runtime 1.0.0→1.1.0");
+    expect(text.output).toMatch(/HOST\s+ROUTE\s+BEHIND/);
+    expect(text.output).toContain("acme-proj.ravi.page  /pedidos");
+  });
+
+  it("says nothing is outdated when every route is current", async () => {
+    const command = new PagesCommands({
+      client: makeClient(async () => ({ items: [] })),
+      readCredentials: makeReadCredentials(),
+    });
+    const { output } = await captureConsole(() => command.outdated("proj", undefined, false));
+    expect(output).toBe("Nothing is outdated in project proj.");
+  });
+});
+
 describe("pages chat", () => {
   function chatResponse(overrides: Record<string, unknown> = {}) {
     return {
@@ -2215,6 +2850,12 @@ describe("pages chat", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       ),
     );
@@ -2251,6 +2892,12 @@ describe("pages chat", () => {
         undefined,
         undefined,
         instructions,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
         true,
@@ -2326,6 +2973,172 @@ describe("pages chat", () => {
     await expectContractError(() => missing.show("ghost", "proj", undefined, true), "SITE_NOT_FOUND", 1);
   });
 
+  type ChatSetFlags = {
+    enabled?: string;
+    instructions?: string;
+    text?: string;
+    replyPolicy?: string;
+    textModel?: string;
+    clearTextModel?: boolean;
+    raviAgent?: string;
+    clearRaviAgent?: boolean;
+    execute?: boolean;
+  };
+  const RAVI_AGENT = "11111111-1111-4111-8111-111111111111/finance";
+
+  /** `pages chat set <site> --project proj ... --json` with named flags. */
+  function setChat(command: PagesChatCommands, flags: ChatSetFlags) {
+    return command.set(
+      "acme-website",
+      "proj",
+      flags.enabled,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      flags.instructions,
+      undefined,
+      flags.text,
+      flags.replyPolicy,
+      flags.textModel,
+      flags.clearTextModel,
+      flags.raviAgent,
+      flags.clearRaviAgent,
+      undefined,
+      true,
+      flags.execute,
+    );
+  }
+
+  it("shows the text chat settings, with defaults for a Console that does not send them", async () => {
+    const withText = new PagesChatCommands({
+      client: makeClient(async () =>
+        chatResponse({
+          settings: {
+            enabled: false,
+            assistantName: "Lia",
+            voice: "tempo",
+            language: "pt-BR",
+            instructions: null,
+            text: true,
+            replyPolicy: "always",
+            textModel: "acme/chat-large-2.1",
+            raviAgent: { installationId: "11111111-1111-4111-8111-111111111111", agentId: "finance" },
+          },
+        }),
+      ),
+      readCredentials: makeReadCredentials(),
+    });
+    const { output } = await captureConsole(() => withText.show("acme-website", "proj"));
+    expect(output).toContain("Status       on");
+    expect(output).toContain("Voice chat   disabled");
+    expect(output).toContain("Text chat    enabled");
+    expect(output).toContain("Replies      always");
+    expect(output).toContain("Text model   acme/chat-large-2.1");
+    expect(output).toContain(`Ravi agent   ${RAVI_AGENT}`);
+
+    const older = new PagesChatCommands({
+      client: makeClient(async () => chatResponse()),
+      readCredentials: makeReadCredentials(),
+    });
+    const json = await captureConsole(() => older.show("acme-website", "proj", undefined, true));
+    expect(JSON.parse(json.output).settings).toMatchObject({
+      text: true,
+      replyPolicy: "mention",
+      textModel: null,
+      raviAgent: null,
+    });
+    const text = await captureConsole(() => older.show("acme-website", "proj"));
+    expect(text.output).toContain("Replies      mention");
+    expect(text.output).toContain("Text model   (platform default)");
+    expect(text.output).toContain("Ravi agent   (none)");
+  });
+
+  it("applies text chat changes that do not widen the agent at once", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return chatResponse();
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      setChat(command, {
+        text: "false",
+        replyPolicy: "mention",
+        textModel: "Acme/chat-large-2.1",
+        clearRaviAgent: true,
+      }),
+    );
+    await captureConsole(() => setChat(command, { clearTextModel: true }));
+
+    expect(calls.map((call) => call.body)).toEqual([
+      { text: false, replyPolicy: "mention", textModel: "acme/chat-large-2.1", raviAgent: null },
+      { textModel: null },
+    ]);
+    expect(JSON.parse(output)).toMatchObject({ changed: ["text", "replyPolicy", "textModel", "raviAgent"] });
+  });
+
+  it("brakes --text true, --reply-policy always and --ravi-agent before Console", async () => {
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const client = makeClient(async (method, path, body) => {
+      calls.push({ method, path, body });
+      return chatResponse();
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+
+    const text = await expectContractError(() => setChat(command, { text: "true" }), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(text.details.plan).toMatchObject({ changes: { textChat: true } });
+    expect(String((text.details.plan as { effect?: unknown }).effect)).toContain("text chat");
+
+    const always = await expectContractError(
+      () => setChat(command, { replyPolicy: "always", text: "false" }),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(always.details.plan).toMatchObject({ changes: { replyPolicy: "always", textChat: false } });
+
+    const agent = await expectContractError(
+      () => setChat(command, { raviAgent: RAVI_AGENT }),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(agent.details.plan).toMatchObject({ changes: { raviAgent: RAVI_AGENT } });
+    expect(String((agent.details.plan as { effect?: unknown }).effect)).toContain(RAVI_AGENT);
+    expect(calls).toEqual([]);
+
+    await captureConsole(() =>
+      setChat(command, { text: "true", replyPolicy: "always", raviAgent: RAVI_AGENT, execute: true }),
+    );
+    expect(calls).toEqual([
+      {
+        method: "PATCH",
+        path: "/api/cli/projects/proj/pages/acme-website/chat",
+        body: {
+          text: true,
+          replyPolicy: "always",
+          raviAgent: { installationId: "11111111-1111-4111-8111-111111111111", agentId: "finance" },
+        },
+      },
+    ]);
+  });
+
+  it("rejects invalid text chat flags with exit 2 before the brake", async () => {
+    const client = makeClient(async () => {
+      throw new Error("console should not be called");
+    });
+    const command = new PagesChatCommands({ client, readCredentials: makeReadCredentials() });
+    const run = (flags: ChatSetFlags) => expectCloudError(() => runWithContext({}, () => setChat(command, flags)));
+
+    expect((await run({ text: "yes" })).message).toContain("--text must be true or false");
+    expect((await run({ replyPolicy: "sometimes" })).message).toContain("--reply-policy");
+    expect((await run({ textModel: "chat large" })).message).toContain("--text-model");
+    expect((await run({ raviAgent: "macbook-ana/finance" })).message).toContain("--ravi-agent");
+    expect((await run({ textModel: "a/b", clearTextModel: true })).message).toContain("Conflicting flags");
+    expect((await run({ raviAgent: RAVI_AGENT, clearRaviAgent: true })).message).toContain("Conflicting flags");
+    expect(client.requestJson).not.toHaveBeenCalled();
+  });
+
   it("declares a conditional brake with --execute last", () => {
     const commands = getCommandsMetadata(PagesChatCommands);
     const set = commands.find((command) => command.name === "set");
@@ -2340,6 +3153,29 @@ describe("pages chat", () => {
   });
 });
 
+const KIT_PATH = "/api/cli/pages/kit";
+
+/** The page kit request ship sends for a one-file page (project proj, private, no --theme). */
+function kitRequest(site: string, route: string, html: string) {
+  return {
+    project: "proj",
+    site,
+    route,
+    visibility: "private",
+    theme: null,
+    files: [{ path: "index.html", html: expect.stringContaining(html) }],
+  };
+}
+
+/** A Console page kit that changes nothing: files back as sent, no uses, no presentation. */
+function kitUnchanged(body: unknown) {
+  const files = ((body as { files?: Array<{ path: string; html: string }> } | undefined)?.files ?? []).map((file) => ({
+    ...file,
+    changed: false,
+  }));
+  return { files, uses: [], presentation: null, diagnostics: [], warnings: [] };
+}
+
 function makeShipClient(): { client: ConsoleApiClient; finalizeBodies: Array<Record<string, unknown>> } {
   const finalizeBodies: Array<Record<string, unknown>> = [];
   const client = {
@@ -2347,10 +3183,11 @@ function makeShipClient(): { client: ConsoleApiClient; finalizeBodies: Array<Rec
       user: { email: "alice@example.com" },
       organization: { id: "org_1" },
     })),
-    requestJson: mock(async (method: string, path: string) => {
+    requestJson: mock(async (method: string, path: string, body?: unknown) => {
       if (method === "GET" && path === "/api/cli/projects/proj/pages") {
         return [{ id: "site_1", slug: "acme-proj", isDefault: true, defaultHostname: "acme-proj.ravi.page" }];
       }
+      if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
       throw new Error(`unexpected ${method} ${path}`);
     }),
     createPageUploadSession: mock(async () => ({

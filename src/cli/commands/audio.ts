@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, normalize, relative, resolve } from "node:path";
+import { resolveCallerPath } from "../caller-cwd.js";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
@@ -209,7 +210,7 @@ export class AudioCommands {
       speed: resolvedSpeed,
       lang: resolvedLang,
       format,
-      outputDir: output ? resolve(output) : undefined,
+      outputDir: output ? resolveCallerPath(output, "write") : undefined,
       ptt: !!send,
     });
 
@@ -258,7 +259,7 @@ export class AudioCommands {
         ...(resolvedSpeed !== undefined ? { speed: resolvedSpeed } : {}),
         lang: resolvedLang,
         ...(format ? { format } : {}),
-        ...(output ? { outputDir: resolve(output) } : {}),
+        ...(output ? { outputDir: resolveCallerPath(output, "write") } : {}),
         voiceNote: !!send,
       },
     };

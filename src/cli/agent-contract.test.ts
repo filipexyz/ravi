@@ -13,9 +13,7 @@ describe("publicContractMessage", () => {
   it("preserves a sanitized COMMAND_FAILED cause instead of replacing it", () => {
     const cause = "CLI/runtime mismatch detected. Pass --allow-runtime-mismatch if you really mean it.";
     expect(publicContractMessage("COMMAND_FAILED", cause)).toBe(cause);
-    expect(
-      new ContractError("instances routes add", "COMMAND_FAILED", cause, 1).envelope().error.message,
-    ).toBe(cause);
+    expect(new ContractError("instances routes add", "COMMAND_FAILED", cause, 1).envelope().error.message).toBe(cause);
   });
 
   it("uses the generic headline only when the cause is empty", () => {
@@ -32,9 +30,7 @@ describe("publicContractMessage", () => {
     expect(publicContractMessage("COMMAND_FAILED", "leak sk-ant-abcdefghijklmnopqrstuv")).toBe(
       GENERIC_COMMAND_FAILED_MESSAGE,
     );
-    expect(publicContractMessage("COMMAND_FAILED", "/tmp/secret-config.json")).toBe(
-      GENERIC_COMMAND_FAILED_MESSAGE,
-    );
+    expect(publicContractMessage("COMMAND_FAILED", "/tmp/secret-config.json")).toBe(GENERIC_COMMAND_FAILED_MESSAGE);
     expect(sanitizePublicContractMessage("SENTINEL_SECRET_7M4Q")).toBeUndefined();
   });
 
@@ -45,20 +41,14 @@ describe("publicContractMessage", () => {
   });
 
   it("does not rewrite non-COMMAND_FAILED codes", () => {
-    expect(publicContractMessage("USAGE_ERROR", "Provide text or --text-file.")).toBe(
-      "Provide text or --text-file.",
-    );
-    expect(publicContractMessage("SESSION_NOT_FOUND", "Session not found: main")).toBe(
-      "Session not found: main",
-    );
+    expect(publicContractMessage("USAGE_ERROR", "Provide text or --text-file.")).toBe("Provide text or --text-file.");
+    expect(publicContractMessage("SESSION_NOT_FOUND", "Session not found: main")).toBe("Session not found: main");
   });
 });
 
 describe("expectedErrorToContractError", () => {
   it("preserves the default COMMAND_FAILED code and the expected message", () => {
-    const error = new CliExpectedError(
-      "--text-file must not contain '..' path segments.",
-    );
+    const error = new CliExpectedError("--text-file must not contain '..' path segments.");
     expect(error.code).toBe("COMMAND_FAILED");
 
     const contract = expectedErrorToContractError("audio generate", error);
@@ -89,8 +79,7 @@ describe("expectedErrorToContractError", () => {
   });
 
   it("preserves a throw-site suggestedAction such as --allow-runtime-mismatch", () => {
-    const suggestedAction =
-      "Re-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.";
+    const suggestedAction = "Re-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.";
     const contract = expectedErrorToContractError(
       "instances routes add",
       new CliExpectedError(
@@ -137,8 +126,15 @@ describe("CliExpectedError default code", () => {
 
     const contract = mapExecutionErrorToContractError("whatsapp group create", error);
     expect(contract.code).toBe("COMMAND_FAILED");
-    expect(contract.envelope().error.message).toBe(
-      "Agent not found: ghost. Pass --create-agent to create it.",
-    );
+    expect(contract.envelope().error.message).toBe("Agent not found: ghost. Pass --create-agent to create it.");
   });
+});
+
+describe("public expected-error credentials", () => {
+  it.each(["password=opaque", "access_token=opaque", "apiKey=opaque", "ctx_fixture_secret"])(
+    "does not relay a secret embedded in public error copy: %s",
+    (secret) => {
+      expect(sanitizePublicContractMessage(`Lookup failed: ${secret}`)).toBeUndefined();
+    },
+  );
 });

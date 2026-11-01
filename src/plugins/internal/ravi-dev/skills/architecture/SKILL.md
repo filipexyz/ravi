@@ -187,7 +187,7 @@ Contrato canônico:
 - provider pode expor `interrupt`, `setModel` e `control`
 - provider não muta task/session/canal diretamente
 
-Documento canônico: `docs/runtime-provider-contract.md`
+Documento canônico: `design/runtime-provider-contract.md`
 
 Checklist para novo provider:
 
@@ -245,21 +245,18 @@ agent:<agentId>:whatsapp:main:group:<groupId>:thread:<threadId>
 
 O runtime autoritativo é a sessão no DB + provider state persistido.
 
-## Tasks / Profiles / Workflow / Project
+## Tasks / Profiles / Workflow
 
 Fronteira obrigatória:
 
 - `task` executa
 - `profile` define protocolo local da task
 - `workflow` coordena nodes/edges/readiness/run state
-- `project` organiza alignment/contexto
 
 Invariantes:
 
 - `parentTaskId` não é scheduling
 - `launch plan` fica na task
-- `project_id` não deve ser gravado direto em tasks
-- task aparece em project por inferência via workflow
 - profile não coordena workflow
 
 ## Plugins / Skills

@@ -24,6 +24,11 @@ const DEFAULT_MIN_JITTER_MS = 20;
 const DEFAULT_MAX_JITTER_MS = 150;
 const DEFAULT_CHECKPOINT_EVERY_N_WRITES = 50;
 
+/** Warn when one write transaction holds the lock longer than this. */
+const SLOW_WRITE_WARN_MS = 2_000;
+/** Warn when a PASSIVE checkpoint leaves this many frames unbackfilled. */
+const WAL_BACKLOG_WARN_FRAMES = 512;
+
 // Per-Database write counter; weakly keyed so the entry vanishes when the
 // caller closes/disposes the connection.
 const writeCounters = new WeakMap<Database, number>();
@@ -33,11 +38,50 @@ const writeCounters = new WeakMap<Database, number>();
  * writers (PASSIVE only flushes frames no one is reading). Keeps the WAL from
  * growing unbounded across multi-process daemons + CLIs that share a single
  * SQLite file — large WAL = slower reads = longer-held locks = more contention.
+ *
+ * The checkpoint reports `busy|log|checkpointed`; a PASSIVE pass makes no
+ * progress while a reader pins an older frame, and silently succeeding with a
+ * huge backlog is how a WAL reached 271MB before one flush stalled writers for
+ * ~30s. Surface that backlog instead of hiding it at debug level.
  */
+export interface WalCheckpointStatus {
+  busy: number;
+  logFrames: number;
+  checkpointedFrames: number;
+  backlogFrames: number;
+}
+
+/**
+ * Interpret `PRAGMA wal_checkpoint(PASSIVE)`'s `busy|log|checkpointed` row.
+ * A PASSIVE pass that cannot advance (busy) or leaves a large backlog is the
+ * signal that a reader is pinning the WAL; callers should warn, not go quiet.
+ */
+export function evaluateWalCheckpoint(
+  row?: { busy?: number | null; log?: number | null; checkpointed?: number | null } | null,
+): { status: WalCheckpointStatus; shouldWarn: boolean } {
+  const logFrames = Math.max(0, Number(row?.log ?? 0));
+  const checkpointedFrames = Math.max(0, Number(row?.checkpointed ?? 0));
+  const backlogFrames = Math.max(0, logFrames - checkpointedFrames);
+  const busy = Number(row?.busy ?? 0);
+  return {
+    status: { busy, logFrames, checkpointedFrames, backlogFrames },
+    shouldWarn: busy === 1 || backlogFrames >= WAL_BACKLOG_WARN_FRAMES,
+  };
+}
+
 function tryWalCheckpoint(db: Database, label: string | undefined): void {
   try {
-    db.exec("PRAGMA wal_checkpoint(PASSIVE)");
-    log.debug("WAL checkpoint (PASSIVE) succeeded", { label });
+    const row = db.prepare("PRAGMA wal_checkpoint(PASSIVE)").get() as {
+      busy?: number | null;
+      log?: number | null;
+      checkpointed?: number | null;
+    } | null;
+    const { status, shouldWarn } = evaluateWalCheckpoint(row);
+    if (shouldWarn) {
+      log.warn("WAL checkpoint left a backlog", { label, ...status });
+      return;
+    }
+    log.debug("WAL checkpoint (PASSIVE) succeeded", { label, ...status });
   } catch (err) {
     log.debug("WAL checkpoint (PASSIVE) failed (ignored)", {
       label,
@@ -127,11 +171,16 @@ export function executeWriteWithStats<T>(
   let totalSleepMs = 0;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const startedAt = Date.now();
     try {
       db.exec("BEGIN IMMEDIATE");
       try {
         const value = fn(db);
         db.exec("COMMIT");
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs >= SLOW_WRITE_WARN_MS) {
+          log.warn("slow write transaction", { ms: elapsedMs, label: label ?? null, attempt });
+        }
         if (attempt > 1) {
           log.info("write succeeded after retry", { attempt, label });
         }

@@ -96,6 +96,10 @@ The canonical failure value is a `ContractError` and its envelope:
   tools, gateway and audit MUST NOT expose the raw exception, provider detail
   or stack. The gateway MAY retain HTTP `500` for this internal-fault class,
   but its body remains the canonical contract envelope.
+- The gateway MUST retain an unexpected handler's cause and stack in its local
+  diagnostic log, together with the command identity. Diagnostics MUST redact
+  credential tokens and MUST NOT copy the request body, runtime context key or
+  arbitrary exception properties. Public envelopes and audit MUST NOT contain the exception or stack. Gateway failures MUST carry the operation, a stable code, an actionable message and a server-generated requestId. Repeated diagnostics MUST be rate-limited and remain traceable to the first request.
 - A return-shape violation is `RETURN_SHAPE_ERROR`, exit `1`, outcome `failed`
   and MAY retain HTTP `500`. A non-success binary response is normalized to a
   safe stable code before it reaches SDK callers or audit; provider response
@@ -139,10 +143,19 @@ details and policy outcome:
   strings that match restricted grammars; free text, paths, URLs,
   token-shaped values, commands and arbitrary objects are discarded. Flags
   and positionals must match their canonical grammars, and `suggestedAction`
-  is replaced by a safe local action. For `media send`, catalog codes
+  is either bounded, sanitized public copy or a safe local action. Remote command failures MUST NOT discard a safe public message solely because the operation lacks a custom catalog. For `media send`, catalog codes
   `MEDIA_SEND_FAILED`, `OMNI_AUTH_FAILED` and `FILE_NOT_FOUND` MUST keep the
-  remote code and use the local catalog message and action; other codes stay
-  on the generic remote failure copy. HTTP `status` and structured `issues`
+  remote code and use the local catalog message and action; other codes preserve bounded, sanitized public contract copy or name the operation/code and next action. Library and Console-backed refusals
+  (`skills`, `themes`, `widgets`, the Library `agents` commands and `pages
+  read`), when the outcome is `failed` or `blocked` (not the write brake),
+  MUST keep the remote message and `suggestedAction` (bounded, without
+  control characters, sanitized again) plus the typed details `conflict`,
+  `proposalStatus`, `turn`, `currentVersion`, `baseVersion`, `errors`,
+  `warnings`, `existing` (file names), `ref` (`<scope>/<slug>`), `scope`
+  (`org`/`project`), `project`, `viewProject`, `archived` and `view`
+  (`organization`, `project`, `source` as short names): the daemon already built that envelope as public copy.
+  Text mode then prints `Next: <suggestedAction>` when no issue carries it.
+  HTTP `status` and structured `issues`
   (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST
   be projected so CLI text and `--json` stay actionable. This privacy
   projection is the permitted exception to byte-for-byte detail parity;

@@ -41,7 +41,7 @@ import {
   dbPruneContexts,
   type ContextRecord,
 } from "../../router/router-db.js";
-import { listSessions, resolveSession } from "../../router/sessions.js";
+import { getSession, getSessionByName, listSessions, resolveSession } from "../../router/sessions.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
   CredentialsFileError,
@@ -652,6 +652,51 @@ export class ContextCommands {
     console.log(JSON.stringify(output));
     return output;
   }
+  @Command({
+    name: "bridge-tool-hook",
+    description: "Authorize one Console bridge command, including an owner decision when eligible",
+    remoteTimeoutMs: 600_000,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "context",
+    action: "bridge-tool-hook",
+    risk: "high",
+    redactions: ["payload"],
+    localOperator: false,
+  })
+  async bridgeToolHook(
+    @Option({ flags: "--json", description: "Machine output" }) _json = false,
+    @Option({ flags: "--payload <json>", description: "Hook input" }) payloadJson?: string,
+  ) {
+    let output: Record<string, unknown>;
+    try {
+      const context = this.requireResolvedContext({ touch: false, readOnly: true });
+      if (typeof context.metadata?.bridgeTurnId !== "string") throw new Error("A live bridge turn is required");
+      const payload = parseCodexHookPayload(payloadJson),
+        input = asRecord(payload.tool_input);
+      const command = typeof input?.command === "string" ? input.command : "";
+      if (!["Bash", "shell"].includes(String(payload.tool_name)) || !command)
+        throw new Error("Unsupported bridge tool");
+      const { createRuntimeHostServices } = await import("../../runtime/host-services.js");
+      const services = createRuntimeHostServices({
+        context,
+        agentId: context.agentId!,
+        sessionName: context.sessionName!,
+        toolContext: {},
+      });
+      const decision = await services.authorizeCommandExecution({
+        command,
+        input: input ?? {},
+        eventData: { command, toolUseId: payload.tool_use_id ?? null },
+      });
+      output = decision.approved ? {} : buildPreToolUseDenyResult(decision.reason ?? "Action denied");
+    } catch {
+      output = buildPreToolUseDenyResult("Bridge command authority is unavailable");
+    }
+    console.log(JSON.stringify(output));
+    return output;
+  }
   private requireResolvedContext(options: { touch?: boolean; readOnly?: boolean } = {}) {
     const inlineContext = getContext()?.context;
     if (inlineContext) {
@@ -1251,6 +1296,7 @@ export class ContextCredentialsCommands {
 }
 
 declareCommandReturns(ContextCommands, {
+  bridgeToolHook: contextCodexBashHookReturnSchema,
   authorize: contextAuthorizeReturnSchema,
   capabilities: contextCapabilitiesReturnSchema,
   check: contextCheckReturnSchema,
@@ -1419,15 +1465,29 @@ function parseDelegatedIdentity(
       },
     });
   }
-  if (sessionKey && !sessionKey.startsWith(`agent:${agentId}:`)) {
+  // Ownership comes from the session registry, not from the key's shape: a
+  // named session's key is its bare name (no agent:<id>: prefix). The prefix
+  // only stands in for ownership when the key is not registered yet.
+  const registeredSession = sessionKey ? getSession(sessionKey) : null;
+  if (sessionKey && !registeredSession && !sessionKey.startsWith(`agent:${agentId}:`)) {
     failContextIssueUsage(
       `Delegated session key must belong to agent ${agentId}`,
-      `Use a session key that starts with agent:${agentId}:`,
+      `Use the key of a registered session owned by ${agentId} (ravi sessions info <name> --json), or one that starts with agent:${agentId}:`,
       asJson,
     );
   }
-  const existingSession = sessionKey ? resolveSession(sessionKey) : sessionName ? resolveSession(sessionName) : null;
-  if (existingSession && existingSession.agentId !== agentId) {
+  const namedSession = sessionName ? getSessionByName(sessionName) : null;
+  const nameMismatch = registeredSession
+    ? Boolean(registeredSession.name) && registeredSession.name !== sessionName
+    : Boolean(namedSession);
+  if (nameMismatch) {
+    failContextIssueUsage(
+      `--as-session-name ${sessionName} does not name the session of --as-session-key`,
+      "Pass the key and name of the same registered session (ravi sessions info <name> --json)",
+      asJson,
+    );
+  }
+  if (registeredSession && registeredSession.agentId !== agentId) {
     failContextIssueUsage(
       `Delegated session does not belong to agent ${agentId}`,
       "Pass --as-session-key / --as-session-name for a session owned by --as-agent",

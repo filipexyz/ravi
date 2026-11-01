@@ -34,6 +34,7 @@ import {
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
   closeRouterDb,
+  dropRedundantSessionEventIndexes,
   getDb,
 } from "./router-db.js";
 import { recomputeChatReadingListMembers } from "../chats/reading-lists.js";
@@ -1300,5 +1301,97 @@ describe("identity chat schema", () => {
       resolvedSenderId: "5511947879044",
     });
     expect(dbListChatParticipants(chat.id)).toHaveLength(1);
+  });
+});
+
+describe("slack thread lifecycle schema", () => {
+  function lifecycleColumns(db: Database): string[] {
+    return (db.prepare("PRAGMA table_info(slack_thread_lifecycle)").all() as Array<{ name: string }>).map(
+      (row) => row.name,
+    );
+  }
+
+  it("adds requested_by to a ravi.db created before the thread card named who asked", () => {
+    expect(lifecycleColumns(getDb())).toContain("requested_by");
+    closeRouterDb();
+
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    legacyDb.exec("ALTER TABLE slack_thread_lifecycle DROP COLUMN requested_by");
+    expect(lifecycleColumns(legacyDb)).not.toContain("requested_by");
+    legacyDb.close();
+
+    expect(lifecycleColumns(getDb())).toContain("requested_by");
+  });
+
+  it("adds the thread runtime columns to a ravi.db created before threads could pin them", () => {
+    const columns = ["provider_override", "effort_override", "thinking_level"];
+    for (const column of columns) {
+      expect(lifecycleColumns(getDb())).toContain(column);
+    }
+    closeRouterDb();
+
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    for (const column of columns) {
+      legacyDb.exec(`ALTER TABLE slack_thread_lifecycle DROP COLUMN ${column}`);
+      expect(lifecycleColumns(legacyDb)).not.toContain(column);
+    }
+    legacyDb.close();
+
+    for (const column of columns) {
+      expect(lifecycleColumns(getDb())).toContain(column);
+    }
+  });
+});
+
+describe("session_events index budget", () => {
+  const REDUNDANT_INDEXES = [
+    "idx_session_events_key_time",
+    "idx_session_events_name_time",
+    "idx_session_events_type_time",
+    "idx_session_events_chat_time",
+    "idx_session_events_rollup_turns",
+    "idx_session_events_canonical_chat",
+  ];
+
+  it("drops the redundant indexes on boot and is idempotent", () => {
+    const db = getDb();
+    for (const name of REDUNDANT_INDEXES) {
+      db.exec(`CREATE INDEX IF NOT EXISTS ${name} ON session_events(session_key)`);
+    }
+    const placeholders = REDUNDANT_INDEXES.map(() => "?").join(", ");
+    const present = () =>
+      (
+        db
+          .prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'index' AND name IN (${placeholders})`)
+          .get(...REDUNDANT_INDEXES) as { n: number }
+      ).n;
+
+    expect(present()).toBe(REDUNDANT_INDEXES.length);
+
+    dropRedundantSessionEventIndexes(db);
+    expect(present()).toBe(0);
+
+    // Every daemon/CLI boot repeats the drop; a second run must stay a no-op.
+    dropRedundantSessionEventIndexes(db);
+    expect(present()).toBe(0);
+  });
+});
+
+describe("router decision migration", () => {
+  it("migrates legacy task questions on DB open without changing the chat or its message ledger", () => {
+    const chat = dbUpsertChat({ channel: "slack", instanceId: "fixture", platformChatId: "C123", chatType: "channel" });
+    getDb().exec(`CREATE TABLE task_decisions(id TEXT PRIMARY KEY,task_id TEXT,key TEXT,status TEXT,owner_type TEXT,owner_id TEXT,ask TEXT,asked_by TEXT,asked_at INTEGER,answer TEXT,answered_by TEXT,answered_at INTEGER,blocks INTEGER,created_at INTEGER,updated_at INTEGER);
+      INSERT INTO task_decisions VALUES('legacy-decision','task-fixture','window','answered','human','person-fixture','When?','worker',1,'Later','operator',2,1,1,2)`);
+    closeRouterDb();
+    const migrated = getDb().query("SELECT * FROM decisions WHERE id='legacy-decision'").get() as {
+      origin_type: string;
+      origin_id: string;
+      answer: string;
+    };
+    expect(migrated).toMatchObject({ origin_type: "task", origin_id: "task-fixture", answer: "Later" });
+    expect(dbFindChat({ channel: "slack", instanceId: "fixture", platformChatId: "C123" })?.id).toBe(chat.id);
+    expect(getDb().query("SELECT name FROM sqlite_master WHERE name='task_decisions'").get()).toBeNull();
+    closeRouterDb();
+    expect(getDb().query("SELECT * FROM decisions").all()).toHaveLength(1);
   });
 });

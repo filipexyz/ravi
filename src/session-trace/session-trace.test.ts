@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachChatToSession, getOrCreateSession, updateSessionName } from "../router/sessions.js";
-import { dbUpsertChat } from "../router/router-db.js";
+import { dbUpsertChat, getDb, closeRouterDb } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
-import { recordAdapterRequestTrace } from "./runtime-trace.js";
+import { recordAdapterRequestTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
 import {
+  getLatestSessionTurn,
   getSessionTraceBlob,
+  getSessionTurn,
   listRecentSessionEventsByType,
-  listSessionEvents,
   recordSessionEvent,
+  upsertSessionTurn,
 } from "./session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 
 let stateDir: string | null = null;
 
@@ -52,6 +55,71 @@ describe("session trace query", () => {
         (event) => event.eventType,
       ),
     ).toEqual(["adapter.raw"]);
+  });
+
+  it("reads a session's newest turn started at or after a time", () => {
+    const sessionKey = "agent:main:latest-turn";
+    upsertSessionTurn({ turnId: "turn-old", sessionKey, status: "complete", startedAt: 1000, updatedAt: 1500 });
+    upsertSessionTurn({
+      turnId: "turn-new",
+      sessionKey,
+      status: "complete",
+      startedAt: 3000,
+      completedAt: 3500,
+      updatedAt: 3500,
+    });
+    upsertSessionTurn({
+      turnId: "turn-other",
+      sessionKey: "agent:main:other",
+      status: "running",
+      startedAt: 9000,
+      updatedAt: 9000,
+    });
+
+    expect(getLatestSessionTurn(sessionKey)?.turnId).toBe("turn-new");
+    expect(getLatestSessionTurn(sessionKey, 3000)).toMatchObject({ turnId: "turn-new", completedAt: 3500 });
+    expect(getLatestSessionTurn(sessionKey, 3001)).toBeNull();
+  });
+
+  it("upgrades existing turns while preserving measured usage and unknown new usage", () => {
+    upsertSessionTurn({
+      turnId: "legacy",
+      sessionKey: "agent:main:upgrade",
+      status: "complete",
+      startedAt: 1000,
+      updatedAt: 2000,
+      inputTokens: 42,
+      outputTokens: 7,
+      costUsd: 0.02,
+    });
+    // Reproduce the previous table shape, then open it through the real migration path.
+    getDb().exec("ALTER TABLE session_turns DROP COLUMN output_state");
+    closeRouterDb();
+    expect(getSessionTurn("legacy")).toMatchObject({
+      inputTokens: 42,
+      outputTokens: 7,
+      costUsd: 0.02,
+      outputState: null,
+    });
+    upsertSessionTurn({
+      turnId: "new-failed",
+      sessionKey: "agent:main:upgrade",
+      status: "failed",
+      startedAt: 3000,
+      updatedAt: 4000,
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+    });
+    closeRouterDb();
+    expect(getSessionTurn("new-failed")).toMatchObject({
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+    });
+    expect(getSessionTurn("legacy")?.inputTokens).toBe(42);
   });
 
   it("lists recent events by type using newest event ids first", () => {
@@ -134,6 +202,43 @@ describe("session trace query", () => {
     });
   });
 
+  it("records the signals rendered into the turn, and omits them when none were", () => {
+    const base = {
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      provider: "codex",
+      model: "gpt-5",
+      prompt: "hello",
+      systemPrompt: "system",
+      cwd: "/tmp/main",
+      resume: false,
+      fork: false,
+      hasHooks: false,
+      pluginNames: [],
+      mcpServerNames: [],
+      hasRemoteSpawn: false,
+    };
+    const withSignals = recordAdapterRequestTrace({
+      ...base,
+      runId: "run-signals",
+      turnId: "turn-signals",
+      signals: {
+        surfaced: ["sig_1"],
+        skipped: [{ id: "sig_2", reason: "budget" }],
+        budget: { used: 1, limit: 3, held: 1 },
+      },
+    });
+    expect(getSessionTraceBlob(withSignals!.requestBlobSha256)?.contentJson).toMatchObject({
+      signalsSurfaced: ["sig_1"],
+      signalsSkipped: [{ id: "sig_2", reason: "budget" }],
+      signalsBudget: { used: 1, limit: 3, held: 1 },
+    });
+
+    const without = recordAdapterRequestTrace({ ...base, runId: "run-no-signals", turnId: "turn-no-signals" });
+    expect(getSessionTraceBlob(without!.requestBlobSha256)?.contentJson).not.toHaveProperty("signalsSurfaced");
+  });
+
   it("records canonical and provider delivery receipt identity", () => {
     const sessionKey = "agent:main:delivery-receipt";
     const sessionName = "main-delivery-receipt";
@@ -157,7 +262,7 @@ describe("session trace query", () => {
       },
     });
 
-    expect(listSessionEvents(sessionKey)[0]?.payloadJson).toMatchObject({
+    expect(listSessionEventsForTest(sessionKey)[0]?.payloadJson).toMatchObject({
       deliveryMessageId: "slack:C123:1713000000.000100",
       canonicalMessageId: "cm_123",
       platformMessageId: "1713000000.000100",
@@ -201,13 +306,67 @@ describe("session trace query", () => {
       timestamp: 30,
     });
 
-    const event = listSessionEvents(sessionKey)[0];
+    const event = listSessionEventsForTest(sessionKey)[0];
     expect(event).toMatchObject({
       eventType: "response.emitted",
       sourceChatId: "5511999999999@s.whatsapp.net",
       canonicalChatId: chat.id,
       actorType: "agent",
       actorAgentId: "main",
+    });
+  });
+});
+
+describe("session turn usage and output state", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-session-turn-usage-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("keeps unreported usage as NULL, never 0, and round-trips the output state", () => {
+    const sessionKey = "agent:main:usage-null";
+    upsertSessionTurn({ turnId: "turn-null", sessionKey, status: "running", startedAt: 1000, updatedAt: 1000 });
+    upsertSessionTurn({
+      turnId: "turn-null",
+      sessionKey,
+      status: "failed",
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+      completedAt: 2000,
+      updatedAt: 2000,
+    });
+    const turn = getSessionTurn("turn-null");
+    expect(turn?.inputTokens).toBeNull();
+    expect(turn?.outputTokens).toBeNull();
+    expect(turn?.cacheReadTokens).toBeNull();
+    expect(turn?.costUsd).toBeNull();
+    expect(turn?.outputState).toBe("incomplete");
+
+    upsertSessionTurn({ turnId: "turn-null", sessionKey, status: "failed", inputTokens: 12, updatedAt: 3000 });
+    expect(getSessionTurn("turn-null")?.inputTokens).toBe(12);
+    expect(getSessionTurn("turn-null")?.outputState).toBe("incomplete");
+  });
+});
+
+describe("runtime capability summary", () => {
+  it("reports host-disabled runtime controls apart from the supported ones", () => {
+    const summary = summarizeRuntimeCapabilities({
+      runtimeControl: {
+        supported: true,
+        operations: ["thread.read", "turn.steer", "turn.follow_up", "turn.interrupt"],
+      },
+    } as unknown as Parameters<typeof summarizeRuntimeCapabilities>[0]);
+
+    expect(summary.runtimeControl).toEqual({
+      supported: true,
+      operations: ["thread.read", "turn.interrupt"],
+      disabledOperations: ["turn.steer", "turn.follow_up"],
     });
   });
 });

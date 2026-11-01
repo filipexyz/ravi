@@ -1,4 +1,19 @@
-import { randomUUID } from "node:crypto";
+import {
+  migrateTaskThreads,
+  createTaskThread,
+  syncTaskThreadEvent,
+  assertTaskDecisionsSettled,
+} from "./thread-state.js";
+import {
+  askDecisionRecord,
+  answerDecisionRecord,
+  decisionWrite,
+  listDecisions,
+  decisionFromRow,
+  type DecisionRow,
+} from "../decisions/store.js";
+import type { Decision } from "../decisions/types.js";
+import { createHash, randomUUID } from "node:crypto";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import {
   DEFAULT_TASK_CHECKPOINT_INTERVAL_MS,
@@ -21,6 +36,10 @@ import {
   type TaskAssignment,
   type TaskComment,
   type TaskCommentInput,
+  type TaskDecision,
+  type TaskDecisionAnswerInput,
+  type TaskDecisionInput,
+  type TaskOpenDecisionRow,
   type TaskDependencyRecord,
   type TaskEvent,
   type TaskLaunchPlan,
@@ -34,11 +53,15 @@ import {
   type TaskWorktreeConfig,
 } from "./types.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
+import { fromSubjectColumns, toSubjectColumns, type SubjectRef } from "../identity/subject.js";
 import { normalizeTaskRuntimeOptions } from "./runtime-options.js";
+import { DecisionError, normalizeDecisionKey } from "../decisions/model.js";
 import { canonicalAssetIdsForTag } from "../tags/helpers.js";
 
 interface TaskRow {
   id: string;
+  thread_id: string;
+  creation_hash: string | null;
   title: string;
   instructions: string;
   status: TaskRecord["status"];
@@ -59,6 +82,12 @@ interface TaskRow {
   created_by: string | null;
   created_by_agent_id: string | null;
   created_by_session_name: string | null;
+  subject_kind: string | null;
+  subject_contact_id: string | null;
+  subject_identity_id: string | null;
+  subject_agent_id: string | null;
+  subject_channel: string | null;
+  subject_raw_id: string | null;
   assignee_agent_id: string | null;
   assignee_session_name: string | null;
   worktree_mode: string | null;
@@ -78,6 +107,7 @@ interface TaskRow {
 
 interface TaskAssignmentRow {
   id: string;
+  execution_status: TaskAssignment["executionStatus"];
   task_id: string;
   agent_id: string;
   session_name: string;
@@ -129,6 +159,14 @@ interface TaskDependencyRow {
   created_at: number;
   satisfied_at: number | null;
   satisfied_by_event_id: number | null;
+}
+
+interface TaskOpenDecisionDbRow extends DecisionRow {
+  task_title: string;
+  task_status: TaskRecord["status"];
+  task_priority: TaskRecord["priority"];
+  assignee_agent_id: string | null;
+  assignee_session_name: string | null;
 }
 
 interface TaskLaunchPlanRow {
@@ -206,6 +244,19 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!taskColumns.has("created_by_session_name")) {
     db.exec("ALTER TABLE tasks ADD COLUMN created_by_session_name TEXT");
   }
+  for (const column of [
+    "subject_kind",
+    "subject_contact_id",
+    "subject_identity_id",
+    "subject_agent_id",
+    "subject_channel",
+    "subject_raw_id",
+  ]) {
+    if (!taskColumns.has(column)) {
+      db.exec(`ALTER TABLE tasks ADD COLUMN ${column} TEXT`);
+    }
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_subject_contact ON tasks(subject_contact_id)");
   if (!taskColumns.has("parent_task_id")) {
     db.exec("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT");
   }
@@ -351,6 +402,7 @@ function ensureTaskSchema(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL UNIQUE REFERENCES threads(id),
       title TEXT NOT NULL,
       instructions TEXT NOT NULL,
       status TEXT NOT NULL,
@@ -371,6 +423,12 @@ function ensureTaskSchema(): void {
       created_by TEXT,
       created_by_agent_id TEXT,
       created_by_session_name TEXT,
+      subject_kind TEXT,
+      subject_contact_id TEXT,
+      subject_identity_id TEXT,
+      subject_agent_id TEXT,
+      subject_channel TEXT,
+      subject_raw_id TEXT,
       assignee_agent_id TEXT,
       assignee_session_name TEXT,
       worktree_mode TEXT,
@@ -477,6 +535,7 @@ function ensureTaskSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_task_dependencies_upstream ON task_dependencies(depends_on_task_id, task_id);
     CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id, satisfied_at, created_at);
+
   `);
   applyTaskWorktreeSchemaMigrations();
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_updated_id ON tasks(updated_at DESC, id DESC)");
@@ -487,6 +546,7 @@ function ensureTaskSchema(): void {
     "CREATE INDEX IF NOT EXISTS idx_task_assignments_checkpoint_due ON task_assignments(status, checkpoint_due_at)",
   );
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_launch_plans_session ON task_launch_plans(session_name)");
+  migrateTaskThreads(db);
   schemaReady = true;
   schemaDbPath = currentDbPath;
 }
@@ -578,9 +638,24 @@ function serializeTaskProfileSnapshot(snapshot?: TaskProfileSnapshot | null): st
   return JSON.stringify(snapshot);
 }
 
+function subjectFromRow(row: TaskRow): SubjectRef | undefined {
+  return fromSubjectColumns(row);
+}
+
+/**
+ * A child task inherits the subject of its parent: an agent working inside a
+ * task is acting on behalf of whoever asked for that task.
+ */
+function resolveInheritedSubject(parentTaskId?: string): SubjectRef | undefined {
+  const normalized = parentTaskId?.trim();
+  if (!normalized) return undefined;
+  return dbGetTask(normalized)?.subject;
+}
+
 function rowToTask(row: TaskRow): TaskRecord {
   return {
     id: row.id,
+    threadId: row.thread_id,
     title: row.title,
     instructions: row.instructions,
     status: row.status,
@@ -603,6 +678,7 @@ function rowToTask(row: TaskRow): TaskRecord {
     ...(row.created_by_session_name ? { createdBySessionName: row.created_by_session_name } : {}),
     ...(row.assignee_agent_id ? { assigneeAgentId: row.assignee_agent_id } : {}),
     ...(row.assignee_session_name ? { assigneeSessionName: row.assignee_session_name } : {}),
+    ...(subjectFromRow(row) ? { subject: subjectFromRow(row) } : {}),
     ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
       ? { worktree: rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch) }
       : {}),
@@ -622,6 +698,7 @@ function rowToTask(row: TaskRow): TaskRecord {
 function rowToAssignment(row: TaskAssignmentRow): TaskAssignment {
   return {
     id: row.id,
+    executionStatus: row.execution_status,
     taskId: row.task_id,
     agentId: row.agent_id,
     sessionName: row.session_name,
@@ -680,6 +757,11 @@ function rowToTaskDependency(row: TaskDependencyRow): TaskDependencyRecord {
     ...(typeof row.satisfied_at === "number" ? { satisfiedAt: row.satisfied_at } : {}),
     ...(typeof row.satisfied_by_event_id === "number" ? { satisfiedByEventId: row.satisfied_by_event_id } : {}),
   };
+}
+
+function taskDecisionProjection(decision: Decision): TaskDecision {
+  const { origin, revision: _revision, ...fields } = decision;
+  return { ...fields, taskId: origin.id };
 }
 
 function rowToTaskLaunchPlan(row: TaskLaunchPlanRow): TaskLaunchPlan {
@@ -819,7 +901,9 @@ function appendTaskEvent(
   if (!row) {
     throw new Error(`Failed to append task event for ${taskId}`);
   }
-  return rowToEvent(row);
+  const event = rowToEvent(row);
+  syncTaskThreadEvent(getTaskOrThrow(taskId), event);
+  return event;
 }
 
 function markActiveAssignmentAccepted(taskId: string, sessionName?: string): void {
@@ -844,55 +928,136 @@ function markActiveAssignmentAccepted(taskId: string, sessionName?: string): voi
   `).run(now, taskId);
 }
 
-export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event: TaskEvent } {
-  ensureTaskSchema();
-  const db = getDb();
-  const id = `task-${randomUUID().slice(0, 8)}`;
-  const now = Date.now();
-  const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
-  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs);
-  const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? input.createdBySessionName);
-  const reportEvents = serializeTaskReportEvents(input.reportEvents);
+function taskCreationKey(input: CreateTaskInput): string | null {
+  return input.idempotencyKey?.trim()
+    ? JSON.stringify([
+        input.createdByAgentId ?? null,
+        input.createdBySessionName ?? null,
+        input.createdBy ?? null,
+        input.idempotencyKey.trim(),
+      ])
+    : null;
+}
 
-  db.prepare(`
+function taskCreationHash(input: CreateTaskInput): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify(input, (_key, value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? Object.fromEntries(
+              Object.entries(value)
+                .filter(([, v]) => v !== undefined)
+                .sort(([a], [b]) => a.localeCompare(b)),
+            )
+          : value,
+      ),
+    )
+    .digest("hex");
+}
+
+export function dbFindTaskCreation(
+  input: CreateTaskInput,
+): { task: TaskRecord; event: TaskEvent; wasNoop: true } | null {
+  if (!input.idempotencyKey?.trim()) return null;
+  ensureTaskSchema();
+  const row = getDb().query("SELECT * FROM tasks WHERE creation_key=?").get(taskCreationKey(input)) as TaskRow | null;
+  if (!row) return null;
+  if (row.creation_hash !== taskCreationHash(input))
+    throw new Error("Task creation idempotency key was reused with different input");
+  return { task: rowToTask(row), event: getLatestTaskEvent(row.id, "task.created")!, wasNoop: true };
+}
+
+export function dbCreateTask(
+  input: CreateTaskInput,
+  request: CreateTaskInput = input,
+): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
+  ensureTaskSchema();
+  return getDb()
+    .transaction(() => {
+      const db = getDb();
+      const retry = dbFindTaskCreation(request);
+      if (retry) return retry;
+      const creationKey = taskCreationKey(request);
+      const creationHash = taskCreationHash(request);
+      const id = `task-${randomUUID().slice(0, 8)}`;
+      const now = Date.now();
+      const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
+      const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs);
+      const reportToSessionName = normalizeTaskReportToSessionName(
+        input.reportToSessionName ?? input.createdBySessionName,
+      );
+      const reportEvents = serializeTaskReportEvents(input.reportEvents);
+      const subject = input.subject ?? resolveInheritedSubject(input.parentTaskId);
+      const subjectColumns = toSubjectColumns(subject);
+
+      const threadId = createTaskThread({
+        id,
+        title: input.title,
+        instructions: input.instructions,
+        createdAt: now,
+        parentTaskId: input.parentTaskId,
+      });
+      db.prepare(`
     INSERT INTO tasks (
-      id, title, instructions, status, priority, progress, checkpoint_interval_ms, report_to_session_name, report_events,
+      id, thread_id, creation_key, creation_hash, title, instructions, status, priority, progress, checkpoint_interval_ms, report_to_session_name, report_events,
       profile_id, profile_version, profile_source, profile_snapshot_json, profile_state_json, profile_input_json,
       runtime_override_json, parent_task_id, task_dir, created_by, created_by_agent_id, created_by_session_name, worktree_mode, worktree_path,
-      worktree_branch, created_at, updated_at
-    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+      worktree_branch, subject_kind, subject_contact_id, subject_identity_id, subject_agent_id, subject_channel, subject_raw_id,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id,
-    input.title,
-    input.instructions,
-    input.priority ?? "normal",
-    checkpointIntervalMs,
-    reportToSessionName,
-    reportEvents,
-    input.profileId ?? DEFAULT_TASK_PROFILE_ID,
-    input.profileVersion ?? null,
-    input.profileSource ?? null,
-    serializeTaskProfileSnapshot(input.profileSnapshot),
-    serializeTaskProfileState(input.profileState),
-    serializeTaskProfileInput(input.profileInput),
-    serializeTaskRuntimeOptions(input.runtimeOverride),
-    input.parentTaskId ?? null,
-    input.createdBy ?? null,
-    input.createdByAgentId ?? null,
-    input.createdBySessionName ?? null,
-    worktreeMode,
-    worktreePath,
-    worktreeBranch,
-    now,
-    now,
-  );
+        id,
+        threadId,
+        creationKey,
+        creationKey ? creationHash : null,
+        input.title,
+        input.instructions,
+        input.priority ?? "normal",
+        checkpointIntervalMs,
+        reportToSessionName,
+        reportEvents,
+        input.profileId ?? DEFAULT_TASK_PROFILE_ID,
+        input.profileVersion ?? null,
+        input.profileSource ?? null,
+        serializeTaskProfileSnapshot(input.profileSnapshot),
+        serializeTaskProfileState(input.profileState),
+        serializeTaskProfileInput(input.profileInput),
+        serializeTaskRuntimeOptions(input.runtimeOverride),
+        input.parentTaskId ?? null,
+        input.createdBy ?? null,
+        input.createdByAgentId ?? null,
+        input.createdBySessionName ?? null,
+        worktreeMode,
+        worktreePath,
+        worktreeBranch,
+        subjectColumns.subjectKind,
+        subjectColumns.subjectContactId,
+        subjectColumns.subjectIdentityId,
+        subjectColumns.subjectAgentId,
+        subjectColumns.subjectChannel,
+        subjectColumns.subjectRawId,
+        now,
+        now,
+      );
 
-  const event = appendTaskEvent(id, "task.created", {
-    actor: input.createdBy,
-    message: input.title,
-    progress: 0,
-  });
-  return { task: getTaskOrThrow(id), event };
+      const event = appendTaskEvent(id, "task.created", {
+        actor: input.createdBy,
+        message: input.title,
+        progress: 0,
+      });
+      return { task: getTaskOrThrow(id), event };
+    })
+    .immediate();
+}
+
+export function dbRollbackTaskCreation(task: TaskRecord): void {
+  ensureTaskSchema();
+  getDb()
+    .transaction(() => {
+      getDb().query("DELETE FROM tasks WHERE id=? AND status='open'").run(task.id);
+      getDb().query("DELETE FROM threads WHERE id=?").run(task.threadId);
+    })
+    .immediate();
 }
 
 export function dbSetTaskDir(taskId: string, taskDir: string): TaskRecord {
@@ -1449,31 +1614,33 @@ export function dbMarkTaskAcceptedForSession(
   taskId?: string,
 ): { task: TaskRecord; assignment: TaskAssignment; event: TaskEvent | null; transitioned: boolean } | null {
   ensureTaskSchema();
-  const binding = dbResolveActiveTaskBindingForSession(sessionName, taskId);
-  if (!binding) {
-    return null;
-  }
+  return getDb()
+    .transaction(() => {
+      const binding = dbResolveActiveTaskBindingForSession(sessionName, taskId);
+      if (!binding) {
+        return null;
+      }
 
-  if (binding.task.status === "blocked") {
-    const resumeResult = dbAutoResumeBlockedTask(binding.task.id, "agent_activity", { sessionName });
-    if (resumeResult.resumed) {
-      return {
-        task: resumeResult.task,
-        assignment: dbGetActiveAssignment(binding.task.id)!,
-        event: resumeResult.event,
-        transitioned: true,
-      };
-    }
-  }
+      if (binding.task.status === "blocked") {
+        const resumeResult = dbAutoResumeBlockedTask(binding.task.id, "agent_activity", { sessionName });
+        if (resumeResult.resumed) {
+          return {
+            task: resumeResult.task,
+            assignment: dbGetActiveAssignment(binding.task.id)!,
+            event: resumeResult.event,
+            transitioned: true,
+          };
+        }
+      }
 
-  const db = getDb();
-  const now = Date.now();
-  const transitionedAssignment = ["assigned", "blocked"].includes(binding.assignment.status);
-  const checkpointDueAt = transitionedAssignment
-    ? computeTaskCheckpointDueAt(now, binding.assignment.checkpointIntervalMs ?? binding.task.checkpointIntervalMs)
-    : (binding.assignment.checkpointDueAt ?? null);
+      const db = getDb();
+      const now = Date.now();
+      const transitionedAssignment = ["assigned", "blocked"].includes(binding.assignment.status);
+      const checkpointDueAt = transitionedAssignment
+        ? computeTaskCheckpointDueAt(now, binding.assignment.checkpointIntervalMs ?? binding.task.checkpointIntervalMs)
+        : (binding.assignment.checkpointDueAt ?? null);
 
-  db.prepare(`
+      db.prepare(`
     UPDATE task_assignments
     SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
         accepted_at = COALESCE(accepted_at, ?),
@@ -1488,9 +1655,9 @@ export function dbMarkTaskAcceptedForSession(
     WHERE id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, checkpointDueAt, binding.assignment.id);
 
-  const transitionedTask =
-    db
-      .prepare(`
+      const transitionedTask =
+        db
+          .prepare(`
     UPDATE tasks
     SET status = CASE
           WHEN status = 'dispatched' THEN 'in_progress'
@@ -1503,25 +1670,27 @@ export function dbMarkTaskAcceptedForSession(
         updated_at = ?
     WHERE id = ? AND status IN ('dispatched', 'in_progress', 'blocked')
   `)
-      .run(now, now, binding.task.id).changes > 0 && binding.task.status === "dispatched";
+          .run(now, now, binding.task.id).changes > 0 && binding.task.status === "dispatched";
 
-  const nextTask = getTaskOrThrow(binding.task.id);
-  const nextAssignment = dbGetActiveAssignment(binding.task.id)!;
-  const event = transitionedTask
-    ? appendTaskEvent(binding.task.id, "task.progress", {
-        actor: sessionName,
-        sessionName,
-        message: "Worker bootstrap started; awaiting the first progress sync.",
-        progress: nextTask.progress,
-      })
-    : null;
+      const nextTask = getTaskOrThrow(binding.task.id);
+      const nextAssignment = dbGetActiveAssignment(binding.task.id)!;
+      const event = transitionedTask
+        ? appendTaskEvent(binding.task.id, "task.progress", {
+            actor: sessionName,
+            sessionName,
+            message: "Worker bootstrap started; awaiting the first progress sync.",
+            progress: nextTask.progress,
+          })
+        : null;
 
-  return {
-    task: nextTask,
-    assignment: nextAssignment,
-    event,
-    transitioned: transitionedTask,
-  };
+      return {
+        task: nextTask,
+        assignment: nextAssignment,
+        event,
+        transitioned: transitionedTask,
+      };
+    })
+    .immediate();
 }
 
 export function dbListTaskEvents(taskId: string, limit = 100): TaskEvent[] {
@@ -1604,6 +1773,7 @@ export function dbRegisterTaskCheckpointMiss(
   taskId: string,
   assignmentId: string,
   now = Date.now(),
+  options: { message?: (overdueCount: number) => string } = {},
 ): { task: TaskRecord; assignment: TaskAssignment; event: TaskEvent; missedCount: number } | null {
   ensureTaskSchema();
   const db = getDb();
@@ -1651,7 +1821,9 @@ export function dbRegisterTaskCheckpointMiss(
     actor: "task-checkpoint-runner",
     agentId: assignment.agentId,
     sessionName: assignment.sessionName,
-    message: `Checkpoint overdue ${assignment.checkpointOverdueCount ?? nextOverdueCount}x; real report still pending.`,
+    message:
+      options.message?.(assignment.checkpointOverdueCount ?? nextOverdueCount) ??
+      `Checkpoint overdue ${assignment.checkpointOverdueCount ?? nextOverdueCount}x; real report still pending.`,
     progress: getTaskOrThrow(taskId).progress,
   });
 
@@ -1671,17 +1843,31 @@ export function dbDispatchTask(
   } = {},
 ): { task: TaskRecord; assignment: TaskAssignment; event: TaskEvent } {
   ensureTaskSchema();
-  const db = getDb();
-  const now = Date.now();
-  const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
-  const task = getTaskOrThrow(taskId);
-  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs ?? task.checkpointIntervalMs);
-  const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? task.reportToSessionName);
-  const reportEvents = serializeTaskReportEvents(input.reportEvents ?? task.reportEvents);
+  return getDb()
+    .transaction(() => {
+      const db = getDb();
+      const now = Date.now();
+      const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
+      const task = getTaskOrThrow(taskId);
+      if (task.status === "done" || task.status === "failed")
+        throw new Error("A terminal task cannot be dispatched again");
+      const active = dbGetActiveAssignment(taskId);
+      if (active?.agentId === input.agentId && active.sessionName === input.sessionName) {
+        return { task, assignment: active, event: getLatestTaskEvent(taskId, "task.dispatched")! };
+      }
+      if (active && ["accepting", "admitted", "uncertain"].includes(active.executionStatus ?? ""))
+        throw new Error("Task execution is admitted or uncertain; reconcile it before changing the assignment");
+      const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
+        input.checkpointIntervalMs ?? task.checkpointIntervalMs,
+      );
+      const reportToSessionName = normalizeTaskReportToSessionName(
+        input.reportToSessionName ?? task.reportToSessionName,
+      );
+      const reportEvents = serializeTaskReportEvents(input.reportEvents ?? task.reportEvents);
 
-  db.prepare("DELETE FROM task_launch_plans WHERE task_id = ?").run(taskId);
+      db.prepare("DELETE FROM task_launch_plans WHERE task_id = ?").run(taskId);
 
-  db.prepare(`
+      db.prepare(`
     UPDATE task_assignments
     SET status = 'superseded',
         completed_at = COALESCE(completed_at, ?),
@@ -1689,32 +1875,32 @@ export function dbDispatchTask(
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, taskId);
 
-  const assignmentId = `asg-${randomUUID().slice(0, 8)}`;
-  db.prepare(`
+      const assignmentId = `asg-${randomUUID().slice(0, 8)}`;
+      db.prepare(`
     INSERT INTO task_assignments (
       id, task_id, agent_id, session_name, assigned_by, assigned_by_agent_id, assigned_by_session_name,
       worktree_mode, worktree_path, worktree_branch, runtime_override_json, checkpoint_interval_ms, report_to_session_name, report_events,
-      checkpoint_last_report_at, checkpoint_due_at, checkpoint_overdue_count, status, assigned_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 'assigned', ?)
+      checkpoint_last_report_at, checkpoint_due_at, checkpoint_overdue_count, execution_status, status, assigned_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 'pending', 'assigned', ?)
   `).run(
-    assignmentId,
-    taskId,
-    input.agentId,
-    input.sessionName,
-    input.assignedBy ?? null,
-    input.assignedByAgentId ?? null,
-    input.assignedBySessionName ?? null,
-    worktreeMode,
-    worktreePath,
-    worktreeBranch,
-    serializeTaskRuntimeOptions(input.runtimeOverride),
-    checkpointIntervalMs,
-    reportToSessionName,
-    reportEvents,
-    now,
-  );
+        assignmentId,
+        taskId,
+        input.agentId,
+        input.sessionName,
+        input.assignedBy ?? null,
+        input.assignedByAgentId ?? null,
+        input.assignedBySessionName ?? null,
+        worktreeMode,
+        worktreePath,
+        worktreeBranch,
+        serializeTaskRuntimeOptions(input.runtimeOverride),
+        checkpointIntervalMs,
+        reportToSessionName,
+        reportEvents,
+        now,
+      );
 
-  db.prepare(`
+      db.prepare(`
     UPDATE tasks
     SET status = 'dispatched',
         assignee_agent_id = ?,
@@ -1724,45 +1910,49 @@ export function dbDispatchTask(
     WHERE id = ?
   `).run(input.agentId, input.sessionName, now, now, taskId);
 
-  const event = appendTaskEvent(taskId, "task.dispatched", {
-    actor: input.assignedBy,
-    agentId: input.agentId,
-    sessionName: input.sessionName,
-    message: options.eventMessage ?? buildDispatchEventMessage(input),
-    progress: 0,
-  });
+      const event = appendTaskEvent(taskId, "task.dispatched", {
+        actor: input.assignedBy,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        message: options.eventMessage ?? buildDispatchEventMessage(input),
+        progress: 0,
+      });
 
-  return {
-    task: getTaskOrThrow(taskId),
-    assignment: dbGetActiveAssignment(taskId)!,
-    event,
-  };
+      return {
+        task: getTaskOrThrow(taskId),
+        assignment: dbGetActiveAssignment(taskId)!,
+        event,
+      };
+    })
+    .immediate();
 }
 
 export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): { task: TaskRecord; event: TaskEvent } {
   ensureTaskSchema();
-  const db = getDb();
-  const task = getTaskOrThrow(taskId);
-  const message = requireTaskProgressMessage(input.message, "Task progress requires a descriptive message.");
-  if (task.status === "done" || task.status === "failed") {
-    const event = appendTaskEvent(taskId, "task.progress", {
-      actor: input.actor,
-      agentId: input.agentId,
-      sessionName: input.sessionName,
-      message: `Ignored late progress after ${task.status}: ${message}`,
-      progress: task.progress,
-    });
-    return { task, event };
-  }
+  return getDb()
+    .transaction(() => {
+      const db = getDb();
+      const task = getTaskOrThrow(taskId);
+      const message = requireTaskProgressMessage(input.message, "Task progress requires a descriptive message.");
+      if (task.status === "done" || task.status === "failed") {
+        const event = appendTaskEvent(taskId, "task.progress", {
+          actor: input.actor,
+          agentId: input.agentId,
+          sessionName: input.sessionName,
+          message: `Ignored late progress after ${task.status}: ${message}`,
+          progress: task.progress,
+        });
+        return { task, event };
+      }
 
-  const now = Date.now();
-  const resetCheckpoint = input.resetCheckpoint ?? true;
-  const progress =
-    typeof input.progress === "number" ? Math.max(0, Math.min(100, Math.round(input.progress))) : task.progress;
-  const nextStatus: TaskRecord["status"] = "in_progress";
-  const startedAt = task.startedAt ?? now;
+      const now = Date.now();
+      const resetCheckpoint = input.resetCheckpoint ?? true;
+      const progress =
+        typeof input.progress === "number" ? Math.max(0, Math.min(100, Math.round(input.progress))) : task.progress;
+      const nextStatus: TaskRecord["status"] = "in_progress";
+      const startedAt = task.startedAt ?? now;
 
-  db.prepare(`
+      db.prepare(`
     UPDATE tasks
     SET status = ?,
         progress = ?,
@@ -1772,15 +1962,19 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
     WHERE id = ?
   `).run(nextStatus, progress, startedAt, now, taskId);
 
-  if (resetCheckpoint) {
-    const activeAssignment = dbGetActiveAssignment(taskId);
-    const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
-      activeAssignment?.checkpointIntervalMs ?? task.checkpointIntervalMs,
-    );
-    const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
+      if (resetCheckpoint) {
+        const activeAssignment = dbGetActiveAssignment(taskId);
+        const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
+          activeAssignment?.checkpointIntervalMs ?? task.checkpointIntervalMs,
+        );
+        const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
 
-    if (input.sessionName) {
-      db.prepare(`
+        // A report from a session other than the assignee (an observer, an operator
+        // shell) still proves the task is being tracked, so it resets the active
+        // assignment's checkpoint instead of matching nothing.
+        const sessionScoped = input.sessionName
+          ? db
+              .prepare(`
         UPDATE task_assignments
         SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
             accepted_at = COALESCE(accepted_at, ?),
@@ -1788,9 +1982,11 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
             checkpoint_due_at = ?,
             checkpoint_overdue_count = 0
         WHERE task_id = ? AND session_name = ? AND status IN ('assigned', 'accepted', 'blocked')
-      `).run(now, now, checkpointDueAt, taskId, input.sessionName);
-    } else {
-      db.prepare(`
+      `)
+              .run(now, now, checkpointDueAt, taskId, input.sessionName).changes
+          : 0;
+        if (sessionScoped === 0) {
+          db.prepare(`
         UPDATE task_assignments
         SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
             accepted_at = COALESCE(accepted_at, ?),
@@ -1799,19 +1995,21 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
             checkpoint_overdue_count = 0
         WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
       `).run(now, now, checkpointDueAt, taskId);
-    }
-  } else {
-    markActiveAssignmentAccepted(taskId, input.sessionName);
-  }
+        }
+      } else {
+        markActiveAssignmentAccepted(taskId, input.sessionName);
+      }
 
-  const event = appendTaskEvent(taskId, "task.progress", {
-    actor: input.actor,
-    agentId: input.agentId,
-    sessionName: input.sessionName,
-    message,
-    progress,
-  });
-  return { task: getTaskOrThrow(taskId), event };
+      const event = appendTaskEvent(taskId, "task.progress", {
+        actor: input.actor,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        message,
+        progress,
+      });
+      return { task: getTaskOrThrow(taskId), event };
+    })
+    .immediate();
 }
 
 export function dbArchiveTask(
@@ -1819,19 +2017,21 @@ export function dbArchiveTask(
   input: TaskArchiveInput,
 ): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
-  const db = getDb();
-  const task = getTaskOrThrow(taskId);
-  if (task.archivedAt) {
-    return {
-      task,
-      event: getLatestTaskEvent(taskId, "task.archived") ?? getLatestTaskEvent(taskId)!,
-      wasNoop: true,
-    };
-  }
+  return getDb()
+    .transaction(() => {
+      const db = getDb();
+      const task = getTaskOrThrow(taskId);
+      if (task.archivedAt) {
+        return {
+          task,
+          event: getLatestTaskEvent(taskId, "task.archived") ?? getLatestTaskEvent(taskId)!,
+          wasNoop: true,
+        };
+      }
 
-  const now = Date.now();
-  const archivedBy = input.actor ?? input.sessionName ?? input.agentId ?? null;
-  db.prepare(`
+      const now = Date.now();
+      const archivedBy = input.actor ?? input.sessionName ?? input.agentId ?? null;
+      db.prepare(`
     UPDATE tasks
     SET archived_at = ?,
         archived_by = ?,
@@ -1840,15 +2040,17 @@ export function dbArchiveTask(
     WHERE id = ?
   `).run(now, archivedBy, input.reason, now, taskId);
 
-  const archivedTask = getTaskOrThrow(taskId);
-  const event = appendTaskEvent(taskId, "task.archived", {
-    actor: input.actor,
-    agentId: input.agentId,
-    sessionName: input.sessionName,
-    message: input.reason,
-    progress: archivedTask.progress,
-  });
-  return { task: archivedTask, event };
+      const archivedTask = getTaskOrThrow(taskId);
+      const event = appendTaskEvent(taskId, "task.archived", {
+        actor: input.actor,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        message: input.reason,
+        progress: archivedTask.progress,
+      });
+      return { task: archivedTask, event };
+    })
+    .immediate();
 }
 
 export function dbUnarchiveTask(
@@ -1856,19 +2058,21 @@ export function dbUnarchiveTask(
   input: TaskUnarchiveInput,
 ): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
-  const db = getDb();
-  const task = getTaskOrThrow(taskId);
-  if (!task.archivedAt) {
-    return {
-      task,
-      event: getLatestTaskEvent(taskId, "task.unarchived") ?? getLatestTaskEvent(taskId)!,
-      wasNoop: true,
-    };
-  }
+  return getDb()
+    .transaction(() => {
+      const db = getDb();
+      const task = getTaskOrThrow(taskId);
+      if (!task.archivedAt) {
+        return {
+          task,
+          event: getLatestTaskEvent(taskId, "task.unarchived") ?? getLatestTaskEvent(taskId)!,
+          wasNoop: true,
+        };
+      }
 
-  const now = Date.now();
-  const previousReason = task.archiveReason;
-  db.prepare(`
+      const now = Date.now();
+      const previousReason = task.archiveReason;
+      db.prepare(`
     UPDATE tasks
     SET archived_at = NULL,
         archived_by = NULL,
@@ -1877,15 +2081,17 @@ export function dbUnarchiveTask(
     WHERE id = ?
   `).run(now, taskId);
 
-  const unarchivedTask = getTaskOrThrow(taskId);
-  const event = appendTaskEvent(taskId, "task.unarchived", {
-    actor: input.actor,
-    agentId: input.agentId,
-    sessionName: input.sessionName,
-    message: previousReason ? `restored visibility (${previousReason})` : "restored visibility",
-    progress: unarchivedTask.progress,
-  });
-  return { task: unarchivedTask, event };
+      const unarchivedTask = getTaskOrThrow(taskId);
+      const event = appendTaskEvent(taskId, "task.unarchived", {
+        actor: input.actor,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        message: previousReason ? `restored visibility (${previousReason})` : "restored visibility",
+        progress: unarchivedTask.progress,
+      });
+      return { task: unarchivedTask, event };
+    })
+    .immediate();
 }
 
 export function dbUpdateTask(
@@ -1893,55 +2099,59 @@ export function dbUpdateTask(
   input: TaskUpdateInput,
 ): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
-  const db = getDb();
-  const task = getTaskOrThrow(taskId);
-  const fields: string[] = [];
-  const values: Array<string | number> = [];
+  return getDb()
+    .transaction(() => {
+      const db = getDb();
+      const task = getTaskOrThrow(taskId);
+      const fields: string[] = [];
+      const values: Array<string | number> = [];
 
-  if (input.title !== undefined && input.title !== task.title) {
-    fields.push("title = ?");
-    values.push(input.title);
-  }
-  if (input.instructions !== undefined && input.instructions !== task.instructions) {
-    fields.push("instructions = ?");
-    values.push(input.instructions);
-  }
-  if (input.priority !== undefined && input.priority !== task.priority) {
-    fields.push("priority = ?");
-    values.push(input.priority);
-  }
+      if (input.title !== undefined && input.title !== task.title) {
+        fields.push("title = ?");
+        values.push(input.title);
+      }
+      if (input.instructions !== undefined && input.instructions !== task.instructions) {
+        fields.push("instructions = ?");
+        values.push(input.instructions);
+      }
+      if (input.priority !== undefined && input.priority !== task.priority) {
+        fields.push("priority = ?");
+        values.push(input.priority);
+      }
 
-  if (fields.length === 0) {
-    return {
-      task,
-      event: getLatestTaskEvent(taskId, "task.updated") ?? getLatestTaskEvent(taskId)!,
-      wasNoop: true,
-    };
-  }
+      if (fields.length === 0) {
+        return {
+          task,
+          event: getLatestTaskEvent(taskId, "task.updated") ?? getLatestTaskEvent(taskId)!,
+          wasNoop: true,
+        };
+      }
 
-  const now = Date.now();
-  db.prepare(`
+      const now = Date.now();
+      db.prepare(`
     UPDATE tasks
     SET ${fields.join(", ")},
         updated_at = ?
     WHERE id = ?
   `).run(...values, now, taskId);
 
-  const updatedTask = getTaskOrThrow(taskId);
-  const changedFields = [
-    input.title !== undefined && input.title !== task.title ? "title" : null,
-    input.instructions !== undefined && input.instructions !== task.instructions ? "instructions" : null,
-    input.priority !== undefined && input.priority !== task.priority ? "priority" : null,
-  ].filter((field): field is string => Boolean(field));
+      const updatedTask = getTaskOrThrow(taskId);
+      const changedFields = [
+        input.title !== undefined && input.title !== task.title ? "title" : null,
+        input.instructions !== undefined && input.instructions !== task.instructions ? "instructions" : null,
+        input.priority !== undefined && input.priority !== task.priority ? "priority" : null,
+      ].filter((field): field is string => Boolean(field));
 
-  const event = appendTaskEvent(taskId, "task.updated", {
-    actor: input.actor,
-    agentId: input.agentId,
-    sessionName: input.sessionName,
-    message: input.message ?? `Updated task fields: ${changedFields.join(", ")}.`,
-    progress: updatedTask.progress,
-  });
-  return { task: updatedTask, event };
+      const event = appendTaskEvent(taskId, "task.updated", {
+        actor: input.actor,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        message: input.message ?? `Updated task fields: ${changedFields.join(", ")}.`,
+        progress: updatedTask.progress,
+      });
+      return { task: updatedTask, event };
+    })
+    .immediate();
 }
 
 export function dbBlockTask(
@@ -1949,18 +2159,20 @@ export function dbBlockTask(
   input: TaskTerminalInput,
 ): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
-  const db = getDb();
-  const task = getTaskOrThrow(taskId);
-  if (task.status === "done" || task.status === "failed") {
-    return getTerminalTaskNoopResult(task);
-  }
-  const now = Date.now();
-  const progress =
-    typeof input.progress === "number"
-      ? Math.max(0, Math.min(100, Math.round(input.progress)))
-      : Math.max(task.progress, 1);
+  return getDb()
+    .transaction(() => {
+      const db = getDb();
+      const task = getTaskOrThrow(taskId);
+      if (task.status === "done" || task.status === "failed") {
+        return getTerminalTaskNoopResult(task);
+      }
+      const now = Date.now();
+      const progress =
+        typeof input.progress === "number"
+          ? Math.max(0, Math.min(100, Math.round(input.progress)))
+          : Math.max(task.progress, 1);
 
-  db.prepare(`
+      db.prepare(`
     UPDATE tasks
     SET status = 'blocked',
         blocker_reason = ?,
@@ -1970,7 +2182,7 @@ export function dbBlockTask(
     WHERE id = ?
   `).run(input.message, progress, now, now, taskId);
 
-  db.prepare(`
+      db.prepare(`
     UPDATE task_assignments
     SET status = 'blocked',
         accepted_at = COALESCE(accepted_at, ?),
@@ -1978,14 +2190,16 @@ export function dbBlockTask(
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, taskId);
 
-  const event = appendTaskEvent(taskId, "task.blocked", {
-    actor: input.actor,
-    agentId: input.agentId,
-    sessionName: input.sessionName,
-    message: input.message,
-    progress,
-  });
-  return { task: getTaskOrThrow(taskId), event };
+      const event = appendTaskEvent(taskId, "task.blocked", {
+        actor: input.actor,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        message: input.message,
+        progress,
+      });
+      return { task: getTaskOrThrow(taskId), event };
+    })
+    .immediate();
 }
 
 export function dbFailTask(
@@ -1993,15 +2207,17 @@ export function dbFailTask(
   input: TaskTerminalInput,
 ): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
-  const task = getTaskOrThrow(taskId);
-  if (task.status === "done" || task.status === "failed") {
-    return getTerminalTaskNoopResult(task);
-  }
+  return getDb()
+    .transaction(() => {
+      const task = getTaskOrThrow(taskId);
+      if (task.status === "done" || task.status === "failed") {
+        return getTerminalTaskNoopResult(task);
+      }
 
-  const db = getDb();
-  const now = Date.now();
+      const db = getDb();
+      const now = Date.now();
 
-  db.prepare(`
+      db.prepare(`
     UPDATE tasks
     SET status = 'failed',
         summary = ?,
@@ -2010,7 +2226,7 @@ export function dbFailTask(
     WHERE id = ?
   `).run(input.message, now, now, taskId);
 
-  db.prepare(`
+      db.prepare(`
     UPDATE task_assignments
     SET status = 'failed',
         accepted_at = COALESCE(accepted_at, ?),
@@ -2019,14 +2235,16 @@ export function dbFailTask(
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, now, taskId);
 
-  const event = appendTaskEvent(taskId, "task.failed", {
-    actor: input.actor,
-    agentId: input.agentId,
-    sessionName: input.sessionName,
-    message: input.message,
-    progress: 100,
-  });
-  return { task: getTaskOrThrow(taskId), event };
+      const event = appendTaskEvent(taskId, "task.failed", {
+        actor: input.actor,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        message: input.message,
+        progress: 100,
+      });
+      return { task: getTaskOrThrow(taskId), event };
+    })
+    .immediate();
 }
 
 export function dbCompleteTask(
@@ -2034,15 +2252,19 @@ export function dbCompleteTask(
   input: TaskTerminalInput,
 ): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
-  const task = getTaskOrThrow(taskId);
-  if (task.status === "done" || task.status === "failed") {
-    return getTerminalTaskNoopResult(task, "task.done");
-  }
+  return getDb()
+    .transaction(() => {
+      const task = getTaskOrThrow(taskId);
+      if (task.status === "done" || task.status === "failed") {
+        return getTerminalTaskNoopResult(task, "task.done");
+      }
 
-  const db = getDb();
-  const now = Date.now();
+      const db = getDb();
+      assertTaskDecisionsSettled(task);
+      if (!input.message.trim()) throw new Error("Task result must not be empty");
+      const now = Date.now();
 
-  db.prepare(`
+      db.prepare(`
     UPDATE tasks
     SET status = 'done',
         progress = 100,
@@ -2054,7 +2276,7 @@ export function dbCompleteTask(
     WHERE id = ?
   `).run(input.message, now, now, now, taskId);
 
-  db.prepare(`
+      db.prepare(`
     UPDATE task_assignments
     SET status = 'done',
         accepted_at = COALESCE(accepted_at, ?),
@@ -2063,14 +2285,16 @@ export function dbCompleteTask(
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, now, taskId);
 
-  const event = appendTaskEvent(taskId, "task.done", {
-    actor: input.actor,
-    agentId: input.agentId,
-    sessionName: input.sessionName,
-    message: input.message,
-    progress: 100,
-  });
-  return { task: getTaskOrThrow(taskId), event };
+      const event = appendTaskEvent(taskId, "task.done", {
+        actor: input.actor,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        message: input.message,
+        progress: 100,
+      });
+      return { task: getTaskOrThrow(taskId), event };
+    })
+    .immediate();
 }
 
 export function dbAutoResumeBlockedTask(
@@ -2083,15 +2307,17 @@ export function dbAutoResumeBlockedTask(
   },
 ): { task: TaskRecord; event: TaskEvent; resumed: true } | { task: TaskRecord; resumed: false } {
   ensureTaskSchema();
-  const task = getTaskOrThrow(taskId);
-  if (task.status !== "blocked") {
-    return { task, resumed: false };
-  }
+  return getDb()
+    .transaction(() => {
+      const task = getTaskOrThrow(taskId);
+      if (task.status !== "blocked") {
+        return { task, resumed: false as const };
+      }
 
-  const db = getDb();
-  const now = Date.now();
+      const db = getDb();
+      const now = Date.now();
 
-  db.prepare(`
+      db.prepare(`
     UPDATE tasks
     SET status = 'in_progress',
         blocker_reason = NULL,
@@ -2099,13 +2325,13 @@ export function dbAutoResumeBlockedTask(
     WHERE id = ? AND status = 'blocked'
   `).run(now, taskId);
 
-  const activeAssignment = dbGetActiveAssignment(taskId);
-  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
-    activeAssignment?.checkpointIntervalMs ?? task.checkpointIntervalMs,
-  );
-  const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
+      const activeAssignment = dbGetActiveAssignment(taskId);
+      const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
+        activeAssignment?.checkpointIntervalMs ?? task.checkpointIntervalMs,
+      );
+      const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
 
-  db.prepare(`
+      db.prepare(`
     UPDATE task_assignments
     SET status = CASE WHEN status = 'blocked' THEN 'accepted' ELSE status END,
         accepted_at = COALESCE(accepted_at, ?),
@@ -2114,15 +2340,17 @@ export function dbAutoResumeBlockedTask(
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, checkpointDueAt, taskId);
 
-  const event = appendTaskEvent(taskId, "task.resumed", {
-    actor: actor?.actor,
-    agentId: actor?.agentId,
-    sessionName: actor?.sessionName,
-    message: `Auto-resumed: blocked → in_progress (reason: ${reason})`,
-    progress: task.progress,
-  });
+      const event = appendTaskEvent(taskId, "task.resumed", {
+        actor: actor?.actor,
+        agentId: actor?.agentId,
+        sessionName: actor?.sessionName,
+        message: `Auto-resumed: blocked → in_progress (reason: ${reason})`,
+        progress: task.progress,
+      });
 
-  return { task: getTaskOrThrow(taskId), event, resumed: true };
+      return { task: getTaskOrThrow(taskId), event, resumed: true as const };
+    })
+    .immediate();
 }
 
 export function dbGetActiveTasksBlocking(): TaskRecord[] {
@@ -2170,4 +2398,103 @@ export function dbAppendTaskEvent(
 
   const event = appendTaskEvent(taskId, type, input);
   return { task: getTaskOrThrow(taskId), event };
+}
+
+/** Task projection: storage/history belong to the shared decision primitive. */
+export function dbDecideTask(
+  taskId: string,
+  input: TaskDecisionInput,
+): { decision: TaskDecision; event: TaskEvent; created: boolean } {
+  ensureTaskSchema();
+  getTaskOrThrow(taskId);
+  return decisionWrite((db) => {
+    const result = askDecisionRecord({ type: "task", id: taskId, chatId: null, sessionKey: null }, input);
+    db.query("UPDATE tasks SET updated_at=? WHERE id=?").run(Date.now(), taskId);
+    const event = appendTaskEvent(taskId, "task.decision.open", {
+      actor: input.actor,
+      agentId: input.agentId,
+      sessionName: input.sessionName,
+      message: `Decision open [${result.decision.key}]: ${result.decision.ask}`,
+    });
+    return { ...result, decision: taskDecisionProjection(result.decision), event };
+  });
+}
+
+export function dbAnswerTaskDecision(
+  taskId: string,
+  input: TaskDecisionAnswerInput,
+): { decision: TaskDecision; event: TaskEvent } {
+  ensureTaskSchema();
+  getTaskOrThrow(taskId);
+  return decisionWrite((db) => {
+    const key = normalizeDecisionKey(input.key);
+    const decisions = listDecisions({ type: "task", id: taskId });
+    const open = decisions.find((d) => d.key === key && d.status === "open");
+    if (!open)
+      throw new DecisionError(
+        decisions.some((d) => d.key === key) ? "DECISION_NOT_OPEN" : "DECISION_NOT_FOUND",
+        "No open decision for this key.",
+      );
+    const decision = answerDecisionRecord(open.id, input.answer, input.actor);
+    db.query("UPDATE tasks SET updated_at=? WHERE id=?").run(Date.now(), taskId);
+    const event = appendTaskEvent(taskId, "task.decision.answered", {
+      actor: input.actor,
+      agentId: input.agentId,
+      sessionName: input.sessionName,
+      message: `Decision answered [${key}]: ${decision.answer}`,
+    });
+    return { decision: taskDecisionProjection(decision), event };
+  });
+}
+
+export function dbListTaskDecisions(taskId: string): TaskDecision[] {
+  ensureTaskSchema();
+  return listDecisions({ type: "task", id: taskId })
+    .map(taskDecisionProjection)
+    .sort(
+      (a, b) =>
+        Number(b.status === "open") - Number(a.status === "open") || b.askedAt - a.askedAt || a.id.localeCompare(b.id),
+    );
+}
+
+/** Open decisions joined with the owning task, oldest ask first. One query. */
+export function dbListOpenTaskDecisions(
+  options: { agentId?: string; ownerType?: TaskDecision["ownerType"]; taskId?: string } = {},
+): TaskOpenDecisionRow[] {
+  ensureTaskSchema();
+  const db = getDb();
+  const where = ["d.origin_type = 'task'", "d.status = 'open'", "t.archived_at IS NULL"];
+  const params: string[] = [];
+  if (options.agentId) {
+    where.push("t.assignee_agent_id = ?");
+    params.push(options.agentId);
+  }
+  if (options.ownerType) {
+    where.push("d.owner_type = ?");
+    params.push(options.ownerType);
+  }
+  if (options.taskId) {
+    where.push("d.origin_id = ?");
+    params.push(options.taskId);
+  }
+
+  const rows = db
+    .prepare(`
+      SELECT d.*, t.title AS task_title, t.status AS task_status, t.priority AS task_priority,
+             t.assignee_agent_id AS assignee_agent_id, t.assignee_session_name AS assignee_session_name
+      FROM decisions d
+      JOIN tasks t ON t.id = d.origin_id
+      WHERE ${where.join(" AND ")}
+      ORDER BY d.asked_at ASC, d.id ASC
+    `)
+    .all(...params) as TaskOpenDecisionDbRow[];
+
+  return rows.map((row) => ({
+    decision: taskDecisionProjection(decisionFromRow(row)),
+    taskTitle: row.task_title,
+    taskStatus: row.task_status,
+    taskPriority: row.task_priority,
+    assigneeAgentId: row.assignee_agent_id,
+    assigneeSessionName: row.assignee_session_name,
+  }));
 }

@@ -1,9 +1,27 @@
+import { publishTaskDispatch, taskDispatchSessionKey } from "./dispatch-admission.js";
 import { getContext } from "../cli/context.js";
+import { resolveSubject, type SubjectRef } from "../identity/subject.js";
+import { CliExpectedError } from "../cli/expected-error.js";
+import {
+  canAccessResource,
+  canAccessSession,
+  canModifySession,
+  getScopeContext,
+  isScopeEnforced,
+  scopeHasCapability,
+  type ScopeContext,
+} from "../permissions/scope.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
-import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
-import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
+import {
+  deleteSessionByName,
+  findSessionByChatId,
+  getOrCreateSession,
+  getSessionByName,
+  resolveSession,
+} from "../router/sessions.js";
+import { assessSessionThreadIdentity } from "../router/thread-identity.js";
 import { logger } from "../utils/logger.js";
 import { resolveRuntimeDefaults } from "../runtime/runtime-defaults.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -27,6 +45,7 @@ import {
   resolveTaskProfilePrimaryArtifact,
   resolveTaskProfileState,
   taskProfileRequiresTaskDocument,
+  taskProfileUsesObserver,
   taskProfileUsesTaskDocument,
   shouldPersistTaskProfileState,
 } from "./profiles.js";
@@ -34,13 +53,16 @@ import {
   dbArchiveTask,
   dbAddTaskComment,
   dbAddTaskDependency,
+  dbAnswerTaskDecision,
   dbAppendTaskEvent,
   dbAutoResumeBlockedTask,
   dbUnarchiveTask,
   dbCompleteTask,
   dbCreateTask,
-  dbDeleteTask,
+  dbFindTaskCreation,
+  dbRollbackTaskCreation,
   dbDispatchTask,
+  dbDecideTask,
   dbFailTask,
   dbBlockTask,
   dbGetTask,
@@ -48,6 +70,8 @@ import {
   dbGetTaskLaunchPlan,
   dbListAssignments,
   dbListTaskComments,
+  dbListTaskDecisions,
+  dbListOpenTaskDecisions,
   dbListChildTasks,
   dbListTaskDependencies,
   dbListTaskDependents,
@@ -71,7 +95,19 @@ import {
   type TaskDocSection,
 } from "./task-doc.js";
 import { publishTaskSessionPrompt } from "./session-publisher.js";
-import { requireTaskProgressMessage } from "./progress-contract.js";
+import { neutralizeSystemMarkers, requireTaskProgressMessage } from "./progress-contract.js";
+import {
+  dbGetTaskObserverState,
+  dbSaveTaskObserverChecklist,
+  type TaskObserverChecklistItem,
+} from "./observer-contract.js";
+import { disableTaskObserverRule, ensureTaskObserverRuleForDispatch } from "./observer-rule.js";
+import { reconcileObserverBindingsForSession } from "../runtime/observation-plane.js";
+import {
+  DEFAULT_TASK_CHECKPOINT_INTERVAL_MS,
+  DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS,
+  resolveTaskCheckpointIntervalMs,
+} from "./checkpoint.js";
 import {
   TASK_RUNTIME_THINKING_LEVELS,
   normalizeTaskRuntimeOptions,
@@ -92,6 +128,11 @@ import type {
   TaskCommentInput,
   TaskDependencyEdge,
   TaskDependencyRecord,
+  TaskDecision,
+  TaskDecisionAnswerInput,
+  TaskDecisionAttentionOptions,
+  TaskDecisionAttentionReport,
+  TaskDecisionInput,
   TaskProfileArtifactKind,
   TaskProfileArtifactRef,
   TaskProgressInput,
@@ -108,6 +149,8 @@ import type {
   TaskWorktreeMode,
 } from "./types.js";
 import { TASK_REPORT_EVENTS } from "./types.js";
+import { foldTaskDecisionAttention } from "./decisions.js";
+import { DecisionError } from "../decisions/model.js";
 import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../tags/service.js";
 import type { TagBinding } from "../tags/types.js";
@@ -123,6 +166,7 @@ export {
   resolveTaskSessionTtlMs,
   shouldRefreshTaskSessionTtlOnTurnComplete,
 } from "./session-retention.js";
+import { assertNoUserOverlayAutomationWrite } from "../permissions/user-overlay-automation.js";
 
 const TASK_EVENT_PREFIX = "ravi.task";
 const TASK_STATUSES = ["open", "dispatched", "in_progress", "blocked", "done", "failed"] as const;
@@ -343,7 +387,6 @@ export interface TaskStreamTaskEntity {
   satisfiedDependencyCount: number;
   unsatisfiedDependencyCount: number;
   workflow: TaskWorkflowSurface | null;
-  project: ProjectTaskSurface | null;
   artifacts: TaskArtifactSummary;
 }
 
@@ -409,7 +452,6 @@ export interface TaskStreamEventPayload {
   readiness: TaskReadiness;
   launchPlan: TaskLaunchPlan | null;
   activeAssignment: TaskAssignment | null;
-  project: ProjectTaskSurface | null;
   task: TaskStreamTaskEntity;
   event: TaskEvent;
   artifacts: TaskArtifactSummary;
@@ -417,7 +459,7 @@ export interface TaskStreamEventPayload {
 
 export interface TaskRecoveryResult {
   recoveredTaskIds: string[];
-  skipped: Array<{ taskId: string; reason: string }>;
+  skipped: Array<{ taskId: string; reason: string; code?: string }>;
 }
 
 export function deriveTaskReadStatus(
@@ -908,9 +950,11 @@ function buildTaskCommentSteerPrompt(task: TaskRecord, comment: TaskComment): st
   const author = comment.authorSessionName ?? comment.authorAgentId ?? comment.author ?? "unknown";
   const profile = resolveTaskProfileForTask(task);
   const primaryArtifactLine = resolvePrimaryArtifactLine(task);
-  const syncInstruction = taskProfileRequiresTaskDocument(profile)
-    ? "If this changes your plan, update TASK.md first and then sync the runtime with ravi tasks report|block|done|fail."
-    : "If this changes your plan, update the profile artifact/context and sync the runtime with ravi tasks report|block|done|fail.";
+  const syncInstruction = taskProfileUsesObserver(profile)
+    ? "Take it into account in the work. The task observer keeps the task status."
+    : taskProfileRequiresTaskDocument(profile)
+      ? "If this changes your plan, update TASK.md first and then sync the runtime with ravi tasks report|block|done|fail."
+      : "If this changes your plan, update the profile artifact/context and sync the runtime with ravi tasks report|block|done|fail.";
   return `[System] Inform: New comment on task ${task.id} (${task.title}).
 
 Author: ${author}
@@ -1297,6 +1341,50 @@ export function resolveTaskWorktreeContext(
   return undefined;
 }
 
+export const TASK_SESSION_OWNERSHIP_CONFLICT = "TASK_SESSION_OWNERSHIP_CONFLICT";
+export const TASK_SESSION_THREAD_IDENTITY_CONFLICT = "TASK_SESSION_THREAD_IDENTITY_CONFLICT";
+
+/**
+ * An open channel thread owns its session name. When that thread's session is
+ * gone, or the name now resolves to a session under another key, creating or
+ * reusing a session by the bare name would shadow the thread: replies would
+ * stop routing and thread commands would refuse. Refuse before anything is
+ * written.
+ */
+function assertTaskSessionThreadIdentity(sessionName: string): void {
+  const assessment = assessSessionThreadIdentity(sessionName, resolveSession(sessionName));
+  if (assessment.kind === "none" || assessment.kind === "ok") return;
+  const { thread } = assessment;
+  const reason =
+    assessment.kind === "child_missing"
+      ? `its session ${thread.childSessionKey} no longer exists`
+      : `the name now resolves to ${assessment.sessionKey}, not ${thread.childSessionKey}`;
+  throw new CliExpectedError(
+    `Session ${sessionName} belongs to open thread ${thread.requestId} of ${thread.parentSessionName}, but ${reason}. Dispatching to it would create a session outside the thread.`,
+    TASK_SESSION_THREAD_IDENTITY_CONFLICT,
+    1,
+    `Dispatch with another --session, or check the thread with: ravi sessions threads --session ${thread.parentSessionName}`,
+  );
+}
+
+/**
+ * A task session must run under the task's agent. A session of the same name
+ * owned by another agent (for example one the router created under the
+ * default agent) is a conflict the caller has to resolve, not a crash.
+ */
+function assertTaskSessionOwnership(sessionName: string, agentId: string): ReturnType<typeof resolveSession> {
+  const existingSession = resolveSession(sessionName);
+  if (existingSession && existingSession.agentId !== agentId) {
+    throw new CliExpectedError(
+      `Session ${sessionName} already belongs to agent ${existingSession.agentId}, not ${agentId}.`,
+      TASK_SESSION_OWNERSHIP_CONFLICT,
+      1,
+      `Dispatch with another --session, or delete session ${sessionName} so it can be recreated for agent ${agentId}`,
+    );
+  }
+  return existingSession;
+}
+
 export function resolveTaskSessionContext(
   task: TaskRecord,
   profile: ResolvedTaskProfile,
@@ -1306,15 +1394,11 @@ export function resolveTaskSessionContext(
 ): { agentId: string; sessionName: string; sessionCwd: string; worktree?: TaskWorktreeConfig } {
   const resolvedAgent = requireTaskRuntimeAgent(agentId);
   const sessionCwd = resolvedAgent.cwd;
+  assertTaskSessionThreadIdentity(sessionName);
   const worktree = resolveTaskWorktreeContext(sessionCwd, task, profile, worktreeInput ?? task.worktree);
-  const existingSession = resolveSession(sessionName);
-  if (existingSession && existingSession.agentId !== resolvedAgent.id) {
-    throw new Error(
-      `Session ${sessionName} already belongs to agent ${existingSession.agentId}, not ${resolvedAgent.id}.`,
-    );
-  }
+  const existingSession = assertTaskSessionOwnership(sessionName, resolvedAgent.id);
 
-  const sessionKey = existingSession?.sessionKey ?? sessionName;
+  const sessionKey = taskDispatchSessionKey(task, resolvedAgent.id, sessionName, existingSession?.sessionKey);
   const session = getOrCreateSession(sessionKey, resolvedAgent.id, sessionCwd, {
     name: existingSession?.name ?? sessionName,
   });
@@ -1328,7 +1412,106 @@ export function resolveTaskSessionContext(
   };
 }
 
+export type TaskAssigneeSessionTarget =
+  | {
+      ok: true;
+      agentId: string;
+      sessionName: string;
+      sessionCwd: string;
+      worktree?: TaskWorktreeConfig;
+      /**
+       * Set when the session record was gone (an expired TTL) and was created again for the assignee:
+       * the new session has no context, so it gets the task brief before the prompt.
+       */
+      briefPrompt?: string;
+    }
+  | { ok: false; reason: string; code?: string };
+
+/**
+ * Resolves the assignee's work session before Ravi prompts it. A task session can expire while the
+ * assignment still points at it, and a prompt published to the bare name cold-starts it on the
+ * default agent. So the session is created again for assignment.agentId, as dispatch does, or the
+ * caller gets a reason not to prompt it.
+ */
+export function resolveTaskAssigneeSession(
+  task: TaskRecord,
+  assignment?: Pick<TaskAssignment, "agentId" | "sessionName" | "worktree"> | null,
+): TaskAssigneeSessionTarget {
+  const activeAssignment = assignment === undefined ? dbGetActiveAssignment(task.id) : assignment;
+  const agentId = activeAssignment?.agentId ?? task.assigneeAgentId;
+  const sessionName = activeAssignment?.sessionName ?? task.assigneeSessionName;
+  if (!agentId || !sessionName) {
+    return { ok: false, reason: `Task ${task.id} has no assigned agent and session.` };
+  }
+
+  try {
+    assertTaskSessionThreadIdentity(sessionName);
+    const profile = resolveTaskProfileForTask(task);
+    const worktreeInput = activeAssignment?.worktree ?? task.worktree;
+    if (resolveSession(sessionName)) {
+      return { ok: true, ...resolveTaskSessionContext(task, profile, agentId, sessionName, worktreeInput) };
+    }
+    // Build the brief before the session exists: a failure must not leave an empty session that
+    // the next prompt would treat as live.
+    const agent = requireTaskRuntimeAgent(agentId);
+    const worktree = resolveTaskWorktreeContext(agent.cwd, task, profile, worktreeInput);
+    const { taskDocPath, primaryArtifact } = validateTaskProfileRuntimeOrThrow(task, profile, {
+      stage: "task.dispatch",
+      effectiveCwd: agent.cwd,
+      ...(worktree ? { worktree } : {}),
+      agentId: agent.id,
+      sessionName,
+      validateDispatch: true,
+    });
+    const briefPrompt = buildTaskDispatchPrompt(task, agent.id, sessionName, {
+      sessionCwd: agent.cwd,
+      ...(worktree ? { worktree } : {}),
+      taskDocPath,
+      taskProfile: profile,
+      primaryArtifact,
+    });
+    const context = resolveTaskSessionContext(task, profile, agentId, sessionName, worktreeInput);
+    return { ok: true, ...context, briefPrompt };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      ...(error instanceof CliExpectedError ? { code: error.code } : {}),
+    };
+  }
+}
+
+/**
+ * Publishes a prompt to a session resolved by resolveTaskAssigneeSession. The prompt names the
+ * assignee agent, so the runtime never cold-starts it on the default agent, and a recreated
+ * session is gated on the task like a dispatch.
+ */
+export async function publishTaskAssigneePrompt(
+  task: TaskRecord,
+  target: Extract<TaskAssigneeSessionTarget, { ok: true }>,
+  payload: Record<string, unknown> & { prompt: string },
+): Promise<void> {
+  try {
+    await publishTaskSessionPrompt(target.sessionName, {
+      ...payload,
+      ...(target.briefPrompt
+        ? {
+            prompt: `${target.briefPrompt}\n\n${payload.prompt}`,
+            deliveryBarrier: "after_task",
+            taskBarrierTaskId: task.id,
+          }
+        : {}),
+      _agentId: target.agentId,
+    });
+  } catch (error) {
+    // A recreated session that never got its brief is dropped, so the next prompt recreates it again.
+    if (target.briefPrompt) deleteSessionByName(target.sessionName);
+    throw error;
+  }
+}
+
 function assertTaskStartAllowed(task: TaskRecord, action: "dispatch" | "arm a launch plan"): void {
+  if (task.status === "done" || task.status === "failed") throw new Error("A terminal task cannot be dispatched again");
   if (task.archivedAt) {
     throw new Error(`Task ${task.id} is archived. Unarchive it before you ${action}.`);
   }
@@ -1351,6 +1534,12 @@ function prepareTaskDispatchContext(
   primaryArtifact: TaskProfileArtifactRef | null;
 } {
   assertTaskStartAllowed(task, options.materializeSession ? "dispatch" : "arm a launch plan");
+  assertTaskTargetAuthorized({
+    agentId: input.agentId,
+    workerSessionName: input.sessionName,
+    reportToSessionName: input.reportToSessionName,
+  });
+  assertTaskSessionThreadIdentity(input.sessionName);
 
   const { task: profiledTask, profile } = ensureResolvedTaskProfile(task, { persistMissingProfileId: true });
   const bootstrappedTask = ensureTaskWorkspaceBootstrap(profiledTask, profile);
@@ -1362,18 +1551,18 @@ function prepareTaskDispatchContext(
     profile,
     input.worktree ?? bootstrappedTask.worktree,
   );
-  const existingSession = resolveSession(input.sessionName);
-  if (existingSession && existingSession.agentId !== resolvedAgent.id) {
-    throw new Error(
-      `Session ${input.sessionName} already belongs to agent ${existingSession.agentId}, not ${resolvedAgent.id}.`,
-    );
-  }
+  const existingSession = assertTaskSessionOwnership(input.sessionName, resolvedAgent.id);
 
   let sessionName = existingSession?.name ?? input.sessionName;
   if (options.materializeSession) {
-    const session = getOrCreateSession(existingSession?.sessionKey ?? input.sessionName, resolvedAgent.id, sessionCwd, {
-      name: existingSession?.name ?? input.sessionName,
-    });
+    const session = getOrCreateSession(
+      taskDispatchSessionKey(task, resolvedAgent.id, input.sessionName, existingSession?.sessionKey),
+      resolvedAgent.id,
+      sessionCwd,
+      {
+        name: existingSession?.name ?? input.sessionName,
+      },
+    );
     applyTaskSessionTtlForAgent(session, resolvedAgent.id, { source: "task.dispatch_context" });
     sessionName = session.name ?? sessionName;
   }
@@ -1449,7 +1638,6 @@ function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment 
     satisfiedDependencyCount: dependencySurface.readiness.satisfiedDependencyCount,
     unsatisfiedDependencyCount: dependencySurface.readiness.unsatisfiedDependencyCount,
     workflow,
-    project: workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null,
     artifacts: buildTaskArtifactSummary(task, activeAssignment),
   };
 }
@@ -1548,11 +1736,48 @@ export async function reportTaskEvent(task: TaskRecord, event: TaskEvent): Promi
       ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
       ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
       sessionName: sourceSessionName,
-      message: task.summary ?? task.blockerReason ?? event.message ?? null,
+      message: neutralizeOptionalText(task.summary ?? task.blockerReason ?? event.message ?? null),
     })}`,
     deliveryBarrier: "after_response",
+    _taskRuntime: { taskId: task.id, kind: "report", event: event.type },
   });
 
+  return resolvedReportToSessionName;
+}
+
+function neutralizeOptionalText(value: string | null): string | null {
+  return value === null ? null : neutralizeSystemMarkers(value);
+}
+
+/**
+ * Tell the task's report target that an observed task went silent. Stalls
+ * follow the `blocked` report filter: both mean the work stopped moving.
+ */
+export async function reportTaskStall(task: TaskRecord, event: TaskEvent): Promise<string | null> {
+  const latestAssignment = dbListAssignments(task.id)[0] ?? null;
+  const reportToSessionName = latestAssignment?.reportToSessionName?.trim() || task.reportToSessionName?.trim() || null;
+  const reportEvents = resolveTaskReportEvents(latestAssignment?.reportEvents ?? task.reportEvents);
+  if (!reportToSessionName || !reportEvents.includes("blocked")) {
+    return null;
+  }
+  const sourceSessionName = task.assigneeSessionName?.trim() || event.sessionName?.trim() || task.id;
+  const resolvedReportToSessionName = resolveTaskReportToSessionName(reportToSessionName, {
+    callerSessionName: sourceSessionName,
+  });
+  if (!resolvedReportToSessionName) {
+    return null;
+  }
+  const lines = [
+    `Task stalled: ${task.id} · ${neutralizeSystemMarkers(task.title)}`,
+    ...(event.message ? [neutralizeSystemMarkers(event.message)] : []),
+    `Assignee: ${task.assigneeAgentId ?? "-"}/${sourceSessionName}`,
+    `Inspect: ravi tasks show ${task.id}`,
+  ];
+  await publishTaskSessionPrompt(resolvedReportToSessionName, {
+    prompt: `[System] Answer: [from: ${sourceSessionName}] ${lines.join("\n")}`,
+    deliveryBarrier: "after_response",
+    _taskRuntime: { taskId: task.id, kind: "stalled", event: event.type },
+  });
   return resolvedReportToSessionName;
 }
 
@@ -1608,11 +1833,140 @@ function resolveTaskCreateAssignee(agentId?: string, assigneeAgentId?: string): 
   return agentId ?? assigneeAgentId;
 }
 
+/**
+ * The scope of a runtime agent turn that task authorization applies to, or null
+ * for the local operator, an admin principal and daemon-internal callers.
+ */
+function enforcedTaskCallerScope(): (ScopeContext & { agentId: string }) | null {
+  if (!getContext()?.context) return null;
+  const scopeCtx = getScopeContext();
+  if (!scopeCtx.agentId || !isScopeEnforced(scopeCtx)) return null;
+  return scopeCtx as ScopeContext & { agentId: string };
+}
+
+function sessionRefsFor(nameOrKey: string): string[] {
+  const session = resolveSession(nameOrKey);
+  return [...new Set([nameOrKey, session?.name, session?.sessionKey].filter((v): v is string => Boolean(v)))];
+}
+
+/**
+ * An agent turn may hand work only to itself or to an agent it may mutate, and
+ * may report to or speak as only sessions it can reach. Without this, the
+ * baseline tasks group would let any agent drive another agent's sessions
+ * under that agent's ceiling. Refusals look like the target does not exist.
+ */
+export function assertTaskTargetAuthorized(input: {
+  agentId?: string;
+  workerSessionName?: string;
+  reportToSessionName?: string;
+  actorSessionName?: string;
+}): void {
+  assertNoUserOverlayAutomationWrite("tasks");
+  const scopeCtx = enforcedTaskCallerScope();
+  if (!scopeCtx) return;
+  const agentId = input.agentId?.trim();
+  if (agentId && agentId !== scopeCtx.agentId && !canAccessResource(scopeCtx, agentId, "mutate")) {
+    throw new CliExpectedError(`Agent not found in runtime config: ${agentId}`, "TASK_AGENT_NOT_FOUND");
+  }
+  const workerSession = input.workerSessionName?.trim();
+  // Fresh task sessions inherit the already-authorized agent target. Reusing
+  // an existing session needs write authority, even for the same agent.
+  if (
+    workerSession &&
+    resolveSession(workerSession) &&
+    !sessionRefsFor(workerSession).some((ref) => canModifySession(scopeCtx, ref))
+  ) {
+    throw new CliExpectedError(`Worker session not found: ${workerSession}`, "SESSION_NOT_FOUND");
+  }
+  const reportTo = input.reportToSessionName?.trim();
+  if (reportTo && !sessionRefsFor(reportTo).some((ref) => canAccessSession(scopeCtx, ref))) {
+    throw new CliExpectedError(`Report target session not found: ${reportTo}`, "REPORT_TARGET_NOT_FOUND");
+  }
+  const actorSession = input.actorSessionName?.trim();
+  if (actorSession && !sessionRefsFor(actorSession).some((ref) => canModifySession(scopeCtx, ref))) {
+    throw new CliExpectedError(`Actor session not found: ${actorSession}`, "SESSION_NOT_FOUND");
+  }
+}
+
+function taskRelatedAgentIds(task: TaskRecord, assignment: TaskAssignment | null): string[] {
+  return [assignment?.agentId, task.assigneeAgentId, task.createdByAgentId, assignment?.assignedByAgentId].filter(
+    (value): value is string => Boolean(value),
+  );
+}
+
+/** True when task reads are filtered by {@link isTaskVisibleToCaller}. */
+export function taskCallerVisibilityEnforced(): boolean {
+  return enforcedTaskCallerScope() !== null;
+}
+
+/**
+ * A task is visible to an agent turn when it holds a grant on the task, when it
+ * can read the task's assignee, creator or dispatcher agent, when the task
+ * reports to one of its sessions, or when an open decision on it waits on the
+ * agent (it must read the question to answer it).
+ */
+export function isTaskVisibleToCaller(task: TaskRecord): boolean {
+  const scopeCtx = enforcedTaskCallerScope();
+  if (!scopeCtx) return true;
+  if (
+    scopeHasCapability(scopeCtx, "read", "task", task.id) ||
+    scopeHasCapability(scopeCtx, "mutate", "task", task.id)
+  ) {
+    return true;
+  }
+  const assignment = dbGetActiveAssignment(task.id);
+  if (taskRelatedAgentIds(task, assignment).some((agentId) => canAccessResource(scopeCtx, agentId, "read"))) {
+    return true;
+  }
+  const reportTo = assignment?.reportToSessionName ?? task.reportToSessionName;
+  if (
+    reportTo &&
+    [scopeCtx.sessionName, scopeCtx.sessionKey].some((ref) => ref && sessionRefsFor(reportTo).includes(ref))
+  ) {
+    return true;
+  }
+  return dbListTaskDecisions(task.id).some(
+    (decision) => decision.status === "open" && decision.ownerType === "agent" && decision.ownerId === scopeCtx.agentId,
+  );
+}
+
+/**
+ * Lifecycle and decision mutations belong to the task's assignee, creator and
+ * dispatcher, or to whoever holds an explicit task grant. The command gate alone
+ * lets every agent with the baseline tasks group through for any task id.
+ */
+export function assertTaskMutationAuthorized(
+  task: TaskRecord,
+  action: string,
+  options: { verb: string; extraAgentIds?: Array<string | null | undefined> },
+): void {
+  const scopeCtx = enforcedTaskCallerScope();
+  if (!scopeCtx) return;
+  const assignment = dbGetActiveAssignment(task.id);
+  const related = [...taskRelatedAgentIds(task, assignment), ...(options.extraAgentIds ?? [])];
+  if (related.includes(scopeCtx.agentId)) return;
+  if (
+    scopeHasCapability(scopeCtx, "mutate", "task", task.id) ||
+    scopeHasCapability(scopeCtx, "mutate", "tasks", action)
+  ) {
+    return;
+  }
+  if (!isTaskVisibleToCaller(task)) {
+    throw new Error(`Task not found: ${task.id}`);
+  }
+  throw new CliExpectedError(
+    `Cannot ${options.verb} task ${task.id}: only its assignee, creator or dispatcher may do that.`,
+    "PERMISSION_DENIED",
+    1,
+    `Ask the task's owner, or have an operator grant mutate task:${task.id}`,
+  );
+}
+
 export function requireTaskRuntimeAgent(agentId: string): { id: string; cwd: string } {
   const normalizedAgentId = agentId.trim();
   const agent = getAgent(normalizedAgentId);
   if (!agent) {
-    throw new Error(`Agent not found in runtime config: ${normalizedAgentId}`);
+    throw new CliExpectedError(`Agent not found in runtime config: ${normalizedAgentId}`, "TASK_AGENT_NOT_FOUND");
   }
 
   return {
@@ -1707,7 +2061,6 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
     readiness: dependencySurface.readiness,
     launchPlan: dependencySurface.launchPlan,
     activeAssignment: dbGetActiveAssignment(task.id),
-    project: taskEntity.project,
     task: taskEntity,
     event,
     artifacts,
@@ -1792,6 +2145,11 @@ export async function executeTaskStreamCommand(
     case "task.create": {
       const args = TaskCreateCommandArgsSchema.parse(rawArgs);
       const assigneeAgentId = resolveTaskCreateAssigneeAgent(args.agentId, args.assigneeAgentId);
+      assertTaskTargetAuthorized({
+        agentId: assigneeAgentId,
+        workerSessionName: args.sessionName,
+        reportToSessionName: args.reportToSessionName,
+      });
       const created = await createTask({
         title: args.title,
         instructions: args.instructions,
@@ -2107,11 +2465,33 @@ export function buildTaskResumePrompt(
   });
 }
 
+function resolveTaskSubjectFromRuntime(): SubjectRef | undefined {
+  const ctx = getContext();
+  const target = ctx?.context?.metadata?.turnReplyTarget as { chatId?: string; canonicalChatId?: string } | undefined;
+
+  // A relayed turn carries an agent actor and no context `source`; the reply
+  // target is the only place that still knows which conversation asked.
+  return resolveSubject({
+    env: process.env,
+    chatIds: [
+      ctx?.source?.chatId,
+      ctx?.source?.canonicalChatId,
+      target?.chatId,
+      target?.canonicalChatId,
+      process.env.RAVI_CHAT_ID,
+      process.env.RAVI_CANONICAL_CHAT_ID,
+    ],
+  });
+}
+
 export function createTask(input: CreateTaskInput): {
+  wasNoop?: boolean;
   task: TaskRecord;
   event: TaskEvent;
   relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
 } {
+  const replay = dbFindTaskCreation(input);
+  if (replay) return { ...replay, relatedEvents: [] };
   const resolvedInput = resolveCreateTaskReportTarget(input);
 
   if (resolvedInput.parentTaskId) {
@@ -2142,18 +2522,27 @@ export function createTask(input: CreateTaskInput): {
     },
     profile,
   );
-  const created = dbCreateTask({
-    ...resolvedInput,
-    profileId: profile.id,
-    profileVersion: profile.version,
-    profileSource: profile.source,
-    profileSnapshot: buildTaskProfileSnapshot(profile),
-    ...(Object.keys(profileInput).length > 0 ? { profileInput } : {}),
-    ...(initialProfileState ? { profileState: initialProfileState } : {}),
-    ...(resolvedInput.runtimeOverride
-      ? { runtimeOverride: normalizeTaskRuntimeOptions(resolvedInput.runtimeOverride) }
-      : {}),
-  });
+  const created = dbCreateTask(
+    {
+      ...resolvedInput,
+      ...(resolvedInput.subject ? {} : { subject: resolveTaskSubjectFromRuntime() }),
+      ...(taskProfileUsesObserver(profile) && typeof resolvedInput.checkpointIntervalMs !== "number"
+        ? { checkpointIntervalMs: DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS }
+        : {}),
+      profileId: profile.id,
+      profileVersion: profile.version,
+      profileSource: profile.source,
+      profileSnapshot: buildTaskProfileSnapshot(profile),
+      ...(Object.keys(profileInput).length > 0 ? { profileInput } : {}),
+      ...(initialProfileState ? { profileState: initialProfileState } : {}),
+      ...(resolvedInput.runtimeOverride
+        ? { runtimeOverride: normalizeTaskRuntimeOptions(resolvedInput.runtimeOverride) }
+        : {}),
+    },
+    input,
+  );
+
+  if (created.wasNoop) return { task: created.task, event: created.event, relatedEvents: [], wasNoop: true };
 
   try {
     const { task: profiledTask, profile: resolvedProfile } = ensureResolvedTaskProfile(created.task, {
@@ -2189,7 +2578,7 @@ export function createTask(input: CreateTaskInput): {
     syncTaskCanonicalTags(task, resolvedProfile, resolvedInput);
     return { task, event: created.event, relatedEvents };
   } catch (error) {
-    dbDeleteTask(created.task.id);
+    dbRollbackTaskCreation(created.task);
     rmSync(getCanonicalTaskDir(created.task.id), { recursive: true, force: true });
     throw error;
   }
@@ -2203,13 +2592,13 @@ export function getTaskDetails(taskId: string): {
   task: TaskRecord | null;
   taskProfile: ResolvedTaskProfile | null;
   tags: TagBinding[];
-  project: ProjectTaskSurface | null;
   parentTask: TaskRecord | null;
   childTasks: TaskRecord[];
   activeAssignment: ReturnType<typeof dbGetActiveAssignment>;
   assignments: ReturnType<typeof dbListAssignments>;
   events: ReturnType<typeof dbListTaskEvents>;
   comments: ReturnType<typeof dbListTaskComments>;
+  decisions: TaskDecision[];
 } {
   const task = dbGetTask(taskId);
   const surfacedTask = task ? surfaceTaskRecordForRead(task) : null;
@@ -2221,7 +2610,6 @@ export function getTaskDetails(taskId: string): {
     task: surfacedTask?.task ?? null,
     taskProfile: surfacedTask?.profile ?? null,
     tags: surfacedTask ? searchTagBindingsForSelector({ selector: { task: surfacedTask.task.id } }).bindings : [],
-    project: surfacedTask ? getTaskProjectSurface(surfacedTask.task.id) : null,
     parentTask,
     childTasks: surfacedTask
       ? dbListChildTasks(surfacedTask.task.id).map((childTask) => surfaceTaskRecordForRead(childTask).task)
@@ -2230,12 +2618,8 @@ export function getTaskDetails(taskId: string): {
     assignments: dbListAssignments(taskId),
     events: dbListTaskEvents(taskId, 200),
     comments: dbListTaskComments(taskId, 200),
+    decisions: dbListTaskDecisions(taskId),
   };
-}
-
-export function getTaskProjectSurface(taskId: string): ProjectTaskSurface | null {
-  const workflow = dbGetTaskWorkflowSurface(taskId);
-  return workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null;
 }
 
 function isTaskDependencyEditable(task: TaskRecord): boolean {
@@ -2649,32 +3033,34 @@ export async function dispatchTask(
       `Task ${taskId} is waiting on ${dependencySurface.readiness.unsatisfiedDependencyCount} dependencies. Arm a launch plan instead of dispatching it early.`,
     );
   }
+  // Validate the whole dispatch (report target, session ownership, profile)
+  // and materialize the assignee's session before auto-resuming, so a refused
+  // dispatch leaves a blocked task blocked. All of it runs before the first
+  // await, so no prompt can claim the session name in between.
+  const resolvedInput = resolveDispatchTaskReportTarget(input);
+  const prepared = prepareTaskDispatchContext(existingTask, resolvedInput, { materializeSession: true });
   const resumeResult = dbAutoResumeBlockedTask(taskId, "dispatch", {
     actor: input.assignedBy,
     agentId: input.assignedByAgentId,
     sessionName: input.assignedBySessionName,
   });
-  const dispatchSourceTask = resumeResult.resumed ? resumeResult.task : existingTask;
-  if (resumeResult.resumed) {
-    await emitTaskEvent(resumeResult.task, resumeResult.event);
-  }
-
-  const resolvedInput = resolveDispatchTaskReportTarget(input);
-  const {
-    task: bootstrappedTask,
-    profile,
-    agentId,
-    sessionName,
-    sessionCwd,
-    worktree,
-    taskDocPath,
-    primaryArtifact,
-  } = prepareTaskDispatchContext(dispatchSourceTask, resolvedInput, { materializeSession: true });
+  const bootstrappedTask = resumeResult.resumed ? resumeResult.task : prepared.task;
+  const { profile, agentId, sessionName, sessionCwd, worktree, taskDocPath, primaryArtifact } = prepared;
+  // Observed tasks use the checkpoint only as a silence window, so it defaults
+  // far above the old worker-nudge cadence unless the caller set one.
+  // A task created before it was observed carries the old 5 min default.
+  const observerStallIntervalMs =
+    taskProfileUsesObserver(profile) &&
+    typeof resolvedInput.checkpointIntervalMs !== "number" &&
+    resolveTaskCheckpointIntervalMs(bootstrappedTask.checkpointIntervalMs) === DEFAULT_TASK_CHECKPOINT_INTERVAL_MS
+      ? DEFAULT_TASK_OBSERVER_STALL_INTERVAL_MS
+      : undefined;
 
   const { task, assignment, event } = dbDispatchTask(
     taskId,
     {
       ...resolvedInput,
+      ...(observerStallIntervalMs ? { checkpointIntervalMs: observerStallIntervalMs } : {}),
       agentId,
       sessionName,
       ...(worktree ? { worktree } : {}),
@@ -2707,6 +3093,28 @@ export async function dispatchTask(
     : ensureTaskWorkspaceBootstrap(task, taskProfile);
   const documentedTaskDocPath = resolveTaskDocumentPathForProfile(documentedTask, taskProfile);
 
+  // The observer is a real, stored rule matching this worker session; it is
+  // created here, at dispatch, and never synthesized by the observation plane.
+  if (taskProfileUsesObserver(taskProfile)) {
+    const observerAgent = getAgent(agentId);
+    if (observerAgent) {
+      ensureTaskObserverRuleForDispatch({ task: documentedTask, sessionName, agent: observerAgent });
+      const workerSession = getSessionByName(sessionName);
+      if (workerSession) {
+        try {
+          reconcileObserverBindingsForSession({
+            sessionName,
+            session: workerSession,
+            agent: observerAgent,
+            mode: "refresh-profile",
+          });
+        } catch (error) {
+          log.warn("Failed to attach the task observer binding", { taskId, sessionName, error });
+        }
+      }
+    }
+  }
+
   const prompt = buildTaskDispatchPrompt(documentedTask, agentId, sessionName, {
     sessionCwd,
     worktree,
@@ -2715,11 +3123,12 @@ export async function dispatchTask(
     primaryArtifact,
   });
   syncWorkflowNodeRunForTask(documentedTask.id);
-  await publishTaskSessionPrompt(sessionName, {
-    prompt,
-    deliveryBarrier: "after_task",
-    taskBarrierTaskId: documentedTask.id,
-  });
+  await publishTaskDispatch(documentedTask, assignment, prompt);
+  // Emit the resume only after the dispatch is recorded and published, so a
+  // failed event publish cannot leave a resumed task with no dispatch.
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
+  }
 
   return {
     task: documentedTask,
@@ -2741,7 +3150,7 @@ export async function dispatchTask(
 
 export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResult> {
   const recoveredTaskIds: string[] = [];
-  const skipped: Array<{ taskId: string; reason: string }> = [];
+  const skipped: Array<{ taskId: string; reason: string; code?: string }> = [];
   const seen = new Set<string>();
   const now = Date.now();
 
@@ -2754,6 +3163,10 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
       const assignment = dbGetActiveAssignment(task.id);
       if (!assignment) {
         skipped.push({ taskId: task.id, reason: "no_active_assignment" });
+        continue;
+      }
+      if (assignment.executionStatus && assignment.executionStatus !== "pending") {
+        skipped.push({ taskId: task.id, reason: "assignment_already_admitted_or_uncertain" });
         continue;
       }
       if (!isTaskRecoveryFresh(task, assignment, now)) {
@@ -2791,16 +3204,16 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
           taskProfile: profile,
           primaryArtifact,
         });
-        await publishTaskSessionPrompt(sessionName, {
-          prompt,
-          deliveryBarrier: "after_task",
-          taskBarrierTaskId: documentedTask.id,
-        });
-        recoveredTaskIds.push(documentedTask.id);
+        if (await publishTaskDispatch(documentedTask, assignment, prompt)) {
+          recoveredTaskIds.push(documentedTask.id);
+        } else {
+          skipped.push({ taskId: task.id, reason: "assignment_already_admitted_or_uncertain" });
+        }
       } catch (error) {
         skipped.push({
           taskId: task.id,
           reason: error instanceof Error ? error.message : String(error),
+          ...(error instanceof CliExpectedError ? { code: error.code } : {}),
         });
       }
     }
@@ -2854,11 +3267,31 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
   return { recoveredTaskIds, skipped };
 }
 
+/**
+ * The assignment's session speaks for the task only while it runs as the assigned agent. A session
+ * recreated under another agent with the same name must not report progress or finish the task.
+ */
+function assertTaskActorMatchesAssignment(
+  taskId: string,
+  input: { agentId?: string; sessionName?: string },
+  action: string,
+): void {
+  if (!input.agentId || !input.sessionName) return;
+  const assignment = dbGetActiveAssignment(taskId);
+  if (!assignment || assignment.sessionName !== input.sessionName || assignment.agentId === input.agentId) return;
+  throw new Error(
+    `Cannot ${action} task ${taskId} from session ${input.sessionName}: it runs as agent ${input.agentId}, ` +
+      `but the task is assigned to ${assignment.agentId}. Re-dispatch the task to its assignee.`,
+  );
+}
+
 export function reportTaskProgress(taskId: string, input: TaskProgressInput): { task: TaskRecord; event: TaskEvent } {
   const existingTask = dbGetTask(taskId);
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "report", { verb: "report progress on" });
+  assertTaskActorMatchesAssignment(taskId, input, "report progress on");
   ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   return dbReportTaskProgress(taskId, {
     ...input,
@@ -2867,6 +3300,21 @@ export function reportTaskProgress(taskId: string, input: TaskProgressInput): { 
       "Task progress requires a descriptive message. Update TASK.md frontmatter.progress_note or provide --message.",
     ),
   });
+}
+
+/** Persist the observer checklist written by `tasks report --checklist`. */
+export function saveTaskObserverChecklist(
+  taskId: string,
+  checklist: TaskObserverChecklistItem[],
+): ReturnType<typeof dbSaveTaskObserverChecklist> {
+  if (!dbGetTask(taskId)) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  return dbSaveTaskObserverChecklist(taskId, checklist);
+}
+
+export function getTaskObserverChecklist(taskId: string): TaskObserverChecklistItem[] {
+  return dbGetTaskObserverState(taskId)?.checklist ?? [];
 }
 
 export function archiveTask(
@@ -2881,11 +3329,13 @@ export function archiveTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "archive", { verb: "archive" });
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbArchiveTask(taskId, input);
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   return { ...result, task: documentedTask };
 }
 
@@ -2901,6 +3351,7 @@ export function unarchiveTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "unarchive", { verb: "unarchive" });
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbUnarchiveTask(taskId, input);
   const documentedTask = result.wasNoop
@@ -2938,17 +3389,20 @@ export async function commentTask(
   comment: TaskComment;
   event: TaskEvent;
   steeredSessionName?: string;
+  steerSkippedReason?: string;
 }> {
   const task = dbGetTask(taskId);
   if (!task) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(task, "comment", { verb: "comment on" });
 
   const { task: profiledTask, profile: taskProfile } = ensureResolvedTaskProfile(task, {
     persistMissingProfileId: true,
   });
   const documentedTask = ensureTaskWorkspaceBootstrap(profiledTask, taskProfile);
   assertTaskDocumentInvariant(documentedTask, taskProfile, "task.comment");
+  const steerTarget = shouldSteerTaskComment(documentedTask) ? resolveTaskAssigneeSession(documentedTask) : null;
   const comment = dbAddTaskComment(taskId, input);
   const eventResult = dbAppendTaskEvent(
     taskId,
@@ -2967,23 +3421,32 @@ export async function commentTask(
     initializeSection: buildTaskMaterializedDocSection(eventResult.task),
   });
 
-  const resumeResult = dbAutoResumeBlockedTask(taskId, "comment_steer", {
-    actor: input.author,
-    agentId: input.authorAgentId,
-    sessionName: input.authorSessionName,
-  });
+  // A blocked task stays blocked when the comment cannot reach its assignee.
+  const resumeResult = !steerTarget?.ok
+    ? { task: updatedTask, resumed: false as const }
+    : dbAutoResumeBlockedTask(taskId, "comment_steer", {
+        actor: input.author,
+        agentId: input.authorAgentId,
+        sessionName: input.authorSessionName,
+      });
   const taskAfterResume = resumeResult.resumed ? resumeResult.task : updatedTask;
-  if (resumeResult.resumed) {
-    await emitTaskEvent(resumeResult.task, resumeResult.event);
-  }
 
   let steeredSessionName: string | undefined;
-  if (shouldSteerTaskComment(taskAfterResume) && taskAfterResume.assigneeSessionName) {
-    await publishTaskSessionPrompt(taskAfterResume.assigneeSessionName, {
+  if (steerTarget?.ok && shouldSteerTaskComment(taskAfterResume)) {
+    await publishTaskAssigneePrompt(taskAfterResume, steerTarget, {
       prompt: buildTaskCommentSteerPrompt(taskAfterResume, comment),
       deliveryBarrier: "after_response",
+      // The steer belongs to this task: it runs in the task's binding.
+      taskBarrierTaskId: taskAfterResume.id,
     });
-    steeredSessionName = taskAfterResume.assigneeSessionName;
+    steeredSessionName = steerTarget.sessionName;
+  } else if (steerTarget && !steerTarget.ok) {
+    log.warn("Task comment not steered to the assignee", { taskId, reason: steerTarget.reason });
+  }
+  // Emit the resume after the prompt, so a failed event publish cannot leave a
+  // resumed task with no prompt.
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
   }
 
   return {
@@ -2991,7 +3454,76 @@ export async function commentTask(
     comment,
     event: eventResult.event,
     ...(steeredSessionName ? { steeredSessionName } : {}),
+    ...(steerTarget && !steerTarget.ok ? { steerSkippedReason: steerTarget.reason } : {}),
   };
+}
+
+/**
+ * Ask (or re-ask) a task decision. A decision is task metadata, never a task
+ * status: it records who owns the answer and whether the task is parked on it.
+ */
+export function decideTask(
+  taskId: string,
+  input: TaskDecisionInput,
+): { task: TaskRecord; decision: TaskDecision; event: TaskEvent; created: boolean } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  assertTaskMutationAuthorized(existingTask, "decide", { verb: "open a decision on" });
+  const result = dbDecideTask(taskId, input);
+  return {
+    task: dbGetTask(taskId) ?? existingTask,
+    decision: result.decision,
+    event: result.event,
+    created: result.created,
+  };
+}
+
+/**
+ * Close a decision by answering it. Only whoever is not the assignee that holds
+ * the work may answer: a worker cannot answer its own pending question.
+ */
+export function answerTaskDecision(
+  taskId: string,
+  input: TaskDecisionAnswerInput,
+): { task: TaskRecord; decision: TaskDecision; event: TaskEvent } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+
+  const openDecision = dbListTaskDecisions(taskId).find(
+    (decision) => decision.status === "open" && decision.key === input.key,
+  );
+  assertTaskMutationAuthorized(existingTask, "answer", {
+    verb: "answer a decision on",
+    extraAgentIds: openDecision?.ownerType === "agent" ? [openDecision.ownerId] : [],
+  });
+  const assignment = dbGetActiveAssignment(taskId);
+  if (assignment && input.sessionName && assignment.sessionName === input.sessionName) {
+    throw new DecisionError(
+      "DECISION_SELF_ANSWER",
+      `Cannot answer decision "${input.key}" on task ${taskId} from its own work session ${assignment.sessionName}. ` +
+        `The pending decision is waiting on someone else.`,
+      { suggestedAction: "Answer it from the requesting session, a human turn, or another agent session." },
+    );
+  }
+
+  const result = dbAnswerTaskDecision(taskId, input);
+  return { task: dbGetTask(taskId) ?? existingTask, ...result };
+}
+
+/**
+ * Deterministic, side-effect-free attention fold over open decisions. It reads
+ * decisions only and never detects stalls or blocked tasks.
+ */
+export function listTaskDecisionAttention(
+  options: TaskDecisionAttentionOptions = {},
+  now?: number,
+): TaskDecisionAttentionReport {
+  const rows = dbListOpenTaskDecisions(options);
+  return foldTaskDecisionAttention(rows, { filters: options, ...(typeof now === "number" ? { now } : {}) });
 }
 
 export function blockTask(
@@ -3007,6 +3539,7 @@ export function blockTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "block", { verb: "block" });
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbBlockTask(taskId, input);
   const documentedTask = result.wasNoop
@@ -3033,11 +3566,13 @@ export function failTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "fail", { verb: "fail" });
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbFailTask(taskId, input);
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   syncWorkflowNodeRunForTask(taskId);
   return {
     ...result,
@@ -3059,11 +3594,14 @@ export async function completeTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
+  assertTaskMutationAuthorized(existingTask, "done", { verb: "complete" });
+  assertTaskActorMatchesAssignment(taskId, input, "complete");
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbCompleteTask(taskId, input);
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) disableTaskObserverRule(taskId);
   syncWorkflowNodeRunForTask(taskId);
   const dependencyRelatedEvents = result.wasNoop
     ? []

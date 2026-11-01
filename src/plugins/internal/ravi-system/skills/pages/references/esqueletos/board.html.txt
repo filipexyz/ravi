@@ -4,7 +4,10 @@
   e client.js (cópia de _client.js.txt). Ship:
     ravi pages ship --project <p> --title "<título>" --route /<rota> --dir <pasta> \
       --uses ravi.bases.views.describe,ravi.bases.views.query,ravi.bases.views.rows.update --json
-  Outras páginas de dados no host? O --uses leva a união dos ids de todas. Rota private (padrão).
+  O --uses leva só os ids desta rota; as outras páginas do host ficam com os delas. Rota private (padrão).
+  Antes: <ravi-view view="<uuid>" layout="board"></ravi-view> já faz este board com o tema, teclado,
+  "Mover para…" e o --uses derivado (references/widgets.md). Use este esqueleto só para o que a tag não faz.
+  Cores, fontes e espaços: variáveis do tema com fallback (references/theme.md), nunca literais.
   Zonas: CONFIG (troque), FIXO (mude só com motivo), LIVRE (estilo e textos).
 -->
 <html lang="pt-BR">
@@ -14,14 +17,18 @@
 <title>Board</title>
 <!-- LIVRE: estilo -->
 <style>
-  body { font: 14px/1.45 system-ui, sans-serif; margin: 16px; color: #1f2328; background: #fff; }
-  #board { display: flex; gap: 12px; overflow-x: auto; align-items: flex-start; }
-  .col { background: #f4f5f7; border-radius: 8px; padding: 8px; flex: 0 0 220px; min-height: 80px; }
-  .col h2 { font-size: 13px; margin: 0 0 8px; }
-  .col.over { outline: 2px dashed #4269d0; }
-  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; margin-bottom: 6px; }
+  body { font: var(--font-text-sm-size, 0.875rem)/1.45 var(--font-sans, system-ui, sans-serif); margin: var(--ravi-space-4, 1rem);
+    color: var(--color-text-primary, #17202a); background: var(--color-background-primary, #fbfcfd); }
+  #board { display: flex; gap: var(--ravi-space-3, 0.75rem); overflow-x: auto; align-items: flex-start; }
+  .col { background: var(--color-background-secondary, #f3f5f8); border-radius: var(--border-radius-lg, 8px);
+    padding: var(--ravi-space-2, 0.5rem); flex: 0 0 var(--ravi-lane-width, 18rem); min-height: 80px; }
+  .col h2 { font-size: var(--font-text-sm-size, 0.875rem); font-weight: var(--font-weight-semibold, 600); margin: 0 0 var(--ravi-space-2, 0.5rem); }
+  .col.over { outline: 2px dashed var(--color-ring-primary, #14635a); }
+  .card { background: var(--color-background-primary, #fbfcfd); border: var(--border-width-regular, 1px) solid var(--color-border-secondary, #dfe4ea);
+    border-radius: var(--border-radius-md, 6px); padding: var(--ravi-space-2, 0.5rem); margin-bottom: var(--ravi-space-2, 0.5rem); }
   .card[draggable="true"] { cursor: grab; }
-  .err { color: #b42318; }
+  .err { color: var(--color-text-danger, #a1262b); }
+  :focus-visible { outline: var(--ravi-focus-width, 2px) solid var(--color-ring-primary, #14635a); outline-offset: 2px; }
   [hidden] { display: none !important; }
 </style>
 </head>

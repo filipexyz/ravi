@@ -45,12 +45,31 @@ describe("bases row inbox payload enrichment", () => {
     });
   });
 
-  it("leaves other events, including bulk changes, untouched", async () => {
+  it("enriches approval and agent requests like row events, keeping their own fields", async () => {
+    for (const eventType of ["bases.approval.requested", "bases.approval.decided", "bases.agent.requested"]) {
+      const base = makePayload({ eventType });
+      const item = { ...base, payload: { ...base.payload, propertyId: "prop_ok", state: "pending" } };
+      const result = await enrichBasesRowPayload(item, async (input) => {
+        expect(input).toEqual({ projectId: "proj_1", baseId: "base_1", rowId: "row_c1", includeArchived: false });
+        return { row, users: {}, idempotentReplay: false } as never;
+      });
+      expect(result.payload).toMatchObject({
+        propertyId: "prop_ok",
+        state: "pending",
+        row: { rowId: "row_c1", version: 3 },
+        rowEnrichment: { status: "ok" },
+      });
+    }
+  });
+
+  it("leaves other events, including bulk changes and agent backfills, untouched", async () => {
     const read = async () => {
       throw new Error("must not read");
     };
     const bulk = makePayload({ eventType: "bases.rows.bulk_changed" });
     expect(await enrichBasesRowPayload(bulk, read)).toBe(bulk);
+    const backfill = makePayload({ eventType: "bases.agent.backfill" });
+    expect(await enrichBasesRowPayload(backfill, read)).toBe(backfill);
     const mail = makePayload({ eventType: "mail.message.received" });
     expect(await enrichBasesRowPayload(mail, read)).toBe(mail);
   });

@@ -89,6 +89,27 @@ describe("channel runner health contract", () => {
     expect(snapshot.adapters[0]?.status).toBe("connected");
   });
 
+  it("accepts a non-secret failure detail on an adapter and rejects a non-string one", () => {
+    const failed = {
+      ...runtimeStatus(),
+      adapters: [
+        {
+          id: "slack:primary",
+          channelId: "slack",
+          status: "failed",
+          reason: "missing_credentials",
+          detail: "connection_not_found",
+        },
+      ],
+    } as ChannelRunnerRuntimeStatus;
+    const snapshot = createChannelRunnerHealthSnapshot(failed, 1_721_563_203_000);
+    expect(isChannelRunnerHealthSnapshot(snapshot)).toBe(true);
+    expect(snapshot.adapters[0]?.detail).toBe("connection_not_found");
+    expect(isChannelRunnerHealthSnapshot({ ...snapshot, adapters: [{ ...snapshot.adapters[0], detail: 42 }] })).toBe(
+      false,
+    );
+  });
+
   it("validates outbound consumer and publish outbox telemetry", () => {
     const snapshot = createChannelRunnerHealthSnapshot({
       ...runtimeStatus(),

@@ -82,8 +82,13 @@ describe("CLI audit outcomes", () => {
     expect(JSON.parse(output[0] ?? "{}")).toMatchObject({
       success: false,
       op: "demo boom",
-      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+      error: {
+        code: "UNHANDLED_ERROR",
+        message: "demo boom failed internally. Report the operation to the operator before retrying.",
+        retryable: false,
+      },
     });
+    expect(output[0]).not.toContain("requestId");
   });
 
   it("maps sqlite capacity failures to SQLITE_CAPACITY instead of UNHANDLED_ERROR", async () => {

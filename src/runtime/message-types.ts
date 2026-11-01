@@ -1,3 +1,4 @@
+import type { CronRunAuthority } from "../cron/authority.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
@@ -94,6 +95,19 @@ export interface ObservationPromptMetadata {
   eventIds: string[];
   /** Source trace turns used to derive durable reaction idempotency. */
   sourceTurnIds?: string[];
+  /** Task bound to the source session when the delivery was composed. */
+  taskId?: string;
+  /** Stable id of this delivery (binding + event ids); verdicts apply once per delivery. */
+  deliveryId?: string;
+  /** Why the delivery was sent: a batch at turn end, or a pulse while the source turn still runs. */
+  trigger?: "end_of_turn" | "pulse" | "realtime" | "debounce";
+}
+
+/** Marks a prompt the task runtime itself published, so the trace shows its origin. */
+export interface TaskRuntimePromptMetadata {
+  taskId: string;
+  kind: "report" | "stalled" | "nudge";
+  event?: string;
 }
 
 export interface DaemonRestartResumePromptMetadata {
@@ -141,6 +155,11 @@ interface RuntimeTurnOriginEnvelope {
   protocol: "ravi.runtime.turn-origin";
   schemaVersion: 1;
   principal: RuntimeTurnOriginPrincipal;
+  /**
+   * The runtime context of the turn that produced this one. It can only narrow
+   * the new turn (to a contact overlay's capabilities), never widen it.
+   */
+  callerContextId?: string;
 }
 
 export interface SessionRelayTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
@@ -164,10 +183,20 @@ export interface ChannelTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
  * a credential: access to the internal prompt bus is the trust boundary.
  * `source` and `context` continue to describe the reply surface.
  */
-export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | ChannelTurnOriginMetadata;
+export interface SignalTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
+  producer: "signals";
+  action: "escalate";
+}
+
+export type RuntimeTurnOriginMetadata =
+  | SessionRelayTurnOriginMetadata
+  | ChannelTurnOriginMetadata
+  | SignalTurnOriginMetadata;
 
 /** Prompt message structure */
 export interface PromptMessage {
+  /** Trusted bridge producer reference; all authority is reloaded from its durable receipt. */
+  _bridgeTurnId?: string;
   prompt: string;
   /** Ravi Commands that produced this prompt, when a user invoked #command. */
   commands?: RaviCommandPromptMetadata[];
@@ -197,12 +226,18 @@ export interface PromptMessage {
   _modelBrokerTurnId?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /** Task runtime metadata for reports, stall notices and observer nudges. */
+  _taskRuntime?: TaskRuntimePromptMetadata;
   /** Heartbeat runner prompt marker. */
   _heartbeat?: boolean;
   /** Cron runner prompt marker. */
   _cron?: boolean;
   /** Cron job id when `_cron` is true. */
   _jobId?: string;
+  /** Durable identity of this admitted cron execution, distinct from its job. */
+  _cronRunId?: string;
+  /** Ownership fixed by the runner before dispatch, never rebuilt from a live job. */
+  _cronAuthority?: CronRunAuthority;
   /** Trigger runner prompt marker. */
   _trigger?: boolean;
   /** Trigger id when `_trigger` is true. */
@@ -215,6 +250,14 @@ export interface PromptMessage {
   _sessionFollowupRunId?: string;
   /** Ravi thread metadata. Distinct from provider-native thread/topic IDs. */
   _thread?: ThreadHandoffPromptMetadata;
+  /** Durable decision-answer admission; validated against the stored envelope. */
+  _decisionDeliveryId?: string;
+  /** Durable task dispatch admission, keyed by the execution assignment. */
+  _taskAssignmentId?: string;
+  /** Frozen assignment session identity, rechecked at runtime launch. */
+  _taskSessionKey?: string;
+  /** Canonical waiting session, rechecked after asynchronous dispatch preflight. */
+  _decisionSessionKey?: string;
   /**
    * Internal restart envelope: start a fresh runtime only to drain messages that
    * were already persisted and stashed by the previous runtime session.
@@ -231,6 +274,11 @@ export interface PromptMessage {
    * `prompt` remains the displayed/persisted user text.
    */
   _runtimePrompt?: string;
+  /**
+   * Internal marker: the per-turn Knowledge audience line (and contact packet)
+   * was already prepended to `_runtimePrompt`, so durable replay adds it once.
+   */
+  _knowledgePreamble?: boolean;
   /**
    * Operator CLI-only turn. Chat attach stays fail-closed; the waiting CLI is
    * the reply destination via this turn's assistant transcript.

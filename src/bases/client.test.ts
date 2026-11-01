@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { ConsoleApiClient } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
+import { TurnRefusalError } from "../cloud-auth/turn-refusal.js";
 import { runWithContext } from "../cli/context.js";
 import {
   BASES_READ_SCOPE,
@@ -137,6 +138,150 @@ describe("RaviBasesClient transport", () => {
     await expect(client.listBases()).resolves.toEqual({ bases: [] });
     expect(tokens).toEqual(["access-secret", "access-new"]);
     expect(written.map((credentials) => credentials.accessToken)).toEqual(["access-new"]);
+  });
+});
+
+describe("Bases reads in a delegated turn", () => {
+  // Console decides read or write by route; the CLI names the person of the turn on every
+  // call, reads included, so a linked person's reads act as that person.
+  it("sends the turn's contact on GET and POST reads, and on writes", async () => {
+    const calls: FetchCall[] = [];
+    const respond = fetchReturning(calls, () =>
+      jsonResponse({ columns: [], rows: [], nextCursor: null, users: {}, row: ROW, idempotentReplay: false }),
+    );
+    const client = makeBasesClient(respond, {
+      client: new ConsoleApiClient({
+        consoleUrl: "https://console.example",
+        fetch: respond as typeof fetch,
+        actorContact: () => "c_ana",
+      }),
+    });
+
+    await client.getBase("crm");
+    await client.listViews("crm");
+    await client.queryView("crm", "view_1", {});
+    await client.queryRows("crm", {});
+    await client.chartData("crm", "chart_1");
+    await client.getViewRow("crm", "view_1", "row_1");
+    await client.updateViewRow("crm", "view_1", "row_1", { values: { ok: "pending" }, expectedVersion: 2 });
+
+    expect(calls).toHaveLength(7);
+    for (const call of calls) expect(call.headers["x-ravi-actor-contact"]).toBe("c_ana");
+  });
+
+  it("refuses a turn Ravi cannot attribute before any Console call, reads included", async () => {
+    let consoleCalls = 0;
+    const client = {
+      requestJson: async () => {
+        consoleCalls += 1;
+        return {};
+      },
+    } as unknown as ConsoleApiClient;
+    await expect(
+      openBasesClient(
+        { project: "sales" },
+        { client, readCredentials: () => makeCredentials(), unattributedTurn: () => true, env: {} },
+      ),
+    ).rejects.toMatchObject({ code: "ACTOR_UNKNOWN", reason: { kind: "unknown" } });
+    expect(consoleCalls).toBe(0);
+
+    const routine = openBasesClient(
+      { project: "sales" },
+      {
+        client,
+        readCredentials: () => makeCredentials(),
+        unattributedTurn: () => ({
+          reason: {
+            kind: "routine_not_operator_owned",
+            routine: "cron",
+            jobId: "job_1",
+            ownerPrincipal: "contact:c_ana",
+          },
+          actorPrincipal: "automation:cron:job_1",
+        }),
+        env: {},
+      },
+    );
+    await expect(routine).rejects.toBeInstanceOf(TurnRefusalError);
+    await expect(routine).rejects.toMatchObject({
+      code: "ACTOR_UNKNOWN",
+      exitCode: 3,
+      details: { refusalReason: "routine_not_operator_owned", jobId: "job_1", ownerPrincipal: "contact:c_ana" },
+    });
+    expect(consoleCalls).toBe(0);
+
+    const attributed = await openBasesClient(
+      { project: "sales" },
+      {
+        client,
+        readCredentials: () => makeCredentials(),
+        unattributedTurn: () => false,
+        getContext: () => undefined,
+        env: {},
+      },
+    );
+    expect(attributed.projectRef).toBe("sales");
+  });
+
+  it("sends no contact outside a delegated turn", async () => {
+    const calls: FetchCall[] = [];
+    const respond = fetchReturning(calls, () => jsonResponse({ columns: [], rows: [], nextCursor: null, users: {} }));
+    const client = makeBasesClient(respond, {
+      client: new ConsoleApiClient({
+        consoleUrl: "https://console.example",
+        fetch: respond as typeof fetch,
+        actorContact: () => null,
+      }),
+    });
+
+    await client.queryView("crm", "view_1", {});
+    expect(calls[0]?.headers["x-ravi-actor-contact"]).toBeUndefined();
+  });
+});
+
+describe("Bases H2 transport", () => {
+  it("posts filtered subscriptions, agent fills and reruns, and lists the project's Pages sites", async () => {
+    const calls: FetchCall[] = [];
+    const client = makeBasesClient(
+      fetchReturning(calls, (call) =>
+        call.url.endsWith("/pages")
+          ? jsonResponse([{ site: { id: "site_1", slug: "acme", defaultHostname: "acme.ravi.page", isDefault: true } }])
+          : jsonResponse({ row: ROW, users: {}, idempotentReplay: false }),
+      ),
+      { clientHint: () => ({ agentId: "dev", sdk: "ravi-cli" }) },
+    );
+
+    await client.subscribe("crm", { events: ["agent.requested"] });
+    await client.fillAgentCell("crm", "row_1", "resumo", { inputsHash: "0123456789abcdef", value: "ok" });
+    await client.rerunAgentCell("crm", "row_1", "resumo");
+    const sites = await client.listPagesSites();
+    await client.createView("crm", { name: "Fila" }, { idempotencyKey: "crm:view:fila" });
+
+    expect(calls.map((call) => `${call.method} ${call.url.replace("https://console.example", "")}`)).toEqual([
+      "POST /api/cli/projects/sales/bases/crm/subscriptions",
+      "POST /api/cli/projects/sales/bases/crm/rows/row_1/agent/resumo",
+      "POST /api/cli/projects/sales/bases/crm/rows/row_1/agent/resumo/rerun",
+      "GET /api/cli/projects/sales/pages",
+      "POST /api/cli/projects/sales/bases/crm/views",
+    ]);
+    expect(calls[0]?.body).toEqual({ events: ["agent.requested"] });
+    expect(calls[1]).toMatchObject({
+      headers: { "Idempotency-Key": "ravi-cli:fixed-key-0001" },
+      body: {
+        inputsHash: "0123456789abcdef",
+        value: "ok",
+        idempotencyKey: "ravi-cli:fixed-key-0001",
+        clientHint: { agentId: "dev", sdk: "ravi-cli" },
+      },
+    });
+    expect(calls[2]?.body).toEqual({ clientHint: { agentId: "dev", sdk: "ravi-cli" } });
+    expect(sites).toEqual([{ id: "site_1", slug: "acme", hostname: "acme.ravi.page", isDefault: true }]);
+    // Schema creates carry the key but not the ledger hint.
+    expect(calls[4]).toMatchObject({
+      headers: { "Idempotency-Key": "crm:view:fila" },
+      body: { name: "Fila", idempotencyKey: "crm:view:fila" },
+    });
+    expect(calls[4]?.body).not.toHaveProperty("clientHint");
   });
 });
 

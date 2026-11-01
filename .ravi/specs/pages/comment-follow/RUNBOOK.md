@@ -7,7 +7,7 @@ ravi pages ship --title "Weekly report" --body "<h1>OK</h1>" --json --execute
 ravi triggers list --json
 ```
 
-Expect `commentFollow.ok: true`, `topic: ravi.watch.console.page.comment.created`, and one trigger named `page-comment:<site id>`. A second ship of the same slug returns `reused: true` and the same `triggerId`.
+Expect `commentFollow.ok: true`, `topic: ravi.watch.console.page.comment.created`, and one trigger named `page-comment:<site id>:<route>`. A second ship of the same route returns `reused: true` and the same `triggerId`; from another session it also returns `rebound: true` and the comments now wake that session.
 
 `commentFollow.skipped`:
 
@@ -18,7 +18,7 @@ Expect `commentFollow.ok: true`, `topic: ravi.watch.console.page.comment.created
 
 ## Confirm ingest
 
-Console must deliver Agent Inbox `eventType: page.comment.created` (not a sync-ledger row). After the inbox runner publishes, a trigger subscription on `ravi.watch.console.page.comment.created` should see `payload.pageId` equal to the site id bound at ship.
+Console must deliver Agent Inbox `eventType: page.comment.created` (not a sync-ledger row). After the inbox runner publishes, a trigger subscription on `ravi.watch.console.page.comment.created` should see `payload.pageId` equal to the site id bound at ship and `payload.routePath` equal to the shipped route. Console sends the item only to the installation that published the commented version; a version published from the Console or before this contract sends nothing until the route is shipped again.
 
 `page.comment.resolved` is published on `ravi.watch.console.page.comment.resolved` and is catalog-only in v0. No ship trigger listens to it.
 
@@ -26,5 +26,5 @@ Console must deliver Agent Inbox `eventType: page.comment.created` (not a sync-l
 
 1. `ravi triggers show <id>` — `runtimeState` must be `active`. `invalid_filter` and `unbound_agent` do not subscribe.
 2. Confirm the event's page id, org id, and project id match the filter. A project slug in the filter is a bug; only ids belong there.
-3. The creator's own comment still wakes in v0. Silence means the filter or the agent binding missed, not an author suppression.
+3. The creator's own comment still wakes. Silence means the filter or the agent binding missed, not an author suppression.
 4. Anchors are ignored. A comment that differs only by anchor still uses the page id filter.

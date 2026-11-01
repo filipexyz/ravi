@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { configStore } from "../../config-store.js";
 import {
   createContact,
@@ -9,8 +12,10 @@ import {
   listAccountPendingChats,
   listAccountPendingContacts,
   resolvePlatformIdentity,
+  unlinkContactIdentity,
   upsertAgentPlatformIdentity,
 } from "../../contacts.js";
+import { dbGetCloudChatApproval, dbRecordCloudChatApproval } from "../../cloud-agents/chat-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { canWithCapabilities } from "../../permissions/provider-runtime.js";
 import {
@@ -28,6 +33,7 @@ import {
   dbLegacySessionChatBindingsTableExists,
   dbListChatParticipants,
   dbUpsertChat,
+  dbUpsertChatParticipant,
   dbUpsertInstance,
   getDb,
 } from "../../router/router-db.js";
@@ -54,6 +60,8 @@ import {
   createSlackNativeRuntimesFromEnv,
   slackClientMessageId,
 } from "./socket-mode.js";
+import { SlackApiError } from "./client.js";
+import { buildSlackThreadCard } from "./thread-card.js";
 import {
   acceptSlackInboundEnvelope,
   claimSlackInboundEnvelope,
@@ -381,6 +389,59 @@ describe("Slack Socket Mode routing", () => {
     ).toMatchObject({ ownerType: "contact", platformDisplayName: "Ana" });
   });
 
+  it("stops admitting a channel through routing's own subscription once groupPolicy is closed", async () => {
+    dbUpsertInstance({ name: "slack-main", instanceId: "slack-main", channel: "slack", groupPolicy: "open" });
+    const instance = {
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "open" as const,
+      groupPolicy: "open" as "open" | "closed",
+      contactIntakeMode: "off" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [{ pattern: "*", accountId: "slack-main", agent: "ravi-hil", priority: 0, channel: "slack" }],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: { "slack-main": instance },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+    const message = (id: string, ts: string) => ({
+      envelope_id: id,
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: id,
+        event_time: 1_713_000_000,
+        event: { type: "message", channel: "C100", channel_type: "channel", user: "U100", text: "oi", ts },
+      },
+    });
+
+    await service.handleEnvelope(message("Ev-open", "1713000000.000600"));
+    expect(published).toHaveLength(1);
+
+    instance.groupPolicy = "closed";
+    dbUpsertInstance({ name: "slack-main", instanceId: "slack-main", channel: "slack", groupPolicy: "closed" });
+    await service.handleEnvelope(message("Ev-closed", "1713000001.000600"));
+    expect(published).toHaveLength(1);
+  });
+
   it("intakes a routed Slack channel sender without requiring a prior DM", async () => {
     dbUpsertInstance({
       name: "slack-main",
@@ -681,6 +742,34 @@ describe("Slack Socket Mode routing", () => {
     ).toBe(false);
   });
 
+  it("posts with link and media unfurls off only for Knowledge-guarded chats", async () => {
+    const postMessage = mock(async (_input: Record<string, unknown>) => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "slack:C123:1713000000.000100",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackTextDelivery(
+      { postMessage } as never,
+      { threadReplyMode: "thread" } as never,
+      undefined,
+      { isKnowledgeGuardedChat: (target) => target.chatId === "DGUARDED" },
+    );
+    const send = (chatId: string) =>
+      delivery.deliverText({
+        sessionName: "s",
+        emitId: "e",
+        idempotencyKey: `k:${chatId}`,
+        target: { channel: "slack", accountId: "T1", chatId },
+        text: "https://acme.ravi.page/politica",
+      });
+    await send("DGUARDED");
+    await send("C123");
+    expect(postMessage.mock.calls[0]?.[0]).toMatchObject({ unfurlLinks: false, unfurlMedia: false });
+    expect(postMessage.mock.calls[1]?.[0]).not.toHaveProperty("unfurlLinks");
+    expect(postMessage.mock.calls[1]?.[0]).not.toHaveProperty("unfurlMedia");
+  });
+
   it("uses a stable UUID client_msg_id and preserves Slack's provider timestamp", async () => {
     const postMessage = mock(async () => ({
       channel: "C123",
@@ -720,6 +809,46 @@ describe("Slack Socket Mode routing", () => {
       platformMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_000,
       raw: { ok: true },
+    });
+  });
+
+  it("renders Markdown text as Block Kit and keeps every posted ts on the receipt", async () => {
+    let count = 0;
+    const postMessage = mock(async () => {
+      count += 1;
+      const ts = `1713000000.00010${count}`;
+      return { channel: "C123", ts, messageId: ts, raw: { ok: true } };
+    });
+    const delivery = new SlackTextDelivery(
+      { postMessage } as never,
+      { threadReplyMode: "thread" } as never,
+      undefined,
+      {
+        isKnowledgeGuardedChat: () => false,
+      },
+    );
+    const paragraph = "The agent explains one more part of the design in plain words. ".repeat(20);
+    const text = ["## Plano", ...Array.from({ length: 12 }, () => paragraph)].join("\n\n");
+
+    const result = await delivery.deliverText({
+      sessionName: "ravi-channels",
+      idempotencyKey: "emit-md",
+      target: { channel: "slack", accountId: "T1", chatId: "C123", threadId: "1712999999.000010" },
+      text,
+      format: "markdown",
+    });
+
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      channel: "C123",
+      text: "Plano",
+      blocks: [expect.objectContaining({ type: "markdown" })],
+      threadTs: "1712999999.000010",
+      clientMsgId: slackClientMessageId("emit-md"),
+    });
+    expect(result).toMatchObject({
+      platformMessageId: "1713000000.000101",
+      raw: { ok: true, ravi_additional_ts: ["1713000000.000102"] },
     });
   });
 
@@ -800,6 +929,7 @@ describe("Slack Socket Mode routing", () => {
       channel: "C123",
       ts: "1713000000.000100",
       text: "corrected",
+      blocks: [{ type: "markdown", text: "corrected" }],
     });
     expect(deleteMessage).toHaveBeenCalledWith({ channel: "C123", ts: "1713000000.000100" });
     expect(addReaction).toHaveBeenCalledWith({
@@ -905,6 +1035,39 @@ describe("Slack Socket Mode routing", () => {
     ).rejects.toThrow(/Slack reaction was not accepted: invalid_name/);
   });
 
+  it("shows the requested runtime on the thread root card", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000200",
+      messageId: "1713000000.000200",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+    const runtime = "codex · gpt-5.4 · high";
+
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "thread-runtime",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: {
+        type: "chat_action",
+        actionId: "thread.create",
+        text: "Investigate this branch",
+        runtime,
+      },
+    });
+
+    const card = buildSlackThreadCard("Investigate this branch", { status: "open", runtime });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "C123",
+        text: "Investigate this branch",
+        blocks: card.blocks,
+      }),
+    );
+    expect(JSON.stringify(card.blocks)).toContain(`runtime ${runtime}`);
+  });
+
   it("creates a native Slack thread root with a stable client message id", async () => {
     const postMessage = mock(async () => ({
       channel: "C123",
@@ -939,11 +1102,123 @@ describe("Slack Socket Mode routing", () => {
     expect(postMessage).toHaveBeenCalledWith({
       channel: "C123",
       text: "Investigate this branch",
+      blocks: buildSlackThreadCard("Investigate this branch", { status: "open" }).blocks,
       clientMsgId: slackClientMessageId(idempotencyKey),
+    });
+    // A one-line brief fits the card: nothing more is posted in the thread.
+    expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts a long thread brief as a card and the whole brief as the first thread reply", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000300",
+      messageId: "1713000000.000300",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+    const brief = [
+      "Estudo do Ravi Knowledge para o Luis.",
+      `O Luis pediu: estuda como funciona o **ravi knowledge**. ${"Explique o fluxo de indexação e busca. ".repeat(12)}`,
+    ].join("\n");
+
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "thread-long",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: { type: "chat_action", actionId: "thread.create", text: brief, requestedBy: "Luís" },
+    });
+
+    const card = buildSlackThreadCard(brief, { status: "open", requestedBy: "Luís" });
+    expect(JSON.stringify(card.blocks)).toContain("pedido por Luís");
+    expect(card.fullBrief).toBeDefined();
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      channel: "C123",
+      text: "Estudo do Ravi Knowledge para o Luis.",
+      blocks: card.blocks,
+      clientMsgId: slackClientMessageId("thread-long"),
+    });
+    expect(postMessage).toHaveBeenNthCalledWith(2, {
+      channel: "C123",
+      text: "*Instruções completas*",
+      blocks: [{ type: "markdown", text: card.fullBrief }],
+      threadTs: "1713000000.000300",
+      clientMsgId: slackClientMessageId("thread-long:brief"),
     });
   });
 
-  it("converts CommonMark chat-action text to mrkdwn before post and update", async () => {
+  it("falls back to classic blocks when Slack rejects the card block", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const postMessage = mock(async (input: Record<string, unknown>) => {
+      posted.push(input);
+      if (posted.length === 1) throw new SlackApiError("chat.postMessage", "invalid_blocks");
+      return { channel: "C123", ts: "1713000000.000400", messageId: "1713000000.000400", raw: { ok: true } };
+    });
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey: "thread-fallback",
+        target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+        action: { type: "chat_action", actionId: "thread.create", text: "Investigate this branch" },
+      }),
+    ).resolves.toMatchObject({ platformMessageId: "1713000000.000400" });
+
+    const card = buildSlackThreadCard("Investigate this branch", { status: "open" });
+    expect(posted.map((input) => input.blocks)).toEqual([card.blocks, card.fallbackBlocks]);
+    expect(posted[0]!.clientMsgId).toBe(posted[1]!.clientMsgId);
+  });
+
+  it("does not retry a card post for an error other than invalid blocks", async () => {
+    const postMessage = mock(async () => {
+      throw new SlackApiError("chat.postMessage", "channel_not_found");
+    });
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey: "thread-missing",
+        target: { channel: "slack", accountId: "ravi-slack", chatId: "C404" },
+        action: { type: "chat_action", actionId: "thread.create", text: "Investigate this branch" },
+      }),
+    ).rejects.toThrow("channel_not_found");
+    expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-renders a thread root card on a card edit", async () => {
+    const updateMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "1713000000.000100",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ updateMessage } as never);
+    const threadCard = { status: "closed" as const, note: "Achados entregues", updatedAt: 1_713_000_000_000 };
+
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "card-edit",
+      target: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      action: {
+        type: "chat_action",
+        actionId: "message.edit",
+        providerMessageId: "1713000000.000100",
+        text: "Investigate this branch",
+        threadCard,
+      },
+    });
+
+    expect(updateMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      ts: "1713000000.000100",
+      text: "Investigate this branch",
+      blocks: buildSlackThreadCard("Investigate this branch", threadCard).blocks,
+    });
+  });
+
+  it("renders chat-action Markdown as a card on post and a markdown block on update", async () => {
     const postMessage = mock(async () => ({
       channel: "C123",
       ts: "1713000000.000200",
@@ -982,13 +1257,15 @@ describe("Slack Socket Mode routing", () => {
 
     expect(postMessage).toHaveBeenCalledWith({
       channel: "C123",
-      text: "Look at *this* <https://example.com/diff|diff>",
+      text: "Look at this diff",
+      blocks: buildSlackThreadCard("Look at **this** [diff](https://example.com/diff)", { status: "open" }).blocks,
       clientMsgId: slackClientMessageId("thread-md"),
     });
     expect(updateMessage).toHaveBeenCalledWith({
       channel: "C123",
       ts: "1713000000.000100",
       text: "Corrected *copy*",
+      blocks: [{ type: "markdown", text: "Corrected **copy**" }],
     });
   });
 
@@ -1695,6 +1972,166 @@ describe("Slack Socket Mode routing", () => {
         role: "primary",
       }),
     ]);
+  });
+
+  describe("route with a fixed session vs a residual chat subscription (bug a2d9fc1c)", () => {
+    const SLACK_INSTANCE = "ravi-rbbt-slack";
+    const MAIN_KEY = `agent:main-agent:slack:${SLACK_INSTANCE}:group:C777`;
+    const SPECIALIST_KEY = "agent:specialist-agent:specialist-fixed";
+
+    function setupResidualSubscription(attachedByType: "system" | "user") {
+      seedAgent("main-agent", "/tmp/main-agent");
+      seedAgent("specialist-agent", "/tmp/specialist-agent");
+      const chat = dbUpsertChat({
+        channel: "slack",
+        instanceId: SLACK_INSTANCE,
+        platformChatId: "C777",
+        chatType: "group",
+        title: "C777",
+        rawProvenance: { source: "test" },
+        seenAt: 1_713_000_000_000,
+      });
+      const mainSession = getOrCreateSession(MAIN_KEY, "main-agent", "/tmp/main-agent", {
+        name: "main-agent-c777",
+        channel: "slack",
+        accountId: SLACK_INSTANCE,
+        groupId: "C777",
+        lastChannel: "slack",
+        lastTo: "C777",
+        lastAccountId: SLACK_INSTANCE,
+      });
+      const specialistSession = getOrCreateSession(SPECIALIST_KEY, "specialist-agent", "/tmp/specialist-agent", {
+        name: "specialist-fixed",
+      });
+      attachChatToSession({
+        sessionKey: mainSession.sessionKey,
+        chatId: chat.id,
+        role: "primary",
+        attachedByType,
+        attachedReason: attachedByType === "system" ? "slack-socket-mode" : "test-operator",
+        setOutputTarget: true,
+      });
+      return { chat, mainSession, specialistSession };
+    }
+
+    function config(routeAgent: string, routeSession: string): RouterConfig {
+      return {
+        agents: {
+          "main-agent": { id: "main-agent", cwd: "/tmp/main-agent", dmScope: "per-peer" },
+          "specialist-agent": { id: "specialist-agent", cwd: "/tmp/specialist-agent", dmScope: "per-peer" },
+        },
+        routes: [
+          {
+            pattern: "group:C777",
+            accountId: SLACK_INSTANCE,
+            agent: routeAgent,
+            session: routeSession,
+            priority: 0,
+          },
+        ],
+        defaultAgent: "main-agent",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { [SLACK_INSTANCE]: SLACK_INSTANCE },
+        instances: {},
+      };
+    }
+
+    function service(routerConfig: RouterConfig, published: Array<{ sessionName: string; payload: unknown }>) {
+      return new SlackSocketModeService({
+        appToken: "xapp-test",
+        botToken: "xoxb-test",
+        accountId: SLACK_INSTANCE,
+        routeAccountId: SLACK_INSTANCE,
+        instanceId: SLACK_INSTANCE,
+        getRouterConfig: () => routerConfig,
+        publishPrompt: async (sessionName, payload) => {
+          published.push({ sessionName, payload });
+        },
+        webClient: {} as never,
+      });
+    }
+
+    function envelope(envelopeId: string) {
+      return {
+        envelope_id: envelopeId,
+        payload: {
+          team_id: "T1",
+          event_id: `Ev-${envelopeId}`,
+          event_time: 1_713_000_001,
+          event: {
+            type: "message",
+            channel: "C777",
+            channel_type: "channel",
+            user: "U123",
+            text: "hello specialist",
+            ts: "1713000001.000200",
+          },
+        },
+      };
+    }
+
+    it("delivers to the route's fixed session and rebinds an automatic subscription", async () => {
+      const { chat, mainSession, specialistSession } = setupResidualSubscription("system");
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      const result = await service(config("specialist-agent", "specialist-fixed"), published).handleEnvelope(
+        envelope("env-a2d9-system"),
+      );
+
+      expect(result).toBe("processed");
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("specialist-fixed");
+      expect(getSessionByName("specialist-fixed")?.agentId).toBe("specialist-agent");
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([]);
+      expect(listSessionSubscriptions(specialistSession.sessionKey)).toEqual([
+        expect.objectContaining({ chatId: chat.id }),
+      ]);
+      expect(getSlackInboundEnvelope(SLACK_INSTANCE, "env-a2d9-system")).toMatchObject({ state: "processed" });
+    });
+
+    it("keeps an explicit attach and never pairs its agent with the route's session", async () => {
+      const { chat, mainSession } = setupResidualSubscription("user");
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("specialist-agent", "specialist-fixed"), published).handleEnvelope(
+        envelope("env-a2d9-explicit"),
+      );
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(getSessionByName("main-agent-c777")?.sessionKey).toBe(mainSession.sessionKey);
+      expect(getSessionByName("specialist-fixed")?.sessionKey).toBe(SPECIALIST_KEY);
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    it("keeps an explicit attach on its own session when the route forces another session of the same agent", async () => {
+      const { chat, mainSession } = setupResidualSubscription("user");
+      getOrCreateSession("agent:main-agent:main-other", "main-agent", "/tmp/main-agent", { name: "main-other" });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("main-agent", "main-other"), published).handleEnvelope(envelope("env-a2d9-same-key"));
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    it("settles the envelope instead of retrying when the route's session belongs to another agent", async () => {
+      seedAgent("main-agent", "/tmp/main-agent");
+      seedAgent("specialist-agent", "/tmp/specialist-agent");
+      getOrCreateSession(SPECIALIST_KEY, "specialist-agent", "/tmp/specialist-agent", { name: "specialist-fixed" });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+      const slack = service(config("main-agent", "specialist-fixed"), published);
+
+      const result = await slack.handleEnvelope(envelope("env-a2d9-conflict"));
+
+      expect(result).toBe("ignored");
+      expect(published).toHaveLength(0);
+      expect(getSlackInboundEnvelope(SLACK_INSTANCE, "env-a2d9-conflict")).toMatchObject({ state: "processed" });
+      expect(await slack.resumePendingInboundEnvelopes()).toMatchObject({ scanned: 0, failed: 0 });
+      expect(getSessionByName("specialist-fixed")?.agentId).toBe("specialist-agent");
+    });
   });
 
   it("publishes Block Kit interactions as native inbound interaction events", async () => {
@@ -2929,6 +3366,84 @@ describe("Slack Socket Mode routing", () => {
       platformIdentityId: identity.platformIdentity!.id,
     });
   });
+
+  it("hands a cloud run's approval reply to the run instead of the agent", async () => {
+    const identity = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: "slack-instance-1",
+      platformSenderId: "U123",
+      contactIdentity: "U123",
+      displayName: "Ana",
+      chatId: "C123",
+      intakeMode: "pending",
+      source: "test",
+    });
+    const approvalId = "ab12cd34-0000-4000-8000-000000000001";
+    dbRecordCloudChatApproval({
+      approvalId,
+      runId: "run_1",
+      sessionName: "ravi-hil",
+      agentName: "triage",
+      tool: "create_issue",
+      actorUserId: "user-ana",
+      actorContactId: identity.contact!.id,
+      actorName: "Ana",
+    });
+    const config: RouterConfig = {
+      agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const postMessage = mock(async (_input: Record<string, unknown>) => ({ ok: true, ts: "1713000031.000100" }));
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: { postMessage } as never,
+    });
+    const send = (text: string, ts: string) =>
+      service.handleEnvelope({
+        envelope_id: `env-cloud-${ts}`,
+        payload: {
+          team_id: "T1",
+          event_id: `EvCloud${ts}`,
+          event_time: 1_713_000_030,
+          event: { type: "message", channel: "C123", channel_type: "channel", user: "U123", text, ts },
+        },
+      });
+
+    // No Console login here: the decision cannot be recorded, but the reply is still the run's.
+    await send("aprovar ab12cd", "1713000030.000100");
+    expect(published).toHaveLength(0);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage.mock.calls[0]?.[0]).toMatchObject({ channel: "C123" });
+    expect(dbGetCloudChatApproval(approvalId)?.status).toBe("pending");
+
+    // Anything else still reaches the agent.
+    await send("bom dia", "1713000032.000100");
+    expect(published).toHaveLength(1);
+  });
 });
 
 describe("Slack Socket Mode connection liveness", () => {
@@ -3245,6 +3760,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     sourceTeamId?: string | null;
     userTeamId?: string | null;
     authorizations?: unknown;
+    text?: string;
   }): SlackSocketEnvelope {
     return {
       envelope_id: input.envelopeId,
@@ -3258,7 +3774,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
           channel: "C123",
           channel_type: "channel",
           user: "UHUMAN",
-          text: "human message",
+          text: input.text ?? "human message",
           ts: input.ts,
           ...(input.eventTeamId === null || input.eventTeamId === undefined ? {} : { team: input.eventTeamId }),
           ...(input.sourceTeamId === null || input.sourceTeamId === undefined
@@ -3301,7 +3817,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     });
   }
 
-  it("preserves human intake without Slack team provenance and does not call auth.test", async () => {
+  it("preserves human intake without Slack team provenance and does not wait on auth.test", async () => {
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
     const service = makeBotService({ published, authTest });
@@ -3316,7 +3832,8 @@ describe("Slack Socket Mode foreign bot intake", () => {
         }),
       ),
     ).toBe("processed");
-    expect(authTest).not.toHaveBeenCalled();
+    // Human intake only starts a background identity lookup; it never gates admission.
+    expect(authTest).toHaveBeenCalledTimes(1);
     expect(published).toHaveLength(1);
     const source = published[0]!.payload.source as MessageTarget;
     expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
@@ -3324,7 +3841,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     });
   });
 
-  it("preserves event.team precedence for conflicting human team values without calling auth.test", async () => {
+  it("preserves event.team precedence for conflicting human team values without waiting on auth.test", async () => {
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
     const service = makeBotService({ published, authTest });
@@ -3342,7 +3859,8 @@ describe("Slack Socket Mode foreign bot intake", () => {
         }),
       ),
     ).toBe("processed");
-    expect(authTest).not.toHaveBeenCalled();
+    // Human intake only starts a background identity lookup; it never gates admission.
+    expect(authTest).toHaveBeenCalledTimes(1);
     expect(published).toHaveLength(1);
     const source = published[0]!.payload.source as MessageTarget;
     expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
@@ -3774,6 +4292,66 @@ describe("Slack Socket Mode foreign bot intake", () => {
 
     expect(authTest).not.toHaveBeenCalled();
     expect(published).toHaveLength(0);
+  });
+
+  async function flushBackgroundWork(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("marks a human message that mentions the local bot and tags the bot in group context", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+    const service = makeBotService({ published, authTest });
+    service.warmLocalBotIdentity();
+    await flushBackgroundWork();
+
+    for (const [index, text] of ["<@ULOCAL> ta ai?", "oi <@ULOCAL|ravi>, ta ai?"].entries()) {
+      expect(
+        await service.handleEnvelope(
+          humanEnvelope({ envelopeId: `human-self-mention-${index}`, ts: `1713000092.00010${index}`, text }),
+        ),
+      ).toBe("processed");
+    }
+    expect(
+      await service.handleEnvelope(
+        humanEnvelope({ envelopeId: "human-other-mention", ts: "1713000092.000200", text: "<@UOTHER> ta ai?" }),
+      ),
+    ).toBe("processed");
+
+    expect(authTest).toHaveBeenCalledTimes(1);
+    expect(published).toHaveLength(3);
+    for (const entry of published.slice(0, 2)) {
+      expect(String(entry.payload.prompt).split("\n")[0]).toContain(" @mention]");
+      expect((entry.payload.context as MessageContext).botTag).toBe("<@ULOCAL>");
+    }
+    expect(String(published[2]!.payload.prompt)).not.toContain("@mention");
+    expect((published[2]!.payload.context as MessageContext).botTag).toBe("<@ULOCAL>");
+  });
+
+  it("admits a human bot mention while auth.test is stuck or failing, without the marker", async () => {
+    for (const [index, authTest] of [
+      mock(() => new Promise<never>(() => {})),
+      mock(async () => {
+        throw new Error("auth_failed");
+      }),
+    ].entries()) {
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const service = makeBotService({ published, authTest, authTestTimeoutMs: 60_000 });
+      expect(
+        await service.handleEnvelope(
+          humanEnvelope({
+            envelopeId: `human-self-mention-no-identity-${index}`,
+            ts: `1713000093.00010${index}`,
+            text: "<@ULOCAL> ta ai?",
+          }),
+        ),
+      ).toBe("processed");
+      expect(authTest).toHaveBeenCalledTimes(1);
+      expect(published).toHaveLength(1);
+      expect(String(published[0]!.payload.prompt)).not.toContain("@mention");
+      expect((published[0]!.payload.context as MessageContext).botTag).toBeUndefined();
+      await service.stop();
+    }
   });
 
   it("coalesces concurrent auth.test discovery for foreign bot messages", async () => {
@@ -4482,6 +5060,43 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
     expect(actorResolutionForSource(source, context)).toBe("resolved");
   });
 
+  it("never resolves a Slack sender from a stale chat participant row", async () => {
+    const identity = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: UUID,
+      platformSenderId: "U123",
+      contactIdentity: "U123",
+      displayName: "Luis",
+      intakeMode: "pending",
+      source: "test",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-s1", eventId: "EvS1", user: "U123", ts: "1713000040.000100" }),
+    );
+    const canonicalChatId = (published[0]!.payload.source as MessageTarget).canonicalChatId!;
+
+    unlinkContactIdentity(identity.platformIdentity!.id);
+    // A participant row written before the unlink still names the old contact.
+    dbUpsertChatParticipant({
+      chatId: canonicalChatId,
+      contactId: identity.contact!.id,
+      normalizedPlatformUserId: "U123",
+      role: "member",
+      status: "active",
+      source: "inbound_message",
+    });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-s2", eventId: "EvS2", user: "U123", ts: "1713000041.000100" }),
+    );
+    expect(published).toHaveLength(2);
+    const source = published[1]!.payload.source as MessageTarget;
+    expect(source.contactId).not.toBe(identity.contact!.id);
+    expect(source.identityProvenance).not.toMatchObject({ source: "chat_participants" });
+  });
+
   it("resolves an identity stored under the configured slug when Slack addresses the UUID", async () => {
     const identity = ensureContactFromInbound({
       channel: "slack",
@@ -4863,4 +5478,65 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
     });
     expect(actorResolutionForSource(secondSource, secondContext)).toBe("missing_contact");
   });
+});
+
+describe("Slack inbound envelope write retry", () => {
+  let retryStateDir: string | null = null;
+
+  beforeEach(async () => {
+    retryStateDir = await createIsolatedRaviState("ravi-slack-inbound-lock-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(retryStateDir);
+    retryStateDir = null;
+  });
+
+  it("retries the accept while another writer holds the lock instead of dropping the delivery", () => {
+    const dbPath = join(retryStateDir!, "ravi.db");
+    // Materialize the schema before the lock holder starts.
+    pruneProcessedSlackInboundEnvelopes({ scopeId: "slack-instance-1", olderThan: 1 });
+    const marker = join(retryStateDir!, "lock-held.marker");
+    // Hold the SQLite write lock past the 5s busy_timeout: without the retry the
+    // accept throws "database is locked" and the Slack delivery is lost.
+    const holder = spawn(
+      process.execPath,
+      [
+        "-e",
+        [
+          'const { Database } = require("bun:sqlite");',
+          'const fs = require("node:fs");',
+          "const db = new Database(process.env.DB_PATH);",
+          'db.exec("BEGIN IMMEDIATE");',
+          'fs.writeFileSync(process.env.MARKER, "1");',
+          "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5300);",
+          'db.exec("COMMIT");',
+          "db.close();",
+        ].join("\n"),
+      ],
+      { env: { ...process.env, DB_PATH: dbPath, MARKER: marker }, stdio: "ignore" },
+    );
+    try {
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(marker) && Date.now() < deadline) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+      }
+      expect(existsSync(marker)).toBe(true);
+
+      const accepted = acceptSlackInboundEnvelope({
+        scopeId: "slack-instance-1",
+        envelopeId: "envelope-lock-retry",
+        envelope: {
+          envelope_id: "envelope-lock-retry",
+          payload: {
+            event: { type: "message", channel: "C123", user: "U123", text: "retry", ts: "1713000000.000300" },
+          },
+        } as SlackSocketEnvelope,
+      });
+      expect(accepted.status).toBe("accepted");
+      expect(getSlackInboundEnvelope("slack-instance-1", "envelope-lock-retry")?.state).toBe("accepted");
+    } finally {
+      holder.kill();
+    }
+  }, 15_000);
 });

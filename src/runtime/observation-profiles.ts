@@ -172,6 +172,7 @@ Source agent: {{source.agentId}}
 Observer role: {{binding.observerRole}}
 Observer mode: {{binding.observerMode}}
 Delivery: realtime
+Delivery id: {{delivery.id}}
 Events: {{delivery.eventCount}}
 Run: {{delivery.runId}}
 
@@ -192,6 +193,7 @@ Source agent: {{source.agentId}}
 Observer role: {{binding.observerRole}}
 Observer mode: {{binding.observerMode}}
 Delivery: debounce
+Delivery id: {{delivery.id}}
 Events: {{delivery.eventCount}}
 Run: {{delivery.runId}}
 
@@ -218,6 +220,7 @@ Observer mode: {{binding.observerMode}}
 Rule: {{binding.ruleId}}
 Profile: {{profile.id}}@{{profile.version}}
 Delivery: end_of_turn
+Delivery id: {{delivery.id}}
 Events: {{delivery.eventCount}}
 Run: {{delivery.runId}}
 
@@ -772,8 +775,9 @@ function truncate(value: string, max = 500): string {
 }
 
 function formatPayloadSummary(payload?: Record<string, unknown>): string {
-  if (!payload || Object.keys(payload).length === 0) return "-";
-  return Object.entries(payload)
+  const entries = Object.entries(payload ?? {}).filter(([key]) => key !== "detail");
+  if (entries.length === 0) return "-";
+  return entries
     .slice(0, 12)
     .map(([key, value]) => {
       if (value === null || value === undefined) return `${key}=`;
@@ -821,8 +825,17 @@ interface ObserverProfileRenderEvent {
   payload?: Record<string, unknown>;
 }
 
+function readEventDetail(event: ObserverProfileRenderEvent): Record<string, unknown> {
+  const detail = event.payload?.detail;
+  return detail && typeof detail === "object" && !Array.isArray(detail) ? (detail as Record<string, unknown>) : {};
+}
+
 function buildEventContext(event: ObserverProfileRenderEvent): Record<string, unknown> {
+  const detail = readEventDetail(event);
   return {
+    // Full text and tool input exist only when the binding reads detail; otherwise they fall back.
+    detailText: typeof detail.text === "string" && detail.text ? detail.text : event.preview || "-",
+    toolInput: typeof detail.input === "string" && detail.input ? detail.input : "-",
     id: event.id,
     type: event.type,
     timestamp: event.timestamp,
@@ -843,6 +856,8 @@ function buildBaseRenderContext(input: {
   deliveryPolicy: ObserverProfileDeliveryPolicy;
   renderedEvents?: string;
   event?: ObserverProfileRenderEvent;
+  input?: Record<string, unknown>;
+  deliveryId?: string;
 }): Record<string, unknown> {
   const instructions = observerInstructions(input.binding);
   // One hash per delivery: the idempotency key and the boundary token are two slices of the same
@@ -885,6 +900,7 @@ function buildBaseRenderContext(input: {
     },
     delivery: {
       policy: input.deliveryPolicy,
+      id: input.deliveryId ?? "-",
       runId: input.runId ?? "-",
       eventCount: input.events.length,
       timestamp: Date.now(),
@@ -901,7 +917,7 @@ function buildBaseRenderContext(input: {
       types: [...new Set(input.events.map((event) => event.type))].join(", "),
     },
     event: input.event ? buildEventContext(input.event) : {},
-    input: {},
+    input: input.input ?? {},
   };
 }
 
@@ -929,6 +945,7 @@ export function renderObservationEventMarkdown(input: {
   event: ObserverProfileRenderEvent;
   deliveryPolicy: ObserverProfileDeliveryPolicy;
   runId?: string;
+  input?: Record<string, unknown>;
 }): string {
   const { key, template } = eventTemplateFor(input.profile, input.event.type);
   return renderStrictObserverTemplate(
@@ -972,6 +989,9 @@ export function renderObservationPromptForProfile(input: {
   events: ObserverProfileRenderEvent[];
   deliveryPolicy?: ObserverProfileDeliveryPolicy;
   runId?: string;
+  deliveryId?: string;
+  /** Producer-supplied context under the `input` root. */
+  input?: Record<string, unknown>;
 }): string {
   const deliveryPolicy = input.deliveryPolicy ?? input.binding.deliveryPolicy;
   const renderedEvents = neutralizeObservationBoundary(
@@ -999,6 +1019,23 @@ export function renderObservationPromptForProfile(input: {
     },
   ).trim();
 }
+
+/** Sample `input` for previews and validation, shaped like a producer's. */
+const REPRESENTATIVE_PREVIEW_INPUT: Record<string, unknown> = {
+  trigger: "end_of_turn",
+  task: {
+    id: "task-preview",
+    title: "Example task",
+    status: "in_progress",
+    progress: "40",
+    instructions: "Example task instructions.",
+    brief: "/tmp/task-preview/TASK.md",
+    checklist: "- [x] First step\n- [ ] Second step",
+    lastStatus: "progress",
+    lastMessage: "First step done.",
+    nudges: "0",
+  },
+};
 
 function representativePreviewEvent(eventType: string): ObserverProfileRenderEvent {
   return {
@@ -1047,6 +1084,7 @@ export function previewObserverProfile(profileId: string, eventType = "message.u
       event,
       deliveryPolicy: profile.defaults.deliveryPolicy,
       runId: "run-preview",
+      input: REPRESENTATIVE_PREVIEW_INPUT,
     }),
     prompt: renderObservationPromptForProfile({
       profile,
@@ -1054,6 +1092,7 @@ export function previewObserverProfile(profileId: string, eventType = "message.u
       binding,
       events: [event],
       runId: "run-preview",
+      input: REPRESENTATIVE_PREVIEW_INPUT,
     }),
   };
 }
@@ -1096,6 +1135,7 @@ function validateProfile(profile: ResolvedObserverProfile): void {
         events: [representativePreviewEvent("message.user")],
         renderedEvents: "Rendered event",
         event: representativePreviewEvent("message.user"),
+        input: REPRESENTATIVE_PREVIEW_INPUT,
       }),
       {
         profileId: profile.id,

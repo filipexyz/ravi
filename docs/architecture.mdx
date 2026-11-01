@@ -49,7 +49,7 @@ Ravi runs as PM2 processes. Each one is started by a different command.
 
 `ravi daemon start` starts only `ravi`. If you use Slack, you also run `ravi channels start` once. If you skip Omni because you only use Slack, you run your own `nats-server` under PM2 instead of `omni-nats` (see [Install](/start/install)).
 
-Restarting the daemon does not restart the runner, and the other way around. `ravi update` restarts both.
+Restarting the daemon does not restart the runner, and the other way around. `ravi update` restarts only the processes that were online before it ran. When native channels are enabled and `ravi-channels` was not running, it warns, and you start the runner with `ravi channels start`.
 
 ## NATS JetStream: the bus
 

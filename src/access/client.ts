@@ -18,7 +18,9 @@
  * shows only to the installation that made the request.
  */
 
+import { turnLinkContract } from "../identity-link/turn-link-copy.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
+import { turnRefusalCopy, turnRefusalDetails, type TurnRefusalReason } from "../cloud-auth/turn-refusal.js";
 import { createAuthenticatedPagesContext, type PagesClientDeps, type PagesClientOptions } from "../pages/client.js";
 import {
   accessActorBody,
@@ -66,6 +68,8 @@ export class AccessActorRefusedError extends Error {
   constructor(
     message: string,
     readonly actorPrincipal: string,
+    /** Why the turn was refused, when the classification said. */
+    readonly reason?: TurnRefusalReason,
   ) {
     super(message);
     this.name = "AccessActorRefusedError";
@@ -75,7 +79,9 @@ export class AccessActorRefusedError extends Error {
 /** The turn's actor, or AccessActorRefusedError. Never falls back to the operator. */
 export function requireAccessActor(deps: AccessActorDeps = {}): ActingDecision {
   const decision = resolveAccessActor(deps);
-  if (decision.kind === "refused") throw new AccessActorRefusedError(decision.message, decision.actorPrincipal);
+  if (decision.kind === "refused") {
+    throw new AccessActorRefusedError(decision.message, decision.actorPrincipal, decision.reason);
+  }
   return decision;
 }
 
@@ -84,7 +90,7 @@ export function requireOperatorActor(deps: AccessActorDeps, what: string): Actin
   const decision = requireAccessActor(deps);
   if (decision.kind !== "operator") {
     throw new AccessActorRefusedError(
-      `Only the operator can ${what} from here: this turn comes from someone else, and Console cannot check their role on this route.`,
+      `Only the operator can ${what} from here: this turn comes from someone else, and Console cannot check their role on this route. Ask the operator to run it in the terminal.`,
       `contact:${decision.contactId}`,
     );
   }
@@ -567,17 +573,23 @@ export function describeAccessFailure(error: unknown, op: AccessOperation): Acce
       code: error.code,
       message: error.message,
       exitCode: 3,
-      details: {
-        suggestedAction:
-          "do not retry from this turn; the person can ask from their own chat, or the operator can run the command in the terminal",
-      },
+      details: error.reason
+        ? {
+            ...turnRefusalDetails(error.reason),
+            suggestedAction: turnRefusalCopy(error.reason, "access").suggestedAction,
+          }
+        : // Operator-only routes (`requireOperatorActor`): the same chat cannot get there.
+          { suggestedAction: "do not retry from this turn; ask the operator to run the command in the terminal" },
     };
   }
   if (!(error instanceof CloudAuthError)) return null;
   const reason = typeof error.details?.reason === "string" ? error.details.reason : undefined;
   const withReason = (details: Record<string, unknown>) => (reason ? { reason, ...details } : details);
   switch (error.code) {
-    case "ACTOR_NOT_LINKED":
+    case "ACTOR_NOT_LINKED": {
+      // The client already started the person's link; say what happens next.
+      const started = turnLinkContract(error.details?.linkFlow);
+      if (started) return { code: "ACTOR_NOT_LINKED", message: started.message, exitCode: 3, details: started.details };
       return {
         code: "ACTOR_NOT_LINKED",
         message:
@@ -585,6 +597,7 @@ export function describeAccessFailure(error: unknown, op: AccessOperation): Acce
         exitCode: 3,
         details: { suggestedAction: "run `ravi link` from the person's own chat turn, then retry the same command" },
       };
+    }
     case "PROJECT_ACCESS_DENIED":
       return {
         code: "PROJECT_ACCESS_DENIED",

@@ -14,6 +14,12 @@ import { publishSessionPrompt } from "./session-stream.js";
 import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
 import { channelMessagePrefixDelivery, parseChannelMessagePrefix } from "../channels/message-prefix.js";
 import { handleSlashCommand } from "../slash/index.js";
+import {
+  handleLinkingDirectMessage,
+  isLinkingDirectMessage,
+  type LinkingDirectMessage,
+} from "../identity-link/link-dm-flow.js";
+import { interceptCloudChatMessage } from "../cloud-agents/chat-routing.js";
 import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
 import { promisify } from "node:util";
 
@@ -68,7 +74,7 @@ import {
 } from "../session-trace/channel-trace.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
-import { canonicalizeRouteIdentity, isBroadcastJid, normalizePhone } from "../utils/phone.js";
+import { canonicalizeRouteIdentity, isBroadcastJid, normalizePhone, parseJid } from "../utils/phone.js";
 import type {
   MessageActorMetadata,
   MessageContext,
@@ -225,12 +231,48 @@ interface ReactionReceivedPayload {
 /**
  * Strip @-suffix from JID to get the phone/id portion.
  * "5511999999999@s.whatsapp.net" → "5511999999999"
+ * "5511999999999:12@s.whatsapp.net" → "5511999999999" (device is transport)
  * "120363xxx@g.us" → "120363xxx"
  * "5511999999999" → "5511999999999"
  */
 function stripJid(jid: string): string {
-  const atIdx = jid.indexOf("@");
-  return atIdx !== -1 ? jid.slice(0, atIdx) : jid;
+  const trimmed = jid.trim();
+  const parsed = parseJid(trimmed);
+  // parseJid removes the WhatsApp device suffix (`:12`), which is not part of
+  // the identity: the same number must resolve whether the provider includes
+  // it or not. LIDs/groups keep their own canonicalization downstream.
+  if (parsed && !parsed.isLid && !parsed.isGroup) return parsed.user;
+  const atIdx = trimmed.indexOf("@");
+  const bare = atIdx !== -1 ? trimmed.slice(0, atIdx) : trimmed;
+  // Only WhatsApp-shaped ids own a device suffix; other channels may use a
+  // colon inside their own opaque ids and must not be truncated.
+  const whatsappJid = /@(?:s\.whatsapp\.net|lid|g\.us)$/i.test(trimmed);
+  const barePhoneWithDevice = /^\d+:\d+$/.test(trimmed);
+  if (whatsappJid || barePhoneWithDevice) {
+    const deviceIdx = bare.indexOf(":");
+    if (deviceIdx !== -1) return bare.slice(0, deviceIdx);
+  }
+  return bare;
+}
+
+/**
+ * Provider metadata that says the linked account itself sent this message.
+ * It is a strong echo signal: keep the ledger row, never open a turn.
+ */
+function isProviderSelfEcho(rawPayload: Record<string, unknown> | undefined): boolean {
+  if (!rawPayload) return false;
+  const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+    value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  const key = asRecord(rawPayload.key);
+  const messageKey = asRecord(asRecord(rawPayload.message)?.key);
+  return [
+    rawPayload.fromMe,
+    rawPayload.isFromMe,
+    key?.fromMe,
+    key?.isFromMe,
+    messageKey?.fromMe,
+    messageKey?.isFromMe,
+  ].some((value) => value === true);
 }
 
 function isUrgentInboundText(text: string): boolean {
@@ -379,6 +421,12 @@ export class OmniConsumer {
   /** Dedup set for recently processed event IDs (prevents double-processing) */
   private readonly processedEvents = new Set<string>();
   private readonly DEDUP_MAX = 500;
+  /** Separate bounded set for inbound message redelivery (kept apart from reaction dedup). */
+  private readonly processedInboundMessages = new Set<string>();
+  private readonly INBOUND_DEDUP_MAX = 2_000;
+  /** In-flight inbound keys: claimed before post-ledger dispatch, completed only on success/final no-turn. */
+  private readonly inboundMessagesInFlight = new Map<string, number>();
+  private readonly INBOUND_IN_FLIGHT_TTL_MS = 600_000;
 
   constructor(
     private sender: OmniSender,
@@ -389,6 +437,10 @@ export class OmniConsumer {
       formatGroupMembers?: typeof formatOmniGroupMembersForPrompt;
       isRuntimeSessionActive?: (sessionName: string) => boolean;
       abortRuntimeSession?: (sessionName: string, provenance: RuntimeAbortProvenance) => boolean;
+      /** Answers a private message of a person in the `ravi link` flow; true when it took the message. */
+      answerLinkingDm?: (message: LinkingDirectMessage) => Promise<boolean>;
+      /** Hands a cloud run's person's reply to the run; true when it took the message. */
+      interceptCloudChat?: typeof interceptCloudChatMessage;
     } = {},
   ) {
     this.typingPresence = new TypingPresenceHeartbeat(
@@ -400,6 +452,17 @@ export class OmniConsumer {
       this.options.isRuntimeSessionActive,
       (event) => this.observeTypingPresence(event),
     );
+  }
+
+  private async answerLinkingDm(message: LinkingDirectMessage): Promise<boolean> {
+    try {
+      if (this.options.answerLinkingDm) return await this.options.answerLinkingDm(message);
+      if (!isLinkingDirectMessage(message)) return false;
+      return await handleLinkingDirectMessage(message);
+    } catch (error) {
+      log.warn("Link flow failed on a private message", { accountId: message.accountId, error });
+      return false;
+    }
   }
 
   /**
@@ -596,6 +659,54 @@ export class OmniConsumer {
     return message.includes("stream not found") || message.includes("consumer not found");
   }
 
+  /** Remember a processed event key with bounded retention. */
+  private rememberProcessedEvent(key: string): void {
+    this.processedEvents.add(key);
+    while (this.processedEvents.size > this.DEDUP_MAX) {
+      const first = this.processedEvents.values().next().value;
+      if (first === undefined) break;
+      this.processedEvents.delete(first);
+    }
+  }
+
+  /** Remember an already-dispatched inbound message with bounded retention. */
+  private rememberProcessedInboundMessage(key: string): void {
+    this.processedInboundMessages.add(key);
+    while (this.processedInboundMessages.size > this.INBOUND_DEDUP_MAX) {
+      const first = this.processedInboundMessages.values().next().value;
+      if (first === undefined) break;
+      this.processedInboundMessages.delete(first);
+    }
+  }
+
+  /**
+   * Claim an inbound key before post-ledger work. Completed keys stay claimed;
+   * concurrent copies see the in-flight entry; stale entries expire so an
+   * interrupted handler never blocks a legitimate retry forever.
+   */
+  private claimInboundMessage(key: string): boolean {
+    const now = Date.now();
+    for (const [candidate, claimedAt] of this.inboundMessagesInFlight) {
+      if (now - claimedAt > this.INBOUND_IN_FLIGHT_TTL_MS) this.inboundMessagesInFlight.delete(candidate);
+    }
+    if (this.processedInboundMessages.has(key) || this.inboundMessagesInFlight.has(key)) return false;
+    this.inboundMessagesInFlight.set(key, now);
+    return true;
+  }
+
+  /** The inbound reached a terminal outcome (a turn or an intentional no-turn). */
+  private completeInboundMessage(key: string | undefined): void {
+    if (!key) return;
+    this.inboundMessagesInFlight.delete(key);
+    this.rememberProcessedInboundMessage(key);
+  }
+
+  /** The inbound did not reach a terminal outcome: allow a retry. */
+  private releaseInboundMessage(key: string | undefined): void {
+    if (!key) return;
+    this.inboundMessagesInFlight.delete(key);
+  }
+
   /**
    * Handle message.received event from omni.
    */
@@ -655,6 +766,9 @@ export class OmniConsumer {
 
     // Derive phone and group status from JIDs
     const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
+    // The provider telling us the linked account sent this is a strong echo
+    // signal. It must not depend on us resolving the agent identity first.
+    const providerSelfEcho = isProviderSelfEcho(rawPayload);
     let editInfo = this.extractMessageEditInfo(payload, rawPayload);
     const normalizedMentionText = normalizeInboundMentionText({
       text: editInfo?.newText ?? payload.content?.text,
@@ -831,6 +945,7 @@ export class OmniConsumer {
       explicitResolvedWhatsAppPhone(explicitResolvedSender) !== null &&
       senderPlatformIdentity?.ownerType !== "agent";
     const shouldRunContactIntake =
+      !providerSelfEcho &&
       senderPlatformIdentity?.ownerType !== "agent" &&
       ((intakeMode !== "off" && (!isGroup || Boolean(explicitResolvedSender))) || linkResolvedLidToExistingContact);
 
@@ -894,7 +1009,13 @@ export class OmniConsumer {
       }
     }
 
-    const actorType = senderPlatformIdentity?.ownerType === "agent" ? "agent" : senderContact ? "contact" : "unknown";
+    const actorType = providerSelfEcho
+      ? "agent"
+      : senderPlatformIdentity?.ownerType === "agent"
+        ? "agent"
+        : senderContact
+          ? "contact"
+          : "unknown";
     const actorAgentId =
       senderPlatformIdentity?.ownerType === "agent" ? (senderPlatformIdentity.ownerId ?? undefined) : undefined;
     const sourceActorMetadata: MessageActorMetadata = {
@@ -1029,6 +1150,81 @@ export class OmniConsumer {
       return;
     }
 
+    // Provider redelivery (JetStream retry on a producer, or the same provider
+    // message id arriving twice) must not open a second turn. The ledger above
+    // is idempotent on `providerMessageId`; edits keep their own event ids and
+    // bypass this guard.
+    const dedupKey = !editInfo && payload.externalId ? `${instanceId}:${chatJid}:${payload.externalId}` : undefined;
+    if (dedupKey) {
+      if (!this.claimInboundMessage(dedupKey)) {
+        log.debug("Inbound message already dispatched; skipping duplicate turn", {
+          instanceId,
+          accountId: effectiveAccountId,
+          chatId: chatJid,
+          externalId: payload.externalId,
+          canonicalChatId: canonicalChat.id,
+        });
+        return;
+      }
+    }
+
+    // A person asked to link their Console account writes here in private:
+    // the daemon answers with the approval link, with no agent turn and
+    // before any route or DM policy, so it works even where unknown DMs are
+    // held for review (src/identity-link/link-dm-flow.ts).
+    if (
+      sessionChannel === "whatsapp" &&
+      !isGroup &&
+      !threadId &&
+      !editInfo &&
+      effectiveActorType === "contact" &&
+      effectiveContactId
+    ) {
+      const linkingDm: LinkingDirectMessage = {
+        contactId: effectiveContactId,
+        channel: sessionChannel,
+        accountId: effectiveAccountId,
+        chatId: chatJid,
+        routePattern: routePhone,
+        platformUserId: effectiveRawSenderId,
+        platformIdentityId: effectivePlatformIdentityId ?? null,
+        displayName: rawPayloadString(rawPayload, "pushName") ?? null,
+      };
+      if (await this.answerLinkingDm(linkingDm)) {
+        log.info("Private message answered by the link flow", {
+          accountId: effectiveAccountId,
+          canonicalChatId: canonicalChat.id,
+        });
+        this.completeInboundMessage(dedupKey);
+        return;
+      }
+    }
+
+    // A cloud run's person answering in chat (`aprovar <código>`, `@run ...`
+    // in a group bound to a run): the run gets it, not the agent, before any
+    // route or mention policy (src/cloud-agents/chat-routing.ts).
+    if (
+      !editInfo &&
+      effectiveActorType === "contact" &&
+      effectiveContactId &&
+      (await (this.options.interceptCloudChat ?? interceptCloudChatMessage)(
+        {
+          channel: sessionChannel,
+          accountId: effectiveAccountId,
+          instanceId,
+          chatId: chatJid,
+          isGroup,
+          contactId: effectiveContactId,
+          text: payload.content.text ?? "",
+          replyToId: payload.replyToId ?? null,
+        },
+        (text) => this.sender.send(instanceId, chatJid, text),
+      ))
+    ) {
+      this.completeInboundMessage(dedupKey);
+      return;
+    }
+
     // Match route (pure) — no DB writes yet. The session row is only
     // committed after every policy/scope gate passes so rejected inbounds
     // don't leave orphan sessions behind (spec contacts/identity-graph/
@@ -1066,6 +1262,7 @@ export class OmniConsumer {
           isGroup,
         });
       }
+      this.completeInboundMessage(dedupKey);
       return;
     }
 
@@ -1218,10 +1415,10 @@ export class OmniConsumer {
       }),
     );
 
-    if (effectiveActorType === "agent") {
+    if (effectiveActorType === "agent" || providerSelfEcho) {
       saveInboundMessageMeta();
       rejectRoute("agent_actor_observed", {
-        reason: "agent_actor_observed",
+        reason: providerSelfEcho && effectiveActorType !== "agent" ? "provider_self_echo" : "agent_actor_observed",
         actorAgentId: effectiveActorAgentId ?? null,
         platformIdentityId: effectivePlatformIdentityId ?? null,
         routeSessionKey: matched.sessionKey,
@@ -1233,8 +1430,10 @@ export class OmniConsumer {
         chatId: chatJid,
         senderId: senderPhone,
         actorAgentId: effectiveActorAgentId,
+        providerSelfEcho,
         routeSessionKey: matched.sessionKey,
       });
+      this.completeInboundMessage(dedupKey);
       return;
     }
 
@@ -1265,6 +1464,7 @@ export class OmniConsumer {
       if (groupPolicy === "closed") {
         log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
         rejectRoute("group_closed", { groupPolicy, chatJid, accountId: effectiveAccountId });
+        this.completeInboundMessage(dedupKey);
         return;
       }
       if (groupPolicy === "allowlist") {
@@ -1297,6 +1497,7 @@ export class OmniConsumer {
             accountId: effectiveAccountId,
             contactStatus: contact?.status ?? null,
           });
+          this.completeInboundMessage(dedupKey);
           return;
         }
       }
@@ -1309,6 +1510,7 @@ export class OmniConsumer {
       if (dmPolicy === "closed") {
         log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
         rejectRoute("dm_closed", { dmPolicy, senderPhone, accountId: effectiveAccountId });
+        this.completeInboundMessage(dedupKey);
         return;
       }
       if (dmPolicy === "pairing") {
@@ -1340,6 +1542,7 @@ export class OmniConsumer {
             accountId: effectiveAccountId,
             contactStatus: contact?.status ?? null,
           });
+          this.completeInboundMessage(dedupKey);
           return;
         }
       }
@@ -1353,6 +1556,7 @@ export class OmniConsumer {
       if (!isContactAllowedForAgent(checkId, matched.agent.id)) {
         log.info("Contact not allowed for agent", { checkId, agentId: matched.agent.id });
         rejectRoute("agent_contact_scope_denied", { checkId, agentId: matched.agent.id, isGroup });
+        this.completeInboundMessage(dedupKey);
         return;
       }
     }
@@ -1487,11 +1691,16 @@ export class OmniConsumer {
     const agentCwd = expandHome(agent.cwd);
     const mediaResult = await this.processMedia(payload, agentCwd, instanceId);
 
-    saveInboundMessageMeta({
-      transcription: mediaResult?.transcript,
-      mediaPath: mediaResult?.localPath,
-      mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
-    });
+    try {
+      saveInboundMessageMeta({
+        transcription: mediaResult?.transcript,
+        mediaPath: mediaResult?.localPath,
+        mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
+      });
+    } catch (error) {
+      this.releaseInboundMessage(dedupKey);
+      throw error;
+    }
 
     // Extract reply/quoted message context (works across all channels)
     const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);
@@ -1571,6 +1780,7 @@ export class OmniConsumer {
         replyMediaPath,
       );
       // Sentinel: observe silently, no typing indicator, no source
+      let sentinelPublished = false;
       try {
         const sentinelPrompt = `${sentinelEnvelope}\n(sentinel — observe, use whatsapp dm send --execute to reply if instructed)`;
         await publishSessionPrompt(sessionName, {
@@ -1579,9 +1789,12 @@ export class OmniConsumer {
           context,
           ...prefixDelivery,
         });
+        sentinelPublished = true;
       } catch (err) {
         log.error("Failed to publish sentinel prompt", err);
       }
+      if (sentinelPublished) this.completeInboundMessage(dedupKey);
+      else this.releaseInboundMessage(dedupKey);
       return;
     }
 
@@ -1600,7 +1813,10 @@ export class OmniConsumer {
           await this.sender.send(instanceId, cId, text);
         },
       });
-      if (handled) return;
+      if (handled) {
+        this.completeInboundMessage(dedupKey);
+        return;
+      }
     }
 
     // Active mode: send typing indicator, emit prompt with source
@@ -1624,6 +1840,7 @@ export class OmniConsumer {
       context,
     });
     if (commandExpansion.status === "failed") {
+      this.releaseInboundMessage(dedupKey);
       return;
     }
 
@@ -1705,11 +1922,13 @@ export class OmniConsumer {
         context,
         ...prefixDelivery,
       });
+      this.completeInboundMessage(dedupKey);
     } catch (err) {
       log.error("Failed to publish prompt", err);
       if (!skipTurn) {
         await this.clearActiveTarget(sessionName);
       }
+      this.releaseInboundMessage(dedupKey);
     }
   }
 
@@ -2139,11 +2358,7 @@ export class OmniConsumer {
     // Dedup: omni publishes duplicate events with different IDs for the same reaction
     const dedupKey = `${payload.messageId}:${payload.emoji}:${senderId}`;
     if (this.processedEvents.has(dedupKey)) return;
-    this.processedEvents.add(dedupKey);
-    if (this.processedEvents.size > this.DEDUP_MAX) {
-      const first = this.processedEvents.values().next().value;
-      if (first) this.processedEvents.delete(first);
-    }
+    this.rememberProcessedEvent(dedupKey);
 
     log.info("Reaction received", {
       messageId: payload.messageId,

@@ -1,7 +1,9 @@
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import type { ContextCapability } from "../router/router-db.js";
+import { normalizeLibrarySkillId, parseLibraryRef } from "../library/refs.js";
 import {
   isKnownRaviSkillDirectory,
+  librarySkillCoveredBySkillCapability,
   officialSkillImpliedByCapabilities,
   resolveKnownRaviSkill,
   skillCoveredBySkillCapability,
@@ -49,6 +51,15 @@ export function skillNotAuthorizedCopy(
 ): SkillNotAuthorizedCopy {
   const skill = skillName.trim() || "<skill>";
   const agent = agentId?.trim();
+  const library = parseLibraryRef(skill);
+  if (library) {
+    return {
+      message: agent
+        ? `Skill '${library.ref}' is not authorized for agent '${agent}'.`
+        : `Skill '${library.ref}' is not authorized for this agent.`,
+      suggestedAction: `It is a Library skill: grant it ('ravi skills grant ${agent || "<agent>"} ${library.ref}') or give the agent the 'use:skill:${library.id}' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.`,
+    };
+  }
   const known = skillName.trim() ? resolveKnownRaviSkill(skill) : null;
   const target = known?.name ?? skill;
   const grant = `'ravi skills grant ${agent || "<agent>"} ${target}'`;
@@ -139,6 +150,10 @@ export function isSkillAuthorizedForAgent(
   options: SkillAuthorizationOptions = {},
 ): boolean {
   if (!agentId?.trim()) return true;
+  // A Library ref or id (`org/x`, `clinica/x`, `org:x`) names a Library
+  // skill, never a local one: it takes the Library path only.
+  const library = parseLibraryRef(skillName);
+  if (library) return isLibrarySkillAuthorizedForAgent(agentId, library.id, options);
   const resolved = resolveConfiguredAgentSkills(agentId);
   if (!resolved.hasConfiguration) return true;
   // Names only the agent's `use:skill:<id>` capabilities put on the allowlist
@@ -157,4 +172,30 @@ export function isSkillAuthorizedForAgent(
 
   const capabilities = options.capabilities ?? materializeSubjectCapabilities("agent", agentId);
   return skillAuthorizedByCapabilities(capabilities, skillName, options.skillPath);
+}
+
+/**
+ * Library skills are authorized like local skills (spec `skills/library`):
+ * an agent without skill configuration passes; otherwise a grant or a Console
+ * pin of the exact id (`org:<slug>`, `project:<projectSlug>:<slug>`) or a capability covering
+ * it (`admin:system:*`, `use:skill:*`, `use:skill:org:*`, ...). Supplied turn
+ * capabilities are the ceiling for the capability path; grants still apply.
+ */
+export function isLibrarySkillAuthorizedForAgent(
+  agentId: string | undefined,
+  libraryId: string,
+  options: Pick<SkillAuthorizationOptions, "capabilities"> = {},
+): boolean {
+  if (!agentId?.trim()) return true;
+  const resolved = resolveConfiguredAgentSkills(agentId);
+  if (!resolved.hasConfiguration) return true;
+  const id = normalizeLibrarySkillId(libraryId);
+  if (resolved.libraryGrants.includes(id) || resolved.libraryPins.includes(id)) return true;
+  const capabilities = options.capabilities ?? materializeSubjectCapabilities("agent", agentId);
+  return librarySkillCoveredBySkillCapability(capabilities, id);
+}
+
+/** Whether the agent holds a grant naming exactly this Library id. */
+export function agentHasLibraryGrant(agentId: string, libraryId: string): boolean {
+  return resolveConfiguredAgentSkills(agentId).libraryGrants.includes(normalizeLibrarySkillId(libraryId));
 }

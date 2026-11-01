@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { ensureConnected, getNats } from "../nats.js";
 import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
+import { isSilentTokenText } from "../silent-token.js";
 import { logger } from "../utils/logger.js";
 import type { ChannelChatActionContent } from "./chat-actions.js";
-import { markdownToSlackMrkdwn } from "./slack/mrkdwn.js";
 
 const log = logger.child("channels:outbound-stream");
 const sc = StringCodec();
@@ -52,6 +52,8 @@ export interface ChannelOutboundRequest {
     | {
         type: "text";
         text: string;
+        /** `markdown`: the delivering adapter renders `text` (Slack: Block Kit). */
+        format?: "markdown";
       }
     | ChannelChatActionContent;
   idempotencyKey: string;
@@ -82,6 +84,7 @@ export interface ChannelTextOutboundJobInput {
   idempotencyKey: string;
   target: MessageTarget;
   text: string;
+  format?: "markdown";
   responsePhase?: string;
   canonicalMessageId?: string;
   metadata?: ResponseMessage["metadata"];
@@ -275,8 +278,11 @@ export function buildChannelOutboundJobFromResponse(
 
   const rawText = response.error ? `Error: ${response.error}` : response.response;
   if (!rawText) return { ok: false, reason: "empty_response" };
-  if (rawText.trim() === "@@SILENT@@") return { ok: false, reason: "silent_response" };
-  const text = formatChannelOutboundText(target.channel, rawText);
+  // Last boundary before the channel job: a marker-only delivery is silence,
+  // including whitespace/truncated variants. Mixed prose is left untouched.
+  if (isSilentTokenText(rawText)) return { ok: false, reason: "silent_response" };
+  // Slack renders the agent's Markdown at delivery (Block Kit), so it travels as written.
+  const markdown = isSlackChannel(target.channel);
 
   const now = options.now ?? Date.now();
   const requestId = `runtime:${sessionName}:${emitId}`;
@@ -309,7 +315,8 @@ export function buildChannelOutboundJobFromResponse(
         },
         content: {
           type: "text",
-          text,
+          text: rawText,
+          ...(markdown ? { format: "markdown" as const } : {}),
         },
         idempotencyKey,
         target,
@@ -355,6 +362,7 @@ export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput):
       content: {
         type: "text",
         text: input.text,
+        ...(input.format ? { format: input.format } : {}),
       },
       idempotencyKey,
       target: input.target,
@@ -431,8 +439,8 @@ function isPublishAckTimeout(error: unknown): boolean {
   return code === "TIMEOUT" || name === "TIMEOUT" || message === "TIMEOUT" || message.includes("TIMEOUT");
 }
 
-function formatChannelOutboundText(channelId: string, text: string): string {
-  return channelId.trim().toLowerCase() === "slack" ? markdownToSlackMrkdwn(text) : text;
+function isSlackChannel(channelId: string): boolean {
+  return channelId.trim().toLowerCase() === "slack";
 }
 
 function formatErrorMessage(error: unknown): string {

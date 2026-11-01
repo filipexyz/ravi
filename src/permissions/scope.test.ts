@@ -592,6 +592,19 @@ describe("Scope Isolation", () => {
   // --------------------------------------------------------------------------
 
   describe("canAccessSession", () => {
+    it("ordinary session capabilities, admin and self shortcuts never authorize private humans", () => {
+      const ref = "console-00000000-0000-4000-8000-000000000001";
+      for (const ctx of [
+        {},
+        scopeCtx("dev", [cap("access", "session", "*")]),
+        scopeCtx("main", [cap("admin", "system", "*")]),
+        { agentId: "main", sessionName: ref },
+      ]) {
+        expect(canAccessSession(ctx, ref)).toBe(false);
+        expect(canModifySession(ctx, ref)).toBe(false);
+      }
+    });
+
     it("allows when no agentId (CLI direct)", () => {
       expect(canAccessSession({}, "any-session")).toBe(true);
     });

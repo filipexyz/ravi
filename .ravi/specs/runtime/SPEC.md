@@ -11,6 +11,7 @@ capabilities:
   - session-continuity
   - context-keys
   - observation-plane
+  - signals
   - traces
   - cloud-trace-export
 tags:
@@ -22,7 +23,7 @@ applies_to:
   - src/runtime
   - src/session-trace
   - src/bot.ts
-  - docs/runtime-provider-contract.md
+  - design/runtime-provider-contract.md
 owners:
   - ravi-dev
 status: active
@@ -40,7 +41,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 ## Current Abstractions
 
 - `RuntimeSessionDispatcher`: queueing, debounce, active-session reuse, interruption, restart decisions, concurrency, task delivery barriers.
-- `RuntimeSessionPool`: global live runtime pool with explicit pending-start backpressure, class-aware capacity, and traceable admission decisions.
+- `RuntimeSessionPool`: global live runtime pool with immediate admission, pressure eviction of idle sessions, class-aware capacity, and traceable refusal decisions.
 - `RuntimeSessionLauncher`: session/agent/provider resolution, user-message persistence, task runtime resolution, request build, provider start, event-loop handoff.
 - `RuntimeStartRequest`: provider-facing start contract.
 - `RuntimeSessionHandle`: live provider handle, event stream, interrupt, optional model switch, optional native control.
@@ -78,17 +79,19 @@ The runtime abstraction exists so new execution engines can be added without cop
 - Tool start/end lifecycle MUST be recorded through canonical `tool.started` and `tool.completed` events.
 - Runtime permissions MUST flow through Ravi host services or host hooks. Providers MUST NOT create a parallel permission model.
 - `adapter.request` trace MUST be recorded before provider handoff, including prompt hashes, system prompt hashes, model, provider, resume/fork state, delivery barrier, source, and capability summary.
-- Runtime pool backpressure MUST be represented as its own dispatch state. A session waiting for a pool slot MUST NOT be reported as an in-flight cold start until a slot has actually been reserved.
+- Runtime pool backpressure MUST be an immediate admission decision. Before refusing a start, the dispatcher MUST reclaim non-serving idle sessions without waiting for their TTL. When no eligible slot exists it MUST refuse immediately and preserve the complete prompt in a durable inbox before acknowledging transport delivery; it MUST NOT park a new capacity waiter or ask the user to resend. See `runtime/start-admission`.
 - Dispatch trace rows MUST use the canonical `session_key` when a session row exists. `session_name` MAY be included as a secondary lookup field, but MUST NOT replace the canonical key.
 - Cloud trace export MUST be asynchronous and best-effort by default. A failed export MUST NOT fail, block, or delay local runtime execution.
 - Background starts such as cron, trigger, heartbeat, task, and observation turns MUST NOT be able to consume all runtime start capacity when interactive channel sessions are waiting. The dispatcher SHOULD reserve a small configurable capacity lane for interactive sessions.
-- An operator-requested channel introduction (`_interactiveStart` on a channel `session.bootstrap` turn, including `whatsapp group create --agent`) MUST be admitted on the interactive lane. It MUST cold-start or queue as a real pending start. It MUST NOT be stashed with `_deferRuntimeStart` or wait indefinitely for a later human message. Turn provenance stays the channel bootstrap cause; only pool admission changes. Observers, task sessions, and prompts that are not a channel `session.bootstrap` MUST ignore `_interactiveStart`. Explicit `_deferRuntimeStart` remains an opt-in stash for a later interactive turn and MUST NOT be used for that greeting.
+- An operator-requested channel introduction (`_interactiveStart` on a channel `session.bootstrap` turn, including `whatsapp group create --agent`) MUST be admitted on the interactive lane. It MUST cold-start immediately when capacity is available, or receive an explicit capacity refusal with a durable inbox receipt. It MUST NOT be stashed with `_deferRuntimeStart` or wait indefinitely for a later human message. Turn provenance stays the channel bootstrap cause; only pool admission changes. Observers, task sessions, and prompts that are not a channel `session.bootstrap` MUST ignore `_interactiveStart`. Explicit `_deferRuntimeStart` remains an opt-in stash for a later interactive turn and MUST NOT be used for that greeting.
 - Provider turns that stop emitting runtime events MUST be bounded by a host-side inactivity timeout. On timeout the event loop MUST record `session.timeout` plus a terminal `turn.failed` snapshot with status `timeout`, request provider interruption before closing the transport when supported, preserve pending/current turn messages, and restart from the stashed queue when possible.
+- A recoverable provider transport restart MUST reserve the session for the duration of its backoff, so an inbound prompt queues into the stash instead of cold-starting a competing provider. After the backoff the dispatcher MUST recheck ownership: when a replacement provider already owns the session it MUST NOT start a second one and MUST hand the queued prompts to that live session; otherwise it MUST rebuild the restart prompt from the freshest stash before starting.
 - Provider compaction MUST suspend the after-tool inactivity timeout, including tool-result deliveries received while compacting. Leaving compaction MUST give an armed watch a fresh inactivity window; terminal events MUST clear it. Compaction time MUST NOT be classified as post-tool provider silence.
 - A provider adapter that can reconcile ambiguous delivery MUST advertise that strategy on its live session handle. Such a recovery MUST keep one stable client delivery id and reconcile it against compatible resumed provider state before deciding whether to reattach, hydrate a completed turn, or replay; failed/interrupted terminal replay additionally requires durable host authority. Without the advertised strategy, the host MUST NOT send an unsafe ambiguous turn back to the provider.
 - Inactivity recovery MUST have a bounded per-session circuit breaker. Exhaustion MUST remain internally observable and notify the operator without exposing raw runtime errors in an end-user channel.
 - Stalled-turn recovery MUST be explicit and traceable. Silent clearing of `turnActive` or dropping queued messages is forbidden.
-- An explicit session abort (reset, delete, kill, `ravi.session.abort`) MUST cancel a running tool through the provider's native interrupt and end the turn promptly, regardless of the tool's safety classification. The abort MAY be deferred only while a completed tool result is still being written back to the provider; that deferral MUST be released by `tool.result_delivered`. The `session.abort` trace and the `turn.interrupted` runtime event MUST identify the cancelled tool.
+- A releasable interactive prompt from another attached chat or thread MUST be able to yield the active physical turn. The scheduler MUST preserve FIFO between reply surfaces, keep each physical turn's reply target immutable, and retain unfinished work as a separate continuation behind already queued work. The continuation MUST inherit the original actor, authority, task/model overrides and channel binding, receive a fresh provider delivery id, and instruct the provider to continue from existing results rather than replay completed actions. It MUST wait for the intervening reply, not interrupt it. A yielded physical terminal MUST NOT terminalize the logical channel request before its continuation replies. Source-less/CLI boundaries and explicit after-response/task barriers remain intact.
+- An explicit session abort (reset, delete, kill, `ravi.session.abort`) MUST cancel a running tool through the provider's native interrupt and end the turn promptly, regardless of the tool's safety classification. It MUST also cancel yielded continuations, terminalize their logical channel requests, and remove them from both pending and restart queues before any abort deferral. Unrelated queued requests retain their existing semantics. The abort MAY be deferred only while a completed tool result is still being written back to the provider; that deferral MUST be released by `tool.result_delivered`. The `session.abort` trace and the `turn.interrupted` runtime event MUST identify the cancelled tool.
 - External compaction announcements (the user-facing "compacting"/"compacted" runtime responses) are user-facing runtime responses. They MUST default off. They MUST NOT be emitted unless `announceCompaction` is explicitly `"true"`. They MUST NOT be emitted for automation-originated turns (cron, trigger, session followup, heartbeat, and other background automation). Human/channel turns MAY emit them only when `announceCompaction` is enabled and sentinel mode does not suppress them. Compaction work, runtime status, traces, live state, and skill-visibility reset MUST still run when announcements are off.
 - Turn origin MUST be classified once per effective turn and snapshotted as `currentTurnProvenance`. `turn.origin` MUST describe the producer cause (`human`, `cron`, `trigger`, `session-followup`, `heartbeat`, `observer`, `task`, `daemon-restart`, and fallbacks), while actor authority and reply surface remain separate dimensions. A cron replying to a human chat is still a cron turn.
 - Pool admission, external compaction announcements, runtime trace/audit payloads, observer events, and trigger anti-loop checks MUST consume canonical turn provenance. Compatibility checks MAY remain for older event producers, but MUST NOT replace provenance.

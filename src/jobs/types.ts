@@ -25,8 +25,8 @@ export function isJobTerminal(status: JobStatus): boolean {
   return JOB_TERMINAL_STATUSES.includes(status);
 }
 
-/** Quem pediu o job. Promoção automática e pedido explícito contam histórias diferentes. */
-export type JobOrigin = "cli" | "agent" | "promotion";
+/** Quem pediu o job. Promoção automática, detach por tempo e pedido explícito contam histórias diferentes. */
+export type JobOrigin = "cli" | "agent" | "promotion" | "detach";
 
 export interface JobRecord {
   id: string;

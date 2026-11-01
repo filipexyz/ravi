@@ -6,10 +6,11 @@ import { join } from "node:path";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
+import { isCommentaryMetadata, isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
 import { nats } from "../nats.js";
-import { SILENT_TOKEN } from "../prompt-builder.js";
+import { isSilentTokenText, stripLeadingSilentMarker } from "../silent-token.js";
 import {
   dbInsertCostEvent,
   deleteSession,
@@ -22,7 +23,7 @@ import {
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
-import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
+import { getSessionTraceBlob, getSessionTurn, listSessionEventsByTurn } from "../session-trace/session-trace-db.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
@@ -91,6 +92,7 @@ import {
   publicRuntimeFailureDetail,
   shouldEmitUserFacingTurnFailure,
 } from "./public-failure.js";
+import { isTransportFailureMessage } from "./transport-failure.js";
 import {
   createTurnToolContinuationLedger,
   listOpenTurnToolNames,
@@ -104,6 +106,7 @@ import {
   createObservationEvent,
   deliverObservationEvents,
   getObservationDebounceMs,
+  getObservationPulseMs,
   logObservationDeliveryFailure,
   type ObservationDeliveryPolicy,
   type ObservationEvent,
@@ -128,9 +131,10 @@ import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
 import {
+  createApprovalWaitLeaseTracker,
   createToolLivenessLease,
   DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
-  resolveDeclaredToolTimeoutMs,
+  resolveToolInactivityTimeoutMs,
 } from "./tool-liveness.js";
 import {
   buildSlowToolLivePatch,
@@ -177,6 +181,10 @@ const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+// Transport drops are transient by nature. A provider outage that outlives this
+// window is worth surfacing again, so transport keeps a short window and never
+// borrows the hour-long session-limit constant.
+const USER_FACING_TRANSPORT_SUPPRESSION_MS = 15 * 60_000;
 const GENERATED_IMAGE_ITEM_TYPE = "imageGeneration";
 const GENERATED_MEDIA_FILE_PREFIX = "ravi-generated-media";
 const MAX_GENERATED_MEDIA_BYTES = 50 * 1024 * 1024;
@@ -273,14 +281,36 @@ function appendAssistantResponse(current: string, next: string): string {
 }
 
 function isCommentaryResponse(metadata: RuntimeEventMetadata | undefined): boolean {
-  return metadata?.item?.phase === "commentary";
+  return isCommentaryMetadata(metadata);
+}
+
+/** Upper bound for the full assistant text carried to observers that read detail. */
+const OBSERVATION_DETAIL_TEXT_MAX = 12_000;
+const OBSERVATION_TOOL_INPUT_MAX = 200;
+
+/** One line about what a tool was asked to do: enough for an observer, never the whole payload. */
+function summarizeObservedToolInput(input: unknown): string {
+  if (input === undefined || input === null) return "";
+  let text: string;
+  if (typeof input === "string") {
+    text = input;
+  } else if (typeof input === "object" && !Array.isArray(input)) {
+    const record = input as Record<string, unknown>;
+    const preferred = ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"];
+    const key = preferred.find((name) => typeof record[name] === "string" && (record[name] as string).trim());
+    text = key ? `${key}: ${record[key] as string}` : JSON.stringify(record);
+  } else {
+    text = JSON.stringify(input);
+  }
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > OBSERVATION_TOOL_INPUT_MAX ? `${line.slice(0, OBSERVATION_TOOL_INPUT_MAX - 3)}...` : line;
 }
 
 function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!rawEvent) return undefined;
 
   const summary: Record<string, unknown> = {};
-  for (const key of ["type", "subtype", "status", "error", "errors", "message", "result", "exitCode"]) {
+  for (const key of ["type", "subtype", "status", "error", "errors", "message", "result", "exitCode", "signal"]) {
     if (rawEvent[key] !== undefined) {
       summary[key] = truncateLogDetail(rawEvent[key]);
     }
@@ -752,7 +782,7 @@ function isAlreadyProcessingFailure(event: { error?: string; rawEvent?: Record<s
 }
 
 type UserFacingRuntimeLimitFailure = {
-  kind: "session_limit";
+  kind: "session_limit" | "transport";
   windowKey: string;
   expiresAt: number;
 };
@@ -816,6 +846,22 @@ export function classifyUserFacingRuntimeLimitFailure(
   now = Date.now(),
 ): UserFacingRuntimeLimitFailure | undefined {
   const normalized = normalizeSuppressionText(error);
+
+  // Transport failures repeat identically while a provider link is down. They
+  // are classified by the closed transport signature list, never by free text,
+  // and deduplicated inside their own short window per chat scope. The window
+  // key is the failure class itself: transport errors routinely differ only in
+  // endpoint details (host:port in ECONNREFUSED/ETIMEDOUT messages) while
+  // mapping to the exact same unavailable notice, so the normalized first line
+  // must not split one outage into several suppression windows.
+  if (isTransportFailureMessage(error)) {
+    return {
+      kind: "transport",
+      windowKey: "transport",
+      expiresAt: now + USER_FACING_TRANSPORT_SUPPRESSION_MS,
+    };
+  }
+
   const isExactSessionLimit = /you['’]?ve hit your session limit/i.test(error);
   const isGenericSessionLimitWithReset = /\bsession limit\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
   if (!isExactSessionLimit && !isGenericSessionLimitWithReset) return undefined;
@@ -1022,6 +1068,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       provider: runtimeSession.provider,
       model,
       startedAt: streaming.currentTraceTurnStartedAt,
+      // A turn that kept commentary but never produced a final utterance is
+      // `incomplete`, so readers never conclude no work happened.
+      outputState: turnOutputCounts.final > 0 ? "final" : turnOutputCounts.commentary > 0 ? "incomplete" : null,
+      usage: reportedTerminalUsage,
       ...input,
       status: terminal.status,
       eventType: runtimeTurnAttemptTerminalEventType(terminal.status),
@@ -1042,6 +1092,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTraceSystemPromptSha256 = undefined;
     streaming.currentTraceRequestBlobSha256 = undefined;
     streaming.currentTraceTurnTerminalRecorded = false;
+    streaming.currentTraceStatusRecorded = undefined;
+    turnOutputCounts.final = 0;
+    turnOutputCounts.commentary = 0;
+    reportedTerminalUsage = undefined;
   };
   const markCurrentTurnAttemptSafety = (input: { startedTool?: true; materializedOutput?: true }) => {
     const attemptId = streaming.currentCrashRecoveryAttemptId;
@@ -1059,6 +1113,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let responseText = "";
   let channelResponseText = "";
   const deliveredVisibleThisTurn: string[] = [];
+  // sessions/turn-output: utterances materialized by the current trace turn, per class.
+  const turnOutputCounts = { final: 0, commentary: 0 };
+  let reportedTerminalUsage: Extract<RuntimeEvent, { type: "turn.complete" }>["usage"] | undefined;
   const turnToolContinuation = createTurnToolContinuationLedger();
   let pendingGeneratedMedia: ResponseMediaAttachment[] = [];
   const generatedMediaKeys = new Set<string>();
@@ -1081,6 +1138,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let debounceObservationTimer: ReturnType<typeof setTimeout> | undefined;
   const truncateObservationPreview = (value: string, maxLength = 500): string =>
     value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+  let pulseObservationTimer: ReturnType<typeof setInterval> | undefined;
+  let pulseCheckedTurnId: string | undefined;
+  const clearObservationPulse = () => {
+    if (pulseObservationTimer !== undefined) clearInterval(pulseObservationTimer);
+    pulseObservationTimer = undefined;
+    pulseCheckedTurnId = undefined;
+  };
 
   const deliverObservationBatch = (
     events: ObservationEvent[],
@@ -1158,6 +1222,41 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     observationEvents.push(event);
     deliverObservationBatch([event], ["realtime"], "realtime");
     scheduleDebouncedObservationEvent(event);
+    armObservationPulse();
+  };
+  // A long turn is read while it runs: bindings with a pulse get the events gathered so
+  // far every pulse, and the end-of-turn delivery then carries only what is new.
+  const armObservationPulse = () => {
+    const turnId = streaming.currentTraceTurnId;
+    if (pulseObservationTimer !== undefined || !turnId || pulseCheckedTurnId === turnId) return;
+    pulseCheckedTurnId = turnId;
+    const pulseMs = getObservationPulseMs({
+      sourceSessionName: sessionName,
+      sourceSession: session,
+      agentId: agent.id,
+    });
+    if (pulseMs === null) return;
+    pulseObservationTimer = setInterval(() => {
+      if (observationEvents.length === 0) return;
+      deliverObservationEvents({
+        sourceSessionName: sessionName,
+        sourceSession: session,
+        agentId: agent.id,
+        events: [...observationEvents],
+        deliveryPolicies: ["end_of_turn"],
+        runId,
+        pulse: true,
+      }).catch((error) =>
+        logObservationDeliveryFailure(error, {
+          sessionName,
+          sessionKey: session.sessionKey,
+          runId,
+          eventCount: observationEvents.length,
+          reason: "pulse",
+        }),
+      );
+    }, pulseMs);
+    pulseObservationTimer.unref?.();
   };
   const currentTurnPromptText = (): string | undefined => {
     const pendingIds = new Set(streaming.currentTurnPendingIds ?? []);
@@ -1192,6 +1291,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       payload,
       preview: terminalType,
     });
+    clearObservationPulse();
     const batch = observationEvents.splice(0, observationEvents.length);
     deliverObservationBatch(batch, ["end_of_turn"], "end_of_turn");
   };
@@ -1240,7 +1340,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     try {
       const turn = getSessionTurn(turnId);
       const objective = turn?.userPromptSha256 ? getSessionTraceBlob(turn.userPromptSha256)?.contentText : undefined;
-      const events = listSessionEvents(session.sessionKey).filter((event) => event.turnId === turnId);
+      const events = listSessionEventsByTurn(turnId);
       return (
         buildInactivityRecoveryCheckpoint({
           objective,
@@ -1294,6 +1394,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         : explain(["O turno nao foi encerrado: ele continua agora, a partir daqui."]),
       deliveryBarrier: "after_tool",
       deliveryBarrierSource: "inferred",
+      ...streaming.currentTurnAuthority,
       source: streaming.currentSource,
       taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
       _agentId: agent.id,
@@ -1460,6 +1561,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
     },
   });
+
+  const approvalWaits = createApprovalWaitLeaseTracker({
+    lease: toolLivenessLease,
+    currentTool: () =>
+      streaming.toolRunning && streaming.currentToolId
+        ? { id: streaming.currentToolId, name: streaming.currentToolName, input: streaming.currentToolInput }
+        : undefined,
+  });
+  streaming.externalApprovalWait = approvalWaits;
 
   /**
    * Destino do chat para saída do turno, conforme `.ravi/specs/sessions/attach/SPEC.md`.
@@ -1845,6 +1955,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     const augmented = {
       ...event,
+      ...(streaming.currentBridgeTurnId ? { _bridgeTurnId: streaming.currentBridgeTurnId } : {}),
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       ...(!streaming.suppressChatEmit && !isObserverRuntimeSessionName(sessionName) && streaming.currentReplyTarget
         ? { _replyTarget: streaming.currentReplyTarget }
@@ -1914,6 +2025,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
     const metadata = streaming.currentChannelBackend;
     if (!metadata) return;
+    // The physical turn ends, but its queued continuation still owns this channel request.
+    if (
+      streaming.currentTurnYieldContinuationId &&
+      !streaming.internalAbortReason &&
+      (event.type === "turn.interrupted" || event.type === "turn.complete")
+    ) {
+      return;
+    }
     const toolProjection =
       event.type === "tool.started"
         ? {
@@ -2400,21 +2519,54 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }).catch((err) => log.warn("Failed to announce skill-gate load", { sessionName, error: err }));
   };
 
-  const recentAssistantContents = (): string[] =>
-    getRecentHistory(sessionName, 48)
-      .filter((message) => message.role === "assistant")
-      .map((message) => message.content);
+  // Replay detection compares against final rows only: commentary is history,
+  // but it never stood as an answer the provider could mash back in.
+  const recentAssistantContents = (): string[] => {
+    try {
+      return getRecentHistory(sessionName, 48)
+        .filter((message) => isFinalAssistantMessage(message))
+        .map((message) => message.content);
+    } catch (error) {
+      log.warn("Assistant history unavailable for delivery cleanup", { sessionName, error });
+      return [];
+    }
+  };
 
-  const persistVisibleAssistantMessage = (text: string) => {
+  /**
+   * Materialize one utterance with its class (sessions/turn-output inv. 1-2, 8):
+   * independent of any chat target, and an exact same-turn replay writes nothing.
+   */
+  const persistVisibleAssistantMessage = (text: string, utteranceClass: UtteranceClass = "final") => {
     const trimmedVisible = text.trim();
     if (!trimmedVisible) return;
-    saveMessage(sessionName, "assistant", trimmedVisible, session.providerSessionId ?? session.sdkSessionId ?? null, {
-      agentId: streaming.agentId,
-      channel: streaming.currentSource?.channel,
-      accountId: streaming.currentSource?.accountId,
-      chatId: streaming.currentSource?.chatId,
-      sourceMessageId: streaming.currentSource?.sourceMessageId,
-    });
+    try {
+      const written = saveMessage(
+        sessionName,
+        "assistant",
+        trimmedVisible,
+        session.providerSessionId ?? session.sdkSessionId ?? null,
+        {
+          agentId: streaming.agentId,
+          channel: streaming.currentSource?.channel,
+          accountId: streaming.currentSource?.accountId,
+          chatId: streaming.currentSource?.chatId,
+          sourceMessageId: streaming.currentSource?.sourceMessageId,
+          utteranceClass,
+          turnId: streaming.currentTraceTurnId ?? null,
+        },
+      );
+      // An exact replay proves the row is durable too.
+      turnOutputCounts[utteranceClass] += 1;
+      if (!written)
+        log.info("Skipped same-turn assistant replay", { sessionName, utteranceClass, chars: trimmedVisible.length });
+    } catch (error) {
+      log.error("Failed to materialize assistant output; continuing delivery", {
+        sessionName,
+        utteranceClass,
+        turnId: streaming.currentTraceTurnId,
+        error: String(error),
+      });
+    }
   };
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
@@ -2675,6 +2827,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             type: "turn.failed",
             error: blockedComplete.error,
             recoverable: true,
+            usage: event.usage,
             rawEvent: event.rawEvent,
             metadata: event.metadata,
           };
@@ -2694,6 +2847,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           type: "turn.failed",
           error,
           recoverable: false,
+          usage: event.usage,
           rawEvent: event.rawEvent,
         };
       }
@@ -2837,6 +2991,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
         if (receivedTerminalStatus !== "complete") {
+          if (event.type === "turn.failed" || event.type === "turn.interrupted") reportedTerminalUsage = event.usage;
           // Interrupted/failed native envelopes may contain partial assistant
           // content that was never accepted by response policy.
           suppressProviderRawForCurrentTurn = true;
@@ -2923,22 +3078,33 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             compacting: streaming.compacting,
           });
         }
-        recordTraceEvent({
-          turnId: streaming.currentTraceTurnId,
-          provider: runtimeSession.provider,
-          model,
-          eventType: "runtime.status",
-          eventGroup: "runtime",
-          status,
-          payloadJson: {
+        // Persist status transitions, not repeats. Providers emit a `status`
+        // event on every internal step: measured ~2.7k identical `thinking`
+        // events per turn, 97% of the whole session_events ledger. Each one was
+        // a real INSERT across every index on the table, inside the turn's hot
+        // loop, so the ledger grew to millions of rows that carried no signal
+        // and made every session-scoped read slower. The transition is the
+        // observability; the repeat is write amplification.
+        const statusTraceKey = `${streaming.currentTraceTurnId ?? ""}\u0000${status}`;
+        if (streaming.currentTraceStatusRecorded !== statusTraceKey) {
+          streaming.currentTraceStatusRecorded = statusTraceKey;
+          recordTraceEvent({
+            turnId: streaming.currentTraceTurnId,
+            provider: runtimeSession.provider,
+            model,
+            eventType: "runtime.status",
+            eventGroup: "runtime",
             status,
-            wasCompacting,
-            compacting: streaming.compacting,
-            externalAnnouncementsAllowed: compactionAnnouncement.externalAnnouncementsAllowed,
-            announcementOrigin: compactionAnnouncement.origin,
-            metadata: event.metadata,
-          },
-        });
+            payloadJson: {
+              status,
+              wasCompacting,
+              compacting: streaming.compacting,
+              externalAnnouncementsAllowed: compactionAnnouncement.externalAnnouncementsAllowed,
+              announcementOrigin: compactionAnnouncement.origin,
+              metadata: event.metadata,
+            },
+          });
+        }
         let statusSkillVisibility: RuntimeSkillVisibilitySnapshot | undefined;
         if (streaming.compacting && !wasCompacting) {
           // Re-read runtimeSessionParams from DB before compaction reset so any skill gate marks
@@ -3015,7 +3181,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // renew this lease without exposing their output to channels or traces.
         // Tools that declare their own `timeout` keep ownership of it: a long
         // scan or build must not be killed by the generic inactivity window.
-        toolLivenessLease.start(event.toolUse.id, resolveDeclaredToolTimeoutMs(event.toolUse.input));
+        // Tools waiting on a human approval outlast the approval's own timeout.
+        toolLivenessLease.start(
+          event.toolUse.id,
+          approvalWaits.timeoutForStartingTool(resolveToolInactivityTimeoutMs(event.toolUse.name, event.toolUse.input)),
+        );
         // O lease cuida da paciência; este aviso cuida do silêncio.
         armSlowToolNotice(event.toolUse.id, event.toolUse.name);
         streaming.currentToolSafety = getToolSafety(
@@ -3029,6 +3199,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             toolId: event.toolUse.id,
             toolName: event.toolUse.name,
             safety: streaming.currentToolSafety,
+            detail: { input: summarizeObservedToolInput(event.toolUse.input) },
           },
         });
         recordTraceEvent({
@@ -3078,10 +3249,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.lastToolFailure = undefined;
         let messageText = event.text;
         if (messageText) {
-          // Strip @@SILENT@@ from anywhere in the text and trim
-          messageText = messageText
-            .replace(new RegExp(SILENT_TOKEN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "")
-            .trim();
+          // Silence is a delivery state: a whole-message marker (exact,
+          // spaced, truncated, or split across fragments) is suppressed. A
+          // leading marker used as a control prefix is removed; a marker cited
+          // inside prose is kept verbatim.
+          messageText = isSilentTokenText(messageText) ? "" : stripLeadingSilentMarker(messageText);
           log.info("Assistant message", {
             runId,
             interrupted: streaming.interrupted,
@@ -3096,7 +3268,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               textLen: messageText.length,
             });
           } else if (!messageText) {
-            // After stripping SILENT_TOKEN, nothing left
+            // The whole message was the silence marker after classification
             suppressProviderRawForCurrentTurn = true;
             log.info("Silent response (stripped)", { sessionName });
             await emitLegacyProviderEvent({ type: "silent" });
@@ -3122,6 +3294,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   payload: {
                     chars: text.length,
                     metadata: event.metadata ?? null,
+                    detail: { text: truncateObservationPreview(text, OBSERVATION_DETAIL_TEXT_MAX) },
                   },
                 });
               }
@@ -3195,10 +3368,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               // This content will be persisted/projected/emitted. Fence replay
               // before any of those effects; silent and discarded responses do
               // not advance the materialized-output marker.
+              const priorAssistantContents = commentaryResponse ? [] : recentAssistantContents();
+              markCurrentTurnAttemptSafety({ materializedOutput: true });
+              fencePendingProviderRawEvent(correlatedProviderRawEvent);
+              // Delivery cleanup must not rewrite or discard the provider utterance in history.
+              persistVisibleAssistantMessage(messageText, commentaryResponse ? "commentary" : "final");
               const visibility = commentaryResponse
                 ? { utterances: [messageText] }
-                : classifyVisibleAssistantUtterances(messageText, recentAssistantContents(), {
+                : classifyVisibleAssistantUtterances(messageText, priorAssistantContents, {
                     alreadyDeliveredThisTurn: deliveredVisibleThisTurn,
+                    structuredTurn: Boolean(streaming.currentBridgeTurnId),
                   });
               const visibleUtterances = visibility.utterances;
               if (!commentaryResponse && visibleUtterances.length === 0) {
@@ -3218,14 +3397,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 });
                 continue;
               }
-              markCurrentTurnAttemptSafety({ materializedOutput: true });
-              fencePendingProviderRawEvent(correlatedProviderRawEvent);
               for (const utterance of visibleUtterances) {
                 noteTurnPostToolAssistant(turnToolContinuation, utterance.length);
                 recordAssistantState(true, utterance);
                 if (!commentaryResponse) {
                   channelResponseText = appendAssistantResponse(channelResponseText, utterance);
-                  persistVisibleAssistantMessage(utterance);
                   deliveredVisibleThisTurn.push(utterance);
                 }
                 await emitRuntimeEvent({
@@ -3255,7 +3431,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 !commentaryResponse &&
                 (visibleUtterances.length > 1 || visibleUtterances[0] !== messageText.trim())
               ) {
-                log.info("Split empty-join assistant mash into turn-immutable rows", {
+                log.info("Split empty-join assistant mash for delivery", {
                   sessionName,
                   incomingLen: messageText.length,
                   utteranceCount: visibleUtterances.length,
@@ -3852,6 +4028,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         responseText = "";
+
         channelResponseText = "";
         deliveredVisibleThisTurn.length = 0;
         clearPendingGeneratedMedia();
@@ -3985,7 +4162,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (sessionRecoveryFailure && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
           await projectRuntimeEventToChannel(event);
-          const history = getRecentHistory(sessionName, 48);
+          const history = getRecentHistory(sessionName, 48).filter(
+            (message) => message.id > (session.historyResetAfterId ?? 0),
+          );
+          // The restated request is this turn's own input, not the newest history
+          // row, which may be another sender's queued message.
+          const ownPendingIds = new Set(streaming.currentTurnPendingIds ?? []);
           const recovery = buildRuntimeContextRecoveryPrompt({
             sessionName,
             runtimeProvider: runtimeSession.provider,
@@ -3993,8 +4175,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             error: event.error,
             recoveryKind: sessionRecoveryFailure.kind,
             history,
+            latestUserRequest: currentTurnPromptText(),
           });
-          const resetApplied = resetSession(session.sessionKey);
+          const queuedSuccessors = streaming.pendingMessages
+            .filter((message) => !message.pendingId || !ownPendingIds.has(message.pendingId))
+            .map((message) => ({ ...message }));
+          const resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
           session.runtimeProvider = undefined;
@@ -4007,12 +4193,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             prompt: recovery.prompt,
             deliveryBarrier: "after_tool",
             deliveryBarrierSource: "inferred",
+            ...streaming.currentTurnAuthority,
             source: streaming.currentSource,
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
             _agentId: agent.id,
             _runtimeProviderId: runtimeSession.provider,
           });
-          stashedMessages.set(sessionName, [recoveredMessage]);
+          // Messages queued behind the failed turn keep their own sender's envelope.
+          stashedMessages.set(sessionName, [recoveredMessage, ...queuedSuccessors]);
           restartStashedReason = recoveryPlan.reason;
 
           log.warn(recoveryPlan.logMessage, {
@@ -4210,6 +4398,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // Never let an exceptional/ownership-loss path externalize a raw envelope
     // that did not reach its canonical write-ahead boundary.
     pendingProviderRawEvents.length = 0;
+    clearObservationPulse();
     log.info("Streaming session ended", { runId, sessionName });
 
     try {

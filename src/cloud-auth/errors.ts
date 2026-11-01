@@ -43,6 +43,14 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "CONNECTOR_POLICY_ABOVE_CEILING",
   "CONNECTOR_FORBIDDEN",
   "ACTOR_NOT_LINKED",
+  // A runtime turn Ravi cannot attribute (another agent's turn, an unresolved
+  // speaker): refused locally, never sent as the operator.
+  "ACTOR_UNKNOWN",
+  // Knowledge (`/api/cli/knowledge/*`): the Console refused the turn, the
+  // organization has Knowledge off, or the Console has no Knowledge routes.
+  "KNOWLEDGE_TURN_NOT_OPERATOR",
+  "KNOWLEDGE_DISABLED",
+  "KNOWLEDGE_UNAVAILABLE",
 ] as const;
 
 export type CloudAuthErrorCode = (typeof CLOUD_AUTH_ERROR_CODES)[number];
@@ -75,6 +83,7 @@ export const CONNECTOR_POLICY_CODES: ReadonlySet<CloudAuthErrorCode> = new Set([
   // Console access calls (`ravi pages share`, `ravi invites`, `ravi access`)
   // that name a chat author with no `ravi link` binding.
   "ACTOR_NOT_LINKED",
+  "ACTOR_UNKNOWN",
 ]);
 
 export function isConnectorPolicyCode(code: CloudAuthErrorCode): boolean {
@@ -114,6 +123,11 @@ export class CloudAuthError extends Error {
   /** Structured `error.details` from the Console CLI envelope. Never serialized by `toJSON`. */
   readonly details?: Record<string, unknown>;
   readonly requestId?: string;
+  /**
+   * The Console's own `error.code` when it is not a {@link CloudAuthErrorCode}
+   * (such as `KIT_WIDGET_UNAUDITED`), so a caller can act on it. Never serialized.
+   */
+  readonly consoleCode?: string;
   readonly exitCode: number;
 
   constructor(
@@ -128,6 +142,7 @@ export class CloudAuthError extends Error {
       retryable?: boolean;
       details?: Record<string, unknown>;
       requestId?: string;
+      consoleCode?: string;
     } = {},
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
@@ -139,6 +154,7 @@ export class CloudAuthError extends Error {
     this.issues = options.issues;
     this.details = options.details;
     this.requestId = options.requestId;
+    this.consoleCode = options.consoleCode;
     this.exitCode = options.exitCode ?? defaultExitCode(code);
   }
 
@@ -229,6 +245,9 @@ function normalizeRetryAfterMs(value: number | undefined): number | undefined {
 function defaultExitCode(code: CloudAuthErrorCode): number {
   if (isConnectorPolicyCode(code)) return 3;
   switch (code) {
+    case "KNOWLEDGE_TURN_NOT_OPERATOR":
+    case "KNOWLEDGE_DISABLED":
+      return 3;
     case "AUTH_REQUIRED":
     case "AUTH_PENDING":
     case "AUTH_EXPIRED":
