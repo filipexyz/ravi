@@ -429,6 +429,18 @@ const sessionCreateThreadReturnSchema = z
   .strict();
 const slackThreadSummarySchema = z
   .object({
+    turnHealth: z
+      .object({
+        turnId: z.string().nullable(),
+        state: z.enum(["idle", "running", "interrupted", "attention", "closed"]),
+        reason: z.enum(["no_signal", "no_reply", "owner_lost", "failed"]).nullable(),
+        since: z.number(),
+        lastSignalAt: z.number().nullable(),
+        checkedAt: z.number(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     requestId: z.string(),
     title: z.string().nullable(),
     status: z.enum(["queued", "root_delivered", "starting", "open", "closed", "failed"]),
@@ -466,7 +478,7 @@ const slackThreadSummarySchema = z
     }),
   })
   .strict();
-const sessionThreadsReturnSchema = z
+export const sessionThreadsReturnSchema = z
   .object({
     parentSession: z.object({
       sessionKey: z.string(),
@@ -6863,13 +6875,14 @@ export class SessionCommands {
         const name = thread.childSessionName ?? thread.requestId;
         const title = thread.title ? ` — ${thread.title}` : "";
         const pending = thread.parentReturn.pending ? " (return pending)" : "";
+        const health = thread.turnHealth ? `; ${thread.turnHealth.reason ?? thread.turnHealth.state}` : "";
         const missing = thread.childSessionMissing ? " (session missing)" : "";
         const decisions = thread.openDecisionCount ? ` (${thread.openDecisionCount} decisions pending)` : "";
         const runtime = [thread.runtime.provider, thread.runtime.model, thread.runtime.effort]
           .filter((value): value is string => Boolean(value))
           .join(" · ");
         console.log(
-          `  [${thread.status}] ${name}${title}${pending}${missing}${decisions}${runtime ? ` (${runtime})` : ""}`,
+          `  [${thread.status}${health}] ${name}${title}${pending}${missing}${decisions}${runtime ? ` (${runtime})` : ""}`,
         );
       }
     }

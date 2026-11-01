@@ -69,3 +69,10 @@ bun run build
 
 - `bun test src/channels/slack/thread-lifecycle.test.ts` closes a pruned child by its durable request id without recreating the session, is idempotent, and closes only the selected request when child keys collide.
 - `bun test src/cli/commands/sessions.test.ts` cloaks missing, ambiguous and unauthorized orphan references as SESSION_NOT_FOUND and requires modify authority before exposing or closing the card.
+
+## Turn attention
+
+- `bun test src/channels/slack/thread-turn-health.test.ts src/channels/slack/thread-lifecycle.test.ts` covers missing terminals, partial output before a tool, long legitimate tools/provider activity, expired ownership leases, human interruption, intentional silence, completed turns without final return, channel-only replies, and close during a tool.
+- Two ticks across a database reopen, concurrent ticks, and `no_signal` becoming `owner_lost` MUST publish one notice per turn. Publication failure MUST retry with the same message id; a new turn may produce a new notice.
+- Listing MUST return the stored observation unchanged until reconciliation; the strict CLI return schema MUST accept old summaries and preserve the new additive `turnHealth`.
+- The runtime provider-activity test MUST prove that real activity updates the matching canonical turn's signal without emitting a public activity event.

@@ -83,7 +83,7 @@ import {
   resolveRuntimeIdleSessionTtlMs,
   resolveRuntimeTurnInactivityMs,
 } from "./session-pool.js";
-import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { markRuntimeLiveIdle, noteRuntimeTurnSignal, updateRuntimeLiveState } from "./live-state.js";
 import {
   formatUserFacingTurnFailure,
   isOpenToolsTurnFailure,
@@ -2873,6 +2873,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
+      noteRuntimeTurnSignal(sessionName, streaming.currentTraceTurnId, streaming.lastActivity);
       // Update compaction before asynchronous projection so the after-tool
       // watch cannot expire while handling the compaction-start event itself.
       const wasCompacting = streaming.compacting;

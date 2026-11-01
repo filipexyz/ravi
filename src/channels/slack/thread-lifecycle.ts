@@ -56,6 +56,16 @@ import {
   type SlackThreadLifecycleRecord,
 } from "./thread-lifecycle-store.js";
 import type { SlackThreadCardState } from "./thread-card.js";
+import { getLatestSessionTurn } from "../../session-trace/session-trace-db.js";
+import { observeThreadTurn } from "./thread-turn-health.js";
+import {
+  claimThreadTurnNotice,
+  finishThreadTurnNotice,
+  getThreadTurnHealth,
+  listThreadTurnHealthCandidates,
+  saveThreadTurnHealth,
+  type ThreadTurnHealth,
+} from "./thread-turn-health-store.js";
 
 const log = logger.child("channels:slack:thread-lifecycle");
 const SLACK_THREAD_CREATED_TOPIC = "ravi.inbound.thread.created";
@@ -97,6 +107,7 @@ export function slackThreadError(code: SlackThreadErrorCode, message: string, su
 }
 
 export interface SlackThreadLifecycleDependencies {
+  now?: () => number;
   publishPrompt: PromptPublisher;
   publishEvent: EventPublisher;
   /** Publishes the root card update; without it the card is left as is. */
@@ -235,7 +246,75 @@ export async function reconcileSlackThreadLifecycle(
     publishPrompt: dependencies.publishPrompt,
     publishOutbound: dependencies.publishOutbound ?? publishChannelOutboundJobDurably,
   });
+  // One owner: the gateway's existing startup/30s reconciliation. Lists never call observeThreadTurn.
+  failures += await reconcileThreadTurnHealth(dependencies);
   return { creations, parentReturns, failures };
+}
+
+async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDependencies): Promise<number> {
+  let failures = 0;
+  for (const requestId of listThreadTurnHealthCandidates()) {
+    let claimId: string | null = null;
+    const now = dependencies.now?.() ?? Date.now();
+    try {
+      const record = getSlackThreadLifecycle(requestId);
+      if (!record) continue;
+      saveThreadTurnHealth(requestId, observeThreadTurn(record, now));
+      const health = getThreadTurnHealth(requestId)!;
+      if (health.state !== "attention" || !health.turnId || !record.childSessionKey || !record.providerThreadId)
+        continue;
+      claimId = claimThreadTurnNotice(requestId, health.turnId, now);
+      if (!claimId) continue;
+      // Fence a concurrent close/reopen/new turn before publishing the observation.
+      if (
+        getSlackThreadLifecycle(requestId)?.status !== "open" ||
+        getLatestSessionTurn(record.childSessionKey)?.turnId !== health.turnId
+      ) {
+        finishThreadTurnNotice(requestId, claimId, false, now);
+        continue;
+      }
+      const parent = getSession(record.parentSessionKey);
+      if (!parent) throw new Error(`Slack thread parent session not found: ${record.parentSessionKey}`);
+      const messageId = `slack-thread-attention:${requestId}:${health.turnId}`;
+      const description = {
+        no_signal: "Sem sinal do turno há pelo menos 15 minutos. Isso não comprova morte do provider.",
+        no_reply: "O turno terminou sem resposta final nem silêncio intencional.",
+        owner_lost: "O turno ficou sem dono válido: lease da tentativa ou do runtime expirado/encerrado.",
+        failed: "O turno registrou falha ou timeout.",
+      }[health.reason!];
+      await publishChannelSessionPrompt(
+        {
+          sessionName: parent.name ?? parent.sessionKey,
+          action: "session.return",
+          principal: resolveChannelLifecyclePrincipal("session.return", record.childSessionKey),
+          payload: {
+            prompt: buildSlackThreadParentNotice(record, "precisa de atenção.", "Estado", description),
+            source: buildSlackThreadParentSource(record, record.providerThreadId),
+            deliveryBarrier: "after_tool",
+            deliveryBarrierSource: "default",
+            _slackThreadLifecycle: {
+              eventId: messageId,
+              eventType: "thread.attention",
+              requestId,
+              parentSessionKey: record.parentSessionKey,
+              childSessionKey: record.childSessionKey,
+              childSessionName: record.childSessionName,
+              turnId: health.turnId,
+              reason: health.reason,
+            },
+          },
+          options: { messageId },
+        },
+        dependencies.publishPrompt,
+      );
+      finishThreadTurnNotice(requestId, claimId, true, now);
+    } catch (error) {
+      failures++;
+      if (claimId) finishThreadTurnNotice(requestId, claimId, false, now);
+      log.warn("Failed to reconcile Slack thread turn health", { requestId, error: errorMessage(error) });
+    }
+  }
+  return failures;
 }
 
 export function registerSlackThreadInboundLifecycle(input: {
@@ -463,6 +542,7 @@ export interface SlackThreadRuntimeSummary {
 }
 
 export interface SlackThreadSummary {
+  turnHealth: ThreadTurnHealth | null;
   requestId: string;
   title: string | null;
   status: SlackThreadLifecycleRecord["status"];
@@ -528,6 +608,7 @@ export function slackThreadLink(record: SlackThreadLifecycleRecord): string | un
 
 export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackThreadSummary {
   return {
+    turnHealth: getThreadTurnHealth(record.requestId),
     requestId: record.requestId,
     title: slackThreadTitle(record) ?? null,
     status: record.status,

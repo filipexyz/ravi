@@ -57,7 +57,7 @@ import {
 } from "./host-event-loop.js";
 import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
 import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
-import { getRuntimeLiveStateForSession } from "./live-state.js";
+import { getRuntimeLiveState, getRuntimeLiveStateForSession } from "./live-state.js";
 import {
   formatUserFacingTurnFailure,
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
@@ -4023,7 +4023,10 @@ describe("runtime session trace instrumentation", () => {
       // runs past it, so the test only passes if each signal re-arms the watch.
       for (let i = 0; i < 10; i++) {
         await new Promise((resolve) => setTimeout(resolve, 150));
+        const signalStartedAt = Date.now();
         yield { type: "provider.activity" };
+        expect(getRuntimeLiveState(SESSION_NAME)?.turnId).toBe("turn-tool-then-long-generation");
+        expect(getRuntimeLiveState(SESSION_NAME)?.lastSignalAt).toBeGreaterThanOrEqual(signalStartedAt);
       }
       yield { type: "assistant.message", text: "Arquivo escrito." };
       yield {

@@ -4,7 +4,7 @@ import { attachChatToSession, getOrCreateSession, updateSessionName } from "../r
 import { dbUpsertChat, getDb, closeRouterDb } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
-import { recordAdapterRequestTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
+import { recordAdapterRequestTrace, recordTerminalTurnTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
 import {
   getLatestSessionTurn,
   getSessionTraceBlob,
@@ -325,6 +325,35 @@ describe("session turn usage and output state", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("keeps explicit terminal silence distinct from missing terminal after database reopen", () => {
+    const sessionKey = "agent:main:silence";
+    for (const turnId of ["silent", "unterminated"]) {
+      upsertSessionTurn({ turnId, sessionKey, status: "running", startedAt: 1000, updatedAt: 1000 });
+    }
+    recordTerminalTurnTrace({
+      sessionKey,
+      turnId: "silent",
+      status: "complete",
+      eventType: "turn.complete",
+      outputState: "silent",
+      completedAt: 2000,
+    });
+    closeRouterDb();
+    expect(getSessionTurn("silent")).toMatchObject({
+      status: "complete",
+      outputState: "silent",
+      completedAt: 2000,
+    });
+    expect(getSessionTurn("unterminated")).toMatchObject({
+      status: "running",
+      outputState: null,
+      completedAt: null,
+    });
+    expect(querySessionTrace({ session: sessionKey }).turns.find((turn) => turn.turnId === "silent")?.outputState).toBe(
+      "silent",
+    );
   });
 
   it("keeps unreported usage as NULL, never 0, and round-trips the output state", () => {

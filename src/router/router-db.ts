@@ -1949,6 +1949,20 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_parent_return
       ON slack_thread_lifecycle(parent_return_requested, parent_notified_at, parent_notification_claim_expires_at);
 
+    CREATE TABLE IF NOT EXISTS slack_thread_turn_health (
+      request_id TEXT PRIMARY KEY REFERENCES slack_thread_lifecycle(request_id) ON DELETE CASCADE,
+      turn_id TEXT,
+      state TEXT NOT NULL CHECK(state IN ('idle','running','interrupted','attention','closed')),
+      reason TEXT CHECK(reason IN ('no_signal','no_reply','owner_lost','failed')),
+      since_at INTEGER NOT NULL,
+      last_signal_at INTEGER,
+      checked_at INTEGER NOT NULL,
+      notified_turn_id TEXT,
+      notified_at INTEGER,
+      claim_id TEXT,
+      claim_expires_at INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
       session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,

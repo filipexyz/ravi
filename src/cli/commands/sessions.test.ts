@@ -566,7 +566,7 @@ mock.module("../../tags/service.js", () => ({
 
 import { getOptionsMetadata } from "../decorators.js";
 
-const { SessionCommands } = await import("./sessions.js");
+const { SessionCommands, sessionThreadsReturnSchema } = await import("./sessions.js");
 const {
   buildCurrentSessionActionsCommand,
   buildCurrentSessionDeleteMessageCommand,
@@ -2419,6 +2419,19 @@ describe("SessionCommands attach hints", () => {
       includeClosed: false,
       threads: [fakeSlackThreadSummary],
     });
+    // Old snapshots still parse; the additive observation survives strict serialization.
+    expectReturnShape(sessionThreadsReturnSchema, listed);
+    const turnHealth = {
+      turnId: "turn-1",
+      state: "attention",
+      reason: "no_signal",
+      since: 100,
+      lastSignalAt: 50,
+      checkedAt: 130,
+    } as const;
+    const observed = { ...listed, threads: [{ ...fakeSlackThreadSummary, turnHealth }] };
+    expectReturnShape(sessionThreadsReturnSchema, observed);
+    expect(sessionThreadsReturnSchema.parse(observed).threads[0]?.turnHealth).toEqual(turnHealth);
 
     const sent = (await new SessionCommands().threadSend(
       "dev-slack-t-1713000000000100",
