@@ -85,6 +85,11 @@ channels.inbound_contact_unresolved
 
 ## False Positive Guards
 
+- `bun test src/security/nats-url-redaction.test.ts` MUST cover passwords ending
+  in a comma, passwords with a comma and suffix, and numeric prefixes that could
+  be mistaken for ports. URL, complete report and log payload MUST all withhold
+  the input; no DNS/TCP probe may receive its fragments. Legitimate explicit-URL
+  lists, unauthenticated bare lists and `%2C` userinfo MUST remain supported.
 - `bun test src/security/nats-exposure-review.test.ts` MUST cover real TCP-probe
   EMFILE in a subprocess with a low descriptor limit, injected probe failures,
   space-containing userinfo in redaction/report/log output, the second local

@@ -87,12 +87,13 @@ export function resolveNatsUrl(env: NodeJS.ProcessEnv = process.env): string {
 
 /**
  * Strip any `user:pass@` / `token@` userinfo so the URL is safe to log. Works per
- * comma-separated server, with or without a scheme, and up to the LAST `@` before
- * the path (URL parsing splits there, so passwords containing `@` are covered).
+ * unambiguous server, with or without a scheme. Invalid or ambiguous lists are
+ * withheld entirely so a delimiter in userinfo cannot expose a secret fragment.
  */
 export function redactNatsUrl(natsUrl: string): string {
-  return natsUrl
-    .split(",")
+  const servers = splitUnambiguousNatsServers(natsUrl);
+  if (!servers) return "[redacted]";
+  return servers
     .map((segment) => {
       const prefix = segment.match(/^(\s*)([a-z][\w+.-]*:\/\/)?/i);
       const whitespace = prefix?.[1] ?? "";
@@ -140,10 +141,23 @@ interface ParsedNatsUrl {
   port: number;
 }
 
-/** Every server in a NATS_URL (nats.js accepts comma-separated lists and bare host:port). */
+/**
+ * A comma followed by an explicit scheme cannot be part of valid userinfo:
+ * the scheme's slashes end the authority. Within each such group, a comma
+ * alongside @ is ambiguous (password/token versus a bare-server separator).
+ * Refuse the entire input instead of splitting and exposing/probing fragments.
+ * Authenticated lists must use explicit schemes; userinfo commas use %2C.
+ */
+function splitUnambiguousNatsServers(natsUrl: string): string[] | null {
+  const groups = natsUrl.split(/,(?=\s*[a-z][\w+.-]*:\/\/)/i);
+  if (groups.some((group) => group.includes(",") && group.includes("@"))) return null;
+  const servers = groups.flatMap((group) => group.split(","));
+  return servers.every((server) => parseNatsServer(server) !== null) ? servers : null;
+}
+
+/** Invalid or ambiguous entries invalidate the whole list; never certify a partial parse. */
 function parseNatsUrls(natsUrl: string): ParsedNatsUrl[] {
-  return natsUrl
-    .split(",")
+  return (splitUnambiguousNatsServers(natsUrl) ?? [])
     .map((segment) => parseNatsServer(segment))
     .filter((server): server is ParsedNatsUrl => server !== null);
 }

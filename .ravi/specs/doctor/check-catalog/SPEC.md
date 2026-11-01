@@ -70,6 +70,12 @@ Checks MUST NOT mutate state.
 - URL userinfo MUST be removed before reports or logs are serialized, including
   passwords with spaces. Malformed URLs MUST use conservative redaction rather
   than falling back to the raw credential-bearing input.
+- A raw comma in a credential-bearing group MUST NOT be split into server
+  fragments. Ambiguous or invalid lists MUST be fully redacted and reported as
+  `unknown`, without resolving or probing fragments. Authenticated lists SHOULD
+  use an explicit scheme per server; literal commas in userinfo MUST use `%2C`.
+  Unauthenticated bare-server lists and fully qualified lists remain supported.
+  One invalid entry MUST invalidate the whole list rather than certify a subset.
 - `substrate.state-dir-permissions` MUST inspect ownership and POSIX permissions
   without changing them. State-directory hardening belongs to startup/setup.
 
