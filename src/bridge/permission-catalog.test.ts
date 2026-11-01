@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { delimiter } from "node:path";
 import { BridgeStore } from "./store.js";
 import { BridgeService } from "./service.js";
 import { withConsoleInvocation, type ConsoleInvocation } from "../sdk/gateway/console-context.js";
@@ -96,6 +97,14 @@ test("catalog metadata has no execution authority, secrets or effect on conversa
   expect(() => acceptCatalogDelegation(value.service, { ...value.grant, policyRevision: original })).toThrow(
     "STALE_DELEGATION",
   );
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = Array.from({ length: 21 }, (_, i) => `/unavailable-catalog-fixture-${i}`).join(delimiter);
+    expect((await withConsoleInvocation(value, () => permissionCatalog())).truncated).toBe(true);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+  }
   value.grant.exp = 1;
   await expect(withConsoleInvocation(value, () => permissionCatalog())).rejects.toThrow("CONSOLE_AUTHORITY_REQUIRED");
   value.service.store.close();

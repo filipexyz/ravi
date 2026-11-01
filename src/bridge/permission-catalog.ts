@@ -74,8 +74,9 @@ export async function permissionCatalog() {
   }
   // Enumerate executable names without executing anything or returning PATH.
   const executables = new Set<string>();
-  let truncated = false;
-  for (const directory of (process.env.PATH ?? "").split(delimiter).filter(isAbsolute).slice(0, 20)) {
+  const pathDirectories = (process.env.PATH ?? "").split(delimiter).filter(isAbsolute);
+  let truncated = pathDirectories.length > 20;
+  for (const directory of pathDirectories.slice(0, 20)) {
     let entries: string[];
     try {
       entries = readdirSync(directory).sort();
