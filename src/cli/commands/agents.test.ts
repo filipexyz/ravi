@@ -336,6 +336,18 @@ describe("AgentsCommands set model validation", () => {
     instructionStates.clear();
   });
 
+  it("rejects incompatible agent creation and mutation before writing", async () => {
+    const commands = new AgentsCommands();
+    expect(() => commands.create("invalid", "/tmp/invalid", "claude", "deepseek/deepseek-flash", true)).toThrow(
+      "does not belong",
+    );
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    await expect(commands.set("dev", "model", "deepseek/deepseek-flash", true)).rejects.toThrow("does not belong");
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "pi", model: "deepseek/deepseek-flash" };
+    await expect(commands.set("dev", "provider", "claude", true)).rejects.toThrow("does not belong");
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
   it("rejects Pi provider ids used as model selectors", async () => {
     const commands = new AgentsCommands();
 
@@ -634,7 +646,7 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("rematerializes no-override sessions whose last-used provider drifted", async () => {
-    currentAgent = { id: "ravi-console", cwd: "/tmp/ravi-console", provider: "codex", model: "gpt-5.5" };
+    currentAgent = { id: "ravi-console", cwd: "/tmp/ravi-console", provider: "codex" };
     sessionsByAgent = [
       {
         sessionKey: "agent:ravi-console:wa",
@@ -691,6 +703,8 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("lists provider overrides with reasons and leaves them in place", async () => {
+    // Exercise provider reconciliation without a provider-specific agent model.
+    currentAgent.model = undefined;
     sessionsByAgent = [
       {
         sessionKey: "agent:dev:pinned",
@@ -722,6 +736,8 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("clears overrides with --force and rematerializes those sessions", async () => {
+    // Exercise provider reconciliation without a provider-specific agent model.
+    currentAgent.model = undefined;
     sessionsByAgent = [
       {
         sessionKey: "agent:dev:pinned",
@@ -767,6 +783,8 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("prints rematerialized drift and remaining overrides on a human provider set", async () => {
+    // Exercise provider reconciliation without a provider-specific agent model.
+    currentAgent.model = undefined;
     sessionsByAgent = [
       {
         sessionKey: "agent:dev:wa",
@@ -867,7 +885,7 @@ describe("AgentsCommands model preset mutations", () => {
   });
 
   it("clears the preset when a direct model is written", async () => {
-    currentAgent = { id: "dev", cwd: "/tmp/dev", modelPresetId: "fast-sonnet" };
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", modelPresetId: "fast-sonnet" };
     const commands = new AgentsCommands();
 
     await commands.set("dev", "model", "sonnet", true);

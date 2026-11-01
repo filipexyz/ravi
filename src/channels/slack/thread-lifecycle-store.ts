@@ -201,6 +201,15 @@ export function findSlackThreadLifecycleByChildSession(childSessionKey: string):
   return row ? rowToSlackThreadLifecycle(row) : null;
 }
 
+/** The lifecycle survives session pruning; names must resolve unambiguously. */
+export function findSlackThreadLifecycleByChildRef(ref: string): SlackThreadLifecycleRecord | null {
+  const rows = getDb()
+    .prepare(`SELECT * FROM slack_thread_lifecycle
+      WHERE child_session_key = ? OR child_session_name = ? OR request_id = ? LIMIT 2`)
+    .all(ref, ref, ref) as SlackThreadLifecycleRow[];
+  return rows.length === 1 ? rowToSlackThreadLifecycle(rows[0]!) : null;
+}
+
 export function findSlackThreadLifecycleByProviderThread(input: {
   instanceId: string;
   platformChatId: string;
@@ -467,6 +476,7 @@ export function registerInboundSlackThread(input: RegisterInboundSlackThreadInpu
 
 export function closeSlackThreadLifecycle(input: {
   childSessionKey: string;
+  requestId?: string;
   returnResult?: string;
   closeContextId?: string;
   closedAt?: number;
@@ -476,7 +486,12 @@ export function closeSlackThreadLifecycle(input: {
   return executeWrite(
     getDb(),
     (database) => {
-      const existing = selectSlackThreadLifecycleByChildSession(database, input.childSessionKey);
+      const existing = input.requestId
+        ? selectSlackThreadLifecycle(database, input.requestId)
+        : selectSlackThreadLifecycleByChildSession(database, input.childSessionKey);
+      if (existing && existing.childSessionKey !== input.childSessionKey) {
+        throw new Error("Slack thread lifecycle child does not match the selected request");
+      }
       if (!existing) {
         throw new Error(`Slack thread lifecycle not found for session: ${input.childSessionKey}`);
       }

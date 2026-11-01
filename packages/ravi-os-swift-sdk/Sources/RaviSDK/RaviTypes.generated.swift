@@ -26215,17 +26215,29 @@ public struct RuntimeCredentialsSelectReturn: Codable, Sendable {
 }
 
 public struct RuntimeCredentialsStatusReturn: Codable, Sendable {
-  public var credential: [String: RaviJSON]
-  public var health: RaviJSON
+  public var credential: [String: RaviJSON]?
+  public var credentials: [[String: RaviJSON]]?
+  public var health: RaviJSON?
+  public var pagination: RaviJSON?
+  public var providerHealth: [[String: RaviJSON]]?
+  public var total: Double?
 
-  public init(credential: [String: RaviJSON], health: RaviJSON) {
+  public init(credential: [String: RaviJSON]? = nil, credentials: [[String: RaviJSON]]? = nil, health: RaviJSON? = nil, pagination: RaviJSON? = nil, providerHealth: [[String: RaviJSON]]? = nil, total: Double? = nil) {
     self.credential = credential
+    self.credentials = credentials
     self.health = health
+    self.pagination = pagination
+    self.providerHealth = providerHealth
+    self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
     case credential = "credential"
+    case credentials = "credentials"
     case health = "health"
+    case pagination = "pagination"
+    case providerHealth = "providerHealth"
+    case total = "total"
   }
 }
 

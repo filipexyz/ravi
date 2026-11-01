@@ -80,7 +80,6 @@ import { validateRuntimeModelSelector } from "../../runtime/model-validation.js"
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess } from "../command-access.js";
 import { CliExpectedError } from "../expected-error.js";
-import { modelProviderMismatch } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
@@ -102,9 +101,11 @@ import { resolveRouteSeededSlackChat } from "../../channels/slack/route-seeded-c
 import {
   createSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
+  findSlackThreadLifecycleByChildRef,
 } from "../../channels/slack/thread-lifecycle-store.js";
 import {
   closeSlackThread,
+  closeSlackThreadRecord,
   listSlackThreadsForSession,
   reportSlackThreadProgress,
   sendSlackThreadMessage,
@@ -3707,6 +3708,20 @@ export class SessionCommands {
     const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
     if (propagate === true && providerOverride && agent) {
       assertAgentDefaultsWriteAuthorized(s.agentId);
+    }
+    const nextRuntime = resolveEffectiveSessionRuntime({
+      session: {
+        ...s,
+        runtimeProviderOverride: providerOverride ?? undefined,
+        // Clearing rematerializes the agent defaults below.
+        runtimeProvider: providerOverride ? s.runtimeProvider : undefined,
+      },
+      agent,
+    });
+    if (nextRuntime.model.value && nextRuntime.model.source !== "runtime_default") {
+      assertModelValidForProvider(nextRuntime.provider.value, nextRuntime.model.value);
+    }
+    if (propagate === true && providerOverride && agent) {
       if (agent.model) assertModelValidForProvider(providerOverride, agent.model);
       const preset = agent.modelPresetId ? getRuntimeModelPreset(agent.modelPresetId) : null;
       if (preset && preset.provider !== providerOverride) {
@@ -3838,6 +3853,15 @@ export class SessionCommands {
     const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
     if (propagate === true && modelOverride && agent) {
       assertAgentDefaultsWriteAuthorized(s.agentId);
+    }
+    const nextRuntime = resolveEffectiveSessionRuntime({
+      session: { ...s, modelOverride: modelOverride ?? undefined },
+      agent,
+    });
+    if (nextRuntime.model.value && nextRuntime.model.source !== "runtime_default") {
+      assertModelValidForProvider(nextRuntime.provider.value, nextRuntime.model.value);
+    }
+    if (propagate === true && modelOverride && agent) {
       assertModelValidForProvider(agent.provider, modelOverride);
     }
     if (model === "clear") {
@@ -6598,25 +6622,24 @@ export class SessionCommands {
     // agent default while `--model` was measured against a different runtime.
     const inheritedProvider = creationTarget.parentSession.runtimeProviderOverride?.trim() || undefined;
     const resolvedProvider = normalizedProvider ?? inheritedProvider;
-    // The check needs the runtime the child will actually start on, which is the
-    // parent's effective provider when nothing was pinned. That value is used for
-    // validation only: storing it would pin a thread that should follow its agent.
-    const parentProvider =
-      resolvedProvider ??
-      resolveEffectiveSessionRuntime({
-        session: creationTarget.parentSession,
-        agent:
-          getAgent(creationTarget.parentSession.agentId) ??
-          loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
-          null,
-      }).provider.value;
-    const selectorValidation = normalizedModel ? validateRuntimeModelSelector(parentProvider, normalizedModel) : null;
-    const providerMismatch = selectorValidation?.error ?? modelProviderMismatch(parentProvider, normalizedModel);
-    if (providerMismatch) {
-      contractFail("sessions create-thread", "THREAD_MODEL_PROVIDER_MISMATCH", providerMismatch, {
-        asJson,
-        details: { suggestedAction: "Choose --provider explicitly; Pi selectors use provider/model" },
-      });
+    // Mirror child materialization: only explicit overrides travel, while the
+    // model and unpinned provider come from the agent/defaults, not parent history.
+    const childRuntime = resolveEffectiveSessionRuntime({
+      session: {
+        agentId: creationTarget.parentSession.agentId,
+        runtimeProviderOverride: resolvedProvider as RuntimeProviderId | undefined,
+        modelOverride: normalizedModel,
+      },
+      agent:
+        getAgent(creationTarget.parentSession.agentId) ??
+        loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
+        null,
+    });
+    if (childRuntime.model.value && childRuntime.model.source !== "runtime_default") {
+      const validation = validateRuntimeModelSelector(childRuntime.provider.value, childRuntime.model.value);
+      if (!validation.ok) {
+        throw slackThreadError("THREAD_MODEL_INVALID", validation.error ?? "Invalid thread model.");
+      }
     }
     const requestedBy = resolveSlackThreadRequester();
     const requestedRuntimeLabel = slackThreadRuntimeLabel({
@@ -6731,18 +6754,25 @@ export class SessionCommands {
       );
       return;
     }
-    const session = this.resolveTarget(target);
-    if (!session) return;
+    const session = resolveSession(target);
+    const orphan = session ? null : findSlackThreadLifecycleByChildRef(target);
     const scopeCtx = getScopeContext();
-    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
-      fail(`Session not found: ${target}`);
-      return;
+    const authorized = session
+      ? !isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, sessionActionRef(session))
+      : orphan &&
+        (!isScopeEnforced(scopeCtx) ||
+          canModifySession(scopeCtx, orphan.childSessionName ?? orphan.childSessionKey ?? target) ||
+          canModifySession(scopeCtx, orphan.parentSessionName));
+    if ((!session && !orphan) || !authorized) {
+      failSessionNotFound("sessions close-thread", target, asJson);
     }
-    assertSlackThreadChildSession("thread.close", session);
+    if (session) assertSlackThreadChildSession("thread.close", session);
     const normalizedReturn = returnResult ? decodeLiteralLineBreaks(returnResult).trim() || undefined : undefined;
     let result: Awaited<ReturnType<typeof closeSlackThread>>;
     try {
-      result = await closeSlackThread(session, normalizedReturn);
+      result = session
+        ? await closeSlackThread(session, normalizedReturn)
+        : await closeSlackThreadRecord(orphan!, normalizedReturn);
     } catch (error) {
       rethrowSlackThreadError(error);
     }
@@ -6766,8 +6796,8 @@ export class SessionCommands {
         sessionName: result.record.parentSessionName,
       },
       childSession: {
-        sessionKey: result.record.childSessionKey ?? session.sessionKey,
-        sessionName: result.record.childSessionName ?? session.name ?? null,
+        sessionKey: result.record.childSessionKey ?? session?.sessionKey ?? null,
+        sessionName: result.record.childSessionName ?? session?.name ?? null,
       },
       slack: {
         channelId: result.record.platformChatId,
@@ -6778,8 +6808,8 @@ export class SessionCommands {
     else {
       console.log(
         result.changed
-          ? `Closed Slack thread ${result.record.providerThreadId ?? sessionActionRef(session)}`
-          : `Slack thread ${result.record.providerThreadId ?? sessionActionRef(session)} was already closed`,
+          ? `Closed Slack thread ${result.record.providerThreadId ?? target}`
+          : `Slack thread ${result.record.providerThreadId ?? target} was already closed`,
       );
     }
     return payload;

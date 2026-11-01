@@ -3250,6 +3250,20 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
 
+    -- Run identity and admitted notification owner survive job edits/deletion.
+    CREATE TABLE IF NOT EXISTS cron_runs (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      admitted_at INTEGER NOT NULL,
+      notification_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'ok', 'error')),
+      finished_at INTEGER,
+      error TEXT,
+      reported INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_id);
+
     -- Durable idempotency ledger for reactions whose target may later be deleted.
     CREATE TABLE IF NOT EXISTS reaction_actions (
       idempotency_key_hash TEXT PRIMARY KEY,

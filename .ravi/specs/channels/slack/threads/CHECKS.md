@@ -64,3 +64,8 @@ bun run build
 
 - `src/channels/slack/thread-lifecycle.test.ts` MUST classify human-requested bootstraps as interactive while keeping agent/cron/observer bootstraps background and actor authority unchanged.
 - `src/cli/commands/sessions.test.ts` and `src/cli/remote-gateway.test.ts` MUST reject an inherited Pi/Codex model mismatch before side effects and preserve an actionable remote error.
+
+## Orphan close
+
+- `bun test src/channels/slack/thread-lifecycle.test.ts` closes a pruned child by its durable request id without recreating the session, is idempotent, and closes only the selected request when child keys collide.
+- `bun test src/cli/commands/sessions.test.ts` cloaks missing, ambiguous and unauthorized orphan references as SESSION_NOT_FOUND and requires modify authority before exposing or closing the card.

@@ -52,6 +52,7 @@ export type RuntimeTurnAuthorityEnvelope = Pick<
   | "_heartbeat"
   | "_cron"
   | "_jobId"
+  | "_cronRunId"
   | "_cronAuthority"
   | "_trigger"
   | "_triggerId"
@@ -79,6 +80,7 @@ export function pickRuntimeTurnAuthorityEnvelope(
   if (prompt._cron) {
     envelope._cron = prompt._cron;
     if (prompt._jobId) envelope._jobId = prompt._jobId;
+    if (prompt._cronRunId) envelope._cronRunId = prompt._cronRunId;
     if (prompt._cronAuthority) envelope._cronAuthority = { ...prompt._cronAuthority };
   }
   if (prompt._trigger) {
@@ -94,9 +96,9 @@ export function pickRuntimeTurnAuthorityEnvelope(
 }
 
 export function hasIsolatedRuntimeTurnEnvelope(
-  prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin"> | null | undefined,
+  prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin" | "_cronRunId"> | null | undefined,
 ): boolean {
-  return prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined;
+  return prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined || prompt?._cronRunId !== undefined;
 }
 
 export interface RuntimeInterruptSuccessorPreparation {

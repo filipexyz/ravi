@@ -5,6 +5,7 @@ import { logger } from "../utils/logger.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { formatUserFacingTurnFailure } from "./public-failure.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("runtime:intake-failure");
 
@@ -62,6 +63,7 @@ export function reportRuntimePromptIntakeFailure(input: {
       type: "dispatch.dropped",
       ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
       reason: `intake_failed:${reason}`,
+      _turnProvenance: classifyTurnProvenance({ prompt }),
       sessionName,
       ...(source ? { _source: source } : {}),
       timestamp: new Date().toISOString(),

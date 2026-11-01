@@ -660,7 +660,12 @@ describe("RuntimePromptSubscription", () => {
   });
 
   it("ACKs sqlite capacity errors and emits a runtime turn.failed without NAK", async () => {
-    const message = makePromptMessage("ravi.session.dev.prompt", { prompt: "continue" });
+    const message = makePromptMessage("ravi.session.dev.prompt", {
+      prompt: "continue",
+      _cron: true,
+      _jobId: "job",
+      _cronRunId: "run",
+    });
     consumedMessages = [message];
     const handlePrompt = mock(async () => {
       throw new Error("SQLiteError: out of memory");
@@ -689,6 +694,7 @@ describe("RuntimePromptSubscription", () => {
           type: "turn.failed",
           recoverable: false,
           error: expect.stringContaining("Vacuum is an operator maintenance step"),
+          _turnProvenance: expect.objectContaining({ automationId: "cron:job", cronRunId: "run" }),
         }),
       }),
     );

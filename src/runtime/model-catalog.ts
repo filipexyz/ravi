@@ -190,6 +190,17 @@ export function modelProviderMismatch(
 ): string | null {
   const value = model?.trim();
   if (!value || !provider) return null;
+  // Pi accepts provider/model selectors, but the Codex-only agent models are
+  // not OpenAI API model ids. Do not silently launch them through Pi.
+  if (
+    provider === "pi" &&
+    /^(?:(?:codex|openai|openai-codex)\/)?gpt-\d(?:\.\d+)?-(?:astra|sol|terra|luna)(?:$|-)/i.test(value)
+  ) {
+    return `Model "${value}" requires the codex runtime. Pass --provider codex.`;
+  }
+  if (provider === "codex" && /^(?:codex|openai-codex)\//i.test(value)) {
+    return `Model "${value}" must be a bare model id for the codex runtime; remove its provider prefix.`;
+  }
   // Pi chooses its own API provider for bare model ids. A Codex selector
   // inherited from a parent must not silently run against that provider.
   // Explicit Pi provider/model selectors remain valid (including custom models).
@@ -202,6 +213,7 @@ export function modelProviderMismatch(
   if (provider === "grok" && (value.includes("/") || (FOREIGN_MODEL_PATTERN.test(value) && !/^grok/i.test(value)))) {
     return `Model "${value}" does not belong to the grok runtime. Pass --provider for that model.`;
   }
+  if (provider === "pi" && !CLAUDE_MODEL_ALIASES.has(value.toLowerCase())) return null;
   if (provider === "claude") {
     if (isClaudeModelAlias(value) || (!value.includes("/") && !FOREIGN_MODEL_PATTERN.test(value))) return null;
     return `Model "${value}" does not belong to the claude runtime. Pass --provider for that model, or choose a Claude model.`;

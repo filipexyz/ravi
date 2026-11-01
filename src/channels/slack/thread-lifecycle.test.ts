@@ -10,6 +10,7 @@ import { dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
   closeSlackThread,
+  closeSlackThreadRecord,
   deliverSlackThreadParentReturn,
   finalizeSlackThreadCreation,
   listSlackThreadsForSession,
@@ -24,6 +25,7 @@ import {
   completeSlackThreadCreation,
   createSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
+  findSlackThreadLifecycleByChildRef,
   getSlackThreadLifecycle,
   markSlackThreadRootDelivered,
 } from "./thread-lifecycle-store.js";
@@ -60,6 +62,75 @@ describe("Slack thread lifecycle", () => {
       expect(payload.source?.actorType).toBe("agent");
     },
   );
+
+  it("closes the selected request when two records refer to the same child", async () => {
+    const fixture = seedPendingCreation();
+    const deps = {
+      publishPrompt: mock(async () => {}),
+      publishEvent: mock(async () => {}),
+      publishOutbound: mock(async () => {}),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, deps);
+    const first = getSlackThreadLifecycle(fixture.requestId)!;
+    createSlackThreadLifecycle({
+      requestId: "slack-thread:duplicate-child",
+      parentSessionKey: first.parentSessionKey,
+      parentSessionName: first.parentSessionName,
+      initiatorSessionKey: first.parentSessionKey,
+      initiatorSessionName: first.parentSessionName,
+      accountId: first.accountId,
+      instanceId: first.instanceId,
+      platformChatId: first.platformChatId,
+      rootCanonicalChatId: first.rootCanonicalChatId,
+      initialPrompt: "Second request",
+    });
+    markSlackThreadRootDelivered({
+      requestId: "slack-thread:duplicate-child",
+      providerThreadId: "1713000000.000200",
+      canonicalRootMessageId: "second",
+    });
+    claimSlackThreadCreation({ requestId: "slack-thread:duplicate-child", claimId: "claim-duplicate", leaseMs: 1000 });
+    completeSlackThreadCreation({
+      requestId: "slack-thread:duplicate-child",
+      claimId: "claim-duplicate",
+      childSessionKey: first.childSessionKey!,
+      childSessionName: first.childSessionName!,
+      threadCanonicalChatId: first.threadCanonicalChatId!,
+      promptPublishedAt: Date.now(),
+    });
+    await closeSlackThreadRecord(first, undefined, deps);
+    expect(getSlackThreadLifecycle(first.requestId)?.status).toBe("closed");
+    expect(getSlackThreadLifecycle("slack-thread:duplicate-child")?.status).toBe("open");
+  });
+  it("closes a pruned child's durable card without recreating the session", async () => {
+    const fixture = seedPendingCreation();
+    const jobs: ChannelOutboundJob[] = [];
+    const deps = {
+      publishPrompt: mock(async () => {}),
+      publishEvent: mock(async () => {}),
+      publishOutbound: mock(async (job: ChannelOutboundJob) => {
+        jobs.push(job);
+      }),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, deps);
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    deleteSession(child.sessionKey);
+    const record = findSlackThreadLifecycleByChildRef(child.name!)!;
+    expect(record.childSessionKey).toBe(child.sessionKey);
+    const result = await closeSlackThreadRecord(record, undefined, deps);
+    expect(result.record.status).toBe("closed");
+    expect(getSession(child.sessionKey)).toBeNull();
+    expect(
+      jobs.some(
+        (job) =>
+          job.request.content.type === "chat_action" &&
+          job.request.content.actionId === "message.edit" &&
+          job.request.content.threadCard?.status === "closed",
+      ),
+    ).toBe(true);
+    expect((await closeSlackThreadRecord(record, undefined, deps)).changed).toBe(false);
+    expect(findSlackThreadLifecycleByChildRef("unknown")).toBeNull();
+  });
 
   it("materializes one child turn after durable root delivery and applies its model first", async () => {
     const fixture = seedPendingCreation();

@@ -234,6 +234,8 @@ export interface PromptMessage {
   _cron?: boolean;
   /** Cron job id when `_cron` is true. */
   _jobId?: string;
+  /** Durable identity of this admitted cron execution, distinct from its job. */
+  _cronRunId?: string;
   /** Ownership fixed by the runner before dispatch, never rebuilt from a live job. */
   _cronAuthority?: CronRunAuthority;
   /** Trigger runner prompt marker. */

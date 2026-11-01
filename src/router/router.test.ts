@@ -246,6 +246,49 @@ describe("router context queries", () => {
     expect(legacy.owner_principal).toBeNull();
   });
 
+  it("creates the durable cron run ledger on reopen without replaying legacy jobs and retains admitted owners after deletion", () => {
+    const db = getDb();
+    db.exec("DROP TABLE cron_runs");
+    db.query(`INSERT INTO cron_jobs (id, name, schedule_type, schedule_every, payload_text, created_at, updated_at)
+      VALUES ('legacy-ledger-job', 'legacy', 'every', 60000, 'noop', 1, 1)`).run();
+    closeRouterDb();
+    const migrated = getDb();
+    expect(migrated.query("SELECT id FROM cron_jobs WHERE id='legacy-ledger-job'").get()).toEqual({
+      id: "legacy-ledger-job",
+    });
+    expect(migrated.query("SELECT * FROM cron_runs").all()).toEqual([]);
+    const notification = JSON.stringify({
+      id: "legacy-ledger-job",
+      ownerPrincipal: "contact:admitted-owner",
+      runId: "admitted-run",
+    });
+    migrated
+      .query(`INSERT INTO cron_runs (id,job_id,session_name,admitted_at,notification_json,status)
+      VALUES ('admitted-run','legacy-ledger-job','cron-session',42,?,'pending')`)
+      .run(notification);
+    migrated.query("DELETE FROM cron_jobs WHERE id='legacy-ledger-job'").run();
+    closeRouterDb();
+    const reopened = getDb();
+    expect(
+      reopened
+        .query(
+          "SELECT job_id,session_name,admitted_at,notification_json,status,reported FROM cron_runs WHERE id='admitted-run'",
+        )
+        .get(),
+    ).toEqual({
+      job_id: "legacy-ledger-job",
+      session_name: "cron-session",
+      admitted_at: 42,
+      notification_json: notification,
+      status: "pending",
+      reported: 0,
+    });
+    expect(() => reopened.query("UPDATE cron_runs SET status='delivered' WHERE id='admitted-run'").run()).toThrow();
+    expect(
+      (reopened.query("PRAGMA index_list(cron_runs)").all() as Array<{ name: string }>).map((row) => row.name),
+    ).toContain("idx_cron_runs_job");
+  });
+
   it("scopes Console inbox item idempotency by Console and organization", () => {
     const db = getDb();
     const insert = db.prepare(
