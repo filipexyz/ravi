@@ -703,6 +703,7 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("lists provider overrides with reasons and leaves them in place", async () => {
+    if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
     // Exercise provider reconciliation without a provider-specific agent model.
     currentAgent.model = undefined;
     sessionsByAgent = [
@@ -736,6 +737,7 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("clears overrides with --force and rematerializes those sessions", async () => {
+    if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
     // Exercise provider reconciliation without a provider-specific agent model.
     currentAgent.model = undefined;
     sessionsByAgent = [
@@ -783,6 +785,7 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("prints rematerialized drift and remaining overrides on a human provider set", async () => {
+    if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
     // Exercise provider reconciliation without a provider-specific agent model.
     currentAgent.model = undefined;
     sessionsByAgent = [
