@@ -85,6 +85,12 @@ channels.inbound_contact_unresolved
 
 ## False Positive Guards
 
+- `bun test src/security/nats-exposure-review.test.ts` MUST cover real TCP-probe
+  EMFILE in a subprocess with a low descriptor limit, injected probe failures,
+  space-containing userinfo in redaction/report/log output, the second local
+  server port, and the complete IPv4-mapped loopback URL after normalization.
+- The descriptor-exhaustion fixture MUST NOT run in the test runner or affect
+  production processes; its subprocess MUST have a bounded lifetime.
 - `bun test src/security/nats-exposure.test.ts` MUST distinguish thrown/null
   enumeration failures from a successful empty list and refuse private startup
   for the failures.

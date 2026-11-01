@@ -122,7 +122,7 @@ describe("probeNatsExposure", () => {
         throw new Error("no firewall");
       },
     });
-    expect(report.status).toBe("loopback_only");
+    expect(report.status).toBe("unknown");
     expect(report.firewall).toBe("unknown");
   });
 

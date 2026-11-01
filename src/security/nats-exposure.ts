@@ -17,8 +17,9 @@
 
 import { execFile } from "node:child_process";
 import { lookup } from "node:dns/promises";
+import { closeSync, openSync } from "node:fs";
 import { createConnection, isIP } from "node:net";
-import { networkInterfaces } from "node:os";
+import { devNull, networkInterfaces } from "node:os";
 
 export const DEFAULT_NATS_URL = "nats://127.0.0.1:4222";
 const DEFAULT_NATS_PORT = 4222;
@@ -37,8 +38,8 @@ export type NatsExposureStatus =
 export type HostFirewallState = "on" | "off" | "unknown";
 
 export interface NatsProbeResult {
-  /** A TCP connection was accepted. */
-  reachable: boolean;
+  /** True: accepted; false: refused; null: the probe could not establish reachability. */
+  reachable: boolean | null;
   /** Parsed server INFO flags; null when no INFO line was read. */
   authRequired: boolean | null;
   tlsRequired: boolean | null;
@@ -92,7 +93,23 @@ export function resolveNatsUrl(env: NodeJS.ProcessEnv = process.env): string {
 export function redactNatsUrl(natsUrl: string): string {
   return natsUrl
     .split(",")
-    .map((segment) => segment.replace(/^(\s*(?:[a-z][\w+.-]*:\/\/)?)[^/\s]*@/i, "$1[redacted]@"))
+    .map((segment) => {
+      const prefix = segment.match(/^(\s*)([a-z][\w+.-]*:\/\/)?/i);
+      const whitespace = prefix?.[1] ?? "";
+      const scheme = prefix?.[2] ?? "";
+      try {
+        const url = new URL(scheme ? segment.trim() : `nats://${segment.trim()}`);
+        if (!url.username && !url.password) return segment;
+        url.username = "";
+        url.password = "";
+        const withoutScheme = url.href.slice(url.protocol.length + 2);
+        return `${whitespace}${scheme}[redacted]@${withoutScheme}`;
+      } catch {
+        // Malformed userinfo is still secret. Over-redact through the last @,
+        // including whitespace and separators that prevented URL parsing.
+        return segment.replace(/^(\s*(?:[a-z][\w+.-]*:\/\/)?)[\s\S]*@/i, "$1[redacted]@");
+      }
+    })
     .join(",");
 }
 
@@ -103,9 +120,14 @@ export function isLoopbackHost(host: string): boolean {
     .toLowerCase()
     .replace(/^\[|\]$/g, "");
   if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
-  if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true;
-  if (normalized.startsWith("::ffff:")) return isLoopbackHost(normalized.slice("::ffff:".length));
-  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(normalized);
+  if (isIP(normalized) === 6) {
+    // Interface enumeration includes zones on link-local IPv6; URL does not.
+    const canonical = new URL(`http://[${normalized.split("%")[0]}]`).hostname.slice(1, -1);
+    if (canonical === "::1") return true;
+    const mapped = canonical.match(/^::ffff:([\da-f]{1,4}):[\da-f]{1,4}$/);
+    return mapped !== null && Number.parseInt(mapped[1], 16) >>> 8 === 127;
+  }
+  return isIP(normalized) === 4 && normalized.startsWith("127.");
 }
 
 function isWildcardHost(host: string): boolean {
@@ -193,7 +215,7 @@ export const defaultNatsProbe: NatsProbe = (host, port, timeoutMs) =>
     };
 
     const timer = setTimeout(() => {
-      finish({ reachable: connected, authRequired: null, tlsRequired: null });
+      finish({ reachable: connected ? true : null, authRequired: null, tlsRequired: null });
     }, timeoutMs);
     timer.unref?.();
 
@@ -210,12 +232,31 @@ export const defaultNatsProbe: NatsProbe = (host, port, timeoutMs) =>
         const info = parseNatsInfoLine(end === -1 ? buffer : buffer.slice(0, end));
         finish({ reachable: true, authRequired: info?.authRequired ?? null, tlsRequired: info?.tlsRequired ?? null });
       });
-      socket.on("error", () => finish({ reachable: connected, authRequired: null, tlsRequired: null }));
-      socket.on("close", () => finish({ reachable: connected, authRequired: null, tlsRequired: null }));
+      socket.on("error", (error: NodeJS.ErrnoException) =>
+        finish({
+          reachable: connected ? true : isConfirmedRefusal(error) ? false : null,
+          authRequired: null,
+          tlsRequired: null,
+        }),
+      );
+      socket.on("close", () => finish({ reachable: connected ? true : null, authRequired: null, tlsRequired: null }));
     } catch {
-      finish({ reachable: false, authRequired: null, tlsRequired: null });
+      finish({ reachable: null, authRequired: null, tlsRequired: null });
     }
   });
+
+function isConfirmedRefusal(error: NodeJS.ErrnoException): boolean {
+  if (error.code !== "ECONNREFUSED") return false;
+  // Bun can report ECONNREFUSED when socket allocation actually failed with
+  // EMFILE. A refusal is not evidence of isolation while descriptors are exhausted.
+  try {
+    const descriptor = openSync(devNull, "r");
+    closeSync(descriptor);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 type ExecFileLike = (
   file: string,
@@ -288,7 +329,7 @@ async function safeProbe(probe: NatsProbe, host: string, port: number, timeoutMs
   try {
     return await probe(host, port, timeoutMs);
   } catch {
-    return { reachable: false, authRequired: null, tlsRequired: null };
+    return { reachable: null, authRequired: null, tlsRequired: null };
   }
 }
 
@@ -341,7 +382,8 @@ export async function probeNatsExposure(
 
   const classified = await Promise.all(servers.map(async (server) => ({ server, local: await isLocalServer(server) })));
   const remoteServers = classified.filter((entry) => !entry.local).map((entry) => entry.server);
-  const localServer = classified.find((entry) => entry.local)?.server;
+  const localServers = classified.filter((entry) => entry.local).map((entry) => entry.server);
+  const localServer = localServers[0];
 
   const remoteChecks = await Promise.all(
     remoteServers.map(async (server) => {
@@ -387,27 +429,43 @@ export async function probeNatsExposure(
     };
   }
 
+  const ports = [...new Set(localServers.map((server) => server.port))];
   const results = await Promise.all(
-    nonLoopback.map(async (address) => ({
-      address,
-      result: await safeProbe(probe, address, parsed.port, timeoutMs),
-    })),
+    ports.flatMap((port) =>
+      nonLoopback.map(async (address) => ({
+        address,
+        port,
+        result: await safeProbe(probe, address, port, timeoutMs),
+      })),
+    ),
   );
   const firewall = await firewallPromise;
-  const reachable = results.filter((entry) => entry.result.reachable);
-  const reachableAddresses = reachable.map((entry) => `${entry.address}:${parsed.port}`);
-  const common = { ...base, host: parsed.host, port: parsed.port, reachableAddresses, firewall };
+  const reachable = results.filter((entry) => entry.result.reachable === true);
+  const reachableAddresses = reachable.map((entry) => `${entry.address}:${entry.port}`);
+  const unknown = results.filter((entry) => entry.result.reachable === null);
+  const unauthenticated = reachable.some((entry) => entry.result.authRequired !== true);
+  const shown = reachable.find((entry) => entry.result.authRequired !== true) ?? unknown[0] ?? reachable[0];
+  const common = { ...base, host: parsed.host, port: shown?.port ?? parsed.port, reachableAddresses, firewall };
+  const portLabel = ports.length === 1 ? `port ${ports[0]}` : `ports ${ports.join(", ")}`;
+
+  if (!unauthenticated && unknown.length > 0) {
+    return {
+      ...common,
+      status: "unknown",
+      message: `could not determine NATS exposure on ${unknown.map((entry) => `${entry.address}:${entry.port}`).join(", ")}`,
+      remediation: LOCAL_REMEDIATION,
+    };
+  }
 
   if (reachable.length === 0) {
     return {
       ...common,
       status: "loopback_only",
-      message: `NATS port ${parsed.port} is not reachable on any non-loopback address`,
+      message: `NATS ${portLabel} is not reachable on any non-loopback address`,
       remediation: [],
     };
   }
 
-  const unauthenticated = reachable.some((entry) => entry.result.authRequired !== true);
   const authRequired = !unauthenticated;
   const tlsRequired = reachable.every((entry) => entry.result.tlsRequired === true);
   if (!unauthenticated) {
@@ -416,7 +474,7 @@ export async function probeNatsExposure(
       authRequired,
       tlsRequired,
       status: "exposed_auth_required",
-      message: `NATS port ${parsed.port} is reachable from the network (${reachableAddresses.join(", ")}) but requires auth`,
+      message: `NATS ${portLabel} is reachable from the network (${reachableAddresses.join(", ")}) but requires auth`,
       remediation: LOCAL_REMEDIATION,
     };
   }
@@ -427,7 +485,7 @@ export async function probeNatsExposure(
     tlsRequired,
     status: "exposed",
     message:
-      `NATS port ${parsed.port} accepts unauthenticated connections from the network ` +
+      `NATS ${portLabel} accepts unauthenticated connections from the network ` +
       `(${reachableAddresses.join(", ")}): anyone who can reach it can read every message and publish commands`,
     remediation: LOCAL_REMEDIATION,
   };
