@@ -16,100 +16,124 @@ applies_to:
 
 # Review Merge Gate
 
-## Current operational state: reviewer requirement OFF
+This spec separates historical evidence, observed live enforcement and the
+recommended replacement. Frontmatter `status: active` makes the documentation
+normative; it does not mean that the recommended gate is deployed.
 
-Exception `RG-2026-10-31-REVIEWER-OFF` is open. On 2026-10-31 the operator
-reported temporarily disabling mandatory reviewers. REST readback at
-`2026-10-31T22:23:58Z` confirmed the following for `filipexyz/ravi`, branch
-`dev`, ruleset `26284495` (`dev review merge gate`):
+## 1. Historical snapshot — 2026-10-31 only
 
-| Control | Observed state |
+At `2026-10-31T22:23:58Z`, REST readback for `filipexyz/ravi`, branch `dev`,
+showed ruleset `26284495` (`dev review merge gate`) with:
+
+| Control | State at that observation only |
 | --- | --- |
 | Ruleset enforcement | `active`; no bypass actors |
-| Native minimum approvals | **OFF**: `required_approving_review_count=0` |
-| Independent last-push approval | **OFF**: `require_last_push_approval=false` |
+| Native minimum approvals | `required_approving_review_count=0` |
+| Independent last-push approval | `require_last_push_approval=false` |
 | Stale approval dismissal | Enabled |
 | Conversation resolution | Required |
-| `Review Gate` and `Review Gate Tests` | Still required, integration `15368`, strict checks |
+| `Review Gate` and `Review Gate Tests` | Required, integration `15368`, strict checks |
 
-The ruleset was last updated at `2026-10-31T19:21:43.584-03:00`. Evidence is
-the operator instruction plus read-only GETs of
-`repos/filipexyz/ravi/rulesets/26284495` and
-`repos/filipexyz/ravi/rules/branches/dev`. This is a dated snapshot, not a
-claim about other branches or future configuration. Frontmatter `status:
-active` describes this policy, not completion of its enforcement rollout.
+The ruleset then reported an update at `2026-10-31T19:21:43.584-03:00`.
+This was the evidence for exception `RG-2026-10-31-REVIEWER-OFF`. It is retained
+as history, not as current configuration or as a guard still protecting merges.
+The later removal below expands the enforcement gap; it does not close the
+exception. The checked-in `.github/review-gate-ruleset.json` represents the
+old design, not live state and not the recommended replacement to apply.
 
-### Interim decision and accepted boundary
+## 2. Current configured policy — 2026-11-01 observation
 
-- Independent review MUST remain mandatory in Ravi's own process while the
-  native reviewer requirement is off. CI success or a merge button being
-  available MUST NOT authorize a merge.
-- Direction/main owns collection of the review packet and operational
-  tracking of this exception. Each cognitive evaluation MUST run in its own
-  Thread with `codex/gpt-6-astra`, linked to the durable delivery/review task.
-  The reviewer MUST be a distinct authenticated agent principal and execution
-  from every patch contributor; a renamed session or another thread under the
-  author's principal MUST NOT count as independence.
-- The packet MUST identify the PR, exact head/base SHAs, contract version,
-  authors/contributors, reviewer identity and thread, explicit verdict,
-  resolved findings and verification evidence. A change to the candidate or
-  relevant review evidence MUST invalidate that packet before integration.
-- This documentation does NOT install an internal technical enforcement
-  service or isolate merge credentials. Until such a path is implemented and
-  independently verified, unattended agent merges MUST remain blocked. A
-  maintainer MAY perform an attended merge only after checking the independent
-  review packet, fresh repository evidence and every still-required check.
-- The existing evaluator still requires an eligible independent **human
-  GitHub approval**. An Astra review artifact is additional internal evidence,
-  not a substitute for that approval and not permission to waive a failing
-  `Review Gate`. Missing reviewer, missing evidence, inconclusive review or
-  failed/missing required checks MUST block the authorized integration path.
-- The temporary risk is loss of the native second-identity/last-push barrier.
-  A writer or administrator using another path may bypass the internal
-  procedure; the current Actions check publisher is not independent of PR
-  authors, and a previous success is not a permanent authorization. Existing
-  required checks and conversation rules reduce some risks but MUST NOT be
-  described as equivalent protection. This exception does NOT authorize
-  unreviewed merges, fabricated approvals, weakened remaining checks, hook
-  bypasses or additional permissions.
+Read-only API inspection at `2026-11-01T13:15:45Z`, followed by the direct
+historical-ruleset lookup in the same inspection, confirmed:
 
-### Restoration ownership and exit criteria
+- `GET repos/filipexyz/ravi/rulesets/26284495` returns **404**.
+- The remaining rulesets are `18436907` (`block main`), `18533706`
+  (`dev copilot`) and `18436625` (`main`).
+- `GET repos/filipexyz/ravi/rules/branches/dev` lists **only `Quality Gate`**
+  in `required_status_checks`, with strict checking disabled. It also lists
+  Copilot code review and code-quality rules; these are not an independent
+  approval requirement or an enforcement of every review finding.
+- `Review Gate` and `Review Gate Tests` are **not required in dev**. Their
+  outputs, when produced, are advisory. No required review/last-push approval
+  or conversation-resolution rule appears in this effective-rules readback.
 
-- **Accountable restoration owner: Luís (`filipexyz`), repository admin.**
-  Direction/main prepares the readiness evidence and keeps the exception
-  visible; the owner applies or explicitly delegates the repository change.
-- Before each attempted integration while this exception is open, the
-  integration owner MUST refresh the rules readback and review packet. Missing
-  evidence MUST stop the attempt; silence or elapsed time MUST NOT close the
-  exception.
-- Restore the native requirement once a real independent eligible reviewer
-  is available and the current-head gate can be exercised without inventing
-  approval or expanding access implicitly. A separately governed internal
-  gate may be proposed as a replacement only by an explicit policy decision;
-  it MUST NOT silently replace the current human-approval evaluator.
-- Restoration MUST set the minimum approval count back to at least one and
-  require independent last-push approval, retain all other required controls,
-  verify the effective branch rules and the negative/positive scenarios in
-  `CHECKS.md`, and record actor, time and evidence here. A fixture pass, merged
-  workflow or active ruleset label alone MUST NOT mark this exception closed.
+The existing evaluator may still reject missing independent human approval,
+open threads or API failures when it runs. An evaluator failure is not a
+repository merge veto unless its check is required. Conversely, its presence
+in this branch, an old ruleset JSON or a prior successful run proves no live
+protection. Configuration MUST be re-read before claiming a later state.
 
-## Required restored-state contract
+**Consequence:** a PR with a reproduced credential finding can be merged when
+`Quality Gate` and other applicable platform conditions permit it; no currently
+required review check makes that finding a blocker. A separate test might
+happen to fail, but the system does not guarantee that. This documents an
+exposure, not permission to merge the finding or a claim that such a merge
+was performed during this inspection.
 
-- `Review Gate` and `Review Gate Tests` MUST be required checks on `dev`, bound to the GitHub Actions integration (15368). The additive ruleset MUST have no bypass actors.
-- The restored platform state MUST require a PR, one independent approval, stale approval dismissal on push, approval of the last push by another identity, and resolution of all conversations. Missing checks MUST block merging. The two approval requirements are currently off under the recorded exception above; this target MUST NOT be reported as the live state.
-- The evaluator MUST query GitHub's API, paginate every thread, review and timeline page, and verify head SHA, explicit counts, nodes and pagination. HTTP/network/auth/GraphQL errors, nulls, partial results and inconsistent snapshots MUST fail closed. An explicit complete zero-thread result is valid; absence of data is not.
-- Every unresolved review thread MUST block, including outdated threads. Neither a green build, a dismissed review nor a severity label waives an open thread.
-- A successful evaluation MUST have a latest effective `APPROVED` review by a non-author human identity with current write/maintain/admin access, whose review commit equals the event's exact head SHA. Bots, the PR author and reader approvals MUST NOT qualify.
-- A push MUST invalidate the old approval and the attestation of previously resolved findings. A fresh independent approval on the new head is required even when GitHub retains the thread's resolved bit.
-- The gate MUST re-read the head and all evidence before success. Changing head or review evidence during evaluation MUST fail, requiring another run.
-- A manually dismissed review carrying a finding MUST have a native `ReviewDismissedEvent` with independent actor, technical justification, timestamp, URL and explicit SHA. The thread MUST also be resolved and there MUST still be an independent approval. Empty/generic unstructured dismissal messages MUST NOT qualify.
-- A stale dismissal can only be renewed by a new independent approval on the new SHA explicitly referencing the original dismissal event with a fresh justification. Native automatic dismissal of stale approvals is not a finding waiver.
-- Tests MUST cover open/resolved/API-failure/new-push scenarios independently of live credentials.
+The intended internal review procedure is not independently enforced tooling.
+This spec MUST NOT claim that a procedural instruction, attended merge,
+agent verdict or session envelope compensates for the missing repository gate.
 
-## Trust boundary
+## 3. Recommendation and exit criteria — not deployed
 
-The workflow executes PR code with read-only GitHub permissions and installs no project dependencies. It MUST NOT receive write credentials or repository secrets. It is reviewable repository policy, not an independently administered GitHub App.
+The independent audit reported on 2026-11-01 concluded that replacing approval
+with a session envelope from the **same authority principal is a bypass**, not
+implementation of the exception. A second thread, session, model, display name
+or agent identifier does not establish independence when the author controls
+its credentials, signing capability or attestation issuer.
 
-Binding a required check to GitHub Actions does **not** bind it to a particular workflow file. A writer can propose a workflow that reports the same name. When the native approval requirement is enabled, that writer still cannot self-approve the required native review. That safeguard is currently absent under the recorded exception. Administrators can edit the ruleset itself. Stronger guarantees against a malicious writer plus colluding reviewer, or against the repository owner, require a separately governed GitHub App/required workflow and organization-level policy. Do not claim these guarantees exist in a personal repository.
+The replacement MUST establish both boundaries:
 
-GitHub Actions has no `pull_request_review_thread` trigger. The restored state MUST keep native conversation-resolution and review rules enabled to prevent a cached success from permitting merge after a thread is reopened or an approval is dismissed. During the exception, fresh attended evidence checks are required but MUST NOT be described as equivalent server-side enforcement. After resolving a thread, re-run the failed gate on the current PR commit (or submit the final current-head approval).
+1. **Independent signed attestation.** An authorized reviewer produces a
+   verdict signed by a key outside the author's reach. PR code, author tools
+   and author-controlled sessions MUST NOT read that private key, impersonate
+   the reviewer, change the trust store, or obtain arbitrary signatures from
+   the signer. A signing service MUST authenticate the review authority and
+   validate the verdict source rather than signing an author-supplied envelope.
+2. **Required check from a dedicated GitHub App.** A verifier outside the
+   author's mutable PR execution publishes the result through a separately
+   controlled GitHub App. Effective branch rules MUST require that check and
+   bind it to that App's identity. A same-named GitHub Actions check, or an App
+   check left advisory, MUST NOT satisfy this boundary. The author's execution
+   MUST NOT hold the App's check-writing credentials or alter its policy.
+
+An attestation MUST bind repository, PR, exact head/base SHAs, candidate tree,
+contract/policy version, reviewer authority, findings and dispositions,
+evidence digest, explicit verdict and validity interval. Verification MUST
+reject tampering, untrusted signatures, wrong subject, stale/replayed approval,
+missing evidence and unresolved blocking findings. A reproduced credential
+finding MUST block until independently verified resolution or a justified,
+independently attested disposition. Renaming a finding or session is not a
+resolution. Any technical dismissal MUST preserve actor, justification,
+candidate and source evidence.
+
+The check MUST fail closed when the reviewer, signer, verifier or evidence is
+unavailable. It MUST invalidate stale results when the candidate or review
+state changes and verify the current subject at integration. The final design
+MUST cover changes that do not trigger the existing Actions workflow; cached
+success is not permanent authorization. Quality checks remain separate and
+required. Astra remains the model for cognitive review in its own Thread/task,
+but model choice and session provenance are not signing authority.
+
+### Ownership and closure
+
+- **Luís (`filipexyz`) owns the repository-policy decision and any activation.**
+  Direction/main prepares evidence and tracks the open gap. This documentation
+  update authorizes no settings/ruleset changes, new permissions, collaborator
+  invitations, credentials or App installation.
+- The owner must approve the concrete replacement and its authority boundaries
+  before activation. Reapplying the old Actions-bound JSON, restoring its old
+  id, or accepting a same-principal envelope MUST NOT be called completion of
+  the recommended independent gate.
+- Exit requires independent verification of key custody and signer access,
+  trusted verifier deployment, effective required-check binding to the App,
+  retained `Quality Gate`, and all negative/positive cases in `CHECKS.md`.
+  No bypass path available to the author may defeat these controls.
+- Record the authorized actor, time, effective rule/check/App identities and
+  validation evidence before declaring the gap closed. An admin's ability to
+  reconfigure policy remains an explicit governance limit; do not claim
+  resistance to the repository owner.
+- Until those criteria are proven, the gate remains **recommended, not
+  enforced**. Ravi agents MUST not use the missing gate as permission to merge
+  unreviewed work or a reproduced unresolved credential finding. This is an
+  operating instruction, not a claim of technical prevention.
