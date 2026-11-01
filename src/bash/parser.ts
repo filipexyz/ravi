@@ -45,6 +45,33 @@ export const UNCONDITIONAL_BLOCKS = new Set([
   ".",
 ]);
 
+// This boundary is enumerative: register every new interpreter runtime here.
+// Parser and real-hook tests iterate this exported set to enforce pipe refusal.
+export const INTERPRETERS: ReadonlySet<string> = new Set([
+  "python",
+  "python3",
+  "node",
+  "perl",
+  "ruby",
+  "php",
+  "bun",
+  "deno",
+  "nodejs",
+  "Rscript",
+  "lua",
+  "osascript",
+  "pwsh",
+  "tsx",
+  "ts-node",
+]);
+
+/** Normalize only for interpreter policy; executable grants keep the real name. */
+function interpreterName(executable: string): string | undefined {
+  if (INTERPRETERS.has(executable)) return executable;
+  const unversioned = executable.replace(/[\d.]+$/, "");
+  return INTERPRETERS.has(unversioned) ? unversioned : undefined;
+}
+
 /**
  * Interpreters that are blocked when used with inline code flags.
  */
@@ -79,17 +106,24 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
     for (let i = 0; i < inspected.syntax.length; i++) {
       if (inspected.syntax[i] !== "|" || /[|>]/.test(inspected.syntax[i - 1] ?? "") || inspected.syntax[i + 1] === "|")
         continue;
-      const receiver = splitByOperators(inspected.command.slice(i + 1))[0] ?? "";
-      const executable = parseSimpleCommand(receiver);
-      if (!executable) continue;
-      if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
-      if (INLINE_CODE_INTERPRETERS[executable]) {
-        if (isInlineCodeExecution(executable, receiver).blocked) {
-          return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
+      // Skip |&'s stderr marker, then scan only this pipe's receiver. Comments
+      // and blank lines may precede it; another chain cannot become its receiver.
+      const receiverStart = i + (inspected.syntax[i + 1] === "&" ? 2 : 1);
+      for (const receiver of splitByOperators(inspected.command.slice(receiverStart), true)) {
+        const executable = parseSimpleCommand(receiver);
+        if (!executable) continue;
+        if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
+        if (interpreterName(executable)) {
+          return { safe: false, reason: "piping to an interpreter is not allowed" };
         }
-        if (countCommandWords(receiver) === 1) {
-          return { safe: false, reason: "piping to interpreter stdin is not allowed" };
-        }
+        break;
+      }
+    }
+    for (const segment of splitByOperators(inspected.command)) {
+      const executable = parseSimpleCommand(segment);
+      const interpreter = executable ? interpreterName(executable) : undefined;
+      if (interpreter && hasDescriptorArgument(segment)) {
+        return { safe: false, reason: "interpreter descriptor arguments are not allowed" };
       }
     }
   } catch {
@@ -198,31 +232,66 @@ function parseWords(command: string, env?: Parameters<typeof parseShell>[1]): Pa
   return parseShell(view, env);
 }
 
-/** Assignments, comments and redirect operands are not interpreter arguments. */
-function countCommandWords(command: string): number {
-  const tokens = parseWords(command);
-  let count = 0;
+// A string marker preserves a word containing an expansion as one token, even
+// with a literal prefix/suffix. Later argument expansions can remain unresolved.
+const UNRESOLVED_EXPANSION = "\0";
+
+/** Assignments, comments and redirect operands are not command arguments. */
+function* commandWords(command: string): Generator<ParseEntry> {
+  const tokens = parseWords(command, () => UNRESOLVED_EXPANSION);
+  let foundExecutable = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
     const next = tokens[i + 1];
     if (typeof token === "string") {
-      if (count === 0 && isEnvAssignment(token)) continue;
+      if (!foundExecutable && isEnvAssignment(token)) continue;
       if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
-      count++;
+      foundExecutable = true;
+      yield token;
     } else if ("comment" in token) {
       break;
     } else if (token.op === "glob") {
-      count++;
+      yield token;
     } else if (token.op === "&" && typeof next === "object" && "op" in next && [">", ">>"].includes(next.op)) {
       // The following redirect token consumes the combined redirect destination.
     } else if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
       if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
-      if (tokens[++i] === undefined) throw new Error("Missing shell redirect destination");
+      const destination = tokens[++i];
+      if (typeof destination !== "string" || !destination) throw new Error("Cannot resolve shell redirect destination");
     } else {
-      throw new Error("Cannot resolve shell pipeline arguments");
+      throw new Error("Cannot resolve shell command arguments");
     }
   }
-  return count;
+}
+
+function hasDescriptorArgument(command: string): boolean {
+  const args = commandWords(command);
+  args.next(); // executable (assignments and redirect operands are skipped)
+  let endOfOptions = false;
+  let hasLiteralPositional = false;
+  let unresolvedLeadingArgument = false;
+  for (const arg of args) {
+    // Refuse descriptor forms in every position, including option operands and
+    // data after a script. No option arity or subcommand grammar grants an exception.
+    if (typeof arg === "string") {
+      const path = resolve("/", arg);
+      if (/^\/dev\/(?:std(?:in|out|err)|fd\/\d+)$/.test(path) || /^\/proc\/.*\/fd\/\d+$/.test(path)) return true;
+    }
+    if (typeof arg !== "string" || arg.includes(UNRESOLVED_EXPANSION)) {
+      if (!hasLiteralPositional) unresolvedLeadingArgument = true;
+      continue;
+    }
+    if (!endOfOptions && arg === "--") {
+      endOfOptions = true;
+      continue;
+    }
+    if (!endOfOptions && arg.startsWith("-") && arg !== "-") continue;
+    hasLiteralPositional = true;
+  }
+  // Keep dynamic leading script words fail-closed, without rejecting expansions
+  // after a literal positional word or attempting to identify a runtime's script.
+  if (unresolvedLeadingArgument) throw new Error("Cannot resolve leading interpreter argument");
+  return false;
 }
 
 /**
@@ -253,9 +322,10 @@ function parseSimpleCommand(command: string): string | null {
 
 /**
  * Split command by operators (pipes, and, or, semicolons).
- * Returns array of simple commands.
+ * Returns array of simple commands. Receiver scans stop at the next operator
+ * except newline, which may separate leading blank/comment-only segments.
  */
-function splitByOperators(command: string): string[] {
+function splitByOperators(command: string, receiverOnly = false): string[] {
   const inspected = inspectShellSyntax(command);
   if (inspected.error) throw new Error(inspected.error);
   const commands: string[] = [];
@@ -268,6 +338,7 @@ function splitByOperators(command: string): string[] {
     if (match[0] === "|" && inspected.syntax[index - 1] === ">") continue;
     const part = inspected.command.slice(start, match.index).trim();
     if (part) commands.push(part);
+    if (receiverOnly && match[0] !== "\n") return commands;
     start = match.index! + match[0].length;
   }
   const last = inspected.command.slice(start).trim();
@@ -279,7 +350,7 @@ function splitByOperators(command: string): string[] {
  * Check if an executable with its arguments represents inline code execution.
  */
 function isInlineCodeExecution(executable: string, command: string): { blocked: boolean; reason?: string } {
-  const flags = INLINE_CODE_INTERPRETERS[executable];
+  const flags = INLINE_CODE_INTERPRETERS[interpreterName(executable) ?? ""];
   if (!flags) return { blocked: false };
 
   // Check if any inline code flag is present in the command
@@ -327,6 +398,8 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
  * - Semicolons: ls; pwd -> ["ls", "pwd"]
  */
 export function parseBashCommand(command: string): ParsedCommand {
+  const patternCheck = checkDangerousPatterns(command);
+  if (!patternCheck.safe) return { executables: [], success: false, error: patternCheck.reason };
   try {
     // Split only on active operators; retain quoted words for token decoding.
     const simpleCommands = splitByOperators(command);

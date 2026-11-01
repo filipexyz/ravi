@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { existsSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { listPermissionDenials } from "../permissions/denials.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
@@ -6,6 +8,7 @@ import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { logger } from "../utils/logger.js";
 import { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } from "./hook.js";
+import { INTERPRETERS } from "./parser.js";
 
 function makeToolContext(agentId: string, capabilities: ContextCapability[], kind = "test-runtime"): ToolContext {
   const context: ContextRecord = {
@@ -130,6 +133,65 @@ describe("Bash quoting permission boundary", () => {
 });
 
 describe("createBashPermissionHook", () => {
+  for (const receiver of [
+    "python3 -u",
+    "python3 -",
+    "python3 -I -",
+    "node --no-warnings",
+    "node --input-type=module -",
+    "perl -w",
+    "ruby -",
+    "php -d x=1",
+    "python3 - script.py",
+    "python3 -W ignore",
+    "python3 $SCRIPT",
+    "python3 --unknown script.py",
+  ]) {
+    it(`denies piped stdin in the actual PreToolUse hook: ${receiver}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      for (const decorated of [
+        receiver,
+        `${receiver} 2>/dev/null`,
+        `FOO=1 ${receiver}`,
+        `FOO=1 ${receiver} 2>/dev/null`,
+      ]) {
+        const result = await callBashHook(`printf code | ${decorated}`, "test-agent", context);
+        expect(isDenied(result)).toBe(true);
+        expect(getDenyReason(result)).toMatch(/interpreter|pipeline/);
+      }
+    });
+  }
+
+  it("deliberately denies piped file scripts, including absolute paths, in PreToolUse", async () => {
+    const context = makeToolContext("test-agent", [{ permission: "execute", objectType: "executable", objectId: "*" }]);
+    for (const receiver of [
+      "python3 script.py",
+      "python3 ./a.py arg",
+      "node build.js",
+      "node --no-warnings build.js",
+      "python /abs/path/script.py",
+      "python3 /abs/path/script.py",
+      "python3 /tmp/a.py arg",
+      "node /abs/build.js",
+      "perl /abs/script.pl",
+      "ruby /abs/script.rb",
+      "php /abs/script.php",
+    ]) {
+      for (const decorated of [
+        receiver,
+        `${receiver} 2>/dev/null`,
+        `FOO=1 ${receiver}`,
+        `FOO=1 ${receiver} 2>/dev/null`,
+      ]) {
+        const result = await callBashHook(`printf data | ${decorated}`, "test-agent", context);
+        expect(isDenied(result)).toBe(true);
+        expect(getDenyReason(result)).toBe("piping to an interpreter is not allowed");
+      }
+    }
+  });
+
   it("has matcher set to 'Bash'", () => {
     const hook = createBashPermissionHook({ getAgentId: () => undefined });
     expect(hook.matcher).toBe("Bash");
@@ -508,6 +570,298 @@ describe("createBashPermissionHook", () => {
 
       expect(superadminDecision.allowed).toBe(true);
     });
+  });
+});
+
+describe("piped interpreter descriptor aliases and receiver segments", () => {
+  for (const receiver of [
+    "python3 /dev/fd/3 3<&0",
+    "python3 /dev/fd/7 7<&0",
+    "python3 /dev/fd/65535",
+    "python3 /dev/stdout 1<&0",
+    "python3 /dev/stderr 2<&0",
+    "python3 /proc/123/fd/3 3<&0",
+    "python3 /proc/123/task/456/fd/7 7<&0",
+    "python3 /proc/self/fd/3 3<&0",
+    "python3 /proc/thread-self/fd/7 7<&0",
+    "python3 '/dev/./fd/3' 3<&0",
+    "# c\n python3 -u",
+    "# c\n\n # another comment\n python3 -u",
+    "\n\n python3 -u",
+    "python3 - 2>/dev/null",
+  ]) {
+    it(`denies through the actual PreToolUse hook: ${JSON.stringify(receiver)}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      const result = await callBashHook(`printf 'print(731)\\n' | ${receiver}`, "test-agent", context);
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toMatch(/interpreter|pipeline/);
+    });
+  }
+
+  it("allows direct scripts but denies script receivers after empty and comment-only segments", async () => {
+    const context = makeToolContext("test-agent", [{ permission: "execute", objectType: "executable", objectId: "*" }]);
+    for (const receiver of [
+      "python3 script.py",
+      "python3 ./a.py arg",
+      "node build.js",
+      "node --no-warnings build.js",
+    ]) {
+      for (const prefix of ["", "printf data | ", "printf data | # c\n\n # another comment\n "]) {
+        const result = await callBashHook(prefix + receiver, "test-agent", context);
+        if (prefix === "") expect(result).toEqual({});
+        else expect(getDenyReason(result)).toBe("piping to an interpreter is not allowed");
+      }
+    }
+  });
+});
+
+describe("pipeline receiver scope and directory changes", () => {
+  for (const command of [
+    "cd /dev && printf 'print(731)\\n' | python3 fd/3 3<&0",
+    "cd /dev && printf 'print(731)\\n' | python3 stdin",
+    "builtin cd /dev && printf 'print(731)\\n' | python3 fd/3 3<&0",
+    "command cd /dev && printf 'print(731)\\n' | python3 stdin",
+    "pushd /dev && printf 'print(731)\\n' | python3 stdin",
+    "env -C /dev printf 'print(731)\\n' | python3 fd/3",
+    "printf data | python3 build.js",
+    "printf cd | python3 script.py # cd /dev",
+    "printf data |& python3 script.py",
+    "cd /tmp && printf data | python3 build.js",
+    "printf data | python3 script.py; cd /tmp",
+    "'cd' /tmp && printf data | # c\n python3 script.py",
+    "printf data | # c\n python3 -u",
+    "printf a | tee x | python3 -u",
+    "printf a |& python3 -u",
+    "printf data | python3 /dev/stdout 1<&0",
+    "printf data | python3 /proc/$$/fd/0",
+    "printf data | python3 /proc/self/task/1/fd/0",
+  ]) {
+    it(`denies in PreToolUse: ${JSON.stringify(command)}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      const result = await callBashHook(command, "test-agent", context);
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toMatch(/interpreter|pipeline/);
+    });
+  }
+
+  for (const command of [
+    "python3 build.js",
+    "printf data | cat; python3 --version",
+    "printf data | cat && python3 script.py",
+    "printf data | cat || python3 --version",
+    "printf data | FOO=bar; python3 --version",
+    "printf data | FOO=bar && python3 --version",
+    "printf data | FOO=bar || python3 --version",
+    "printf data | cat\n python3 --version",
+    "printf data | cat; # c\n python3 -u",
+    "printf data | # c\n cat; python3 --version",
+    "cd /tmp && printf data | cat; python3 build.js",
+  ]) {
+    it(`allows in PreToolUse: ${JSON.stringify(command)}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      expect(await callBashHook(command, "test-agent", context)).toEqual({});
+    });
+  }
+});
+
+describe("direct interpreter descriptor paths and named input", () => {
+  for (const command of [
+    "python3 /dev/fd/3 3<&0",
+    "python3 /dev/fd/4 4<&0",
+    "python3 /dev/fd/4 4</tmp/x.py",
+    "python3 /dev/stdin",
+    "python3 -u /dev/stdout 1<&0",
+    "python3 -W ignore -- /dev/./fd/7 7<&0",
+    "node --no-warnings /proc/self/fd/0",
+    "php -d x=1 /dev/stderr 2<&0",
+    "perl -w /dev/fd/99",
+    "ruby /proc/123/task/456/fd/7",
+  ]) {
+    it(`denies a direct descriptor script in PreToolUse: ${command}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      const result = await callBashHook(command, "test-agent", context);
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toBe("interpreter descriptor arguments are not allowed");
+    });
+  }
+
+  for (const command of [
+    "python3 script.py",
+    "python3 ./a.py arg",
+    "node --no-warnings build.js",
+    "python3 /abs/script.py",
+    "python3 /abs/s.py < dados.txt",
+    "cd /tmp && python3 /abs/s.py < dados.txt",
+    "printf data | cat; python3 /abs/s.py < dados.txt",
+  ]) {
+    it(`allows direct file execution in PreToolUse: ${command}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      expect(await callBashHook(command, "test-agent", context)).toEqual({});
+    });
+  }
+
+  it.skipIf(!existsSync("/dev/stdin"))("denies a pipe to an absolute symlink to stdin in PreToolUse", async () => {
+    const path = join(stateDir!, "script.py");
+    symlinkSync("/dev/stdin", path);
+    const context = makeToolContext("test-agent", [{ permission: "execute", objectType: "executable", objectId: "*" }]);
+    const result = await callBashHook(`printf 'print(731)\\n' | python3 "${path}"`, "test-agent", context);
+    expect(isDenied(result)).toBe(true);
+    expect(getDenyReason(result)).toBe("piping to an interpreter is not allowed");
+  });
+});
+
+describe("interpreter registry, option arity and script-only resolution", () => {
+  for (const executable of INTERPRETERS) {
+    it(`denies every registered pipe receiver in PreToolUse: ${executable}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      for (const receiver of [executable, `"${executable}" /abs/script`, `/usr/bin/${executable} /abs/script`]) {
+        const result = await callBashHook(`printf data | ${receiver}`, "test-agent", context);
+        expect(isDenied(result)).toBe(true);
+        expect(getDenyReason(result)).toBe("piping to an interpreter is not allowed");
+      }
+    });
+  }
+
+  for (const command of [
+    "printf 'console.log(731)\\n' | bun run -",
+    "python3 --check-hash-based-pycs always /dev/stdin",
+    "python3 -X importtime /dev/stdin",
+    "node --require helper.js /dev/stdin",
+    "node -r helper.js /dev/stdin",
+    "nodejs --require helper.js /dev/stdin",
+    'python3 --check-hash-based-pycs "$MODE" /dev/stdin',
+    'python3 "$SCRIPT_PATH"',
+    'python3 "/abs/$SCRIPT_PATH"',
+    "python3 *.py",
+    "printf data | python3 script.py",
+  ]) {
+    it(`denies in PreToolUse: ${JSON.stringify(command)}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      expect(isDenied(await callBashHook(command, "test-agent", context))).toBe(true);
+    });
+  }
+
+  for (const command of [
+    'python3 script.py "$INPUT"',
+    "node build.js *.json",
+    'python3 --check-hash-based-pycs always script.py "$INPUT"',
+    "node --require helper.js build.js *.json",
+    "python3 /abs/s.py < dados.txt",
+  ]) {
+    it(`allows later argument expansion in PreToolUse: ${JSON.stringify(command)}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      expect(await callBashHook(command, "test-agent", context)).toEqual({});
+    });
+  }
+});
+
+describe("descriptor-shaped arguments are denied even when used as data", () => {
+  for (const command of [
+    "perl -I /tmp /dev/stdin",
+    "node --conditions testing /dev/stdin",
+    "bun run /dev/stdin",
+    "python3 --check-hash-based-pycs always /dev/stdin",
+    "bun --bun run /dev/stdin",
+    "deno run /dev/stdin",
+    "python3 script.py /dev/stdin",
+    'python3 script.py "$INPUT" /dev/stdin',
+    "python3 -W /dev/stdin script.py",
+    "python3 script.py /dev/fd/4",
+    "python3 script.py /proc/self/fd/9",
+    "node build.js /dev/stdout",
+    "node build.js /dev/stderr",
+  ]) {
+    it(`deliberately denies any descriptor argument in PreToolUse: ${command}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      const result = await callBashHook(command, "test-agent", context);
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toBe("interpreter descriptor arguments are not allowed");
+    });
+  }
+});
+
+describe("versioned interpreter basenames", () => {
+  for (const receiver of [
+    "python3.12 -",
+    "python3.11 -",
+    "python3.11 /dev/stdin",
+    "php8.2 -r 'echo 1;'",
+    "perl5.36 -e 'print 1'",
+    "lua5.4 -",
+    "ruby3.2 -",
+    "node20 /abs/build.js",
+    "node20 -e 1",
+    '"/usr/bin/python3.12" /abs/script.py',
+  ]) {
+    it(`denies a pipe into ${receiver} in PreToolUse`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      const result = await callBashHook(`printf 'print(1)\\n' | ${receiver}`, "test-agent", context);
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toBe("piping to an interpreter is not allowed");
+    });
+  }
+
+  for (const command of [
+    "python3.11 /dev/stdin",
+    "python3.12 --check-hash-based-pycs always /dev/stdin",
+    "node20 --require helper.js /dev/stdin",
+    "php8.2 -r 'echo 1;'",
+    "perl5.36 -e 'print 1'",
+  ]) {
+    it(`applies direct interpreter rules in PreToolUse: ${command}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      expect(isDenied(await callBashHook(command, "test-agent", context))).toBe(true);
+    });
+  }
+
+  for (const command of [
+    "nodejs build.js",
+    "Rscript script.R",
+    "ts-node script.ts",
+    "python3.12 script.py",
+    'python3.12 script.py "$INPUT"',
+    "printf data | Python3.12 script.py",
+    "printf data | rscript script.R",
+  ]) {
+    it(`preserves direct execution and case-sensitive names in PreToolUse: ${command}`, async () => {
+      const context = makeToolContext("test-agent", [
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ]);
+      expect(await callBashHook(command, "test-agent", context)).toEqual({});
+    });
+  }
+
+  it("checks the original versioned name against executable grants", async () => {
+    const versioned = makeToolContext("test-agent", [
+      { permission: "execute", objectType: "executable", objectId: "python3.12" },
+    ]);
+    const unversioned = makeToolContext("test-agent", [
+      { permission: "execute", objectType: "executable", objectId: "python" },
+    ]);
+    expect(await callBashHook("/usr/bin/python3.12 script.py", "test-agent", versioned)).toEqual({});
+    expect(isDenied(await callBashHook("/usr/bin/python3.12 script.py", "test-agent", unversioned))).toBe(true);
   });
 });
 

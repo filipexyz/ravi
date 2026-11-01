@@ -150,10 +150,33 @@ Required capability materializers:
   same word-start comment semantics: an unquoted mid-word `#` is data and MUST
   NOT hide later executables, inline flags or redirect targets. A real comment
   MUST still stop at the next newline.
-- Piped-interpreter stdin detection MUST count command words, excluding leading
-  assignments, comments, redirection operators, descriptors and destinations.
-  These shell decorations MUST NOT make a bare interpreter appear to have a
-  script argument, even when wildcard executable access is granted.
+- Every pipe receiver whose executable belongs to the exported `INTERPRETERS`
+  set (`python`, `python3`, `node`, `perl`, `ruby`, `php`, `bun`, `deno`, `nodejs`,
+  `Rscript`, `lua`, `osascript`, `pwsh`, `tsx`, `ts-node`) MUST be denied unconditionally, including with wildcard
+  executable access. The reason MUST be `piping to an interpreter is not allowed`.
+  `... | python3 /abs/script.py` is deliberately denied; absolute paths and
+  symlinks MUST NOT grant an exception. No cwd or wrapper model is involved.
+  This rule is enumerative: new runtimes MUST enter that single set, and parser
+  and real-hook tests MUST iterate every member to enforce pipe refusal.
+  Match basenames case-sensitively: try the exact name first, then remove a
+  final `[\d.]+` version suffix and retry the same set. Apply the matched
+  interpreter's descriptor and inline rules to versioned names too;
+  executable permission checks MUST retain the original basename.
+- Direct file-script invocation (`python3 /abs/script.py`) and named-file input
+  (`python3 /abs/script.py < dados.txt`) MAY remain allowed by executable grants.
+  Any argument shaped as `/dev/fd/N`, `/proc/**/fd/N`,
+  `/dev/stdin`, `/dev/stdout` or `/dev/stderr` MUST still be refused for every
+  descriptor number, including option operands and arguments after a script.
+  `python3 script.py /dev/stdin` is deliberately denied even when the descriptor
+  is data: this check does not identify the script or model option arity/subcommands.
+  Redirect operands are separate from command arguments. Unresolved leading
+  interpreter arguments MUST deny; variable/glob arguments after a literal
+  positional word, such as `python3 script.py "$INPUT"`, MUST remain allowed.
+- Pipeline inspection MUST continue after empty/comment-only receiver segments;
+  a whole-line comment MUST NOT hide an interpreter on the next line. Each pipe
+  stops at its effective receiver and MUST NOT cross `;`, `&&` or `||`; other
+  pipes remain independently checked.
+- This guard does not prove content provenance; it refuses pipes into interpreters. FIFO, symlink and preexisting-file content provenance is outside this contract. Reopening that surface requires a sandbox, not more parser rules.
 - The bounded scanner MUST refuse unterminated quotes/escapes and unsupported
   ANSI-C / locale quoting rather than assume them safe. It is not a shell AST.
   `stripShellQuoting`, used for identity text checks, MUST NOT be used as the
