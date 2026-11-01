@@ -91,27 +91,8 @@ export function resolveNatsUrl(env: NodeJS.ProcessEnv = process.env): string {
  * withheld entirely so a delimiter in userinfo cannot expose a secret fragment.
  */
 export function redactNatsUrl(natsUrl: string): string {
-  const servers = splitUnambiguousNatsServers(natsUrl);
-  if (!servers) return "[redacted]";
-  return servers
-    .map((segment) => {
-      const prefix = segment.match(/^(\s*)([a-z][\w+.-]*:\/\/)?/i);
-      const whitespace = prefix?.[1] ?? "";
-      const scheme = prefix?.[2] ?? "";
-      try {
-        const url = new URL(scheme ? segment.trim() : `nats://${segment.trim()}`);
-        if (!url.username && !url.password) return segment;
-        url.username = "";
-        url.password = "";
-        const withoutScheme = url.href.slice(url.protocol.length + 2);
-        return `${whitespace}${scheme}[redacted]@${withoutScheme}`;
-      } catch {
-        // Malformed userinfo is still secret. Over-redact through the last @,
-        // including whitespace and separators that prevented URL parsing.
-        return segment.replace(/^(\s*(?:[a-z][\w+.-]*:\/\/)?)[\s\S]*@/i, "$1[redacted]@");
-      }
-    })
-    .join(",");
+  const servers = parseNatsUrls(natsUrl);
+  return servers.length > 0 ? servers.map((server) => server.redactedUrl).join(",") : "[redacted]";
 }
 
 /** true for localhost, 127.0.0.0/8 and ::1 (with or without brackets). */
@@ -139,6 +120,7 @@ interface ParsedNatsUrl {
   scheme: string;
   host: string;
   port: number;
+  redactedUrl: string;
 }
 
 /**
@@ -148,31 +130,48 @@ interface ParsedNatsUrl {
  * Refuse the entire input instead of splitting and exposing/probing fragments.
  * Authenticated lists must use explicit schemes; userinfo commas use %2C.
  */
-function splitUnambiguousNatsServers(natsUrl: string): string[] | null {
-  const groups = natsUrl.split(/,(?=\s*[a-z][\w+.-]*:\/\/)/i);
-  if (groups.some((group) => group.includes(",") && group.includes("@"))) return null;
-  const servers = groups.flatMap((group) => group.split(","));
-  return servers.every((server) => parseNatsServer(server) !== null) ? servers : null;
-}
-
-/** Invalid or ambiguous entries invalidate the whole list; never certify a partial parse. */
 function parseNatsUrls(natsUrl: string): ParsedNatsUrl[] {
-  return (splitUnambiguousNatsServers(natsUrl) ?? [])
-    .map((segment) => parseNatsServer(segment))
-    .filter((server): server is ParsedNatsUrl => server !== null);
+  // WHATWG strips TAB/LF/CR and leading controls. Reject them before either
+  // splitting or parsing so log sanitization and network targets cannot diverge.
+  for (const character of natsUrl) {
+    const code = character.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f) return [];
+  }
+  const groups = natsUrl.split(/,(?=\s*[a-z][\w+.-]*:\/\/)/i);
+  if (groups.some((group) => group.includes(",") && group.includes("@"))) return [];
+  const servers: ParsedNatsUrl[] = [];
+  for (const segment of groups.flatMap((group) => group.split(","))) {
+    const server = parseNatsServer(segment);
+    if (!server) return []; // Never certify a partial parse of an invalid list.
+    servers.push(server);
+  }
+  return servers;
 }
 
 function parseNatsServer(segment: string): ParsedNatsUrl | null {
   const first = segment.trim();
   if (!first) return null;
-  const withScheme = first.includes("://") ? first : `nats://${first}`;
+  const schemePrefix = first.match(/^[a-z][\w+.-]*:\/\//i)?.[0] ?? "";
+  const withScheme = schemePrefix ? first : `nats://${first}`;
   try {
     const url = new URL(withScheme);
+    // Delimiters may have moved a credential suffix into path/query/fragment.
+    // Do not emit or probe an interpretation that cannot account for that @.
+    if (first.includes("@") && (url.pathname || url.search || url.hash || (!url.username && !url.password))) {
+      return null;
+    }
     const host = url.hostname.replace(/^\[|\]$/g, "");
     if (!host) return null;
     const port = url.port ? Number(url.port) : DEFAULT_NATS_PORT;
     if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
-    return { scheme: url.protocol.replace(/:$/, "").toLowerCase(), host, port };
+    let redactedUrl = segment;
+    if (url.username || url.password) {
+      url.username = "";
+      url.password = "";
+      const whitespace = segment.match(/^\s*/)?.[0] ?? "";
+      redactedUrl = `${whitespace}${schemePrefix}[redacted]@${url.href.slice(url.protocol.length + 2)}`;
+    }
+    return { scheme: url.protocol.replace(/:$/, "").toLowerCase(), host, port, redactedUrl };
   } catch {
     return null;
   }

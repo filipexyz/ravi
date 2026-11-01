@@ -76,6 +76,14 @@ Checks MUST NOT mutate state.
   use an explicit scheme per server; literal commas in userinfo MUST use `%2C`.
   Unauthenticated bare-server lists and fully qualified lists remain supported.
   One invalid entry MUST invalidate the whole list rather than certify a subset.
+- Redaction and exposure classification MUST consume the same per-server parse,
+  including scheme detection and canonicalization. Raw C0 controls and DEL MUST
+  invalidate the entire input before splitting or WHATWG normalization. They
+  MUST NOT reach URL/report/log output or DNS/TCP probes.
+- An input containing `@` whose interpretation includes a path, query, fragment
+  or no parsed userinfo MUST be withheld as ambiguous. Delimiters inside actual
+  userinfo SHOULD be percent-encoded; diagnostic code MUST NOT expose a suffix
+  merely because a URL parser interpreted it as a non-credential component.
 - `substrate.state-dir-permissions` MUST inspect ownership and POSIX permissions
   without changing them. State-directory hardening belongs to startup/setup.
 

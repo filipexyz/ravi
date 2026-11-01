@@ -85,6 +85,10 @@ channels.inbound_contact_unresolved
 
 ## False Positive Guards
 
+- `bun test src/security/nats-url-controls.test.ts` MUST cover real TAB/LF/CR in
+  schemes (including `nats:\n//`), userinfo and list boundaries, plus NUL/DEL and
+  credentials demoted into path/query/fragment. URL, report and log MUST withhold
+  the full input, with `unknown/refuse` and no DNS/TCP calls for those cases.
 - `bun test src/security/nats-url-redaction.test.ts` MUST cover passwords ending
   in a comma, passwords with a comma and suffix, and numeric prefixes that could
   be mistaken for ports. URL, complete report and log payload MUST all withhold
