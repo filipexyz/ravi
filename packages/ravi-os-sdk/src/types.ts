@@ -6339,6 +6339,7 @@ export type ChannelsBackendRuntimeReadbackReturn = {
       causationId?: string;
       correlationId: string;
       ingressRequestId: string;
+      traceTurnId?: string;
     };
     eventId: string;
     kind: "turn.terminal_output";
@@ -20865,6 +20866,14 @@ export type SessionsThreadSendReturn = {
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
     title: string | null;
+    turnHealth?: ({
+      checkedAt: number;
+      lastSignalAt: number | null;
+      reason: ("no_signal" | "no_reply" | "owner_lost" | "failed") | null;
+      since: number;
+      state: "idle" | "running" | "interrupted" | "attention" | "closed";
+      turnId: string | null;
+    }) | null;
     updatedAt: number;
   };
 };
@@ -20915,6 +20924,14 @@ export type SessionsThreadsReturn = {
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
     title: string | null;
+    turnHealth?: ({
+      checkedAt: number;
+      lastSignalAt: number | null;
+      reason: ("no_signal" | "no_reply" | "owner_lost" | "failed") | null;
+      since: number;
+      state: "idle" | "running" | "interrupted" | "attention" | "closed";
+      turnId: string | null;
+    }) | null;
     updatedAt: number;
   }>;
 };

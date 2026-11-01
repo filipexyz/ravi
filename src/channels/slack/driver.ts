@@ -110,6 +110,7 @@ export function createSlackNativeChannelDriver(
                 text: renderSlackBackendOutput(envelope),
                 format: "markdown",
                 responsePhase: envelope.kind === "assistant_message" ? "final_answer" : "safe_error",
+                traceTurnId: envelope.traceTurnId,
                 ...(canonicalMessageId ? { canonicalMessageId } : {}),
                 ...(options.now ? { now: options.now() } : {}),
               }),
@@ -146,6 +147,7 @@ export function createSlackNativeChannelDriver(
                 text: renderSlackContent(event.payload.content),
                 format: "markdown",
                 responsePhase: "commentary",
+                traceTurnId: event.correlation.traceTurnId,
                 ...(options.now ? { now: options.now() } : {}),
               }),
             );

@@ -59,6 +59,7 @@ function boundedUtf8String(maxBytes: number, label: string, minBytes = 1) {
 }
 
 export const ChannelRuntimeCorrelationSchema = z.object({
+  traceTurnId: ChannelBackendOpaqueIdSchema.optional(),
   correlationId: ChannelBackendOpaqueIdSchema,
   causationId: ChannelBackendOpaqueIdSchema.optional(),
   ingressRequestId: ChannelBackendOpaqueIdSchema,
@@ -699,6 +700,7 @@ async function recordAndEmit(
   input: RecordAndEmitInput,
 ): Promise<{ event: KnownChannelRuntimeEvent; dispatchError?: unknown }> {
   const persisted = dbRecordChannelBackendRuntimeEvent({
+    traceTurnId: input.metadata.traceTurnId,
     turnId: input.metadata.binding.turnId,
     state: input.state,
     assistantDelta: input.assistantDelta,
@@ -723,6 +725,7 @@ async function recordAndEmit(
     occurredAt: new Date(input.occurredAt).toISOString(),
     sequence: persisted.runtime.lastSequence,
     correlation: {
+      ...(input.metadata.traceTurnId ? { traceTurnId: input.metadata.traceTurnId } : {}),
       correlationId: input.metadata.correlationId,
       causationId: input.metadata.ingressRequestId,
       ingressRequestId: input.metadata.ingressRequestId,
@@ -751,6 +754,7 @@ async function recordAndEmit(
   ) {
     try {
       const output = ChannelOutputEnvelopeSchema.parse({
+        traceTurnId: input.metadata.traceTurnId,
         protocol: CHANNEL_BACKEND_PROTOCOL,
         schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
         outputId: semanticEventId("output", input.metadata.binding.turnId, "terminal"),
@@ -795,6 +799,7 @@ function parseChannelBackendMetadata(input: ChannelBackendPromptMetadata): Chann
   return {
     protocol: CHANNEL_BACKEND_PROTOCOL,
     schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+    ...(input.traceTurnId ? { traceTurnId: ChannelBackendOpaqueIdSchema.parse(input.traceTurnId) } : {}),
     ingressRequestId: ChannelBackendOpaqueIdSchema.parse(input.ingressRequestId),
     correlationId: ChannelBackendOpaqueIdSchema.parse(input.correlationId),
     binding: LocalChannelMessageBindingSchema.parse(input.binding),
@@ -1015,6 +1020,7 @@ function terminalEventFromReadback(
     sequence: runtime.lastSequence,
     correlation: {
       correlationId: receipt.initialRequestId,
+      ...(runtime.traceTurnId ? { traceTurnId: runtime.traceTurnId } : {}),
       causationId: receipt.initialRequestId,
       ingressRequestId: receipt.initialRequestId,
       binding,

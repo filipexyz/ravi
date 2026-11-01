@@ -125,6 +125,8 @@ export interface DaemonRestartResumePromptMetadata {
 }
 
 export interface ChannelBackendPromptMetadata {
+  /** Physical Ravi trace turn; distinct from the channel request's binding.turnId. */
+  traceTurnId?: string;
   protocol: "ravi.channel.backend";
   schemaVersion: 1;
   ingressRequestId: string;
@@ -340,6 +342,8 @@ export type ResponseContentPart =
 
 /** Response message structure */
 export interface ResponseMessage {
+  /** Canonical session_turns.turn_id, never a provider-native turn id. */
+  traceTurnId?: string;
   response?: string;
   error?: string;
   content?: ResponseContentPart[];

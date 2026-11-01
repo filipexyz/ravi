@@ -43,6 +43,7 @@ describe("channel outbound consumer", () => {
     const emitEvent = mock(async () => {});
     const job = makeJob();
     job.request.origin.responsePhase = "commentary";
+    job.request.origin.traceTurnId = "turn-canonical";
     const delivery: NativeTextDelivery = {
       channelId: "slack",
       supports: (target) => target.channel === "slack",
@@ -83,6 +84,7 @@ describe("channel outbound consumer", () => {
         providerMessageId: "1711111111.000100",
         platformMessageId: "1711111111.000100",
         responsePhase: "commentary",
+        traceTurnId: "turn-canonical",
         idempotencyKey: "runtime:ravi-channels:emit_1:slack:T1:C123:1711111111.000010",
         jobId: "runtime:ravi-channels:emit_1",
       }),

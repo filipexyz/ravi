@@ -19,6 +19,9 @@ fail before the fix lands, and to stay as a regression test after it.
 
 ## Run health and usage
 
+- [x] `bun test src/runtime/session-trace.test.ts -t 'does not persist silent'` distinguishes completed intentional silence from a running turn without a terminal.
+- [x] `bun test src/session-trace/channel-trace.test.ts src/channels/outbound-stream.test.ts src/channels/outbound-consumer.test.ts src/channels/slack/driver.test.ts` preserves the physical trace turn across response and native delivery.
+
 - [x] A turn that fails with `provider_inactive` persists the reason and the usage it received.
 - [x] Host conversion of `turn.complete` to failure after tools or a login stub preserves provider usage, including measured zero.
 - [x] Usage not reported by the provider is persisted as `NULL` and rendered as `unknown`, never `0`.

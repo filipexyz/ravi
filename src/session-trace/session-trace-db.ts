@@ -543,7 +543,7 @@ function pickNumber<K extends keyof UpsertSessionTurnInput>(
 }
 
 function toOutputState(value: unknown): SessionTurnOutputState | null {
-  return value === "final" || value === "incomplete" ? value : null;
+  return value === "final" || value === "incomplete" || value === "silent" ? value : null;
 }
 
 function pickBoolean<K extends keyof UpsertSessionTurnInput>(

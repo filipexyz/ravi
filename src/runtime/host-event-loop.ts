@@ -83,7 +83,7 @@ import {
   resolveRuntimeIdleSessionTtlMs,
   resolveRuntimeTurnInactivityMs,
 } from "./session-pool.js";
-import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { markRuntimeLiveIdle, noteRuntimeTurnSignal, updateRuntimeLiveState } from "./live-state.js";
 import {
   formatUserFacingTurnFailure,
   isOpenToolsTurnFailure,
@@ -1070,7 +1070,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       startedAt: streaming.currentTraceTurnStartedAt,
       // A turn that kept commentary but never produced a final utterance is
       // `incomplete`, so readers never conclude no work happened.
-      outputState: turnOutputCounts.final > 0 ? "final" : turnOutputCounts.commentary > 0 ? "incomplete" : null,
+      outputState:
+        turnOutputCounts.final > 0
+          ? "final"
+          : terminal.status === "complete" && intentionalSilence
+            ? "silent"
+            : turnOutputCounts.commentary > 0
+              ? "incomplete"
+              : null,
       usage: reportedTerminalUsage,
       ...input,
       status: terminal.status,
@@ -1095,6 +1102,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTraceStatusRecorded = undefined;
     turnOutputCounts.final = 0;
     turnOutputCounts.commentary = 0;
+    intentionalSilence = false;
     reportedTerminalUsage = undefined;
   };
   const markCurrentTurnAttemptSafety = (input: { startedTool?: true; materializedOutput?: true }) => {
@@ -1115,6 +1123,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const deliveredVisibleThisTurn: string[] = [];
   // sessions/turn-output: utterances materialized by the current trace turn, per class.
   const turnOutputCounts = { final: 0, commentary: 0 };
+  let intentionalSilence = false;
   let reportedTerminalUsage: Extract<RuntimeEvent, { type: "turn.complete" }>["usage"] | undefined;
   const turnToolContinuation = createTurnToolContinuationLedger();
   let pendingGeneratedMedia: ResponseMediaAttachment[] = [];
@@ -2053,7 +2062,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           : {};
     try {
       await projectChannelRuntimeEvent({
-        metadata,
+        metadata: { ...metadata, traceTurnId: streaming.currentTraceTurnId },
         event: stripRuntimeRawEvent(event),
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
         ...toolProjection,
@@ -2621,6 +2630,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       channelBackendOwnsText,
     });
     await nats.emit(`ravi.session.${sessionName}.response`, {
+      traceTurnId: streaming.currentTraceTurnId,
       response: responseText,
       ...(content ? { content } : {}),
       target: resolvedTarget,
@@ -2863,6 +2873,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
+      noteRuntimeTurnSignal(sessionName, streaming.currentTraceTurnId, streaming.lastActivity);
       // Update compaction before asynchronous projection so the after-tool
       // watch cannot expire while handling the compaction-start event itself.
       const wasCompacting = streaming.compacting;
@@ -3164,6 +3175,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "tool.started") {
+        intentionalSilence = false;
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = true;
         noteTurnToolStarted(turnToolContinuation, event.toolUse.id, event.toolUse.name);
@@ -3246,6 +3258,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       // Handle assistant messages
       if (event.type === "assistant.message") {
+        // A marker is an explicit outcome, not evidence that the provider ended.
+        intentionalSilence = false;
         streaming.lastToolFailure = undefined;
         let messageText = event.text;
         if (messageText) {
@@ -3268,6 +3282,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               textLen: messageText.length,
             });
           } else if (!messageText) {
+            intentionalSilence = true;
             // The whole message was the silence marker after classification
             suppressProviderRawForCurrentTurn = true;
             log.info("Silent response (stripped)", { sessionName });
@@ -3333,6 +3348,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 provider: runtimeSession.provider,
               });
             } else if (heartbeatResponse) {
+              intentionalSilence = true;
               suppressProviderRawForCurrentTurn = true;
               recordAssistantState(false);
               log.info("Heartbeat OK", { sessionName });
@@ -3342,6 +3358,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 provider: runtimeSession.provider,
               });
             } else if (noResponseRequested) {
+              intentionalSilence = true;
               suppressProviderRawForCurrentTurn = true;
               recordAssistantState(false);
               log.info("Silent response (no response requested)", {

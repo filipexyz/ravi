@@ -178,6 +178,7 @@ export const ExternalChannelTargetSchema = z.object({
 
 export const ChannelOutputEnvelopeSchema = z
   .object({
+    traceTurnId: ChannelBackendOpaqueIdSchema.optional(),
     protocol: z.literal(CHANNEL_BACKEND_PROTOCOL),
     schemaVersion: z.literal(CHANNEL_BACKEND_SCHEMA_VERSION),
     outputId: ChannelBackendOpaqueIdSchema,

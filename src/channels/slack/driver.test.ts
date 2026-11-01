@@ -143,6 +143,7 @@ describe("createSlackNativeChannelDriver", () => {
       protocol: "ravi.channel.backend",
       schemaVersion: 1,
       outputId: "output-md",
+      traceTurnId: "turn-physical",
       correlationId: "correlation-a",
       binding,
       target: {
@@ -161,6 +162,7 @@ describe("createSlackNativeChannelDriver", () => {
     });
 
     expect(published).toHaveLength(1);
+    expect(published[0]?.request.origin.traceTurnId).toBe("turn-physical");
     expect(published[0]?.request.content).toEqual({
       type: "text",
       text: "**Ready.** See [runbook](https://example.com/runbook).",

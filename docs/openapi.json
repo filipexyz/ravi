@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "667f486aab0c4590"
+    "version": "1efe463c0126eac2"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -36519,6 +36519,10 @@
                               "type": "string"
                             },
                             "ingressRequestId": {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                              "type": "string"
+                            },
+                            "traceTurnId": {
                               "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
                               "type": "string"
                             }
@@ -122784,6 +122788,79 @@
                             }
                           ]
                         },
+                        "turnHealth": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "checkedAt": {
+                                  "type": "number"
+                                },
+                                "lastSignalAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "enum": [
+                                        "no_signal",
+                                        "no_reply",
+                                        "owner_lost",
+                                        "failed"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "since": {
+                                  "type": "number"
+                                },
+                                "state": {
+                                  "enum": [
+                                    "idle",
+                                    "running",
+                                    "interrupted",
+                                    "attention",
+                                    "closed"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turnId": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "turnId",
+                                "state",
+                                "reason",
+                                "since",
+                                "lastSignalAt",
+                                "checkedAt"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "updatedAt": {
                           "type": "number"
                         }
@@ -123111,6 +123188,79 @@
                             "anyOf": [
                               {
                                 "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "turnHealth": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "checkedAt": {
+                                    "type": "number"
+                                  },
+                                  "lastSignalAt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "reason": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "no_signal",
+                                          "no_reply",
+                                          "owner_lost",
+                                          "failed"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "since": {
+                                    "type": "number"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "idle",
+                                      "running",
+                                      "interrupted",
+                                      "attention",
+                                      "closed"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "turnId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "turnId",
+                                  "state",
+                                  "reason",
+                                  "since",
+                                  "lastSignalAt",
+                                  "checkedAt"
+                                ],
+                                "type": "object"
                               },
                               {
                                 "type": "null"

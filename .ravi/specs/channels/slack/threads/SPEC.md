@@ -211,3 +211,13 @@ The existing thread reconciler also drains decision effects. Exact origin bindin
 - An orphan close MUST require modify authority over the child or its recorded parent. Missing, ambiguous and unauthorized references MUST be cloaked as `SESSION_NOT_FOUND`; public copy MUST distinguish this condition from an execution failure without revealing private names.
 - Closing an orphan uses the same card update, pending-decision guard, close sequence, parent-return delivery and idempotency as a live child.
 - Existing orphan cards are reconciled by this same close command; no deployment-time destructive cleanup or recreation is authorized by this fix.
+
+## Turn attention
+
+- The existing gateway startup/30-second lifecycle reconciliation owns the persisted `slack_thread_turn_health` observation. `sessions threads` only reads it as additive nullable `turnHealth`; lifecycle `status` retains its existing meaning. No separate timer or overlay detector.
+- Observation states are `idle`, `running`, `interrupted`, `attention`, `closed`. An attention reason is `no_signal`, `no_reply`, `owner_lost` or `failed`. Each observation includes canonical `turnId`, `since`, `lastSignalAt` and `checkedAt`. Closing wins; a new turn is a new occurrence.
+- Missing `session_turns.completed_at` MUST never be hidden by partial or final-looking output. After 15 minutes without provider/trace progress, report `no_signal`, never assert death. An open tool retains the runtime's declared inactivity budget. Host lease heartbeats are ownership, not progress.
+- `owner_lost` requires a running `runtime_turn_attempts` row whose lease expired, or whose `runtime_boot_epochs` owner is absent, inactive or expired. No lease evidence means no claim of owner loss.
+- With `completed_at`, interrupted/aborted turns become `interrupted`; failures/timeouts become `attention/failed`. A complete turn is `idle` for terminal `output_state=final|silent` or a canonical-turn-correlated final response/delivery. Otherwise, after a 60-second delivery grace, it is `attention/no_reply`.
+- Persist one notification receipt per physical turn, claim publication atomically, and use a stable transport message id. Repeated ticks, restart, or a reason change on the same turn MUST NOT produce another successful parent notice. Failed publication retries that same id. Recheck close/new-turn before publishing through the existing `session.return` path.
+- This observation MUST NOT abort, replay, synthesize a terminal event, close work, or infer PR/task completion. Reconcile bounded fair batches of 100 threads per tick; `checkedAt` makes observation age explicit.

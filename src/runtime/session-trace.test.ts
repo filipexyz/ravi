@@ -57,7 +57,7 @@ import {
 } from "./host-event-loop.js";
 import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
 import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
-import { getRuntimeLiveStateForSession } from "./live-state.js";
+import { getRuntimeLiveState, getRuntimeLiveStateForSession } from "./live-state.js";
 import {
   formatUserFacingTurnFailure,
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
@@ -4023,7 +4023,10 @@ describe("runtime session trace instrumentation", () => {
       // runs past it, so the test only passes if each signal re-arms the watch.
       for (let i = 0; i < 10; i++) {
         await new Promise((resolve) => setTimeout(resolve, 150));
+        const signalStartedAt = Date.now();
         yield { type: "provider.activity" };
+        expect(getRuntimeLiveState(SESSION_NAME)?.turnId).toBe("turn-tool-then-long-generation");
+        expect(getRuntimeLiveState(SESSION_NAME)?.lastSignalAt).toBeGreaterThanOrEqual(signalStartedAt);
       }
       yield { type: "assistant.message", text: "Arquivo escrito." };
       yield {
@@ -4318,6 +4321,15 @@ describe("runtime session trace instrumentation", () => {
     );
 
     expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
+    expect(getSessionTurn("turn-silent-no-row")).toMatchObject({ status: "complete", outputState: "silent" });
+    expect(getSessionTurn("turn-silent-no-row")?.completedAt).not.toBeNull();
+    const unfinished = makeStreamingSession();
+    seedAdapterTrace(unfinished, "turn-without-terminal");
+    expect(getSessionTurn("turn-without-terminal")).toMatchObject({
+      status: "running",
+      completedAt: null,
+      outputState: null,
+    });
   });
 
   it("suppresses a truncated silence marker and keeps prose that cites the marker", async () => {

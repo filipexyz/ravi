@@ -25,6 +25,20 @@ afterEach(async () => {
 });
 
 describe("channel session trace", () => {
+  it("correlates channel-only delivery without borrowing a newer turn or a provider id", () => {
+    getOrCreateSession("trace-channel-only", "main", "/tmp/ravi", { name: "trace-channel-only" });
+    const recorded = recordDeliveryTrace({
+      sessionName: "trace-channel-only",
+      delivery: {
+        status: "delivered",
+        traceTurnId: "turn-original",
+        responsePhase: "final_answer",
+        target: { channel: "slack", accountId: "test", chatId: "C_TEST" },
+      },
+    });
+    expect(recorded?.turnId).toBe("turn-original");
+    expect(recorded?.payloadJson).toMatchObject({ responsePhase: "final_answer" });
+  });
   it("records an inbound channel message through prompt, response, and delivery outcomes", () => {
     const sessionKey = "agent:main:whatsapp:dm:5511999999999";
     const sessionName = "main-dm-5511999999999";
@@ -76,6 +90,7 @@ describe("channel session trace", () => {
       },
     });
     const response = {
+      traceTurnId: "turn-canonical",
       response: "hi",
       target: {
         channel: "whatsapp-baileys",
@@ -122,6 +137,11 @@ describe("channel session trace", () => {
     });
 
     const events = listSessionEventsForTest(sessionKey);
+    expect(
+      events
+        .filter((event) => event.eventGroup === "response" || event.eventGroup === "delivery")
+        .map((event) => event.turnId),
+    ).toEqual(new Array(4).fill("turn-canonical"));
     expect(events.map((event) => event.eventType)).toEqual([
       "channel.message.received",
       "route.resolved",
