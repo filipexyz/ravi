@@ -4522,6 +4522,8 @@ class DesktopNamespace {
 
   DesktopLoopsNamespace get loops => DesktopLoopsNamespace(_transport);
 
+  DesktopPermissionsNamespace get permissions => DesktopPermissionsNamespace(_transport);
+
   DesktopSessionNamespace get session => DesktopSessionNamespace(_transport);
 
   DesktopWorkNamespace get work => DesktopWorkNamespace(_transport);
@@ -4598,6 +4600,22 @@ class DesktopLoopsNamespace {
       command: "set-enabled",
       body: requestBody,
       decode: desktopLoopsSetEnabledReturnFromJson,
+    );
+  }
+}
+
+class DesktopPermissionsNamespace {
+  const DesktopPermissionsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<DesktopPermissionsCatalogReturn> catalog() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["desktop", "permissions"],
+      command: "catalog",
+      body: requestBody,
+      decode: desktopPermissionsCatalogReturnFromJson,
     );
   }
 }

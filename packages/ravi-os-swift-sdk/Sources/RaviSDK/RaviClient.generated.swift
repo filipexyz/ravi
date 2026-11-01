@@ -3305,6 +3305,10 @@ public struct DesktopNamespace: Sendable {
     DesktopLoopsNamespace(transport: transport)
   }
 
+  public var permissions: DesktopPermissionsNamespace {
+    DesktopPermissionsNamespace(transport: transport)
+  }
+
   public var session: DesktopSessionNamespace {
     DesktopSessionNamespace(transport: transport)
   }
@@ -3367,6 +3371,19 @@ public struct DesktopLoopsNamespace: Sendable {
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     requestBody["enabled"] = try RaviJSON.fromEncodable(enabled)
     return try await transport.call(groupSegments: ["desktop","loops"], command: "set-enabled", body: requestBody, as: DesktopLoopsSetEnabledReturn.self)
+  }
+}
+
+public struct DesktopPermissionsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func catalog() async throws -> DesktopPermissionsCatalogReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["desktop","permissions"], command: "catalog", body: requestBody, as: DesktopPermissionsCatalogReturn.self)
   }
 }
 

@@ -16387,6 +16387,27 @@ public typealias DesktopLoopsListReturn = [RaviJSON]
 
 public typealias DesktopLoopsSetEnabledReturn = [RaviJSON]
 
+public struct DesktopPermissionsCatalogReturn: Codable, Sendable {
+  public var actions: [RaviJSON]
+  public var agents: [RaviJSON]
+  public var digest: String
+  public var truncated: Bool
+
+  public init(actions: [RaviJSON], agents: [RaviJSON], digest: String, truncated: Bool) {
+    self.actions = actions
+    self.agents = agents
+    self.digest = digest
+    self.truncated = truncated
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actions = "actions"
+    case agents = "agents"
+    case digest = "digest"
+    case truncated = "truncated"
+  }
+}
+
 public struct DesktopSessionConfigureReturn: Codable, Sendable {
   public var effort: String
   public var model: String

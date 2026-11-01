@@ -13959,6 +13959,30 @@ typedef DesktopLoopsSetEnabledReturn = List<RaviJson>;
 
 DesktopLoopsSetEnabledReturn desktopLoopsSetEnabledReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
 
+class DesktopPermissionsCatalogReturn {
+  const DesktopPermissionsCatalogReturn({required this.actions, required this.agents, required this.digest, required this.truncated});
+
+  final List<RaviJson> actions;
+  final List<RaviJson> agents;
+  final String digest;
+  final bool truncated;
+
+  factory DesktopPermissionsCatalogReturn.fromJson(Map<String, Object?> json) {
+    return DesktopPermissionsCatalogReturn(
+      actions: raviJsonAsList(json["actions"], RaviJson.from),
+      agents: raviJsonAsList(json["agents"], RaviJson.from),
+      digest: raviJsonAsString(json["digest"]),
+      truncated: raviJsonAsBool(json["truncated"]),
+    );
+  }
+
+  static DesktopPermissionsCatalogReturn fromJsonValue(Object? json) {
+    return DesktopPermissionsCatalogReturn.fromJson(raviJsonObject(json, "DesktopPermissionsCatalogReturn"));
+  }
+}
+
+DesktopPermissionsCatalogReturn desktopPermissionsCatalogReturnFromJson(Object? json) => DesktopPermissionsCatalogReturn.fromJsonValue(json);
+
 class DesktopSessionConfigureReturn {
   const DesktopSessionConfigureReturn({required this.effort, required this.model, required this.models, required this.provider});
 

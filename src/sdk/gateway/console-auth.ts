@@ -1,3 +1,4 @@
+import { isPermissionCatalog, acceptCatalogDelegation } from "./console-catalog-authority.js";
 import { createHash } from "node:crypto";
 import { decodeJwt, importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose";
 import { z } from "zod";
@@ -93,7 +94,8 @@ export async function verifyConsoleRequest(
       }
     });
     // A newer decision must survive a denied command and any later rollback.
-    service.acceptDelegation(verified);
+    if (isPermissionCatalog(verified)) acceptCatalogDelegation(service, verified);
+    else service.acceptDelegation(verified);
     return { grant: verified, enrollment, service };
   } catch (error) {
     if (error instanceof BridgeError) throw error;

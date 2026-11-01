@@ -85,3 +85,13 @@ owners:
 - Desktop resource commands have finite resource/action/scope mappings.
   Installation administration, conversation reading and session configuration
   remain distinct Console decisions; no wildcard catalog forwarding is allowed.
+
+- `desktop.permissions.catalog` is an installation-scoped, Console-only read of
+  agent names and declared concrete tool/CLI/executable actions. It exposes no
+  prompts, filesystem paths, credentials, local grants or private conversations.
+  Console authorization.read admits it independently of conversation execution
+  grants; its delegation has no agents/send/approve authority. Catalog entries
+  and prerequisites are metadata, never automatically assigned grants. Enumeration
+  is bounded and truncation is explicit; unknown actions must not be fabricated.
+  Metadata revisions use a separate delegation head and never renew, replace or
+  cancel a conversation execution lease.

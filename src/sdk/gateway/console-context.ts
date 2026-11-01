@@ -1,3 +1,4 @@
+import { consoleHeadProject } from "./console-catalog-authority.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { conversationAgentsAllowed } from "../../bridge/teams.js";
 import type { ConsoleGrant } from "./console-contract.js";
@@ -45,7 +46,7 @@ export function consoleInvocationLive(value: ConsoleInvocation): boolean {
     .query<{ revision: number; digest: string }, [string, string, string]>(
       "SELECT revision,digest FROM delegation_heads WHERE enrollment_id=? AND subject=? AND project_id=?",
     )
-    .get(grant.enrollmentId, grant.sub, grant.projectId);
+    .get(grant.enrollmentId, grant.sub, consoleHeadProject(grant));
   return (
     grant.exp * 1000 > Date.now() &&
     Boolean(

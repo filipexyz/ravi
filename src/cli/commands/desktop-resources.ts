@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { permissionCatalog, permissionCatalogSchema } from "../../bridge/permission-catalog.js";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Returns, Arg, Option } from "../decorators.js";
 import {
@@ -237,5 +238,27 @@ export class DesktopWorkCommands {
     @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
   ) {
     return invoke(() => desktopWork(conversationId, limit, offset));
+  }
+}
+
+@Group({
+  name: "desktop.permissions",
+  description: "Execution permission metadata for Console administrators",
+  scope: "resource",
+})
+export class DesktopPermissionsCommands {
+  @Command({ name: "catalog", description: "List agent names and concrete execution actions without granting access" })
+  @CommandAccess({
+    kind: "read",
+    resource: "desktop.permissions",
+    action: "catalog",
+    risk: "low",
+    localOperator: false,
+    consoleOnly: true,
+    consoleScope: "installation",
+  })
+  @Returns(permissionCatalogSchema)
+  catalog(@Option({ flags: "--json", description: "Print structured result" }) _asJson = false) {
+    return invoke(() => permissionCatalog());
   }
 }
