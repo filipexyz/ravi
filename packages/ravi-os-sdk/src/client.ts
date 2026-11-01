@@ -4243,11 +4243,14 @@ export class RaviClient {
   readonly desktop = {
     channels: {
       /** List configured native channels and observed availability */
-      list: async (): Promise<DesktopChannelsListReturn> => {
+      list: async (options?: {
+        limit?: number;
+        offset?: number;
+      }): Promise<DesktopChannelsListReturn> => {
         return this.transport.call({
           groupSegments: ["desktop","channels"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Enable or disable an already configured native channel */
@@ -4271,11 +4274,14 @@ export class RaviClient {
     },
     loops: {
       /** List agent-bound cron, trigger and heartbeat state without prompts or secrets */
-      list: async (): Promise<DesktopLoopsListReturn> => {
+      list: async (options?: {
+        limit?: number;
+        offset?: number;
+      }): Promise<DesktopLoopsListReturn> => {
         return this.transport.call({
           groupSegments: ["desktop","loops"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Set a permitted routine's enabled state */
@@ -4307,11 +4313,14 @@ export class RaviClient {
     },
     work: {
       /** Read current turns, queued requests and agent handoffs in this conversation */
-      list: async (conversationId: string): Promise<DesktopWorkListReturn> => {
+      list: async (conversationId: string, options?: {
+        limit?: number;
+        offset?: number;
+      }): Promise<DesktopWorkListReturn> => {
         return this.transport.call({
           groupSegments: ["desktop","work"],
           command: "list",
-          body: { conversationId },
+          body: { conversationId, ...(options ?? {}) },
         });
       }
     }

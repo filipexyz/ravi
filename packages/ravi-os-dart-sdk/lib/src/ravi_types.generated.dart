@@ -13875,6 +13875,22 @@ class DecisionsShowReturn {
 
 DecisionsShowReturn decisionsShowReturnFromJson(Object? json) => DecisionsShowReturn.fromJsonValue(json);
 
+class DesktopChannelsListOptions {
+  const DesktopChannelsListOptions({this.limit, this.offset});
+
+  final int? limit;
+  final int? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
 typedef DesktopChannelsListReturn = List<RaviJson>;
 
 DesktopChannelsListReturn desktopChannelsListReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
@@ -13918,6 +13934,22 @@ class DesktopComputerReadReturn {
 }
 
 DesktopComputerReadReturn desktopComputerReadReturnFromJson(Object? json) => DesktopComputerReadReturn.fromJsonValue(json);
+
+class DesktopLoopsListOptions {
+  const DesktopLoopsListOptions({this.limit, this.offset});
+
+  final int? limit;
+  final int? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
 
 typedef DesktopLoopsListReturn = List<RaviJson>;
 
@@ -13974,6 +14006,22 @@ class DesktopSessionReadReturn {
 }
 
 DesktopSessionReadReturn desktopSessionReadReturnFromJson(Object? json) => DesktopSessionReadReturn.fromJsonValue(json);
+
+class DesktopWorkListOptions {
+  const DesktopWorkListOptions({this.limit, this.offset});
+
+  final int? limit;
+  final int? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
 
 typedef DesktopWorkListReturn = List<RaviJson>;
 

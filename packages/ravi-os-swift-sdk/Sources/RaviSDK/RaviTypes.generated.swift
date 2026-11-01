@@ -16292,6 +16292,30 @@ public struct DecisionsShowReturn: Codable, Sendable {
   }
 }
 
+public struct DesktopChannelsListOptions: Codable, Sendable {
+  public var limit: Int?
+  public var offset: Int?
+
+  public init(limit: Int? = nil, offset: Int? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public typealias DesktopChannelsListReturn = [RaviJSON]
 
 public typealias DesktopChannelsSetEnabledReturn = [RaviJSON]
@@ -16332,6 +16356,30 @@ public struct DesktopComputerReadReturn: Codable, Sendable {
     case processes = "processes"
     case terminal = "terminal"
     case uptime = "uptime"
+  }
+}
+
+public struct DesktopLoopsListOptions: Codable, Sendable {
+  public var limit: Int?
+  public var offset: Int?
+
+  public init(limit: Int? = nil, offset: Int? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
   }
 }
 
@@ -16378,6 +16426,30 @@ public struct DesktopSessionReadReturn: Codable, Sendable {
     case model = "model"
     case models = "models"
     case provider = "provider"
+  }
+}
+
+public struct DesktopWorkListOptions: Codable, Sendable {
+  public var limit: Int?
+  public var offset: Int?
+
+  public init(limit: Int? = nil, offset: Int? = nil) {
+    self.limit = limit
+    self.offset = offset
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case limit = "limit"
+    case offset = "offset"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
   }
 }
 

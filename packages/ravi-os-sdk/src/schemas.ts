@@ -67426,7 +67426,22 @@ export const DecisionsShowReturnSchema = {
 /** JSON Schema for the input body of `desktop.channels.list`. */
 export const DesktopChannelsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "default": 100,
+      "description": "Page size, up to 100",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "default": 0,
+      "description": "Matching items to skip",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -67666,7 +67681,22 @@ export const DesktopComputerReadReturnSchema = {
 /** JSON Schema for the input body of `desktop.loops.list`. */
 export const DesktopLoopsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "default": 100,
+      "description": "Page size, up to 100",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "default": 0,
+      "description": "Matching items to skip",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -67964,6 +67994,20 @@ export const DesktopWorkListInputSchema = {
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
+    },
+    "limit": {
+      "default": 100,
+      "description": "Page size, up to 100",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "default": 0,
+      "description": "Matching items to skip",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
     }
   },
   "required": [

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "15eced723f5b6c1f"
+    "version": "b6cac5c7a125cb75"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -75008,6 +75008,33 @@
       "post": {
         "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "desktop.channels.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "default": 100,
+                    "description": "Page size, up to 100",
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "default": 0,
+                    "description": "Matching items to skip",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -75353,6 +75380,33 @@
       "post": {
         "description": "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation.",
         "operationId": "desktop.loops.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "limit": {
+                    "default": 100,
+                    "description": "Page size, up to 100",
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "default": 0,
+                    "description": "Matching items to skip",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -75800,6 +75854,20 @@
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                     "type": "string"
+                  },
+                  "limit": {
+                    "default": 100,
+                    "description": "Page size, up to 100",
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "default": 0,
+                    "description": "Matching items to skip",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
                   }
                 },
                 "required": [

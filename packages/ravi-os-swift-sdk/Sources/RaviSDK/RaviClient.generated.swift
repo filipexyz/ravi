@@ -3321,8 +3321,9 @@ public struct DesktopChannelsNamespace: Sendable {
     self.transport = transport
   }
 
-  public func list() async throws -> DesktopChannelsListReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func list(_ options: DesktopChannelsListOptions = .init()) async throws -> DesktopChannelsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["desktop","channels"], command: "list", body: requestBody, as: DesktopChannelsListReturn.self)
   }
 
@@ -3355,8 +3356,9 @@ public struct DesktopLoopsNamespace: Sendable {
     self.transport = transport
   }
 
-  public func list() async throws -> DesktopLoopsListReturn {
-    let requestBody: [String: RaviJSON] = [:]
+  public func list(_ options: DesktopLoopsListOptions = .init()) async throws -> DesktopLoopsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["desktop","loops"], command: "list", body: requestBody, as: DesktopLoopsListReturn.self)
   }
 
@@ -3397,9 +3399,10 @@ public struct DesktopWorkNamespace: Sendable {
     self.transport = transport
   }
 
-  public func list(_ conversationId: String) async throws -> DesktopWorkListReturn {
+  public func list(_ conversationId: String, _ options: DesktopWorkListOptions = .init()) async throws -> DesktopWorkListReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["desktop","work"], command: "list", body: requestBody, as: DesktopWorkListReturn.self)
   }
 }

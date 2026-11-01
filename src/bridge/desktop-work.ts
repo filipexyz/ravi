@@ -13,7 +13,7 @@ export const desktopWorkSchema = z.array(
     parentId: z.string().optional(),
   }),
 );
-export function desktopWork(conversationId: string): z.infer<typeof desktopWorkSchema> {
+export function desktopWork(conversationId: string, limit = 100, offset = 0): z.infer<typeof desktopWorkSchema> {
   const invocation = currentConsoleInvocation();
   if (
     !invocation ||
@@ -37,13 +37,13 @@ export function desktopWork(conversationId: string): z.infer<typeof desktopWorkS
         created_at: number;
         parent_turn_id: string | null;
       },
-      [string]
+      [string, number, number]
     >(`SELECT target.turn_id id,COALESCE(t.status,q.state) status,m.text,target.agent_id,COALESCE(t.created_at,q.created_at) created_at,h.parent_turn_id
     FROM turn_targets target JOIN messages m ON m.id=target.message_id
     LEFT JOIN turns t ON t.id=target.turn_id LEFT JOIN queued_messages q ON q.turn_id=target.turn_id
     LEFT JOIN team_handoffs h ON h.turn_id=target.turn_id
-    WHERE m.conversation_id=? ORDER BY created_at DESC LIMIT 100`)
-    .all(conversationId);
+    WHERE m.conversation_id=? ORDER BY created_at DESC, target.turn_id DESC LIMIT ? OFFSET ?`)
+    .all(conversationId, limit, offset);
   return rows.reverse().map((row) => ({
     id: row.id,
     title: row.text.slice(0, 120),

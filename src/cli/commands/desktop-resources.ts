@@ -67,8 +67,26 @@ export class DesktopLoopsCommands {
     consoleScope: "installation",
   })
   @Returns(z.array(loopSchema))
-  list(@Option({ flags: "--json", description: "Print structured result" }) _asJson = false) {
-    return invoke(() => desktopLoops());
+  list(
+    @Option({
+      flags: "--limit <n>",
+      description: "Page size, up to 100",
+      schema: z.coerce.number().int().min(1).max(100).default(100),
+    })
+    limit = 100,
+    @Option({
+      flags: "--offset <n>",
+      description: "Matching items to skip",
+      schema: z.coerce.number().int().min(0).default(0),
+    })
+    offset = 0,
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
+  ) {
+    return invoke(() =>
+      desktopLoops()
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .slice(offset, offset + limit),
+    );
   }
   @Command({ name: "set-enabled", description: "Set a permitted routine's enabled state" })
   @CommandAccess({
@@ -106,8 +124,24 @@ export class DesktopChannelsCommands {
     consoleScope: "installation",
   })
   @Returns(z.array(channelSchema))
-  list(@Option({ flags: "--json", description: "Print structured result" }) _asJson = false) {
-    return invoke(() => desktopChannels());
+  list(
+    @Option({
+      flags: "--limit <n>",
+      description: "Page size, up to 100",
+      schema: z.coerce.number().int().min(1).max(100).default(100),
+    })
+    limit = 100,
+    @Option({
+      flags: "--offset <n>",
+      description: "Matching items to skip",
+      schema: z.coerce.number().int().min(0).default(0),
+    })
+    offset = 0,
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
+  ) {
+    return invoke(async () =>
+      (await desktopChannels()).sort((a, b) => a.id.localeCompare(b.id)).slice(offset, offset + limit),
+    );
   }
   @Command({ name: "set-enabled", description: "Enable or disable an already configured native channel" })
   @CommandAccess({
@@ -188,8 +222,20 @@ export class DesktopWorkCommands {
   @Returns(desktopWorkSchema)
   list(
     @Arg("conversationId", { required: true, schema: z.string().uuid() }) conversationId: string,
+    @Option({
+      flags: "--limit <n>",
+      description: "Page size, up to 100",
+      schema: z.coerce.number().int().min(1).max(100).default(100),
+    })
+    limit = 100,
+    @Option({
+      flags: "--offset <n>",
+      description: "Matching items to skip",
+      schema: z.coerce.number().int().min(0).default(0),
+    })
+    offset = 0,
     @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
   ) {
-    return invoke(() => desktopWork(conversationId));
+    return invoke(() => desktopWork(conversationId, limit, offset));
   }
 }

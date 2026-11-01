@@ -12809,7 +12809,10 @@ export type DecisionsShowReturn = {
 };
 
 /** Input shape for `desktop.channels.list`. */
-export type DesktopChannelsListInput = Record<string, never>;
+export type DesktopChannelsListInput = {
+  limit?: number;
+  offset?: number;
+};
 
 /** Return shape for `desktop.channels.list`. */
 export type DesktopChannelsListReturn = Array<{
@@ -12865,7 +12868,10 @@ export type DesktopComputerReadReturn = {
 };
 
 /** Input shape for `desktop.loops.list`. */
-export type DesktopLoopsListInput = Record<string, never>;
+export type DesktopLoopsListInput = {
+  limit?: number;
+  offset?: number;
+};
 
 /** Return shape for `desktop.loops.list`. */
 export type DesktopLoopsListReturn = Array<{
@@ -12934,6 +12940,8 @@ export type DesktopSessionReadReturn = {
 /** Input shape for `desktop.work.list`. */
 export type DesktopWorkListInput = {
   conversationId: string;
+  limit?: number;
+  offset?: number;
 };
 
 /** Return shape for `desktop.work.list`. */

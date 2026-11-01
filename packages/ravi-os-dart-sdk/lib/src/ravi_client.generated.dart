@@ -4532,8 +4532,9 @@ class DesktopChannelsNamespace {
 
   final RaviTransport _transport;
 
-  Future<DesktopChannelsListReturn> list() async {
+  Future<DesktopChannelsListReturn> list([DesktopChannelsListOptions options = const DesktopChannelsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["desktop", "channels"],
       command: "list",
@@ -4577,8 +4578,9 @@ class DesktopLoopsNamespace {
 
   final RaviTransport _transport;
 
-  Future<DesktopLoopsListReturn> list() async {
+  Future<DesktopLoopsListReturn> list([DesktopLoopsListOptions options = const DesktopLoopsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["desktop", "loops"],
       command: "list",
@@ -4635,9 +4637,10 @@ class DesktopWorkNamespace {
 
   final RaviTransport _transport;
 
-  Future<DesktopWorkListReturn> list(String conversationId) async {
+  Future<DesktopWorkListReturn> list(String conversationId, [DesktopWorkListOptions options = const DesktopWorkListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["conversationId"] = RaviJson.from(conversationId);
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["desktop", "work"],
       command: "list",
