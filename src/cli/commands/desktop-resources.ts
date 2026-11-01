@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Group, Command, CommandAccess, Returns, Arg } from "../decorators.js";
+import { Group, Command, CommandAccess, Returns, Arg, Option } from "../decorators.js";
 import {
   desktopComputer,
   desktopLoops,
@@ -44,7 +44,10 @@ export class DesktopComputerCommands {
     resourceId: "conversationId",
   })
   @Returns(computerSchema)
-  read(@Arg("conversationId", { required: true, schema: z.string().uuid() }) conversationId: string) {
+  read(
+    @Arg("conversationId", { required: true, schema: z.string().uuid() }) conversationId: string,
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
+  ) {
     return invoke(() => desktopComputer(conversationId));
   }
 }
@@ -64,7 +67,7 @@ export class DesktopLoopsCommands {
     consoleScope: "installation",
   })
   @Returns(z.array(loopSchema))
-  list() {
+  list(@Option({ flags: "--json", description: "Print structured result" }) _asJson = false) {
     return invoke(() => desktopLoops());
   }
   @Command({ name: "set-enabled", description: "Set a permitted routine's enabled state" })
@@ -81,6 +84,7 @@ export class DesktopLoopsCommands {
   setEnabled(
     @Arg("id", { required: true, schema: z.string().min(1).max(160) }) id: string,
     @Arg("enabled", { required: true, schema: z.boolean() }) enabled: boolean,
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
   ) {
     return invoke(() => desktopSetLoop(id, enabled));
   }
@@ -102,7 +106,7 @@ export class DesktopChannelsCommands {
     consoleScope: "installation",
   })
   @Returns(z.array(channelSchema))
-  list() {
+  list(@Option({ flags: "--json", description: "Print structured result" }) _asJson = false) {
     return invoke(() => desktopChannels());
   }
   @Command({ name: "set-enabled", description: "Enable or disable an already configured native channel" })
@@ -119,6 +123,7 @@ export class DesktopChannelsCommands {
   setEnabled(
     @Arg("id", { required: true, schema: z.string().min(1).max(160) }) id: string,
     @Arg("enabled", { required: true, schema: z.boolean() }) enabled: boolean,
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
   ) {
     return invoke(() => desktopSetChannel(id, enabled));
   }
@@ -138,7 +143,10 @@ export class DesktopSessionCommands {
     resourceId: "conversationId",
   })
   @Returns(desktopSessionSchema)
-  read(@Arg("conversationId", { required: true, schema: z.string().uuid() }) conversationId: string) {
+  read(
+    @Arg("conversationId", { required: true, schema: z.string().uuid() }) conversationId: string,
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
+  ) {
     return invoke(() => desktopSessionRead(conversationId));
   }
   @Command({ name: "configure", description: "Set this conversation model and effort for following turns" })
@@ -158,6 +166,7 @@ export class DesktopSessionCommands {
     @Arg("model", { required: true, schema: z.string().min(1).max(200) }) model: string,
     @Arg("effort", { required: true, schema: z.enum(RUNTIME_EFFORT_LEVELS) })
     effort: (typeof RUNTIME_EFFORT_LEVELS)[number],
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
   ) {
     return invoke(() => desktopSessionConfigure(conversationId, model, effort));
   }
@@ -177,7 +186,10 @@ export class DesktopWorkCommands {
     resourceId: "conversationId",
   })
   @Returns(desktopWorkSchema)
-  list(@Arg("conversationId", { required: true, schema: z.string().uuid() }) conversationId: string) {
+  list(
+    @Arg("conversationId", { required: true, schema: z.string().uuid() }) conversationId: string,
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
+  ) {
     return invoke(() => desktopWork(conversationId));
   }
 }

@@ -3521,6 +3521,7 @@ export class SessionCommands {
     @Option({ flags: "--done <json>", description: "JSON array of completed work" }) done = "[]",
     @Option({ flags: "--open <json>", description: "JSON array of remaining work" }) open = "[]",
     @Option({ flags: "--output <value>", description: "Public team output reference" }) output?: string,
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
   ) {
     return teamHandoff(getContext()?.context, {
       toAgentId: agent,

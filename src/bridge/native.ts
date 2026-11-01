@@ -10,6 +10,7 @@ import { bridgeStateDir, getBridgeStore, type BridgeStore } from "./store.js";
 import { bridgeTurnAuthority, bridgeContextCapabilities } from "./authority.js";
 import { requestDigest } from "./auth.js";
 import type { BridgeRuntime } from "./service.js";
+import { nativeTurnContext } from "./native-context.js";
 
 export function consoleConversationCwd(conversationId: string) {
   if (!/^[0-9a-f-]{36}$/.test(conversationId)) throw new Error("Invalid bridge conversation");
@@ -35,18 +36,7 @@ export function nativeBridgeRuntime(bot: RaviBot): BridgeRuntime {
         name: conversation.session_name,
         channel: "console",
       });
-      const message = store.db
-        .query<{ text: string; barrier: string | null }, [string, string]>(
-          "SELECT m.text,mm.barrier FROM messages m LEFT JOIN message_metadata mm ON mm.message_id=m.id WHERE m.id=COALESCE((SELECT message_id FROM turn_targets WHERE turn_id=?),(SELECT id FROM messages WHERE turn_id=? AND role='user'))",
-        )
-        .get(turnId, turnId);
-      if (!message) throw new Error("Missing accepted message");
-      const notes = store.db
-        .query<{ text: string }, [string, string]>(
-          "SELECT m.text FROM messages m JOIN queued_messages q ON q.message_id=m.id WHERE q.conversation_id=? AND q.state='recorded' AND m.rowid<(SELECT rowid FROM messages WHERE turn_id=? AND role='user') ORDER BY m.rowid DESC LIMIT 20",
-        )
-        .all(conversation.id, turnId)
-        .reverse();
+      const { message, notes, history } = nativeTurnContext(store, conversation.id, turnId);
       // Notes are context for the next explicit request, never independent
       // execution. Bound repeated context and exclude notes recorded after it.
       const noteText = notes
@@ -57,13 +47,7 @@ export function nativeBridgeRuntime(bot: RaviBot): BridgeRuntime {
         ? `[Recorded notes — context only, no execution requested for these notes]\n${noteText}\n[Current request]\n`
         : "";
       const team = store.team(conversation.id);
-      const sharedContext = team
-        ? store.db
-            .query<{ role: string; text: string }, [string]>(
-              "SELECT role,text FROM (SELECT rowid,role,text FROM messages WHERE conversation_id=? ORDER BY rowid DESC LIMIT 30) ORDER BY rowid",
-            )
-            .all(conversation.id)
-        : [];
+      const sharedContext = team ? history : [];
       const teamContext = team
         ? `Team conversation. You are @${agent.id}; owner @${team.ownerAgentId}. Use \`ravi sessions team-handoff <agent> <task> --done <JSON-array> --open <JSON-array>\` to pass work to an authorized teammate after your reply, if your existing permissions allow it. It creates a visible card and uses only this team's authority. Complete your turn after handing off. Only this team's history follows.\n${sharedContext
             .map((row) => `${row.role}: ${row.text}`)

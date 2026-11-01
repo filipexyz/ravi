@@ -85,6 +85,7 @@ export class SessionConversationCommands {
     })
     agentIds: string[],
     @Arg("personIds", { required: true, schema: z.array(id).max(30) }) personIds: string[],
+    @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
   ) {
     return invoke("team-create", { projectId, requestId, createdAt, title, agentIds, personIds });
   }
