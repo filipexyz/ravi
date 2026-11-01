@@ -100,6 +100,7 @@ describe("channel runtime event projection", () => {
     ]);
     expect(stateColumns).toEqual(
       new Set([
+        "trace_turn_id",
         "turn_id",
         "state",
         "last_sequence",
@@ -133,11 +134,13 @@ describe("channel runtime event projection", () => {
 
   it("emits ordered safe events and persists one canonical terminal assistant message", async () => {
     const metadata = await acceptedMetadata();
+    metadata.traceTurnId = "physical-trace-turn";
     const events: KnownChannelRuntimeEvent[] = [];
     const outputs: ChannelOutputEnvelope[] = [];
     const sinks = runtimeSinks(metadata, events);
     unregisterOutput = channelOutputSinks.register(metadata.target, {
       async emit(output) {
+        expect(output.traceTurnId).toBe("physical-trace-turn");
         outputs.push(output);
       },
     });

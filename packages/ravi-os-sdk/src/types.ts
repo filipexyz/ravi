@@ -6339,6 +6339,7 @@ export type ChannelsBackendRuntimeReadbackReturn = {
       causationId?: string;
       correlationId: string;
       ingressRequestId: string;
+      traceTurnId?: string;
     };
     eventId: string;
     kind: "turn.terminal_output";

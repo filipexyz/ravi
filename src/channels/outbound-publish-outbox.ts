@@ -644,6 +644,7 @@ async function emitQueuedDelivery(
   reason: "native_channel_outbound" | "native_channel_outbound_reconciled",
 ): Promise<void> {
   await emitEvent(`ravi.session.${job.request.origin.sessionName}.delivery`, {
+    traceTurnId: job.request.origin.traceTurnId,
     status: "queued",
     reason,
     jobId: job.jobId,

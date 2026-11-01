@@ -246,7 +246,10 @@ function rowToSessionTurn(row: SessionTurnRow): SessionTurnRecord {
     costUsd: row.cost_usd ?? null,
     error: row.error,
     abortReason: row.abort_reason,
-    outputState: row.output_state === "final" || row.output_state === "incomplete" ? row.output_state : null,
+    outputState:
+      row.output_state === "final" || row.output_state === "incomplete" || row.output_state === "silent"
+        ? row.output_state
+        : null,
     startedAt: row.started_at,
     completedAt: row.completed_at,
     updatedAt: row.updated_at,

@@ -4318,6 +4318,15 @@ describe("runtime session trace instrumentation", () => {
     );
 
     expect(getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant")).toEqual([]);
+    expect(getSessionTurn("turn-silent-no-row")).toMatchObject({ status: "complete", outputState: "silent" });
+    expect(getSessionTurn("turn-silent-no-row")?.completedAt).not.toBeNull();
+    const unfinished = makeStreamingSession();
+    seedAdapterTrace(unfinished, "turn-without-terminal");
+    expect(getSessionTurn("turn-without-terminal")).toMatchObject({
+      status: "running",
+      completedAt: null,
+      outputState: null,
+    });
   });
 
   it("suppresses a truncated silence marker and keeps prose that cites the marker", async () => {

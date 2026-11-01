@@ -43,6 +43,7 @@ export interface ChannelOutboundRequest {
   origin: {
     sessionName: string;
     emitId: string;
+    traceTurnId?: string;
     responseVersion?: number;
     runtimePid?: number;
     responsePhase?: string;
@@ -78,6 +79,7 @@ export interface ChannelOutboundJob {
 }
 
 export interface ChannelTextOutboundJobInput {
+  traceTurnId?: string;
   requestId: string;
   sessionName: string;
   emitId: string;
@@ -307,6 +309,7 @@ export function buildChannelOutboundJobFromResponse(
         origin: {
           sessionName,
           emitId,
+          traceTurnId: response.traceTurnId,
           responseVersion:
             typeof (response as { _v?: unknown })._v === "number" ? (response as { _v: number })._v : undefined,
           runtimePid:
@@ -356,6 +359,7 @@ export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput):
       origin: {
         sessionName,
         emitId,
+        ...(input.traceTurnId ? { traceTurnId: input.traceTurnId } : {}),
         ...(input.responsePhase ? { responsePhase: input.responsePhase } : {}),
         ...(canonicalMessageId ? { canonicalMessageId } : {}),
       },

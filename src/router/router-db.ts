@@ -368,6 +368,7 @@ interface ChannelBackendIngressReceiptRow {
 }
 
 interface ChannelBackendRuntimeStateRow {
+  trace_turn_id: string | null;
   turn_id: string;
   state: ChannelBackendRuntimeState;
   last_sequence: number;
@@ -831,6 +832,7 @@ export type ChannelBackendRuntimeState =
   | "interrupted";
 
 export interface ChannelBackendRuntimeStateRecord {
+  traceTurnId?: string;
   turnId: string;
   state: ChannelBackendRuntimeState;
   lastSequence: number;
@@ -842,6 +844,7 @@ export interface ChannelBackendRuntimeStateRecord {
 }
 
 export interface RecordChannelBackendRuntimeEventInput {
+  traceTurnId?: string;
   turnId: string;
   state?: ChannelBackendRuntimeState;
   assistantDelta?: boolean;
@@ -1762,6 +1765,7 @@ function getDb(): Database {
       ON channel_backend_ingress_receipts(session_name, accepted_at);
 
     CREATE TABLE IF NOT EXISTS channel_backend_runtime_state (
+      trace_turn_id TEXT,
       turn_id TEXT PRIMARY KEY
         REFERENCES channel_backend_ingress_receipts(turn_id) ON DELETE CASCADE,
       state TEXT NOT NULL DEFAULT 'accepted'
@@ -3596,6 +3600,7 @@ function getDb(): Database {
     "INTEGER NOT NULL DEFAULT 0 CHECK(last_delta_sequence >= 0)",
   );
   ensureColumn(db, "channel_backend_runtime_state", "runtime_generation_id", "TEXT");
+  ensureColumn(db, "channel_backend_runtime_state", "trace_turn_id", "TEXT");
   ensureColumn(db, "channel_backend_runtime_state", "terminal_error_json", "TEXT");
   ensureColumn(db, "channel_backend_ingress_receipts", "prompt_json", "TEXT");
   ensureColumn(db, "daemon_restart_resume_deliveries", "delivery_kind", "TEXT NOT NULL DEFAULT 'resume'");
@@ -4666,6 +4671,7 @@ function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow)
 function rowToChannelBackendRuntimeState(row: ChannelBackendRuntimeStateRow): ChannelBackendRuntimeStateRecord {
   const terminalError = parseJsonRecord(row.terminal_error_json);
   return {
+    ...(row.trace_turn_id ? { traceTurnId: row.trace_turn_id } : {}),
     turnId: row.turn_id,
     state: row.state,
     lastSequence: row.last_sequence,
@@ -7533,6 +7539,7 @@ export function dbRecordChannelBackendRuntimeEvent(
         .prepare(
           `
           INSERT INTO channel_backend_runtime_state (
+            trace_turn_id,
             turn_id,
             state,
             last_sequence,
@@ -7542,8 +7549,9 @@ export function dbRecordChannelBackendRuntimeEvent(
             terminal_error_json,
             updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(turn_id) DO UPDATE SET
+            trace_turn_id = COALESCE(excluded.trace_turn_id, channel_backend_runtime_state.trace_turn_id),
             state = excluded.state,
             last_sequence = excluded.last_sequence,
             last_delta_sequence = excluded.last_delta_sequence,
@@ -7560,6 +7568,7 @@ export function dbRecordChannelBackendRuntimeEvent(
         `,
         )
         .run(
+          input.traceTurnId ?? null,
           turnId,
           nextState,
           nextSequence,
