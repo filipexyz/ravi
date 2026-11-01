@@ -63,6 +63,16 @@ Quoting regressions (`bun test src/bash/`):
   `env -C` MUST deny through the same unconditional pipe rule.
 - Direct `python3 /dev/fd/3 3<&0` and `python3 /dev/stdin` MUST deny by descriptor
   shape. Cover other interpreters, options, arbitrary fds and `/proc/**/fd/N`.
+- Parser and real-hook tests MUST iterate the exported `INTERPRETERS` set and
+  deny every member as a bare, quoted and absolute-path pipe receiver. Include
+  `printf 'console.log(731)\n' | bun run -` as an explicit regression.
+- Option operands MUST NOT hide a descriptor script: deny
+  `python3 --check-hash-based-pycs always /dev/stdin`,
+  `python3 -X importtime /dev/stdin` and `node --require helper.js /dev/stdin`.
+- Direct `python3 script.py "$INPUT"` and `node build.js *.json` MUST pass;
+  `python3 "$SCRIPT_PATH"`, `python3 "/abs/$SCRIPT_PATH"` and `python3 *.py`
+  MUST deny because the script itself is unresolved. A pipe into
+  `python3 script.py` MUST still deny regardless of later arguments.
 - Without a pipe, `python3 script.py`, `python3 ./a.py arg`,
   `node --no-warnings build.js`, `python3 /abs/script.py` and
   `python3 /abs/s.py < dados.txt` MUST remain allowed. A descriptor-looking later

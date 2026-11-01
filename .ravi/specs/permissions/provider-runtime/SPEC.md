@@ -150,22 +150,28 @@ Required capability materializers:
   same word-start comment semantics: an unquoted mid-word `#` is data and MUST
   NOT hide later executables, inline flags or redirect targets. A real comment
   MUST still stop at the next newline.
-- Every pipe receiver whose executable is `python`, `python3`, `node`, `perl`,
-  `ruby` or `php` MUST be denied unconditionally, including with wildcard
+- Every pipe receiver whose executable belongs to the exported `INTERPRETERS`
+  set (`python`, `python3`, `node`, `perl`, `ruby`, `php`, `bun`, `deno`, `nodejs`,
+  `Rscript`, `lua`, `osascript`, `pwsh`, `tsx`, `ts-node`) MUST be denied unconditionally, including with wildcard
   executable access. The reason MUST be `piping to an interpreter is not allowed`.
   `... | python3 /abs/script.py` is deliberately denied; absolute paths and
   symlinks MUST NOT grant an exception. No cwd or wrapper model is involved.
+  This rule is enumerative: new runtimes MUST enter that single set, and parser
+  and real-hook tests MUST iterate every member to enforce pipe refusal.
 - Direct file-script invocation (`python3 /abs/script.py`) and named-file input
   (`python3 /abs/script.py < dados.txt`) MAY remain allowed by executable grants.
   Direct positional script paths shaped as `/dev/fd/N`, `/proc/**/fd/N`,
   `/dev/stdin`, `/dev/stdout` or `/dev/stderr` MUST still be refused for every
   descriptor number. Known option operands, redirect targets and later script
   arguments MUST NOT be confused with the positional script path.
+  Option arity MUST consume option/value pairs before selecting the script.
+  The script word MUST resolve literally; expansions in later arguments MUST
+  NOT deny an otherwise allowed direct file-script invocation.
 - Pipeline inspection MUST continue after empty/comment-only receiver segments;
   a whole-line comment MUST NOT hide an interpreter on the next line. Each pipe
   stops at its effective receiver and MUST NOT cross `;`, `&&` or `||`; other
   pipes remain independently checked.
-- This guard does not prove content provenance; it refuses pipes into interpreters. Reopening that surface requires a sandbox, not more parser rules.
+- This guard does not prove content provenance; it refuses pipes into interpreters. FIFO, symlink and preexisting-file content provenance is outside this contract. Reopening that surface requires a sandbox, not more parser rules.
 - The bounded scanner MUST refuse unterminated quotes/escapes and unsupported
   ANSI-C / locale quoting rather than assume them safe. It is not a shell AST.
   `stripShellQuoting`, used for identity text checks, MUST NOT be used as the

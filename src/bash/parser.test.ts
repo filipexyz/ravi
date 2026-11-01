@@ -9,6 +9,7 @@ import {
   findOutputRedirectTargets,
   stripShellQuoting,
   UNCONDITIONAL_BLOCKS,
+  INTERPRETERS,
 } from "./parser.js";
 
 // ============================================================================
@@ -635,4 +636,53 @@ describe("direct interpreter descriptor paths and named input", () => {
       rmSync(directory, { recursive: true, force: true });
     }
   });
+});
+
+describe("interpreter registry, option arity and script-only resolution", () => {
+  for (const executable of INTERPRETERS) {
+    it(`denies every registered pipe receiver: ${executable}`, () => {
+      for (const receiver of [executable, `"${executable}" /abs/script`, `/usr/bin/${executable} /abs/script`]) {
+        const command = `printf data | ${receiver}`;
+        expect(checkDangerousPatterns(command)).toEqual({
+          safe: false,
+          reason: "piping to an interpreter is not allowed",
+        });
+        expect(parseBashCommand(command).success).toBe(false);
+      }
+    });
+  }
+
+  for (const command of [
+    "printf 'console.log(731)\\n' | bun run -",
+    "python3 --check-hash-based-pycs always /dev/stdin",
+    "python3 -X importtime /dev/stdin",
+    "node --require helper.js /dev/stdin",
+    "node -r helper.js /dev/stdin",
+    "nodejs --require helper.js /dev/stdin",
+    'python3 --check-hash-based-pycs "$MODE" /dev/stdin',
+    'python3 "$SCRIPT_PATH"',
+    'python3 "/abs/$SCRIPT_PATH"',
+    "python3 *.py",
+    "printf data | python3 script.py",
+  ]) {
+    it(`denies ${JSON.stringify(command)}`, () => {
+      expect(checkDangerousPatterns(command).safe).toBe(false);
+      expect(parseBashCommand(command).success).toBe(false);
+    });
+  }
+
+  for (const command of [
+    'python3 script.py "$INPUT"',
+    "node build.js *.json",
+    'python3 --check-hash-based-pycs always script.py "$INPUT"',
+    'python3 --check-hash-based-pycs "$MODE" script.py "$INPUT"',
+    "node --require helper.js build.js *.json",
+    'python3 script.py "$INPUT" /dev/stdin',
+    "python3 /abs/s.py < dados.txt",
+  ]) {
+    it(`allows later argument expansion: ${JSON.stringify(command)}`, () => {
+      expect(checkDangerousPatterns(command).safe).toBe(true);
+      expect(parseBashCommand(command).success).toBe(true);
+    });
+  }
 });

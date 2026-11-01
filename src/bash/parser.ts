@@ -45,6 +45,26 @@ export const UNCONDITIONAL_BLOCKS = new Set([
   ".",
 ]);
 
+// This boundary is enumerative: register every new interpreter runtime here.
+// Parser and real-hook tests iterate this exported set to enforce pipe refusal.
+export const INTERPRETERS: ReadonlySet<string> = new Set([
+  "python",
+  "python3",
+  "node",
+  "perl",
+  "ruby",
+  "php",
+  "bun",
+  "deno",
+  "nodejs",
+  "Rscript",
+  "lua",
+  "osascript",
+  "pwsh",
+  "tsx",
+  "ts-node",
+]);
+
 /**
  * Interpreters that are blocked when used with inline code flags.
  */
@@ -59,8 +79,10 @@ const INLINE_CODE_INTERPRETERS: Record<string, string[]> = {
 
 // Known option operands are not positional script paths in direct invocations.
 const INTERPRETER_OPTION_VALUES: Record<string, string[]> = {
-  python: ["-W", "-X"],
-  python3: ["-W", "-X"],
+  python: ["-W", "-X", "--check-hash-based-pycs"],
+  python3: ["-W", "-X", "--check-hash-based-pycs"],
+  node: ["-r", "--require"],
+  nodejs: ["-r", "--require"],
   php: ["-d", "-c"],
 };
 
@@ -93,7 +115,7 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
         const executable = parseSimpleCommand(receiver);
         if (!executable) continue;
         if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
-        if (INLINE_CODE_INTERPRETERS[executable]) {
+        if (INTERPRETERS.has(executable)) {
           return { safe: false, reason: "piping to an interpreter is not allowed" };
         }
         break;
@@ -101,7 +123,7 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
     }
     for (const segment of splitByOperators(inspected.command)) {
       const executable = parseSimpleCommand(segment);
-      if (executable && INLINE_CODE_INTERPRETERS[executable] && hasDescriptorScriptArgument(executable, segment)) {
+      if (executable && INTERPRETERS.has(executable) && hasDescriptorScriptArgument(executable, segment)) {
         return { safe: false, reason: "interpreter descriptor script paths are not allowed" };
       }
     }
@@ -211,19 +233,26 @@ function parseWords(command: string, env?: Parameters<typeof parseShell>[1]): Pa
   return parseShell(view, env);
 }
 
-/** Assignments, comments and redirect operands are not interpreter arguments. */
-function resolvedCommandWords(command: string): string[] {
-  const tokens = parseWords(command, () => ({ op: "glob", pattern: "unknown expansion" }));
-  const words: string[] = [];
+// A string marker preserves a word containing an expansion as one token, even
+// with a literal prefix/suffix. Only the script word must resolve literally.
+const UNRESOLVED_EXPANSION = "\0";
+
+/** Yield lazily: later script arguments need no resolution or classification. */
+function* commandWords(command: string): Generator<ParseEntry> {
+  const tokens = parseWords(command, () => UNRESOLVED_EXPANSION);
+  let foundExecutable = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
     const next = tokens[i + 1];
     if (typeof token === "string") {
-      if (words.length === 0 && isEnvAssignment(token)) continue;
+      if (!foundExecutable && isEnvAssignment(token)) continue;
       if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
-      words.push(token);
+      foundExecutable = true;
+      yield token;
     } else if ("comment" in token) {
       break;
+    } else if (token.op === "glob") {
+      yield token;
     } else if (token.op === "&" && typeof next === "object" && "op" in next && [">", ">>"].includes(next.op)) {
       // The following redirect token consumes the combined redirect destination.
     } else if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
@@ -231,24 +260,26 @@ function resolvedCommandWords(command: string): string[] {
       const destination = tokens[++i];
       if (typeof destination !== "string" || !destination) throw new Error("Cannot resolve shell redirect destination");
     } else {
-      throw new Error("Cannot resolve shell pipeline arguments");
+      throw new Error("Cannot resolve shell command arguments");
     }
   }
-  return words;
 }
 
 function hasDescriptorScriptArgument(executable: string, command: string): boolean {
-  const [, ...args] = resolvedCommandWords(command);
+  const args = commandWords(command);
+  args.next(); // executable (assignments and redirect operands are skipped)
   const optionValues = INTERPRETER_OPTION_VALUES[executable] ?? [];
   let endOfOptions = false;
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
+  for (const arg of args) {
+    if (typeof arg !== "string" || arg.includes(UNRESOLVED_EXPANSION)) {
+      throw new Error("Cannot resolve interpreter script argument");
+    }
     if (!endOfOptions && arg === "--") {
       endOfOptions = true;
       continue;
     }
     if (!endOfOptions && optionValues.includes(arg)) {
-      i++;
+      args.next(); // consume this option's operand before locating the script
       continue;
     }
     if (!endOfOptions && arg.startsWith("-") && arg !== "-") continue;
