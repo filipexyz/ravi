@@ -16292,6 +16292,97 @@ public struct DecisionsShowReturn: Codable, Sendable {
   }
 }
 
+public typealias DesktopChannelsListReturn = [RaviJSON]
+
+public typealias DesktopChannelsSetEnabledReturn = [RaviJSON]
+
+public struct DesktopComputerReadReturn: Codable, Sendable {
+  public var branch: String
+  public var changes: [RaviJSON]
+  public var cpu: Double
+  public var cwd: String
+  public var host: String
+  public var memory: Double
+  public var os: String
+  public var processes: [RaviJSON]
+  public var terminal: [String]
+  public var uptime: String
+
+  public init(branch: String, changes: [RaviJSON], cpu: Double, cwd: String, host: String, memory: Double, os: String, processes: [RaviJSON], terminal: [String], uptime: String) {
+    self.branch = branch
+    self.changes = changes
+    self.cpu = cpu
+    self.cwd = cwd
+    self.host = host
+    self.memory = memory
+    self.os = os
+    self.processes = processes
+    self.terminal = terminal
+    self.uptime = uptime
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case branch = "branch"
+    case changes = "changes"
+    case cpu = "cpu"
+    case cwd = "cwd"
+    case host = "host"
+    case memory = "memory"
+    case os = "os"
+    case processes = "processes"
+    case terminal = "terminal"
+    case uptime = "uptime"
+  }
+}
+
+public typealias DesktopLoopsListReturn = [RaviJSON]
+
+public typealias DesktopLoopsSetEnabledReturn = [RaviJSON]
+
+public struct DesktopSessionConfigureReturn: Codable, Sendable {
+  public var effort: String
+  public var model: String
+  public var models: [RaviJSON]
+  public var provider: String
+
+  public init(effort: String, model: String, models: [RaviJSON], provider: String) {
+    self.effort = effort
+    self.model = model
+    self.models = models
+    self.provider = provider
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case effort = "effort"
+    case model = "model"
+    case models = "models"
+    case provider = "provider"
+  }
+}
+
+public struct DesktopSessionReadReturn: Codable, Sendable {
+  public var effort: String
+  public var model: String
+  public var models: [RaviJSON]
+  public var provider: String
+
+  public init(effort: String, model: String, models: [RaviJSON], provider: String) {
+    self.effort = effort
+    self.model = model
+    self.models = models
+    self.provider = provider
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case effort = "effort"
+    case model = "model"
+    case models = "models"
+    case provider = "provider"
+  }
+}
+
+public typealias DesktopWorkListReturn = [RaviJSON]
+
 public struct DevinAuthCheckReturn: Codable, Sendable {
   public var baseUrl: String
   public var configuredOrgId: String?
@@ -27892,16 +27983,42 @@ public struct SessionsConversationsRenewReturn: Codable, Sendable {
   }
 }
 
+public struct SessionsConversationsSendOptions: Codable, Sendable {
+  public var barrier: String?
+  public var replyTo: RaviJSON?
+
+  public init(barrier: String? = nil, replyTo: RaviJSON? = nil) {
+    self.barrier = barrier
+    self.replyTo = replyTo
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case barrier = "barrier"
+    case replyTo = "replyTo"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.barrier {
+      body["barrier"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.replyTo {
+      body["replyTo"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct SessionsConversationsSendReturn: Codable, Sendable {
   public var accepted: Bool
   public var conversationId: String
+  public var delivery: String?
   public var messageId: String
   public var turnId: String
   public var version: Double
 
-  public init(accepted: Bool, conversationId: String, messageId: String, turnId: String, version: Double) {
+  public init(accepted: Bool, conversationId: String, delivery: String? = nil, messageId: String, turnId: String, version: Double) {
     self.accepted = accepted
     self.conversationId = conversationId
+    self.delivery = delivery
     self.messageId = messageId
     self.turnId = turnId
     self.version = version
@@ -27910,9 +28027,25 @@ public struct SessionsConversationsSendReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case accepted = "accepted"
     case conversationId = "conversationId"
+    case delivery = "delivery"
     case messageId = "messageId"
     case turnId = "turnId"
     case version = "version"
+  }
+}
+
+public struct SessionsConversationsTeamCreateReturn: Codable, Sendable {
+  public var conversation: RaviJSON
+  public var conversationId: String
+
+  public init(conversation: RaviJSON, conversationId: String) {
+    self.conversation = conversation
+    self.conversationId = conversationId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case conversation = "conversation"
+    case conversationId = "conversationId"
   }
 }
 
@@ -29553,6 +29686,51 @@ public typealias SessionsSetThinkingReturn = [String: RaviJSON]
 public typealias SessionsSetTtlReturn = [String: RaviJSON]
 
 public typealias SessionsSubscriptionsReturn = [String: RaviJSON]
+
+public struct SessionsTeamHandoffOptions: Codable, Sendable {
+  public var done: String?
+  public var open_: String?
+  public var output: String?
+
+  public init(done: String? = nil, open_: String? = nil, output: String? = nil) {
+    self.done = done
+    self.open_ = open_
+    self.output = output
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case done = "done"
+    case open_ = "open"
+    case output = "output"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.done {
+      body["done"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.open_ {
+      body["open"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.output {
+      body["output"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsTeamHandoffReturn: Codable, Sendable {
+  public var messageId: String
+  public var turnId: String
+
+  public init(messageId: String, turnId: String) {
+    self.messageId = messageId
+    self.turnId = turnId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case messageId = "messageId"
+    case turnId = "turnId"
+  }
+}
 
 public struct SessionsThreadSendOptions: Codable, Sendable {
   public var session: String?

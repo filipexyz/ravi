@@ -8,6 +8,9 @@ import { BridgeStore, type Enrollment } from "./store.js";
 import { BridgeService } from "./service.js";
 import { requestDigest, runtimeIdentity } from "./auth.js";
 import { type BridgeRequest, type BridgeResult } from "./protocol.js";
+import { teamHandoff } from "./team-handoff.js";
+import type { ContextRecord } from "../router/router-db.js";
+import { bridgeTurnAuthority } from "./authority.js";
 
 import { CONSOLE_PROTOCOL } from "../sdk/gateway/console-contract.js";
 import { consoleRequestDigest } from "../sdk/gateway/console-auth.js";
@@ -132,7 +135,10 @@ beforeEach(() => {
   };
   store.putEnrollment(enrollment);
   service = new BridgeService(store, enrollment.runtimeId, "test-cursor-secret", {
-    agents: () => [{ id: "main", name: "main" }],
+    agents: () => [
+      { id: "main", name: "main" },
+      { id: "dev", name: "dev" },
+    ],
     start: async (id) => {
       started.push(id);
     },
@@ -227,8 +233,8 @@ describe("human bridge durable authority", () => {
       receipt = await send(id);
     await service.tick();
     expect(await call(req("send", { conversationId: id, text: "again", expectedVersion: 2 }))).toMatchObject({
-      ok: false,
-      error: "TURN_BUSY",
+      ok: true,
+      data: { delivery: "queued" },
     });
     store.putEnrollment({ ...enrollment, epoch: 2 });
     await service.tick();
@@ -417,4 +423,244 @@ it("terminalizes failed preparation by its exact bridge turn and cancels absent 
   data(await call(req("cancel", { conversationId: next, turnId: second.turnId })));
   await service.tick();
   expect(store.turn(second.turnId)!.status).toBe("cancelled");
+});
+
+describe("Desktop delivery barriers", () => {
+  it("records a note without a turn or execution and preserves its receipt", async () => {
+    const id = await create();
+    const request = req("send", {
+      conversationId: id,
+      text: "!! context only",
+      expectedVersion: 0,
+      barrier: "record_only",
+    });
+    const receipt = data(await call(request));
+    expect(receipt.delivery).toBe("recorded");
+    expect(store.turn(receipt.turnId)).toBeNull();
+    await service.tick();
+    expect(started).toEqual([]);
+    expect(data(await call(request))).toEqual(receipt);
+    const snapshot = data(await call(req("open", { conversationId: id })));
+    expect(snapshot.messages[0]).toMatchObject({
+      text: "!! context only",
+      delivery: "recorded",
+      requestId: request.requestId,
+      barrier: "record_only",
+    });
+    expect(snapshot.turn).toBeNull();
+  });
+  it("waits for the reply, renews a queued grant, then dispatches once", async () => {
+    const id = await create(),
+      first = await send(id);
+    await service.tick();
+    const request = req("send", {
+      conversationId: id,
+      text: ">> after reply",
+      expectedVersion: 2,
+      barrier: "after_reply",
+    });
+    const queued = data(await call(request));
+    expect(queued.delivery).toBe("queued");
+    await service.tick();
+    expect(started).toEqual([first.turnId]);
+    expect(data(await call(req("renew", { conversationId: id }))).renewed).toBe(true);
+    store.setTurn(first.turnId, "completed");
+    await service.tick();
+    await service.tick();
+    expect(started).toEqual([first.turnId, queued.turnId]);
+    expect(data(await call(request))).toEqual(queued);
+    await service.tick();
+    expect(started).toHaveLength(2);
+  });
+  it("keeps after-tool behind the tool and interrupts only when the barrier releases", async () => {
+    const id = await create(),
+      first = await send(id);
+    await service.tick();
+    let releasable = false;
+    service.runtime.canStart = () => releasable;
+    const queued = data(
+      await call(req("send", { conversationId: id, text: "next", expectedVersion: 2, barrier: "after_tool" })),
+    );
+    await service.tick();
+    expect(cancelled).toEqual([]);
+    expect(started).toEqual([first.turnId]);
+    releasable = true;
+    await service.tick();
+    expect(cancelled).toHaveLength(1);
+    expect(store.turn(first.turnId)?.cancel_requested).toBe(1);
+    expect(store.turn(queued.turnId)).toBeNull();
+    store.setTurn(first.turnId, "cancelled");
+    await service.tick();
+    await service.tick();
+    expect(started).toEqual([first.turnId, queued.turnId]);
+  });
+  it("expires queued work on revocation even when the revoking request is denied", async () => {
+    const id = await create(),
+      first = await send(id);
+    await service.tick();
+    const queued = data(
+      await call(req("send", { conversationId: id, text: "next", expectedVersion: 2, barrier: "after_reply" })),
+    );
+    await call(req("renew", { conversationId: id }), owner, {
+      canSend: false,
+      policyRevision: 2,
+      policyDigest: "b".repeat(64),
+    });
+    await service.tick();
+    expect(store.turn(queued.turnId)).toBeNull();
+    expect(started).toEqual([first.turnId]);
+    expect(store.db.query("SELECT state FROM queued_messages WHERE turn_id=?").get(queued.turnId)).toMatchObject({
+      state: "expired",
+    });
+  });
+  it("cancels pending input durably and denies another owner", async () => {
+    const id = await create(),
+      first = await send(id);
+    await service.tick();
+    const queued = data(
+      await call(req("send", { conversationId: id, text: "next", expectedVersion: 2, barrier: "after_reply" })),
+    );
+    const request = req("cancel", { conversationId: id, turnId: queued.turnId });
+    expect(await call(request, other)).toMatchObject({ ok: false, error: "NOT_FOUND_OR_DENIED" });
+    const result = data(await call(request));
+    expect(result.status).toBe("cancelled");
+    expect(data(await call(request))).toEqual(result);
+    store.setTurn(first.turnId, "completed");
+    await service.tick();
+    await service.tick();
+    expect(started).toEqual([first.turnId]);
+  });
+  it("does not release an expired pending grant after restart", async () => {
+    const id = await create(),
+      first = await send(id);
+    await service.tick();
+    const queued = data(
+      await call(req("send", { conversationId: id, text: "next", expectedVersion: 2, barrier: "after_reply" })),
+    );
+    store.db.query("UPDATE queued_messages SET lease_until=0 WHERE turn_id=?").run(queued.turnId);
+    service.start();
+    await service.tick();
+    expect(started).toEqual([first.turnId]);
+    expect(store.turn(queued.turnId)).toBeNull();
+  });
+});
+
+describe("explicit shared teams", () => {
+  const agents = () => ["main", "dev"].map((id) => ({ id, capabilities: [], approvalCapabilities: [conditional] }));
+  const authority = () => ({
+    agents: agents(),
+    teamParticipants: [
+      { id: owner, name: "Owner" },
+      { id: other, name: "Member" },
+    ],
+  });
+  async function team() {
+    return data(
+      await call(
+        req("team-create", { title: "Synthetic team", agentIds: ["main", "dev"], personIds: [other] }),
+        owner,
+        authority(),
+      ),
+    ).conversationId as string;
+  }
+  it("requires verified roster candidates and never exposes a pre-existing private conversation", async () => {
+    const privateId = await create();
+    const rejected = await call(
+      req("team-create", { title: "No verified roster", agentIds: ["main", "dev"], personIds: [other] }),
+      owner,
+      { agents: agents() },
+    );
+    expect(rejected.ok).toBe(false);
+    const sharedId = await team();
+    const listing = data(await call(req("list"), other, { agents: agents() }));
+    expect(listing.map((row: any) => row.id)).toEqual([sharedId]);
+    expect(listing[0].team.members).toContainEqual({ kind: "person", personId: other, name: "Member", role: "member" });
+    expect((await call(req("open", { conversationId: privateId }), other, { agents: agents() })).ok).toBe(false);
+    expect((await call(req("open", { conversationId: sharedId }), randomUUID(), { agents: agents() })).ok).toBe(false);
+    expect((await call(req("open", { conversationId: sharedId }), other)).ok).toBe(false);
+  });
+  it("binds a member's addressed turn to that member and agent; another member cannot renew or replace it", async () => {
+    const conversationId = await team();
+    const accepted = data(
+      await call(req("send", { conversationId, text: "@dev review this", expectedVersion: 0 }), other, {
+        agents: agents(),
+      }),
+    );
+    const execution = bridgeTurnAuthority(accepted.turnId, store)!;
+    expect(execution.grant.sub).toBe(other);
+    expect(store.turnAgent(accepted.turnId)).toBe("dev");
+    const before = store.turn(accepted.turnId)!;
+    expect(data(await call(req("renew", { conversationId }), owner, { agents: agents() })).renewed).toBe(false);
+    await call(req("open", { conversationId }), owner, {
+      agents: agents(),
+      policyRevision: 2,
+      policyDigest: "b".repeat(64),
+    });
+    expect(store.turn(accepted.turnId)?.authority).toBe(before.authority);
+    expect(store.turn(accepted.turnId)?.lease_until).toBe(before.lease_until);
+    const message = data(await call(req("open", { conversationId }), other, { agents: agents() })).messages[0];
+    expect(message.authorId).toBe(other);
+    expect(message.authorName).toBe("Member");
+    expect(store.conversation(conversationId)?.title).toBe("Synthetic team");
+  });
+  it("hands off once inside the team, preserving requester authority and waiting for the parent completion", async () => {
+    const conversationId = await team();
+    const delegated = {
+      ...authority(),
+      agents: agents().map((agent) => ({
+        ...agent,
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "sessions" }],
+      })),
+    };
+    const accepted = data(
+      await call(req("send", { conversationId, text: "Review with Dev", expectedVersion: 0 }), other, delegated),
+    );
+    await service.tick();
+    const context = {
+      kind: "turn-runtime",
+      agentId: "main",
+      sessionKey: store.conversation(conversationId)!.session_key,
+      capabilities: [],
+      metadata: { bridgeTurnId: accepted.turnId },
+    } as unknown as ContextRecord;
+    const input = { toAgentId: "dev", task: "Review the shared output", done: ["Draft ready"], open: ["Check tests"] };
+    const handed = teamHandoff(context, input, store);
+    expect(teamHandoff(context, input, store)).toEqual(handed);
+    expect(() => teamHandoff(context, { ...input, toAgentId: "outside" }, store)).toThrow("NOT_FOUND_OR_DENIED");
+    expect(() => teamHandoff({ ...context, kind: "child" } as ContextRecord, input, store)).toThrow(
+      "CONSOLE_TEAM_TURN_REQUIRED",
+    );
+    await service.tick();
+    expect(started).toEqual([accepted.turnId]);
+    expect(data(await call(req("open", { conversationId }), other, delegated)).messages.at(-1).handoff.status).toBe(
+      "pending",
+    );
+    store.setTurn(accepted.turnId, "completed");
+    await service.tick();
+    await service.tick();
+    expect(started).toEqual([accepted.turnId, handed.turnId]);
+    expect(bridgeTurnAuthority(handed.turnId, store)?.grant.sub).toBe(other);
+    expect(store.turnAgent(handed.turnId)).toBe("dev");
+    expect(data(await call(req("open", { conversationId }), other, delegated)).messages.at(-1).handoff.status).toBe(
+      "accepted",
+    );
+  });
+  it("dispatches everyone sequentially from the roster without a second active execution", async () => {
+    const conversationId = await team();
+    const accepted = data(
+      await call(req("send", { conversationId, text: "@everyone update", expectedVersion: 0 }), owner, authority()),
+    );
+    await service.tick();
+    expect(started).toEqual([accepted.turnId]);
+    expect(store.turnAgent(accepted.turnId)).toBe("main");
+    store.setTurn(accepted.turnId, "completed");
+    await service.tick();
+    await service.tick();
+    expect(started).toHaveLength(2);
+    expect(store.turnAgent(started[1]!)).toBe("dev");
+    expect(
+      store.db.query("SELECT count(*) n FROM turns WHERE status IN ('queued','running','awaiting_approval')").get(),
+    ).toEqual({ n: 1 });
+    expect(data(await call(req("open", { conversationId }), owner, authority())).messages).toHaveLength(1);
+  });
 });

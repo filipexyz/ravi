@@ -13875,6 +13875,110 @@ class DecisionsShowReturn {
 
 DecisionsShowReturn decisionsShowReturnFromJson(Object? json) => DecisionsShowReturn.fromJsonValue(json);
 
+typedef DesktopChannelsListReturn = List<RaviJson>;
+
+DesktopChannelsListReturn desktopChannelsListReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
+typedef DesktopChannelsSetEnabledReturn = List<RaviJson>;
+
+DesktopChannelsSetEnabledReturn desktopChannelsSetEnabledReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
+class DesktopComputerReadReturn {
+  const DesktopComputerReadReturn({required this.branch, required this.changes, required this.cpu, required this.cwd, required this.host, required this.memory, required this.os, required this.processes, required this.terminal, required this.uptime});
+
+  final String branch;
+  final List<RaviJson> changes;
+  final double cpu;
+  final String cwd;
+  final String host;
+  final double memory;
+  final String os;
+  final List<RaviJson> processes;
+  final List<String> terminal;
+  final String uptime;
+
+  factory DesktopComputerReadReturn.fromJson(Map<String, Object?> json) {
+    return DesktopComputerReadReturn(
+      branch: raviJsonAsString(json["branch"]),
+      changes: raviJsonAsList(json["changes"], RaviJson.from),
+      cpu: raviJsonAsDouble(json["cpu"]),
+      cwd: raviJsonAsString(json["cwd"]),
+      host: raviJsonAsString(json["host"]),
+      memory: raviJsonAsDouble(json["memory"]),
+      os: raviJsonAsString(json["os"]),
+      processes: raviJsonAsList(json["processes"], RaviJson.from),
+      terminal: raviJsonAsList(json["terminal"], raviJsonAsString),
+      uptime: raviJsonAsString(json["uptime"]),
+    );
+  }
+
+  static DesktopComputerReadReturn fromJsonValue(Object? json) {
+    return DesktopComputerReadReturn.fromJson(raviJsonObject(json, "DesktopComputerReadReturn"));
+  }
+}
+
+DesktopComputerReadReturn desktopComputerReadReturnFromJson(Object? json) => DesktopComputerReadReturn.fromJsonValue(json);
+
+typedef DesktopLoopsListReturn = List<RaviJson>;
+
+DesktopLoopsListReturn desktopLoopsListReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
+typedef DesktopLoopsSetEnabledReturn = List<RaviJson>;
+
+DesktopLoopsSetEnabledReturn desktopLoopsSetEnabledReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
+class DesktopSessionConfigureReturn {
+  const DesktopSessionConfigureReturn({required this.effort, required this.model, required this.models, required this.provider});
+
+  final String effort;
+  final String model;
+  final List<RaviJson> models;
+  final String provider;
+
+  factory DesktopSessionConfigureReturn.fromJson(Map<String, Object?> json) {
+    return DesktopSessionConfigureReturn(
+      effort: raviJsonAsString(json["effort"]),
+      model: raviJsonAsString(json["model"]),
+      models: raviJsonAsList(json["models"], RaviJson.from),
+      provider: raviJsonAsString(json["provider"]),
+    );
+  }
+
+  static DesktopSessionConfigureReturn fromJsonValue(Object? json) {
+    return DesktopSessionConfigureReturn.fromJson(raviJsonObject(json, "DesktopSessionConfigureReturn"));
+  }
+}
+
+DesktopSessionConfigureReturn desktopSessionConfigureReturnFromJson(Object? json) => DesktopSessionConfigureReturn.fromJsonValue(json);
+
+class DesktopSessionReadReturn {
+  const DesktopSessionReadReturn({required this.effort, required this.model, required this.models, required this.provider});
+
+  final String effort;
+  final String model;
+  final List<RaviJson> models;
+  final String provider;
+
+  factory DesktopSessionReadReturn.fromJson(Map<String, Object?> json) {
+    return DesktopSessionReadReturn(
+      effort: raviJsonAsString(json["effort"]),
+      model: raviJsonAsString(json["model"]),
+      models: raviJsonAsList(json["models"], RaviJson.from),
+      provider: raviJsonAsString(json["provider"]),
+    );
+  }
+
+  static DesktopSessionReadReturn fromJsonValue(Object? json) {
+    return DesktopSessionReadReturn.fromJson(raviJsonObject(json, "DesktopSessionReadReturn"));
+  }
+}
+
+DesktopSessionReadReturn desktopSessionReadReturnFromJson(Object? json) => DesktopSessionReadReturn.fromJsonValue(json);
+
+typedef DesktopWorkListReturn = List<RaviJson>;
+
+DesktopWorkListReturn desktopWorkListReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
 class DevinAuthCheckReturn {
   const DevinAuthCheckReturn({required this.baseUrl, this.configuredOrgId, required this.ok, required this.self});
 
@@ -23861,11 +23965,28 @@ class SessionsConversationsRenewReturn {
 
 SessionsConversationsRenewReturn sessionsConversationsRenewReturnFromJson(Object? json) => SessionsConversationsRenewReturn.fromJsonValue(json);
 
+class SessionsConversationsSendOptions {
+  const SessionsConversationsSendOptions({this.barrier, this.replyTo});
+
+  final String? barrier;
+  final RaviJson? replyTo;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (barrier != null) {
+      into["barrier"] = RaviJson.from(barrier);
+    }
+    if (replyTo != null) {
+      into["replyTo"] = RaviJson.from(replyTo);
+    }
+  }
+}
+
 class SessionsConversationsSendReturn {
-  const SessionsConversationsSendReturn({required this.accepted, required this.conversationId, required this.messageId, required this.turnId, required this.version});
+  const SessionsConversationsSendReturn({required this.accepted, required this.conversationId, this.delivery, required this.messageId, required this.turnId, required this.version});
 
   final bool accepted;
   final String conversationId;
+  final String? delivery;
   final String messageId;
   final String turnId;
   final double version;
@@ -23874,6 +23995,7 @@ class SessionsConversationsSendReturn {
     return SessionsConversationsSendReturn(
       accepted: raviJsonAsBool(json["accepted"]),
       conversationId: raviJsonAsString(json["conversationId"]),
+      delivery: json["delivery"] == null ? null : raviJsonAsString(json["delivery"]),
       messageId: raviJsonAsString(json["messageId"]),
       turnId: raviJsonAsString(json["turnId"]),
       version: raviJsonAsDouble(json["version"]),
@@ -23886,6 +24008,26 @@ class SessionsConversationsSendReturn {
 }
 
 SessionsConversationsSendReturn sessionsConversationsSendReturnFromJson(Object? json) => SessionsConversationsSendReturn.fromJsonValue(json);
+
+class SessionsConversationsTeamCreateReturn {
+  const SessionsConversationsTeamCreateReturn({required this.conversation, required this.conversationId});
+
+  final RaviJson conversation;
+  final String conversationId;
+
+  factory SessionsConversationsTeamCreateReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsTeamCreateReturn(
+      conversation: RaviJson.from(json["conversation"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+    );
+  }
+
+  static SessionsConversationsTeamCreateReturn fromJsonValue(Object? json) {
+    return SessionsConversationsTeamCreateReturn.fromJson(raviJsonObject(json, "SessionsConversationsTeamCreateReturn"));
+  }
+}
+
+SessionsConversationsTeamCreateReturn sessionsConversationsTeamCreateReturnFromJson(Object? json) => SessionsConversationsTeamCreateReturn.fromJsonValue(json);
 
 class SessionsCreateThreadOptions {
   const SessionsCreateThreadOptions({this.effort, this.model, this.provider, this.session, this.thinking});
@@ -25232,6 +25374,46 @@ SessionsSetTtlReturn sessionsSetTtlReturnFromJson(Object? json) => raviJsonAsRav
 typedef SessionsSubscriptionsReturn = Map<String, RaviJson>;
 
 SessionsSubscriptionsReturn sessionsSubscriptionsReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class SessionsTeamHandoffOptions {
+  const SessionsTeamHandoffOptions({this.done, this.open, this.output});
+
+  final String? done;
+  final String? open;
+  final String? output;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (done != null) {
+      into["done"] = RaviJson.from(done);
+    }
+    if (open != null) {
+      into["open"] = RaviJson.from(open);
+    }
+    if (output != null) {
+      into["output"] = RaviJson.from(output);
+    }
+  }
+}
+
+class SessionsTeamHandoffReturn {
+  const SessionsTeamHandoffReturn({required this.messageId, required this.turnId});
+
+  final String messageId;
+  final String turnId;
+
+  factory SessionsTeamHandoffReturn.fromJson(Map<String, Object?> json) {
+    return SessionsTeamHandoffReturn(
+      messageId: raviJsonAsString(json["messageId"]),
+      turnId: raviJsonAsString(json["turnId"]),
+    );
+  }
+
+  static SessionsTeamHandoffReturn fromJsonValue(Object? json) {
+    return SessionsTeamHandoffReturn.fromJson(raviJsonObject(json, "SessionsTeamHandoffReturn"));
+  }
+}
+
+SessionsTeamHandoffReturn sessionsTeamHandoffReturnFromJson(Object? json) => SessionsTeamHandoffReturn.fromJsonValue(json);
 
 class SessionsThreadSendOptions {
   const SessionsThreadSendOptions({this.session});

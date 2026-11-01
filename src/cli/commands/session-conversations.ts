@@ -8,6 +8,8 @@ import {
   cancelledSchema,
   decidedSchema,
   receiptSchema,
+  deliveryBarrierSchema,
+  replyToSchema,
 } from "../../bridge/schemas.js";
 import "reflect-metadata";
 import { z } from "zod";
@@ -55,6 +57,37 @@ function invoke(command: BridgeRequest["command"], input: Record<string, unknown
   scope: "resource",
 })
 export class SessionConversationCommands {
+  @Command({
+    name: "team-create",
+    description: "Create a new shared conversation with explicitly authorized people and agents",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions.conversations",
+    action: "team-create",
+    risk: "high",
+    localOperator: false,
+    consoleOnly: true,
+    consoleScope: "project",
+  })
+  @Returns(createdSchema)
+  teamCreate(
+    @Arg("projectId", { required: true, schema: id }) projectId: string,
+    @Arg("requestId", { required: true, schema: id }) requestId: string,
+    @Arg("createdAt", { required: true, schema: z.number().int().positive() }) createdAt: number,
+    @Arg("title", { required: true, schema: z.string().trim().min(1).max(120) }) title: string,
+    @Arg("agentIds", {
+      required: true,
+      schema: z
+        .array(z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/))
+        .min(2)
+        .max(6),
+    })
+    agentIds: string[],
+    @Arg("personIds", { required: true, schema: z.array(id).max(30) }) personIds: string[],
+  ) {
+    return invoke("team-create", { projectId, requestId, createdAt, title, agentIds, personIds });
+  }
   @Command({ name: "agents", description: "agents.list in the authorized private session store" })
   @CommandAccess({
     kind: "read",
@@ -193,9 +226,26 @@ export class SessionConversationCommands {
     @Arg("conversationId", { required: true, schema: id }) conversationId: string,
     @Arg("text", { required: true, schema: z.string().min(1).max(16384) }) text: string,
     @Arg("expectedVersion", { required: true, schema: z.number().int().nonnegative() }) expectedVersion: number,
+    @Option({
+      flags: "--barrier <barrier>",
+      description: "Delivery barrier: after_tool, after_reply, after_task or record_only",
+      schema: deliveryBarrierSchema.optional(),
+    })
+    barrier: z.infer<typeof deliveryBarrierSchema> = "after_tool",
+    @Option({ flags: "--reply-to <json>", description: "Quoted message context", schema: replyToSchema.optional() })
+    replyTo?: z.infer<typeof replyToSchema>,
     @Option({ flags: "--json", description: "Print structured result" }) _asJson = false,
   ) {
-    return invoke("send", { projectId, requestId, createdAt, conversationId, text, expectedVersion });
+    return invoke("send", {
+      projectId,
+      requestId,
+      createdAt,
+      conversationId,
+      text,
+      expectedVersion,
+      barrier,
+      ...(replyTo ? { replyTo } : {}),
+    });
   }
   @Command({ name: "events", description: "events.read in the authorized private session store" })
   @CommandAccess({

@@ -1,3 +1,12 @@
+import {
+  drainQueues,
+  queueMessage,
+  recordDelivery,
+  messageMetadata,
+  cancelQueued,
+  renewQueued,
+  type DeliveryBarrier,
+} from "./queue.js";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   BridgeError,
@@ -9,13 +18,15 @@ import {
   type BridgeEvent,
 } from "./protocol.js";
 import { requestDigest } from "./auth.js";
-import { conversationDto, type BridgeStore, type Enrollment, type ConversationRow } from "./store.js";
+import { type BridgeStore, type Enrollment, type ConversationRow } from "./store.js";
+import { createTeam, teamRecipients, conversationAgentsAllowed } from "./teams.js";
 import { bridgeTurnAuthority } from "./authority.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 
-const MUTATIONS = new Set(["create", "send", "cancel", "decide"]);
+const MUTATIONS = new Set(["create", "team-create", "send", "cancel", "decide"]);
 export interface BridgeRuntime {
   agents(): { id: string; name: string }[];
+  canStart?(sessionName: string, barrier: DeliveryBarrier): boolean;
   start(turnId: string): Promise<void>;
   cancel(sessionName: string): boolean | void;
 }
@@ -65,6 +76,7 @@ export class BridgeService {
         this.store.setTurn(row.id, "running");
         void this.runtime.start(row.id).catch(() => this.store.setTurn(row.id, "failed"));
       }
+      drainQueues(this.store, this.runtime);
     } finally {
       this.ticking = false;
     }
@@ -98,16 +110,26 @@ export class BridgeService {
           "INSERT INTO delegation_heads VALUES (?,?,?,?,?) ON CONFLICT(enrollment_id,subject,project_id) DO UPDATE SET revision=excluded.revision,digest=excluded.digest",
         )
         .run(grant.enrollmentId, grant.sub, grant.projectId, grant.policyRevision, grant.policyDigest);
-      // A fresh Console revision changes existing turns too. Reading never extends their lease.
       this.store.db
-        .query(`UPDATE turns SET authority=?,lease_until=MIN(lease_until,?) WHERE status IN ('queued','running','awaiting_approval')
-        AND conversation_id IN (SELECT id FROM conversations WHERE enrollment_id=? AND subject=? AND project_id=?)`)
+        .query(`UPDATE queued_messages SET authority=?,lease_until=MIN(lease_until,?) WHERE state='pending'
+        AND conversation_id IN (SELECT id FROM conversations WHERE enrollment_id=? AND project_id=?) AND json_extract(authority,'$.sub')=?`)
         .run(
           JSON.stringify(grant),
           grant.canSend ? grant.exp * 1000 : Date.now(),
           grant.enrollmentId,
-          grant.sub,
           grant.projectId,
+          grant.sub,
+        );
+      // A fresh Console revision changes existing turns too. Reading never extends their lease.
+      this.store.db
+        .query(`UPDATE turns SET authority=?,lease_until=MIN(lease_until,?) WHERE status IN ('queued','running','awaiting_approval')
+        AND conversation_id IN (SELECT id FROM conversations WHERE enrollment_id=? AND project_id=?) AND json_extract(authority,'$.sub')=?`)
+        .run(
+          JSON.stringify(grant),
+          grant.canSend ? grant.exp * 1000 : Date.now(),
+          grant.enrollmentId,
+          grant.projectId,
+          grant.sub,
         );
     }
   }
@@ -122,7 +144,7 @@ export class BridgeService {
       "conversationId" in request
         ? this.store.authorizedConversation(request.conversationId, enrollment, grant.sub, request.projectId)
         : null;
-    if (conversation && !grant.agents.some((a) => a.id === conversation.agent_id))
+    if (conversation && !conversationAgentsAllowed(this.store, conversation, grant))
       throw new BridgeError("NOT_FOUND_OR_DENIED");
     const receipt = this.store.db
       .query<{ digest: string; result: string; project_id: string }, [string, string, string]>(
@@ -148,18 +170,24 @@ export class BridgeService {
         break;
       case "list":
         result = this.store.db
-          .query<ConversationRow, [string, string, string, string, number, number]>(
-            "SELECT * FROM conversations WHERE enrollment_id=? AND subject=? AND project_id=? AND agent_id IN (SELECT value FROM json_each(?)) ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?",
+          .query<ConversationRow, [string, string, string, string, string, string, number, number]>(
+            "SELECT * FROM conversations WHERE enrollment_id=? AND ((subject=? AND NOT EXISTS (SELECT 1 FROM teams WHERE conversation_id=conversations.id)) OR id IN (SELECT conversation_id FROM team_members WHERE subject=?)) AND project_id=? AND agent_id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM teams t,json_each(t.definition,'$.members') m WHERE t.conversation_id=conversations.id AND json_extract(m.value,'$.kind')='agent' AND json_extract(m.value,'$.agentId') NOT IN (SELECT value FROM json_each(?))) ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?",
           )
           .all(
             enrollment.id,
             grant.sub,
+            grant.sub,
             request.projectId,
+            JSON.stringify(grant.agents.map((a) => a.id)),
             JSON.stringify(grant.agents.map((a) => a.id)),
             request.limit ?? 100,
             request.offset ?? 0,
           )
-          .map(conversationDto);
+          .filter((conversation) => conversationAgentsAllowed(this.store, conversation, grant))
+          .map((conversation) => this.store.conversationDto(conversation));
+        break;
+      case "team-create":
+        result = createTeam(this.store, enrollment, grant, request, this.runtime.agents());
         break;
       case "create": {
         if (
@@ -182,7 +210,7 @@ export class BridgeService {
             0,
             Date.now(),
           );
-        result = { conversationId: id, conversation: conversationDto(this.store.conversation(id)!) };
+        result = { conversationId: id, conversation: this.store.conversationDto(this.store.conversation(id)!) };
         break;
       }
       case "open":
@@ -194,33 +222,69 @@ export class BridgeService {
       case "send": {
         if (Buffer.byteLength(request.text) > 16_384) throw new BridgeError("PAYLOAD_TOO_LARGE");
         if (conversation!.version !== request.expectedVersion) throw new BridgeError("VERSION_CONFLICT");
-        if (this.store.activeTurn(conversation!.id)) throw new BridgeError("TURN_BUSY");
+        const barrier = request.barrier ?? "after_tool";
+        const pending =
+          Boolean(this.store.activeTurn(conversation!.id)) ||
+          Boolean(
+            this.store.db
+              .query("SELECT 1 FROM queued_messages WHERE conversation_id=? AND state='pending'")
+              .get(conversation!.id),
+          );
+        const deferred =
+          barrier === "record_only" ||
+          pending ||
+          (this.runtime.canStart && !this.runtime.canStart(conversation!.session_name, barrier));
         const { count } = this.store.db
           .query<{ count: number }, [string, string]>(
-            "SELECT COUNT(*) count FROM turns t JOIN conversations c ON c.id=t.conversation_id WHERE c.enrollment_id=? AND c.subject=? AND t.status IN ('queued','running','awaiting_approval')",
+            "SELECT COUNT(*) count FROM turns t JOIN conversations c ON c.id=t.conversation_id WHERE c.enrollment_id=? AND json_extract(t.authority,'$.sub')=? AND t.status IN ('queued','running','awaiting_approval')",
           )
           .get(enrollment.id, grant.sub)!;
-        if (count >= 3) throw new BridgeError("RATE_LIMITED");
+        if (!deferred && count >= 3) throw new BridgeError("RATE_LIMITED");
         const turnId = randomUUID(),
           messageId = randomUUID(),
           now = Date.now();
-        this.store.db
-          .query(
-            "INSERT INTO turns(id,conversation_id,status,lease_until,authority,created_at) VALUES (?,?,'queued',?,?,?)",
-          )
-          .run(turnId, conversation!.id, Math.min(now + LEASE_MS, grant.exp * 1000), JSON.stringify(grant), now);
+        if (!deferred)
+          this.store.db
+            .query(
+              "INSERT INTO turns(id,conversation_id,status,lease_until,authority,created_at) VALUES (?,?,'queued',?,?,?)",
+            )
+            .run(turnId, conversation!.id, Math.min(now + LEASE_MS, grant.exp * 1000), JSON.stringify(grant), now);
         this.store.db
           .query("INSERT INTO messages VALUES (?,?,?,?,?,?)")
           .run(messageId, conversation!.id, "user", request.text, turnId, now);
+        const recipients = teamRecipients(this.store, conversation!, request.text);
+        const team = this.store.team(conversation!.id);
+        const person = team?.members.find((member) => member.kind === "person" && member.personId === grant.sub);
+        this.store.db
+          .query("INSERT INTO message_authors VALUES (?,?,?)")
+          .run(messageId, grant.sub, person?.kind === "person" ? person.name : "User");
+        this.store.db.query("INSERT INTO turn_targets VALUES (?,?,?)").run(turnId, recipients[0]!, messageId);
+        const delivery = barrier === "record_only" ? "recorded" : deferred || recipients.length > 1 ? "queued" : "sent";
+        recordDelivery(this.store, {
+          messageId,
+          requestId: request.requestId,
+          barrier,
+          delivery,
+          replyTo: request.replyTo,
+        });
+        if (deferred) queueMessage(this.store, conversation!, grant, messageId, turnId, barrier);
+        if (barrier !== "record_only")
+          for (const agentId of recipients.slice(1)) {
+            const nextTurnId = randomUUID();
+            this.store.db.query("INSERT INTO turn_targets VALUES (?,?,?)").run(nextTurnId, agentId, messageId);
+            queueMessage(this.store, conversation!, grant, messageId, nextTurnId, "after_reply");
+          }
         this.store.db
           .query("UPDATE conversations SET version=version+1,updated_at=? WHERE id=?")
           .run(now, conversation!.id);
-        if (conversation!.version === 0)
+        if (conversation!.version === 0 && !team)
           this.store.db
             .query("UPDATE conversations SET title=? WHERE id=?")
             .run(request.text.replace(/\s+/g, " ").slice(0, 64), conversation!.id);
         this.store.event(conversation!.id, "message.accepted", {
           id: messageId,
+          ...messageMetadata(this.store, messageId),
+          ...this.store.author(messageId),
           turnId,
           role: "user",
           text: request.text,
@@ -228,6 +292,7 @@ export class BridgeService {
         });
         result = {
           accepted: true,
+          delivery,
           conversationId: conversation!.id,
           messageId,
           turnId,
@@ -236,14 +301,16 @@ export class BridgeService {
         break;
       }
       case "renew": {
+        const queuedRenewed = renewQueued(this.store, conversation!.id, grant);
         const turn = this.store.activeTurn(conversation!.id);
-        if (turn && turn.lease_until > Date.now() && !turn.cancel_requested) {
+        const ownTurn = turn && JSON.parse(turn.authority).sub === grant.sub;
+        if (turn && ownTurn && turn.lease_until > Date.now() && !turn.cancel_requested) {
           this.store.db
             .query("UPDATE turns SET lease_until=?,authority=? WHERE id=?")
             .run(Math.min(Date.now() + LEASE_MS, grant.exp * 1000), JSON.stringify(grant), turn.id);
         }
         result = {
-          renewed: Boolean(turn && !turn.cancel_requested && turn.lease_until > Date.now()),
+          renewed: queuedRenewed || Boolean(turn && ownTurn && !turn.cancel_requested && turn.lease_until > Date.now()),
           conversationId: conversation!.id,
         };
         break;
@@ -278,6 +345,11 @@ export class BridgeService {
         break;
       }
       case "cancel": {
+        const queued = cancelQueued(this.store, conversation!.id, request.turnId);
+        if (queued) {
+          result = queued;
+          break;
+        }
         const turn = this.store.turn(request.turnId);
         if (!turn || turn.conversation_id !== conversation!.id) throw new BridgeError("NOT_FOUND_OR_DENIED");
         const active = ["queued", "running", "awaiting_approval"].includes(turn.status);
@@ -322,13 +394,16 @@ export class BridgeService {
         )
           throw new BridgeError("APPROVAL_STALE");
         const capability = JSON.parse(row.capability);
-        const permitted = grant.agents.find((a) => a.id === conversation!.agent_id)!.approvalCapabilities;
+        const permitted = grant.agents.find(
+          (a) => a.id === (this.store.turnAgent(turn.id) ?? conversation!.agent_id),
+        )!.approvalCapabilities;
         if (!canWithCapabilities(permitted, capability.permission, capability.objectType, capability.objectId))
           throw new BridgeError("NOT_FOUND_OR_DENIED");
         // The decision is bound to this invocation; the Console's current grant replaces the stale snapshot.
-        this.store.db
-          .query("UPDATE turns SET authority=?,lease_until=? WHERE id=?")
-          .run(JSON.stringify(grant), Math.min(turn.lease_until, grant.exp * 1000), turn.id);
+        if (JSON.parse(turn.authority).sub === grant.sub)
+          this.store.db
+            .query("UPDATE turns SET authority=?,lease_until=? WHERE id=?")
+            .run(JSON.stringify(grant), Math.min(turn.lease_until, grant.exp * 1000), turn.id);
         const state = request.decision === "approve" ? "approved" : "rejected";
         this.store.db
           .query("UPDATE approvals SET state=?,version=version+1 WHERE id=? AND state='pending'")
@@ -368,7 +443,7 @@ export class BridgeService {
     const result = JSON.parse(row.result);
     if (result.conversationId) {
       const conversation = this.store.authorizedConversation(result.conversationId, enrollment, grant.sub, projectId);
-      if (!grant.agents.some((a) => a.id === conversation.agent_id)) throw new BridgeError("NOT_FOUND_OR_DENIED");
+      if (!conversationAgentsAllowed(this.store, conversation, grant)) throw new BridgeError("NOT_FOUND_OR_DENIED");
     }
     return result;
   }
@@ -439,10 +514,17 @@ export class BridgeService {
       .query<{ value: number }, [string]>("SELECT COALESCE(MAX(sequence),0) value FROM events WHERE conversation_id=?")
       .get(c.id)!.value;
     return {
-      conversation: conversationDto(c),
+      conversation: this.store.conversationDto(c),
       messages,
       hasOlder,
-      turn: turn ? { id: turn.id, status: turn.status, cancelRequested: Boolean(turn.cancel_requested) } : null,
+      turn: turn
+        ? {
+            id: turn.id,
+            status: turn.status,
+            cancelRequested: Boolean(turn.cancel_requested),
+            ...(this.store.turnAgent(turn.id) ? { agentId: this.store.turnAgent(turn.id) } : {}),
+          }
+        : null,
       approvals,
       cursor: this.cursor(c, g, e, sequence),
     };
@@ -466,7 +548,15 @@ export class BridgeService {
       messages: rows
         .slice(0, 20)
         .reverse()
-        .map((m) => ({ id: m.id, role: m.role, text: m.text, turnId: m.turn_id, createdAt: m.created_at })),
+        .map((m) => ({
+          id: m.id,
+          role: m.role,
+          text: m.text,
+          turnId: m.turn_id,
+          createdAt: m.created_at,
+          ...messageMetadata(this.store, m.id),
+          ...this.store.author(m.id),
+        })),
       hasOlder: rows.length > 20,
     };
   }

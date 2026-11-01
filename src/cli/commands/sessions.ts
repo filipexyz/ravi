@@ -15,6 +15,8 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
+import { Returns } from "../decorators.js";
+import { teamHandoff } from "../../bridge/team-handoff.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -3505,6 +3507,28 @@ export class SessionCommands {
     }
     console.log();
     return payload;
+  }
+
+  @Command({
+    name: "team-handoff",
+    description: "Hand work to a roster agent in the current authorized Console team turn",
+  })
+  @CommandAccess({ kind: "mutate", resource: "sessions", action: "team-handoff", risk: "high", localOperator: false })
+  @Returns(z.object({ messageId: z.string().uuid(), turnId: z.string().uuid() }))
+  teamHandoff(
+    @Arg("agent", { required: true }) agent: string,
+    @Arg("task", { required: true }) task: string,
+    @Option({ flags: "--done <json>", description: "JSON array of completed work" }) done = "[]",
+    @Option({ flags: "--open <json>", description: "JSON array of remaining work" }) open = "[]",
+    @Option({ flags: "--output <value>", description: "Public team output reference" }) output?: string,
+  ) {
+    return teamHandoff(getContext()?.context, {
+      toAgentId: agent,
+      task,
+      done: JSON.parse(done),
+      open: JSON.parse(open),
+      ...(output ? { output } : {}),
+    });
   }
 
   @Command({ name: "set-display", description: "Set session display label" })

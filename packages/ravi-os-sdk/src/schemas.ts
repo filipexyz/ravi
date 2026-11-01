@@ -67423,6 +67423,601 @@ export const DecisionsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `desktop.channels.list`. */
+export const DesktopChannelsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `desktop.channels.list`. */
+export const DesktopChannelsListReturnSchema = {
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "disabled",
+          "unknown",
+          "starting",
+          "connected",
+          "degraded",
+          "reconnecting",
+          "disconnected",
+          "failed"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "provider",
+      "enabled",
+      "status"
+    ],
+    "type": "object"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `desktop.channels.set-enabled`. */
+export const DesktopChannelsSetEnabledInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "enabled",
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `desktop.channels.set-enabled`. */
+export const DesktopChannelsSetEnabledReturnSchema = {
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "disabled",
+          "unknown",
+          "starting",
+          "connected",
+          "degraded",
+          "reconnecting",
+          "disconnected",
+          "failed"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "provider",
+      "enabled",
+      "status"
+    ],
+    "type": "object"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `desktop.computer.read`. */
+export const DesktopComputerReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `desktop.computer.read`. */
+export const DesktopComputerReadReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "branch": {
+      "type": "string"
+    },
+    "changes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "additions": {
+            "type": "number"
+          },
+          "change": {
+            "enum": [
+              "M",
+              "A",
+              "D"
+            ],
+            "type": "string"
+          },
+          "deletions": {
+            "type": "number"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "change",
+          "additions",
+          "deletions"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "cpu": {
+      "type": "number"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "memory": {
+      "type": "number"
+    },
+    "os": {
+      "type": "string"
+    },
+    "processes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "idle",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "detail",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "terminal": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "uptime": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "host",
+    "os",
+    "cwd",
+    "branch",
+    "uptime",
+    "cpu",
+    "memory",
+    "processes",
+    "changes",
+    "terminal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `desktop.loops.list`. */
+export const DesktopLoopsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `desktop.loops.list`. */
+export const DesktopLoopsListReturnSchema = {
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      },
+      "kind": {
+        "enum": [
+          "cron",
+          "trigger",
+          "heartbeat"
+        ],
+        "type": "string"
+      },
+      "lastResult": {
+        "enum": [
+          "ok",
+          "failed",
+          "skipped",
+          "never",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "lastRunAt": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "nextRunAt": {
+        "type": "string"
+      },
+      "schedule": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "name",
+      "schedule",
+      "enabled",
+      "lastResult"
+    ],
+    "type": "object"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `desktop.loops.set-enabled`. */
+export const DesktopLoopsSetEnabledInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "enabled",
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `desktop.loops.set-enabled`. */
+export const DesktopLoopsSetEnabledReturnSchema = {
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      },
+      "kind": {
+        "enum": [
+          "cron",
+          "trigger",
+          "heartbeat"
+        ],
+        "type": "string"
+      },
+      "lastResult": {
+        "enum": [
+          "ok",
+          "failed",
+          "skipped",
+          "never",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "lastRunAt": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "nextRunAt": {
+        "type": "string"
+      },
+      "schedule": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "name",
+      "schedule",
+      "enabled",
+      "lastResult"
+    ],
+    "type": "object"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `desktop.session.configure`. */
+export const DesktopSessionConfigureInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "effort": {
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "type": "string"
+    },
+    "model": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "effort",
+    "model"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `desktop.session.configure`. */
+export const DesktopSessionConfigureReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "effort": {
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "models": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "provider": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "model",
+    "effort",
+    "models"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `desktop.session.read`. */
+export const DesktopSessionReadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `desktop.session.read`. */
+export const DesktopSessionReadReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "effort": {
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "models": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "provider": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "model",
+    "effort",
+    "models"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `desktop.work.list`. */
+export const DesktopWorkListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `desktop.work.list`. */
+export const DesktopWorkListReturnSchema = {
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "parentId": {
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "needs_you",
+          "working",
+          "done",
+          "follow_up"
+        ],
+        "type": "string"
+      },
+      "statusLabel": {
+        "type": "string"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "updatedAt": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "title",
+      "state",
+      "statusLabel",
+      "summary",
+      "updatedAt"
+    ],
+    "type": "object"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `devin.auth.check`. */
 export const DevinAuthCheckInputSchema = {
   "additionalProperties": false,
@@ -100614,6 +101209,81 @@ export const SessionsConversationsCreateReturnSchema = {
           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
           "type": "string"
         },
+        "team": {
+          "additionalProperties": false,
+          "properties": {
+            "members": {
+              "items": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "agentId": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "agent",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "agentId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "personId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "owner",
+                          "member"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "personId",
+                      "name",
+                      "role"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "memory": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ownerAgentId",
+            "memory",
+            "members"
+          ],
+          "type": "object"
+        },
         "title": {
           "type": "string"
         },
@@ -100807,10 +101477,211 @@ export const SessionsConversationsEventsReturnSchema = {
               "data": {
                 "additionalProperties": false,
                 "properties": {
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "accepted",
+                      "cancelled",
+                      "expired"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "handoff.state",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "delivery": {
+                    "enum": [
+                      "sent",
+                      "queued",
+                      "recorded",
+                      "cancelled",
+                      "expired"
+                    ],
+                    "type": "string"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "delivery"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "message.delivery",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "authorId": {
+                    "type": "string"
+                  },
+                  "authorName": {
+                    "type": "string"
+                  },
+                  "barrier": {
+                    "enum": [
+                      "after_tool",
+                      "after_reply",
+                      "after_task",
+                      "record_only"
+                    ],
+                    "type": "string"
+                  },
                   "createdAt": {
                     "type": "number"
                   },
+                  "delivery": {
+                    "enum": [
+                      "sent",
+                      "queued",
+                      "recorded",
+                      "cancelled",
+                      "expired"
+                    ],
+                    "type": "string"
+                  },
+                  "handoff": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "done": {
+                        "items": {
+                          "maxLength": 1000,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "fromAgentId": {
+                        "type": "string"
+                      },
+                      "open": {
+                        "items": {
+                          "maxLength": 1000,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "output": {
+                        "maxLength": 1000,
+                        "type": "string"
+                      },
+                      "status": {
+                        "enum": [
+                          "pending",
+                          "accepted",
+                          "cancelled",
+                          "expired"
+                        ],
+                        "type": "string"
+                      },
+                      "task": {
+                        "maxLength": 4000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "toAgentId": {
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "toAgentId",
+                      "task",
+                      "done",
+                      "open",
+                      "fromAgentId",
+                      "status"
+                    ],
+                    "type": "object"
+                  },
                   "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "replyTo": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "authorName": {
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      "excerpt": {
+                        "maxLength": 2000,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "authorName",
+                      "excerpt"
+                    ],
+                    "type": "object"
+                  },
+                  "requestId": {
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                     "type": "string"
@@ -100867,10 +101738,114 @@ export const SessionsConversationsEventsReturnSchema = {
               "data": {
                 "additionalProperties": false,
                 "properties": {
+                  "authorId": {
+                    "type": "string"
+                  },
+                  "authorName": {
+                    "type": "string"
+                  },
+                  "barrier": {
+                    "enum": [
+                      "after_tool",
+                      "after_reply",
+                      "after_task",
+                      "record_only"
+                    ],
+                    "type": "string"
+                  },
                   "createdAt": {
                     "type": "number"
                   },
+                  "delivery": {
+                    "enum": [
+                      "sent",
+                      "queued",
+                      "recorded",
+                      "cancelled",
+                      "expired"
+                    ],
+                    "type": "string"
+                  },
+                  "handoff": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "done": {
+                        "items": {
+                          "maxLength": 1000,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "fromAgentId": {
+                        "type": "string"
+                      },
+                      "open": {
+                        "items": {
+                          "maxLength": 1000,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "output": {
+                        "maxLength": 1000,
+                        "type": "string"
+                      },
+                      "status": {
+                        "enum": [
+                          "pending",
+                          "accepted",
+                          "cancelled",
+                          "expired"
+                        ],
+                        "type": "string"
+                      },
+                      "task": {
+                        "maxLength": 4000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "toAgentId": {
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "toAgentId",
+                      "task",
+                      "done",
+                      "open",
+                      "fromAgentId",
+                      "status"
+                    ],
+                    "type": "object"
+                  },
                   "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "replyTo": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "authorName": {
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      "excerpt": {
+                        "maxLength": 2000,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "authorName",
+                      "excerpt"
+                    ],
+                    "type": "object"
+                  },
+                  "requestId": {
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                     "type": "string"
@@ -100927,6 +101902,9 @@ export const SessionsConversationsEventsReturnSchema = {
               "data": {
                 "additionalProperties": false,
                 "properties": {
+                  "agentId": {
+                    "type": "string"
+                  },
                   "cancelRequested": {
                     "type": "boolean"
                   },
@@ -101267,10 +102245,114 @@ export const SessionsConversationsHistoryReturnSchema = {
       "items": {
         "additionalProperties": false,
         "properties": {
+          "authorId": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "barrier": {
+            "enum": [
+              "after_tool",
+              "after_reply",
+              "after_task",
+              "record_only"
+            ],
+            "type": "string"
+          },
           "createdAt": {
             "type": "number"
           },
+          "delivery": {
+            "enum": [
+              "sent",
+              "queued",
+              "recorded",
+              "cancelled",
+              "expired"
+            ],
+            "type": "string"
+          },
+          "handoff": {
+            "additionalProperties": false,
+            "properties": {
+              "done": {
+                "items": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "fromAgentId": {
+                "type": "string"
+              },
+              "open": {
+                "items": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "output": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "accepted",
+                  "cancelled",
+                  "expired"
+                ],
+                "type": "string"
+              },
+              "task": {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "toAgentId": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "toAgentId",
+              "task",
+              "done",
+              "open",
+              "fromAgentId",
+              "status"
+            ],
+            "type": "object"
+          },
           "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "replyTo": {
+            "additionalProperties": false,
+            "properties": {
+              "authorName": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "excerpt": {
+                "maxLength": 2000,
+                "type": "string"
+              }
+            },
+            "required": [
+              "authorName",
+              "excerpt"
+            ],
+            "type": "object"
+          },
+          "requestId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -101362,6 +102444,81 @@ export const SessionsConversationsListReturnSchema = {
         "format": "uuid",
         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
         "type": "string"
+      },
+      "team": {
+        "additionalProperties": false,
+        "properties": {
+          "members": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "agent",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "agentId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "const": "person",
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "personId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "owner",
+                        "member"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "personId",
+                    "name",
+                    "role"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "memory": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ownerAgentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerAgentId",
+          "memory",
+          "members"
+        ],
+        "type": "object"
       },
       "title": {
         "type": "string"
@@ -101507,6 +102664,81 @@ export const SessionsConversationsOpenReturnSchema = {
           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
           "type": "string"
         },
+        "team": {
+          "additionalProperties": false,
+          "properties": {
+            "members": {
+              "items": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "agentId": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "agent",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "agentId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "personId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "owner",
+                          "member"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "personId",
+                      "name",
+                      "role"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "memory": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ownerAgentId",
+            "memory",
+            "members"
+          ],
+          "type": "object"
+        },
         "title": {
           "type": "string"
         },
@@ -101538,10 +102770,114 @@ export const SessionsConversationsOpenReturnSchema = {
       "items": {
         "additionalProperties": false,
         "properties": {
+          "authorId": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "barrier": {
+            "enum": [
+              "after_tool",
+              "after_reply",
+              "after_task",
+              "record_only"
+            ],
+            "type": "string"
+          },
           "createdAt": {
             "type": "number"
           },
+          "delivery": {
+            "enum": [
+              "sent",
+              "queued",
+              "recorded",
+              "cancelled",
+              "expired"
+            ],
+            "type": "string"
+          },
+          "handoff": {
+            "additionalProperties": false,
+            "properties": {
+              "done": {
+                "items": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "fromAgentId": {
+                "type": "string"
+              },
+              "open": {
+                "items": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "output": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "accepted",
+                  "cancelled",
+                  "expired"
+                ],
+                "type": "string"
+              },
+              "task": {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "toAgentId": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "toAgentId",
+              "task",
+              "done",
+              "open",
+              "fromAgentId",
+              "status"
+            ],
+            "type": "object"
+          },
           "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "replyTo": {
+            "additionalProperties": false,
+            "properties": {
+              "authorName": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "excerpt": {
+                "maxLength": 2000,
+                "type": "string"
+              }
+            },
+            "required": [
+              "authorName",
+              "excerpt"
+            ],
+            "type": "object"
+          },
+          "requestId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
@@ -101578,6 +102914,9 @@ export const SessionsConversationsOpenReturnSchema = {
         {
           "additionalProperties": false,
           "properties": {
+            "agentId": {
+              "type": "string"
+            },
             "cancelRequested": {
               "type": "boolean"
             },
@@ -101675,6 +103014,81 @@ export const SessionsConversationsReceiptReturnSchema = {
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
               "type": "string"
             },
+            "team": {
+              "additionalProperties": false,
+              "properties": {
+                "members": {
+                  "items": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "agentId": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "agent",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "agentId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "person",
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "personId": {
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                            "type": "string"
+                          },
+                          "role": {
+                            "enum": [
+                              "owner",
+                              "member"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "personId",
+                          "name",
+                          "role"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "memory": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "ownerAgentId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ownerAgentId",
+                "memory",
+                "members"
+              ],
+              "type": "object"
+            },
             "title": {
               "type": "string"
             },
@@ -101718,6 +103132,16 @@ export const SessionsConversationsReceiptReturnSchema = {
         "conversationId": {
           "format": "uuid",
           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "delivery": {
+          "enum": [
+            "sent",
+            "queued",
+            "recorded",
+            "cancelled",
+            "expired"
+          ],
           "type": "string"
         },
         "messageId": {
@@ -101874,6 +103298,16 @@ export const SessionsConversationsRenewReturnSchema = {
 export const SessionsConversationsSendInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "barrier": {
+      "description": "Delivery barrier: after_tool, after_reply, after_task or record_only",
+      "enum": [
+        "after_tool",
+        "after_reply",
+        "after_task",
+        "record_only"
+      ],
+      "type": "string"
+    },
     "conversationId": {
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -101893,6 +103327,25 @@ export const SessionsConversationsSendInputSchema = {
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
+    },
+    "replyTo": {
+      "additionalProperties": false,
+      "description": "Quoted message context",
+      "properties": {
+        "authorName": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "excerpt": {
+          "maxLength": 2000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "authorName",
+        "excerpt"
+      ],
+      "type": "object"
     },
     "requestId": {
       "format": "uuid",
@@ -101929,6 +103382,16 @@ export const SessionsConversationsSendReturnSchema = {
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
     },
+    "delivery": {
+      "enum": [
+        "sent",
+        "queued",
+        "recorded",
+        "cancelled",
+        "expired"
+      ],
+      "type": "string"
+    },
     "messageId": {
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -101949,6 +103412,184 @@ export const SessionsConversationsSendReturnSchema = {
     "messageId",
     "turnId",
     "version"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.team-create`. */
+export const SessionsConversationsTeamCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentIds": {
+      "items": {
+        "pattern": "^[a-zA-Z0-9_-]{1,80}$",
+        "type": "string"
+      },
+      "maxItems": 6,
+      "minItems": 2,
+      "type": "array"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "personIds": {
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "maxItems": 30,
+      "type": "array"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 120,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentIds",
+    "createdAt",
+    "personIds",
+    "projectId",
+    "requestId",
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.team-create`. */
+export const SessionsConversationsTeamCreateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversation": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "team": {
+          "additionalProperties": false,
+          "properties": {
+            "members": {
+              "items": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "agentId": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "agent",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "agentId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "person",
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "personId": {
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "owner",
+                          "member"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "personId",
+                      "name",
+                      "role"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "memory": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ownerAgentId",
+            "memory",
+            "members"
+          ],
+          "type": "object"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "title",
+        "version",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "conversation"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -106670,6 +108311,58 @@ export const SessionsSubscriptionsInputSchema = {
 export const SessionsSubscriptionsReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.team-handoff`. */
+export const SessionsTeamHandoffInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "done": {
+      "description": "JSON array of completed work",
+      "type": "string"
+    },
+    "open": {
+      "description": "JSON array of remaining work",
+      "type": "string"
+    },
+    "output": {
+      "description": "Public team output reference",
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.team-handoff`. */
+export const SessionsTeamHandoffReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "messageId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "turnId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "messageId",
+    "turnId"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

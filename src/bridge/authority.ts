@@ -23,10 +23,10 @@ export function bridgeTurnAuthority(
   const c = store.conversation(turn.conversation_id);
   if (
     !c ||
-    c.subject !== grant.sub ||
+    !store.hasParticipant(c, grant.sub) ||
     c.project_id !== grant.projectId ||
     c.enrollment_id !== enrollment.id ||
-    !grant.agents.some((a) => a.id === c.agent_id)
+    !grant.agents.some((a) => a.id === (store.turnAgent(turnId) ?? c.agent_id))
   )
     return null;
   return { turn, enrollment, grant };
@@ -49,7 +49,8 @@ export function bridgeCapabilityAllowed(
   if (permission === "access" && objectType === "session" && ![c.session_name, c.session_key].includes(objectId))
     return false;
   return canWithCapabilities(
-    authority.grant.agents.find((a) => a.id === c.agent_id)!.capabilities,
+    authority.grant.agents.find((a) => a.id === (getBridgeStore().turnAgent(authority.turn.id) ?? c.agent_id))!
+      .capabilities,
     permission,
     objectType,
     objectId,
@@ -66,7 +67,9 @@ export function bridgeContextCapabilities(
   const authority = typeof id === "string" ? bridgeTurnAuthority(id, store) : null;
   if (!authority) return [];
   const c = store.conversation(authority.turn.conversation_id)!;
-  const capabilities = authority.grant.agents.find((a) => a.id === c.agent_id)!.capabilities;
+  const capabilities = authority.grant.agents.find(
+    (a) => a.id === (store.turnAgent(authority.turn.id) ?? c.agent_id),
+  )!.capabilities;
   return context.kind === "turn-runtime"
     ? capabilities
     : buildEffectiveCapabilities({ agentCapabilities: capabilities, actorCapabilities: context.capabilities });
@@ -76,7 +79,8 @@ export function resolveBridgeInvocation(turnId: string, sessionKey: string, agen
     authority = bridgeTurnAuthority(turnId, store);
   if (!authority) throw new BridgeError("ACCESS_REVOKED");
   const c = store.conversation(authority.turn.conversation_id)!;
-  if (c.session_key !== sessionKey || c.agent_id !== agentId) throw new BridgeError("NOT_FOUND_OR_DENIED");
+  if (c.session_key !== sessionKey || (store.turnAgent(turnId) ?? c.agent_id) !== agentId)
+    throw new BridgeError("NOT_FOUND_OR_DENIED");
   const capabilities = authority.grant.agents.find((a) => a.id === agentId)!.capabilities;
   return {
     capabilities,

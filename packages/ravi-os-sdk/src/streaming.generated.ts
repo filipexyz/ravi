@@ -67,8 +67,42 @@ export type SessionViewStreamPayload = {
   events: Array<({
     createdAt: number;
     data: {
-      createdAt: number;
       id: string;
+      status: "pending" | "accepted" | "cancelled" | "expired";
+    };
+    sequence: number;
+    type: "handoff.state";
+  }) | ({
+    createdAt: number;
+    data: {
+      delivery: "sent" | "queued" | "recorded" | "cancelled" | "expired";
+      id: string;
+    };
+    sequence: number;
+    type: "message.delivery";
+  }) | ({
+    createdAt: number;
+    data: {
+      authorId?: string;
+      authorName?: string;
+      barrier?: "after_tool" | "after_reply" | "after_task" | "record_only";
+      createdAt: number;
+      delivery?: "sent" | "queued" | "recorded" | "cancelled" | "expired";
+      handoff?: {
+        done: string[];
+        fromAgentId: string;
+        open: string[];
+        output?: string;
+        status: "pending" | "accepted" | "cancelled" | "expired";
+        task: string;
+        toAgentId: string;
+      };
+      id: string;
+      replyTo?: {
+        authorName: string;
+        excerpt: string;
+      };
+      requestId?: string;
       role: "user" | "assistant";
       text: string;
       turnId: string;
@@ -78,8 +112,26 @@ export type SessionViewStreamPayload = {
   }) | ({
     createdAt: number;
     data: {
+      authorId?: string;
+      authorName?: string;
+      barrier?: "after_tool" | "after_reply" | "after_task" | "record_only";
       createdAt: number;
+      delivery?: "sent" | "queued" | "recorded" | "cancelled" | "expired";
+      handoff?: {
+        done: string[];
+        fromAgentId: string;
+        open: string[];
+        output?: string;
+        status: "pending" | "accepted" | "cancelled" | "expired";
+        task: string;
+        toAgentId: string;
+      };
       id: string;
+      replyTo?: {
+        authorName: string;
+        excerpt: string;
+      };
+      requestId?: string;
       role: "user" | "assistant";
       text: string;
       turnId: string;
@@ -89,6 +141,7 @@ export type SessionViewStreamPayload = {
   }) | ({
     createdAt: number;
     data: {
+      agentId?: string;
       cancelRequested: boolean;
       id: string;
       status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";

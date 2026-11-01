@@ -11,11 +11,18 @@ export type BridgeRequest = Base &
     | { command: "agents" }
     | { command: "list"; limit?: number; offset?: number }
     | { command: "create"; agentId: string }
+    | { command: "team-create"; title: string; agentIds: string[]; personIds: string[] }
     | (Conversation &
         (
           | { command: "open" | "renew" }
           | { command: "history"; before: string | null }
-          | { command: "send"; text: string; expectedVersion: number }
+          | {
+              command: "send";
+              text: string;
+              expectedVersion: number;
+              barrier?: import("./queue.js").DeliveryBarrier;
+              replyTo?: { authorName: string; excerpt: string };
+            }
           | { command: "events"; cursor: string | null }
           | { command: "cancel"; turnId: string }
           | {
@@ -38,6 +45,8 @@ export type BridgeTurnStatus =
   | "authorization_expired"
   | "interrupted_unknown";
 export interface BridgeMessage {
+  authorId?: string;
+  authorName?: string;
   id: string;
   role: "user" | "assistant";
   text: string;
@@ -55,16 +64,26 @@ export interface BridgeApproval {
   state: "pending" | "approved" | "rejected" | "expired" | "invalidated";
 }
 export interface BridgeTurn {
+  agentId?: string;
   id: string;
   status: BridgeTurnStatus;
   cancelRequested: boolean;
 }
 export interface BridgeConversation {
+  team?: BridgeTeam;
   id: string;
   agentId: string;
   title: string;
   version: number;
   updatedAt: number;
+}
+export interface BridgeTeam {
+  ownerAgentId: string;
+  members: (
+    | { kind: "agent"; agentId: string }
+    | { kind: "person"; personId: string; name: string; role: "owner" | "member" }
+  )[];
+  memory: string[];
 }
 export interface BridgeSnapshot {
   conversation: BridgeConversation;

@@ -1097,3 +1097,21 @@ function surfacePrompt(prompt: string, channel: string, canonicalChatId: string,
     },
   };
 }
+
+it("never coalesces private bridge turns with another authority envelope", () => {
+  const session = {
+    pendingMessages: [
+      createQueuedRuntimeUserMessage({ prompt: "first", _bridgeTurnId: "private-a" }),
+      createQueuedRuntimeUserMessage({ prompt: "second", _bridgeTurnId: "private-b" }),
+    ],
+    done: false,
+    turnActive: false,
+    toolRunning: false,
+    compacting: false,
+    starting: false,
+    toolResultDeliveryPending: false,
+  } as RuntimeHostStreamingSession;
+  const deliverable = getDeliverableRuntimeMessages("private-fixture", session);
+  expect(deliverable).toHaveLength(1);
+  expect(deliverable[0]?.launchPrompt?._bridgeTurnId).toBe("private-a");
+});

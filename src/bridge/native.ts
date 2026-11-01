@@ -20,6 +20,7 @@ export function consoleConversationCwd(conversationId: string) {
 export function nativeBridgeRuntime(bot: RaviBot): BridgeRuntime {
   return {
     agents: () => Object.values(configStore.getConfig().agents).map((agent) => ({ id: agent.id, name: agent.id })),
+    canStart: (sessionName, barrier) => bot.canReleaseBridgePrompt(sessionName, barrier),
     cancel: (sessionName) => {
       return bot.abortSession(sessionName);
     },
@@ -28,18 +29,55 @@ export function nativeBridgeRuntime(bot: RaviBot): BridgeRuntime {
         authority = bridgeTurnAuthority(turnId, store);
       if (!authority) throw new Error("Bridge authority expired");
       const conversation = store.conversation(authority.turn.conversation_id)!;
-      const agent = configStore.getConfig().agents[conversation.agent_id];
+      const agent = configStore.getConfig().agents[store.turnAgent(turnId) ?? conversation.agent_id];
       if (!agent) throw new Error("Agent unavailable");
       getOrCreateSession(conversation.session_key, agent.id, consoleConversationCwd(conversation.id), {
         name: conversation.session_name,
         channel: "console",
       });
       const message = store.db
-        .query<{ text: string }, [string]>("SELECT text FROM messages WHERE turn_id=? AND role='user'")
-        .get(turnId);
+        .query<{ text: string; barrier: string | null }, [string, string]>(
+          "SELECT m.text,mm.barrier FROM messages m LEFT JOIN message_metadata mm ON mm.message_id=m.id WHERE m.id=COALESCE((SELECT message_id FROM turn_targets WHERE turn_id=?),(SELECT id FROM messages WHERE turn_id=? AND role='user'))",
+        )
+        .get(turnId, turnId);
       if (!message) throw new Error("Missing accepted message");
+      const notes = store.db
+        .query<{ text: string }, [string, string]>(
+          "SELECT m.text FROM messages m JOIN queued_messages q ON q.message_id=m.id WHERE q.conversation_id=? AND q.state='recorded' AND m.rowid<(SELECT rowid FROM messages WHERE turn_id=? AND role='user') ORDER BY m.rowid DESC LIMIT 20",
+        )
+        .all(conversation.id, turnId)
+        .reverse();
+      // Notes are context for the next explicit request, never independent
+      // execution. Bound repeated context and exclude notes recorded after it.
+      const noteText = notes
+        .map((n) => n.text)
+        .join("\n")
+        .slice(-32_768);
+      const noteContext = notes.length
+        ? `[Recorded notes — context only, no execution requested for these notes]\n${noteText}\n[Current request]\n`
+        : "";
+      const team = store.team(conversation.id);
+      const sharedContext = team
+        ? store.db
+            .query<{ role: string; text: string }, [string]>(
+              "SELECT role,text FROM (SELECT rowid,role,text FROM messages WHERE conversation_id=? ORDER BY rowid DESC LIMIT 30) ORDER BY rowid",
+            )
+            .all(conversation.id)
+        : [];
+      const teamContext = team
+        ? `Team conversation. You are @${agent.id}; owner @${team.ownerAgentId}. Use \`ravi sessions team-handoff <agent> <task> --done <JSON-array> --open <JSON-array>\` to pass work to an authorized teammate after your reply, if your existing permissions allow it. It creates a visible card and uses only this team's authority. Complete your turn after handing off. Only this team's history follows.\n${sharedContext
+            .map((row) => `${row.role}: ${row.text}`)
+            .join("\n")
+            .slice(-32_768)}\nCurrent request:\n`
+        : "";
       await bot.submitBridgePrompt(conversation.session_name, {
-        prompt: message.text,
+        prompt: teamContext + noteContext + message.text,
+        deliveryBarrier:
+          message.barrier === "after_reply"
+            ? "after_response"
+            : message.barrier === "after_task"
+              ? "after_task"
+              : "after_tool",
         _agentId: agent.id,
         _bridgeTurnId: turnId,
       });
@@ -63,11 +101,21 @@ export function recordBridgeRuntimeEvent(topic: string, data: Record<string, unk
   if (data.type === "assistant.message" && typeof data.text === "string") {
     // Provider response policy has already accepted this message in host-event-loop.
     // Raw text.delta, reasoning, prompts and tool payloads never reach this surface.
-    const message = { id: randomUUID(), role: "assistant", text: data.text, turnId: turn.id, createdAt: Date.now() };
+    const agentId = store.turnAgent(turn.id) ?? conversation.agent_id;
+    const message = {
+      id: randomUUID(),
+      role: "assistant",
+      text: data.text,
+      turnId: turn.id,
+      createdAt: Date.now(),
+      authorId: agentId,
+      authorName: agentId,
+    };
     store.atomic(() => {
       store.db
         .query("INSERT INTO messages VALUES (?,?,?,?,?,?)")
         .run(message.id, conversation.id, message.role, message.text, turn.id, message.createdAt);
+      store.db.query("INSERT INTO message_authors VALUES (?,?,?)").run(message.id, agentId, agentId);
       store.event(conversation.id, "message.finalized", message);
     });
   } else if (data.type === "turn.complete") store.setTurn(turn.id, "completed");
@@ -101,7 +149,8 @@ export async function authorizeBridgeAction(
   const authority = bridgeTurnAuthority(id, store);
   if (!authority) return deny("Bridge authorization expired");
   const conversation = store.conversation(authority.turn.conversation_id)!;
-  if (context.agentId !== conversation.agent_id || context.sessionKey !== conversation.session_key)
+  const agentId = store.turnAgent(authority.turn.id) ?? conversation.agent_id;
+  if (context.agentId !== agentId || context.sessionKey !== conversation.session_key)
     return deny("Bridge context identity mismatch");
   if (
     permission === "access" &&
@@ -113,7 +162,7 @@ export async function authorizeBridgeAction(
   if (canWithCapabilities(ordinary, permission, objectType, objectId))
     return { context, allowed: true, approved: false, inherited: true };
   if (context.kind !== "turn-runtime") return deny("A child context cannot request broader bridge authority");
-  const conditional = authority.grant.agents.find((a) => a.id === conversation.agent_id)!.approvalCapabilities;
+  const conditional = authority.grant.agents.find((a) => a.id === agentId)!.approvalCapabilities;
   if (!authority.grant.canApprove || !canWithCapabilities(conditional, permission, objectType, objectId))
     return deny("Console delegation does not authorize approval for this action");
   const capability = { permission, objectType, objectId },
@@ -155,7 +204,7 @@ export async function authorizeBridgeAction(
     if (!current) return deny("Turn cancelled or authorization expired");
     const row = store.db.query<{ state: string }, [string]>("SELECT state FROM approvals WHERE id=?").get(approvalId)!;
     if (row.state === "pending") {
-      const currentCaps = current.grant.agents.find((a) => a.id === conversation.agent_id)!.approvalCapabilities;
+      const currentCaps = current.grant.agents.find((a) => a.id === agentId)!.approvalCapabilities;
       if (current.grant.canApprove && canWithCapabilities(currentCaps, permission, objectType, objectId)) continue;
       store.db
         .query("UPDATE approvals SET state='invalidated',version=version+1 WHERE id=? AND state='pending'")
@@ -174,7 +223,7 @@ export async function authorizeBridgeAction(
       row.state === "approved" &&
       current.grant.canApprove &&
       canWithCapabilities(
-        current.grant.agents.find((a) => a.id === conversation.agent_id)!.approvalCapabilities,
+        current.grant.agents.find((a) => a.id === agentId)!.approvalCapabilities,
         permission,
         objectType,
         objectId,

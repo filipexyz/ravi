@@ -35,6 +35,7 @@ class RaviClient {
   CronNamespace get cron => CronNamespace(_transport);
   DaemonNamespace get daemon => DaemonNamespace(_transport);
   DecisionsNamespace get decisions => DecisionsNamespace(_transport);
+  DesktopNamespace get desktop => DesktopNamespace(_transport);
   DevinNamespace get devin => DevinNamespace(_transport);
   EvalNamespace get eval => EvalNamespace(_transport);
   FeedbackNamespace get feedback => FeedbackNamespace(_transport);
@@ -4510,6 +4511,142 @@ class DecisionsNamespace {
   }
 }
 
+class DesktopNamespace {
+  const DesktopNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  DesktopChannelsNamespace get channels => DesktopChannelsNamespace(_transport);
+
+  DesktopComputerNamespace get computer => DesktopComputerNamespace(_transport);
+
+  DesktopLoopsNamespace get loops => DesktopLoopsNamespace(_transport);
+
+  DesktopSessionNamespace get session => DesktopSessionNamespace(_transport);
+
+  DesktopWorkNamespace get work => DesktopWorkNamespace(_transport);
+}
+
+class DesktopChannelsNamespace {
+  const DesktopChannelsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<DesktopChannelsListReturn> list() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["desktop", "channels"],
+      command: "list",
+      body: requestBody,
+      decode: desktopChannelsListReturnFromJson,
+    );
+  }
+
+  Future<DesktopChannelsSetEnabledReturn> setEnabled(String id, bool enabled) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    requestBody["enabled"] = RaviJson.from(enabled);
+    return _transport.callJson(
+      groupSegments: const ["desktop", "channels"],
+      command: "set-enabled",
+      body: requestBody,
+      decode: desktopChannelsSetEnabledReturnFromJson,
+    );
+  }
+}
+
+class DesktopComputerNamespace {
+  const DesktopComputerNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<DesktopComputerReadReturn> read(String conversationId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    return _transport.callJson(
+      groupSegments: const ["desktop", "computer"],
+      command: "read",
+      body: requestBody,
+      decode: desktopComputerReadReturnFromJson,
+    );
+  }
+}
+
+class DesktopLoopsNamespace {
+  const DesktopLoopsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<DesktopLoopsListReturn> list() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["desktop", "loops"],
+      command: "list",
+      body: requestBody,
+      decode: desktopLoopsListReturnFromJson,
+    );
+  }
+
+  Future<DesktopLoopsSetEnabledReturn> setEnabled(String id, bool enabled) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    requestBody["enabled"] = RaviJson.from(enabled);
+    return _transport.callJson(
+      groupSegments: const ["desktop", "loops"],
+      command: "set-enabled",
+      body: requestBody,
+      decode: desktopLoopsSetEnabledReturnFromJson,
+    );
+  }
+}
+
+class DesktopSessionNamespace {
+  const DesktopSessionNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<DesktopSessionConfigureReturn> configure(String conversationId, String model, String effort) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["model"] = RaviJson.from(model);
+    requestBody["effort"] = RaviJson.from(effort);
+    return _transport.callJson(
+      groupSegments: const ["desktop", "session"],
+      command: "configure",
+      body: requestBody,
+      decode: desktopSessionConfigureReturnFromJson,
+    );
+  }
+
+  Future<DesktopSessionReadReturn> read(String conversationId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    return _transport.callJson(
+      groupSegments: const ["desktop", "session"],
+      command: "read",
+      body: requestBody,
+      decode: desktopSessionReadReturnFromJson,
+    );
+  }
+}
+
+class DesktopWorkNamespace {
+  const DesktopWorkNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<DesktopWorkListReturn> list(String conversationId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    return _transport.callJson(
+      groupSegments: const ["desktop", "work"],
+      command: "list",
+      body: requestBody,
+      decode: desktopWorkListReturnFromJson,
+    );
+  }
+}
+
 class DevinNamespace {
   const DevinNamespace(this._transport);
 
@@ -8370,6 +8507,19 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsTeamHandoffReturn> teamHandoff(String agent, String task, [SessionsTeamHandoffOptions options = const SessionsTeamHandoffOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    requestBody["task"] = RaviJson.from(task);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "team-handoff",
+      body: requestBody,
+      decode: sessionsTeamHandoffReturnFromJson,
+    );
+  }
+
   Future<SessionsThreadSendReturn> threadSend(String thread, String message, [SessionsThreadSendOptions options = const SessionsThreadSendOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["thread"] = RaviJson.from(thread);
@@ -8569,7 +8719,7 @@ class SessionsConversationsNamespace {
     );
   }
 
-  Future<SessionsConversationsSendReturn> send(String projectId, String requestId, int createdAt, String conversationId, String text, int expectedVersion) async {
+  Future<SessionsConversationsSendReturn> send(String projectId, String requestId, int createdAt, String conversationId, String text, int expectedVersion, [SessionsConversationsSendOptions options = const SessionsConversationsSendOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["projectId"] = RaviJson.from(projectId);
     requestBody["requestId"] = RaviJson.from(requestId);
@@ -8577,11 +8727,28 @@ class SessionsConversationsNamespace {
     requestBody["conversationId"] = RaviJson.from(conversationId);
     requestBody["text"] = RaviJson.from(text);
     requestBody["expectedVersion"] = RaviJson.from(expectedVersion);
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["sessions", "conversations"],
       command: "send",
       body: requestBody,
       decode: sessionsConversationsSendReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsTeamCreateReturn> teamCreate(String projectId, String requestId, int createdAt, String title, List<String> agentIds, List<String> personIds) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["title"] = RaviJson.from(title);
+    requestBody["agentIds"] = RaviJson.from(agentIds);
+    requestBody["personIds"] = RaviJson.from(personIds);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "team-create",
+      body: requestBody,
+      decode: sessionsConversationsTeamCreateReturnFromJson,
     );
   }
 }

@@ -1,3 +1,5 @@
+import { dbHasActiveTaskForSession } from "./tasks/task-db.js";
+import { canReleaseRuntimeDeliveryBarrier } from "./runtime/delivery-queue.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { close as closeDb } from "./db.js";
@@ -240,6 +242,17 @@ export class RaviBot {
   public async submitBridgePrompt(sessionName: string, prompt: PromptMessage): Promise<void> {
     if (!sessionName.startsWith("console-") || !prompt._bridgeTurnId) throw new Error("Invalid bridge dispatch");
     await this.sessionDispatcher.handlePrompt(sessionName, prompt);
+  }
+
+  public canReleaseBridgePrompt(sessionName: string, barrier: import("./bridge/queue.js").DeliveryBarrier): boolean {
+    const session = this.streamingSessions.get(sessionName);
+    if (!session || session.done) return barrier !== "after_task" || !dbHasActiveTaskForSession(sessionName);
+    if (barrier === "record_only") return false;
+    return canReleaseRuntimeDeliveryBarrier(
+      sessionName,
+      session,
+      barrier === "after_reply" ? "after_response" : barrier,
+    );
   }
 
   public isRuntimeSessionActive(sessionName: string): boolean {

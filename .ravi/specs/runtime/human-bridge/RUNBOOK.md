@@ -23,3 +23,12 @@ The gateway wire contract rejects old bridge frames; it requires a matching clie
 The CLI now loads `.env` from the selected `RAVI_STATE_DIR`; default installations
 still use `~/.ravi/.env`. An explicitly separate state directory must contain its
 own configuration rather than inheriting another installation's secrets.
+
+## Desktop candidate validation
+
+Use only synthetic organization members and new owned conversations for team
+checks. Do not invite real people or share existing histories. Run
+`bun test --preload ./src/test/isolated-runtime-preload.ts src/bridge/ src/sdk/gateway/console.test.ts src/runtime/delivery-queue.test.ts`.
+Compare generated TS/Dart/Swift/OpenAPI to the canonical decorated registry.
+Deploy private candidates only with exact revisions, operation locks, backups,
+zero active turns and existing enrollment/provider configuration preserved.

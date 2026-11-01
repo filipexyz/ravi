@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { conversationAgentsAllowed } from "../../bridge/teams.js";
 import type { ConsoleGrant } from "./console-contract.js";
 import type { BridgeService } from "../../bridge/service.js";
 import type { Enrollment } from "../../bridge/store.js";
@@ -27,7 +28,7 @@ export function consoleSessionTarget(ref: string): string | null {
       grant.projectId,
     );
     if (
-      !grant.agents.some((agent) => agent.id === row.agent_id) ||
+      !conversationAgentsAllowed(service.store, row, grant) ||
       ![row.id, row.session_key, row.session_name].includes(ref)
     )
       return null;

@@ -1,14 +1,36 @@
 import { z } from "zod";
+import { handoffSchema } from "./team-handoff.js";
 
 const id = z.string().uuid();
+export const teamSchema = z.object({
+  ownerAgentId: z.string(),
+  memory: z.array(z.string()),
+  members: z.array(
+    z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("agent"), agentId: z.string() }),
+      z.object({ kind: z.literal("person"), personId: id, name: z.string(), role: z.enum(["owner", "member"]) }),
+    ]),
+  ),
+});
 export const conversationSchema = z.object({
+  team: teamSchema.optional(),
   id,
   agentId: z.string(),
   title: z.string(),
   version: z.number().int(),
   updatedAt: z.number(),
 });
+export const deliveryBarrierSchema = z.enum(["after_tool", "after_reply", "after_task", "record_only"]);
+export const messageDeliverySchema = z.enum(["sent", "queued", "recorded", "cancelled", "expired"]);
+export const replyToSchema = z.object({ authorName: z.string().max(200), excerpt: z.string().max(2000) }).strict();
 export const messageSchema = z.object({
+  handoff: handoffSchema.optional(),
+  authorId: z.string().optional(),
+  authorName: z.string().optional(),
+  requestId: id.optional(),
+  barrier: deliveryBarrierSchema.optional(),
+  delivery: messageDeliverySchema.optional(),
+  replyTo: replyToSchema.optional(),
   id,
   role: z.enum(["user", "assistant"]),
   text: z.string(),
@@ -41,16 +63,23 @@ export const snapshotSchema = z.object({
   messages: z.array(messageSchema),
   hasOlder: z.boolean(),
   cursor: z.string(),
-  turn: z.object({ id, status: turnStatusSchema, cancelRequested: z.boolean() }).nullable(),
+  turn: z
+    .object({ id, status: turnStatusSchema, cancelRequested: z.boolean(), agentId: z.string().optional() })
+    .nullable(),
   approvals: z.array(approvalSchema),
 });
 const eventBase = z.object({ sequence: z.number().int(), createdAt: z.number() });
 export const journalEventSchema = z.discriminatedUnion("type", [
+  eventBase.extend({
+    type: z.literal("handoff.state"),
+    data: z.object({ id, status: z.enum(["pending", "accepted", "cancelled", "expired"]) }),
+  }),
+  eventBase.extend({ type: z.literal("message.delivery"), data: z.object({ id, delivery: messageDeliverySchema }) }),
   eventBase.extend({ type: z.literal("message.accepted"), data: messageSchema }),
   eventBase.extend({ type: z.literal("message.finalized"), data: messageSchema }),
   eventBase.extend({
     type: z.literal("turn.state"),
-    data: z.object({ id, status: turnStatusSchema, cancelRequested: z.boolean() }),
+    data: z.object({ id, status: turnStatusSchema, cancelRequested: z.boolean(), agentId: z.string().optional() }),
   }),
   eventBase.extend({ type: z.literal("turn.activity"), data: z.object({ turnId: id, status: z.string() }) }),
   eventBase.extend({ type: z.literal("cancel.requested"), data: z.object({ turnId: id }) }),
@@ -67,6 +96,7 @@ export const journalEventSchema = z.discriminatedUnion("type", [
 export const journalSchema = z.object({ events: z.array(journalEventSchema), cursor: z.string() });
 export const createdSchema = z.object({ conversationId: id, conversation: conversationSchema });
 export const acceptedSchema = z.object({
+  delivery: messageDeliverySchema.optional(),
   accepted: z.literal(true),
   conversationId: id,
   messageId: id,

@@ -107,6 +107,10 @@ public final class RaviClient {
     DecisionsNamespace(transport: transport)
   }
 
+  public var desktop: DesktopNamespace {
+    DesktopNamespace(transport: transport)
+  }
+
   public var devin: DevinNamespace {
     DevinNamespace(transport: transport)
   }
@@ -3282,6 +3286,124 @@ public struct DecisionsNamespace: Sendable {
   }
 }
 
+public struct DesktopNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var channels: DesktopChannelsNamespace {
+    DesktopChannelsNamespace(transport: transport)
+  }
+
+  public var computer: DesktopComputerNamespace {
+    DesktopComputerNamespace(transport: transport)
+  }
+
+  public var loops: DesktopLoopsNamespace {
+    DesktopLoopsNamespace(transport: transport)
+  }
+
+  public var session: DesktopSessionNamespace {
+    DesktopSessionNamespace(transport: transport)
+  }
+
+  public var work: DesktopWorkNamespace {
+    DesktopWorkNamespace(transport: transport)
+  }
+}
+
+public struct DesktopChannelsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list() async throws -> DesktopChannelsListReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["desktop","channels"], command: "list", body: requestBody, as: DesktopChannelsListReturn.self)
+  }
+
+  public func setEnabled(_ id: String, _ enabled: Bool) async throws -> DesktopChannelsSetEnabledReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["enabled"] = try RaviJSON.fromEncodable(enabled)
+    return try await transport.call(groupSegments: ["desktop","channels"], command: "set-enabled", body: requestBody, as: DesktopChannelsSetEnabledReturn.self)
+  }
+}
+
+public struct DesktopComputerNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func read(_ conversationId: String) async throws -> DesktopComputerReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    return try await transport.call(groupSegments: ["desktop","computer"], command: "read", body: requestBody, as: DesktopComputerReadReturn.self)
+  }
+}
+
+public struct DesktopLoopsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list() async throws -> DesktopLoopsListReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["desktop","loops"], command: "list", body: requestBody, as: DesktopLoopsListReturn.self)
+  }
+
+  public func setEnabled(_ id: String, _ enabled: Bool) async throws -> DesktopLoopsSetEnabledReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["enabled"] = try RaviJSON.fromEncodable(enabled)
+    return try await transport.call(groupSegments: ["desktop","loops"], command: "set-enabled", body: requestBody, as: DesktopLoopsSetEnabledReturn.self)
+  }
+}
+
+public struct DesktopSessionNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func configure(_ conversationId: String, _ model: String, _ effort: String) async throws -> DesktopSessionConfigureReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    requestBody["model"] = try RaviJSON.fromEncodable(model)
+    requestBody["effort"] = try RaviJSON.fromEncodable(effort)
+    return try await transport.call(groupSegments: ["desktop","session"], command: "configure", body: requestBody, as: DesktopSessionConfigureReturn.self)
+  }
+
+  public func read(_ conversationId: String) async throws -> DesktopSessionReadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    return try await transport.call(groupSegments: ["desktop","session"], command: "read", body: requestBody, as: DesktopSessionReadReturn.self)
+  }
+}
+
+public struct DesktopWorkNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func list(_ conversationId: String) async throws -> DesktopWorkListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
+    return try await transport.call(groupSegments: ["desktop","work"], command: "list", body: requestBody, as: DesktopWorkListReturn.self)
+  }
+}
+
 public struct DevinNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -5934,6 +6056,14 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "subscriptions", body: requestBody, as: SessionsSubscriptionsReturn.self)
   }
 
+  public func teamHandoff(_ agent: String, _ task: String, _ options: SessionsTeamHandoffOptions = .init()) async throws -> SessionsTeamHandoffReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agent"] = try RaviJSON.fromEncodable(agent)
+    requestBody["task"] = try RaviJSON.fromEncodable(task)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "team-handoff", body: requestBody, as: SessionsTeamHandoffReturn.self)
+  }
+
   public func threadSend(_ thread: String, _ message: String, _ options: SessionsThreadSendOptions = .init()) async throws -> SessionsThreadSendReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["thread"] = try RaviJSON.fromEncodable(thread)
@@ -6065,7 +6195,7 @@ public struct SessionsConversationsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions","conversations"], command: "renew", body: requestBody, as: SessionsConversationsRenewReturn.self)
   }
 
-  public func send(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String, _ text: String, _ expectedVersion: Int) async throws -> SessionsConversationsSendReturn {
+  public func send(_ projectId: String, _ requestId: String, _ createdAt: Int, _ conversationId: String, _ text: String, _ expectedVersion: Int, _ options: SessionsConversationsSendOptions = .init()) async throws -> SessionsConversationsSendReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
     requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
@@ -6073,7 +6203,19 @@ public struct SessionsConversationsNamespace: Sendable {
     requestBody["conversationId"] = try RaviJSON.fromEncodable(conversationId)
     requestBody["text"] = try RaviJSON.fromEncodable(text)
     requestBody["expectedVersion"] = try RaviJSON.fromEncodable(expectedVersion)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions","conversations"], command: "send", body: requestBody, as: SessionsConversationsSendReturn.self)
+  }
+
+  public func teamCreate(_ projectId: String, _ requestId: String, _ createdAt: Int, _ title: String, _ agentIds: [String], _ personIds: [String]) async throws -> SessionsConversationsTeamCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["projectId"] = try RaviJSON.fromEncodable(projectId)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    requestBody["createdAt"] = try RaviJSON.fromEncodable(createdAt)
+    requestBody["title"] = try RaviJSON.fromEncodable(title)
+    requestBody["agentIds"] = try RaviJSON.fromEncodable(agentIds)
+    requestBody["personIds"] = try RaviJSON.fromEncodable(personIds)
+    return try await transport.call(groupSegments: ["sessions","conversations"], command: "team-create", body: requestBody, as: SessionsConversationsTeamCreateReturn.self)
   }
 }
 

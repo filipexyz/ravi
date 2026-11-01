@@ -94,9 +94,11 @@ export function pickRuntimeTurnAuthorityEnvelope(
 }
 
 export function hasIsolatedRuntimeTurnEnvelope(
-  prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin"> | null | undefined,
+  prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin" | "_bridgeTurnId"> | null | undefined,
 ): boolean {
-  return prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined;
+  return (
+    prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined || prompt?._bridgeTurnId !== undefined
+  );
 }
 
 export interface RuntimeInterruptSuccessorPreparation {

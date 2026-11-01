@@ -1,6 +1,6 @@
 ---
 id: runtime/human-bridge
-title: "Private human conversations from Fleet"
+title: "Private and explicit team conversations from Fleet"
 kind: capability
 domain: runtime
 capability: human-bridge
@@ -15,7 +15,7 @@ owners:
   - ravi-dev
 ---
 
-# Private human conversations
+# Human conversations
 
 - The bridge listener is disabled unless `RAVI_HUMAN_BRIDGE=1`. Non-bridge
   authorization/events must not create bridge state. The bridge namespace is
@@ -102,7 +102,8 @@ owners:
 - Cancellation commits before interrupting the native runtime. It revokes new
   action authority immediately; final cancellation is reported from the native
   interrupt event carrying the exact bridge turn ID. It does not undo effects.
-- Approval is owner-only, eligible under the current Console decision,
+- Approval is owner-only for private conversations and explicit-member-only for
+  teams, eligible under the current decider Console decision,
   bound to the live turn, exact action digest, version and expiry. It authorizes
   one waiting invocation, never grants future invocations. Revoking conditional
   eligibility invalidates a pending action without local policy edits. Terminal turns
@@ -119,3 +120,51 @@ owners:
 The transport and control boundary is specified in `sdk/console-authority`. The
 former NDJSON bridge operation protocol has been removed; enrollment and private
 execution storage remain, and ordinary local callers cannot obtain human authority.
+
+
+## Desktop delivery
+
+- A send declares after_tool, after_reply, after_task or record_only. The accepted
+  input, receipt, reply quote and delivery metadata commit together. Busy input is
+  a durable owner-scoped pending row, never a browser timer or a second active turn.
+- Pending input retains a short Console lease. Renewal covers pending input in the
+  same conversation; newer policy restrictions and enrollment revocation apply to
+  pending and running work. Expired, cancelled or dispatched entries never replay.
+- after_reply waits for terminal execution; after_task also waits for the runtime
+  task barrier. after_tool waits for the native tool barrier, requests cancellation
+  of the previous turn, and dispatches the successor only after terminalization.
+  One active execution per conversation remains enforced by SQLite.
+- record_only saves context without creating an execution. The next explicit
+  request can read bounded recorded notes; notes alone never start a provider.
+- The journal projects delivery transitions and stable request IDs. Original
+  action digests and one-action approvals remain unchanged. Bridge authority
+  envelopes cannot be coalesced with another turn during runtime intake.
+
+## Explicit Teams and original Desktop contracts
+
+- Team creation is a distinct operation, always creating a new conversation.
+  Signed teamParticipants contain Console-verified active identities, never a
+  browser-supplied verified roster. Existing private/channel sessions cannot be
+  converted. Reads require roster membership and current policy for every team
+  agent. Organization membership alone is insufficient.
+- Each request/message and turn retains its human author. @agent and @everyone
+  select only roster agents; every execution retains that requesting person's
+  capabilities. Another member's read, approval or renewal cannot replace or
+  renew the requester's authority. An eligible member may decide one exact action;
+  both the current turn eligibility and decider authority remain required.
+- `sessions team-handoff` is limited to a live root team turn with its existing
+  sessions command capability and a permitted roster target. It creates a visible
+  handoff and queues its successor after successful completion; cancellation or
+  expiry prevents succession. One immutable handoff per parent and depth six bound
+  duplication/cycles. Shared context contains only this conversation; native
+  provider resume resets when the executing agent changes.
+- Desktop work, computer, session selection, loops and configured channels are
+  explicit canonical commands. Work/selection bind the conversation; computer
+  additionally requires installation read. Loops/channels require installation
+  read/manage and retain native ownership/readiness constraints. These controls
+  confer no execution capability and cannot alter permission grants.
+- Telemetry omits credentials, arbitrary paths, other users' processes and raw
+  terminal/tool payloads. Channel connected state requires an observed runner
+  response. Enabled configuration is not connection evidence. Loop status is
+  unknown when the native source has no outcome. Model/effort targets one session,
+  not agent defaults; unsupported bridge providers stay denied.

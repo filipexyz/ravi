@@ -12808,6 +12808,145 @@ export type DecisionsShowReturn = {
   }>;
 };
 
+/** Input shape for `desktop.channels.list`. */
+export type DesktopChannelsListInput = Record<string, never>;
+
+/** Return shape for `desktop.channels.list`. */
+export type DesktopChannelsListReturn = Array<{
+  enabled: boolean;
+  id: string;
+  name: string;
+  provider: string;
+  status: "disabled" | "unknown" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+}>;
+
+/** Input shape for `desktop.channels.set-enabled`. */
+export type DesktopChannelsSetEnabledInput = {
+  enabled: boolean;
+  id: string;
+};
+
+/** Return shape for `desktop.channels.set-enabled`. */
+export type DesktopChannelsSetEnabledReturn = Array<{
+  enabled: boolean;
+  id: string;
+  name: string;
+  provider: string;
+  status: "disabled" | "unknown" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+}>;
+
+/** Input shape for `desktop.computer.read`. */
+export type DesktopComputerReadInput = {
+  conversationId: string;
+};
+
+/** Return shape for `desktop.computer.read`. */
+export type DesktopComputerReadReturn = {
+  branch: string;
+  changes: Array<{
+    additions: number;
+    change: "M" | "A" | "D";
+    deletions: number;
+    path: string;
+  }>;
+  cpu: number;
+  cwd: string;
+  host: string;
+  memory: number;
+  os: string;
+  processes: Array<{
+    detail: string;
+    id: string;
+    name: string;
+    status: "running" | "idle" | "failed";
+  }>;
+  terminal: string[];
+  uptime: string;
+};
+
+/** Input shape for `desktop.loops.list`. */
+export type DesktopLoopsListInput = Record<string, never>;
+
+/** Return shape for `desktop.loops.list`. */
+export type DesktopLoopsListReturn = Array<{
+  enabled: boolean;
+  id: string;
+  kind: "cron" | "trigger" | "heartbeat";
+  lastResult: "ok" | "failed" | "skipped" | "never" | "unknown";
+  lastRunAt?: string;
+  name: string;
+  nextRunAt?: string;
+  schedule: string;
+}>;
+
+/** Input shape for `desktop.loops.set-enabled`. */
+export type DesktopLoopsSetEnabledInput = {
+  enabled: boolean;
+  id: string;
+};
+
+/** Return shape for `desktop.loops.set-enabled`. */
+export type DesktopLoopsSetEnabledReturn = Array<{
+  enabled: boolean;
+  id: string;
+  kind: "cron" | "trigger" | "heartbeat";
+  lastResult: "ok" | "failed" | "skipped" | "never" | "unknown";
+  lastRunAt?: string;
+  name: string;
+  nextRunAt?: string;
+  schedule: string;
+}>;
+
+/** Input shape for `desktop.session.configure`. */
+export type DesktopSessionConfigureInput = {
+  conversationId: string;
+  effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+  model: string;
+};
+
+/** Return shape for `desktop.session.configure`. */
+export type DesktopSessionConfigureReturn = {
+  effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+  model: string;
+  models: Array<{
+    id: string;
+    label: string;
+  }>;
+  provider: string;
+};
+
+/** Input shape for `desktop.session.read`. */
+export type DesktopSessionReadInput = {
+  conversationId: string;
+};
+
+/** Return shape for `desktop.session.read`. */
+export type DesktopSessionReadReturn = {
+  effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+  model: string;
+  models: Array<{
+    id: string;
+    label: string;
+  }>;
+  provider: string;
+};
+
+/** Input shape for `desktop.work.list`. */
+export type DesktopWorkListInput = {
+  conversationId: string;
+};
+
+/** Return shape for `desktop.work.list`. */
+export type DesktopWorkListReturn = Array<{
+  id: string;
+  parentId?: string;
+  state: "needs_you" | "working" | "done" | "follow_up";
+  statusLabel: string;
+  summary: string;
+  title: string;
+  updatedAt: string;
+}>;
+
 /** Input shape for `devin.auth.check`. */
 export type DevinAuthCheckInput = Record<string, never>;
 
@@ -19505,6 +19644,19 @@ export type SessionsConversationsCreateReturn = {
   conversation: {
     agentId: string;
     id: string;
+    team?: {
+      members: Array<({
+        agentId: string;
+        kind: "agent";
+      }) | ({
+        kind: "person";
+        name: string;
+        personId: string;
+        role: "owner" | "member";
+      })>;
+      memory: string[];
+      ownerAgentId: string;
+    };
     title: string;
     updatedAt: number;
     version: number;
@@ -19547,8 +19699,42 @@ export type SessionsConversationsEventsReturn = {
   events: Array<({
     createdAt: number;
     data: {
-      createdAt: number;
       id: string;
+      status: "pending" | "accepted" | "cancelled" | "expired";
+    };
+    sequence: number;
+    type: "handoff.state";
+  }) | ({
+    createdAt: number;
+    data: {
+      delivery: "sent" | "queued" | "recorded" | "cancelled" | "expired";
+      id: string;
+    };
+    sequence: number;
+    type: "message.delivery";
+  }) | ({
+    createdAt: number;
+    data: {
+      authorId?: string;
+      authorName?: string;
+      barrier?: "after_tool" | "after_reply" | "after_task" | "record_only";
+      createdAt: number;
+      delivery?: "sent" | "queued" | "recorded" | "cancelled" | "expired";
+      handoff?: {
+        done: string[];
+        fromAgentId: string;
+        open: string[];
+        output?: string;
+        status: "pending" | "accepted" | "cancelled" | "expired";
+        task: string;
+        toAgentId: string;
+      };
+      id: string;
+      replyTo?: {
+        authorName: string;
+        excerpt: string;
+      };
+      requestId?: string;
       role: "user" | "assistant";
       text: string;
       turnId: string;
@@ -19558,8 +19744,26 @@ export type SessionsConversationsEventsReturn = {
   }) | ({
     createdAt: number;
     data: {
+      authorId?: string;
+      authorName?: string;
+      barrier?: "after_tool" | "after_reply" | "after_task" | "record_only";
       createdAt: number;
+      delivery?: "sent" | "queued" | "recorded" | "cancelled" | "expired";
+      handoff?: {
+        done: string[];
+        fromAgentId: string;
+        open: string[];
+        output?: string;
+        status: "pending" | "accepted" | "cancelled" | "expired";
+        task: string;
+        toAgentId: string;
+      };
       id: string;
+      replyTo?: {
+        authorName: string;
+        excerpt: string;
+      };
+      requestId?: string;
       role: "user" | "assistant";
       text: string;
       turnId: string;
@@ -19569,6 +19773,7 @@ export type SessionsConversationsEventsReturn = {
   }) | ({
     createdAt: number;
     data: {
+      agentId?: string;
       cancelRequested: boolean;
       id: string;
       status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
@@ -19633,8 +19838,26 @@ export type SessionsConversationsHistoryInput = {
 export type SessionsConversationsHistoryReturn = {
   hasOlder: boolean;
   messages: Array<{
+    authorId?: string;
+    authorName?: string;
+    barrier?: "after_tool" | "after_reply" | "after_task" | "record_only";
     createdAt: number;
+    delivery?: "sent" | "queued" | "recorded" | "cancelled" | "expired";
+    handoff?: {
+      done: string[];
+      fromAgentId: string;
+      open: string[];
+      output?: string;
+      status: "pending" | "accepted" | "cancelled" | "expired";
+      task: string;
+      toAgentId: string;
+    };
     id: string;
+    replyTo?: {
+      authorName: string;
+      excerpt: string;
+    };
+    requestId?: string;
     role: "user" | "assistant";
     text: string;
     turnId: string;
@@ -19654,6 +19877,19 @@ export type SessionsConversationsListInput = {
 export type SessionsConversationsListReturn = Array<{
   agentId: string;
   id: string;
+  team?: {
+    members: Array<({
+      agentId: string;
+      kind: "agent";
+    }) | ({
+      kind: "person";
+      name: string;
+      personId: string;
+      role: "owner" | "member";
+    })>;
+    memory: string[];
+    ownerAgentId: string;
+  };
   title: string;
   updatedAt: number;
   version: number;
@@ -19686,6 +19922,19 @@ export type SessionsConversationsOpenReturn = {
   conversation: {
     agentId: string;
     id: string;
+    team?: {
+      members: Array<({
+        agentId: string;
+        kind: "agent";
+      }) | ({
+        kind: "person";
+        name: string;
+        personId: string;
+        role: "owner" | "member";
+      })>;
+      memory: string[];
+      ownerAgentId: string;
+    };
     title: string;
     updatedAt: number;
     version: number;
@@ -19693,13 +19942,32 @@ export type SessionsConversationsOpenReturn = {
   cursor: string;
   hasOlder: boolean;
   messages: Array<{
+    authorId?: string;
+    authorName?: string;
+    barrier?: "after_tool" | "after_reply" | "after_task" | "record_only";
     createdAt: number;
+    delivery?: "sent" | "queued" | "recorded" | "cancelled" | "expired";
+    handoff?: {
+      done: string[];
+      fromAgentId: string;
+      open: string[];
+      output?: string;
+      status: "pending" | "accepted" | "cancelled" | "expired";
+      task: string;
+      toAgentId: string;
+    };
     id: string;
+    replyTo?: {
+      authorName: string;
+      excerpt: string;
+    };
+    requestId?: string;
     role: "user" | "assistant";
     text: string;
     turnId: string;
   }>;
   turn: ({
+    agentId?: string;
     cancelRequested: boolean;
     id: string;
     status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
@@ -19719,6 +19987,19 @@ export type SessionsConversationsReceiptReturn = ({
   conversation: {
     agentId: string;
     id: string;
+    team?: {
+      members: Array<({
+        agentId: string;
+        kind: "agent";
+      }) | ({
+        kind: "person";
+        name: string;
+        personId: string;
+        role: "owner" | "member";
+      })>;
+      memory: string[];
+      ownerAgentId: string;
+    };
     title: string;
     updatedAt: number;
     version: number;
@@ -19727,6 +20008,7 @@ export type SessionsConversationsReceiptReturn = ({
 }) | ({
   accepted: true;
   conversationId: string;
+  delivery?: "sent" | "queued" | "recorded" | "cancelled" | "expired";
   messageId: string;
   turnId: string;
   version: number;
@@ -19758,10 +20040,15 @@ export type SessionsConversationsRenewReturn = {
 
 /** Input shape for `sessions.conversations.send`. */
 export type SessionsConversationsSendInput = {
+  barrier?: "after_tool" | "after_reply" | "after_task" | "record_only";
   conversationId: string;
   createdAt: number;
   expectedVersion: number;
   projectId: string;
+  replyTo?: {
+    authorName: string;
+    excerpt: string;
+  };
   requestId: string;
   text: string;
 };
@@ -19770,9 +20057,45 @@ export type SessionsConversationsSendInput = {
 export type SessionsConversationsSendReturn = {
   accepted: true;
   conversationId: string;
+  delivery?: "sent" | "queued" | "recorded" | "cancelled" | "expired";
   messageId: string;
   turnId: string;
   version: number;
+};
+
+/** Input shape for `sessions.conversations.team-create`. */
+export type SessionsConversationsTeamCreateInput = {
+  agentIds: string[];
+  createdAt: number;
+  personIds: string[];
+  projectId: string;
+  requestId: string;
+  title: string;
+};
+
+/** Return shape for `sessions.conversations.team-create`. */
+export type SessionsConversationsTeamCreateReturn = {
+  conversation: {
+    agentId: string;
+    id: string;
+    team?: {
+      members: Array<({
+        agentId: string;
+        kind: "agent";
+      }) | ({
+        kind: "person";
+        name: string;
+        personId: string;
+        role: "owner" | "member";
+      })>;
+      memory: string[];
+      ownerAgentId: string;
+    };
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  conversationId: string;
 };
 
 /** Input shape for `sessions.create-thread`. */
@@ -20804,6 +21127,21 @@ export type SessionsSubscriptionsInput = {
 
 /** Return shape for `sessions.subscriptions`. */
 export type SessionsSubscriptionsReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.team-handoff`. */
+export type SessionsTeamHandoffInput = {
+  agent: string;
+  done?: string;
+  open?: string;
+  output?: string;
+  task: string;
+};
+
+/** Return shape for `sessions.team-handoff`. */
+export type SessionsTeamHandoffReturn = {
+  messageId: string;
+  turnId: string;
+};
 
 /** Input shape for `sessions.thread-send`. */
 export type SessionsThreadSendInput = {

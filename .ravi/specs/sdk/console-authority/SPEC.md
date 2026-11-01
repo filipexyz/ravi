@@ -77,3 +77,11 @@ owners:
 - Execution/model credentials and private history remain on the installation.
   Console stores delivery identity/digest/status, not a private response cache.
   Replayed receipts still require current authorization.
+
+- Explicit teams use a separate durable roster; session target resolution checks
+  membership and policy for all roster agents. No generic configuration handler
+  can bypass this binding. Team creation accepts verified participants only in
+  the signed Console delegation.
+- Desktop resource commands have finite resource/action/scope mappings.
+  Installation administration, conversation reading and session configuration
+  remain distinct Console decisions; no wildcard catalog forwarding is allowed.

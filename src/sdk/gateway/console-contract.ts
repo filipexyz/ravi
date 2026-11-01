@@ -55,6 +55,12 @@ export const consoleGrantSchema = z
       .refine((items) => new Set(items.map((a) => a.id)).size === items.length),
     canSend: z.boolean(),
     canApprove: z.boolean(),
+    // Creation-time roster candidates verified against current Console policy.
+    // Never accepted from the browser as authority or used to adopt private history.
+    teamParticipants: z
+      .array(z.object({ id, name: z.string().min(1).max(200) }).strict())
+      .max(30)
+      .optional(),
   })
   .strict();
 export type ConsoleGrant = z.infer<typeof consoleGrantSchema> & { sub: string; iss: string; jti: string; exp: number };

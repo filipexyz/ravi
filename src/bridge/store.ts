@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
-import { BridgeError, type BridgeConversation, type BridgeTurnStatus } from "./protocol.js";
+import { BridgeError, type BridgeConversation, type BridgeTurnStatus, type BridgeTeam } from "./protocol.js";
 
 export interface Enrollment {
   id: string;
@@ -51,6 +51,16 @@ export class BridgeStore {
       CREATE UNIQUE INDEX IF NOT EXISTS active_turn ON turns(conversation_id) WHERE status IN ('queued','running','awaiting_approval');
       CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id),
         role TEXT NOT NULL, text TEXT NOT NULL, turn_id TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS message_metadata(message_id TEXT PRIMARY KEY REFERENCES messages(id), request_id TEXT NOT NULL,
+        barrier TEXT NOT NULL, delivery TEXT NOT NULL, reply_to TEXT);
+      CREATE TABLE IF NOT EXISTS queued_messages(turn_id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL REFERENCES conversations(id),
+        message_id TEXT NOT NULL REFERENCES messages(id),barrier TEXT NOT NULL,state TEXT NOT NULL,authority TEXT NOT NULL,lease_until INTEGER NOT NULL,created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS teams(conversation_id TEXT PRIMARY KEY REFERENCES conversations(id), definition TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS team_members(conversation_id TEXT NOT NULL REFERENCES teams(conversation_id), subject TEXT NOT NULL,
+        role TEXT NOT NULL, PRIMARY KEY(conversation_id,subject));
+      CREATE TABLE IF NOT EXISTS turn_targets(turn_id TEXT PRIMARY KEY,agent_id TEXT NOT NULL,message_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS team_handoffs(message_id TEXT PRIMARY KEY,parent_turn_id TEXT NOT NULL UNIQUE,turn_id TEXT NOT NULL UNIQUE,payload TEXT NOT NULL,definition TEXT NOT NULL,depth INTEGER NOT NULL,state TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS message_authors(message_id TEXT PRIMARY KEY,subject TEXT NOT NULL,name TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS receipts(enrollment_id TEXT NOT NULL, subject TEXT NOT NULL, request_id TEXT NOT NULL,
         digest TEXT NOT NULL, result TEXT NOT NULL, project_id TEXT NOT NULL, PRIMARY KEY(enrollment_id,subject,request_id));
       CREATE TABLE IF NOT EXISTS delegation_heads(enrollment_id TEXT NOT NULL, subject TEXT NOT NULL, project_id TEXT NOT NULL,
@@ -93,9 +103,41 @@ export class BridgeStore {
   }
   authorizedConversation(id: string, enrollment: Enrollment, subject: string, projectId: string): ConversationRow {
     const row = this.conversation(id);
-    if (!row || row.enrollment_id !== enrollment.id || row.subject !== subject || row.project_id !== projectId)
+    if (
+      !row ||
+      row.enrollment_id !== enrollment.id ||
+      !this.hasParticipant(row, subject) ||
+      row.project_id !== projectId
+    )
       throw new BridgeError("NOT_FOUND_OR_DENIED");
     return row;
+  }
+  hasParticipant(row: ConversationRow, subject: string): boolean {
+    if (!this.team(row.id)) return row.subject === subject;
+    return Boolean(
+      this.db.query("SELECT 1 FROM team_members WHERE conversation_id=? AND subject=?").get(row.id, subject),
+    );
+  }
+  team(id: string): BridgeTeam | undefined {
+    const row = this.db
+      .query<{ definition: string }, [string]>("SELECT definition FROM teams WHERE conversation_id=?")
+      .get(id);
+    return row ? JSON.parse(row.definition) : undefined;
+  }
+  conversationDto(row: ConversationRow): BridgeConversation {
+    const team = this.team(row.id);
+    return { ...conversationDto(row), ...(team ? { team } : {}) };
+  }
+  turnAgent(turnId: string): string | undefined {
+    return this.db
+      .query<{ agent_id: string }, [string]>("SELECT agent_id FROM turn_targets WHERE turn_id=?")
+      .get(turnId)?.agent_id;
+  }
+  author(messageId: string) {
+    const row = this.db
+      .query<{ subject: string; name: string }, [string]>("SELECT subject,name FROM message_authors WHERE message_id=?")
+      .get(messageId);
+    return row ? { authorId: row.subject, authorName: row.name } : {};
   }
   event(conversationId: string, type: string, data: unknown) {
     this.db
@@ -112,7 +154,12 @@ export class BridgeStore {
         .query("UPDATE conversations SET version=version+1,updated_at=? WHERE id=?")
         .run(Date.now(), turn.conversation_id);
       if (!["queued", "running", "awaiting_approval"].includes(status)) this.invalidateApprovals(id);
-      this.event(turn.conversation_id, "turn.state", { id, status, cancelRequested: Boolean(turn.cancel_requested) });
+      this.event(turn.conversation_id, "turn.state", {
+        id,
+        status,
+        cancelRequested: Boolean(turn.cancel_requested),
+        ...(this.turnAgent(id) ? { agentId: this.turnAgent(id) } : {}),
+      });
     });
   }
   invalidateApprovals(turnId: string) {

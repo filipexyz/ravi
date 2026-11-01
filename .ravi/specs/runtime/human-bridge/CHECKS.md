@@ -29,3 +29,14 @@
 
 - The service behavioral suite now enters via the canonical HTTP dispatcher;
   `src/sdk/gateway/console.test.ts` checks the new signed request boundary.
+
+- Desktop delivery tests exercise record-only without execution, after-reply FIFO, after-tool release, pending cancellation, receipt dedupe, revocation and restart lease expiry in `src/bridge/service.test.ts`.
+- Bridge turn envelopes remain separate in the delivery queue, including when adjacent inputs belong to one human.
+
+- Team creation rejects unsigned/unavailable candidates; an invited synthetic
+  member sees only the new team, never the creator's private history.
+- Member renewal cannot extend another requester's turn; @everyone is sequential.
+- Handoff is deduplicated, roster-bound and waits for parent completion.
+- Desktop resource tests reject read-to-write escalation, other agents' loops,
+  invalid shell owners and conversation reads by a foreign subject.
+- Run the bridge suite with isolated-runtime-preload, never a live state directory.
