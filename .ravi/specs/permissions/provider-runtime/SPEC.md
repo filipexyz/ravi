@@ -150,23 +150,22 @@ Required capability materializers:
   same word-start comment semantics: an unquoted mid-word `#` is data and MUST
   NOT hide later executables, inline flags or redirect targets. A real comment
   MUST still stop at the next newline.
-- Piped interpreters MUST have a resolved, nonempty literal script argument.
-  Flags, option values, the stdin marker `-`, leading assignments, comments,
-  redirection operators, descriptors and destinations MUST NOT count as that
-  argument. The first positional word selects the code source; a later filename
-  MUST NOT override stdin. Descriptor device paths (`/dev/fd/N`, `/proc/**/fd/N`,
-  and `/dev/stdin`, `/dev/stdout`, `/dev/stderr`) MUST also be refused for every
-  descriptor number: redirection can alias any of them to piped stdin.
+- Every pipe receiver whose executable is `python`, `python3`, `node`, `perl`,
+  `ruby` or `php` MUST be denied unconditionally, including with wildcard
+  executable access. The reason MUST be `piping to an interpreter is not allowed`.
+  `... | python3 /abs/script.py` is deliberately denied; absolute paths and
+  symlinks MUST NOT grant an exception. No cwd or wrapper model is involved.
+- Direct file-script invocation (`python3 /abs/script.py`) and named-file input
+  (`python3 /abs/script.py < dados.txt`) MAY remain allowed by executable grants.
+  Direct positional script paths shaped as `/dev/fd/N`, `/proc/**/fd/N`,
+  `/dev/stdin`, `/dev/stdout` or `/dev/stderr` MUST still be refused for every
+  descriptor number. Known option operands, redirect targets and later script
+  arguments MUST NOT be confused with the positional script path.
 - Pipeline inspection MUST continue after empty/comment-only receiver segments;
   a whole-line comment MUST NOT hide an interpreter on the next line. Each pipe
   stops at its effective receiver and MUST NOT cross `;`, `&&` or `||`; other
   pipes remain independently checked.
-- Commands containing `cd` MUST NOT pipe into interpreters, even with a literal file script; cwd modelling is intentionally unsupported.
-- Options before a piped script MUST have explicitly supported arity and
-  file-script semantics. Unknown options, alternate/interactive execution modes
-  and unresolved expansions MUST fail closed, even with wildcard executable
-  access. Both parser entry points and the actual PreToolUse hook MUST enforce
-  this rule. File script contents remain outside this syntax check.
+- This guard does not prove content provenance; it refuses pipes into interpreters. Reopening that surface requires a sandbox, not more parser rules.
 - The bounded scanner MUST refuse unterminated quotes/escapes and unsupported
   ANSI-C / locale quoting rather than assume them safe. It is not a shell AST.
   `stripShellQuoting`, used for identity text checks, MUST NOT be used as the

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   parseBashCommand,
   checkDangerousPatterns,
@@ -382,12 +384,15 @@ describe("review reconciliation: Bash comment and pipeline boundaries", () => {
     });
   }
 
-  it("still recognizes a piped interpreter file argument", () => {
-    expect(checkDangerousPatterns("cat input | python3 script.py 2>/dev/null # comment").safe).toBe(true);
+  it("denies a file script as a pipe receiver despite redirects and comments", () => {
+    expect(checkDangerousPatterns("cat input | python3 script.py 2>/dev/null # comment")).toEqual({
+      safe: false,
+      reason: "piping to an interpreter is not allowed",
+    });
   });
 });
 
-describe("piped interpreters require a resolved script argument", () => {
+describe("piped interpreters are denied regardless of script arguments", () => {
   const stdinReceivers = [
     "python3 -u",
     "python3 -",
@@ -442,8 +447,15 @@ describe("piped interpreters require a resolved script argument", () => {
     "ruby -w script.rb",
     "python3 -- ./a.py -",
     'python3 "a b.py"',
+    "python /abs/path/script.py",
+    "python3 /abs/path/script.py",
+    "python3 /tmp/a.py arg",
+    "node /abs/build.js",
+    "perl /abs/script.pl",
+    "ruby /abs/script.rb",
+    "php /abs/script.php",
   ]) {
-    it(`allows file execution: ${receiver}`, () => {
+    it(`deliberately denies a file-script receiver: ${receiver}`, () => {
       for (const decorated of [
         receiver,
         `${receiver} 2>/dev/null`,
@@ -451,8 +463,11 @@ describe("piped interpreters require a resolved script argument", () => {
         `FOO=1 ${receiver} 2>/dev/null`,
       ]) {
         const command = `printf data | ${decorated}`;
-        expect(checkDangerousPatterns(command).safe).toBe(true);
-        expect(parseBashCommand(command).success).toBe(true);
+        expect(checkDangerousPatterns(command)).toEqual({
+          safe: false,
+          reason: "piping to an interpreter is not allowed",
+        });
+        expect(parseBashCommand(command).success).toBe(false);
       }
     });
   }
@@ -500,7 +515,7 @@ describe("piped interpreter descriptor aliases and receiver segments", () => {
     });
   }
 
-  it("allows file scripts after empty and comment-only receiver segments", () => {
+  it("allows direct scripts but denies script receivers after empty and comment-only segments", () => {
     for (const receiver of [
       "python3 script.py",
       "python3 ./a.py arg",
@@ -509,8 +524,8 @@ describe("piped interpreter descriptor aliases and receiver segments", () => {
     ]) {
       for (const prefix of ["", "printf data | ", "printf data | # c\n\n # another comment\n "]) {
         const command = prefix + receiver;
-        expect(checkDangerousPatterns(command).safe).toBe(true);
-        expect(parseBashCommand(command).success).toBe(true);
+        expect(checkDangerousPatterns(command).safe).toBe(prefix === "");
+        expect(parseBashCommand(command).success).toBe(prefix === "");
       }
     }
   });
@@ -520,6 +535,13 @@ describe("pipeline receiver scope and directory changes", () => {
   for (const command of [
     "cd /dev && printf 'print(731)\\n' | python3 fd/3 3<&0",
     "cd /dev && printf 'print(731)\\n' | python3 stdin",
+    "builtin cd /dev && printf 'print(731)\\n' | python3 fd/3 3<&0",
+    "command cd /dev && printf 'print(731)\\n' | python3 stdin",
+    "pushd /dev && printf 'print(731)\\n' | python3 stdin",
+    "env -C /dev printf 'print(731)\\n' | python3 fd/3",
+    "printf data | python3 build.js",
+    "printf cd | python3 script.py # cd /dev",
+    "printf data |& python3 script.py",
     "cd /tmp && printf data | python3 build.js",
     "printf data | python3 script.py; cd /tmp",
     "'cd' /tmp && printf data | # c\n python3 script.py",
@@ -544,9 +566,7 @@ describe("pipeline receiver scope and directory changes", () => {
     "printf data | cat\n python3 --version",
     "printf data | cat; # c\n python3 -u",
     "printf data | # c\n cat; python3 --version",
-    "printf cd | python3 script.py # cd /dev",
     "cd /tmp && printf data | cat; python3 build.js",
-    "printf data |& python3 script.py",
   ]) {
     it(`preserves ${JSON.stringify(command)}`, () => {
       expect(checkDangerousPatterns(command).safe).toBe(true);
@@ -561,4 +581,58 @@ describe("pipeline receiver scope and directory changes", () => {
       expect(parseBashCommand(command).success).toBe(true);
     });
   }
+});
+
+describe("direct interpreter descriptor paths and named input", () => {
+  for (const command of [
+    "python3 /dev/fd/3 3<&0",
+    "python3 /dev/stdin",
+    "python3 -u /dev/stdout 1<&0",
+    "python3 -W ignore -- /dev/./fd/7 7<&0",
+    "node --no-warnings /proc/self/fd/0",
+    "php -d x=1 /dev/stderr 2<&0",
+    "perl -w /dev/fd/99",
+    "ruby /proc/123/task/456/fd/7",
+  ]) {
+    it(`denies a direct descriptor script: ${command}`, () => {
+      expect(checkDangerousPatterns(command)).toEqual({
+        safe: false,
+        reason: "interpreter descriptor script paths are not allowed",
+      });
+      expect(parseBashCommand(command).success).toBe(false);
+    });
+  }
+
+  for (const command of [
+    "python3 script.py",
+    "python3 ./a.py arg",
+    "node --no-warnings build.js",
+    "python3 /abs/script.py",
+    "python3 /abs/s.py < dados.txt",
+    "cd /tmp && python3 /abs/s.py < dados.txt",
+    "python3 script.py /dev/stdin",
+    "python3 -W /dev/stdin script.py",
+    "printf data | cat; python3 /abs/s.py < dados.txt",
+  ]) {
+    it(`preserves direct file execution: ${command}`, () => {
+      expect(checkDangerousPatterns(command).safe).toBe(true);
+      expect(parseBashCommand(command).success).toBe(true);
+    });
+  }
+
+  it.skipIf(!existsSync("/dev/stdin"))("denies a pipe to an absolute symlink to stdin", () => {
+    const directory = mkdtempSync(join(tmpdir(), "ravi-bash-symlink-test-"));
+    try {
+      const path = join(directory, "script.py");
+      symlinkSync("/dev/stdin", path);
+      const command = `printf 'print(731)\\n' | python3 "${path}"`;
+      expect(checkDangerousPatterns(command)).toEqual({
+        safe: false,
+        reason: "piping to an interpreter is not allowed",
+      });
+      expect(parseBashCommand(command).success).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });

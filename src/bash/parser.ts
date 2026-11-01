@@ -57,20 +57,11 @@ const INLINE_CODE_INTERPRETERS: Record<string, string[]> = {
   php: ["-r"],
 };
 
-// Only options with known arity and file-script semantics are supported before
-// a piped script. Unknown options (including alternate/interactive code modes)
-// fail closed: their next word may be an option value rather than a script.
-const PYTHON_SCRIPT_OPTIONS = {
-  flags: ["-u", "-I", "-B", "-E", "-s", "-S", "-O", "-OO", "-q", "-b", "-bb"],
-  values: ["-W", "-X"],
-};
-const SCRIPT_OPTIONS: Record<string, { flags: string[]; values: string[] }> = {
-  python: PYTHON_SCRIPT_OPTIONS,
-  python3: PYTHON_SCRIPT_OPTIONS,
-  node: { flags: ["--no-warnings", "--trace-warnings"], values: [] },
-  perl: { flags: ["-w", "-W"], values: [] },
-  ruby: { flags: ["-w"], values: [] },
-  php: { flags: ["-n"], values: ["-d", "-c"] },
+// Known option operands are not positional script paths in direct invocations.
+const INTERPRETER_OPTION_VALUES: Record<string, string[]> = {
+  python: ["-W", "-X"],
+  python3: ["-W", "-X"],
+  php: ["-d", "-c"],
 };
 
 // ============================================================================
@@ -103,17 +94,15 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
         if (!executable) continue;
         if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
         if (INLINE_CODE_INTERPRETERS[executable]) {
-          if (splitByOperators(inspected.command).some((segment) => parseSimpleCommand(segment) === "cd")) {
-            return { safe: false, reason: "piping to interpreter in a command containing cd is not allowed" };
-          }
-          if (isInlineCodeExecution(executable, receiver).blocked) {
-            return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
-          }
-          if (!hasResolvedScriptArgument(executable, receiver)) {
-            return { safe: false, reason: "piping to interpreter stdin or ambiguous script arguments is not allowed" };
-          }
+          return { safe: false, reason: "piping to an interpreter is not allowed" };
         }
         break;
+      }
+    }
+    for (const segment of splitByOperators(inspected.command)) {
+      const executable = parseSimpleCommand(segment);
+      if (executable && INLINE_CODE_INTERPRETERS[executable] && hasDescriptorScriptArgument(executable, segment)) {
+        return { safe: false, reason: "interpreter descriptor script paths are not allowed" };
       }
     }
   } catch {
@@ -248,9 +237,9 @@ function resolvedCommandWords(command: string): string[] {
   return words;
 }
 
-function hasResolvedScriptArgument(executable: string, command: string): boolean {
+function hasDescriptorScriptArgument(executable: string, command: string): boolean {
   const [, ...args] = resolvedCommandWords(command);
-  const options = SCRIPT_OPTIONS[executable]!;
+  const optionValues = INTERPRETER_OPTION_VALUES[executable] ?? [];
   let endOfOptions = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
@@ -258,20 +247,16 @@ function hasResolvedScriptArgument(executable: string, command: string): boolean
       endOfOptions = true;
       continue;
     }
-    if (!endOfOptions && options.flags.includes(arg)) continue;
-    if (!endOfOptions && options.values.includes(arg)) {
-      const value = args[++i];
-      if (!value || /[{}~]/.test(value)) return false;
+    if (!endOfOptions && optionValues.includes(arg)) {
+      i++;
       continue;
     }
-    // The FIRST positional argument selects the code source. A later filename
-    // cannot turn `python3 - script.py` into file execution. Empty words,
-    // unmodelled expansions and descriptor aliases do not prove a script file.
-    if (!arg || arg.startsWith("-") || /[{}~]/.test(arg)) return false;
+    if (!endOfOptions && arg.startsWith("-") && arg !== "-") continue;
+    // Only the first positional word is the script. Later descriptor-looking
+    // words may be ordinary arguments to a file script; this is a shape check,
+    // not proof of content provenance, cwd or filesystem identity.
     const path = resolve("/", arg);
-    // Any descriptor may alias stdin after duplication, including stdout/stderr
-    // and numeric process/task paths. Its pathname cannot prove a script file.
-    return !/^\/dev\/(?:std(?:in|out|err)|fd\/\d+)$/.test(path) && !/^\/proc\/.*\/fd\/\d+$/.test(path);
+    return /^\/dev\/(?:std(?:in|out|err)|fd\/\d+)$/.test(path) || /^\/proc\/.*\/fd\/\d+$/.test(path);
   }
   return false;
 }
