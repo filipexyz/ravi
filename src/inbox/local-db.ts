@@ -257,6 +257,13 @@ export function listLocalInboxItems(input: ListLocalInboxItemsInput = {}): Local
   return rows.map(rowToItem);
 }
 
+/** Lookup without marking an item seen or appending an inbox event. */
+export function findLocalInboxItemByDedupeKey(dedupeKey: string): LocalInboxItem | null {
+  ensureLocalInboxSchema();
+  const row = getItemRowByDedupe(dedupeKey);
+  return row ? rowToItem(row) : null;
+}
+
 export function readLocalInboxItem(id: string): { item: LocalInboxItem; events: LocalInboxEvent[] } {
   ensureLocalInboxSchema();
   const row = getDb().prepare(`SELECT * FROM inbox_items WHERE id = ?`).get(id) as LocalInboxItemRow | undefined;

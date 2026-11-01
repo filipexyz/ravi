@@ -1464,6 +1464,16 @@ function loadSessionReadTranscript(session: SessionEntry, maxMessages: number): 
     };
   }
 
+  // A thread shares the platform chat id with its parent and sibling threads.
+  // An empty child history is not permission to read that shared chat history.
+  if (session.lastThreadId || session.sessionKey.includes(":thread:")) {
+    return {
+      messages: [],
+      totalMessages: 0,
+      transcript: { available: true, source: "chat-db", sessionName: sessionLabel },
+    };
+  }
+
   const chatIdVariants = resolveSessionChatIdVariants(session);
   const chatDbByChat = getRecentHistoryByChatIds(chatIdVariants, maxMessages, session.agentId);
   if (chatDbByChat.length > 0) {

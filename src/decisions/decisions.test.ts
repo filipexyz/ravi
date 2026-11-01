@@ -1,9 +1,10 @@
+import { RuntimeStartCapacityError } from "../runtime/start-admission.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { renameSessionName } from "../router/sessions.js";
+import { renameSessionName, closeSessionStore } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { getDb, dbUpsertChat } from "../router/router-db.js";
+import { getDb, dbUpsertChat, closeRouterDb } from "../router/router-db.js";
 import { getOrCreateSession, getSession, deleteSession, updateSessionName } from "../router/index.js";
 import {
   createSlackThreadLifecycle,
@@ -305,6 +306,100 @@ describe("generic decisions and managed threads", () => {
     expect(() => closeSlackThreadLifecycle({ childSessionKey: origin.sessionKey! })).toThrow("undelivered answer");
     resetFailedDecisionDeliveries(decision.id);
     await admitDecisionAnswer(name, published[0]!, async () => {});
+    expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");
+  });
+
+  it("keeps capacity refusal in the durable decision retry path without ambiguous admission", async () => {
+    const origin = await thread();
+    const { decision } = await askDecision(origin, { key: "capacity", ask: "Question" });
+    await answerDecision(decision.id, "Outcome");
+    const published: RuntimeLaunchPrompt[] = [];
+    await reconcileDecisionDeliveries(deps(published), decision.id);
+    const name = getSession(origin.sessionKey!)!.name!;
+    await expect(
+      admitDecisionAnswer(name, published[0]!, async () => {
+        throw new RuntimeStartCapacityError({
+          lane: "background",
+          reason: "concurrency_limit",
+          active: 1,
+          reserved: 0,
+          max: 1,
+          backgroundLimit: 1,
+          queuePosition: null,
+          occupants: [],
+          largestConsumer: null,
+        });
+      }),
+    ).rejects.toBeInstanceOf(RuntimeStartCapacityError);
+    expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")).toMatchObject({
+      status: "failed",
+      lastError: "RUNTIME_START_CAPACITY",
+    });
+    resetFailedDecisionDeliveries(decision.id);
+    await admitDecisionAnswer(name, published[0]!, async () => {});
+    expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");
+  });
+
+  it("republishes a capacity-refused answer within the transport dedup window and keeps uncertain publication idempotent", async () => {
+    const origin = await thread();
+    const { decision } = await askDecision(origin, { key: "transport-retry", ask: "Question" });
+    await answerDecision(decision.id, "Outcome");
+    const seen = new Set<string>();
+    const deliveries: RuntimeLaunchPrompt[] = [];
+    const messageIds: string[] = [];
+    let losePublishReceipt = false;
+    const transport: DecisionDeliveryDeps = {
+      ...deps([]),
+      publishPrompt: async (_name, payload, options) => {
+        const id = options!.messageId!;
+        messageIds.push(id);
+        if (!seen.has(id)) {
+          seen.add(id);
+          deliveries.push(payload as unknown as RuntimeLaunchPrompt);
+        }
+        if (losePublishReceipt) throw new Error("lost publication acknowledgement");
+      },
+    };
+    await reconcileDecisionDeliveries(transport, decision.id);
+    const name = getSession(origin.sessionKey!)!.name!;
+    await expect(
+      admitDecisionAnswer(name, deliveries[0]!, async () => {
+        throw new RuntimeStartCapacityError({
+          lane: "background",
+          reason: "concurrency_limit",
+          active: 1,
+          reserved: 0,
+          max: 1,
+          backgroundLimit: 1,
+          queuePosition: null,
+          occupants: [],
+          largestConsumer: null,
+        });
+      }),
+    ).rejects.toBeInstanceOf(RuntimeStartCapacityError);
+    resetFailedDecisionDeliveries(decision.id);
+    losePublishReceipt = true;
+    closeSessionStore();
+    closeRouterDb();
+    await reconcileDecisionDeliveries(transport, decision.id);
+    expect(deliveries).toHaveLength(2);
+    expect(messageIds[1]).not.toBe(messageIds[0]);
+    resetFailedDecisionDeliveries(decision.id);
+    losePublishReceipt = false;
+    closeSessionStore();
+    closeRouterDb();
+    await reconcileDecisionDeliveries(transport, decision.id);
+    expect(messageIds[2]).toBe(messageIds[1]);
+    expect(deliveries).toHaveLength(2);
+    expect(deliveries[1]).toEqual(deliveries[0]);
+    let executions = 0;
+    await admitDecisionAnswer(name, deliveries[1]!, async () => {
+      executions++;
+    });
+    await admitDecisionAnswer(name, deliveries[0]!, async () => {
+      executions++;
+    });
+    expect(executions).toBe(1);
     expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");
   });
 

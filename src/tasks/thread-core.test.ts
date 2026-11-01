@@ -16,6 +16,8 @@ import {
 import { migrateTaskThreads } from "./thread-state.js";
 import { setTaskSessionPromptPublisherForTests } from "./session-publisher.js";
 import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
+import { RuntimeStartCapacityError } from "../runtime/start-admission.js";
+import { listLocalInboxItems } from "../inbox/local-db.js";
 
 const actualNats = { ...(await import("../nats.js")) };
 mock.module("../nats.js", () => ({
@@ -25,6 +27,7 @@ mock.module("../nats.js", () => ({
 }));
 const slackLifecycle = await import("../channels/slack/thread-lifecycle.js");
 const { createTask, dispatchTask, completeTask, recoverActiveTasksAfterRestart } = await import("./service.js");
+const { RuntimePromptSubscription } = await import("../runtime/prompt-subscription.js");
 import { logger } from "../utils/logger.js";
 logger.setLevel("error");
 let stateDir: string;
@@ -208,6 +211,60 @@ describe("channel-independent task threads", () => {
       calls++;
     });
     expect(calls).toBe(1);
+  });
+
+  it("retains a capacity-refused task across restart and admits only its explicit transport resumption", async () => {
+    const { prompt, assignment, task } = fixture();
+    let saturated = true;
+    const handle = mock(async (_name: string, accepted: RuntimeLaunchPrompt) => {
+      expect(accepted).toEqual(prompt);
+      if (saturated)
+        throw new RuntimeStartCapacityError({
+          lane: "background",
+          reason: "concurrency_limit",
+          active: 1,
+          reserved: 0,
+          max: 1,
+          backgroundLimit: 1,
+          queuePosition: null,
+          occupants: [],
+          largestConsumer: null,
+        });
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => true,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      markConsumerReady: () => {},
+      handlePrompt: handle,
+      startCapacityRetryDelaysMs: [1, 5],
+    });
+    const message = {
+      info: { stream: "SESSION_PROMPTS", streamSequence: 1, timestampNanos: 1 },
+      subject: "ravi.session.offline-work.prompt",
+      ack: mock(() => {}),
+      nak: mock(() => {}),
+    };
+    const dispatch = (envelope: typeof message) =>
+      (subscription as any).dispatchPrompt("offline-work", prompt, envelope);
+    await dispatch(message);
+    expect(handle).toHaveBeenCalledTimes(3);
+    expect(message.ack).toHaveBeenCalledTimes(1);
+    expect(execution(assignment.id)).toEqual({ execution_status: "refused" });
+    expect(listLocalInboxItems()).toHaveLength(1);
+    closeSessionStore();
+    closeRouterDb();
+    expect((await recoverActiveTasksAfterRestart()).recoveredTaskIds).not.toContain(task.id);
+    expect(await publishTaskDispatch(task, assignment, "automatic retry")).toBe(false);
+    expect(published).toHaveLength(0);
+    saturated = false;
+    await dispatch(message);
+    expect(handle).toHaveBeenCalledTimes(3);
+    await dispatch({ ...message, info: { ...message.info, streamSequence: 2 } });
+    expect(handle).toHaveBeenCalledTimes(4);
+    expect(execution(assignment.id)).toEqual({ execution_status: "admitted" });
+    await dispatch({ ...message, info: { ...message.info, streamSequence: 3 } });
+    expect(handle).toHaveBeenCalledTimes(4);
   });
 
   it("holds ambiguous admission as uncertain and never retries the task", async () => {

@@ -1,4 +1,9 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { closeRouterDb } from "../router/router-db.js";
+import { createIsolatedRaviState, cleanupIsolatedRaviState } from "../test/ravi-state.js";
+import { listLocalInboxItems } from "../inbox/local-db.js";
+import * as admissionInbox from "./start-admission-inbox.js";
+import { RuntimeStartCapacityError } from "./start-admission.js";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 
 const consumeCalls: Array<Record<string, unknown>> = [];
 const ensureInfrastructureMock = mock(async () => {});
@@ -8,6 +13,7 @@ let running = false;
 let consumedMessages: FakePromptMessage[] = [];
 
 interface FakePromptMessage {
+  info?: { stream: string; streamSequence: number; redeliveryCount: number };
   data: Uint8Array;
   subject: string;
   ack: ReturnType<typeof mock>;
@@ -78,7 +84,12 @@ afterAll(() => {
   mock.restore();
 });
 
-beforeEach(() => {
+let stateDir: string;
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+});
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-prompt-subscription-");
   decisionAdmission = async () => false;
   taskAdmission = async () => false;
   running = true;
@@ -91,6 +102,72 @@ beforeEach(() => {
 });
 
 describe("RuntimePromptSubscription", () => {
+  it.each([false, true])("retries capacity only before handoff, exhausted=%s", async (exhausted) => {
+    const prompt = {
+      prompt: "original",
+      source: { channel: "slack", accountId: "slack", chatId: "C123", threadId: "123.456" },
+    };
+    const message = makePromptMessage("ravi.session.child.prompt", prompt);
+    const capacity = {
+      lane: "interactive" as const,
+      reason: "concurrency_limit" as const,
+      active: 1,
+      reserved: 0,
+      max: 1,
+      backgroundLimit: 0,
+      queuePosition: null,
+      occupants: [],
+      largestConsumer: null,
+    };
+    let attempts = 0;
+    const handlePrompt = mock(async (_name: string, received: unknown) => {
+      expect(received).toEqual(prompt);
+      attempts++;
+      if (exhausted || attempts < 3) throw new RuntimeStartCapacityError(capacity);
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => true,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      markConsumerReady: () => {},
+      handlePrompt,
+      startCapacityRetryDelaysMs: [1, 5],
+    });
+    await (subscription as any).dispatchPrompt("child", prompt, message);
+    expect(handlePrompt).toHaveBeenCalledTimes(3);
+    expect(message.ack).toHaveBeenCalledTimes(1);
+    const retries = emitCalls.filter((call) => call.payload.type === "dispatch.start_retry");
+    expect(retries.map((call) => call.payload.retryDelayMs)).toEqual([1, 5]);
+    expect(retries.every((call) => call.payload.providerHandoff === false)).toBe(true);
+    expect(listLocalInboxItems()).toHaveLength(exhausted ? 1 : 0);
+    const notice = emitCalls.find((call) => call.topic === "ravi.session.child.response");
+    if (exhausted) expect(notice?.payload.response).toContain("pedido foi salvo");
+    else expect(notice).toBeUndefined();
+    if (exhausted) {
+      await (subscription as any).dispatchPrompt("child", prompt, message);
+      expect(handlePrompt).toHaveBeenCalledTimes(3);
+    }
+  });
+
+  it("never locally retries an ambiguous provider failure after admission", async () => {
+    const message = makePromptMessage("ravi.session.child.prompt", { prompt: "original" });
+    const handlePrompt = mock(async () => {
+      throw new Error("provider transport failed after handoff");
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => true,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      markConsumerReady: () => {},
+      handlePrompt,
+      startCapacityRetryDelaysMs: [1, 5],
+    });
+    await (subscription as any).dispatchPrompt("child", { prompt: "original" }, message);
+    expect(handlePrompt).toHaveBeenCalledTimes(1);
+    expect(emitCalls.filter((call) => call.payload.type === "dispatch.start_retry")).toHaveLength(0);
+    expect(listLocalInboxItems()).toHaveLength(0);
+  });
+
   it("consumes task dispatch through assignment admission before any channel or runtime work", async () => {
     const message = makePromptMessage("ravi.session.worker.prompt", {
       prompt: "task",
@@ -161,6 +238,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: () => {},
       handlePrompt,
     });
@@ -176,6 +254,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt: mock(async () => {}),
     });
@@ -206,6 +285,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -231,6 +311,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -257,6 +338,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -289,6 +371,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -328,6 +411,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -358,6 +442,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       promptAckProgressIntervalMs: 5,
       markConsumerReady: mock(() => {}),
       handlePrompt: async () => accepted,
@@ -373,6 +458,205 @@ describe("RuntimePromptSubscription", () => {
     await new Promise((resolve) => setTimeout(resolve, 15));
 
     expect(message.working).toHaveBeenCalledTimes(renewalsAfterAck);
+  });
+
+  it("emits receipt immediately even behind a blocked dispatch in the same session", async () => {
+    const first = makePromptMessage("ravi.session.main.prompt", { prompt: "first" });
+    const second = makePromptMessage("ravi.session.main.prompt", {
+      prompt: "second",
+      source: { channel: "slack", accountId: "test", chatId: "C1", actorType: "contact" },
+    });
+    consumedMessages = [first, second];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handled: string[] = [];
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 12,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
+      markConsumerReady: () => {},
+      handlePrompt: async (_name, prompt) => {
+        handled.push(prompt.prompt);
+        if (prompt.prompt === "first") await gate;
+      },
+    });
+    subscription.subscribe();
+    try {
+      await waitUntil(() => emitCalls.filter((c) => c.payload.type === "prompt.received").length === 2);
+      expect(second.ack).not.toHaveBeenCalled();
+      expect(handled).not.toContain("second");
+      expect(emitCalls.find((c) => c.payload.prompt === "second")?.payload._source).toMatchObject({
+        channel: "slack",
+        chatId: "C1",
+        suppressPresence: false,
+      });
+    } finally {
+      release();
+      await waitUntil(() => second.ack.mock.calls.length === 1);
+    }
+  });
+
+  it("refuses immediately, clears presence, saves complete requests in inbox before ACK and deduplicates redelivery", async () => {
+    const source = { channel: "slack", accountId: "test", chatId: "C1", actorType: "contact" };
+    const first = makePromptMessage("ravi.session.main.prompt", { prompt: "first", source });
+    const second = makePromptMessage("ravi.session.main.prompt", { prompt: "second", source });
+    first.info = { stream: "SESSION_PROMPTS", streamSequence: 101, redeliveryCount: 1 };
+    second.info = { stream: "SESSION_PROMPTS", streamSequence: 102, redeliveryCount: 1 };
+    const other = makePromptMessage("ravi.session.other.prompt", { prompt: "other" });
+    consumedMessages = [first, second, other];
+    let saturated = true;
+    const executed: string[] = [];
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
+      markConsumerReady: () => {},
+      handlePrompt: async (name, prompt) => {
+        if (saturated && name === "main")
+          throw new RuntimeStartCapacityError({
+            lane: "interactive",
+            reason: "concurrency_limit",
+            active: 1,
+            reserved: 0,
+            max: 1,
+            backgroundLimit: 1,
+            queuePosition: null,
+            occupants: [{ sessionName: "private-session", agentId: "private-agent", state: "running", inactiveMs: 5 }],
+            largestConsumer: { agentId: "private-agent", slots: 1 },
+          });
+        executed.push(prompt.prompt);
+      },
+    });
+    subscription.subscribe();
+    await waitUntil(
+      () =>
+        first.ack.mock.calls.length === 1 && second.ack.mock.calls.length === 1 && other.ack.mock.calls.length === 1,
+    );
+    expect(first.nak).not.toHaveBeenCalled();
+    expect(second.nak).not.toHaveBeenCalled();
+    const items = listLocalInboxItems({ sourceDomain: "system" });
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => (item.metadata.prompt as { prompt: string }).prompt).sort()).toEqual([
+      "first",
+      "second",
+    ]);
+    expect(executed).toEqual(["other"]);
+    const mainEvents = emitCalls.filter((c) => c.topic === "ravi.session.main.runtime");
+    expect(mainEvents[0]?.payload.type).toBe("prompt.received");
+    expect(mainEvents.find((c) => c.payload.type === "dispatch.start_rejected")?.payload).toMatchObject({
+      receipt: expect.stringContaining("inbox_item"),
+      retainedBy: "inbox",
+      recovery: "operator_resume_saved_envelope",
+    });
+    const notice = emitCalls.find((c) => c.topic === "ravi.session.main.response");
+    expect(notice?.payload.response).toContain("inbox_item");
+    expect(notice?.payload.response).not.toContain("private-agent");
+    expect(notice?.payload.response).not.toContain("private-session");
+
+    // Reopen SQLite: the receipt cannot depend on process-local dedupe state.
+    closeRouterDb();
+    saturated = false;
+    first.info.redeliveryCount = second.info.redeliveryCount = 2;
+    consumedMessages = [second, first];
+    running = true;
+    subscription.subscribe();
+    await waitUntil(() => first.ack.mock.calls.length === 2 && second.ack.mock.calls.length === 2);
+    expect(executed).toEqual(["other"]);
+    expect(listLocalInboxItems({ sourceDomain: "system" })).toHaveLength(2);
+    expect(emitCalls.filter((c) => c.topic === "ravi.session.main.response")).toHaveLength(2);
+
+    // An explicit replay publishes a new transport delivery; old redeliveries stay fenced.
+    const resumed = makePromptMessage("ravi.session.main.prompt", { prompt: "first", source });
+    resumed.info = { stream: "SESSION_PROMPTS", streamSequence: 103, redeliveryCount: 1 };
+    consumedMessages = [resumed];
+    running = true;
+    subscription.subscribe();
+    await waitUntil(() => resumed.ack.mock.calls.length === 1);
+    expect(executed).toEqual(["other", "first"]);
+  });
+
+  it("leaves refused decision answers with their existing durable retry owner", async () => {
+    const message = makePromptMessage("ravi.session.main.prompt", {
+      prompt: "answer",
+      _decisionDeliveryId: "answer-1",
+    });
+    consumedMessages = [message];
+    decisionAdmission = async (_name, prompt, handle) => {
+      await handle(prompt);
+      return true;
+    };
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
+      markConsumerReady: () => {},
+      handlePrompt: async () => {
+        throw new RuntimeStartCapacityError({
+          lane: "background",
+          reason: "concurrency_limit",
+          active: 1,
+          reserved: 0,
+          max: 1,
+          backgroundLimit: 1,
+          queuePosition: null,
+          occupants: [],
+          largestConsumer: null,
+        });
+      },
+    });
+    subscription.subscribe();
+    await waitUntil(() => message.ack.mock.calls.length === 1);
+    expect(listLocalInboxItems()).toHaveLength(0);
+    expect(emitCalls.find((c) => c.payload.type === "dispatch.start_rejected")?.payload).toMatchObject({
+      retainedBy: "decision",
+      receipt: "answer-1",
+      retryDelayMs: 30_000,
+    });
+  });
+
+  it("does not ACK or claim preservation when the durable inbox write fails", async () => {
+    const message = makePromptMessage("ravi.session.main.prompt", { prompt: "must not disappear" });
+    consumedMessages = [message];
+    const persist = spyOn(admissionInbox, "preserveRejectedRuntimeStart").mockImplementation(() => {
+      throw new Error("SQLiteError: out of memory");
+    });
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 1,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
+      markConsumerReady: () => {},
+      handlePrompt: async () => {
+        throw new RuntimeStartCapacityError({
+          lane: "interactive",
+          reason: "concurrency_limit",
+          active: 1,
+          reserved: 0,
+          max: 1,
+          backgroundLimit: 1,
+          queuePosition: null,
+          occupants: [],
+          largestConsumer: null,
+        });
+      },
+    });
+    try {
+      subscription.subscribe();
+      await waitUntil(() => message.nak.mock.calls.length === 1);
+      expect(message.ack).not.toHaveBeenCalled();
+      expect(emitCalls.some((c) => c.topic.endsWith(".response"))).toBe(false);
+    } finally {
+      persist.mockRestore();
+    }
   });
 
   it("ACKs sqlite capacity errors and emits a runtime turn.failed without NAK", async () => {
@@ -391,6 +675,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });
@@ -426,6 +711,7 @@ describe("RuntimePromptSubscription", () => {
       canAcceptPrompt,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
       markConsumerReady: mock(() => {}),
       handlePrompt,
     });

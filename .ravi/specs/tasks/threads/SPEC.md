@@ -70,6 +70,13 @@ while active. This is not universal exactly-once side-effect delivery.
 Restart recovery MUST NOT republish admitted or uncertain assignments. Existing runtime
 pending-message recovery remains responsible for an already admitted execution.
 
+A typed capacity refusal before provider handoff MUST leave execution `refused`, not
+`uncertain`. Bounded pre-handoff retries stay inside the admission claim. Once exhausted,
+the prompt consumer retains the complete frozen envelope in its inbox before ACK. Restart
+recovery MUST NOT republish refused assignments; the inbox owns recovery. An explicit new
+transport delivery may re-admit that same refused assignment, while redelivery of the
+retained original stays fenced. Ambiguous failures continue to require reconciliation.
+
 ## Import and deferred work
 
 Backfill imports tasks with explicit `task.import` provenance, preserving task IDs, session

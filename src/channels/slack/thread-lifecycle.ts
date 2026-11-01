@@ -1,5 +1,5 @@
 import { listDecisions } from "../../decisions/store.js";
-import { getDb } from "../../router/router-db.js";
+import { dbGetContext, getDb } from "../../router/router-db.js";
 import { randomUUID } from "node:crypto";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
@@ -933,12 +933,24 @@ function buildSlackThreadInitialPrompt(
   },
 ): Record<string, unknown> {
   const providerThreadId = record.providerThreadId!;
+  const initiatingProvenance = record.initiatorContextId
+    ? dbGetContext(record.initiatorContextId)?.metadata?.turnProvenance
+    : undefined;
+  const interactiveStart = Boolean(
+    initiatingProvenance &&
+      typeof initiatingProvenance === "object" &&
+      "origin" in initiatingProvenance &&
+      initiatingProvenance.origin === "human",
+  );
   return {
     prompt: `[System] Execute: [from: ${record.parentSessionName}] ${record.initialPrompt}`,
     source: buildSlackThreadChildSource(record, materialized.threadCanonicalChatId, materialized.agentId),
     context: buildSlackThreadMessageContext(record, materialized.threadCanonicalChatId, materialized.agentId),
     deliveryBarrier: "after_tool",
     deliveryBarrierSource: "default",
+    // Use the persisted initiating turn, not its display name or Slack target.
+    // This changes admission only; the child remains an agent bootstrap turn.
+    _interactiveStart: interactiveStart,
     _slackThreadLifecycle: {
       eventType: "thread.created",
       source: "ravi.chat_action",

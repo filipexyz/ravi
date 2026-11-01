@@ -53,6 +53,7 @@ export interface PendingRuntimeSessionStart {
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
   resolve: () => void;
+  reject: (error: Error) => void;
   cancelled?: boolean;
   queuedAt?: number;
   lane?: RuntimeSessionStartLane;

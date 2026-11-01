@@ -346,7 +346,7 @@ export interface TaskRecord {
 
 export interface TaskAssignment {
   id: string;
-  executionStatus?: "legacy" | "pending" | "accepting" | "admitted" | "uncertain";
+  executionStatus?: "legacy" | "pending" | "accepting" | "refused" | "admitted" | "uncertain";
   taskId: string;
   agentId: string;
   sessionName: string;

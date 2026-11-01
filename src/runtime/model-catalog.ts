@@ -201,16 +201,25 @@ export function modelProviderMismatch(
   if (provider === "codex" && /^(?:codex|openai-codex)\//i.test(value)) {
     return `Model "${value}" must be a bare model id for the codex runtime; remove its provider prefix.`;
   }
+  // Pi chooses its own API provider for bare model ids. A Codex selector
+  // inherited from a parent must not silently run against that provider.
+  // Explicit Pi provider/model selectors remain valid (including custom models).
+  if (provider === "pi" && !value.includes("/") && FOREIGN_MODEL_PATTERN.test(value)) {
+    return `Model "${value}" requires an explicit runtime: Codex models use --provider codex; Pi models use a provider/model selector.`;
+  }
+  if (provider === "codex" && /^(grok|gemini|llama|mistral|deepseek|[^/]+\/)/i.test(value)) {
+    return `Model "${value}" does not belong to the codex runtime. Pass --provider for that model.`;
+  }
+  if (provider === "grok" && (value.includes("/") || (FOREIGN_MODEL_PATTERN.test(value) && !/^grok/i.test(value)))) {
+    return `Model "${value}" does not belong to the grok runtime. Pass --provider for that model.`;
+  }
   if (provider === "pi" && !CLAUDE_MODEL_ALIASES.has(value.toLowerCase())) return null;
   if (provider === "claude") {
-    if (isClaudeModelAlias(value) || !FOREIGN_MODEL_PATTERN.test(value)) return null;
+    if (isClaudeModelAlias(value) || (!value.includes("/") && !FOREIGN_MODEL_PATTERN.test(value))) return null;
     return `Model "${value}" does not belong to the claude runtime. Pass --provider for that model, or choose a Claude model.`;
   }
   if (isClaudeModelAlias(value)) {
     return `Model "${value}" is a Claude alias and ${provider} cannot run it. Pass --provider claude, or choose a ${provider} model.`;
-  }
-  if (provider === "codex" && /^(deepseek|gemini|grok|llama|mistral)(?:[-/_.]|$)/i.test(value)) {
-    return `Model "${value}" does not belong to the codex runtime. Pass --provider for that model.`;
   }
   return null;
 }

@@ -103,6 +103,9 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
   `https://app.slack.com` links always open the browser. It MUST be sourced
   at the channel root, never inside the thread.
 
+- A programmatic thread requested by a human turn MUST use interactive admission via `_interactiveStart`. This fact MUST come from the persisted initiating context's canonical turn provenance, never its requester display name. Cron, observer and agent turns MUST retain background admission; bootstrap actor authority and turn origin MUST remain unchanged.
+- `sessions create-thread --provider <provider> --model <model>` MUST validate the effective pair before creating lifecycle or outbound records. Known incompatible models MUST fail with `THREAD_MODEL_PROVIDER_MISMATCH` and an explicit provider hint. Bare Codex model selectors on Pi MUST be refused; explicit Pi `provider/model` selectors remain available.
+
 ## Route Semantics
 
 `route.session` means "root/base session" for Slack channel roots.
@@ -128,7 +131,7 @@ channel-root parent.
 ## Session Actions
 
 ```bash
-ravi sessions create-thread "<initial message>" [--model <model>]
+ravi sessions create-thread "<initial message>" [--provider <provider>] [--model <model>]
 ravi sessions close-thread [--return "<result>"]
 ravi sessions report "<progress>"
 ravi sessions threads [--all] [--json]

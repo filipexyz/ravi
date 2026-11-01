@@ -42,6 +42,10 @@ export function migrateDecisions(db: Database): void {
         UNIQUE(decision_id,kind,revision)
       );
     `);
+    const columns = db.query("PRAGMA table_info(decision_deliveries)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "transport_message_id")) {
+      db.exec("ALTER TABLE decision_deliveries ADD COLUMN transport_message_id TEXT");
+    }
     const legacy = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='task_decisions'").get();
     if (!legacy) return;
     // Strict insert: an unexpected collision rolls the entire migration back.

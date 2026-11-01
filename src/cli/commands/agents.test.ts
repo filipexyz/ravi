@@ -646,7 +646,7 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("rematerializes no-override sessions whose last-used provider drifted", async () => {
-    currentAgent = { id: "ravi-console", cwd: "/tmp/ravi-console", provider: "codex", model: "gpt-5.5" };
+    currentAgent = { id: "ravi-console", cwd: "/tmp/ravi-console", provider: "codex" };
     sessionsByAgent = [
       {
         sessionKey: "agent:ravi-console:wa",
@@ -703,6 +703,9 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("lists provider overrides with reasons and leaves them in place", async () => {
+    if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
+    // Exercise provider reconciliation without a provider-specific agent model.
+    currentAgent.model = undefined;
     sessionsByAgent = [
       {
         sessionKey: "agent:dev:pinned",
@@ -734,6 +737,9 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("clears overrides with --force and rematerializes those sessions", async () => {
+    if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
+    // Exercise provider reconciliation without a provider-specific agent model.
+    currentAgent.model = undefined;
     sessionsByAgent = [
       {
         sessionKey: "agent:dev:pinned",
@@ -779,6 +785,9 @@ describe("AgentsCommands set session override reporting", () => {
   });
 
   it("prints rematerialized drift and remaining overrides on a human provider set", async () => {
+    if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
+    // Exercise provider reconciliation without a provider-specific agent model.
+    currentAgent.model = undefined;
     sessionsByAgent = [
       {
         sessionKey: "agent:dev:wa",

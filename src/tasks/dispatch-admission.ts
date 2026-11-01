@@ -1,6 +1,7 @@
 import { getDb } from "../router/router-db.js";
 import { resolveSession } from "../router/sessions.js";
 import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
+import { RuntimeStartCapacityError } from "../runtime/start-admission.js";
 import { prepareThreadHandoff, markThreadHandoffDelivered } from "../threads/service.js";
 import { dbGetTask } from "./task-db.js";
 import { publishTaskSessionPrompt } from "./session-publisher.js";
@@ -124,7 +125,7 @@ export async function admitTaskDispatch(
       )
         throw new Error("Task dispatch envelope differs");
       if (task.status === "done" || task.status === "failed" || row.status === "superseded") return null;
-      if (row.execution_status !== "pending") return null;
+      if (row.execution_status !== "pending" && row.execution_status !== "refused") return null;
       const session = resolveSession(sessionName);
       if (session?.agentId !== row.agent_id) throw new Error("Task dispatch target differs");
       const handoff = getDb()
@@ -146,8 +147,8 @@ export async function admitTaskDispatch(
       .run(Date.now(), id);
   } catch (error) {
     getDb()
-      .query("UPDATE task_assignments SET execution_status='uncertain' WHERE id=? AND execution_status='accepting'")
-      .run(id);
+      .query("UPDATE task_assignments SET execution_status=? WHERE id=? AND execution_status='accepting'")
+      .run(error instanceof RuntimeStartCapacityError ? "refused" : "uncertain", id);
     throw error;
   }
   return true;
