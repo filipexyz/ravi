@@ -45,6 +45,7 @@ import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import { reportRuntimePromptIntakeFailure } from "./intake-failure.js";
 import { isSessionRelayTurn } from "./turn-origin.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -523,6 +524,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       type: "turn.failed",
       ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
       provider: runtimeProviderId,
+      _turnProvenance: classifyTurnProvenance({ prompt }),
       error: errorMessage,
       recoverable: false,
       ...(resolvedSource ? { _source: resolvedSource } : {}),

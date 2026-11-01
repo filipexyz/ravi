@@ -18455,8 +18455,21 @@ export type RuntimeCredentialsStatusInput = {
 
 /** Return shape for `runtime.credentials.status`. */
 export type RuntimeCredentialsStatusReturn = {
-  credential: Record<string, unknown>;
-  health: (Record<string, unknown>) | null;
+  credential?: Record<string, unknown>;
+  credentials?: Array<Record<string, unknown>>;
+  health?: (Record<string, unknown>) | null;
+  pagination?: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  providerHealth?: Array<Record<string, unknown>>;
+  total?: number;
   [k: string]: unknown;
 };
 

@@ -286,6 +286,7 @@ export class RuntimePromptSubscription {
           .emit(`ravi.session.${sessionName}.runtime`, {
             type: "turn.failed",
             error: SQLITE_CAPACITY_USER_MESSAGE,
+            _turnProvenance: classifyTurnProvenance({ prompt }),
             recoverable: false,
             sessionName,
             timestamp: new Date().toISOString(),

@@ -5,6 +5,7 @@ import { getSessionByName, type AgentConfig, type SessionEntry } from "../router
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
 import { applyProviderModelRule } from "./model-catalog.js";
+import { validateRuntimeModelSelector } from "./model-validation.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
@@ -435,6 +436,10 @@ async function buildRuntimeStartRequestInternal(
   const toolEffectFence = resolveRuntimeToolEffectFence(runtimeProviderId, runtimeCapabilities.tools.permissionMode);
   streamingSession.toolEffectFence = toolEffectFence;
   const preflightModel = options.modelBrokerPlanClaim?.plan.lease.model ?? model;
+  if (!options.modelBrokerPlanClaim) {
+    const validation = validateRuntimeModelSelector(runtimeProviderId, preflightModel);
+    if (!validation.ok) throw new Error(validation.error ?? "Invalid runtime model configuration");
+  }
 
   const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
     dbSessionKey,

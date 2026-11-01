@@ -22282,15 +22282,23 @@ class RuntimeCredentialsSelectReturn {
 RuntimeCredentialsSelectReturn runtimeCredentialsSelectReturnFromJson(Object? json) => RuntimeCredentialsSelectReturn.fromJsonValue(json);
 
 class RuntimeCredentialsStatusReturn {
-  const RuntimeCredentialsStatusReturn({required this.credential, required this.health});
+  const RuntimeCredentialsStatusReturn({this.credential, this.credentials, this.health, this.pagination, this.providerHealth, this.total});
 
-  final Map<String, RaviJson> credential;
-  final RaviJson health;
+  final Map<String, RaviJson>? credential;
+  final List<Map<String, RaviJson>>? credentials;
+  final RaviJson? health;
+  final RaviJson? pagination;
+  final List<Map<String, RaviJson>>? providerHealth;
+  final double? total;
 
   factory RuntimeCredentialsStatusReturn.fromJson(Map<String, Object?> json) {
     return RuntimeCredentialsStatusReturn(
-      credential: raviJsonAsRaviJsonMap(json["credential"]),
-      health: RaviJson.from(json["health"]),
+      credential: json["credential"] == null ? null : raviJsonAsRaviJsonMap(json["credential"]),
+      credentials: json["credentials"] == null ? null : raviJsonAsList(json["credentials"], raviJsonAsRaviJsonMap),
+      health: json["health"] == null ? null : RaviJson.from(json["health"]),
+      pagination: json["pagination"] == null ? null : RaviJson.from(json["pagination"]),
+      providerHealth: json["providerHealth"] == null ? null : raviJsonAsList(json["providerHealth"], raviJsonAsRaviJsonMap),
+      total: json["total"] == null ? null : raviJsonAsDouble(json["total"]),
     );
   }
 

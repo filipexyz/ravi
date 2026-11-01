@@ -83,6 +83,7 @@ export const SLACK_THREAD_ERROR_CODES = [
   "THREAD_PARENT_MISSING",
   "THREAD_PARENT_RETURN_PENDING",
   "THREAD_DECISIONS_PENDING",
+  "THREAD_MODEL_INVALID",
 ] as const;
 export type SlackThreadErrorCode = (typeof SLACK_THREAD_ERROR_CODES)[number];
 
@@ -320,6 +321,18 @@ export async function closeSlackThread(
   dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<CloseSlackThreadResult> {
   const existing = ensureSlackThreadLifecycleForSession(session);
+  return closeSlackThreadRecord(existing, returnResult, dependencies);
+}
+
+/** Close the durable work/card even when its runtime session was pruned. */
+export async function closeSlackThreadRecord(
+  existing: SlackThreadLifecycleRecord,
+  returnResult?: string,
+  dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
+): Promise<CloseSlackThreadResult> {
+  if (!existing.childSessionKey) {
+    throw slackThreadError("THREAD_NOT_STARTED", "The Slack thread has not started yet.");
+  }
   if (existing.parentReturnRequested && existing.parentNotifiedAt === undefined) {
     let delivered = false;
     try {
@@ -341,7 +354,8 @@ export async function closeSlackThread(
     }
   }
   const closed = closeSlackThreadLifecycle({
-    childSessionKey: session.sessionKey,
+    childSessionKey: existing.childSessionKey,
+    requestId: existing.requestId,
     returnResult,
     closeContextId: getContext({ localOnly: true })?.contextId,
   });

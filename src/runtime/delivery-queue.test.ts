@@ -4,6 +4,7 @@ import {
   createQueuedRuntimeUserMessage,
   createRuntimeMessageGenerator,
   getDeliverableRuntimeMessages,
+  pickRuntimeTurnAuthorityEnvelope,
   prepareRuntimeInterruptSuccessor,
   shouldInterruptRuntimeForIncoming,
 } from "./delivery-queue.js";
@@ -50,6 +51,22 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
 }
 
 describe("runtime delivery queue", () => {
+  it("keeps admitted cron runs separate and preserves their identity in continuations", () => {
+    const first = createQueuedRuntimeUserMessage({ prompt: "first", _cron: true, _jobId: "job", _cronRunId: "run-1" });
+    const second = createQueuedRuntimeUserMessage({
+      prompt: "second",
+      _cron: true,
+      _jobId: "job",
+      _cronRunId: "run-2",
+    });
+    const session = makeStreamingSession({ pendingMessages: [first, second] });
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([first]);
+    expect(pickRuntimeTurnAuthorityEnvelope(first.launchPrompt)).toMatchObject({
+      _cron: true,
+      _jobId: "job",
+      _cronRunId: "run-1",
+    });
+  });
   it("distinguishes host write-ahead from Codex and Pi asynchronous tool observation", () => {
     expect(resolveRuntimeToolEffectFence("claude", "ravi-host")).toBe("host_write_ahead");
     expect(resolveRuntimeToolEffectFence("grok", "ravi-host")).toBe("host_write_ahead");

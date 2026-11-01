@@ -97144,6 +97144,14 @@ class RaviSchemas {
       "properties": {},
       "type": "object"
     },
+    "credentials": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
     "health": {
       "anyOf": [
         {
@@ -97155,12 +97163,69 @@ class RaviSchemas {
           "type": "null"
         }
       ]
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "providerHealth": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
     }
   },
-  "required": [
-    "credential",
-    "health"
-  ],
   "type": "object"
 }
 ''';

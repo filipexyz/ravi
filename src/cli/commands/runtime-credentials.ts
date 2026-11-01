@@ -10,6 +10,7 @@ import {
   runtimeCredentialSelectReturnSchema,
   runtimeCredentialsListReturnSchema,
   runtimeCredentialStatusReturnSchema,
+  runtimeCredentialsStatusReturnSchema,
 } from "./operational-return-schemas.js";
 import {
   createRuntimeCredential,
@@ -392,7 +393,7 @@ export class RuntimeCredentialsCommands {
 
   @Command({ name: "status", description: "Show credential health and provider health" })
   @CommandAccess({ kind: "read", resource: "runtime.credentials", action: "status", risk: "low" })
-  @Returns(runtimeCredentialStatusReturnSchema)
+  @Returns(runtimeCredentialsStatusReturnSchema)
   status(
     @Arg("id", { required: false, description: "Credential id" }) id?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,

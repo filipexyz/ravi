@@ -494,8 +494,8 @@ function sessionsRuntimeCatalogCopy(
   op: string,
   code: string,
 ): { message: string; suggestedAction: string } | undefined {
+  if (op.startsWith("sessions ") && code === "SESSION_NOT_FOUND") return RUNTIME_SESSION_NOT_FOUND_COPY;
   if (!op.startsWith(SESSIONS_RUNTIME_OP_PREFIX)) return undefined;
-  if (code === "SESSION_NOT_FOUND") return RUNTIME_SESSION_NOT_FOUND_COPY;
   return runtimeControlCatalogCopy(code);
 }
 
@@ -505,9 +505,19 @@ function sessionsRuntimeCatalogCopy(
  * tasks/service.ts). The relay renders local copy for them instead of the
  * daemon's free text, which names sessions and threads.
  */
-const SESSIONS_THREAD_OPS = new Set(["sessions report", "sessions close-thread", "sessions thread-send"]);
+const SESSIONS_THREAD_OPS = new Set([
+  "sessions create-thread",
+  "sessions report",
+  "sessions close-thread",
+  "sessions thread-send",
+]);
 const TASK_DISPATCH_OPS = new Set(["tasks dispatch"]);
 const THREAD_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedAction: string }>> = {
+  THREAD_MODEL_INVALID: {
+    message: "Thread was not created: the requested model is invalid or incompatible with its runtime provider.",
+    suggestedAction:
+      "Pass a compatible --provider and --model together (for example --provider codex --model gpt-6-astra).",
+  },
   THREAD_NOT_THREAD_CHILD: {
     message: "This command is available only inside a Slack thread child session.",
     suggestedAction: "Run it from the Slack thread's own session, or pass --session <thread session>",
