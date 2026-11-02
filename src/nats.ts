@@ -8,6 +8,7 @@
  */
 
 import { connect, type NatsConnection, StringCodec } from "nats";
+import { redactNatsUrl } from "./security/nats-exposure.js";
 import { logger } from "./utils/logger.js";
 
 const log = logger.child("nats");
@@ -67,10 +68,7 @@ export async function connectNats(
   }
 }
 
-/** NATS URLs can carry `user:password@` or a token; logs keep only the host. */
-export function redactNatsUrl(url: string): string {
-  return url.replace(/\/\/[^@/,\s]+@/g, "//[redacted]@");
-}
+export { redactNatsUrl };
 
 /** Whether NATS was explicitly connected (daemon) vs lazy (CLI) */
 export function isExplicitConnect(): boolean {
