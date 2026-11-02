@@ -108139,6 +108139,9 @@ class RaviSchemas {
           ],
           "type": "object"
         },
+        "pendingAnswerCount": {
+          "type": "number"
+        },
         "requestId": {
           "type": "string"
         },
@@ -108301,6 +108304,9 @@ class RaviSchemas {
             }
           ]
         },
+        "uncertainAnswerCount": {
+          "type": "number"
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -108314,6 +108320,8 @@ class RaviSchemas {
         "childSessionName",
         "childSessionMissing",
         "openDecisionCount",
+        "pendingAnswerCount",
+        "uncertainAnswerCount",
         "slackThreadTs",
         "link",
         "runtime",
@@ -108445,6 +108453,9 @@ class RaviSchemas {
               "pending"
             ],
             "type": "object"
+          },
+          "pendingAnswerCount": {
+            "type": "number"
           },
           "requestId": {
             "type": "string"
@@ -108608,6 +108619,9 @@ class RaviSchemas {
               }
             ]
           },
+          "uncertainAnswerCount": {
+            "type": "number"
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -108621,6 +108635,8 @@ class RaviSchemas {
           "childSessionName",
           "childSessionMissing",
           "openDecisionCount",
+          "pendingAnswerCount",
+          "uncertainAnswerCount",
           "slackThreadTs",
           "link",
           "runtime",

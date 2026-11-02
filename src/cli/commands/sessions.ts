@@ -437,6 +437,8 @@ const slackThreadSummarySchema = z
     childSessionName: z.string().nullable(),
     childSessionMissing: z.boolean(),
     openDecisionCount: z.number(),
+    pendingAnswerCount: z.number(),
+    uncertainAnswerCount: z.number(),
     slackThreadTs: z.string().nullable(),
     link: z.string().nullable(),
     runtime: z
@@ -6865,11 +6867,17 @@ export class SessionCommands {
         const pending = thread.parentReturn.pending ? " (return pending)" : "";
         const missing = thread.childSessionMissing ? " (session missing)" : "";
         const decisions = thread.openDecisionCount ? ` (${thread.openDecisionCount} decisions pending)` : "";
+        const answers = thread.pendingAnswerCount
+          ? ` (${thread.pendingAnswerCount} ${thread.pendingAnswerCount === 1 ? "resposta" : "respostas"} aguardando admissão)`
+          : "";
+        const uncertain = thread.uncertainAnswerCount
+          ? ` (${thread.uncertainAnswerCount} ${thread.uncertainAnswerCount === 1 ? "entrega incerta" : "entregas incertas"})`
+          : "";
         const runtime = [thread.runtime.provider, thread.runtime.model, thread.runtime.effort]
           .filter((value): value is string => Boolean(value))
           .join(" · ");
         console.log(
-          `  [${thread.status}] ${name}${title}${pending}${missing}${decisions}${runtime ? ` (${runtime})` : ""}`,
+          `  [${thread.status}] ${name}${title}${pending}${missing}${decisions}${answers}${uncertain}${runtime ? ` (${runtime})` : ""}`,
         );
       }
     }

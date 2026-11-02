@@ -79,6 +79,8 @@ const fakeSlackThreadSummary = {
   childSessionName: "dev-slack-t-1713000000000100",
   childSessionMissing: false,
   openDecisionCount: 0,
+  pendingAnswerCount: 0,
+  uncertainAnswerCount: 0,
   slackThreadTs: "1713000000.000100",
   link: null,
   runtime: {
@@ -653,6 +655,9 @@ beforeEach(() => {
   closedSlackThreads.length = 0;
   reportedSlackThreads.length = 0;
   sentSlackThreadMessages.length = 0;
+  fakeSlackThreadSummary.openDecisionCount = 0;
+  fakeSlackThreadSummary.pendingAnswerCount = 0;
+  fakeSlackThreadSummary.uncertainAnswerCount = 0;
   threadIdentityAssessment = { kind: "none" };
   displayNameUpdates = [];
   deletedSessionKeys = [];
@@ -2406,6 +2411,41 @@ describe("SessionCommands attach hints", () => {
     await expect(new SessionCommands().threadSend("vanished", "Hello", undefined, true)).rejects.toMatchObject({
       code: "THREAD_SESSION_MISSING",
     });
+  });
+
+  it.each([0, 1, 2])("renders %i pending answers in human and JSON thread listings", (count) => {
+    const rootKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: rootKey, sessionName: "dev-slack" };
+    fakeSlackThreadSummary.openDecisionCount = 1;
+    fakeSlackThreadSummary.pendingAnswerCount = count;
+    fakeSlackThreadSummary.uncertainAnswerCount = count;
+    const commands = new SessionCommands();
+    const human = captureLogs(() => commands.threads());
+    expect(human).toContain("(1 decisions pending)");
+    if (count) {
+      expect(human).toContain(`(${count} ${count === 1 ? "resposta" : "respostas"} aguardando admissão)`);
+      expect(human).toContain(`(${count} ${count === 1 ? "entrega incerta" : "entregas incertas"})`);
+    } else {
+      expect(human).not.toContain("aguardando admissão");
+      expect(human).not.toContain("incerta");
+    }
+    const json = JSON.parse(captureLogs(() => commands.threads(undefined, undefined, true)));
+    expect(json.threads[0]).toMatchObject({
+      openDecisionCount: 1,
+      pendingAnswerCount: count,
+      uncertainAnswerCount: count,
+    });
+  });
+
+  it("shows admission wait without an uncertainty cue while delivery is not uncertain", () => {
+    resolvedSession = { sessionKey: "parent", name: "parent", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: "parent", sessionName: "parent" };
+    fakeSlackThreadSummary.pendingAnswerCount = 1;
+    const human = captureLogs(() => new SessionCommands().threads());
+    expect(human).toContain("(1 resposta aguardando admissão)");
+    expect(human).not.toContain("decisions pending");
+    expect(human).not.toContain("incerta");
   });
 
   it("lists the threads a Slack session owns and sends one new instructions", async () => {

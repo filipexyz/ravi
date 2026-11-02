@@ -20844,6 +20844,7 @@ export type SessionsThreadSendReturn = {
       pending: boolean;
       requested: boolean;
     };
+    pendingAnswerCount: number;
     requestId: string;
     runtime: {
       effort: string;
@@ -20865,6 +20866,7 @@ export type SessionsThreadSendReturn = {
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
     title: string | null;
+    uncertainAnswerCount: number;
     updatedAt: number;
   };
 };
@@ -20894,6 +20896,7 @@ export type SessionsThreadsReturn = {
       pending: boolean;
       requested: boolean;
     };
+    pendingAnswerCount: number;
     requestId: string;
     runtime: {
       effort: string;
@@ -20915,6 +20918,7 @@ export type SessionsThreadsReturn = {
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
     title: string | null;
+    uncertainAnswerCount: number;
     updatedAt: number;
   }>;
 };
