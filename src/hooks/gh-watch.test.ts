@@ -477,6 +477,7 @@ describe("gh watch follow", () => {
         return trigger();
       },
       emitTriggersRefresh: async () => {},
+      updateTrigger: () => true,
     };
 
     const first = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: { sessionName: "dev" } }, deps);
@@ -505,6 +506,7 @@ describe("gh watch follow", () => {
           updates.push({ id, patch: patch as Record<string, unknown> });
           return true;
         },
+        emitTriggersRefresh: async () => {},
       },
     );
 

@@ -18,6 +18,9 @@ applies_to:
   - src/watch
   - src/inbox
   - src/triggers
+  - src/hooks/gh-watch.ts
+  - src/hooks/gh-pr-publish.ts
+  - scripts/publish-pr.ts
 owners:
   - ravi-dev
 status: draft
@@ -166,6 +169,27 @@ When a trigger is created from a watch command in a chat context, Ravi SHOULD:
 
 The trigger system remains the execution mechanism. Watch does not invent a
 second trigger runner.
+
+## PR Publication Follow
+
+- The sanctioned Git Data API publication path MUST finish with
+  `bun scripts/publish-pr.ts`, from the publishing Ravi session. A raw
+  `POST /pulls` alone is not a completed publication.
+- Publication MUST verify the remote branch against the local commit SHA,
+  create the PR ready for review, and call the same `ensureGhWatchFollow`
+  primitive used by `observeGhBashCommand`. It MUST NOT create another follow
+  registry or depend on a shell observer recognizing nested API commands.
+- Success MUST require a local CI event producer and a trigger filtered by
+  repository and PR, bound to the publishing session, with a runner refresh.
+- Re-running publication MUST reconcile the selected existing PR: create a
+  missing follow, repair stale topic/filter/destination, restore its producer,
+  and promote a legacy draft. It MUST reuse the existing PR and trigger ids.
+  It MUST NOT enumerate or promote unrelated drafts.
+- Partial failures MUST report incomplete publication and permit the same
+  command to recover it. Runner refresh MUST be retried even if a previous
+  attempt already persisted the desired trigger.
+- Publishing ready MUST NOT weaken independent current-head approval or any
+  other Review Gate requirement. Ready means eligible for review, not approved.
 
 ## Acceptance Criteria
 
