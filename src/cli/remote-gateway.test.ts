@@ -1970,6 +1970,21 @@ describe("thread command remote relay", () => {
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
   });
 
+  it("relays active trigger IDs and repoint guidance without forwarding arbitrary remote text", async () => {
+    const remote = await relay(
+      "sessions close-thread",
+      new ContractError("sessions close-thread", "THREAD_TRIGGERS_PENDING", "PRIVATE_TEXT", 1, {
+        triggerIds: ["abcd1234", "bad;command", "1234abcd"],
+        suggestedAction: "PRIVATE_ACTION",
+      }),
+    );
+    expect(remote?.code).toBe("THREAD_TRIGGERS_PENDING");
+    expect(remote?.details.triggerIds).toEqual(["abcd1234", "1234abcd"]);
+    expect(remote?.details.suggestedAction).toContain("abcd1234, 1234abcd");
+    expect(remote?.details.suggestedAction).toContain("ravi triggers set <id> replySession <parent-session>");
+    expect(JSON.stringify(remote?.envelope())).not.toMatch(/PRIVATE|bad;command/);
+  });
+
   it("relays decision errors and pending closure with safe local guidance", async () => {
     for (const [op, code, copy] of [
       ["decisions answer", "DECISION_SELF_ANSWER", "waiting worker"],

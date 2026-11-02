@@ -86,3 +86,10 @@ Trigger filters are the deterministic pre-agent predicate for event payloads. Th
 - `ravi triggers list --json` reports that trigger with `runtimeState: "invalid_filter"`, `filterStatus: "invalid"`, a `filterError`, and a top-level `warnings[]` entry with the fix command; text mode shows `invalid_filter` in the `STATE` column.
 - `ravi triggers enable <id>` on a trigger with an invalid filter succeeds but warns that the trigger will not fire.
 - Skills and docs point users to the catalog instead of asking them to infer subjects by symmetry.
+
+## PR follow recipient lifetime
+
+- A generated `gh-follow` MUST use the durable parent session when its publisher is a Slack thread. It MUST capture the channel root as reply-source fallback, never the child's thread.
+- Pending PR-number resolution MUST recover the parent from the durable lifecycle even after the child closes or is pruned. Missing/ambiguous thread lineage or a missing parent MUST fail closed; failed pending registrations MUST stay queued for retry within their existing expiry.
+- Reuse and maintenance MUST reconcile existing generated follows using the saved owner's lifecycle, not a new observer's session. A repaired row MUST refresh the runner. Unrelated trigger recipients MUST NOT be changed.
+- API publication MUST explicitly ensure a follow: Git Data API alone does not pass through the `gh pr create` observer. Completion MUST verify ready state, active follow and durable reply owner.

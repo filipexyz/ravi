@@ -62,6 +62,7 @@ const agentChatActionCounts = new Map<string, { ownMessageCount: number; ownText
 let stickerCatalog: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
+let closeThreadError: Error | null = null;
 const closedSlackThreads: Array<{ session: Record<string, unknown>; returnResult?: string }> = [];
 const reportedSlackThreads: Array<{ session: Record<string, unknown>; message: string }> = [];
 const sentSlackThreadMessages: Array<{
@@ -288,6 +289,7 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
     parentReturnDelivered: false,
   }),
   closeSlackThread: async (session: Record<string, unknown>, returnResult?: string) => {
+    if (closeThreadError) throw closeThreadError;
     closedSlackThreads.push({ session, ...(returnResult ? { returnResult } : {}) });
     return {
       changed: true,
@@ -653,6 +655,7 @@ beforeEach(() => {
   publishedOutboundJobs.length = 0;
   createdSlackThreadLifecycles.length = 0;
   closedSlackThreads.length = 0;
+  closeThreadError = null;
   reportedSlackThreads.length = 0;
   sentSlackThreadMessages.length = 0;
   fakeSlackThreadSummary.openDecisionCount = 0;
@@ -2298,6 +2301,21 @@ describe("SessionCommands attach hints", () => {
       true,
     );
     expect(createdSlackThreadLifecycles[0]).toMatchObject({ providerOverride: "codex", modelOverride: "gpt-6-astra" });
+  });
+
+  it("preserves the active-trigger close refusal and actionable IDs", async () => {
+    const key = "parent:thread:1.2";
+    resolvedSession = { sessionKey: key, name: "child", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: key, sessionName: "child" };
+    closeThreadError = new ContractError(
+      "sessions close-thread",
+      "THREAD_TRIGGERS_PENDING",
+      "Thread still receives active triggers: abcd1234.",
+      1,
+      { triggerIds: ["abcd1234"], suggestedAction: "ravi triggers set abcd1234 replySession parent" },
+    );
+    await expect(new SessionCommands().closeThread("done", undefined, true)).rejects.toBe(closeThreadError);
+    expect(closedSlackThreads).toHaveLength(0);
   });
 
   it("closes the current Slack child and opts into a parent return only with --return", async () => {
@@ -4281,8 +4299,6 @@ describe("extractNormalizedTranscriptMessages", () => {
     ]);
   });
 });
-
-const { ContractError } = await import("../agent-contract.js");
 
 describe("sessions agent-first contract", () => {
   function configureMessageActionFixture(channel: "slack" | "whatsapp") {

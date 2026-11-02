@@ -20,6 +20,8 @@ import { execFileSync } from "node:child_process";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { dbGetAgent } from "../router/router-db.js";
 import type { ContextSource } from "../router/router-db.js";
+import { getSession, resolveSession } from "../router/sessions.js";
+import { findSlackThreadLifecycleByChildRef } from "../channels/slack/thread-lifecycle-store.js";
 import {
   dbCreateTrigger,
   dbListTriggers,
@@ -601,6 +603,55 @@ export function buildGhFollowTriggerInput(
   };
 }
 
+/** The lifecycle survives pruning, including delayed `gh pr create` resolution. */
+export function resolveGhFollowContext(context: GhWatchFollowContext): GhWatchFollowContext {
+  const ref = context.sessionKey ?? context.sessionName;
+  if (!ref) return context;
+  const thread = findSlackThreadLifecycleByChildRef(ref);
+  if (!thread) {
+    const session = resolveSession(ref);
+    if (
+      ref.includes(":thread:") ||
+      session?.sessionKey.includes(":thread:") ||
+      (!session && context.source?.channel === "slack" && context.source.threadId)
+    ) {
+      throw new Error("Cannot register PR follow: thread lifecycle is missing or ambiguous.");
+    }
+    return context;
+  }
+  const parent = getSession(thread.parentSessionKey);
+  if (!parent || parent.sessionKey.includes(":thread:")) {
+    throw new Error("Cannot register PR follow: durable parent session is missing.");
+  }
+  return {
+    ...context,
+    agentId: parent.agentId,
+    accountId: thread.accountId,
+    sessionName: parent.name ?? parent.sessionKey,
+    sessionKey: parent.sessionKey,
+    // Never keep the child's frozen replySource as fallback after handoff.
+    source: { channel: "slack", accountId: thread.accountId, chatId: thread.platformChatId },
+  };
+}
+
+/** Reconcile the saved owner's lifecycle; a new observer must not steal a follow. */
+export function ghFollowReplyTargetPatch(trigger: Trigger): Partial<TriggerInput> {
+  if (!trigger.replySession) return {};
+  const resolved = resolveGhFollowContext({
+    agentId: trigger.agentId,
+    accountId: trigger.accountId,
+    sessionName: trigger.replySession,
+    source: trigger.replySource,
+  });
+  if (resolved.sessionName === trigger.replySession) return {};
+  return {
+    agentId: resolved.agentId,
+    accountId: resolved.accountId,
+    replySession: resolved.sessionName,
+    replySource: resolved.source,
+  };
+}
+
 export function findExistingGhFollowTrigger(repo: string, prNumber: number, triggers: Trigger[]): Trigger | undefined {
   const name = ghFollowTriggerName(repo, prNumber);
   return triggers.find((trigger) => trigger.name === name);
@@ -825,7 +876,9 @@ export async function ensureGhWatchFollow(
     return result;
   }
 
-  const resolved: GhWatchFollowContext = { ...context };
+  // A follow created from inside a thread belongs to the durable parent, so closing
+  // the child cannot take down the only recipient of the PR's lifecycle and CI.
+  const resolved: GhWatchFollowContext = resolveGhFollowContext({ ...context });
   if (!resolved.accountId && resolved.agentId) {
     try {
       const { getAccountForAgent } = await import("../router/router-db.js");
@@ -847,6 +900,9 @@ export async function ensureGhWatchFollow(
     if (existing.message !== desired.message) patch.message = desired.message;
     if (existing.filter !== desired.filter) patch.filter = desired.filter;
     if (existing.topic !== desired.topic) patch.topic = desired.topic;
+    // A closed owner thread must not take the follow down with it: always repoint
+    // the saved owner to its live lifecycle target, even when only observing.
+    Object.assign(patch, ghFollowReplyTargetPatch(existing));
     // Explicit publication owns this follow; automatic observation does not
     // steal another session's subscription or re-enable a deliberately paused one.
     if (input.reconcile) {
@@ -862,6 +918,7 @@ export async function ensureGhWatchFollow(
         const updated = (deps.updateTrigger ?? dbUpdateTrigger)(existing.id, patch);
         if (!updated) throw new Error(`Could not reconcile gh follow ${existing.id}`);
         result.triggerRepaired = true;
+        await (deps.emitTriggersRefresh ?? defaultEmitTriggersRefresh)();
       } catch (error) {
         if (input.reconcile) throw error;
         log.warn("Could not refresh gh follow instructions", { triggerId: existing.id, error });

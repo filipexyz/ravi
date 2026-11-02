@@ -38,3 +38,7 @@ useful result.
 
 
 Decisions belong to their own ledger; a thread can wait for an explicit answer without a task. Open questions prevent closure so a completed card never silently hides pending work.
+
+## Durable follow ownership
+
+A trigger can outlive the thread that created it. Checking only pending decisions allowed a completed thread to remain the recipient of future CI notifications. The close guard enforces handoff under the same database write lock as the lifecycle transition. Automatic close-time retargeting was rejected: an arbitrary trigger's recipient is intentional policy, not something close may silently rewrite. Generated PR follows instead select the durable parent at creation and reconcile their existing rows.

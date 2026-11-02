@@ -85,7 +85,7 @@ mock.module("../../omni/session-stream.js", () => ({
 }));
 
 const { TriggerRunner } = await import("../runner.js");
-const { dbCreateTrigger, dbGetTrigger } = await import("../triggers-db.js");
+const { dbCreateTrigger, dbGetTrigger, dbUpdateTrigger } = await import("../triggers-db.js");
 
 let stateDir: string | null = null;
 let markerDir: string | null = null;
@@ -140,6 +140,59 @@ afterEach(async () => {
   markerDir = null;
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
+});
+
+describe("thread follow handoff delivery", () => {
+  it("refuses close, then delivers a CI event to the parent after repoint and close", async () => {
+    const { registerInboundSlackThread, closeSlackThreadLifecycle, getSlackThreadLifecycle } = await import(
+      "../../channels/slack/thread-lifecycle-store.js"
+    );
+    const parent = getOrCreateSession("parent-key", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "parent",
+    });
+    const child = getOrCreateSession("parent-key:thread:1.2", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "child",
+    });
+    updateSessionSource(parent.sessionKey, { channel: "slack", accountId: "slack-account", chatId: "C123" });
+    const record = registerInboundSlackThread({
+      parentSessionKey: parent.sessionKey,
+      parentSessionName: parent.name!,
+      childSessionKey: child.sessionKey,
+      childSessionName: child.name!,
+      accountId: "slack-account",
+      instanceId: "slack-instance",
+      platformChatId: "C123",
+      threadCanonicalChatId: "thread-chat",
+      providerThreadId: "1.2",
+    });
+    const topic = "ravi.watch.github.ci";
+    const trigger = dbCreateTrigger({
+      name: "gh-follow:o/r#7",
+      topic,
+      message: "CI completed",
+      session: "main",
+      agentId: "trigger-test-agent",
+      replySession: "child",
+      cooldownMs: 0,
+    });
+    await startRunner();
+    expect(() => closeSlackThreadLifecycle({ childSessionKey: child.sessionKey })).toThrow(
+      "Thread still receives active triggers",
+    );
+    dbUpdateTrigger(trigger.id, { replySession: "parent" });
+    // The CLI emits this after triggers set; exercise the live reload too.
+    emit("ravi.triggers.refresh", {});
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    closeSlackThreadLifecycle({ childSessionKey: child.sessionKey });
+    emit(topic, { payload: { repository: "o/r", number: 7, conclusion: "success" } });
+    await waitFor(() => publishCalls.length === 1);
+    expect(publishCalls[0]).toMatchObject({
+      sessionName: "parent",
+      payload: { source: { channel: "slack", accountId: "slack-account", chatId: "C123" }, _triggerId: trigger.id },
+    });
+    expect(dbGetTrigger(trigger.id)?.fireCount).toBe(1);
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+  });
 });
 
 describe("TriggerRunner named sessions", () => {

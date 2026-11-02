@@ -77,3 +77,6 @@ A trigger with a valid filter, or with no filter, MUST behave exactly as before.
 - `ravi triggers topics --json` MUST include `schema.fields[]` for built-in trigger-ready subjects.
 - `ravi triggers add --topic "custom.external.>"` without `--message` MUST fail, because custom subjects have no catalog template.
 - `ravi triggers add --topic "whatsapp.*.reaction"` MUST succeed with a warning pointing at `ravi.inbound.reaction`.
+
+- [ ] `bun test src/hooks/gh-watch.test.ts src/hooks/gh-follow-sweep.test.ts` covers parent registration, delayed registration after prune, existing-owner reconciliation, maintenance refresh and missing-parent refusal.
+- [ ] `bun test src/triggers/__tests__/runner-named-session.test.ts` confirms actual prompt publication to the repointed parent after close, with correct Slack source and fire count.

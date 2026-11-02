@@ -2897,7 +2897,7 @@ function assertSlackThreadChildSession(action: "thread.report" | "thread.close",
 
 /** Keep a typed thread refusal; anything else stays a plain command failure. */
 function rethrowSlackThreadError(error: unknown): never {
-  if (error instanceof CliExpectedError) throw error;
+  if (error instanceof CliExpectedError || error instanceof ContractError) throw error;
   fail(error instanceof Error ? error.message : String(error));
 }
 
