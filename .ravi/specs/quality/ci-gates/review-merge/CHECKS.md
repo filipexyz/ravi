@@ -8,21 +8,100 @@ feature: review-merge
 status: active
 ---
 
-# Verification
+## 1. Historical snapshot checks
 
-Run `bun test src/ci/review-gate.test.ts` (no install, full build or full suite needed).
+- The 31/10 snapshot has its timestamp, old ruleset id and old settings, and is
+  labelled historical in every companion. It does not say those controls
+  remain required today.
+- The old JSON is identified as a historical design, not an installation
+  recipe for the independently governed replacement.
+- The earlier reviewer-off exception remains audit history; removal of its
+  ruleset is not reported as successful restoration or closure.
 
-- Open thread + valid independent head approval: blocks.
-- Resolved thread + valid independent head approval: passes.
-- HTTP 403/429/500, network/GraphQL errors, malformed or incomplete response: blocks.
-- New head with approval on old head: blocks. Previously resolved threads do not rescue it.
-- Outdated unresolved thread, later changes requested, author/bot/reader approval: blocks.
-- Missing/blank/self/stale/automatic finding dismissal: blocks.
-- Justified independent dismissal: audit includes actor, reason, SHA and source URL; unresolved thread still blocks.
-- New independent head approval explicitly renewing a justified dismissal: passes once resolved.
-- Pagination to page two finds a blocker; malformed cursor or truncated count blocks.
-- Head or evidence changes between reads: blocks.
+## 2. Current-policy checks
 
-On the PR, inspect `Review Gate Tests` and the live `Review Gate` logs. A live gate failure for missing independent approval is expected with one collaborator; never manufacture an approval to make the check green. Fixture success is not a live second-identity approval.
+Read the rulesets list and effective `dev` rules via GET as documented in the
+runbook; save the observation time. At the 01/11 snapshot, rechecked on 02/11:
 
-Inspect the active ruleset by REST readback and `gh api repos/filipexyz/ravi/rules/branches/dev`. Both named checks must appear with integration 15368; required approvals, stale dismissal, last-push approval and conversation resolution must be enabled. Verify `bypass_actors` is empty. Check PR `reviewDecision`/`mergeStateStatus`; do not attempt a merge as a test.
+- `rulesets/26284495` returns 404.
+- Remaining ids are `18436907`, `18533706`, `18436625`.
+- The only required status check is `Quality Gate`; `Review Gate` and
+  `Review Gate Tests` are not required.
+- Copilot/code-quality rules are not described as independent-review or
+  conversation-resolution requirements.
+- The document explicitly states that a PR with a reproduced credential
+  finding can merge if the actual required checks/platform conditions permit
+  it; an advisory review failure is not a server-enforced blocker.
+- For stacked PRs, inspect their own base branch. #783 targets
+  `fix/review-merge-gate`, whose effective rules returned `[]` on 02/11.
+
+Do not merge a vulnerable PR to prove this gap. Readback plus the absence of
+an enforcing review condition is the evidence, with no claim that another
+unrelated quality test could never fail.
+
+### Implemented approval-path checks
+
+Compare `RUNBOOK.md` with `independentWriter` and `evaluate` in
+`src/ci/review-gate.cjs` and the events in `.github/workflows/review-gate.yml`:
+
+- Only a native `APPROVED` review by a non-author `User` with
+  `write`/`maintain`/`admin` permission on the exact current head supplies
+  approval. Latest substantive state wins; pending/comment-only reviews do
+  not count. This is not a last-pusher or independent key-custody check.
+- The documented API request creates that same native review, under the
+  reviewer's identity; a review comment, session envelope, artifact or
+  commit/tree verified through Git Data API is not an approval input.
+- Draft status, any latest `CHANGES_REQUESTED`, unresolved threads (even outdated),
+  invalid dismissal/renewal or unavailable evidence remain blockers even
+  with approval. Same-tree new commits still need a new review.
+- The draft #783 is not promised a passing gate after documentation edits.
+  The signed-App proposal is explicitly unimplemented, and the workflow has
+  no dedicated thread-resolution trigger to guarantee a fresh result.
+
+## 3. Recommended replacement acceptance — not implemented by this PR
+
+Independent review of the replacement MUST verify:
+
+- An author's envelope, including a renamed/nested/second session or agent
+  label under the same authority principal, cannot create an approval.
+- The author/PR execution cannot read the signing key, mutate trusted keys,
+  change verifier policy, access the App's check credential, or cause a signing
+  service to attest an author-supplied verdict as an independent reviewer.
+- Missing, forged, tampered, untrusted, expired or replayed attestation fails.
+- Wrong repo/PR/head/base/tree/contract/policy/evidence binding fails; a new
+  candidate invalidates the old approval.
+- An unresolved reproduced credential finding fails even when Quality Gate
+  passes. Only independently verified resolution or a technically justified,
+  independently signed disposition can change that finding's outcome.
+- Signer/verifier/reviewer unavailability and incomplete API/evidence reads
+  fail closed, rather than accepting cached or missing approval.
+- A same-named Actions check or wrong App publisher cannot satisfy the
+  required gate. The trusted App's own advisory-only success is insufficient.
+- Effective branch rules require the gate with its dedicated App identity;
+  author-accessible bypasses are absent and Quality Gate remains required.
+- Candidate and finding/review-state changes invalidate stale results,
+  including changes not covered by existing Actions event subscriptions.
+- A correctly bound, valid independent signature with resolved findings and
+  passing verification is eligible; a check success is not a claim that a
+  merge has been executed.
+
+Record independent verification of custody, effective policy and these cases,
+plus authorized actor and activation time, before claiming enforcement. A unit
+test pass, a signed envelope from the author's key or an App installation alone
+cannot close the gap. Settings and permissions remain outside this PR's scope.
+
+## Existing evaluator regression tests — advisory only
+
+For changes to the evaluator, run its focused test with an isolated
+`RAVI_STATE_DIR` from process startup; no install, full build or full suite is
+needed:
+
+```bash
+bun test src/ci/review-gate.test.ts
+```
+
+Existing cases cover open/resolved/outdated threads, native independent human
+approval, current/stale heads, API/pagination failures and finding dismissal
+or renewal provenance. They test the evaluator's result, not the live branch
+policy, key custody, signed attestation or dedicated-App enforcement. This
+spec-only correction does not implement those recommended mechanisms.
