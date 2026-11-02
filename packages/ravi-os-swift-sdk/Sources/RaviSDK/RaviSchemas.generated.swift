@@ -68499,6 +68499,130 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let DesktopPermissionsCatalogInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let DesktopPermissionsCatalogReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actions": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "capability": {
+              "additionalProperties": false,
+              "properties": {
+                "objectId": {
+                  "type": "string"
+                },
+                "objectType": {
+                  "type": "string"
+                },
+                "permission": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "permission",
+                "objectType",
+                "objectId"
+              ],
+              "type": "object"
+            },
+            "category": {
+              "enum": [
+                "tool",
+                "command",
+                "executable",
+                "protocol"
+              ],
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "prerequisites": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "objectId": {
+                    "type": "string"
+                  },
+                  "objectType": {
+                    "type": "string"
+                  },
+                  "permission": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "permission",
+                  "objectType",
+                  "objectId"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "label",
+            "category",
+            "description",
+            "capability",
+            "prerequisites"
+          ],
+          "type": "object"
+        },
+        "maxItems": 3000,
+        "type": "array"
+      },
+      "agents": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "maxItems": 1000,
+        "type": "array"
+      },
+      "digest": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "digest",
+      "agents",
+      "actions",
+      "truncated"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let DesktopSessionConfigureInputSchema = #"""
   {
     "additionalProperties": false,

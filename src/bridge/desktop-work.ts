@@ -48,13 +48,20 @@ export function desktopWork(conversationId: string, limit = 100, offset = 0): z.
     id: row.id,
     title: row.text.slice(0, 120),
     state:
-      row.status === "completed"
-        ? "done"
+      row.status === "awaiting_approval"
+        ? "needs_you"
         : ["running", "queued", "pending"].includes(row.status)
           ? "working"
-          : "needs_you",
+          : "done",
     statusLabel: row.status === "pending" ? "Queued" : row.status.replaceAll("_", " "),
-    summary: row.agent_id ?? c.agent_id,
+    summary:
+      row.status === "failed"
+        ? "Request failed. Check the conversation before trying again."
+        : row.status === "interrupted_unknown"
+          ? "Outcome unconfirmed. Check the conversation before trying again."
+          : row.status === "authorization_expired" || row.status === "expired"
+            ? "Access expired. Check your access before sending a new request."
+            : (row.agent_id ?? c.agent_id),
     updatedAt: new Date(row.created_at).toISOString(),
     ...(row.parent_turn_id ? { parentId: row.parent_turn_id } : {}),
   }));

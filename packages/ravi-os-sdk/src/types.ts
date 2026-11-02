@@ -12903,6 +12903,34 @@ export type DesktopLoopsSetEnabledReturn = Array<{
   schedule: string;
 }>;
 
+/** Input shape for `desktop.permissions.catalog`. */
+export type DesktopPermissionsCatalogInput = Record<string, never>;
+
+/** Return shape for `desktop.permissions.catalog`. */
+export type DesktopPermissionsCatalogReturn = {
+  actions: Array<{
+    capability: {
+      objectId: string;
+      objectType: string;
+      permission: string;
+    };
+    category: "tool" | "command" | "executable" | "protocol";
+    description: string;
+    label: string;
+    prerequisites: Array<{
+      objectId: string;
+      objectType: string;
+      permission: string;
+    }>;
+  }>;
+  agents: Array<{
+    id: string;
+    name: string;
+  }>;
+  digest: string;
+  truncated: boolean;
+};
+
 /** Input shape for `desktop.session.configure`. */
 export type DesktopSessionConfigureInput = {
   conversationId: string;

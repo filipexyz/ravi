@@ -163,6 +163,10 @@ execution storage remain, and ordinary local callers cannot obtain human authori
   additionally requires installation read. Loops/channels require installation
   read/manage and retain native ownership/readiness constraints. These controls
   confer no execution capability and cannot alter permission grants.
+- Desktop work MUST reserve `needs_you` for an actual pending approval. Completed,
+  cancelled, failed, expired and interrupted requests MUST leave the attention
+  queue and retain their outcome label in history. An unknown outcome MUST NOT
+  be presented as success or as a safe automatic retry.
 - Telemetry omits credentials, arbitrary paths, other users' processes and raw
   terminal/tool payloads. Channel connected state requires an observed runner
   response. Enabled configuration is not connection evidence. Loop status is
