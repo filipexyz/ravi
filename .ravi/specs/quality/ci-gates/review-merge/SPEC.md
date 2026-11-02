@@ -14,11 +14,9 @@ applies_to:
   - .github/review-gate-ruleset.json
 ---
 
-# Review Merge Gate
-
 This spec separates historical evidence, observed live enforcement and the
-recommended replacement. Frontmatter `status: active` makes the documentation
-normative; it does not mean that the recommended gate is deployed.
+recommended replacement. Frontmatter `status: active` and `normative: true`
+describe this documentation; they do not mean that the recommended gate is deployed.
 
 ## 1. Historical snapshot — 2026-10-31 only
 
@@ -41,7 +39,7 @@ The later removal below expands the enforcement gap; it does not close the
 exception. The checked-in `.github/review-gate-ruleset.json` represents the
 old design, not live state and not the recommended replacement to apply.
 
-## 2. Current configured policy — 2026-11-01 observation
+## 2. Configured policy — 2026-11-01, rechecked 2026-11-02
 
 Read-only API inspection at `2026-11-01T13:15:45Z`, followed by the direct
 historical-ruleset lookup in the same inspection, confirmed:
@@ -57,7 +55,12 @@ historical-ruleset lookup in the same inspection, confirmed:
   outputs, when produced, are advisory. No required review/last-push approval
   or conversation-resolution rule appears in this effective-rules readback.
 
-The existing evaluator may still reject missing independent human approval,
+The same read-only endpoints were rechecked on 2026-11-02 (inspection recorded
+at `2026-11-02T14:32:31Z`) with the same results. PR #783 targets
+`fix/review-merge-gate`, whose effective-rules endpoint returned `[]`; the
+`dev` snapshot MUST NOT be presented as that stacked branch's rules.
+
+The existing evaluator rejects missing independent native approval,
 open threads or API failures when it runs. An evaluator failure is not a
 repository merge veto unless its check is required. Conversely, its presence
 in this branch, an old ruleset JSON or a prior successful run proves no live
@@ -73,6 +76,40 @@ was performed during this inspection.
 The intended internal review procedure is not independently enforced tooling.
 This spec MUST NOT claim that a procedural instruction, attended merge,
 agent verdict or session envelope compensates for the missing repository gate.
+
+### Implemented approval contract — how the evaluator passes
+
+`src/ci/review-gate.cjs` (`independentWriter` and `evaluate`) accepts at least
+one native GitHub pull-request review meeting **all** of these conditions:
+
+- The reviewer is a GraphQL `User`, with a login different from the PR author
+  (case-insensitive), and permission `write`, `maintain` or `admin` according
+  to the collaborator-permission API. Bots and read-only users do not count.
+- That user's latest submitted review other than `COMMENTED` is `APPROVED`;
+  pending reviews are ignored. A later `CHANGES_REQUESTED` or `DISMISSED`
+  review supersedes their approval.
+- The review's `commit.oid` equals the **full current head SHA** being
+  evaluated. A new commit requires a new approval even if its tree is equal.
+
+This is account/permission independence from the **PR author**, not a check
+against the last pusher or proof of human identity, key custody or independent
+control of two accounts. The evaluator does not implement the signed
+head/base/tree attestation recommended below.
+
+Approval alone is insufficient: the PR must be open and non-draft, every
+review thread must be resolved (including outdated threads), and no reviewer's
+latest substantive review may remain `CHANGES_REQUESTED`. Manually dismissed
+findings need the independent, justified current-head dismissal or renewal
+described in `RUNBOOK.md`. API failures, incomplete/inconsistent evidence or a
+head change fail the run; before success, it rereads all review evidence.
+
+The supported approval path is that eligible reviewer submitting a native
+`APPROVE` review, through GitHub's UI or its pull-request reviews API, on the
+reviewed head. There is **no implemented alternative approval input** for a
+session envelope, review comment, artifact, signature or Git Data API
+publication with a verified tree. Git Data API publication is a sanctioned
+commit-publication procedure, not review approval. The replacement below
+remains a proposal. See `RUNBOOK.md` for the exact native API request.
 
 ## 3. Recommendation and exit criteria — not deployed
 

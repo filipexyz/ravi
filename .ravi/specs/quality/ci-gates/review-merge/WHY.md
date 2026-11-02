@@ -8,8 +8,6 @@ feature: review-merge
 status: active
 ---
 
-# Why this gate exists
-
 PRs #767 and #756 were reported merged with unresolved security findings and
 without independent approvals. Successful build checks do not establish that
 review findings were addressed. This rationale distinguishes evidence from
@@ -33,6 +31,8 @@ The independent reviewer rejected the previous version of this document
 because it continued to describe the old ruleset as operational. Fresh API
 readback confirms that the ruleset returns 404 and only `Quality Gate` is a
 required status check in `dev`. Review Gate results are advisory.
+The 02/11 recheck confirmed that snapshot; #783's actual stacked base
+`fix/review-merge-gate` returned no effective rules.
 
 The exposure is broader than the earlier zero-approval snapshot: a reproduced
 credential finding does not itself prevent merge. A failing advisory review
@@ -40,6 +40,15 @@ check or unresolved review cannot be represented as a server-enforced veto.
 The remaining quality/Copilot rules do not establish that every security
 finding is addressed. This exposure is reported explicitly, not silently
 accepted as permission to integrate unsafe work.
+
+The earlier text omitted how the still-running evaluator obtains approval.
+It requires another GitHub `User` with write-level permission to submit a
+native approved review on the exact head. It does not verify independent
+control of that account or accept a session/artifact as review evidence.
+Submitting that native review by API is supported; publishing a commit with
+verified tree/SHA through Git Data API is a different operation and never
+satisfies review. Keeping #783 draft also deliberately keeps its evaluator red.
+These implemented limits must stay distinct from the proposed remedy below.
 
 ## 3. Recommended remedy — independent authority
 

@@ -8,8 +8,6 @@ feature: review-merge
 status: active
 ---
 
-# Review gate verification
-
 ## 1. Historical snapshot checks
 
 - The 31/10 snapshot has its timestamp, old ruleset id and old settings, and is
@@ -23,7 +21,7 @@ status: active
 ## 2. Current-policy checks
 
 Read the rulesets list and effective `dev` rules via GET as documented in the
-runbook; save the observation time. At the 01/11 snapshot:
+runbook; save the observation time. At the 01/11 snapshot, rechecked on 02/11:
 
 - `rulesets/26284495` returns 404.
 - Remaining ids are `18436907`, `18533706`, `18436625`.
@@ -34,10 +32,31 @@ runbook; save the observation time. At the 01/11 snapshot:
 - The document explicitly states that a PR with a reproduced credential
   finding can merge if the actual required checks/platform conditions permit
   it; an advisory review failure is not a server-enforced blocker.
+- For stacked PRs, inspect their own base branch. #783 targets
+  `fix/review-merge-gate`, whose effective rules returned `[]` on 02/11.
 
 Do not merge a vulnerable PR to prove this gap. Readback plus the absence of
 an enforcing review condition is the evidence, with no claim that another
 unrelated quality test could never fail.
+
+### Implemented approval-path checks
+
+Compare `RUNBOOK.md` with `independentWriter` and `evaluate` in
+`src/ci/review-gate.cjs` and the events in `.github/workflows/review-gate.yml`:
+
+- Only a native `APPROVED` review by a non-author `User` with
+  `write`/`maintain`/`admin` permission on the exact current head supplies
+  approval. Latest substantive state wins; pending/comment-only reviews do
+  not count. This is not a last-pusher or independent key-custody check.
+- The documented API request creates that same native review, under the
+  reviewer's identity; a review comment, session envelope, artifact or
+  commit/tree verified through Git Data API is not an approval input.
+- Draft status, any latest `CHANGES_REQUESTED`, unresolved threads (even outdated),
+  invalid dismissal/renewal or unavailable evidence remain blockers even
+  with approval. Same-tree new commits still need a new review.
+- The draft #783 is not promised a passing gate after documentation edits.
+  The signed-App proposal is explicitly unimplemented, and the workflow has
+  no dedicated thread-resolution trigger to guarantee a fresh result.
 
 ## 3. Recommended replacement acceptance — not implemented by this PR
 
