@@ -174,6 +174,30 @@ test("conversation configuration and work remain subject-bound and cannot use re
   reader.grant.command = "desktop.work.list";
   reader.grant.access = { kind: "read", resource: "desktop.work", action: "list" };
   expect(withConsoleInvocation(reader, () => desktopWork(id))).toEqual([]);
+  const messageId = randomUUID(),
+    turnId = randomUUID();
+  store.db
+    .query("INSERT INTO messages VALUES (?,?,?,?,?,?)")
+    .run(messageId, id, "user", "Review the report", turnId, Date.now());
+  store.db.query("INSERT INTO turn_targets VALUES (?,?,?)").run(turnId, "desktop-config", messageId);
+  store.db
+    .query("INSERT INTO turns (id,conversation_id,status,lease_until,authority,created_at) VALUES (?,?,?,?,?,?)")
+    .run(turnId, id, "running", Date.now() + 30000, "{}", Date.now());
+  for (const [status, state] of [
+    ["running", "working"],
+    ["queued", "working"],
+    ["awaiting_approval", "needs_you"],
+    ["completed", "done"],
+    ["cancelled", "done"],
+    ["failed", "done"],
+    ["authorization_expired", "done"],
+    ["interrupted_unknown", "done"],
+  ]) {
+    store.db.query("UPDATE turns SET status=? WHERE id=?").run(status!, turnId);
+    const [work] = withConsoleInvocation(reader, () => desktopWork(id));
+    expect(work).toMatchObject({ id: turnId, state, statusLabel: status!.replaceAll("_", " ") });
+    if (status === "interrupted_unknown") expect(work!.summary).toContain("Outcome unconfirmed");
+  }
   reader.grant.sub = randomUUID();
   reader.service.acceptDelegation(reader.grant);
   expect(() => withConsoleInvocation(reader, () => desktopWork(id))).toThrow("NOT_FOUND_OR_DENIED");
