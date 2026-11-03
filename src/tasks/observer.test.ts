@@ -23,12 +23,6 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-mock.module("../omni/session-stream.js", () => ({
-  publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
-    publishCalls.push({ sessionName, payload });
-  }),
-}));
-
 const { createTask, dispatchTask, dbGetTask, dbListTaskEvents } = await import("./index.js");
 const { dbGetTaskObserverState, TASK_OBSERVER_MAX_CHECKLIST_ITEMS } = await import("./observer-contract.js");
 const {

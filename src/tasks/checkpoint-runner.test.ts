@@ -26,12 +26,6 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-mock.module("../omni/session-stream.js", () => ({
-  publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
-    publishCalls.push({ sessionName, payload });
-  }),
-}));
-
 const {
   TaskCheckpointRunner,
   listTaskCheckpointSweepTasks,
@@ -57,7 +51,7 @@ beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-checkpoint-test-");
   emittedEvents.length = 0;
   publishCalls.length = 0;
-  // Other suites in the same process mock the stream differently; record through the hook.
+  // Capture task publications without replacing the shared session-stream module.
   setTaskSessionPromptPublisherForTests(async (sessionName, payload) => {
     publishCalls.push({ sessionName, payload });
   });
