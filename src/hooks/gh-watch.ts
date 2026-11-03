@@ -17,6 +17,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import type { Database } from "bun:sqlite";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { dbGetAgent } from "../router/router-db.js";
 import type { ContextSource } from "../router/router-db.js";
@@ -94,11 +95,12 @@ export const GH_FOLLOW_COOLDOWN_MS = 30_000;
 
 /**
  * O follow precisa dos dois lados: o evento de ciclo de vida da PR e o resultado
- * de CI. `ravi.watch.github.*` cobre ambos (o filtro por repo+PR descarta o
+ * de CI. `ravi.watch.github.>` cobre ambos (o filtro por repo+PR descarta o
  * resto), enquanto um tópico só de `pull_request.*` deixaria "o CI quebrou" sem
  * caminho até a sessão.
  */
-export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.*";
+// NATS '*' consumes exactly one token; event types such as workflow_run.completed consume two.
+export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.>";
 
 export interface GhWatchIntent {
   scope: "pr" | "run" | "repo" | "api";
@@ -134,6 +136,8 @@ export interface GhWatchFollowResult {
 }
 
 export interface GhWatchFollowDeps {
+  /** Explicit publication only needs the local producer; do not introduce Console network work. */
+  localOnly?: boolean;
   listWatches?: typeof listWatchRecords;
   createWatch?: typeof createWatch;
   listTriggers?: () => Trigger[];
@@ -604,12 +608,16 @@ export function buildGhFollowTriggerInput(
 }
 
 /** The lifecycle survives pruning, including delayed `gh pr create` resolution. */
-export function resolveGhFollowContext(context: GhWatchFollowContext): GhWatchFollowContext {
+export function resolveGhFollowContext(context: GhWatchFollowContext, database?: Database): GhWatchFollowContext {
   const ref = context.sessionKey ?? context.sessionName;
   if (!ref) return context;
-  const thread = findSlackThreadLifecycleByChildRef(ref);
+  const thread = findSlackThreadLifecycleByChildRef(ref, database);
   if (!thread) {
-    const session = resolveSession(ref);
+    const session = database
+      ? (database
+          .query("SELECT session_key AS sessionKey FROM sessions WHERE session_key=? OR name=?")
+          .get(ref, ref) as { sessionKey: string } | null)
+      : resolveSession(ref);
     if (
       ref.includes(":thread:") ||
       session?.sessionKey.includes(":thread:") ||
@@ -619,7 +627,11 @@ export function resolveGhFollowContext(context: GhWatchFollowContext): GhWatchFo
     }
     return context;
   }
-  const parent = getSession(thread.parentSessionKey);
+  const parent = database
+    ? (database
+        .query("SELECT session_key AS sessionKey, name, agent_id AS agentId FROM sessions WHERE session_key=?")
+        .get(thread.parentSessionKey) as { sessionKey: string; name: string | null; agentId: string } | null)
+    : getSession(thread.parentSessionKey);
   if (!parent || parent.sessionKey.includes(":thread:")) {
     throw new Error("Cannot register PR follow: durable parent session is missing.");
   }
@@ -701,7 +713,7 @@ export function locallySupportedEventTypes(provider = "github"): string[] {
  */
 export async function ensureRepoWatch(
   repo: string,
-  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & {
+  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch" | "localOnly"> & {
     localEventTypes?: () => string[];
     removeWatch?: (id: string) => Promise<boolean>;
   } = {},
@@ -709,6 +721,7 @@ export async function ensureRepoWatch(
   const create = deps.createWatch ?? createWatch;
   const activeWatches = listActiveRepoWatches(repo, deps.listWatches ?? listWatchRecords);
   const { ciWatchId, ciWatchReused } = await reconcileLocalWatch(repo, activeWatches, deps);
+  if (deps.localOnly) return { watchId: ciWatchId, reused: ciWatchReused, ciWatchId, ciWatchReused };
   const anyWatch = activeWatches[0];
 
   if (anyWatch) return { watchId: anyWatch.id, reused: true, ciWatchId, ciWatchReused };

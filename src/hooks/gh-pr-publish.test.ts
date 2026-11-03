@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
+import {
+  publishGhPr,
+  verifyPublicationFollow,
+  type GhPrPublication,
+  type GhPublicationRequest,
+} from "./gh-pr-publish.js";
+import { registerInboundSlackThread, closeSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
 import { deleteSession, getOrCreateSession } from "../router/sessions.js";
+import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { publishGhPr, type GhPrPublication, type GhPublicationRequest } from "./gh-pr-publish.js";
 import { buildGhFollowTriggerInput, type GhWatchFollowDeps } from "./gh-watch.js";
 import { evaluateFilter } from "../triggers/filter.js";
 import type { Trigger } from "../triggers/types.js";
@@ -111,7 +117,22 @@ function fixture(options: { existing?: boolean; draft?: boolean; staleFollow?: b
       refreshes += 1;
     },
   };
-  return { calls, watches, triggers, deps: { request, follow }, refreshes: () => refreshes };
+  return {
+    calls,
+    watches,
+    triggers,
+    deps: {
+      request,
+      follow,
+      verifyFollow: (value: GhPrPublication, result: import("./gh-watch.js").GhWatchFollowResult, number: number) =>
+        verifyPublicationFollow(value, result, number, {
+          watch: (id) => watches.find((watch) => watch.id === id) ?? null,
+          trigger: (id) => triggers.find((trigger) => trigger.id === id) ?? null,
+          runtime: async () => {},
+        }),
+    },
+    refreshes: () => refreshes,
+  };
 }
 
 function makePr(draft = false) {
@@ -133,12 +154,14 @@ describe("Git Data API publication boundary", () => {
     expect(result).toMatchObject({ ready: true, reused: false, sha: input.sha });
     expect(f.calls.find((call) => call.method === "POST")?.body?.draft).toBe(false);
     expect(f.triggers).toHaveLength(1);
+    expect(f.watches).toHaveLength(1);
+    expect(f.watches[0]!.placement).toBe("local");
     expect(f.triggers[0]).toMatchObject({
       name: "gh-follow:o/r#9",
       replySession: "publishing-parent",
       agentId: "main",
       replySource: parentSource,
-      topic: "ravi.watch.github.*",
+      topic: "ravi.watch.github.>",
       enabled: true,
     });
     expect(
@@ -169,7 +192,7 @@ describe("Git Data API publication boundary", () => {
       enabled: true,
       replySession: "publishing-parent",
       replySource: parentSource,
-      topic: "ravi.watch.github.*",
+      topic: "ravi.watch.github.>",
     });
     expect(f.watches.some((watch) => watch.placement === "local")).toBe(true);
   });
@@ -257,6 +280,42 @@ describe("Git Data API publication boundary", () => {
     expect(f.triggers[0]).toMatchObject({ replySession: "publishing-parent", replySource: parentSource });
   });
 
+  it("revalidates original lineage after the child closes and is pruned during GitHub I/O", async () => {
+    const f = fixture();
+    const request = f.deps.request;
+    f.deps.request = (endpoint, method, body) => {
+      const result = request(endpoint, method, body);
+      if (endpoint.endsWith("/pulls") && method === "POST") {
+        closeSlackThreadLifecycle({ childSessionKey: childKey });
+        deleteSession(childKey);
+      }
+      return result;
+    };
+    expect((await publishGhPr(input, f.deps)).ready).toBe(true);
+    expect(f.triggers[0]).toMatchObject({ replySession: "publishing-parent", replySource: parentSource });
+  });
+
+  it.each(["before-follow", "verification"])(
+    "refuses lineage lost at %s instead of reporting success",
+    async (phase) => {
+      const f = fixture();
+      const request = f.deps.request;
+      f.deps.request = (endpoint, method, body) => {
+        const result = request(endpoint, method, body);
+        if (
+          (phase === "before-follow" && endpoint.endsWith("/pulls") && method === "POST") ||
+          (phase === "verification" && endpoint.endsWith("/pulls/9"))
+        ) {
+          getDb().query("DELETE FROM slack_thread_lifecycle WHERE child_session_key=?").run(childKey);
+        }
+        return result;
+      };
+      await expect(publishGhPr(input, f.deps)).rejects.toMatchObject({ code: "PUBLICATION_SESSION_REQUIRED" });
+      if (phase === "before-follow") expect(f.triggers).toHaveLength(0);
+      else expect(f.triggers[0]!.replySession).toBe("publishing-parent");
+    },
+  );
+
   it("refuses another repository or a moved PR head without registering or promoting it", async () => {
     for (const mismatch of ["repo", "sha"] as const) {
       const pr = makePr(true);
@@ -266,7 +325,9 @@ describe("Git Data API publication boundary", () => {
       const request = f.deps.request;
       f.deps.request = (endpoint, method, body) =>
         endpoint.includes("/pulls?") ? [pr] : request(endpoint, method, body);
-      await expect(publishGhPr(input, f.deps)).rejects.toThrow("PR does not match");
+      await expect(publishGhPr(input, f.deps)).rejects.toMatchObject({
+        code: mismatch === "repo" ? "PR_CONFLICT" : "PR_PUBLICATION_INCOMPLETE",
+      });
       expect(f.triggers).toHaveLength(0);
     }
   });

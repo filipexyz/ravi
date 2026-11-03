@@ -923,6 +923,25 @@ describe("remote gateway exit taxonomy", () => {
   it("keeps representative native dry-run plans actionable after remote projection", () => {
     const cases = [
       {
+        op: "pr publish",
+        plan: {
+          repo: "owner/repo",
+          base: "dev",
+          head: "fix/publish",
+          localSha: "a".repeat(40),
+          treeSha: "b".repeat(40),
+          remoteSha: null,
+          commitCount: 2,
+          objectCount: 6,
+          uploadBytes: 1024,
+          refAction: "create",
+          prAction: "create",
+          prNumber: null,
+          replySession: "publisher",
+          followAction: "reconcile",
+        },
+      },
+      {
         op: "agents delete",
         plan: { agentId: "main", cwdPresent: true, namePresent: false },
       },
@@ -990,6 +1009,41 @@ describe("remote gateway exit taxonomy", () => {
 
       expect(error?.envelope().error).toMatchObject({ dryRun: true, plan: testCase.plan });
     }
+  });
+
+  it("keeps publication recovery evidence through the gateway while stripping unrelated content", () => {
+    const partial = {
+      publicationId: `prpub_${"a".repeat(24)}`,
+      attemptId: "10000000-0000-4000-8000-000000000001",
+      phase: "follow",
+      repo: "owner/repo",
+      head: "fix/publish",
+      localSha: "a".repeat(40),
+      refPublished: true,
+      prNumber: 42,
+      uncertain: true,
+    };
+    const error = remoteGatewayErrorToContractError(
+      "pr publish",
+      result({
+        status: 500,
+        body: JSON.stringify({
+          success: false,
+          op: "pr publish",
+          exitCode: 1,
+          outcome: "failed",
+          error: {
+            code: "PR_PUBLICATION_INCOMPLETE",
+            message: "SECRET REMOTE TEXT",
+            retryable: true,
+            partial: { ...partial, body: "SECRET BODY" },
+            token: "SECRET TOKEN",
+          },
+        }),
+      }),
+    );
+    expect(error?.envelope().error).toMatchObject({ code: "PR_PUBLICATION_INCOMPLETE", partial });
+    expect(JSON.stringify(error?.envelope())).not.toContain("SECRET");
   });
 
   it.each([

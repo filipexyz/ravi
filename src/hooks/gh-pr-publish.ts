@@ -1,135 +1,182 @@
-import { execFileSync } from "node:child_process";
 import {
   ensureGhWatchFollow,
-  resolveGhFollowContext,
+  buildGhFollowTriggerInput,
   type GhWatchFollowContext,
   type GhWatchFollowDeps,
+  type GhWatchFollowResult,
 } from "./gh-watch.js";
+import {
+  githubClient,
+  findPublicationPr,
+  parseGithub,
+  pullSchema,
+  type GithubRequest,
+  type PullRequest,
+} from "../pr/github.js";
+import { prError, type PublicationPhase } from "../pr/contracts.js";
+import { requireFollowRuntime } from "../pr/follow-health.js";
+import { dbGetTrigger } from "../triggers/index.js";
+import { getWatch } from "../watch/watch-db.js";
+import { resolvePublicationFollowContext } from "../pr/context.js";
 
 export interface GhPrPublication {
   repo: string;
   head: string;
   base: string;
   sha: string;
-  title: string;
-  body: string;
+  title?: string;
+  body?: string;
   context: GhWatchFollowContext;
 }
-
-interface PullRequest {
-  number: number;
-  node_id: string;
-  html_url: string;
-  state: string;
-  draft: boolean;
-  head: { ref: string; sha: string; repo: { full_name: string } };
-  base: { ref: string; repo: { full_name: string } };
+export type GhPublicationRequest = GithubRequest;
+export const requestGhPublication = githubClient();
+export interface GhPrPublicationDeps {
+  request?: GithubRequest;
+  follow?: GhWatchFollowDeps;
+  beforeFollow?: () => void;
+  afterFollow?: () => void;
+  phase?: (phase: PublicationPhase) => void;
+  onPr?: (pr: PullRequest) => void;
+  verifyFollow?: (input: GhPrPublication, result: GhWatchFollowResult, prNumber: number) => Promise<void>;
 }
-
-export type GhPublicationRequest = (endpoint: string, method: string, body?: Record<string, unknown>) => unknown;
-
-/** Use stdin for JSON: PR text must never become shell code or argv. */
-export const requestGhPublication: GhPublicationRequest = (endpoint, method, body) => {
-  const args = ["api", endpoint, "--method", method];
-  if (body) args.push("--input", "-");
-  return JSON.parse(
-    execFileSync("gh", args, {
-      input: body ? JSON.stringify(body) : undefined,
-      encoding: "utf8",
-      timeout: 30_000,
-      stdio: ["pipe", "pipe", "pipe"],
-    }),
-  );
-};
 
 function assertPublishedHead(pr: PullRequest, input: GhPrPublication): void {
   if (
-    !Number.isSafeInteger(pr.number) ||
-    pr.number <= 0 ||
-    !pr.node_id ||
     pr.state !== "open" ||
-    typeof pr.draft !== "boolean" ||
-    pr.head?.sha !== input.sha ||
-    pr.head?.ref !== input.head ||
-    pr.head?.repo?.full_name !== input.repo ||
-    pr.base?.ref !== input.base ||
-    pr.base?.repo?.full_name !== input.repo ||
+    pr.head.sha !== input.sha ||
+    pr.head.ref !== input.head ||
+    pr.head.repo.full_name.toLowerCase() !== input.repo.toLowerCase() ||
+    pr.base.ref !== input.base ||
+    pr.base.repo.full_name.toLowerCase() !== input.repo.toLowerCase() ||
     pr.html_url !== `https://github.com/${input.repo}/pull/${pr.number}`
-  ) {
-    throw new Error("PR does not match the verified repository, branches and head SHA; publication incomplete");
-  }
+  )
+    throw prError(
+      "PR_PUBLICATION_INCOMPLETE",
+      "PR does not match the verified repository, branches and head SHA; publication incomplete",
+    );
 }
 
-/**
- * Final step of Git Data API publication. Re-running also repairs a PR created
- * by the old ad-hoc path: same PR, same follow registry, current publishing session.
- * A partial failure is an error, never a successful unobserved publication.
- */
-export async function publishGhPr(
+export async function verifyPublicationFollow(
   input: GhPrPublication,
-  deps: { request?: GhPublicationRequest; follow?: GhWatchFollowDeps } = {},
-) {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(input.repo) || !/^[a-f0-9]{40}$/.test(input.sha)) {
-    throw new Error("Expected owner/repo and a full verified commit SHA");
-  }
-  if (!input.head || !input.base || input.head === input.base || !input.title.trim() || !input.body.trim()) {
-    throw new Error("Publication requires distinct head/base branches, title and body");
-  }
-  if (!input.context.agentId || !(input.context.sessionName || input.context.sessionKey)) {
-    throw new Error("Publication requires the publishing Ravi agent and session");
-  }
-  // A thread's durable parent must already exist before publishing externally.
-  // Do not invent lineage from source metadata or create an unobserved PR when
-  // registration is known to be impossible. ensureGhWatchFollow resolves again
-  // after GitHub I/O, including when the child closed or was pruned meanwhile.
-  resolveGhFollowContext(input.context);
+  follow: GhWatchFollowResult,
+  prNumber: number,
+  deps: { watch?: typeof getWatch; trigger?: typeof dbGetTrigger; runtime?: typeof requireFollowRuntime } = {},
+): Promise<void> {
+  const watch = follow.ciWatchId ? (deps.watch ?? getWatch)(follow.ciWatchId) : null;
+  const trigger = follow.triggerId ? (deps.trigger ?? dbGetTrigger)(follow.triggerId) : null;
+  const desired = buildGhFollowTriggerInput(input.repo, prNumber, resolvePublicationFollowContext(input.context));
+  if (
+    !watch ||
+    watch.status !== "active" ||
+    watch.placement !== "local" ||
+    watch.provider !== "github" ||
+    watch.resourceRef !== input.repo ||
+    !watch.eventTypes.includes("workflow_run.completed") ||
+    !trigger?.enabled ||
+    ["topic", "filter", "agentId", "replySession", "replySource", "session", "accountId"].some(
+      (key) =>
+        JSON.stringify(trigger[key as keyof typeof trigger]) !== JSON.stringify(desired[key as keyof typeof desired]),
+    )
+  )
+    throw prError(
+      "PR_PUBLICATION_INCOMPLETE",
+      "PR exists but CI follow is incomplete; rerun publication to reconcile.",
+      { retryable: true },
+    );
+  await (deps.runtime ?? requireFollowRuntime)(trigger);
+  resolvePublicationFollowContext(input.context);
+}
+
+/** Shared final publication step. Retry repairs the same PR and the existing follow registry. */
+export async function publishGhPr(input: GhPrPublication, deps: GhPrPublicationDeps = {}) {
+  if (
+    !/^[\w.-]+\/[\w.-]+$/.test(input.repo) ||
+    !/^[a-f0-9]{40}$/.test(input.sha) ||
+    !input.head ||
+    !input.base ||
+    input.head === input.base
+  )
+    throw prError(
+      "USAGE_ERROR",
+      "Publication requires owner/repo, a full verified commit SHA and distinct branches.",
+      {},
+      2,
+    );
+  if (!input.context.agentId || !(input.context.sessionName || input.context.sessionKey))
+    throw prError("PUBLICATION_SESSION_REQUIRED", "Publication requires the publishing Ravi agent and session");
+  // Keep the original publisher: registration must re-read its durable lineage
+  // after GitHub I/O, including closure/pruning while publication is in flight.
+  resolvePublicationFollowContext(input.context);
   const request = deps.request ?? requestGhPublication;
   const root = `repos/${input.repo}`;
-  const ref = request(`${root}/git/ref/heads/${input.head}`, "GET") as { object?: { sha?: string } };
-  if (ref.object?.sha !== input.sha) throw new Error("Remote branch does not match the verified local commit SHA");
-
-  const owner = input.repo.split("/")[0];
-  const query = new URLSearchParams({ state: "open", head: `${owner}:${input.head}`, base: input.base });
-  const existing = request(`${root}/pulls?${query}`, "GET") as PullRequest[];
-  if (!Array.isArray(existing) || existing.length > 1) throw new Error("Ambiguous PR lookup; publication incomplete");
-  const reused = existing.length === 1;
-  const pr =
-    existing[0] ??
-    (request(`${root}/pulls`, "POST", {
-      head: input.head,
-      base: input.base,
-      title: input.title,
-      body: input.body,
-      draft: false,
-    }) as PullRequest);
-  assertPublishedHead(pr, input);
-
-  // This is the SAME primitive used by observeGhBashCommand, not a second ledger.
-  const follow = await ensureGhWatchFollow(
-    {
-      repo: input.repo,
-      prNumber: pr.number,
-      context: input.context,
-      reconcile: true,
-    },
-    deps.follow,
-  );
-  if (!follow.watchId || !follow.ciWatchId || !follow.triggerId) {
-    throw new Error(`PR ${pr.html_url} exists but CI follow is incomplete; rerun publication to reconcile`);
-  }
-
-  if (pr.draft) {
-    // Only the explicitly selected legacy PR is promoted. Never scan/promote other drafts.
-    const response = request("graphql", "POST", {
-      query: "mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}",
-      variables: { id: pr.node_id },
-    }) as { errors?: unknown[]; data?: { markPullRequestReadyForReview?: { pullRequest?: { isDraft?: boolean } } } };
-    if (response.errors?.length || response.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false) {
-      throw new Error(`Could not mark ${pr.html_url} ready; rerun publication to reconcile`);
+  const ref = (await request(`${root}/git/ref/heads/${encodeURIComponent(input.head)}`, "GET")) as {
+    object?: { sha?: string };
+  };
+  if (ref.object?.sha !== input.sha)
+    throw prError("REMOTE_REF_CHANGED", "Remote branch does not match the verified local commit SHA");
+  deps.phase?.("pr");
+  let pr = await findPublicationPr(request, input.repo, input.head, input.base);
+  let reused = Boolean(pr);
+  if (!pr) {
+    if (!input.title?.trim() || !input.body?.trim())
+      throw prError("USAGE_ERROR", "A new PR requires --title and --body-file.", {}, 2);
+    try {
+      pr = parseGithub(
+        pullSchema,
+        await request(`${root}/pulls`, "POST", {
+          head: input.head,
+          base: input.base,
+          title: input.title,
+          body: input.body,
+          draft: false,
+        }),
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        ["PUBLICATION_AUDIT_FAILED", "PERMISSION_DENIED"].includes(String(error.code))
+      )
+        throw error;
+      // A timeout or a competing publisher may have created it. A 422 by itself is not success.
+      pr = await findPublicationPr(request, input.repo, input.head, input.base);
+      if (!pr) throw error;
+      reused = true;
     }
   }
-  const verified = request(`${root}/pulls/${pr.number}`, "GET") as PullRequest;
+  assertPublishedHead(pr, input);
+  deps.onPr?.(pr);
+  deps.phase?.("follow");
+  deps.beforeFollow?.();
+  resolvePublicationFollowContext(input.context);
+  const follow = await ensureGhWatchFollow(
+    { repo: input.repo, prNumber: pr.number, context: input.context, reconcile: true },
+    { ...deps.follow, localOnly: true },
+  );
+  if (!follow.watchId || !follow.ciWatchId || !follow.triggerId)
+    throw prError(
+      "PR_PUBLICATION_INCOMPLETE",
+      "PR exists but CI follow is incomplete; rerun publication to reconcile.",
+      { retryable: true },
+    );
+  await (deps.verifyFollow ?? verifyPublicationFollow)(input, follow, pr.number);
+  deps.afterFollow?.();
+  if (pr.draft) {
+    deps.phase?.("ready");
+    const response = (await request("graphql", "POST", {
+      query: "mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}",
+      variables: { id: pr.node_id },
+    })) as { errors?: unknown[]; data?: { markPullRequestReadyForReview?: { pullRequest?: { isDraft?: boolean } } } };
+    if (response.errors?.length || response.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false)
+      throw prError("PR_PUBLICATION_INCOMPLETE", "Could not mark the PR ready; rerun publication to reconcile.", {
+        retryable: true,
+      });
+  }
+  deps.phase?.("verify");
+  const verified = parseGithub(pullSchema, await request(`${root}/pulls/${pr.number}`, "GET"));
   assertPublishedHead(verified, input);
-  if (verified.draft) throw new Error(`PR ${pr.html_url} is still draft; publication incomplete`);
-  return { url: verified.html_url, number: verified.number, sha: input.sha, ready: true, reused, follow };
+  if (verified.draft)
+    throw prError("PR_PUBLICATION_INCOMPLETE", "PR is still draft; publication incomplete.", { retryable: true });
+  resolvePublicationFollowContext(input.context);
+  return { url: verified.html_url, number: verified.number, sha: input.sha, ready: true as const, reused, follow };
 }

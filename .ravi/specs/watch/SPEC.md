@@ -20,7 +20,8 @@ applies_to:
   - src/triggers
   - src/hooks/gh-watch.ts
   - src/hooks/gh-pr-publish.ts
-  - scripts/publish-pr.ts
+  - src/cli/commands/pr.ts
+  - src/pr/follow-health.ts
 owners:
   - ravi-dev
 status: draft
@@ -172,8 +173,8 @@ second trigger runner.
 
 ## PR Publication Follow
 
-- The sanctioned Git Data API publication path MUST finish with
-  `bun scripts/publish-pr.ts`, from the publishing Ravi session. A raw
+- The sanctioned Git Data API publication path is `ravi pr publish`, from
+  the publishing Ravi session (see `cli/pr`). A raw
   `POST /pulls` alone is not a completed publication.
 - Publication MUST verify the remote branch against the local commit SHA,
   create the PR ready for review, and call the same `ensureGhWatchFollow`
@@ -181,6 +182,18 @@ second trigger runner.
   registry or depend on a shell observer recognizing nested API commands.
 - Success MUST require a local CI event producer and a trigger filtered by
   repository and PR, bound to the publishing session, with a runner refresh.
+  The existing trigger runner MUST answer a read-only NATS health request
+  scoped to its installation DB path, with local producer running state and
+  a fingerprint of its loaded subscription. Publication MUST confirm that
+  fingerprint matches the desired follow, not merely that a DB row exists.
+- The follow subscription MUST use `ravi.watch.github.>`: NATS `*` matches
+  one token and cannot receive `pull_request.opened` or `workflow_run.completed`.
+  Reconciliation MUST repair an existing selected follow's obsolete topic;
+  a persisted and loaded subscription to the wrong pattern is still broken.
+- Publication MUST validate durable ownership before GitHub I/O and revalidate
+  the original publisher at follow registration and completion. Follow health
+  MUST compare the loaded subscription against the resolved durable parent;
+  closing/pruning the child MUST NOT invalidate a correctly handed-off follow.
 - Re-running publication MUST reconcile the selected existing PR: create a
   missing follow, repair stale topic/filter/destination, restore its producer,
   and promote a legacy draft. It MUST reuse the existing PR and trigger ids.

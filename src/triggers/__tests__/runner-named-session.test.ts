@@ -147,7 +147,7 @@ describe("thread follow handoff delivery", () => {
   it.each(["after publication", "during publication"])(
     "delivers API-published CI to the parent after child closure and pruning %s",
     async (timing) => {
-      const { publishGhPr } = await import("../../hooks/gh-pr-publish.js");
+      const { publishGhPr, verifyPublicationFollow } = await import("../../hooks/gh-pr-publish.js");
       const { registerInboundSlackThread, closeSlackThreadLifecycle, getSlackThreadLifecycle } = await import(
         "../../channels/slack/thread-lifecycle-store.js"
       );
@@ -183,6 +183,7 @@ describe("thread follow handoff delivery", () => {
         head: { ref: "fix/publish", sha: "a".repeat(40), repo: { full_name: "o/r" } },
         base: { ref: "dev", repo: { full_name: "o/r" } },
       };
+      const watches: WatchRecord[] = [];
       const result = await publishGhPr(
         {
           repo: "o/r",
@@ -210,13 +211,19 @@ describe("thread follow handoff delivery", () => {
             throw new Error(`Unexpected publication request: ${method} ${endpoint}`);
           },
           follow: {
-            listWatches: () => ({ items: [] }) as never,
-            createWatch: async (input) => ({
-              watch: { ...input, id: `api-${input.placement ?? "console"}` } as WatchRecord,
-              createdRemote: false,
-            }),
+            listWatches: () => ({ items: watches }) as never,
+            createWatch: async (input) => {
+              const watch = { ...input, id: `api-${input.placement ?? "console"}`, status: "active" } as WatchRecord;
+              watches.push(watch);
+              return { watch, createdRemote: false };
+            },
             emitTriggersRefresh: async () => {},
           },
+          verifyFollow: (input, follow, number) =>
+            verifyPublicationFollow(input, follow, number, {
+              watch: (id) => watches.find((watch) => watch.id === id) ?? null,
+              runtime: async () => {}, // Transport is mocked; actual TriggerRunner delivery is asserted below.
+            }),
         },
       );
       expect(result.ready).toBe(true);

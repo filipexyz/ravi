@@ -56,6 +56,7 @@ class RaviClient {
   ObserversNamespace get observers => ObserversNamespace(_transport);
   PagesNamespace get pages => PagesNamespace(_transport);
   PermissionsNamespace get permissions => PermissionsNamespace(_transport);
+  PrNamespace get pr => PrNamespace(_transport);
   ProjectsNamespace get projects => ProjectsNamespace(_transport);
   ProxNamespace get prox => ProxNamespace(_transport);
   ReactNamespace get react => ReactNamespace(_transport);
@@ -6861,6 +6862,23 @@ class PermissionsNamespace {
       command: "status",
       body: requestBody,
       decode: permissionsStatusReturnFromJson,
+    );
+  }
+}
+
+class PrNamespace {
+  const PrNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<PrPublishReturn> publish([PrPublishOptions options = const PrPublishOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pr"],
+      command: "publish",
+      body: requestBody,
+      decode: prPublishReturnFromJson,
     );
   }
 }

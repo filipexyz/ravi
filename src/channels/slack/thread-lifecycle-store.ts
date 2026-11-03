@@ -205,8 +205,8 @@ export function findSlackThreadLifecycleByChildSession(childSessionKey: string):
 }
 
 /** The lifecycle survives session pruning; names must resolve unambiguously. */
-export function findSlackThreadLifecycleByChildRef(ref: string): SlackThreadLifecycleRecord | null {
-  const rows = getDb()
+export function findSlackThreadLifecycleByChildRef(ref: string, database = getDb()): SlackThreadLifecycleRecord | null {
+  const rows = database
     .prepare(`SELECT * FROM slack_thread_lifecycle
       WHERE child_session_key = ? OR child_session_name = ? OR request_id = ? LIMIT 2`)
     .all(ref, ref, ref) as SlackThreadLifecycleRow[];
