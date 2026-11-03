@@ -10,6 +10,7 @@ import { RaviAppError } from "../../apps/types.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { pickFields } from "../../cli/agent-contract.js";
 import { AppsCommands } from "../../cli/commands/apps.js";
+import { SessionCommands } from "../../cli/commands/sessions.js";
 import { TaskCommands } from "../../cli/commands/tasks.js";
 import { TaskProfileCommands } from "../../cli/commands/tasks-profiles.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
@@ -346,6 +347,8 @@ const registry = buildRegistry([
   GatewayGatedCommands,
 ]);
 const appsRegistry = buildRegistry([AppsCommands]);
+// Keep the real runtime command contract separate from the lightweight polling fixtures.
+const sessionRuntimeRegistry = buildRegistry([SessionCommands]);
 
 function findCmd(fullName: string) {
   const cmd = registry.commands.find((c) => c.fullName === fullName);
@@ -403,6 +406,115 @@ const appsContext = gatewayContext(
 const sessionsContext = gatewayContext([executeGroup("sessions")]);
 const tasksContext = gatewayContext([executeGroup("tasks")]);
 const secretContext = gatewayContext([executeGroup("secret"), adminSystem()]);
+
+describe("dispatch — sessions thread-configure authorization", () => {
+  function threadConfigureCommand() {
+    const command = sessionRuntimeRegistry.commands.find(
+      (candidate) => candidate.fullName === "sessions.thread-configure",
+    );
+    if (!command) throw new Error("sessions.thread-configure is missing from the real command registry");
+    return command;
+  }
+
+  it("declares a medium-risk session mutation without an execute brake or propagation option", () => {
+    const command = threadConfigureCommand();
+    expect(command.access).toMatchObject({
+      kind: "mutate",
+      resource: "sessions",
+      action: "thread-configure",
+      risk: "medium",
+    });
+    expect(command.access?.requiresConfirmation).not.toBe(true);
+    expect(command.options.map((option) => option.name).sort()).toEqual([
+      "effort",
+      "model",
+      "provider",
+      "session",
+      "thinking",
+    ]);
+    expect(command.args.map((arg) => ({ name: arg.name, required: arg.required }))).toEqual([
+      { name: "thread", required: true },
+    ]);
+    expect(command.returns).toBeDefined();
+  });
+
+  it.each([
+    { name: "no grants", capabilities: [] },
+    { name: "thread listing", capabilities: [semanticCap("read", "sessions", "threads")] },
+    { name: "generic effort setter", capabilities: [semanticCap("mutate", "sessions", "set-effort")] },
+  ])(
+    "denies a context without thread-configure capability before invoking the handler: $name",
+    async ({ capabilities }) => {
+      const handler = spyOn(SessionCommands.prototype, "threadConfigure");
+      try {
+        const audits = captureAudits();
+        const result = await dispatch(
+          threadConfigureCommand(),
+          { thread: "child", effort: "ultra" },
+          {},
+          {
+            contextRecord: gatewayContext([...capabilities], "thread-configure-denied"),
+            emitAudit: audits.emit,
+          },
+        );
+        expect(result.response.status).toBe(403);
+        expect(handler).not.toHaveBeenCalled();
+        expect(await result.response.json()).toMatchObject({
+          success: false,
+          op: "sessions thread-configure",
+          outcome: "denied",
+          error: { code: "PERMISSION_DENIED", capability: "mutate:sessions:thread-configure", stage: "command_access" },
+        });
+        expect(audits.events).toHaveLength(1);
+        expect(audits.events[0]).toMatchObject({
+          tool: "sessions_thread-configure",
+          outcome: "denied",
+          errorCode: "PERMISSION_DENIED",
+        });
+      } finally {
+        handler.mockRestore();
+      }
+    },
+  );
+
+  it("reaches the real registered handler with only the precise capability and binds every runtime option", async () => {
+    const handler = spyOn(SessionCommands.prototype, "threadConfigure").mockImplementation(() => {
+      contractFail("sessions thread-configure", "THREAD_NOT_FOUND", "The fixture thread does not exist", {
+        exitCode: 1,
+      });
+    });
+    try {
+      const audits = captureAudits();
+      const result = await dispatch(
+        threadConfigureCommand(),
+        {
+          thread: "child",
+          provider: "codex",
+          model: "gpt-6-astra",
+          effort: "ultra",
+          thinking: "normal",
+          session: "parent",
+        },
+        {},
+        {
+          contextRecord: gatewayContext(
+            [semanticCap("mutate", "sessions", "thread-configure")],
+            "thread-configure-authorized",
+          ),
+          emitAudit: audits.emit,
+        },
+      );
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith("child", "codex", "gpt-6-astra", "ultra", "normal", "parent");
+      expect(result.response.status).toBe(422);
+      expect(await result.response.json()).toMatchObject({ error: { code: "THREAD_NOT_FOUND" } });
+      expect(audits.events).toHaveLength(1);
+      expect(audits.events[0]?.outcome).not.toBe("denied");
+    } finally {
+      handler.mockRestore();
+    }
+  });
+});
 
 describe("dispatch — body shape (flat-only)", () => {
   it("accepts a flat body with args + options merged at top level", async () => {

@@ -79,7 +79,8 @@ import {
 } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
-import { enforceCliCommandAccess } from "../command-access.js";
+import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
+import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
@@ -118,6 +119,7 @@ import {
   summarizeSlackThread,
 } from "../../channels/slack/thread-lifecycle.js";
 import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
+import { configureSlackThreadRuntime } from "../../channels/slack/thread-runtime.js";
 import { decodeLiteralLineBreaks } from "../../channels/slack/thread-text.js";
 import { assessSessionThreadIdentity } from "../../router/thread-identity.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
@@ -501,6 +503,31 @@ const sessionThreadSendReturnSchema = z
     thread: slackThreadSummarySchema,
   })
   .strict();
+const threadRuntimeOverridesSchema = z
+  .object({
+    provider: z.string().nullable(),
+    model: z.string().nullable(),
+    effort: z.string().nullable(),
+    thinking: z.string().nullable(),
+  })
+  .strict();
+const sessionThreadConfigureReturnSchema = z
+  .object({
+    status: z.literal("configured"),
+    actionId: z.literal("thread.configure"),
+    changed: z.boolean(),
+    appliesOn: z.literal("next-turn"),
+    thread: slackThreadSummarySchema,
+    before: threadRuntimeOverridesSchema,
+    after: threadRuntimeOverridesSchema,
+  })
+  .strict();
+const THREAD_CONFIGURE_COMMAND_ACCESS = {
+  kind: "mutate",
+  resource: "sessions",
+  action: "thread-configure",
+  risk: "medium",
+} as const;
 const sessionCloseThreadReturnSchema = z
   .object({
     status: z.literal("closed"),
@@ -618,6 +645,7 @@ export function buildSessionActionsPromptHint(): string {
     `To edit an own outbound text message, run \`${buildCurrentSessionEditMessageCommand("<message-id>", "novo texto")}\`.`,
     `When \`media.send\` is listed as available, send a local file with \`${buildCurrentSessionMediaSendCommand("<file-path>")}\`.`,
     `To create a Slack work branch, run \`${buildCurrentSessionCreateThreadCommand()}\`; omit \`--model\` to inherit the normal model.`,
+    "When `thread.configure` is available, use `usage.tools.configureThread` to configure one owned child for its next turn.",
     `Inside a Slack thread, close silently with \`${buildCurrentSessionCloseThreadCommand()}\` or return a result with \`${buildCurrentSessionCloseThreadCommand("<result>")}\`.`,
     "For reactions, stickers, media, transcript reads, and recaps, follow the command-specific `usage.tools` constraints.",
     "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
@@ -785,6 +813,21 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "A closed thread reopens.",
       ],
       promptHint: 'Use `ravi sessions thread-send <thread-session> "<instructions>"` to steer a thread.',
+    },
+    configureThread: {
+      id: "thread.configure",
+      tool: "ravi sessions thread-configure",
+      command: "ravi sessions thread-configure <thread-session> --effort ultra --json",
+      useWhen: "Configure the runtime of a Slack thread owned by this parent session.",
+      constraints: [
+        "Use only from the channel-root parent, with a target listed by sessions threads.",
+        "Set provider, model, effort or thinking; omitted fields remain, and clear removes an override.",
+        "Provider changes retain their separate agent-configuration authority check.",
+        "Read the persisted before/after values and thread.runtime; the change applies on the next turn.",
+        "This does not start a turn or grant generic session modification or history access.",
+      ],
+      promptHint:
+        "Use `ravi sessions thread-configure <thread-session> --effort ultra --json` to configure an owned child directly. Set provider and model together when changing providers. The current turn keeps its runtime.",
     },
   };
 }
@@ -1169,6 +1212,29 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
   });
   const surfaces = buildSessionActionSurfaces(session, chatIds);
   const runtimeMediaSendCapabilities = resolveRuntimeMediaSendCapabilities(getContext()?.context);
+  const scopeCtx = getScopeContext();
+  const runtimeContext = getContext()?.context;
+  const canConfigureThread =
+    slackThreadParentSessionKey(session.sessionKey) === session.sessionKey &&
+    surfaces.some((surface) => surface.channel.toLowerCase() === "slack" && surface.chatType !== "thread") &&
+    (!isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, ref)) &&
+    (!runtimeContext ||
+      listCliCommandAccessCandidates({
+        group: "sessions",
+        command: "thread-configure",
+        access: THREAD_CONFIGURE_COMMAND_ACCESS,
+        input: {},
+        source: "tool",
+      }).some((candidate) =>
+        canWithCapabilities(
+          runtimeContext.capabilities ?? [],
+          candidate.permission,
+          candidate.objectType,
+          candidate.objectId,
+        ),
+      ));
+  const configureThreadHints = toolHints.configureThread;
+  if (!canConfigureThread) delete toolHints.configureThread;
   const actionAvailability = new Map(
     CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
       const availabilityBySurface = surfaces.map((surface) => {
@@ -1234,6 +1300,21 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
           availabilityBySurface: resolved.availabilityBySurface.map(serializeChatActionAvailability),
         };
       }),
+      {
+        id: "thread.configure",
+        status: canConfigureThread ? "available" : "unavailable",
+        description: "Configure runtime options for one of this parent session's Slack threads.",
+        ...(canConfigureThread
+          ? {
+              command: configureThreadHints.command,
+              promptHint: configureThreadHints.promptHint,
+              constraints: configureThreadHints.constraints,
+            }
+          : {
+              unavailableReasonCode: "parent_runtime_configuration_unavailable",
+              unavailableReason: "Runtime configuration requires an authorized Slack channel-root parent.",
+            }),
+      },
       {
         id: "session.read",
         status: "available",
@@ -3694,26 +3775,7 @@ export class SessionCommands {
     // (Claude gates every SDK tool; Codex hooks only the shell), so an agent
     // turn needs agent-configuration authority to pick one. Clearing returns
     // to the agent's configured provider and stays open, as does picking it.
-    const configuredAgent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId];
-    // The same resolution the launch path uses: agent provider, model preset,
-    // then the runtime.defaultProvider setting.
-    let configuredProvider: string;
-    try {
-      configuredProvider = resolveAgentRuntimeDefaultProvider(configuredAgent ?? {});
-    } catch {
-      configuredProvider = configuredAgent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
-    }
-    if (
-      propagate !== true &&
-      providerOverride &&
-      providerOverride !== s.runtimeProviderOverride &&
-      providerOverride !== configuredProvider
-    ) {
-      assertAgentDefaultsWriteAuthorized(s.agentId, {
-        message: `Permission denied: the runtime provider decides which tool gate applies to ${s.name ?? s.sessionKey} and needs the authority of 'ravi agents set'`,
-        suggestedAction: "Ask an operator to set the provider",
-      });
-    }
+    if (propagate !== true) assertSessionProviderSelectionAuthorized(s, providerOverride);
 
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
@@ -7030,6 +7092,57 @@ export class SessionCommands {
   }
 
   @Command({
+    name: "thread-configure",
+    description: "Configure runtime options for a Slack thread owned by this parent session",
+  })
+  @CommandAccess(THREAD_CONFIGURE_COMMAND_ACCESS)
+  threadConfigure(
+    @Arg("thread", { description: "Owned thread session name, key, request id or Slack thread ts" })
+    thread: string,
+    @Option({ flags: "--provider <provider>", description: "Runtime provider id, or clear to use the agent default" })
+    provider?: string,
+    @Option({ flags: "--model <model>", description: "Runtime model selector, or clear to remove the override" })
+    model?: string,
+    @Option({ flags: "--effort <level>", description: "Reasoning effort, or clear to remove the override" })
+    effort?: string,
+    @Option({ flags: "--thinking <level>", description: "Thinking level (off|normal|verbose), or clear" })
+    thinking?: string,
+    @Option({ flags: "--session <nameOrKey>", description: "Explicit authorized parent (defaults to current session)" })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      throw new CliExpectedError(
+        "No current parent session found. Run inside the owning Slack session or pass --session <parent>.",
+        "USAGE_ERROR",
+        2,
+      );
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
+      failSessionNotFound("sessions thread-configure", target, asJson);
+    }
+    let payload: ReturnType<typeof configureSlackThreadRuntime>;
+    try {
+      payload = configureSlackThreadRuntime(
+        { parentSession: session, ref: thread, provider, model, effort, thinking },
+        assertSessionProviderSelectionAuthorized,
+      );
+    } catch (error) {
+      rethrowSlackThreadError(error);
+    }
+    if (shouldReturnStructuredResult(asJson)) return returnStructuredResult(payload, asJson);
+    console.log(
+      `Runtime ${payload.changed ? "configured" : "unchanged"} for ${payload.thread.childSessionName ?? payload.thread.requestId}. Applies on the next turn.`,
+    );
+    return payload;
+  }
+
+  @Command({
     name: "delete-message",
     description: "Delete one of this session agent's own channel messages",
   })
@@ -7485,11 +7598,32 @@ declareCommandReturns(SessionCommands, {
   setThinking: commandEnvelopeReturnSchema,
   setTtl: commandEnvelopeReturnSchema,
   subscriptions: commandEnvelopeReturnSchema,
+  threadConfigure: sessionThreadConfigureReturnSchema,
   threadSend: sessionThreadSendReturnSchema,
   threads: sessionThreadsReturnSchema,
   trace: commandEnvelopeReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });
+
+function assertSessionProviderSelectionAuthorized(session: SessionEntry, providerOverride: string | null): void {
+  const configuredAgent = getAgent(session.agentId) ?? loadRouterConfig().agents[session.agentId];
+  let configuredProvider: string;
+  try {
+    configuredProvider = resolveAgentRuntimeDefaultProvider(configuredAgent ?? {});
+  } catch {
+    configuredProvider = configuredAgent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
+  }
+  if (
+    providerOverride &&
+    providerOverride !== session.runtimeProviderOverride &&
+    providerOverride !== configuredProvider
+  ) {
+    assertAgentDefaultsWriteAuthorized(session.agentId, {
+      message: `Permission denied: the runtime provider decides which tool gate applies to ${session.name ?? session.sessionKey} and needs the authority of 'ravi agents set'`,
+      suggestedAction: "Ask an operator to set the provider",
+    });
+  }
+}
 
 /**
  * `--propagate` rewrites the agent's defaults and moves every sibling session,

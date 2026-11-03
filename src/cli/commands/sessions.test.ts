@@ -30,6 +30,7 @@ let providerRequestResponse: Record<string, unknown> = { success: true };
 let listedSessions: Array<Record<string, unknown>> = [];
 let orphanThread: Record<string, unknown> | null = null;
 let resolvedSession: Record<string, unknown> | null = null;
+const resolvedSessionRefs: string[] = [];
 let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
 let listedContexts: Array<Record<string, unknown>> = [];
 let listedAdapters: Array<Record<string, unknown>> = [];
@@ -72,6 +73,18 @@ const sentSlackThreadMessages: Array<{
   message: string;
   origin?: unknown;
 }> = [];
+const configuredSlackThreadCalls: Array<{
+  parentSession: Record<string, unknown>;
+  ref: string;
+  provider?: string;
+  model?: string;
+  effort?: string;
+  thinking?: string;
+}> = [];
+let configureSlackThreadError: Error | null = null;
+let configuredSlackThreadResult: Record<string, unknown>;
+let configuredThreadChild: Record<string, unknown>;
+const modifiedSessionRefs: string[] = [];
 const fakeSlackThreadSummary = {
   requestId: "slack-thread:req-1",
   title: "Investigate this branch",
@@ -232,6 +245,22 @@ mock.module("../../router/thread-identity.js", () => ({
   findOpenThreadIdentity: () => null,
 }));
 
+mock.module("../../channels/slack/thread-runtime.js", () => ({
+  configureSlackThreadRuntime: (
+    input: (typeof configuredSlackThreadCalls)[number],
+    assertProviderAuthorized: (child: Record<string, unknown>, nextOverride: string | null) => void,
+  ) => {
+    configuredSlackThreadCalls.push(input);
+    if (configureSlackThreadError) throw configureSlackThreadError;
+    expect(typeof assertProviderAuthorized).toBe("function");
+    if (input.provider !== undefined) {
+      const provider = input.provider.trim().toLowerCase();
+      assertProviderAuthorized(configuredThreadChild, provider === "clear" ? null : provider);
+    }
+    return configuredSlackThreadResult;
+  },
+}));
+
 mock.module("../../channels/slack/thread-lifecycle.js", () => ({
   slackThreadError: (code: string, message: string, suggestedAction?: string) =>
     new CliExpectedError(message, code, 1, suggestedAction),
@@ -329,7 +358,10 @@ mock.module("../../router/sessions.js", () => ({
     }
     return true;
   },
-  resolveSession: () => resolvedSession,
+  resolveSession: (ref: string) => {
+    resolvedSessionRefs.push(ref);
+    return resolvedSession;
+  },
   getSessionTurnUsageSummary: (sessionKey: string) =>
     sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
   listSessionSubscriptions: (sessionKey: string) =>
@@ -509,7 +541,10 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => (scopeEnforced ? { agentId: "dev" } : undefined),
   isScopeEnforced: () => scopeEnforced,
   canAccessSession: () => canAccess,
-  canModifySession: () => sessionModifyAllowed,
+  canModifySession: (_scope: unknown, ref: string) => {
+    modifiedSessionRefs.push(ref);
+    return sessionModifyAllowed;
+  },
   canAccessResource: () => true,
   canAccessContact: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
@@ -659,6 +694,10 @@ beforeEach(() => {
   closeThreadError = null;
   reportedSlackThreads.length = 0;
   sentSlackThreadMessages.length = 0;
+  configuredSlackThreadCalls.length = 0;
+  configureSlackThreadError = null;
+  resolvedSessionRefs.length = 0;
+  modifiedSessionRefs.length = 0;
   fakeSlackThreadSummary.openDecisionCount = 0;
   fakeSlackThreadSummary.pendingAnswerCount = 0;
   fakeSlackThreadSummary.uncertainAnswerCount = 0;
@@ -2824,6 +2863,354 @@ describe("SessionCommands prune", () => {
     expect(deletedSessionKeys).toEqual(["agent:dev:stale"]);
     expect(natsEmits.some((event) => event.topic === "ravi.session.abort")).toBe(true);
   });
+});
+
+describe("SessionCommands thread-configure", () => {
+  const parentKey = "agent:dev:slack:ravi-slack:C123";
+  const childName = fakeSlackThreadSummary.childSessionName;
+
+  beforeEach(() => {
+    resolvedSession = { sessionKey: parentKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    configuredThreadChild = {
+      sessionKey: fakeSlackThreadSummary.childSessionKey,
+      name: childName,
+      agentId: "dev",
+      runtimeProviderOverride: "claude",
+    };
+    toolContext = {
+      agentId: "dev",
+      sessionKey: parentKey,
+      sessionName: "dev-slack",
+      context: {
+        contextId: "ctx_thread_configure",
+        contextKey: "rctx_thread_configure",
+        kind: "turn-runtime",
+        agentId: "dev",
+        sessionKey: parentKey,
+        sessionName: "dev-slack",
+        capabilities: [{ permission: "mutate", objectType: "sessions", objectId: "thread-configure" }],
+        metadata: { authorityMode: "delegated" },
+        createdAt: 0,
+      },
+    };
+    scopeEnforced = true;
+    sessionDerivedSource = undefined;
+    routerConfig = { agents: { dev: { provider: "claude", model: "sonnet" } } };
+    listedSessions = [resolvedSession, configuredThreadChild];
+    publishedPrompts.length = 0;
+    configuredSlackThreadResult = {
+      status: "configured",
+      actionId: "thread.configure",
+      changed: true,
+      appliesOn: "next-turn",
+      thread: fakeSlackThreadSummary,
+      before: { provider: "claude", model: null, effort: null, thinking: null },
+      after: { provider: "claude", model: "sonnet", effort: "ultra", thinking: "normal" },
+    };
+  });
+
+  function expectNoRuntimeEffects(): void {
+    expect(createdSlackThreadLifecycles).toEqual([]);
+    expect(publishedOutboundJobs).toEqual([]);
+    expect(publishedPrompts).toEqual([]);
+    expect(natsEmits).toEqual([]);
+    expect(providerRequestCalls).toEqual([]);
+    expect(resetSessionCalls).toEqual([]);
+    expect(deletedSessionKeys).toEqual([]);
+    expect(renameSessionNameCalls).toEqual([]);
+    expect(effortUpdates).toEqual([]);
+    expect(revokedRuntimeContextCalls).toEqual([]);
+  }
+
+  it("authorizes the inferred parent and delegates the patch without requesting generic child access", () => {
+    let result: unknown;
+    const output = captureLogs(() => {
+      result = new SessionCommands().threadConfigure(
+        childName,
+        undefined,
+        "sonnet",
+        "ultra",
+        "normal",
+        undefined,
+        true,
+      );
+    });
+
+    expect(configuredSlackThreadCalls).toEqual([
+      {
+        parentSession: resolvedSession!,
+        ref: childName,
+        provider: undefined,
+        model: "sonnet",
+        effort: "ultra",
+        thinking: "normal",
+      },
+    ]);
+    expect(resolvedSessionRefs.length).toBeGreaterThan(0);
+    expect(new Set(resolvedSessionRefs)).toEqual(new Set(["dev-slack"]));
+    expect(modifiedSessionRefs).toEqual(["dev-slack"]);
+    expect(result).toEqual(configuredSlackThreadResult);
+    expect(JSON.parse(output)).toEqual(result);
+    expectNoRuntimeEffects();
+  });
+
+  it("fails before child lookup when there is no caller session context", () => {
+    toolContext = undefined;
+    expect(() => new SessionCommands().threadConfigure(childName, undefined, undefined, "ultra")).toThrow(
+      /No current.*session/,
+    );
+    expect(resolvedSessionRefs).toEqual([]);
+    expect(configuredSlackThreadCalls).toEqual([]);
+    expectNoRuntimeEffects();
+  });
+
+  it("does not recreate a missing parent", () => {
+    resolvedSession = null;
+    expect(() => new SessionCommands().threadConfigure(childName, undefined, undefined, "ultra")).toThrow(
+      "Session not found",
+    );
+    expect(configuredSlackThreadCalls).toEqual([]);
+    expectNoRuntimeEffects();
+  });
+
+  it.each([undefined, "other-parent"])(
+    "rejects a parent without modify authority, including --session %s",
+    (override) => {
+      if (override) {
+        resolvedSession = { sessionKey: "other-parent-key", name: override, agentId: "dev", agentCwd: "/tmp/dev" };
+      }
+      sessionModifyAllowed = false;
+      const before = structuredClone(resolvedSession);
+      expect(() =>
+        new SessionCommands().threadConfigure(childName, undefined, undefined, "ultra", undefined, override),
+      ).toThrow("Session not found");
+      expect(modifiedSessionRefs).toEqual([override ?? "dev-slack"]);
+      expect(configuredSlackThreadCalls).toEqual([]);
+      expect(resolvedSession).toEqual(before);
+      expectNoRuntimeEffects();
+    },
+  );
+
+  it("does not use --session to bypass parent access checks", () => {
+    canAccess = false;
+    expect(() =>
+      new SessionCommands().threadConfigure(childName, undefined, undefined, "ultra", undefined, "private-parent"),
+    ).toThrow("Session not found: private-parent");
+    expect(modifiedSessionRefs).toEqual([]);
+    expect(configuredSlackThreadCalls).toEqual([]);
+    expectNoRuntimeEffects();
+  });
+
+  it("passes explicit parent and clear values to the atomic runtime operation", () => {
+    toolContext = undefined;
+    captureLogs(() =>
+      new SessionCommands().threadConfigure("slack-thread:req-1", "clear", "clear", "clear", "clear", "dev-slack"),
+    );
+    expect(configuredSlackThreadCalls).toEqual([
+      {
+        parentSession: resolvedSession!,
+        ref: "slack-thread:req-1",
+        provider: "clear",
+        model: "clear",
+        effort: "clear",
+        thinking: "clear",
+      },
+    ]);
+    expect(resolvedSessionRefs.length).toBeGreaterThan(0);
+    expect(new Set(resolvedSessionRefs)).toEqual(new Set(["dev-slack"]));
+    expectNoRuntimeEffects();
+  });
+
+  it("preserves typed failures from the core and performs no other mutation", () => {
+    configureSlackThreadError = new CliExpectedError("The thread session is missing", "THREAD_SESSION_MISSING", 1);
+    expect(() => new SessionCommands().threadConfigure(childName, undefined, undefined, "ultra")).toThrow(
+      expect.objectContaining({ code: "THREAD_SESSION_MISSING" }),
+    );
+    expectNoRuntimeEffects();
+  });
+
+  it("returns the core's compact persisted readback, including no-op and next-turn semantics", () => {
+    configuredSlackThreadResult = {
+      ...configuredSlackThreadResult,
+      changed: false,
+      after: configuredSlackThreadResult.before,
+    };
+    let result: unknown;
+    const output = captureLogs(() => {
+      result = new SessionCommands().threadConfigure(
+        childName,
+        undefined,
+        undefined,
+        "ultra",
+        undefined,
+        undefined,
+        true,
+      );
+    });
+    expect(result).toEqual(configuredSlackThreadResult);
+    expect(JSON.parse(output)).toEqual(configuredSlackThreadResult);
+    expect(Object.keys(result as object).sort()).toEqual([
+      "actionId",
+      "after",
+      "appliesOn",
+      "before",
+      "changed",
+      "status",
+      "thread",
+    ]);
+    expect(output).not.toContain("agentCwd");
+    expect(output).not.toContain("contextKey");
+    expect(output).not.toContain("providerSessionId");
+    expectNoRuntimeEffects();
+  });
+
+  it("retains the agent-configuration authority guard when a parent selects a different provider", () => {
+    expect(() => new SessionCommands().threadConfigure(childName, "codex", "gpt-6-astra")).toThrow(
+      expect.objectContaining({ code: "PERMISSION_DENIED" }),
+    );
+    expect(configuredThreadChild.runtimeProviderOverride).toBe("claude");
+    expect(routerConfig.agents.dev?.provider).toBe("claude");
+    expectNoRuntimeEffects();
+  });
+
+  it.each(["clear", "claude"])("allows provider %s under the existing set-provider exceptions", (provider) => {
+    captureLogs(() => new SessionCommands().threadConfigure(childName, provider));
+    expect(configuredSlackThreadCalls).toHaveLength(1);
+    expect(routerConfig.agents.dev?.provider).toBe("claude");
+    expectNoRuntimeEffects();
+  });
+
+  it("allows a provider change with explicit agent-configuration authority", () => {
+    (toolContext!.context as { capabilities: unknown[] }).capabilities.push({
+      permission: "mutate",
+      objectType: "agents",
+      objectId: "set",
+    });
+    captureLogs(() => new SessionCommands().threadConfigure(childName, "codex", "gpt-6-astra"));
+    expect(configuredSlackThreadCalls).toHaveLength(1);
+    expect(routerConfig.agents.dev?.provider).toBe("claude");
+    expectNoRuntimeEffects();
+  });
+
+  function addActionSurface(channel = "slack"): void {
+    const isChild = String(resolvedSession!.sessionKey).includes(":thread:");
+    sessionSubscriptions = [
+      {
+        id: "sub_thread_configure",
+        sessionKey: resolvedSession!.sessionKey,
+        chatId: "chat_thread_configure",
+        role: "primary",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_thread_configure", {
+      id: "chat_thread_configure",
+      title: "Thread configuration",
+      channel,
+      instanceId: "ravi-slack",
+      platformChatId: isChild ? `C123#${fakeSlackThreadSummary.slackThreadTs}` : "C123",
+    });
+    routerConfig.channels = {
+      "ravi-slack": { name: "ravi-slack", provider: "slack", enabled: true, credentialConnection: "test-slack" },
+    };
+  }
+
+  it("advertises thread.configure and its bounded runtime constraints to an authorized Slack parent", () => {
+    addActionSurface();
+    const payload = JSON.parse(captureLogs(() => new SessionCommands().actions(undefined, undefined, true)));
+    const action = payload.actions.find((candidate: { id: string }) => candidate.id === "thread.configure");
+    expect(action).toMatchObject({ id: "thread.configure", status: "available" });
+    expect(action.command).toContain("ravi sessions thread-configure <thread-session>");
+    expect(action.constraints.join(" ")).toContain("next turn");
+    expect(action.constraints.join(" ")).toContain("generic session");
+    expect(payload.usage.tools.configureThread).toMatchObject({ id: "thread.configure", command: action.command });
+    expect(configuredSlackThreadCalls).toEqual([]);
+    expectNoRuntimeEffects();
+  });
+
+  it.each(["child", "no-modify", "missing-capability", "headless", "whatsapp"])(
+    "does not advertise executable thread.configure for %s",
+    (reason) => {
+      if (reason === "child") {
+        resolvedSession = configuredThreadChild;
+        toolContext!.sessionKey = configuredThreadChild.sessionKey;
+        toolContext!.sessionName = configuredThreadChild.name;
+      }
+      if (reason === "no-modify") sessionModifyAllowed = false;
+      if (reason === "missing-capability") {
+        (toolContext!.context as { capabilities: unknown[] }).capabilities = [
+          { permission: "read", objectType: "sessions", objectId: "threads" },
+        ];
+      }
+      if (reason !== "headless") addActionSurface(reason === "whatsapp" ? "whatsapp" : "slack");
+      const payload = JSON.parse(captureLogs(() => new SessionCommands().actions(undefined, undefined, true)));
+      const action = payload.actions.find((candidate: { id: string }) => candidate.id === "thread.configure");
+      expect(action).toMatchObject({ id: "thread.configure", status: "unavailable" });
+      expect(action).not.toHaveProperty("command");
+      expect(payload.usage.tools).not.toHaveProperty("configureThread");
+      expect(configuredSlackThreadCalls).toEqual([]);
+      expectNoRuntimeEffects();
+    },
+  );
+
+  it.each(["set-provider", "set-model", "set-effort", "set-thinking", "reset", "delete", "rename", "read"])(
+    "does not grant generic %s authority over a child",
+    async (command) => {
+      resolvedSession = configuredThreadChild;
+      sessionModifyAllowed = false;
+      canAccess = false;
+      const before = structuredClone(resolvedSession);
+      const commands = new SessionCommands();
+      const run = async () => {
+        switch (command) {
+          case "set-provider":
+            return commands.setProvider(childName, "codex", true);
+          case "set-model":
+            return commands.setModel(childName, "sonnet", true);
+          case "set-effort":
+            return commands.setEffort(childName, "ultra", true);
+          case "set-thinking":
+            return commands.setThinking(childName, "verbose", true);
+          case "reset":
+            return commands.reset(childName, true, true);
+          case "delete":
+            return commands.delete(childName, true, true);
+          case "rename":
+            return commands.rename(childName, "renamed-child", true);
+          case "read":
+            return commands.read(childName, "10", true);
+        }
+      };
+      await expect(captureLogsAsync(run)).rejects.toThrow("Session not found");
+      expect(resolvedSession).toEqual(before);
+      expect(configuredSlackThreadCalls).toEqual([]);
+      expect(chatHistoryReads).toBe(0);
+      expectNoRuntimeEffects();
+    },
+  );
+
+  it.each(["provider", "model", "effort", "thinking"])(
+    "keeps generic set-%s available for the caller's own session",
+    async (field) => {
+      const commands = new SessionCommands();
+      await captureLogsAsync(async () => {
+        switch (field) {
+          case "provider":
+            return commands.setProvider("dev-slack", "claude", true);
+          case "model":
+            return commands.setModel("dev-slack", "sonnet", true);
+          case "effort":
+            return commands.setEffort("dev-slack", "ultra", true);
+          case "thinking":
+            return commands.setThinking("dev-slack", "normal", true);
+        }
+      });
+      expect(modifiedSessionRefs).toEqual(["dev-slack"]);
+      expect(configuredSlackThreadCalls).toEqual([]);
+      expect(resetSessionCalls).toEqual([]);
+      expect(deletedSessionKeys).toEqual([]);
+    },
+  );
 });
 
 describe("SessionCommands rename and display labels", () => {

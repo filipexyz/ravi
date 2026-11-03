@@ -136,6 +136,7 @@ ravi sessions close-thread [--return "<result>"]
 ravi sessions report "<progress>"
 ravi sessions threads [--all] [--json]
 ravi sessions thread-send <thread> "<instructions>"
+ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <model|clear>] [--effort <level|clear>] [--thinking <level|clear>] [--json]
 ```
 
 - Both commands infer the current session and Slack surface from tool context.
@@ -160,6 +161,45 @@ ravi sessions thread-send <thread> "<instructions>"
   names, so an open thread stays bound to its child's current name.
   A rename MUST refuse a name that an open thread saves for another child
   session, even when that child session no longer exists.
+
+## Runtime configuration by the parent
+
+- `sessions thread-configure` MUST resolve and authorize the calling channel-root
+  parent before looking up a child. An explicit `--session` MUST NOT impersonate
+  a parent the caller cannot modify.
+- The target MUST belong to that parent's persisted Slack lifecycle, be started
+  (`open` or `closed`), and resolve to the recorded child of the same agent.
+  Unknown, unrelated, missing, or mismatched children MUST NOT fall back to a
+  generic session mutation or be recreated. A child MUST NOT configure siblings.
+  A parent attached to several channels MUST use its persisted Slack thread
+  binding, rather than its historical origin channel, as ownership evidence.
+- This operation grants only configuration of `provider`, `model`, `effort`, and
+  `thinking` for that child. It MUST NOT grant generic session access or modify
+  authority, propagate agent defaults, or enable reset/delete/rename/history.
+- At least one runtime option is required. Omitted fields preserve their current
+  override; `clear` removes that field's override. Thinking accepts
+  `off|normal|verbose`; effort uses the canonical runtime effort levels.
+- The complete candidate provider/model pair and every supplied value MUST be
+  validated before any write. A provider change MUST preserve the additional
+  agent-configuration authority required by `sessions set-provider`; parenthood
+  alone MUST NOT bypass a provider's tool-control boundary.
+- The lifecycle binding, child identity, and configuration MUST be checked and
+  persisted atomically. Clearing provider MUST follow the configured agent
+  default, and incompatible provider continuity state MUST follow the same
+  handling as `sessions set-provider`. Durable history and subscriptions remain.
+- Readback MUST confirm the persisted fields and return only the thread/runtime
+  summary plus prior/current overrides, `changed`, and `appliesOn: "next-turn"`.
+  It MUST NOT expose a full session record or assert that the current turn already
+  uses the new configuration. Failed validation/authorization MUST NOT write
+  runtime configuration. Permission-denial audit MUST survive a failed operation;
+  a provider guard evaluated before the transaction MUST be revalidated against
+  the relevant identity/provider state under the write lock.
+- Configuration MUST NOT publish a prompt, interrupt the current turn, restart a
+  daemon, reopen a closed thread, or overwrite the original creation request.
+  Repeating the same patch MUST report `changed: false`.
+- The action discovery surface MUST advertise `thread.configure` and its
+  command/constraints to an authorized parent. Generic session setters keep
+  their existing authorization rules.
 
 ## Root Card
 
