@@ -4300,6 +4300,8 @@ describe("extractNormalizedTranscriptMessages", () => {
   });
 });
 
+const { ContractError } = await import("../agent-contract.js");
+
 describe("sessions agent-first contract", () => {
   function configureMessageActionFixture(channel: "slack" | "whatsapp") {
     agentMessageByRef = {
