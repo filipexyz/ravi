@@ -80,3 +80,5 @@ A trigger with a valid filter, or with no filter, MUST behave exactly as before.
 
 - [ ] `bun test src/hooks/gh-watch.test.ts src/hooks/gh-follow-sweep.test.ts` covers parent registration, delayed registration after prune, existing-owner reconciliation, maintenance refresh and missing-parent refusal.
 - [ ] `bun test src/triggers/__tests__/runner-named-session.test.ts` confirms actual prompt publication to the repointed parent after close, with correct Slack source and fire count.
+- [ ] `bun test src/hooks/gh-pr-publish.test.ts` refuses missing/ambiguous lifecycle or a missing parent before any GitHub request; successful API publication targets the durable parent.
+- [ ] The runner publication regression closes and prunes the child during and after GitHub publication, then verifies CI prompt publication to the parent, root source, incremented fire count and no recreated child.

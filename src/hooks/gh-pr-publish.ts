@@ -1,5 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { ensureGhWatchFollow, type GhWatchFollowContext, type GhWatchFollowDeps } from "./gh-watch.js";
+import {
+  ensureGhWatchFollow,
+  resolveGhFollowContext,
+  type GhWatchFollowContext,
+  type GhWatchFollowDeps,
+} from "./gh-watch.js";
 
 export interface GhPrPublication {
   repo: string;
@@ -73,6 +78,11 @@ export async function publishGhPr(
   if (!input.context.agentId || !(input.context.sessionName || input.context.sessionKey)) {
     throw new Error("Publication requires the publishing Ravi agent and session");
   }
+  // A thread's durable parent must already exist before publishing externally.
+  // Do not invent lineage from source metadata or create an unobserved PR when
+  // registration is known to be impossible. ensureGhWatchFollow resolves again
+  // after GitHub I/O, including when the child closed or was pruned meanwhile.
+  resolveGhFollowContext(input.context);
   const request = deps.request ?? requestGhPublication;
   const root = `repos/${input.repo}`;
   const ref = request(`${root}/git/ref/heads/${input.head}`, "GET") as { object?: { sha?: string } };
