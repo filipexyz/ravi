@@ -40,3 +40,22 @@ ravi instances pending reject main 5511999 --json     # expect exit 3 + kind/pre
 ravi routes list --fields pattern,agent --json        # expect compact items
 ravi instances list --fields name,channel --json      # expect compact items
 ```
+
+## Repair a previously approved opaque chat
+
+1. Confirm the runtime/DB target and recover the full original chat id from
+   the pending entry, chat ledger or approval evidence. A numeric fragment is
+   insufficient to infer a Slack channel id. Do not bulk-delete short routes.
+2. With the corrected runtime, approve that exact chat with an explicit prefix,
+   even if the previous approval already removed the pending entry:
+   `ravi instances pending approve <instance> 'group:<full-chat-id>' --agent <agent> --json`.
+3. Run `ravi routes explain <instance> 'group:<full-chat-id>' --channel slack --json`.
+   Require `liveEffect.verified: true` and the complete lowercase group pattern
+   as `liveEffect.winningPattern`. The real Slack gate computes `explicitRoute`
+   from the matched route (excluding `*`); `routes explain` does not itself
+   expose an `explicitRoute` field.
+4. Only when evidence identifies the obsolete rule, remove that exact pattern
+   with `ravi instances routes remove <instance> 'group:<confirmed-fragment>'`.
+   Keep the recorded pattern/agent for rollback via `instances routes restore`.
+5. On a production host, run focused regressions with production DB access
+   blocked: `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/instances-pending.test.ts`.

@@ -79,7 +79,6 @@ import {
   listAccountPending,
   removeAccountPending,
   allowContact,
-  normalizePhone,
   type AccountPendingEntry,
 } from "../../contacts.js";
 import {
@@ -112,23 +111,24 @@ function emitConfigChanged() {
 
 function normalizePendingChatPattern(entry: Pick<AccountPendingEntry, "phone" | "chatId" | "isGroup">): string {
   const raw = (entry.chatId || entry.phone || "").trim();
-  const normalized = normalizePhone(raw);
+  const normalized = normalizeRoutePattern(raw);
   if (normalized.startsWith("group:")) return normalized;
-  if (entry.isGroup) {
-    const bareGroupId = (normalized || raw).replace(/^group:/, "").replace(/@.*$/, "");
-    if (/^\d+(?:-\d+)?$/.test(bareGroupId)) return `group:${bareGroupId}`;
-  }
-  return normalized || raw;
+  return entry.isGroup ? `group:${normalized}` : normalized;
 }
 
 function findPendingReviewEntry(instanceName: string, ref: string): AccountPendingEntry | null {
-  const normalizedRef = normalizePhone(ref);
+  const normalizedRef = normalizeRoutePattern(ref);
   return (
     listAccountPending(instanceName).find((entry) => {
       if (entry.phone === ref || entry.chatId === ref) return true;
-      const entryPhone = normalizePhone(entry.phone);
-      const entryChat = entry.chatId ? normalizePhone(entry.chatId) : "";
-      return Boolean(normalizedRef && (entryPhone === normalizedRef || entryChat === normalizedRef));
+      const entryPhone = normalizeRoutePattern(entry.phone);
+      const entryChat = entry.chatId ? normalizeRoutePattern(entry.chatId) : "";
+      return Boolean(
+        normalizedRef &&
+          (entryPhone === normalizedRef ||
+            entryChat === normalizedRef ||
+            (entry.isGroup && normalizePendingChatPattern(entry) === normalizedRef)),
+      );
     }) ?? null
   );
 }
@@ -2228,7 +2228,7 @@ export class InstancesPendingCommands {
     const instance = dbGetInstance(name);
     if (!instance) failInstanceNotFound("instances pending approve", name, asJson);
     const pending = findPendingReviewEntry(name, contact);
-    const normalizedContact = normalizePhone(contact);
+    const normalizedContact = normalizeRoutePattern(contact);
     const isChatApproval = pending?.pendingKind === "chat" || normalizedContact.startsWith("group:");
 
     if (isChatApproval) {
