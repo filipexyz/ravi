@@ -1,4 +1,4 @@
-import { listDecisions } from "../../decisions/store.js";
+import { getDecisionWaitSummary, listDecisions } from "../../decisions/store.js";
 import { dbGetContext, getDb } from "../../router/router-db.js";
 import { randomUUID } from "node:crypto";
 import { CliExpectedError } from "../../cli/expected-error.js";
@@ -475,6 +475,8 @@ export interface SlackThreadSummary {
    */
   childSessionMissing: boolean;
   openDecisionCount: number;
+  pendingAnswerCount: number;
+  uncertainAnswerCount: number;
   slackThreadTs: string | null;
   link: string | null;
   runtime: SlackThreadRuntimeSummary;
@@ -535,7 +537,7 @@ export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackT
     childSessionKey: record.childSessionKey ?? null,
     childSessionName: record.childSessionName ?? null,
     childSessionMissing: isSlackThreadChildMissing(record),
-    openDecisionCount: listDecisions({ type: "thread", id: record.requestId }, true).length,
+    ...getDecisionWaitSummary({ type: "thread", id: record.requestId }),
     slackThreadTs: record.providerThreadId ?? null,
     link: slackThreadLink(record) ?? null,
     runtime: summarizeSlackThreadRuntime(record),

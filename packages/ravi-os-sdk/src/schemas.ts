@@ -106851,6 +106851,9 @@ export const SessionsThreadSendReturnSchema = {
           ],
           "type": "object"
         },
+        "pendingAnswerCount": {
+          "type": "number"
+        },
         "requestId": {
           "type": "string"
         },
@@ -107013,6 +107016,9 @@ export const SessionsThreadSendReturnSchema = {
             }
           ]
         },
+        "uncertainAnswerCount": {
+          "type": "number"
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -107026,6 +107032,8 @@ export const SessionsThreadSendReturnSchema = {
         "childSessionName",
         "childSessionMissing",
         "openDecisionCount",
+        "pendingAnswerCount",
+        "uncertainAnswerCount",
         "slackThreadTs",
         "link",
         "runtime",
@@ -107155,6 +107163,9 @@ export const SessionsThreadsReturnSchema = {
               "pending"
             ],
             "type": "object"
+          },
+          "pendingAnswerCount": {
+            "type": "number"
           },
           "requestId": {
             "type": "string"
@@ -107318,6 +107329,9 @@ export const SessionsThreadsReturnSchema = {
               }
             ]
           },
+          "uncertainAnswerCount": {
+            "type": "number"
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -107331,6 +107345,8 @@ export const SessionsThreadsReturnSchema = {
           "childSessionName",
           "childSessionMissing",
           "openDecisionCount",
+          "pendingAnswerCount",
+          "uncertainAnswerCount",
           "slackThreadTs",
           "link",
           "runtime",

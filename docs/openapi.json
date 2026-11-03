@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "667f486aab0c4590"
+    "version": "5dc227922904c90d"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -122622,6 +122622,9 @@
                           ],
                           "type": "object"
                         },
+                        "pendingAnswerCount": {
+                          "type": "number"
+                        },
                         "requestId": {
                           "type": "string"
                         },
@@ -122784,6 +122787,9 @@
                             }
                           ]
                         },
+                        "uncertainAnswerCount": {
+                          "type": "number"
+                        },
                         "updatedAt": {
                           "type": "number"
                         }
@@ -122797,6 +122803,8 @@
                         "childSessionName",
                         "childSessionMissing",
                         "openDecisionCount",
+                        "pendingAnswerCount",
+                        "uncertainAnswerCount",
                         "slackThreadTs",
                         "link",
                         "runtime",
@@ -122954,6 +122962,9 @@
                               "pending"
                             ],
                             "type": "object"
+                          },
+                          "pendingAnswerCount": {
+                            "type": "number"
                           },
                           "requestId": {
                             "type": "string"
@@ -123117,6 +123128,9 @@
                               }
                             ]
                           },
+                          "uncertainAnswerCount": {
+                            "type": "number"
+                          },
                           "updatedAt": {
                             "type": "number"
                           }
@@ -123130,6 +123144,8 @@
                           "childSessionName",
                           "childSessionMissing",
                           "openDecisionCount",
+                          "pendingAnswerCount",
+                          "uncertainAnswerCount",
                           "slackThreadTs",
                           "link",
                           "runtime",
