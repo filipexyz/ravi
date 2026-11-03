@@ -43,7 +43,52 @@ Quoting regressions (`bun test src/bash/`):
   provider-settings write check.
 - Piped bare interpreters with trailing comments, descriptor duplication,
   output/clobber/combined redirects or leading assignments MUST be refused;
-  a real file-script argument MUST retain the documented executable boundary.
+  a file-script argument MUST NOT exempt the receiver from refusal.
+- PR #776 regression: `python3 -u`, `python3 -`, `python3 -I -`,
+  `node --no-warnings`, `node --input-type=module -`, `perl -w`, `ruby -`,
+  and `php -d x=1` as pipe receivers MUST fail in `checkDangerousPatterns`,
+  `parseBashCommand` and the actual PreToolUse hook. Each MUST be tested alone,
+  with `2>/dev/null`, with a leading `FOO=1`, and with both decorations.
+  The reason MUST name the pipe surface, regardless of flags or script arguments.
+- Previously allowed relative and absolute file-script receivers MUST now deny:
+  `printf data | python3 /abs/path/script.py`, `printf data | python3 /tmp/a.py arg`
+  and `printf data | node /abs/build.js`. A real absolute symlink to `/dev/stdin`
+  MUST deny in both parser entry points and the actual PreToolUse callback.
+- PR #784 independent review regressions: `python3 /dev/fd/3 3<&0` and
+  `| # comment` followed by `python3 -u` on the next line MUST be denied in both
+  parser entry points and the actual hook. Cover arbitrary descriptor numbers,
+  `/proc/**/fd/N`, stdout/stderr aliases, multiple leading comment lines and a
+  file-script receivers after comments that now also deny.
+- Relative receivers following `cd`, `builtin cd`, `command cd`, `pushd` and
+  `env -C` MUST deny through the same unconditional pipe rule.
+- Direct `python3 /dev/fd/3 3<&0` and `python3 /dev/stdin` MUST deny by descriptor
+  shape. Cover other interpreters, options, arbitrary fds and `/proc/**/fd/N`.
+  Include literal `python3 /dev/fd/4 4<&0` and
+  `python3 /dev/fd/4 4</tmp/x.py`: descriptor form denies independently of origin.
+- Parser and real-hook tests MUST iterate the exported `INTERPRETERS` set and
+  deny every member as a bare, quoted and absolute-path pipe receiver. Include
+  `printf 'console.log(731)\n' | bun run -` as an explicit regression.
+- Versioned receivers `python3.12 -`, `python3.11 /dev/stdin`, `php8.2 -r`,
+  `perl5.36 -e`, `lua5.4 -`, `ruby3.2 -` and `node20` MUST deny by the same
+  pipe rule. Without pipes, `nodejs build.js`, `Rscript script.R`,
+  `ts-node script.ts` and `python3.12 script.py` MUST pass. Matching remains
+  case-sensitive, and a versioned invocation still needs its own executable grant.
+- Descriptor forms in any argument MUST deny without locating a script: cover
+  `perl -I /tmp /dev/stdin`, `node --conditions testing /dev/stdin`,
+  `bun run /dev/stdin`, `bun --bun run /dev/stdin`, `deno run /dev/stdin`,
+  `python3 --check-hash-based-pycs always /dev/stdin`,
+  `python3 -X importtime /dev/stdin` and `node --require helper.js /dev/stdin`.
+- Direct `python3 script.py "$INPUT"` and `node build.js *.json` MUST pass;
+  `python3 "$SCRIPT_PATH"`, `python3 "/abs/$SCRIPT_PATH"` and `python3 *.py`
+  MUST deny because the script itself is unresolved. A pipe into
+  `python3 script.py` MUST still deny regardless of later arguments.
+- Without a pipe, `python3 script.py`, `python3 ./a.py arg`,
+  `node --no-warnings build.js`, `python3 /abs/script.py` and
+  `python3 /abs/s.py < dados.txt` MUST remain allowed. Descriptor-looking later
+  arguments or option operands MUST deny regardless of their role:
+  `python3 script.py /dev/stdin` and `python3 -W /dev/stdin script.py` are deliberate refusals.
+- `printf data | cat; python3 --version` and `printf data | cat && python3 script.py`
+  MUST pass; `printf a | tee x | python3 -u` MUST deny at the later pipe.
 - Single-quoted substitution/backtick/process/heredoc text and escaped dollar
   or backtick in double quotes MUST pass in JSON and rg/grep arguments.
 - Active substitutions outside and inside double quotes MUST fail, including

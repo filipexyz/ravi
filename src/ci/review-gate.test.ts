@@ -7,12 +7,27 @@ const NEXT = "b".repeat(40);
 const args = { owner: "example", repo: "repo", number: 1, expectedSha: HEAD };
 const author = { login: "author", __typename: "User" };
 const reviewer = { login: "reviewer", __typename: "User" };
+const authorProvenance = '<!-- ravi-author {"agent":"builder","session":"build-session"} -->';
+function verdict(overrides = {}) {
+  return `<!-- ravi-review ${JSON.stringify({
+    head: HEAD,
+    agent: "reviewer",
+    session: "review-session",
+    authorSession: "build-session",
+    verdict: "approved",
+    reason: "Reviewed the complete diff and focused test evidence.",
+    resolves: [],
+    ...overrides,
+  })} -->`;
+}
 const approval = {
   id: "approval",
   author: reviewer,
   state: "APPROVED",
   commit: { oid: HEAD },
   submittedAt: "2026-10-31T20:00:00Z",
+  body: verdict(),
+  url: "https://github.com/example/repo/pull/1#pullrequestreview-approval",
 };
 const finding = {
   id: "finding",
@@ -20,6 +35,8 @@ const finding = {
   state: "COMMENTED",
   commit: { oid: HEAD },
   submittedAt: "2026-10-31T19:00:00Z",
+  body: "Finding tracked in the native thread.",
+  url: "https://github.com/example/repo/pull/1#pullrequestreview-finding",
 };
 const thread = {
   id: "thread",
@@ -43,18 +60,42 @@ const dismissal = {
 
 function fixture() {
   const state: any = {
-    pr: { headRefOid: HEAD, author, state: "OPEN", baseRefName: "dev", isDraft: false },
+    pr: {
+      headRefOid: HEAD,
+      author,
+      state: "OPEN",
+      baseRefName: "dev",
+      isDraft: false,
+      body: authorProvenance,
+      url: "https://github.com/example/repo/pull/1",
+    },
     reviewThreads: [structuredClone(thread)],
     reviews: [structuredClone(finding), structuredClone(approval)],
     timelineItems: [],
+    comments: [],
+    reviewComments: {},
+    writers: ["reviewer"],
   };
   const calls: any[] = [];
   const api: any = {
     permission: async () => "write",
+    independentWriters: async () => structuredClone(state.writers),
     graphql: async (query: string, variables: any) => {
       calls.push({ query, variables });
-      const key = ["reviewThreads", "reviews", "timelineItems"].find((name) => query.includes(`${name}(first:`));
+      const key = ["reviewThreads", "reviews", "timelineItems", "comments"].find((name) =>
+        query.includes(`${name}(first:`),
+      );
       const pr = structuredClone(state.pr);
+      if (variables.reviewId) {
+        const nodes = structuredClone(state.reviewComments[variables.reviewId] ?? []);
+        return {
+          repository: { pullRequest: pr },
+          node: {
+            id: variables.reviewId,
+            comments: { nodes, totalCount: nodes.length, pageInfo: { hasNextPage: false, endCursor: null } },
+          },
+        };
+      }
       if (key) {
         const nodes = structuredClone(state[key]);
         pr[key] = { nodes, totalCount: nodes.length, pageInfo: { hasNextPage: false, endCursor: null } };
@@ -174,7 +215,7 @@ describe("identity, dismissal and current evidence", () => {
     state.timelineItems.push(structuredClone(dismissal));
     state.reviews[1].commit.oid = NEXT;
     expect((await evaluate(api, { ...args, expectedSha: NEXT })).ok).toBe(false);
-    state.reviews[1].body = `review-gate-renew dismissal ${NEXT}\nReason: Rechecked the changed code; the upstream input validation still applies.`;
+    state.reviews[1].body = `${verdict({ head: NEXT })}\nreview-gate-renew dismissal ${NEXT}\nReason: Rechecked the changed code; the upstream input validation still applies.`;
     state.reviews[1].url = "https://github.com/example/repo/pull/1#pullrequestreview-2";
     expect((await evaluate(api, { ...args, expectedSha: NEXT })).ok).toBe(true);
   });
@@ -297,5 +338,227 @@ test("workflow gate is unconditional, read-only, and listens for pushes and revi
   expect(workflow).not.toContain("continue-on-error:");
   expect(workflow).not.toContain("if:");
   expect(workflow).not.toContain("paths-ignore:");
+  expect(workflow).not.toContain("paths:");
+  expect(workflow).not.toContain("branches:");
   expect(workflow).not.toContain(": write");
+  expect(workflow).toContain("issues: read");
+  expect(workflow).not.toContain("issue_comment:");
+});
+
+describe("agent/session verdicts and code blockers across GitHub surfaces", () => {
+  const blockedComment = {
+    id: "code-blocker",
+    author,
+    body: "Independent review: **blocked-por-código**. Flags still enable stdin.",
+    url: "https://github.com/example/repo/pull/1#issuecomment-6550021053",
+    updatedAt: "2026-10-31T21:00:00Z",
+  };
+
+  test("#776: issue comment is a blocker when the next PR event evaluates the same head", async () => {
+    const { api, state } = fixture();
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.comments.push(structuredClone(blockedComment));
+    const blocked = await evaluate(api, args);
+    expect(blocked.sha).toBe(HEAD);
+    expect(blocked.ok).toBe(false);
+    expect(blocked.problems.join("\n")).toContain(blockedComment.url);
+    state.comments[0].body = "Finding withdrawn after checking the corrected branch.";
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.comments[0].body = blockedComment.body;
+    expect((await evaluate(api, args)).ok).toBe(false);
+    state.comments = [];
+    expect((await evaluate(api, args)).ok).toBe(true);
+  });
+
+  test("a new native review after green immediately makes the same head red", async () => {
+    const { api, state } = fixture();
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.reviews.push({
+      ...finding,
+      id: "new-blocker",
+      body: blockedComment.body,
+      submittedAt: blockedComment.updatedAt,
+      url: "https://github.com/example/repo/pull/1#pullrequestreview-3",
+    });
+    const blocked = await evaluate(api, args);
+    expect(blocked.sha).toBe(HEAD);
+    expect(blocked.problems.join("\n")).toContain("Unresolved code-blocked review");
+  });
+
+  test.each(["PR body", "review body", "issue comment"])(
+    "code blocker in %s cannot be hidden by approval",
+    async (where) => {
+      const { api, state } = fixture();
+      if (where === "PR body") state.pr.body += `\n${blockedComment.body}`;
+      if (where === "review body") state.reviews[0].body = blockedComment.body;
+      if (where === "issue comment") state.comments.push(blockedComment);
+      expect((await evaluate(api, args)).problems.join("\n")).toContain("Unresolved code-blocked review");
+    },
+  );
+
+  test("single writer can publish a review from a different session on the exact head", async () => {
+    const { api, state } = fixture();
+    state.writers = [];
+    state.reviews = [{ ...approval, author, state: "COMMENTED" }];
+    state.reviewThreads = [];
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.reviews[0].body = verdict({ session: "build-session", agent: "builder" });
+    expect((await evaluate(api, args)).ok).toBe(false);
+    state.reviews[0].body = verdict({ head: NEXT });
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test("issue comments never approve or resolve a code blocker", async () => {
+    const { api, state } = fixture();
+    state.writers = [];
+    state.reviews[1].body = "No native verdict yet.";
+    state.comments = [{ ...blockedComment, body: verdict() }];
+    expect((await evaluate(api, args)).ok).toBe(false);
+    state.comments = [
+      blockedComment,
+      {
+        ...blockedComment,
+        id: "resolution",
+        updatedAt: "2026-10-31T22:00:00Z",
+        body: verdict({ resolves: [blockedComment.url] }),
+      },
+    ];
+    state.reviews[1].body = verdict();
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test("native review comments carry verdicts and code blockers", async () => {
+    const { api, state } = fixture();
+    state.reviews[1].body = "Verdict is on the reviewed line.";
+    state.reviewComments.approval = [
+      { ...blockedComment, id: "native-comment", body: verdict(), commit: { oid: HEAD } },
+    ];
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.reviewComments.approval.push({ ...blockedComment, id: "native-blocker", commit: { oid: HEAD } });
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test.each(["stale native commit", "dismissed native review"])("rejects approving envelope on %s", async (variant) => {
+    const { api, state } = fixture();
+    state.writers = [];
+    if (variant === "stale native commit") state.reviews[1].commit.oid = NEXT;
+    else state.reviews[1].state = "DISMISSED";
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test("a second writer makes native approval mandatory in addition to the session verdict", async () => {
+    const { api, state } = fixture();
+    state.reviews[1].state = "COMMENTED";
+    state.writers = [];
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.writers = ["reviewer"];
+    expect((await evaluate(api, args)).problems.join("\n")).toContain("No independent writer approval");
+    state.reviews[1].state = "APPROVED";
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.reviews[1].body = "Native approval without agent provenance.";
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test("finding needs an explicit newer resolution from a current-head independent session", async () => {
+    const { api, state } = fixture();
+    state.comments = [blockedComment];
+    state.reviews[1].body = verdict({ resolves: [blockedComment.url] });
+    expect((await evaluate(api, args)).ok).toBe(false);
+    state.reviews[1].submittedAt = "2026-10-31T22:00:00Z";
+    expect((await evaluate(api, args)).ok).toBe(true);
+    state.comments[0] = { ...blockedComment, updatedAt: "2026-10-31T23:00:00Z" };
+    expect((await evaluate(api, args)).ok).toBe(false);
+  });
+
+  test.each(["APPROVED", "COMMENTED"])(
+    "an edited %s review body blocks again after its finding and native thread were resolved",
+    async (reviewState) => {
+      const { api, state, calls } = fixture();
+      state.reviews[0] = {
+        ...finding,
+        author: reviewer,
+        state: reviewState,
+        body: "The reviewed changes are approved.",
+        submittedAt: "2026-10-31T18:00:00Z",
+        updatedAt: "2026-10-31T18:00:00Z",
+      };
+      state.reviews[1].submittedAt = "2026-10-31T19:00:00Z";
+      state.reviews[1].body = verdict({ resolves: [finding.url] });
+      expect(state.reviewThreads[0].isResolved).toBe(true);
+      expect((await evaluate(api, args)).ok).toBe(true);
+
+      state.reviews[0].body = "blocked-por-código: the original finding.";
+      state.reviews[0].updatedAt = "2026-10-31T18:30:00Z";
+      expect((await evaluate(api, args)).ok).toBe(true);
+
+      state.reviews[0].body += " New finding added after the previous resolution.";
+      state.reviews[0].updatedAt = "2026-10-31T20:00:00Z";
+      const blocked = await evaluate(api, args);
+      expect(blocked.ok).toBe(false);
+      expect(blocked.problems.join("\n")).toContain(finding.url);
+      expect(state.reviewThreads[0].isResolved).toBe(true);
+      expect(calls.some(({ query }) => query.includes("reviews(first:") && query.includes("updatedAt"))).toBe(true);
+
+      state.reviews[1].submittedAt = "2026-10-31T21:00:00Z";
+      expect((await evaluate(api, args)).ok).toBe(true);
+    },
+  );
+
+  test("missing author provenance, reader publication and malformed verdicts fail closed", async () => {
+    const { api, state } = fixture();
+    state.pr.body = "";
+    expect((await evaluate(api, args)).ok).toBe(false);
+    state.pr.body = authorProvenance;
+    api.permission = async () => "read";
+    expect((await evaluate(api, args)).ok).toBe(false);
+    state.reviews[1].body = '<!-- ravi-review {"head":"invalid"} -->';
+    await expect(evaluate(api, args)).rejects.toThrow("malformed agent review verdict");
+  });
+
+  test("a code blocker on the second issue-comment page is included", async () => {
+    const { api } = fixture();
+    const original = api.graphql;
+    api.graphql = async (query: string, variables: any) => {
+      const result = await original(query, variables);
+      const pr = result.repository.pullRequest;
+      if (pr.comments) {
+        pr.comments = variables.cursor
+          ? { nodes: [blockedComment], totalCount: 2, pageInfo: { hasNextPage: false, endCursor: "last" } }
+          : {
+              nodes: [{ ...blockedComment, id: "benign", body: "Review in progress." }],
+              totalCount: 2,
+              pageInfo: { hasNextPage: true, endCursor: "next" },
+            };
+      }
+      return result;
+    };
+    expect((await evaluate(api, args)).problems.join("\n")).toContain(blockedComment.url);
+  });
+
+  test("a comment edit while a green decision is being evaluated fails closed", async () => {
+    const { api, state } = fixture();
+    const original = api.graphql;
+    let reads = 0;
+    api.graphql = async (query: string, variables: any) => {
+      if (!variables.reviewId && query.includes("comments(first:100") && ++reads === 2)
+        state.comments.push(blockedComment);
+      return original(query, variables);
+    };
+    await expect(evaluate(api, args)).rejects.toThrow("comments: evidence changed");
+  });
+
+  test.each(["missing", "truncated"])("%s issue-comment data cannot mean no blockers", async (variant) => {
+    const { api } = fixture();
+    const original = api.graphql;
+    api.graphql = async (query: string, variables: any) => {
+      const result = await original(query, variables);
+      const pr = result.repository.pullRequest;
+      if (pr.comments) {
+        if (variant === "missing") delete pr.comments.nodes;
+        else pr.comments.totalCount++;
+      }
+      return result;
+    };
+    await expect(evaluate(api, args)).rejects.toThrow("comments:");
+  });
 });
