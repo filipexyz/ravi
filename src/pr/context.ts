@@ -4,8 +4,34 @@ import { getContext } from "../cli/context.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
 import { localOperatorCan } from "../permissions/provider-runtime.js";
 import { getRaviDbPath } from "../router/router-db.js";
-import type { GhWatchFollowContext } from "../hooks/gh-watch.js";
+import { resolveGhFollowContext, type GhWatchFollowContext } from "../hooks/gh-watch.js";
 import { prError } from "./contracts.js";
+
+/** Validate live ownership without bootstrapping or migrating state during preview. */
+export function resolvePublicationFollowContext(context: GhWatchFollowContext): GhWatchFollowContext {
+  let database: Database | undefined;
+  try {
+    database = new Database(getRaviDbPath(), { readonly: true, create: false });
+    const resolved = resolveGhFollowContext(context, database);
+    const ref = resolved.sessionKey ?? resolved.sessionName;
+    if (
+      !resolved.agentId ||
+      !ref ||
+      !database.query("SELECT 1 FROM sessions WHERE session_key=? OR name=?").get(ref, ref)
+    )
+      throw new Error("Cannot register PR follow: durable session is missing.");
+    return resolved;
+  } catch (error) {
+    throw prError(
+      "PUBLICATION_SESSION_REQUIRED",
+      error instanceof Error && error.message.startsWith("Cannot register PR follow:")
+        ? error.message
+        : "Cannot register PR follow: readable durable lifecycle state is required.",
+    );
+  } finally {
+    database?.close();
+  }
+}
 
 /** Read-only even in a fresh installation: preview must not bootstrap the runtime database. */
 export function resolvePublicationContext(replySession?: string): GhWatchFollowContext {

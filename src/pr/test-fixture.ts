@@ -8,9 +8,11 @@ import { openPublicationJournal } from "./journal.js";
 import type { GhWatchFollowDeps } from "../hooks/gh-watch.js";
 import type { WatchRecord } from "../watch/types.js";
 import type { Trigger } from "../triggers/types.js";
+import { getOrCreateSession } from "../router/sessions.js";
 
 /** Real Git databases at both ends; only HTTP and the unrelated daemon are simulated. */
 export function publicationFixture() {
+  getOrCreateSession("agent:test:publisher", "test", "/tmp/publication-test", { name: "publisher" });
   const root = mkdtempSync(join(tmpdir(), "ravi-pr-publish-"));
   const cwd = join(root, "local");
   const remote = join(root, "remote.git");

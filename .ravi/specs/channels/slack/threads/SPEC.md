@@ -211,3 +211,9 @@ The existing thread reconciler also drains decision effects. Exact origin bindin
 - An orphan close MUST require modify authority over the child or its recorded parent. Missing, ambiguous and unauthorized references MUST be cloaked as `SESSION_NOT_FOUND`; public copy MUST distinguish this condition from an execution failure without revealing private names.
 - Closing an orphan uses the same card update, pending-decision guard, close sequence, parent-return delivery and idempotency as a live child.
 - Existing orphan cards are reconciled by this same close command; no deployment-time destructive cleanup or recreation is authorized by this fix.
+
+## Durable subscribers at close
+
+- Closing MUST refuse atomically with `THREAD_TRIGGERS_PENDING` when a trigger addresses the child by name or key in `replySession` and the shared activation verdict is `active` (including `enabled`). The refusal MUST list offending trigger ids and explain `ravi triggers set <id> replySession <parent-session>`.
+- Refusal MUST leave lifecycle status, close sequence, parent return and card untouched. The same guard applies after child pruning. Disabled, invalid-filter, blocked-topic and unbound-agent triggers MUST NOT block close.
+- Repointing is explicit for arbitrary triggers; close MUST NOT silently change their recipients. After handoff, close MAY proceed. The remote CLI MUST retain actionable ids without forwarding arbitrary remote text.

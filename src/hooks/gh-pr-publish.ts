@@ -17,6 +17,7 @@ import { prError, type PublicationPhase } from "../pr/contracts.js";
 import { requireFollowRuntime } from "../pr/follow-health.js";
 import { dbGetTrigger } from "../triggers/index.js";
 import { getWatch } from "../watch/watch-db.js";
+import { resolvePublicationFollowContext } from "../pr/context.js";
 
 export interface GhPrPublication {
   repo: string;
@@ -63,7 +64,7 @@ export async function verifyPublicationFollow(
 ): Promise<void> {
   const watch = follow.ciWatchId ? (deps.watch ?? getWatch)(follow.ciWatchId) : null;
   const trigger = follow.triggerId ? (deps.trigger ?? dbGetTrigger)(follow.triggerId) : null;
-  const desired = buildGhFollowTriggerInput(input.repo, prNumber, input.context);
+  const desired = buildGhFollowTriggerInput(input.repo, prNumber, resolvePublicationFollowContext(input.context));
   if (
     !watch ||
     watch.status !== "active" ||
@@ -83,6 +84,7 @@ export async function verifyPublicationFollow(
       { retryable: true },
     );
   await (deps.runtime ?? requireFollowRuntime)(trigger);
+  resolvePublicationFollowContext(input.context);
 }
 
 /** Shared final publication step. Retry repairs the same PR and the existing follow registry. */
@@ -102,6 +104,9 @@ export async function publishGhPr(input: GhPrPublication, deps: GhPrPublicationD
     );
   if (!input.context.agentId || !(input.context.sessionName || input.context.sessionKey))
     throw prError("PUBLICATION_SESSION_REQUIRED", "Publication requires the publishing Ravi agent and session");
+  // Keep the original publisher: registration must re-read its durable lineage
+  // after GitHub I/O, including closure/pruning while publication is in flight.
+  resolvePublicationFollowContext(input.context);
   const request = deps.request ?? requestGhPublication;
   const root = `repos/${input.repo}`;
   const ref = (await request(`${root}/git/ref/heads/${encodeURIComponent(input.head)}`, "GET")) as {
@@ -143,6 +148,7 @@ export async function publishGhPr(input: GhPrPublication, deps: GhPrPublicationD
   deps.onPr?.(pr);
   deps.phase?.("follow");
   deps.beforeFollow?.();
+  resolvePublicationFollowContext(input.context);
   const follow = await ensureGhWatchFollow(
     { repo: input.repo, prNumber: pr.number, context: input.context, reconcile: true },
     { ...deps.follow, localOnly: true },
@@ -171,5 +177,6 @@ export async function publishGhPr(input: GhPrPublication, deps: GhPrPublicationD
   assertPublishedHead(verified, input);
   if (verified.draft)
     throw prError("PR_PUBLICATION_INCOMPLETE", "PR is still draft; publication incomplete.", { retryable: true });
+  resolvePublicationFollowContext(input.context);
   return { url: verified.html_url, number: verified.number, sha: input.sha, ready: true as const, reused, follow };
 }

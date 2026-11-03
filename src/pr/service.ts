@@ -14,6 +14,7 @@ import {
   type GithubRequest,
 } from "./github.js";
 import { openPublicationJournal, type PublicationJournal } from "./journal.js";
+import { resolvePublicationFollowContext } from "./context.js";
 
 export interface PublicationInput {
   cwd: string;
@@ -31,6 +32,7 @@ export async function preparePublication(
 ) {
   if (!REPO.test(input.repo) || !input.base || (input.expectSha !== undefined && !SHA.test(input.expectSha)))
     throw prError("USAGE_ERROR", "Provide --repo owner/repo, --base branch and optionally a full --expect-sha.", {}, 2);
+  const followContext = resolvePublicationFollowContext(input.context);
   const snapshot = await git.snapshot(input.repo);
   await git.run(["check-ref-format", `refs/heads/${input.base}`]);
   if (input.expectSha && snapshot.sha !== input.expectSha)
@@ -74,7 +76,7 @@ export async function preparePublication(
     refAction: remoteSha === snapshot.sha ? "reuse" : remoteSha ? "advance" : "create",
     prAction: existing ? (existing.draft ? "ready" : "reuse") : "create",
     prNumber: existing?.number ?? null,
-    replySession: input.context.sessionName ?? input.context.sessionKey ?? "",
+    replySession: followContext.sessionName ?? followContext.sessionKey ?? "",
     followAction: "reconcile",
   });
   return { input: { ...input, repo }, plan, objects, git };
@@ -161,6 +163,7 @@ export async function executePublication(
   const auditedRequest: GithubRequest = async (endpoint, method, body) => {
     if (method === "GET") return await request(endpoint, method, body);
     options.authorize();
+    resolvePublicationFollowContext(input.context);
     const detail: Record<string, string> = currentObject ?? (partial.phase === "ref" ? { sha: plan.localSha } : {});
     journal.record(partial.phase, "intent", detail);
     partial.uncertain = true;
@@ -179,6 +182,7 @@ export async function executePublication(
       });
   };
   try {
+    resolvePublicationFollowContext(input.context);
     partial.phase = "objects";
     for (const object of objects) {
       currentObject = { objectType: object.type, sha: object.sha };
@@ -267,6 +271,7 @@ export async function executePublication(
       throw prError("REMOTE_REF_CHANGED", "The remote head changed during final verification.");
     if ((await git.text(["rev-parse", "HEAD"])) !== plan.localSha)
       throw prError("LOCAL_HEAD_CHANGED", "Local HEAD changed during final verification.");
+    const followContext = resolvePublicationFollowContext(input.context);
     journal.record("complete", "confirmed", {
       prNumber: published.number,
       sha: plan.localSha,
@@ -290,7 +295,7 @@ export async function executePublication(
         watchId: published.follow.watchId!,
         ciWatchId: published.follow.ciWatchId!,
         triggerId: published.follow.triggerId!,
-        replySession: plan.replySession,
+        replySession: followContext.sessionName ?? followContext.sessionKey ?? "",
         verifiedAt: new Date().toISOString(),
       },
       checks,

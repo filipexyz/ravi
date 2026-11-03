@@ -552,6 +552,11 @@ const THREAD_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedA
     message: "Thread has open decisions or an undelivered answer.",
     suggestedAction: "Answer pending decisions and verify delivery before closing.",
   },
+  THREAD_TRIGGERS_PENDING: {
+    message: "Thread still receives active triggers and cannot close.",
+    suggestedAction:
+      "Repoint each trigger with ravi triggers set <id> replySession <parent-session>, verify the destination, then retry sessions close-thread.",
+  },
   THREAD_PARENT_RETURN_PENDING: {
     message: "A previous return to the parent session is still pending.",
     suggestedAction: "Retry after the parent session receives the pending return",
@@ -1121,6 +1126,13 @@ function projectRemoteContractDetails(
     Object.assign(details, projectSessionsRuntimeDetails(remote));
   } else if (threadCatalog) {
     details.suggestedAction = threadCatalog.suggestedAction;
+    if (op === "sessions close-thread" && remote.code === "THREAD_TRIGGERS_PENDING") {
+      const triggerIds = boundedStringList(remote.triggerIds, /^[a-f0-9]{8}$/);
+      if (triggerIds) {
+        details.triggerIds = triggerIds;
+        details.suggestedAction = `Active triggers: ${triggerIds.join(", ")}. ${threadCatalog.suggestedAction}`;
+      }
+    }
   } else if (profileCatalog) {
     details.suggestedAction = profileCatalog.suggestedAction;
   } else if (identityCatalog && body.outcome === "failed") {

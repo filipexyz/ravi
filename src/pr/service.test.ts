@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmodSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { preparePublication, executePublication } from "./service.js";
@@ -6,14 +6,138 @@ import { publicationFixture } from "./test-fixture.js";
 import { GithubError, type GithubRequest } from "./github.js";
 import { parseCommit, LocalGit } from "./git.js";
 import { ContractError } from "../cli/agent-contract.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { registerInboundSlackThread, closeSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
+import { deleteSession, getOrCreateSession } from "../router/sessions.js";
+import { getDb } from "../router/router-db.js";
 
 let f: ReturnType<typeof publicationFixture>;
-afterEach(() => f?.close());
+let state: string | null = null;
+beforeEach(async () => {
+  state = await createIsolatedRaviState("ravi-pr-service-");
+});
+afterEach(async () => {
+  f?.close();
+  await cleanupIsolatedRaviState(state);
+  state = null;
+});
 const mutations = () => f.calls.filter((call) => call.method !== "GET");
 async function publish(request: GithubRequest = f.request) {
   const prepared = await preparePublication(f.input(), request);
   return executePublication(prepared, request, f.options);
 }
+
+function threadInput() {
+  const input = f.input();
+  const childKey = `${input.context.sessionKey}:thread:1.2`;
+  getOrCreateSession(childKey, "test", f.cwd, { name: "publisher-thread" });
+  registerInboundSlackThread({
+    parentSessionKey: input.context.sessionKey,
+    parentSessionName: input.context.sessionName,
+    childSessionKey: childKey,
+    childSessionName: "publisher-thread",
+    accountId: "slack",
+    instanceId: "slack-test",
+    platformChatId: "C-test",
+    threadCanonicalChatId: "chat-thread-test",
+    providerThreadId: "1.2",
+  });
+  return {
+    ...input,
+    context: {
+      ...input.context,
+      sessionKey: childKey,
+      sessionName: "publisher-thread",
+      source: { ...input.context.source, threadId: "1.2" },
+    },
+  };
+}
+
+describe("publication lifecycle across object upload", () => {
+  it.each(["missing", "ambiguous", "parent-missing", "root-missing"])(
+    "rejects %s ownership before any GitHub request or journal",
+    async (kind) => {
+      f = publicationFixture();
+      const input = kind === "root-missing" ? f.input() : threadInput();
+      if (kind === "missing") getDb().exec("DELETE FROM slack_thread_lifecycle");
+      if (kind === "ambiguous")
+        registerInboundSlackThread({
+          parentSessionKey: "agent:test:publisher",
+          parentSessionName: "publisher",
+          childSessionKey: input.context.sessionKey,
+          childSessionName: input.context.sessionName,
+          accountId: "slack",
+          instanceId: "slack-test",
+          platformChatId: "C-test",
+          threadCanonicalChatId: "chat-thread-other",
+          providerThreadId: "3.4",
+        });
+      if (kind === "parent-missing" || kind === "root-missing") deleteSession("agent:test:publisher");
+      const before = getDb().query("SELECT total_changes() AS changes").get();
+      await expect(preparePublication(input, f.request)).rejects.toMatchObject({
+        code: "PUBLICATION_SESSION_REQUIRED",
+      });
+      expect(f.calls).toHaveLength(0);
+      expect(f.db.query("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(0);
+      expect(getDb().query("SELECT total_changes() AS changes").get()).toEqual(before);
+    },
+  );
+
+  it("checks again between preview and execute, without uploading or moving the branch", async () => {
+    f = publicationFixture();
+    const prepared = await preparePublication(threadInput(), f.request);
+    getDb().exec("DELETE FROM slack_thread_lifecycle");
+    f.calls.length = 0;
+    await expect(executePublication(prepared, f.request, f.options)).rejects.toMatchObject({
+      code: "PUBLICATION_SESSION_REQUIRED",
+      details: { partial: { phase: "preflight", refPublished: false } },
+    });
+    expect(f.calls).toHaveLength(0);
+    expect(f.triggers).toHaveLength(0);
+  });
+
+  it("stops further GitHub mutations if lineage disappears during object upload", async () => {
+    f = publicationFixture();
+    const prepared = await preparePublication(threadInput(), f.request);
+    const request: GithubRequest = async (endpoint, method, body) => {
+      const value = await f.request(endpoint, method, body);
+      if (method === "POST") getDb().exec("DELETE FROM slack_thread_lifecycle");
+      return value;
+    };
+    await expect(executePublication(prepared, request, f.options)).rejects.toMatchObject({
+      code: "PUBLICATION_SESSION_REQUIRED",
+      details: { partial: { phase: "objects", refPublished: false } },
+    });
+    expect(mutations()).toHaveLength(1);
+    expect(mutations()[0]!.endpoint).toEndWith("/git/blobs");
+    expect(f.pr()).toBeNull();
+    expect(f.triggers).toHaveLength(0);
+  });
+
+  it("keeps the original publisher lineage through child closure/pruning during upload", async () => {
+    f = publicationFixture();
+    const input = threadInput();
+    const prepared = await preparePublication(input, f.request);
+    expect(prepared.plan.replySession).toBe("publisher");
+    let closed = false;
+    const request: GithubRequest = async (endpoint, method, body) => {
+      const value = await f.request(endpoint, method, body);
+      if (!closed && method === "POST") {
+        closeSlackThreadLifecycle({ childSessionKey: input.context.sessionKey });
+        deleteSession(input.context.sessionKey);
+        closed = true;
+      }
+      return value;
+    };
+    const result = await executePublication(prepared, request, f.options);
+    expect(result.follow.replySession).toBe("publisher");
+    expect(f.triggers[0]).toMatchObject({
+      replySession: "publisher",
+      replySource: { channel: "slack", accountId: "slack", chatId: "C-test" },
+    });
+    expect(f.triggers[0]!.replySource?.threadId).toBeUndefined();
+  });
+});
 
 describe("verified Git Data API publication", () => {
   it("plans without writes and publishes byte-identical objects, ready PR and one follow", async () => {

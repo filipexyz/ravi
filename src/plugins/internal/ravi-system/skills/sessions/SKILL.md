@@ -290,6 +290,8 @@ Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack th
 
 `sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
 
+`THREAD_TRIGGERS_PENDING` impede fechar enquanto algum trigger ativo aponta para a filha em `replySession`. O erro lista os ids: confira `ravi triggers show <id> --json`, repontando cada um com `ravi triggers set <id> replySession <sessão-pai>` antes de tentar fechar novamente. Não desative um follow vivo só para liberar o fechamento. Follows de PR gerados usam a sessão pai e reconciliam destinatários antigos.
+
 ### Decisões de uma thread
 
 Uma thread pode precisar de decisão sem task. Leia `ravi skills show decisions`.

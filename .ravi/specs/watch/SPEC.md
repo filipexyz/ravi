@@ -190,6 +190,10 @@ second trigger runner.
   one token and cannot receive `pull_request.opened` or `workflow_run.completed`.
   Reconciliation MUST repair an existing selected follow's obsolete topic;
   a persisted and loaded subscription to the wrong pattern is still broken.
+- Publication MUST validate durable ownership before GitHub I/O and revalidate
+  the original publisher at follow registration and completion. Follow health
+  MUST compare the loaded subscription against the resolved durable parent;
+  closing/pruning the child MUST NOT invalidate a correctly handed-off follow.
 - Re-running publication MUST reconcile the selected existing PR: create a
   missing follow, repair stale topic/filter/destination, restore its producer,
   and promote a legacy draft. It MUST reuse the existing PR and trigger ids.

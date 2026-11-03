@@ -106,6 +106,8 @@ step. If interrupted or failed after PR creation, repeat the command: it repairs
 the existing PR/follow, including a legacy draft, without duplicating either.
 Ready does not waive the independent current-head approval required by Review
 Gate. This script does not upload Git objects or bypass a hook.
+A thread publisher hands CI to its durable parent; never claim persistent
+follow-up while closing the only recipient.
 
 ## Adding or changing a CLI command
 

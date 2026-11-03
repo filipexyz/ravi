@@ -84,6 +84,13 @@ PR reconciliation and follow are internal helpers, not separate public commands.
   subscription fingerprint. Missing or old runtime fails preflight; a lost
   runner after mutation returns partial failure. `fireCount=0` is legitimate
   before the first event. Never start another runner to make a probe pass.
+- Preflight MUST validate durable publisher ownership before any GitHub call,
+  using read-only lifecycle/session access so preview cannot bootstrap state.
+  Execute MUST revalidate the original publisher before object/ref/PR writes,
+  before follow registration and before success. A thread closing or being
+  pruned is safe while its saved lifecycle and durable parent remain; missing
+  or ambiguous lineage MUST fail closed. Verification and reported replySession
+  MUST refer to the resolved parent, never a frozen child destination.
 - New PRs are ready; legacy drafts become ready after follow verification.
   Final result includes repo/head/base, local and remote SHA/tree, PR URL,
   watch/CI-watch/trigger IDs, publishing session, verification time and current

@@ -15,13 +15,25 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { dbDeleteTrigger, dbListTriggers, dbUpdateTrigger, type Trigger } from "../triggers/index.js";
+import {
+  dbDeleteTrigger,
+  dbListTriggers,
+  dbUpdateTrigger,
+  type Trigger,
+  type TriggerInput,
+} from "../triggers/index.js";
 import { validateFilter } from "../triggers/filter.js";
 import { removeWatch as removeWatchOperation, listWatchRecords } from "../watch/index.js";
 import type { WatchRecord } from "../watch/types.js";
 import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
-import { ensureGhWatchFollow, ensureFollowWatchProducer, ghFollowFilter, isGhFollowManagedWatch } from "./gh-watch.js";
+import {
+  ensureGhWatchFollow,
+  ensureFollowWatchProducer,
+  ghFollowFilter,
+  ghFollowReplyTargetPatch,
+  isGhFollowManagedWatch,
+} from "./gh-watch.js";
 import {
   addPendingGhFollow,
   dropExpiredPendingGhFollows,
@@ -51,7 +63,7 @@ export interface GhFollowMaintenanceDeps {
   writePending?: (entries: PendingGhFollow[]) => void;
   listTriggers?: () => Trigger[];
   deleteTrigger?: (id: string) => boolean;
-  updateTrigger?: (id: string, updates: { filter: string }) => unknown;
+  updateTrigger?: (id: string, updates: Partial<TriggerInput>) => unknown;
   listWatches?: () => WatchRecord[];
   removeWatch?: (id: string) => Promise<boolean>;
   ensureFollow?: typeof ensureGhWatchFollow;
@@ -224,6 +236,7 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
       result.pendingResolved += 1;
     } catch (error) {
       log.warn("Could not create follow trigger for resolved PR", { repo: entry.repo, prNumber, error });
+      stillPending.push(entry);
       result.errors += 1;
     }
   }
@@ -261,12 +274,19 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
     }
 
     const alive = triggers.filter((trigger) => !removedTriggerIds.has(trigger.id));
-    for (const { trigger, filter } of selectGhFollowFilterRepairs(alive)) {
+    const filterRepairs = new Map(
+      selectGhFollowFilterRepairs(alive).map(({ trigger, filter }) => [trigger.id, filter]),
+    );
+    for (const trigger of alive) {
       try {
-        updateTrigger(trigger.id, { filter });
+        const patch = ghFollowReplyTargetPatch(trigger);
+        const filter = filterRepairs.get(trigger.id);
+        if (filter) patch.filter = filter;
+        if (Object.keys(patch).length === 0) continue;
+        updateTrigger(trigger.id, patch);
         result.triggersRepaired += 1;
       } catch (error) {
-        log.warn("Could not repair follow trigger filter", { triggerId: trigger.id, error });
+        log.warn("Could not repair follow trigger", { triggerId: trigger.id, error });
         result.errors += 1;
       }
     }

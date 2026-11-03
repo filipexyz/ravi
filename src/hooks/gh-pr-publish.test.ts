@@ -1,10 +1,14 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   publishGhPr,
   verifyPublicationFollow,
   type GhPrPublication,
   type GhPublicationRequest,
 } from "./gh-pr-publish.js";
+import { registerInboundSlackThread, closeSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
+import { deleteSession, getOrCreateSession } from "../router/sessions.js";
+import { getDb } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { buildGhFollowTriggerInput, type GhWatchFollowDeps } from "./gh-watch.js";
 import { evaluateFilter } from "../triggers/filter.js";
 import type { Trigger } from "../triggers/types.js";
@@ -25,7 +29,35 @@ const input: GhPrPublication = {
   },
 };
 
-function fixture(options: { existing?: boolean; draft?: boolean; staleFollow?: boolean } = {}) {
+let stateDir: string | null = null;
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-gh-pr-publication-");
+});
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
+});
+
+const parentKey = "publishing-parent-key";
+const childKey = `${parentKey}:thread:1.2`;
+const parentSource = { channel: "slack", accountId: "slack", chatId: "C1" };
+
+function fixture(options: { existing?: boolean; draft?: boolean; staleFollow?: boolean; noLifecycle?: boolean } = {}) {
+  getOrCreateSession(parentKey, "main", "/tmp/publication-test", { name: "publishing-parent" });
+  getOrCreateSession(childKey, "main", "/tmp/publication-test", { name: input.context.sessionName });
+  if (!options.noLifecycle) {
+    registerInboundSlackThread({
+      parentSessionKey: parentKey,
+      parentSessionName: "publishing-parent",
+      childSessionKey: childKey,
+      childSessionName: input.context.sessionName!,
+      accountId: "slack",
+      instanceId: "slack-instance",
+      platformChatId: "C1",
+      threadCanonicalChatId: "thread-chat",
+      providerThreadId: "1.2",
+    });
+  }
   const calls: Array<{ endpoint: string; method: string; body?: Record<string, unknown> }> = [];
   let pr = options.existing ? makePr(options.draft) : undefined;
   const watches: WatchRecord[] = [];
@@ -126,9 +158,9 @@ describe("Git Data API publication boundary", () => {
     expect(f.watches[0]!.placement).toBe("local");
     expect(f.triggers[0]).toMatchObject({
       name: "gh-follow:o/r#9",
-      replySession: "publishing-thread",
+      replySession: "publishing-parent",
       agentId: "main",
-      replySource: input.context.source,
+      replySource: parentSource,
       topic: "ravi.watch.github.>",
       enabled: true,
     });
@@ -158,7 +190,8 @@ describe("Git Data API publication boundary", () => {
     expect(f.triggers).toHaveLength(1);
     expect(f.triggers[0]).toMatchObject({
       enabled: true,
-      replySession: input.context.sessionName,
+      replySession: "publishing-parent",
+      replySource: parentSource,
       topic: "ravi.watch.github.>",
     });
     expect(f.watches.some((watch) => watch.placement === "local")).toBe(true);
@@ -210,6 +243,78 @@ describe("Git Data API publication boundary", () => {
     await expect(publishGhPr({ ...input, sha: "b".repeat(40) }, f.deps)).rejects.toThrow("Remote branch");
     expect(f.calls.every((call) => call.method === "GET")).toBe(true);
   });
+
+  it.each(["missing", "unknown", "ambiguous", "parent-missing"])(
+    "refuses %s lineage before creating a PR, promoting a draft or registering a follow",
+    async (lineage) => {
+      const f = fixture({ noLifecycle: lineage === "missing" || lineage === "unknown" });
+      if (lineage === "unknown") deleteSession(childKey);
+      if (lineage === "parent-missing") deleteSession(parentKey);
+      if (lineage === "ambiguous") {
+        registerInboundSlackThread({
+          parentSessionKey: parentKey,
+          parentSessionName: "publishing-parent",
+          childSessionKey: childKey,
+          childSessionName: input.context.sessionName!,
+          accountId: "slack",
+          instanceId: "slack-instance",
+          platformChatId: "C1",
+          threadCanonicalChatId: "other-thread-chat",
+          providerThreadId: "3.4",
+        });
+      }
+      await expect(publishGhPr(input, f.deps)).rejects.toThrow("Cannot register PR follow");
+      expect(f.calls).toHaveLength(0);
+      expect(f.watches).toHaveLength(0);
+      expect(f.triggers).toHaveLength(0);
+    },
+  );
+
+  it("publishes from a durable root session without requiring a thread lifecycle", async () => {
+    const f = fixture({ noLifecycle: true });
+    const rootInput = {
+      ...input,
+      context: { ...input.context, sessionName: "publishing-parent", source: parentSource },
+    };
+    expect((await publishGhPr(rootInput, f.deps)).ready).toBe(true);
+    expect(f.triggers[0]).toMatchObject({ replySession: "publishing-parent", replySource: parentSource });
+  });
+
+  it("revalidates original lineage after the child closes and is pruned during GitHub I/O", async () => {
+    const f = fixture();
+    const request = f.deps.request;
+    f.deps.request = (endpoint, method, body) => {
+      const result = request(endpoint, method, body);
+      if (endpoint.endsWith("/pulls") && method === "POST") {
+        closeSlackThreadLifecycle({ childSessionKey: childKey });
+        deleteSession(childKey);
+      }
+      return result;
+    };
+    expect((await publishGhPr(input, f.deps)).ready).toBe(true);
+    expect(f.triggers[0]).toMatchObject({ replySession: "publishing-parent", replySource: parentSource });
+  });
+
+  it.each(["before-follow", "verification"])(
+    "refuses lineage lost at %s instead of reporting success",
+    async (phase) => {
+      const f = fixture();
+      const request = f.deps.request;
+      f.deps.request = (endpoint, method, body) => {
+        const result = request(endpoint, method, body);
+        if (
+          (phase === "before-follow" && endpoint.endsWith("/pulls") && method === "POST") ||
+          (phase === "verification" && endpoint.endsWith("/pulls/9"))
+        ) {
+          getDb().query("DELETE FROM slack_thread_lifecycle WHERE child_session_key=?").run(childKey);
+        }
+        return result;
+      };
+      await expect(publishGhPr(input, f.deps)).rejects.toMatchObject({ code: "PUBLICATION_SESSION_REQUIRED" });
+      if (phase === "before-follow") expect(f.triggers).toHaveLength(0);
+      else expect(f.triggers[0]!.replySession).toBe("publishing-parent");
+    },
+  );
 
   it("refuses another repository or a moved PR head without registering or promoting it", async () => {
     for (const mismatch of ["repo", "sha"] as const) {
