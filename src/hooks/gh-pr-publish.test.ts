@@ -129,7 +129,7 @@ describe("Git Data API publication boundary", () => {
       replySession: "publishing-thread",
       agentId: "main",
       replySource: input.context.source,
-      topic: "ravi.watch.github.*",
+      topic: "ravi.watch.github.>",
       enabled: true,
     });
     expect(
@@ -159,7 +159,7 @@ describe("Git Data API publication boundary", () => {
     expect(f.triggers[0]).toMatchObject({
       enabled: true,
       replySession: input.context.sessionName,
-      topic: "ravi.watch.github.*",
+      topic: "ravi.watch.github.>",
     });
     expect(f.watches.some((watch) => watch.placement === "local")).toBe(true);
   });

@@ -16,3 +16,7 @@
 - A live authorized smoke must verify remote SHA/tree against local Git,
   ready PR, active follow and receipt of CI events in the selected session.
   Build and the complete test suite belong in CI, not the production machine.
+- `bun test src/pr/follow-broker.test.ts` starts an isolated in-memory NATS
+  broker on an ephemeral loopback port and verifies actual delivery of PR,
+  CI and comment subjects. It skips explicitly when `nats-server` is absent;
+  topic reconciliation remains covered by the always-on helper tests.

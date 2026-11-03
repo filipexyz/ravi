@@ -495,7 +495,11 @@ describe("gh watch follow", () => {
 
   it("refreshes the instructions of an existing follow", async () => {
     const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
-    const stale = trigger({ message: "Activity on o/r#7. Tell the user what changed.", filter: "old" });
+    const stale = trigger({
+      message: "Activity on o/r#7. Tell the user what changed.",
+      filter: "old",
+      topic: "ravi.watch.github.*",
+    });
 
     const result = await ensureGhWatchFollow(
       { repo: "o/r", prNumber: 7, context: { sessionName: "dev" } },
@@ -516,6 +520,7 @@ describe("gh watch follow", () => {
     expect(updates).toHaveLength(1);
     expect(String(updates[0].patch.message)).toContain("comment");
     expect(updates[0].patch.filter).toBe(ghFollowFilter("o/r", 7));
+    expect(updates[0].patch.topic).toBe("ravi.watch.github.>");
   });
 
   it("does not create a trigger without a PR number", async () => {

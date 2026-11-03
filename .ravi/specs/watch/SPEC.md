@@ -186,6 +186,10 @@ second trigger runner.
   scoped to its installation DB path, with local producer running state and
   a fingerprint of its loaded subscription. Publication MUST confirm that
   fingerprint matches the desired follow, not merely that a DB row exists.
+- The follow subscription MUST use `ravi.watch.github.>`: NATS `*` matches
+  one token and cannot receive `pull_request.opened` or `workflow_run.completed`.
+  Reconciliation MUST repair an existing selected follow's obsolete topic;
+  a persisted and loaded subscription to the wrong pattern is still broken.
 - Re-running publication MUST reconcile the selected existing PR: create a
   missing follow, repair stale topic/filter/destination, restore its producer,
   and promote a legacy draft. It MUST reuse the existing PR and trigger ids.

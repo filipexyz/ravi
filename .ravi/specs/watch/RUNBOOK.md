@@ -19,6 +19,11 @@ After a partial failure, repeat with the same `--expect-sha` in the same session
 The PR/follow are reused; do not create another trigger or alter Review Gate.
 Independent current-head approval remains required before merge.
 
+An older selected follow ending in `ravi.watch.github.*` is repaired in place
+to `ravi.watch.github.>` during reconciliation. The former cannot receive the
+two-token PR/CI event suffixes in NATS. After updating the runtime, republish
+each affected PR from its owning session to repair its existing subscription.
+
 ## List Connectors
 
 ```bash

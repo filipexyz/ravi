@@ -92,11 +92,12 @@ export const GH_FOLLOW_COOLDOWN_MS = 30_000;
 
 /**
  * O follow precisa dos dois lados: o evento de ciclo de vida da PR e o resultado
- * de CI. `ravi.watch.github.*` cobre ambos (o filtro por repo+PR descarta o
+ * de CI. `ravi.watch.github.>` cobre ambos (o filtro por repo+PR descarta o
  * resto), enquanto um tópico só de `pull_request.*` deixaria "o CI quebrou" sem
  * caminho até a sessão.
  */
-export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.*";
+// NATS '*' consumes exactly one token; event types such as workflow_run.completed consume two.
+export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.>";
 
 export interface GhWatchIntent {
   scope: "pr" | "run" | "repo" | "api";
