@@ -132,6 +132,8 @@ export interface GhWatchFollowResult {
 }
 
 export interface GhWatchFollowDeps {
+  /** Explicit publication only needs the local producer; do not introduce Console network work. */
+  localOnly?: boolean;
   listWatches?: typeof listWatchRecords;
   createWatch?: typeof createWatch;
   listTriggers?: () => Trigger[];
@@ -650,7 +652,7 @@ export function locallySupportedEventTypes(provider = "github"): string[] {
  */
 export async function ensureRepoWatch(
   repo: string,
-  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & {
+  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch" | "localOnly"> & {
     localEventTypes?: () => string[];
     removeWatch?: (id: string) => Promise<boolean>;
   } = {},
@@ -658,6 +660,7 @@ export async function ensureRepoWatch(
   const create = deps.createWatch ?? createWatch;
   const activeWatches = listActiveRepoWatches(repo, deps.listWatches ?? listWatchRecords);
   const { ciWatchId, ciWatchReused } = await reconcileLocalWatch(repo, activeWatches, deps);
+  if (deps.localOnly) return { watchId: ciWatchId, reused: ciWatchReused, ciWatchId, ciWatchReused };
   const anyWatch = activeWatches[0];
 
   if (anyWatch) return { watchId: anyWatch.id, reused: true, ciWatchId, ciWatchReused };
