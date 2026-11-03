@@ -3,6 +3,7 @@ import { runWithContext, type ToolContext } from "../cli/context.js";
 import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { resolvePublicationContext } from "./context.js";
+import { openPublicationJournal } from "./journal.js";
 
 let state: string | null = null;
 beforeEach(async () => {
@@ -14,6 +15,36 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await cleanupIsolatedRaviState(state);
+});
+
+it("persists audit through a dedicated real SQLite connection and shares its lease with other connections", () => {
+  const plan = {
+    repo: "o/r",
+    head: "fix/test",
+    base: "dev",
+    localSha: "a".repeat(40),
+    treeSha: "b".repeat(40),
+    remoteSha: null,
+    commitCount: 1,
+    objectCount: 3,
+    uploadBytes: 100,
+    refAction: "create" as const,
+    prAction: "create" as const,
+    prNumber: null,
+    replySession: "publisher",
+    followAction: "reconcile" as const,
+  };
+  const first = openPublicationJournal(plan, { actor: "agent:test" });
+  try {
+    expect(() => openPublicationJournal(plan, {})).toThrow("Another publication");
+    first.record("objects", "intent");
+    expect(getDb().query("SELECT COUNT(*) AS count FROM pr_publication_events").get()).toEqual({ count: 2 });
+  } finally {
+    first.close();
+  }
+  const second = openPublicationJournal(plan, {});
+  expect(second.publicationId).toBe(first.publicationId);
+  second.close();
 });
 const context: ToolContext = {
   agentId: "test",

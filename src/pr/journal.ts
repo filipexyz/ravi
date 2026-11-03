@@ -22,7 +22,7 @@ export function openPublicationJournal(
 ): PublicationJournal {
   let db: Database;
   try {
-    db = database ?? new Database(getRaviDbPath(), { create: false });
+    db = database ?? new Database(getRaviDbPath(), { readwrite: true, create: false });
     // A separate connection makes intent durable before network IO without changing the runtime connection.
     if (!database) db.exec("PRAGMA synchronous=FULL; PRAGMA busy_timeout=3000;");
   } catch {
