@@ -18,7 +18,7 @@ RUN bun run console:sdk:check
 WORKDIR /app/apps/console
 ARG CONSOLE_ORIGIN
 ENV NEXT_TELEMETRY_DISABLED=1 RAVI_SELFHOST_BUILD=1 RAVI_PAGES_AI_ENABLED=0 NODE_OPTIONS=--max-old-space-size=4096 NEXT_PUBLIC_CONSOLE_URL=${CONSOLE_ORIGIN}
-RUN DATABASE_URL=postgresql://build:build@127.0.0.1:1/build bun run build && bun run fleet:build
+RUN mkdir -p public && DATABASE_URL=postgresql://build:build@127.0.0.1:1/build bun run build && bun run fleet:build
 
 FROM ${NODE_IMAGE} AS runtime
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
