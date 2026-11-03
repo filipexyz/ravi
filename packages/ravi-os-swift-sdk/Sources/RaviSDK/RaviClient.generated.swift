@@ -191,6 +191,10 @@ public final class RaviClient {
     PermissionsNamespace(transport: transport)
   }
 
+  public var pr: PrNamespace {
+    PrNamespace(transport: transport)
+  }
+
   public var projects: ProjectsNamespace {
     ProjectsNamespace(transport: transport)
   }
@@ -4879,6 +4883,20 @@ public struct PermissionsNamespace: Sendable {
   public func status() async throws -> PermissionsStatusReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["permissions"], command: "status", body: requestBody, as: PermissionsStatusReturn.self)
+  }
+}
+
+public struct PrNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func publish(_ options: PrPublishOptions = .init()) async throws -> PrPublishReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pr"], command: "publish", body: requestBody, as: PrPublishReturn.self)
   }
 }
 

@@ -17753,6 +17753,47 @@ export type PermissionsStatusReturn = {
   status: "provider-runtime";
 };
 
+/** Input shape for `pr.publish`. */
+export type PrPublishInput = {
+  base?: string;
+  bodyFile?: string;
+  dryRun?: boolean;
+  execute?: boolean;
+  expectSha?: string;
+  replySession?: string;
+  repo?: string;
+  title?: string;
+};
+
+/** Return shape for `pr.publish`. */
+export type PrPublishReturn = {
+  attemptId: string;
+  base: string;
+  checks: {
+    count: number;
+    state: "pending" | "success" | "failure";
+  };
+  follow: {
+    ciWatchId: string;
+    replySession: string;
+    triggerId: string;
+    verifiedAt: string;
+    watchId: string;
+  };
+  head: string;
+  localSha: string;
+  pr: {
+    number: number;
+    ready: true;
+    reused: boolean;
+    url: string;
+  };
+  publicationId: string;
+  remoteSha: string;
+  repo: string;
+  treeSha: string;
+};
+
 /** Input shape for `projects.create`. */
 export type ProjectsCreateInput = {
   console?: string;

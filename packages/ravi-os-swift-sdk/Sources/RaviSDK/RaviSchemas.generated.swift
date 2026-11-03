@@ -94471,6 +94471,183 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PrPublishInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "base": {
+        "description": "Required existing target branch",
+        "type": "string"
+      },
+      "bodyFile": {
+        "description": "UTF-8 PR description, relative to caller cwd; required for a new PR",
+        "type": "string"
+      },
+      "dryRun": {
+        "description": "Preview only; also the default without --execute (exit 3)",
+        "type": "boolean"
+      },
+      "execute": {
+        "description": "Publish externally and reconcile CI follow",
+        "type": "boolean"
+      },
+      "expectSha": {
+        "description": "Require this full local commit SHA (default: capture HEAD)",
+        "type": "string"
+      },
+      "replySession": {
+        "description": "Required only for an operator terminal without a session",
+        "type": "string"
+      },
+      "repo": {
+        "description": "Required github.com destination; must match origin",
+        "type": "string"
+      },
+      "title": {
+        "description": "Required for a new PR; existing PR text is preserved",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let PrPublishReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "attemptId": {
+        "type": "string"
+      },
+      "base": {
+        "maxLength": 255,
+        "minLength": 1,
+        "pattern": "^[^\\s\\x00-\\x1f~^:?*[\\\\]+$",
+        "type": "string"
+      },
+      "checks": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "success",
+              "failure"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "count"
+        ],
+        "type": "object"
+      },
+      "follow": {
+        "additionalProperties": false,
+        "properties": {
+          "ciWatchId": {
+            "type": "string"
+          },
+          "replySession": {
+            "type": "string"
+          },
+          "triggerId": {
+            "type": "string"
+          },
+          "verifiedAt": {
+            "type": "string"
+          },
+          "watchId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "watchId",
+          "ciWatchId",
+          "triggerId",
+          "replySession",
+          "verifiedAt"
+        ],
+        "type": "object"
+      },
+      "head": {
+        "maxLength": 255,
+        "minLength": 1,
+        "pattern": "^[^\\s\\x00-\\x1f~^:?*[\\\\]+$",
+        "type": "string"
+      },
+      "localSha": {
+        "pattern": "^[a-f0-9]{40}$",
+        "type": "string"
+      },
+      "pr": {
+        "additionalProperties": false,
+        "properties": {
+          "number": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "ready": {
+            "const": true,
+            "type": "boolean"
+          },
+          "reused": {
+            "type": "boolean"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "url",
+          "reused",
+          "ready"
+        ],
+        "type": "object"
+      },
+      "publicationId": {
+        "type": "string"
+      },
+      "remoteSha": {
+        "pattern": "^[a-f0-9]{40}$",
+        "type": "string"
+      },
+      "repo": {
+        "maxLength": 200,
+        "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$",
+        "type": "string"
+      },
+      "treeSha": {
+        "pattern": "^[a-f0-9]{40}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "publicationId",
+      "attemptId",
+      "repo",
+      "base",
+      "head",
+      "localSha",
+      "remoteSha",
+      "treeSha",
+      "pr",
+      "follow",
+      "checks"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsCreateInputSchema = #"""
   {
     "additionalProperties": false,

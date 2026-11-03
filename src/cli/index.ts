@@ -115,6 +115,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "metrics",
   "observers",
   "pages",
+  "pr",
   "projects",
   "prox",
   "react",

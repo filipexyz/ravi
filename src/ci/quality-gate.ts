@@ -173,6 +173,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   ],
   "src/hooks/": [
     "src/hooks/gh-watch.test.ts",
+    "src/hooks/gh-pr-publish.test.ts",
     "src/hooks/gh-follow-sweep.test.ts",
     // Promoção de comando longo para job: a reescrita que evita prender o turno.
     "src/hooks/jobs-promote.test.ts",
@@ -181,6 +182,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/hooks/tool-safety.test.ts",
     // Ravi Page links: browser, WebFetch and shell fetches go to `ravi pages read`.
     "src/hooks/pages-link-guard.test.ts",
+  ],
+  "src/pr/": [
+    "src/pr/service.test.ts",
+    "src/pr/journal.test.ts",
+    "src/pr/context.test.ts",
+    "src/pr/follow-health.test.ts",
+    "src/cli/commands/pr.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": [

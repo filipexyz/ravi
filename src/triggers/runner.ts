@@ -10,7 +10,10 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nats } from "../nats.js";
+import { nats, getNats } from "../nats.js";
+import type { Subscription } from "nats";
+import { followFingerprint, followHealthTopic } from "../pr/follow-health.js";
+import { getLocalWatchRunner } from "../watch/local-runner.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
@@ -120,6 +123,44 @@ export function shouldRetryTriggerTopic(
  * TriggerRunner - manages event-driven trigger subscriptions
  */
 export class TriggerRunner {
+  private publicationHealth: Subscription | null = null;
+
+  /** Read the loaded subscription, not just a row that has not reached this runner. */
+  publicationFollowHealth(triggerId?: string) {
+    const loaded = [...this.topicSubs.values()]
+      .flatMap((sub) => sub.triggers)
+      .find(({ trigger }) => trigger.id === triggerId);
+    return {
+      running: this.running,
+      producerRunning: getLocalWatchRunner().isRunning(),
+      fingerprint: this.running && loaded ? followFingerprint(loaded.trigger) : null,
+    };
+  }
+
+  private subscribePublicationHealth(): void {
+    try {
+      this.publicationHealth = getNats().subscribe(followHealthTopic(), {
+        callback: (error, message) => {
+          if (error || !message.reply || message.data.length > 512) return;
+          try {
+            const input = JSON.parse(new TextDecoder().decode(message.data)) as { triggerId?: unknown };
+            if (
+              input.triggerId !== undefined &&
+              (typeof input.triggerId !== "string" || !/^[\w-]{1,100}$/.test(input.triggerId))
+            )
+              return;
+            message.respond(
+              Buffer.from(JSON.stringify(this.publicationFollowHealth(input.triggerId as string | undefined))),
+            );
+          } catch {
+            /* Ignore malformed probes; no state is changed by this endpoint. */
+          }
+        },
+      });
+    } catch {
+      log.warn("PR publication health endpoint is unavailable");
+    }
+  }
   /** Topic streams (NOT including refresh/test — those are long-lived) */
   private topicSubs = new Map<string, TopicSubscription>();
   /** Last desired topic set, used to prevent delayed retries from reviving removed subscriptions. */
@@ -146,6 +187,7 @@ export class TriggerRunner {
     log.info("Starting trigger runner");
 
     await this.setupSubscriptions();
+    this.subscribePublicationHealth();
     this.subscribeToConfigRefresh();
     this.subscribeToTestEvents();
 
@@ -158,6 +200,9 @@ export class TriggerRunner {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+
+    this.publicationHealth?.unsubscribe();
+    this.publicationHealth = null;
 
     log.info("Stopping trigger runner");
 

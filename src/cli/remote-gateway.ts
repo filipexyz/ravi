@@ -53,6 +53,7 @@ import {
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
 import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
+import { projectPublicationDetails, publicationRecoveryAction } from "../pr/contracts.js";
 
 export { CALLER_CWD_HEADER } from "./caller-cwd.js";
 
@@ -985,6 +986,7 @@ function remoteContractFailureMessage(
     const catalog = cloudContractCatalogCopy(code);
     if (catalog) return catalog.message;
   }
+  if (op === "pr publish") return remoteFailureMessage(op, code);
   const safe = boundedRemoteLine(sourceMessage, LIBRARY_REMOTE_MESSAGE_MAX);
   return safe &&
     !/^(?:Remote command failed\.?|Command could not be completed\.?|Command failed unexpectedly\.?)$/.test(safe)
@@ -1153,6 +1155,14 @@ function projectRemoteContractDetails(
   const plan = projectRemotePlan(remote.plan);
   const plannedDns = op === PAGES_DOMAINS_OP ? projectPlannedDomainDns(remote.plan) : undefined;
   if (plan || plannedDns) details.plan = { ...(plan ?? {}), ...(plannedDns ? { dnsSetup: plannedDns } : {}) };
+  if (op === "pr publish") {
+    delete details.plan;
+    Object.assign(details, projectPublicationDetails(remote));
+    details.suggestedAction =
+      body.outcome === "failed"
+        ? publicationRecoveryAction(remote.code)
+        : remoteSuggestedAction(op, body.outcome, remote.code);
+  }
   return details;
 }
 

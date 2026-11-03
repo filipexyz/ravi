@@ -20787,6 +20787,84 @@ class PermissionsStatusReturn {
 
 PermissionsStatusReturn permissionsStatusReturnFromJson(Object? json) => PermissionsStatusReturn.fromJsonValue(json);
 
+class PrPublishOptions {
+  const PrPublishOptions({this.base, this.bodyFile, this.dryRun, this.execute, this.expectSha, this.replySession, this.repo, this.title});
+
+  final String? base;
+  final String? bodyFile;
+  final bool? dryRun;
+  final bool? execute;
+  final String? expectSha;
+  final String? replySession;
+  final String? repo;
+  final String? title;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (base != null) {
+      into["base"] = RaviJson.from(base);
+    }
+    if (bodyFile != null) {
+      into["bodyFile"] = RaviJson.from(bodyFile);
+    }
+    if (dryRun != null) {
+      into["dryRun"] = RaviJson.from(dryRun);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectSha != null) {
+      into["expectSha"] = RaviJson.from(expectSha);
+    }
+    if (replySession != null) {
+      into["replySession"] = RaviJson.from(replySession);
+    }
+    if (repo != null) {
+      into["repo"] = RaviJson.from(repo);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+  }
+}
+
+class PrPublishReturn {
+  const PrPublishReturn({required this.attemptId, required this.base, required this.checks, required this.follow, required this.head, required this.localSha, required this.pr, required this.publicationId, required this.remoteSha, required this.repo, required this.treeSha});
+
+  final String attemptId;
+  final String base;
+  final RaviJson checks;
+  final RaviJson follow;
+  final String head;
+  final String localSha;
+  final RaviJson pr;
+  final String publicationId;
+  final String remoteSha;
+  final String repo;
+  final String treeSha;
+
+  factory PrPublishReturn.fromJson(Map<String, Object?> json) {
+    return PrPublishReturn(
+      attemptId: raviJsonAsString(json["attemptId"]),
+      base: raviJsonAsString(json["base"]),
+      checks: RaviJson.from(json["checks"]),
+      follow: RaviJson.from(json["follow"]),
+      head: raviJsonAsString(json["head"]),
+      localSha: raviJsonAsString(json["localSha"]),
+      pr: RaviJson.from(json["pr"]),
+      publicationId: raviJsonAsString(json["publicationId"]),
+      remoteSha: raviJsonAsString(json["remoteSha"]),
+      repo: raviJsonAsString(json["repo"]),
+      treeSha: raviJsonAsString(json["treeSha"]),
+    );
+  }
+
+  static PrPublishReturn fromJsonValue(Object? json) {
+    return PrPublishReturn.fromJson(raviJsonObject(json, "PrPublishReturn"));
+  }
+}
+
+PrPublishReturn prPublishReturnFromJson(Object? json) => PrPublishReturn.fromJsonValue(json);
+
 class ProjectsCreateOptions {
   const ProjectsCreateOptions({this.console, this.defaultPageSite, this.description, this.execute, this.name, this.visibility});
 

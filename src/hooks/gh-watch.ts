@@ -92,11 +92,12 @@ export const GH_FOLLOW_COOLDOWN_MS = 30_000;
 
 /**
  * O follow precisa dos dois lados: o evento de ciclo de vida da PR e o resultado
- * de CI. `ravi.watch.github.*` cobre ambos (o filtro por repo+PR descarta o
+ * de CI. `ravi.watch.github.>` cobre ambos (o filtro por repo+PR descarta o
  * resto), enquanto um tópico só de `pull_request.*` deixaria "o CI quebrou" sem
  * caminho até a sessão.
  */
-export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.*";
+// NATS '*' consumes exactly one token; event types such as workflow_run.completed consume two.
+export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.>";
 
 export interface GhWatchIntent {
   scope: "pr" | "run" | "repo" | "api";
@@ -132,6 +133,8 @@ export interface GhWatchFollowResult {
 }
 
 export interface GhWatchFollowDeps {
+  /** Explicit publication only needs the local producer; do not introduce Console network work. */
+  localOnly?: boolean;
   listWatches?: typeof listWatchRecords;
   createWatch?: typeof createWatch;
   listTriggers?: () => Trigger[];
@@ -650,7 +653,7 @@ export function locallySupportedEventTypes(provider = "github"): string[] {
  */
 export async function ensureRepoWatch(
   repo: string,
-  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & {
+  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch" | "localOnly"> & {
     localEventTypes?: () => string[];
     removeWatch?: (id: string) => Promise<boolean>;
   } = {},
@@ -658,6 +661,7 @@ export async function ensureRepoWatch(
   const create = deps.createWatch ?? createWatch;
   const activeWatches = listActiveRepoWatches(repo, deps.listWatches ?? listWatchRecords);
   const { ciWatchId, ciWatchReused } = await reconcileLocalWatch(repo, activeWatches, deps);
+  if (deps.localOnly) return { watchId: ciWatchId, reused: ciWatchReused, ciWatchId, ciWatchReused };
   const anyWatch = activeWatches[0];
 
   if (anyWatch) return { watchId: anyWatch.id, reused: true, ciWatchId, ciWatchReused };

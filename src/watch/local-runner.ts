@@ -314,6 +314,9 @@ export function departedNumbersBetween(previous: LocalWatchSnapshot | null, curr
 }
 
 export class LocalWatchRunner {
+  isRunning(): boolean {
+    return this.running;
+  }
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
   private processing = false;

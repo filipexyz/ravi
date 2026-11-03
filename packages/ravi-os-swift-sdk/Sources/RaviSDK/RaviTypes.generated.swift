@@ -24478,6 +24478,108 @@ public struct PermissionsStatusReturn: Codable, Sendable {
   }
 }
 
+public struct PrPublishOptions: Codable, Sendable {
+  public var base: String?
+  public var bodyFile: String?
+  public var dryRun: Bool?
+  public var execute: Bool?
+  public var expectSha: String?
+  public var replySession: String?
+  public var repo: String?
+  public var title: String?
+
+  public init(base: String? = nil, bodyFile: String? = nil, dryRun: Bool? = nil, execute: Bool? = nil, expectSha: String? = nil, replySession: String? = nil, repo: String? = nil, title: String? = nil) {
+    self.base = base
+    self.bodyFile = bodyFile
+    self.dryRun = dryRun
+    self.execute = execute
+    self.expectSha = expectSha
+    self.replySession = replySession
+    self.repo = repo
+    self.title = title
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case bodyFile = "bodyFile"
+    case dryRun = "dryRun"
+    case execute = "execute"
+    case expectSha = "expectSha"
+    case replySession = "replySession"
+    case repo = "repo"
+    case title = "title"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.base {
+      body["base"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.bodyFile {
+      body["bodyFile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.dryRun {
+      body["dryRun"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectSha {
+      body["expectSha"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.replySession {
+      body["replySession"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.repo {
+      body["repo"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.title {
+      body["title"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PrPublishReturn: Codable, Sendable {
+  public var attemptId: String
+  public var base: String
+  public var checks: RaviJSON
+  public var follow: RaviJSON
+  public var head: String
+  public var localSha: String
+  public var pr: RaviJSON
+  public var publicationId: String
+  public var remoteSha: String
+  public var repo: String
+  public var treeSha: String
+
+  public init(attemptId: String, base: String, checks: RaviJSON, follow: RaviJSON, head: String, localSha: String, pr: RaviJSON, publicationId: String, remoteSha: String, repo: String, treeSha: String) {
+    self.attemptId = attemptId
+    self.base = base
+    self.checks = checks
+    self.follow = follow
+    self.head = head
+    self.localSha = localSha
+    self.pr = pr
+    self.publicationId = publicationId
+    self.remoteSha = remoteSha
+    self.repo = repo
+    self.treeSha = treeSha
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case attemptId = "attemptId"
+    case base = "base"
+    case checks = "checks"
+    case follow = "follow"
+    case head = "head"
+    case localSha = "localSha"
+    case pr = "pr"
+    case publicationId = "publicationId"
+    case remoteSha = "remoteSha"
+    case repo = "repo"
+    case treeSha = "treeSha"
+  }
+}
+
 public struct ProjectsCreateOptions: Codable, Sendable {
   public var console: String?
   public var defaultPageSite: String?

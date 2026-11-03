@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { publishGhPr, type GhPrPublication, type GhPublicationRequest } from "./gh-pr-publish.js";
+import {
+  publishGhPr,
+  verifyPublicationFollow,
+  type GhPrPublication,
+  type GhPublicationRequest,
+} from "./gh-pr-publish.js";
 import { buildGhFollowTriggerInput, type GhWatchFollowDeps } from "./gh-watch.js";
 import { evaluateFilter } from "../triggers/filter.js";
 import type { Trigger } from "../triggers/types.js";
@@ -80,7 +85,22 @@ function fixture(options: { existing?: boolean; draft?: boolean; staleFollow?: b
       refreshes += 1;
     },
   };
-  return { calls, watches, triggers, deps: { request, follow }, refreshes: () => refreshes };
+  return {
+    calls,
+    watches,
+    triggers,
+    deps: {
+      request,
+      follow,
+      verifyFollow: (value: GhPrPublication, result: import("./gh-watch.js").GhWatchFollowResult, number: number) =>
+        verifyPublicationFollow(value, result, number, {
+          watch: (id) => watches.find((watch) => watch.id === id) ?? null,
+          trigger: (id) => triggers.find((trigger) => trigger.id === id) ?? null,
+          runtime: async () => {},
+        }),
+    },
+    refreshes: () => refreshes,
+  };
 }
 
 function makePr(draft = false) {
@@ -102,12 +122,14 @@ describe("Git Data API publication boundary", () => {
     expect(result).toMatchObject({ ready: true, reused: false, sha: input.sha });
     expect(f.calls.find((call) => call.method === "POST")?.body?.draft).toBe(false);
     expect(f.triggers).toHaveLength(1);
+    expect(f.watches).toHaveLength(1);
+    expect(f.watches[0]!.placement).toBe("local");
     expect(f.triggers[0]).toMatchObject({
       name: "gh-follow:o/r#9",
       replySession: "publishing-thread",
       agentId: "main",
       replySource: input.context.source,
-      topic: "ravi.watch.github.*",
+      topic: "ravi.watch.github.>",
       enabled: true,
     });
     expect(
@@ -137,7 +159,7 @@ describe("Git Data API publication boundary", () => {
     expect(f.triggers[0]).toMatchObject({
       enabled: true,
       replySession: input.context.sessionName,
-      topic: "ravi.watch.github.*",
+      topic: "ravi.watch.github.>",
     });
     expect(f.watches.some((watch) => watch.placement === "local")).toBe(true);
   });
@@ -198,7 +220,9 @@ describe("Git Data API publication boundary", () => {
       const request = f.deps.request;
       f.deps.request = (endpoint, method, body) =>
         endpoint.includes("/pulls?") ? [pr] : request(endpoint, method, body);
-      await expect(publishGhPr(input, f.deps)).rejects.toThrow("PR does not match");
+      await expect(publishGhPr(input, f.deps)).rejects.toMatchObject({
+        code: mismatch === "repo" ? "PR_CONFLICT" : "PR_PUBLICATION_INCOMPLETE",
+      });
       expect(f.triggers).toHaveLength(0);
     }
   });

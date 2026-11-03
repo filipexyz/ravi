@@ -1,25 +1,28 @@
 # Watch / RUNBOOK
 
-## Publish Or Reconcile A PR After Git Data API Upload
+## Publish Or Reconcile A PR
 
-From the publishing Ravi session and committed worktree, after verifying the
-uploaded Git tree and commit against the local SHA:
+From the publishing Ravi session and clean committed worktree:
 
 ```bash
-bun scripts/publish-pr.ts --repo owner/repo --base dev --title "Fix description" --body-file /tmp/pr-body.md
+ravi pr publish --repo owner/repo --base dev --title "Fix description" --body-file /tmp/pr-body.md --dry-run --json
+ravi pr publish --repo owner/repo --base dev --title "Fix description" --body-file /tmp/pr-body.md --execute --json
 ```
 
-This command validates the branch SHA, creates a ready PR (or finds the existing
-one for that head/base), and registers its CI follow with the shared primitive.
-The JSON result reports PR, SHA, watch and trigger. Inspect the returned trigger
-and local watch to confirm routing and active CI coverage. It does not upload
-Git objects or replace commit hooks.
+This command uploads verified Git objects, advances the work branch without
+force, creates/reuses a ready PR, and reconciles CI follow through the shared
+primitive. Success requires the existing live runner to confirm its local CI
+producer and loaded trigger configuration. The JSON result includes both
+SHAs, PR URL and watch/trigger IDs. See `cli/pr` for limits and error recovery.
 
-If publication fails after creating a PR, run the identical command again in
-the same worktree/session. The PR and trigger are reused; a legacy draft is
-promoted only after its follow exists. Do not repair this by making another
-trigger or by editing Review Gate policy. Unrelated PRs are never reconciled by
-this command. Missing independent approval remains a legitimate review blocker.
+After a partial failure, repeat with the same `--expect-sha` in the same session.
+The PR/follow are reused; do not create another trigger or alter Review Gate.
+Independent current-head approval remains required before merge.
+
+An older selected follow ending in `ravi.watch.github.*` is repaired in place
+to `ravi.watch.github.>` during reconciliation. The former cannot receive the
+two-token PR/CI event suffixes in NATS. After updating the runtime, republish
+each affected PR from its owning session to repair its existing subscription.
 
 ## List Connectors
 
