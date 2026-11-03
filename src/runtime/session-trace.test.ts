@@ -2401,6 +2401,10 @@ describe("runtime session trace instrumentation", () => {
       sessionId: "provider-before",
       skillVisibility: makeSkillVisibility("loaded"),
     };
+    // The loop receives a snapshot of persisted native state, as on a real resume.
+    updateProviderSession(SESSION_KEY, PROVIDER, "provider-before", {
+      runtimeSessionParams: session.runtimeSessionParams,
+    });
 
     await runTraceLoop(
       streaming,
@@ -3009,6 +3013,10 @@ describe("runtime session trace instrumentation", () => {
       sessionId: "provider-before",
       skillVisibility: makeLoadedRaviTaskSkillVisibility(),
     };
+    // The loop receives a snapshot of persisted native state, as on a real resume.
+    updateProviderSession(SESSION_KEY, PROVIDER, "provider-before", {
+      runtimeSessionParams: session.runtimeSessionParams,
+    });
 
     await runTraceLoop(
       streaming,
@@ -3152,6 +3160,10 @@ describe("runtime session trace instrumentation", () => {
       sessionId: "provider-before",
       skillVisibility: makeClaudeCatalogSkillVisibility(),
     };
+    // The loop receives a snapshot of persisted native state, as on a real resume.
+    updateProviderSession(SESSION_KEY, PROVIDER, "provider-before", {
+      runtimeSessionParams: session.runtimeSessionParams,
+    });
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
     const gateSnapshot = makeGateLoadedRoutesSkillVisibility();
 
@@ -3161,6 +3173,9 @@ describe("runtime session trace instrumentation", () => {
         // The authorize path fires while the provider turn is in flight; the
         // bootstrap closure has already refreshed the in-memory params.
         session.runtimeSessionParams = { ...session.runtimeSessionParams, skillVisibility: gateSnapshot };
+        updateProviderSession(SESSION_KEY, PROVIDER, "provider-before", {
+          runtimeSessionParams: session.runtimeSessionParams,
+        });
         streaming.onSkillGatePersisted?.(gateSnapshot, { skill: "ravi-system-routes-manager", toolName: "Bash" });
         expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["routes-manager"]);
         yield makeClaudeTurnComplete("provider-after");

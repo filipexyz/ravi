@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbUpsertChat } from "./router-db.js";
+import { closeRouterDb, dbUpsertChat, getDb } from "./router-db.js";
 import {
   attachChatToSession,
+  bumpSessionRuntimeProviderConfigRevision,
+  clearProviderSession,
+  closeSessionStore,
   detachChatFromSession,
   expireEphemeralSession,
   getExpiredSessions,
@@ -14,6 +17,9 @@ import {
   setSessionEphemeral,
   updateSessionContext,
   updateProviderSession,
+  updateProviderSessionId,
+  updateRuntimeProviderState,
+  updateSdkSessionId,
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverride,
   updateSessionThreadId,
@@ -139,6 +145,89 @@ describe("sessions store", () => {
       runtimeProvider: "codex",
       runtimeProviderOverride: undefined,
     });
+  });
+
+  it("starts provider configuration revisions at zero, including an initial override", () => {
+    for (const runtimeProviderOverride of [undefined, "codex"]) {
+      const session = getOrCreateSession(
+        `agent:dev:revision-${runtimeProviderOverride ?? "default"}`,
+        "dev",
+        "/tmp/dev",
+        {
+          runtimeProviderOverride,
+        },
+      );
+      expect(session.runtimeProviderConfigRevision).toBe(0);
+      expect(getSession(session.sessionKey)?.runtimeProviderConfigRevision).toBe(0);
+    }
+  });
+
+  it("advances provider configuration revisions for repeated clears and repeated selections", () => {
+    const session = getOrCreateSession("agent:dev:revision-repeated", "dev", "/tmp/dev");
+    const selections = [null, null, "claude", "claude"];
+    for (const [index, provider] of selections.entries()) {
+      updateSessionRuntimeProviderOverride(session.sessionKey, provider);
+      expect(getSession(session.sessionKey)).toMatchObject({
+        runtimeProviderOverride: provider ?? undefined,
+        runtimeProviderConfigRevision: index + 1,
+      });
+    }
+  });
+
+  it("keeps provider configuration revisions unchanged when writing native continuity", () => {
+    const session = getOrCreateSession("agent:dev:revision-native", "dev", "/tmp/dev");
+    const writes = [
+      () => updateRuntimeProviderState(session.sessionKey, "codex"),
+      () => updateProviderSession(session.sessionKey, "codex", "native-one"),
+      () => updateRuntimeProviderState(session.sessionKey, "codex", { providerSessionId: "native-two" }),
+      () => updateProviderSessionId(session.sessionKey, "native-three", "codex"),
+      () => updateSdkSessionId(session.sessionKey, "native-four"),
+      () => clearProviderSession(session.sessionKey),
+    ];
+    for (const write of writes) {
+      write();
+      expect(getSession(session.sessionKey)?.runtimeProviderConfigRevision).toBe(0);
+    }
+  });
+
+  it("rolls back the provider override and its configuration revision together", () => {
+    const session = getOrCreateSession("agent:dev:revision-rollback", "dev", "/tmp/dev");
+    expect(() =>
+      getDb().transaction(() => {
+        updateSessionRuntimeProviderOverride(session.sessionKey, "claude");
+        expect(getSession(session.sessionKey)?.runtimeProviderConfigRevision).toBe(1);
+        throw new Error("rollback provider selection");
+      })(),
+    ).toThrow("rollback provider selection");
+    expect(getSession(session.sessionKey)).toMatchObject({
+      runtimeProviderOverride: undefined,
+      runtimeProviderConfigRevision: 0,
+    });
+  });
+
+  it("bumps the provider configuration revision without changing native or override state", () => {
+    const session = getOrCreateSession("agent:dev:revision-bump", "dev", "/tmp/dev", {
+      runtimeProvider: "codex",
+      runtimeProviderOverride: "claude",
+      providerSessionId: "native-one",
+    });
+    bumpSessionRuntimeProviderConfigRevision(session.sessionKey);
+    expect(getSession(session.sessionKey)).toEqual({ ...session, runtimeProviderConfigRevision: 1 });
+    bumpSessionRuntimeProviderConfigRevision(session.sessionKey);
+    expect(getSession(session.sessionKey)).toEqual({ ...session, runtimeProviderConfigRevision: 2 });
+  });
+
+  it("migrates an existing session to provider configuration revision zero", () => {
+    const session = getOrCreateSession("agent:dev:revision-migration", "dev", "/tmp/dev", {
+      runtimeProvider: "codex",
+      runtimeProviderOverride: "claude",
+    });
+    closeSessionStore();
+    getDb().exec("ALTER TABLE sessions DROP COLUMN runtime_provider_config_revision");
+    closeRouterDb();
+    expect(getSession(session.sessionKey)).toEqual(session);
+    updateSessionRuntimeProviderOverride(session.sessionKey, null);
+    expect(getSession(session.sessionKey)?.runtimeProviderConfigRevision).toBe(1);
   });
 
   it("persists and clears the provider thread id for programmatic session forks", () => {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -6,11 +6,16 @@ import { createRuntimeContext } from "./context-registry.js";
 import {
   dbUpsertSkillGateRule,
   dbUpsertSkillGrant,
+  clearProviderSession,
+  deleteSession,
   getOrCreateSession,
   getSession,
   updateProviderSession,
+  updateRuntimeProviderState,
+  updateSessionRuntimeProviderOverride,
 } from "../router/index.js";
 import { dbUpdateAgent } from "../router/router-db.js";
+import { nats } from "../nats.js";
 import {
   flushPermissionAuditEvents,
   listPermissionDenials,
@@ -18,6 +23,7 @@ import {
 } from "../permissions/denials.js";
 import {
   evaluateSkillGate,
+  evaluateRuntimeToolSkillGate,
   loadedSkillMatchesGate,
   runtimeSkillGateForCommand,
   runtimeSkillGateForTool,
@@ -27,36 +33,40 @@ import * as skillAuthorization from "./skill-authorization.js";
 import { SKILLS_SHOW_CAPABILITY_CANDIDATES } from "./skill-capability-implication.js";
 import { listCliCommandAccessCandidates } from "../cli/command-access.js";
 import { listCatalogSkills, listSkillFilePaths } from "../skills/manager.js";
+import * as skillManager from "../skills/manager.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import {
   buildSkillVisibilitySnapshot,
+  markLoadedFromSkillGate,
   markLoadedFromRaviSkillToolCall,
   readSkillVisibilityFromParams,
 } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
 let stateDir: string | null = null;
-let previousCodexHome: string | undefined;
+let restoreInstalledSkillLookup: (() => void) | undefined;
 
 beforeEach(async () => {
-  previousCodexHome = process.env.CODEX_HOME;
   stateDir = await createIsolatedRaviState("ravi-skill-gate-");
-  process.env.CODEX_HOME = join(stateDir, "codex");
+  const lookup = spyOn(skillManager, "findInstalledSkill").mockImplementation((name) =>
+    skillManager.findSkillByName(skillManager.listInstalledSkills({ homeDir: stateDir!, includeCodex: false }), name),
+  );
+  restoreInstalledSkillLookup = () => lookup.mockRestore();
 });
 
 afterEach(async () => {
   setPermissionAuditPublisherForTest();
-  if (previousCodexHome === undefined) {
-    delete process.env.CODEX_HOME;
-  } else {
-    process.env.CODEX_HOME = previousCodexHome;
-  }
+  restoreInstalledSkillLookup?.();
+  restoreInstalledSkillLookup = undefined;
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
 
-function writeCodexSkill(name: string): void {
-  const dir = join(process.env.CODEX_HOME!, "skills", name);
+function writeInstalledSkill(name: string): void {
+  const pluginDir = skillManager.userSkillsPluginDir(stateDir!);
+  mkdirSync(join(pluginDir, ".claude-plugin"), { recursive: true });
+  writeFileSync(join(pluginDir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "ravi-user-skills" }));
+  const dir = join(pluginDir, "skills", name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, "SKILL.md"),
@@ -66,7 +76,7 @@ function writeCodexSkill(name: string): void {
 
 describe("evaluateSkillGate", () => {
   it("soft-gates a missing skill, delivers it, and marks it loaded for the session", () => {
-    writeCodexSkill("demo-skill");
+    writeInstalledSkill("demo-skill");
     // Custom skills must be granted to the agent (Invariant G,
     // spec skills/scoping/per-agent-visibility) before the gate delivers them.
     dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
@@ -104,6 +114,130 @@ describe("evaluateSkillGate", () => {
     });
 
     expect(second.allowed).toBe(true);
+  });
+
+  it.each([
+    "provider-change",
+    "clear-null",
+    "provider-aba",
+    "native-provider-change",
+    "agent-reassignment",
+    "session-recreation",
+  ])("delivers the skill without restoring stale state after %s during loading", (interleaving) => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "demo-gate", tool: "demo_run", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:skill-race", "main", stateDir!, {
+      name: "skill-gate-race",
+      runtimeProvider: "codex",
+      providerSessionId: "old-native",
+      runtimeSessionParams: { oldParameter: true },
+    });
+    const context = createRuntimeContext({ kind: "agent-runtime", agentId: "main", sessionKey: session.sessionKey });
+    const authorizeActual = skillAuthorization.isSkillAuthorizedForAgent;
+    let changedSession: ReturnType<typeof getSession> = null;
+    const authorize = spyOn(skillAuthorization, "isSkillAuthorizedForAgent").mockImplementation((...args) => {
+      const allowed = authorizeActual(...args);
+      if (interleaving === "provider-change") {
+        updateSessionRuntimeProviderOverride(session.sessionKey, "claude");
+        clearProviderSession(session.sessionKey);
+        updateRuntimeProviderState(session.sessionKey, "claude");
+      } else if (interleaving === "clear-null") {
+        updateSessionRuntimeProviderOverride(session.sessionKey, null);
+      } else if (interleaving === "provider-aba") {
+        updateSessionRuntimeProviderOverride(session.sessionKey, "claude");
+        updateSessionRuntimeProviderOverride(session.sessionKey, null);
+      } else if (interleaving === "agent-reassignment") {
+        getOrCreateSession(session.sessionKey, "other-agent", stateDir!);
+        updateProviderSession(session.sessionKey, "codex", "reassigned-native");
+      } else if (interleaving === "session-recreation") {
+        deleteSession(session.sessionKey);
+        const now = spyOn(Date, "now").mockReturnValue(session.createdAt + 1);
+        try {
+          getOrCreateSession(session.sessionKey, "main", stateDir!, {
+            name: session.name,
+            runtimeProvider: "codex",
+            providerSessionId: "recreated-native",
+          });
+        } finally {
+          now.mockRestore();
+        }
+      } else {
+        updateProviderSession(session.sessionKey, "claude", "new-native");
+      }
+      changedSession = getSession(session.sessionKey);
+      return allowed;
+    });
+    const emit = spyOn(nats, "emit").mockResolvedValue(undefined);
+    const onSkillGatePersisted = mock(() => {});
+    try {
+      const decision = evaluateRuntimeToolSkillGate({ toolName: "demo_run", context, onSkillGatePersisted });
+      expect(decision.code).toBe("RAVI_SKILL_REQUIRED");
+      expect(decision.reason).toContain("# demo-skill");
+      expect(getSession(session.sessionKey)).toEqual(changedSession);
+      expect(decision.skillVisibility).toBeUndefined();
+      expect(decision.reason).not.toContain("marked as loaded");
+      expect(onSkillGatePersisted).not.toHaveBeenCalled();
+      expect(emit.mock.calls.some(([, event]) => (event as { type?: string }).type === "skill.gate.loaded")).toBe(
+        false,
+      );
+    } finally {
+      authorize.mockRestore();
+      emit.mockRestore();
+    }
+  });
+
+  it("persists the skill into fresh native state when provider configuration did not change", () => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "demo-gate", tool: "demo_run", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:skill-fresh", "main", stateDir!, {
+      name: "skill-gate-fresh",
+      runtimeProvider: "codex",
+      providerSessionId: "old-native",
+      runtimeSessionParams: { oldParameter: true },
+    });
+    const context = createRuntimeContext({ kind: "agent-runtime", agentId: "main", sessionKey: session.sessionKey });
+    const authorizeActual = skillAuthorization.isSkillAuthorizedForAgent;
+    const freshVisibility = markLoadedFromSkillGate(buildSkillVisibilitySnapshot([]), {
+      provider: "codex",
+      skill: "other-loaded-skill",
+    });
+    const authorize = spyOn(skillAuthorization, "isSkillAuthorizedForAgent").mockImplementation((...args) => {
+      const allowed = authorizeActual(...args);
+      updateProviderSession(session.sessionKey, "codex", "new-native", {
+        runtimeSessionDisplayId: "new-display",
+        runtimeSessionParams: { freshParameter: true, skillVisibility: freshVisibility },
+      });
+      return allowed;
+    });
+    const emit = spyOn(nats, "emit").mockResolvedValue(undefined);
+    const onSkillGatePersisted = mock(() => {});
+    try {
+      const decision = evaluateRuntimeToolSkillGate({ toolName: "demo_run", context, onSkillGatePersisted });
+      const persisted = getSession(session.sessionKey)!;
+      expect(persisted).toMatchObject({
+        runtimeProvider: "codex",
+        runtimeProviderConfigRevision: 0,
+        sdkSessionId: "new-native",
+        runtimeSessionDisplayId: "new-display",
+        runtimeSessionParams: { freshParameter: true },
+      });
+      expect(persisted.runtimeSessionParams).not.toHaveProperty("oldParameter");
+      expect(readSkillVisibilityFromParams(persisted.runtimeSessionParams).loadedSkills.sort()).toEqual([
+        "demo-skill",
+        "other-loaded-skill",
+      ]);
+      expect(persisted.runtimeSessionParams!.skillVisibility).toEqual(decision.skillVisibility);
+      expect(onSkillGatePersisted).toHaveBeenCalledWith(decision.skillVisibility, {
+        skill: "demo-skill",
+        toolName: "demo_run",
+      });
+      expect(emit.mock.calls.some(([, event]) => (event as { type?: string }).type === "skill.gate.loaded")).toBe(true);
+    } finally {
+      authorize.mockRestore();
+      emit.mockRestore();
+    }
   });
 
   it("reports configuration errors distinctly when the declared skill does not exist", () => {
@@ -486,7 +620,7 @@ describe("runtime host skill-gate enforcement", () => {
 
   // Dynamic tool dispatch lazily initializes the complete command registry.
   it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
-    writeCodexSkill("ravi-system-image");
+    writeInstalledSkill("ravi-system-image");
     // System skills are visible through provider-owned group capabilities. The
     // tool-local context permission below authorizes execution but must not
     // accidentally become the agent's persisted skill allowlist.
@@ -546,7 +680,7 @@ describe("runtime host skill-gate enforcement", () => {
   }, 20_000);
 
   it("checks Bash permission before delivering a required skill", async () => {
-    writeCodexSkill("ravi-system-daemon-manager");
+    writeInstalledSkill("ravi-system-daemon-manager");
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",
@@ -578,7 +712,7 @@ describe("runtime host skill-gate enforcement", () => {
   });
 
   it("does not infer a Ravi skill gate from quoted Bash text", async () => {
-    writeCodexSkill("ravi-system-tasks");
+    writeInstalledSkill("ravi-system-tasks");
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",

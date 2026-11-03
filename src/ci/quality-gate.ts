@@ -107,6 +107,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/runtime-selection.test.ts",
     // Agent default vs last-used runtime_provider rematerialize.
     "src/runtime/agent-session-runtime-sync.test.ts",
+    // A later thread runtime configuration survives the active provider's completion.
+    "src/runtime/thread-provider-config.test.ts",
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",

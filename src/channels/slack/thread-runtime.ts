@@ -86,7 +86,8 @@ export function configureSlackThreadRuntime(
       }
       const { before, next } = validateRuntimePatch(child, patch, agent);
 
-      if (patch.provider !== undefined && next.provider !== before.provider) {
+      // Even a repeated clear is new intent for an already-running handle.
+      if (patch.provider !== undefined) {
         updateSessionRuntimeProviderOverride(child.sessionKey, next.provider);
       }
       if (
@@ -177,6 +178,7 @@ function providerAuthorizationState(
     owned.child.createdAt,
     owned.child.agentId,
     owned.child.runtimeProviderOverride ?? null,
+    owned.child.runtimeProviderConfigRevision ?? 0,
     defaultProvider,
   ]);
 }

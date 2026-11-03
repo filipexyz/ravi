@@ -1,5 +1,9 @@
 # Runtime Session Continuity Checks
 
+- `bun test src/runtime/thread-provider-config.test.ts` MUST exercise an active
+  host event loop and its next-turn resolver: newer provider configuration wins
+  over late completion, while compatible native continuity/output/usage survive.
+
 ## Prompt Atom Ledger
 
 - Inbound channel messages create one prompt atom before debounce or provider batching.

@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
+import { executeWrite } from "../db/write-retry.js";
+import { getDb } from "../router/router-db.js";
 import { isCommentaryMetadata, isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
@@ -15,6 +17,7 @@ import {
   dbInsertCostEvent,
   deleteSession,
   getAnnounceCompaction,
+  getAgent,
   getSession,
   resetSession,
   updateProviderSession,
@@ -27,6 +30,7 @@ import { getSessionTraceBlob, getSessionTurn, listSessionEventsByTurn } from "..
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
+import { resolveEffectiveSessionRuntime } from "./runtime-selection.js";
 import { classifyVisibleAssistantUtterances } from "./assistant-transcript.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
@@ -982,6 +986,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     restartStashedSession,
     onToolBarrierReleased,
   } = options;
+  let lastPersistedProvider = session.runtimeProvider;
+  let lastPersistedOverride = session.runtimeProviderOverride;
+  let providerConfigurationRevision = session.runtimeProviderConfigRevision ?? 0;
   prewarmPricingCatalog();
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
@@ -2395,6 +2402,41 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     };
   };
 
+  // Configuration can rematerialize the next provider while this handle still
+  // owns an active turn. Check under the write lock so a late completion or
+  // telemetry write cannot restore that handle's incompatible native state.
+  // The revision distinguishes an explicit clear (even of a null override) and
+  // ABA from an unchanged launch. Compatible providers can keep continuity.
+  const persistCurrentProviderState = (write: () => void): boolean => {
+    const saved = executeWrite(
+      getDb(),
+      () => {
+        const current = getSession(session.sessionKey);
+        if (!current) return null;
+        const unchanged =
+          (current.runtimeProviderConfigRevision ?? 0) === providerConfigurationRevision &&
+          current.runtimeProvider === lastPersistedProvider &&
+          current.runtimeProviderOverride === lastPersistedOverride;
+        if (
+          !unchanged &&
+          resolveEffectiveSessionRuntime({ session: current, agent: getAgent(current.agentId) ?? agent }).provider
+            .value !== runtimeSession.provider
+        ) {
+          return null;
+        }
+        write();
+        return current;
+      },
+      { label: "runtime_provider_state" },
+    );
+    if (saved) {
+      lastPersistedProvider = runtimeSession.provider;
+      lastPersistedOverride = saved.runtimeProviderOverride;
+      providerConfigurationRevision = saved.runtimeProviderConfigRevision ?? 0;
+    }
+    return saved !== null;
+  };
+
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
@@ -2413,16 +2455,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (!lastUsedMatchesCurrent) {
       return runtimeSessionParams;
     }
-    if (persistedSessionId) {
-      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-        runtimeSessionParams,
-        runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-      });
-    } else {
-      updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
-        runtimeSessionParams,
-      });
-    }
+    persistCurrentProviderState(() => {
+      if (persistedSessionId) {
+        updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+          runtimeSessionParams,
+          runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
+        });
+      } else {
+        updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
+          runtimeSessionParams,
+        });
+      }
+    });
     return runtimeSessionParams;
   };
 
@@ -2442,15 +2486,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const providerUnset = !session.runtimeProvider;
     const lastUsedMatchesCurrent = session.runtimeProvider === runtimeSession.provider;
     if (!lastUsedMatchesCurrent && !providerUnset) return;
-    if (persistedSessionId) {
-      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-        runtimeSessionParams,
-        runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-      });
-      return;
-    }
-    updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
-      runtimeSessionParams,
+    persistCurrentProviderState(() => {
+      if (persistedSessionId) {
+        updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+          runtimeSessionParams,
+          runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
+        });
+      } else {
+        updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, { runtimeSessionParams });
+      }
     });
   };
 
@@ -3688,11 +3732,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           runtimeSessionDisplayId ??
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
-        if (persistedSessionId) {
-          updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-            runtimeSessionParams,
-            runtimeSessionDisplayId,
-          });
+        if (
+          persistedSessionId &&
+          persistCurrentProviderState(() => {
+            updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+              runtimeSessionParams,
+              runtimeSessionDisplayId,
+            });
+          })
+        ) {
           backfillProviderSessionId(sessionName, persistedSessionId);
           session.runtimeSessionParams = runtimeSessionParams;
           session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
@@ -3736,10 +3784,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             createdAt: Date.now(),
           });
         }
+        const providerSessionIdAfter = getSession(session.sessionKey)?.providerSessionId ?? null;
         recordTerminalTraceOnce({
           status: "complete",
           eventType: "turn.complete",
-          providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
+          providerSessionIdAfter,
           usage: event.usage,
           costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
@@ -3773,7 +3822,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           usage: event.usage,
           costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
-          providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
+          providerSessionIdAfter,
           promptTooLongReset: streaming._promptTooLong ?? false,
         });
         if (

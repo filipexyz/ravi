@@ -1,4 +1,5 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { spawnSync } from "bun";
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ZodTypeAny } from "zod";
 import { CliExpectedError } from "../expected-error.js";
@@ -3124,6 +3125,101 @@ describe("SessionCommands thread-configure", () => {
     expect(action.constraints.join(" ")).toContain("next turn");
     expect(action.constraints.join(" ")).toContain("generic session");
     expect(payload.usage.tools.configureThread).toMatchObject({ id: "thread.configure", command: action.command });
+    expect(configuredSlackThreadCalls).toEqual([]);
+    expectNoRuntimeEffects();
+  });
+
+  function advertisedConfigureThreadArgs(): string[] {
+    const payload = JSON.parse(
+      captureLogs(() =>
+        new SessionCommands().actions(String(resolvedSession!.name ?? resolvedSession!.sessionKey), undefined, true),
+      ),
+    );
+    const action = payload.actions.find((candidate: { id: string }) => candidate.id === "thread.configure");
+    expect(action.status).toBe("available");
+    expect(payload.usage.tools.configureThread.command).toBe(action.command);
+    expect(action.promptHint).toContain(action.command);
+    expect(payload.usage.tools.configureThread.promptHint).toBe(action.promptHint);
+    // Parse the advertised invocation with a real shell, capturing argv without running Ravi.
+    const shell = spawnSync([
+      "/bin/sh",
+      "-c",
+      `ravi() { printf '%s\\0' "$@"; }\n${action.command.replace("<thread-session>", childName)}`,
+    ]);
+    expect(shell.exitCode).toBe(0);
+    const args = shell.stdout.toString().split("\0").slice(0, -1);
+    expect(args.slice(0, 3)).toEqual(["sessions", "thread-configure", childName]);
+    return args;
+  }
+
+  it("discovery binds an explicit parent outside a current turn", () => {
+    toolContext = undefined;
+    scopeEnforced = false;
+    addActionSurface();
+    const args = advertisedConfigureThreadArgs();
+    const advertisedParent = args[args.indexOf("--session") + 1];
+    const advertisedEffort = args[args.indexOf("--effort") + 1];
+    expect(advertisedParent).toBe("dev-slack");
+    captureLogs(() =>
+      new SessionCommands().threadConfigure(
+        args[2],
+        undefined,
+        undefined,
+        advertisedEffort,
+        undefined,
+        advertisedParent,
+        true,
+      ),
+    );
+    expect(configuredSlackThreadCalls).toEqual([{ parentSession: resolvedSession!, ref: childName, effort: "ultra" }]);
+    expectNoRuntimeEffects();
+  });
+
+  it("discovery control accepts an explicit parent outside a current turn", () => {
+    toolContext = undefined;
+    scopeEnforced = false;
+    captureLogs(() =>
+      new SessionCommands().threadConfigure(childName, undefined, undefined, "ultra", undefined, "dev-slack", true),
+    );
+    expect(configuredSlackThreadCalls).toHaveLength(1);
+    expectNoRuntimeEffects();
+  });
+
+  it("discovery keeps the selected authorized parent when the current session differs", () => {
+    resolvedSession!.name = "other-parent";
+    resolvedSession!.sessionKey = "agent:dev:slack:ravi-slack:C456";
+    addActionSurface();
+    const args = advertisedConfigureThreadArgs();
+    const advertisedParent = args[args.indexOf("--session") + 1];
+    expect(advertisedParent).toBe("other-parent");
+    captureLogs(() =>
+      new SessionCommands().threadConfigure(args[2], undefined, undefined, "ultra", undefined, advertisedParent, true),
+    );
+    expect(new Set(resolvedSessionRefs)).toEqual(new Set(["other-parent"]));
+    expect(new Set(modifiedSessionRefs)).toEqual(new Set(["other-parent"]));
+    expect(configuredSlackThreadCalls).toHaveLength(1);
+    expectNoRuntimeEffects();
+  });
+
+  it.each(["name", "sessionKey"])("discovery shell-quotes the selected parent's %s", (field) => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Shell expansions must remain literal arguments.
+    const parentRef = "dev-'\"-$(printf expanded)-`printf expanded`-${RAVI_DISCOVERY_LITERAL:-expanded}-\\parent";
+    toolContext = undefined;
+    scopeEnforced = false;
+    resolvedSession!.name = field === "name" ? parentRef : null;
+    if (field === "sessionKey") resolvedSession!.sessionKey = parentRef;
+    addActionSurface();
+    const args = advertisedConfigureThreadArgs();
+    expect(args).toEqual([
+      "sessions",
+      "thread-configure",
+      childName,
+      "--session",
+      parentRef,
+      "--effort",
+      "ultra",
+      "--json",
+    ]);
     expect(configuredSlackThreadCalls).toEqual([]);
     expectNoRuntimeEffects();
   });

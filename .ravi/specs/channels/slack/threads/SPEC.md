@@ -197,6 +197,10 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
 - Configuration MUST NOT publish a prompt, interrupt the current turn, restart a
   daemon, reopen a closed thread, or overwrite the original creation request.
   Repeating the same patch MUST report `changed: false`.
+- An already-running provider's completion or telemetry MUST NOT overwrite the
+  provider materialized by a later `clear` or restore incompatible native state.
+  The old turn still records its output and usage; the next turn uses the saved
+  configuration. Unchanged or compatible provider continuity MUST still persist.
 - The action discovery surface MUST advertise `thread.configure` and its
   command/constraints to an authorized parent. Generic session setters keep
   their existing authorization rules.

@@ -75,6 +75,17 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - After daemon restart, resume MUST select the last-used `session.runtimeProvider` or the restart-snapshot provider when no launch, observation, or session `set-provider` override is present. Agent and global defaults MUST NOT steal that resume onto a different provider.
 - Ravi MUST clear stored provider session ids only for an explicit provider change (launch override, observation override, or session `set-provider`). A mismatch caused only by agent/global default MUST preserve compatible stored state.
 - Ravi MUST NOT persist last-used `runtimeProvider=<new>` until a successful authenticated turn.
+- A live provider writer MUST preserve a newer explicitly materialized provider
+  selection. Checking this and writing native continuity MUST be atomic; late
+  completion/telemetry from the old provider MUST NOT undo that selection.
+  Ordinary unchanged-provider completion and compatible state updates remain
+  resumable, and output/usage from the old turn are still recorded.
+- Explicit provider configuration MUST advance a persisted configuration
+  revision, including repeated `clear` with an already-null override. Administrative
+  rematerialization MUST also invalidate an older launch snapshot. Native state
+  writes MUST NOT advance that revision. A handle captures the revision before
+  launch; after it changes, continuity is accepted only for a provider compatible
+  with the current selection, including agent/global defaults.
 - Login / not-logged-in stubs (for example `Not logged in · Please run /login`) MUST be classified as `turn.failed` / auth error. They MUST NOT be saved as assistant transcript rows and MUST NOT be emitted to a bound chat.
 - Ravi MUST NOT clear compatible provider state solely because a terminal callback is missing. When an adapter can reconcile an ambiguous delivery, Ravi MUST preserve session continuity and the stable logical delivery id through recovery.
 - A provider that supports fork MUST define how parent provider state maps into the child or rebased session.

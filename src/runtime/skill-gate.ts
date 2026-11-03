@@ -4,11 +4,11 @@ import {
   getAgent,
   getSession,
   resolveSession,
-  updateProviderSession,
-  updateRuntimeProviderState,
   type ContextCapability,
   type ContextRecord,
 } from "../router/index.js";
+import { getDb } from "../router/router-db.js";
+import { executeWrite } from "../db/write-retry.js";
 import {
   findInstalledSkill,
   findSkillByName,
@@ -184,13 +184,6 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
     return { allowed: true };
   }
 
-  const nextSkillVisibility = markLoadedFromSkillGate(snapshot, {
-    provider: session.runtimeProvider ?? "unknown",
-    skill: input.gate.skill,
-    source: skill.source,
-    path: skill.skillFilePath,
-    toolName: input.toolName,
-  });
   const footer =
     getAgent(session.agentId)?.mode === "sentinel"
       ? null
@@ -199,21 +192,21 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
           capabilities: input.context?.capabilities,
           loadedSkills: snapshot.loadedSkills,
         });
-  const reason = buildSoftGateMessage(input.toolName, input.gate.skill, skill, footer);
-  persistSkillGateVisibility(
+  const skillVisibility = persistSkillGateVisibility(
     session,
-    nextSkillVisibility,
+    skill,
     input.toolName,
     input.gate,
     `RAVI_SKILL_REQUIRED: ${input.toolName} requires skill ${input.gate.skill}; skill delivered and marked as loaded.`,
   );
+  const reason = buildSoftGateMessage(input.toolName, input.gate.skill, skill, Boolean(skillVisibility), footer);
 
   return {
     allowed: false,
     code: "RAVI_SKILL_REQUIRED",
     skill: input.gate.skill,
     reason,
-    skillVisibility: nextSkillVisibility,
+    ...(skillVisibility ? { skillVisibility } : {}),
   };
 }
 
@@ -249,38 +242,58 @@ function resolveSkillForGate(skillName: string): RaviSkill | null {
 
 function persistSkillGateVisibility(
   session: SessionEntry,
-  skillVisibility: RuntimeSkillVisibilitySnapshot,
+  skill: RaviSkill,
   toolName: string,
   gate: SkillGateMetadata,
   reason: string,
-): void {
-  const runtimeSessionParams: Record<string, unknown> = {
-    ...(session.runtimeSessionParams ?? {}),
-    skillVisibility,
-  };
-  const persistedSessionId =
-    session.runtimeSessionDisplayId ??
-    session.providerSessionId ??
-    session.sdkSessionId ??
-    (typeof runtimeSessionParams.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
+): RuntimeSkillVisibilitySnapshot | undefined {
+  // Authorization and skill loading can outlive a concurrent provider change.
+  // Compare and merge under the write lock; a stale gate still delivers its
+  // content to the pending turn without changing the newer session state.
+  const persisted = executeWrite(
+    getDb(),
+    (db) => {
+      const current = getSession(session.sessionKey);
+      if (
+        !current ||
+        current.agentId !== session.agentId ||
+        current.createdAt !== session.createdAt ||
+        (current.runtimeProviderConfigRevision ?? 0) !== (session.runtimeProviderConfigRevision ?? 0) ||
+        current.runtimeProvider !== session.runtimeProvider ||
+        current.runtimeProviderOverride !== session.runtimeProviderOverride
+      ) {
+        return null;
+      }
+      const skillVisibility = markLoadedFromSkillGate(readSkillVisibilityFromParams(current.runtimeSessionParams), {
+        provider: current.runtimeProvider ?? "unknown",
+        skill: gate.skill,
+        source: skill.source,
+        path: skill.skillFilePath,
+        toolName,
+      });
+      const runtimeSessionParams = { ...(current.runtimeSessionParams ?? {}), skillVisibility };
+      // Visibility owns only params. Keep native ids, provider and its revision
+      // exactly as they were reread, including distinct SDK/display identities.
+      db.prepare("UPDATE sessions SET runtime_session_json = ?, updated_at = ? WHERE session_key = ?").run(
+        JSON.stringify(runtimeSessionParams),
+        Date.now(),
+        current.sessionKey,
+      );
+      return { session: current, skillVisibility };
+    },
+    { label: "skill_gate_visibility" },
+  );
+  if (!persisted) return undefined;
 
-  if (persistedSessionId) {
-    updateProviderSession(session.sessionKey, session.runtimeProvider, persistedSessionId, {
-      runtimeSessionParams,
-      runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-    });
-  } else {
-    updateRuntimeProviderState(session.sessionKey, session.runtimeProvider, { runtimeSessionParams });
-  }
-
-  emitSkillGateEvent(session, {
+  emitSkillGateEvent(persisted.session, {
     type: "skill.gate.loaded",
     toolName,
     gate,
     code: "RAVI_SKILL_REQUIRED",
     reason,
-    skillVisibility,
+    skillVisibility: persisted.skillVisibility,
   });
+  return persisted.skillVisibility;
 }
 
 function emitSkillGateEvent(
@@ -314,10 +327,18 @@ function emitSkillGateEvent(
     .catch(() => {});
 }
 
-function buildSoftGateMessage(toolName: string, skillName: string, skill: RaviSkill, footer?: string | null): string {
+function buildSoftGateMessage(
+  toolName: string,
+  skillName: string,
+  skill: RaviSkill,
+  markedLoaded: boolean,
+  footer?: string | null,
+): string {
   return [
     `RAVI_SKILL_REQUIRED: ${toolName} requires skill ${skillName}.`,
-    `The skill has been delivered and marked as loaded for this session. Read it, then retry the original tool call.`,
+    markedLoaded
+      ? "The skill has been delivered and marked as loaded for this session. Read it, then retry the original tool call."
+      : "The skill has been delivered for this turn. Read it, then retry the original tool call.",
     "",
     ...(footer ? [skill.content.trimEnd(), "", footer] : [skill.content]),
   ].join("\n");

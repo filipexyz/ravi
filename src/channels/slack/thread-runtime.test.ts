@@ -249,12 +249,13 @@ describe("Slack parent thread runtime configuration", () => {
     }
   });
 
-  it.each(["child-provider", "agent-default"])(
+  it.each(["child-provider", "agent-default", "provider-intent"])(
     "refuses stale provider authorization after %s changes",
     async (change) => {
       const fixture = await seedThread();
       const guard = mock(() => {
         if (change === "child-provider") updateSessionRuntimeProviderOverride(fixture.child.sessionKey, "grok");
+        else if (change === "provider-intent") updateSessionRuntimeProviderOverride(fixture.child.sessionKey, "codex");
         else dbUpdateAgent("ravi", { provider: "grok" });
       });
       expectErrorCode(
@@ -309,9 +310,13 @@ describe("Slack parent thread runtime configuration", () => {
     expect(result.thread.runtime).toMatchObject({ provider: "codex", model: "gpt-6-astra" });
     expect(getSession(fixture.child.sessionKey)).toMatchObject({ runtimeProvider: "codex" });
     expect(getSession(fixture.child.sessionKey)?.providerSessionId).toBeUndefined();
-    const unchanged = getSession(fixture.child.sessionKey);
+    const unchanged = getSession(fixture.child.sessionKey)!;
     expect(configureSlackThreadRuntime(input, () => {}).changed).toBe(false);
-    expect(getSession(fixture.child.sessionKey)).toEqual(unchanged);
+    expect(getSession(fixture.child.sessionKey)).toEqual({
+      ...unchanged,
+      runtimeProviderConfigRevision: (unchanged.runtimeProviderConfigRevision ?? 0) + 1,
+      updatedAt: expect.any(Number),
+    });
     expect(getSlackThreadLifecycle(fixture.requestId)).toEqual(fixture.record);
   });
 
@@ -330,10 +335,10 @@ describe("Slack parent thread runtime configuration", () => {
     expect(getSession(fixture.child.sessionKey)?.providerSessionId).toBeUndefined();
   });
 
-  it("keeps same-provider continuity and reports a no-op without rewriting the child", async () => {
+  it("keeps same-provider continuity and reports unchanged settings while recording fresh provider intent", async () => {
     const fixture = await seedThread();
     updateRuntimeProviderState(fixture.child.sessionKey, "codex", { providerSessionId: "private-provider-session" });
-    const before = getSession(fixture.child.sessionKey);
+    const before = getSession(fixture.child.sessionKey)!;
     const result = configureSlackThreadRuntime(
       {
         parentSession: fixture.parent,
@@ -347,7 +352,11 @@ describe("Slack parent thread runtime configuration", () => {
     );
     expect(result.changed).toBe(false);
     expect(result.before).toEqual(result.after);
-    expect(getSession(fixture.child.sessionKey)).toEqual(before);
+    expect(getSession(fixture.child.sessionKey)).toEqual({
+      ...before,
+      runtimeProviderConfigRevision: (before.runtimeProviderConfigRevision ?? 0) + 1,
+      updatedAt: expect.any(Number),
+    });
   });
 
   it("configures a closed thread without changing lifecycle, pending return, or output", async () => {

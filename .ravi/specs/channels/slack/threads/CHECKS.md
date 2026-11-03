@@ -77,6 +77,10 @@ bun run build
 
 ## Parent runtime configuration
 
+- Pause a real host event loop on a fake active provider, clear provider/model
+  through the parent, then complete that turn. Verify fresh next-turn selection
+  and native continuity, with no interrupt/restart and intact output/usage.
+
 - A parent attached to Slack from another channel MUST configure its owned Slack
   thread using persisted lifecycle identity; a historical channel is not a deny.
 - A denied provider change MUST preserve its permission-denial audit while

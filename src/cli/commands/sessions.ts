@@ -594,7 +594,7 @@ export function buildSessionDeleteMessageCommand(sessionRef: string, messageRef:
 }
 
 function quoteCliArg(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[$`]/g, "\\$&")}"`;
 }
 
 export function buildCurrentSessionEditMessageCommand(messageRef: string, text = "<new-text>"): string {
@@ -652,7 +652,8 @@ export function buildSessionActionsPromptHint(): string {
   ].join("\n");
 }
 
-function buildSessionActionToolHints(): Record<string, Record<string, unknown>> {
+function buildSessionActionToolHints(sessionRef: string): Record<string, Record<string, unknown>> {
+  const configureThreadCommand = `ravi sessions thread-configure <thread-session> --session ${quoteCliArg(sessionRef)} --effort ultra --json`;
   return {
     deleteMessage: {
       id: "message.delete",
@@ -817,7 +818,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
     configureThread: {
       id: "thread.configure",
       tool: "ravi sessions thread-configure",
-      command: "ravi sessions thread-configure <thread-session> --effort ultra --json",
+      command: configureThreadCommand,
       useWhen: "Configure the runtime of a Slack thread owned by this parent session.",
       constraints: [
         "Use only from the channel-root parent, with a target listed by sessions threads.",
@@ -826,8 +827,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Read the persisted before/after values and thread.runtime; the change applies on the next turn.",
         "This does not start a turn or grant generic session modification or history access.",
       ],
-      promptHint:
-        "Use `ravi sessions thread-configure <thread-session> --effort ultra --json` to configure an owned child directly. Set provider and model together when changing providers. The current turn keeps its runtime.",
+      promptHint: `Use \`${configureThreadCommand}\` to configure an owned child directly. Set provider and model together when changing providers. The current turn keeps its runtime.`,
     },
   };
 }
@@ -1183,7 +1183,7 @@ function sessionActionToolFields(
 function buildSessionActionsPayload(session: SessionEntry, options: { limit?: number } = {}): Record<string, unknown> {
   const ref = sessionActionRef(session);
   const limit = options.limit ?? 10;
-  const toolHints = buildSessionActionToolHints();
+  const toolHints = buildSessionActionToolHints(ref);
   const promptHint = buildSessionActionsPromptHint();
   const subscriptions = listSessionSubscriptions(session.sessionKey).map((subscription) => {
     const chat = dbGetChat(subscription.chatId);

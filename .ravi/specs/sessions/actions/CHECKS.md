@@ -23,3 +23,10 @@
 - [ ] Group and DM snapshots with only bootstrap groups MUST mark `media.send`
       unavailable with `permission_denied` and omit the command.
 - [ ] Explicit `--account` / `--to` MUST NOT grant `media send` authority.
+- [ ] `thread.configure` and `usage.tools.configureThread` MUST advertise the
+      selected authorized parent via `--session`, including outside a runtime
+      turn and when the current session differs.
+- [ ] Shell parsing of the advertised command MUST preserve the exact parent
+      name or key without interpreting quotes, substitutions or backslashes.
+- [ ] Thread configuration discovery MUST remain unavailable without parent
+      modify authority, command capability or a Slack channel-root surface.
