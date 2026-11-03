@@ -53,6 +53,7 @@ export interface SlackEventPayload {
   readonly user?: string;
   readonly bot_id?: string;
   readonly text?: string;
+  readonly blocks?: readonly unknown[];
   readonly ts?: string;
   readonly thread_ts?: string;
   readonly team?: string;

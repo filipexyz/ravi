@@ -77,6 +77,7 @@ import {
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
+import { extractSlackMessageText } from "./message-content.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
   acceptSlackInboundEnvelope,
@@ -1300,7 +1301,7 @@ export class SlackSocketModeService {
 
     const thread = resolveSlackThreadContext(event, this.routingPolicy);
     const eventTimeMs = payload?.event_time ? payload.event_time * 1000 : slackTsToMs(ts);
-    const text = typeof event.text === "string" ? event.text : "";
+    const text = extractSlackMessageText(event);
     const files = normalizeSlackFiles(event.files);
     if (!text.trim() && files.length === 0) return null;
 
