@@ -92,13 +92,14 @@ The adapter MUST ignore:
 - hidden events;
 - non-message events;
 - unsupported subtypes except accepted thread broadcast, file share, and
-  explicitly admitted bot-message behavior.
+  admitted bot-message behavior.
 
 ## Foreign Bot Intake
 
-Human message admission MUST remain unchanged. Bot-authored messages MUST fail
-closed by default, but the adapter MAY admit a foreign bot so agents can
-interoperate in shared Slack channels.
+Human message admission MUST remain unchanged. Foreign bot messages that pass
+the local-identity, installation-visibility, and origin checks below MUST enter
+the same route and channel-policy evaluation as human messages. Bot authorship
+MUST NOT introduce an additional mention or message-addressing alias requirement.
 
 Before deciding whether to admit any bot-authored message, the adapter MUST use
 `auth.test` with that channel account's bot token to discover both the local
@@ -134,18 +135,13 @@ seconds by default); the underlying HTTP request MUST receive an abort signal,
 and a timeout MUST fail closed and MUST release the in-flight slot so a later bot
 message can retry. A failure MUST NOT become a permanent cached identity.
 
-A foreign bot message MUST be admitted only when at least one of these rules
-matches:
-
-- the text contains an explicit Slack `<@local_bot_user_id>` mention; or
-- the text starts with a configured alias for that exact Slack chat id.
-
-Aliases MUST be configured per canonical Slack channel/account under
-`ChannelConfig.defaults.botMessageAliasesByChat`. They MUST NOT come from an
-environment variable or leak between channel accounts. Alias matching is
-case-insensitive and MUST require the complete alias followed by end-of-text,
-whitespace, or Unicode punctuation. Leading whitespace, middle-of-text matches,
-partial words, and aliases from another chat MUST NOT admit the message.
+An otherwise eligible foreign bot message MUST NOT be dropped because its text
+lacks a local-bot mention or begins without an address. Explicit addressing MAY
+inform the agent that it was addressed, but MUST NOT be a bot-only admission
+gate or bypass normal route/channel policy. There MUST NOT be a separate
+message-addressing alias configuration for bot intake. Plain text and multiline
+messages MUST preserve their content through the same normalization as human
+messages.
 
 Admitted bot messages MUST keep raw `user`, `bot_id`, team, channel, timestamp,
 and `senderKind=bot` provenance. The effective sender is raw `user` when present
@@ -163,15 +159,20 @@ reason. A resolved agent actor MUST enter the runtime as the corresponding
 `agent:<actorAgentId>` principal; it MUST NOT fall through to `missing_contact`
 or erase the executor agent's effective capabilities.
 
-Admission MUST reuse existing route, root/thread, canonical chat, persistence,
-and envelope-deduplication behavior. A duplicate Socket Mode envelope MUST still
-produce at most one prompt.
+Admission MUST reuse existing route, channel-policy, root/thread, canonical
+chat, persistence, and envelope-deduplication behavior. A foreign bot in an
+ignored channel or without an eligible route MUST NOT bypass that policy,
+whether or not it explicitly addresses Ravi. Root messages MUST follow the
+configured root reply policy, and thread replies MUST follow the same configured
+subscription/reply policy and session-fork rules as human messages. A duplicate Socket Mode envelope MUST still
+produce at most one prompt. Message admission alone MUST NOT grant actor
+authority or change the identity-resolution rules above.
 
 ## Local Bot Mentions
 
-A human message that mentions the local bot by id (`<@local_bot_user_id>` or
-`<@local_bot_user_id|label>`) MUST reach the agent with a `@mention` marker in
-the prompt header, and group message context MUST carry
+An admitted human or foreign bot message that mentions the local bot by id
+(`<@local_bot_user_id>` or `<@local_bot_user_id|label>`) MUST reach the agent with
+a `@mention` marker in the prompt header, and group message context MUST carry
 `botTag: "<@local_bot_user_id>"`, so the agent can tell it was addressed. The
 group system prompt MUST explain the `@mention` marker whenever `botTag` is
 known, whatever the size of the member list. A mention of another user MUST NOT

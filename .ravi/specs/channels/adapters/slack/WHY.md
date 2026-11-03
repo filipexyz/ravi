@@ -19,22 +19,24 @@ The safer default is thread-first routing:
 
 This keeps the first Slack adapter useful for real work while preserving the Ravi principle that channels transport context and Ravi owns routing/session semantics.
 
-## Why Foreign Bots Are Explicitly Addressed
+## Why Foreign Bots Follow Normal Channel Policy
 
 Slack Connect and shared automation channels often contain messages authored by
-other bots. Ignoring every `bot_id` prevents useful agent-to-agent coordination,
-while admitting every bot message creates loops and lets ambient automation drive
-an agent. Ravi therefore discovers its own bot/user pair with `auth.test`, always
-filters self output, and admits a foreign bot only through an explicit mention or
-a chat-scoped alias at the beginning of the text.
+other bots. A bot-only mention or alias requirement silently drops ordinary
+messages that would reach the agent if a human sent them, including multiline
+context and thread replies. Foreign bots therefore follow the same route,
+channel, root, and thread policy as humans once the adapter verifies local
+identity, installation visibility, and message origin. Explicit addressing stays
+useful as a prompt signal; it does not decide bot admission. No separate
+message-addressing alias configuration is needed.
 
-Aliases live on the channel account rather than in process environment so two
-workspaces can use different names without sharing policy. Complete-word Unicode
-boundaries make the operator-visible rule match natural text without accepting
-partial names. Authentication discovery is coalesced and successful results are
-cached, but each request has a bounded timeout and failures get only a short
-backoff: this avoids a stuck Web API call or a transient Slack failure turning
-into a daemon-lifetime outage without creating an API storm.
+Admitting a message does not grant its author authority. Ravi still discovers
+its own bot/user pair with `auth.test`, always filters self output, applies
+normal route/channel restrictions, and deduplicates delivery. Authentication
+discovery is coalesced and successful results are cached, but each request has a
+bounded timeout and failures get only a short backoff: this avoids a stuck Web
+API call or a transient Slack failure turning into a daemon-lifetime outage
+without creating an API storm.
 
 Slack Connect also separates message origin from app visibility. `source_team`
 may name the workspace that authored a message while `authorizations[].team_id`
@@ -97,7 +99,7 @@ Hermes' Slack gateway shows the operational details that matter before real work
 - Socket Mode must have a singleton lock per app/workspace connection.
 - Old handlers must be closed before reconnecting to avoid duplicate delivery.
 - Slack should be handled as threads, mentions, files and workspace policy, not just plain text.
-- Bot filtering needs explicit modes.
+- Bot intake needs local-echo suppression and explicit identity/provenance checks.
 - File handling often needs Web API calls with bot-token authenticated downloads.
 - Long messages need chunking or post/edit fallback.
 - Commands in threads may need text normalization because Slack does not support native slash commands everywhere.

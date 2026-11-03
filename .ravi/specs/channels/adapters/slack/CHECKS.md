@@ -4,7 +4,7 @@
 - [ ] Thread reply MUST include the Slack thread target.
 - [ ] Outbound response MUST use Slack native delivery.
 - [ ] Human message admission MUST remain unchanged.
-- [ ] A human message mentioning `<@local_bot_user_id>` (with or without a label) MUST carry `@mention` in the prompt header and `botTag` in group context; a mention of another user MUST NOT add the marker.
+- [ ] An admitted human or foreign bot message mentioning `<@local_bot_user_id>` (with or without a label) MUST carry `@mention` in the prompt header and `botTag` in group context; a mention of another user MUST NOT add the marker.
 - [ ] The group system prompt MUST explain the `@mention` marker whenever `botTag` is set, also for groups with fewer than three known members.
 - [ ] Human intake MUST NOT wait on `auth.test`; a stuck or failing discovery MUST still admit the human message, without the marker.
 - [ ] The local bot MUST be ignored when either event `bot_id` or `user` matches `auth.test`.
@@ -16,14 +16,18 @@
 - [ ] Resolved origin, `source_team`, `user_team`, `event.team`, `payload.team_id`, received authorization team ids, and local authenticated team MUST remain separate provenance fields.
 - [ ] Successful `auth.test` discovery MUST be cached, concurrent calls coalesced, and failures retried only after a bounded backoff.
 - [ ] A stuck `auth.test` MUST receive an abort signal, time out, fail closed, release the shared in-flight slot, and permit a later retry.
-- [ ] A foreign bot MUST require an explicit local-user mention or a chat-scoped alias at the beginning with a Unicode whitespace/punctuation boundary.
-- [ ] Aliases MUST come only from the current channel account's `defaults.botMessageAliasesByChat`; wrong-chat, wrong-account, middle, partial-word, and env aliases MUST be rejected.
+- [ ] An eligible foreign bot message with no local-bot mention or address MUST pass the same route/channel policy as a human message, without a bot-only admission gate or message-addressing alias configuration.
+- [ ] Plain and multiline foreign bot messages MUST pass the same admission checks even with leading whitespace or text before an address, preserving text and line breaks through normal normalization.
+- [ ] Explicit local-bot mentions MUST remain addressing signals; their presence or absence MUST NOT change bot admission when normal route/channel policy is otherwise identical.
 - [ ] Raw bot/user ids and `senderKind=bot` MUST survive chat, message, participant, source, and context provenance.
 - [ ] Bot/user candidate identities MAY produce `actorType=agent` only when all resolved ids identify one consistent agent; contact-only and owner conflicts MUST be unknown with no authority.
 - [ ] A resolved bot agent MUST become runtime principal `agent:<actorAgentId>` without stripping the executor agent's effective capabilities.
 - [ ] Daemon-restart resume MUST select stashed agent actor metadata and preserve its `agent:<actorAgentId>` authority principal.
 - [ ] Bot actor lookup MUST preserve canonical UUID/slug aliases, exact-empty fallback, cross-workspace isolation, and alias-collision fail-closed behavior.
-- [ ] Admitted bot messages MUST preserve root/thread routing and duplicate-envelope suppression.
+- [ ] An eligible unaddressed foreign bot root message MUST follow the configured root reply mode; a thread message MUST follow the same subscription/reply policy and session-fork rules as a human message.
+- [ ] Ignored-channel policy and missing-route rejection MUST apply to foreign bots with and without a local-bot mention, just as they do to human messages.
+- [ ] Duplicate envelopes for an admitted unaddressed bot message MUST still produce at most one prompt.
+- [ ] Admitting unaddressed foreign bot messages MUST NOT grant authority: unlinked, contact-only, mixed-owner, and ambiguous actors MUST remain unknown with zero actor authority, while a consistently linked agent keeps its existing principal.
 - [ ] Missing credentials MUST disable the adapter.
 - [ ] Env fallback MUST be opt-in.
 - [ ] Tests MUST cover routing policy and native delivery.

@@ -1287,7 +1287,6 @@ export class SlackSocketModeService {
       shouldIgnoreSlackMessageEvent(event, {
         selfBotId: localBotIdentity?.botId,
         selfUserId: localBotIdentity?.userId,
-        botMessageAliasesByChat: this.routingPolicy.botMessageAliasesByChat,
       })
     ) {
       return null;

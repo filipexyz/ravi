@@ -1334,7 +1334,7 @@ describe("Slack Socket Mode routing", () => {
     expect(disabled).toEqual([]);
   });
 
-  it("keeps bot alias defaults isolated per configured Slack account", async () => {
+  it("keeps inbound subscription defaults isolated per configured Slack account", async () => {
     const resolveSecret = mock(async ({ connection }: { connection: string }) => ({
       secret: JSON.stringify({ appToken: `xapp-${connection}`, botToken: `xoxb-${connection}` }),
       connection: { connection },
@@ -1346,12 +1346,12 @@ describe("Slack Socket Mode routing", () => {
         "ravi-rbbt-slack": slackChannel({
           name: "ravi-rbbt-slack",
           credentialConnection: "rbbt-secret",
-          defaults: { botMessageAliasesByChat: { CDEMO: ["Ravi"] } },
+          defaults: { subscriptionScope: "chat" },
         }),
         "hana-slack": slackChannel({
           name: "hana-slack",
           credentialConnection: "hana-secret",
-          defaults: { botMessageAliasesByChat: { CDEMO: ["Hana"] } },
+          defaults: { subscriptionScope: "thread" },
         }),
       },
     });
@@ -1359,13 +1359,12 @@ describe("Slack Socket Mode routing", () => {
     const policies = Object.fromEntries(
       runtimes.map((runtime) => [
         runtime.accountId,
-        (runtime.socketMode as unknown as { routingPolicy: { botMessageAliasesByChat: unknown } }).routingPolicy
-          .botMessageAliasesByChat,
+        (runtime.socketMode as unknown as { routingPolicy: SlackRoutingPolicy }).routingPolicy.subscriptionScope,
       ]),
     );
     expect(policies).toEqual({
-      "hana-slack": { CDEMO: ["Hana"] },
-      "ravi-rbbt-slack": { CDEMO: ["Ravi"] },
+      "hana-slack": "thread",
+      "ravi-rbbt-slack": "chat",
     });
   });
 
@@ -3716,8 +3715,9 @@ describe("Slack Socket Mode foreign bot intake", () => {
     envelopeId: string;
     ts: string;
     text: string;
-    botId: string;
+    botId?: string;
     userId?: string;
+    subtype?: string | null;
     channelId?: string;
     threadTs?: string;
     teamId?: string | null;
@@ -3735,7 +3735,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
         event_time: 1_713_000_000,
         event: {
           type: "message",
-          subtype: "bot_message",
+          ...(input.subtype === null ? {} : { subtype: input.subtype ?? "bot_message" }),
           channel: input.channelId ?? "C123",
           channel_type: "channel",
           user: input.userId,
@@ -3796,6 +3796,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
       team_id?: string;
     }>;
     routingPolicy?: Partial<SlackRoutingPolicy>;
+    config?: RouterConfig;
     now?: () => number;
     authTestFailureRetryMs?: number;
     authTestTimeoutMs?: number;
@@ -3807,7 +3808,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
       routeAccountId: SLUG,
       instanceId: SLUG,
       routingPolicy: input.routingPolicy,
-      getRouterConfig: botRouterConfig,
+      getRouterConfig: () => input.config ?? botRouterConfig(),
       publishPrompt: async (sessionName, payload) => {
         input.published.push({ sessionName, payload });
       },
@@ -3815,6 +3816,171 @@ describe("Slack Socket Mode foreign bot intake", () => {
       now: input.now,
       authTestFailureRetryMs: input.authTestFailureRetryMs,
       authTestTimeoutMs: input.authTestTimeoutMs,
+    });
+  }
+
+  function expectUnknownBotAuthority(entry: { sessionName: string; payload: Record<string, unknown> }): void {
+    const source = entry.payload.source as MessageTarget;
+    const context = entry.payload.context as MessageContext;
+    expect(source.actorType).toBe("unknown");
+    expect(source.actorAgentId).toBeUndefined();
+    expect(source.contactId).toBeUndefined();
+    expect(source.platformIdentityId).toBeUndefined();
+    const session = getSessionByName(entry.sessionName)!;
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: session.sessionKey,
+      sessionName: entry.sessionName,
+      sessionCwd: "/tmp/route-agent",
+      agent: { id: "route-agent", cwd: "/tmp/route-agent" },
+      prompt: { prompt: String(entry.payload.prompt), source, context },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution: {
+        options: {},
+        sources: { model: null, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      resolvedSource: source,
+    });
+    expect(runtimeContext.metadata?.actorResolution).toBe("missing_contact");
+    expect(Number(runtimeContext.metadata?.agentIdentityCapabilityCount)).toBe(0);
+    expect(Number(runtimeContext.metadata?.effectiveCapabilityCount)).toBe(0);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
+  }
+
+  const botVariants: Array<{
+    name: string;
+    botId?: string;
+    userId?: string;
+    subtype?: string | null;
+  }> = [
+    { name: "bot_id only", botId: "BFOREIGN" },
+    { name: "user and bot_id", userId: "UFOREIGN", botId: "BFOREIGN" },
+    { name: "bot_message with user only", userId: "UFOREIGN" },
+    { name: "bot_id without subtype", botId: "BFOREIGN", subtype: null },
+    { name: "bot file_share", userId: "UFOREIGN", botId: "BFOREIGN", subtype: "file_share" },
+    { name: "bot thread_broadcast", userId: "UFOREIGN", botId: "BFOREIGN", subtype: "thread_broadcast" },
+  ];
+
+  for (const variant of botVariants) {
+    it(`preserves unaddressed multiline ${variant.name} text through root and thread intake`, async () => {
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+      const service = makeBotService({ published, authTest });
+      const text = "  Atualização do serviço\n\n- Primeiro detalhe\n- Segundo detalhe\nFim do conteúdo.  ";
+      const rootTs = "1713000080.000100";
+      const senderId = variant.userId ?? variant.botId;
+
+      for (const [index, threadTs] of [undefined, rootTs].entries()) {
+        const ts = index === 0 ? rootTs : "1713000080.000200";
+        const envelope = botEnvelope({
+          ...variant,
+          envelopeId: `unaddressed-${index}`,
+          ts,
+          threadTs,
+          text,
+        });
+        expect(await service.handleEnvelope(envelope)).toBe("processed");
+        expect(await service.handleEnvelope(envelope)).toBe("duplicate");
+        expect(published).toHaveLength(index + 1);
+        const entry = published[index]!;
+        const source = entry.payload.source as MessageTarget;
+        const context = entry.payload.context as MessageContext;
+        expect(String(entry.payload.prompt)).toEndWith(text.trim());
+        expect(String(entry.payload.prompt)).not.toContain("@mention");
+        expect(entry.payload.deliveryBarrier).toBe("after_tool");
+        expect(source).toMatchObject({ instanceId: UUID, chatId: "C123", rawSenderId: senderId });
+        expect(source.identityProvenance).toMatchObject({ senderKind: "bot" });
+        expect(source.threadId).toBe(threadTs);
+        expect(context).toMatchObject({ senderId, actorType: "unknown", botTag: "<@ULOCAL>" });
+        expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
+          platformChatId: threadTs ? `C123#${threadTs}` : "C123",
+          chatType: threadTs ? "thread" : "group",
+          rawProvenance: { senderKind: "bot", userId: variant.userId ?? null, botId: variant.botId ?? null },
+        });
+        expect(
+          dbFindChatMessage({
+            channel: "slack",
+            instanceId: UUID,
+            chatId: source.canonicalChatId!,
+            providerMessageId: ts,
+          }),
+        ).toMatchObject({
+          actorType: "unknown",
+          rawSenderId: senderId,
+          content: { text, threadTs: threadTs ?? null, outboundThreadTs: threadTs ?? null },
+          rawProvenance: { senderKind: "bot", userId: variant.userId ?? null, botId: variant.botId ?? null },
+        });
+        expect(dbListChatParticipants(source.canonicalChatId!)).toEqual([
+          expect.objectContaining({
+            rawPlatformUserId: senderId,
+            metadata: expect.objectContaining({ slackSenderKind: "bot", slackBotId: variant.botId ?? null }),
+          }),
+        ]);
+        expectUnknownBotAuthority(entry);
+      }
+
+      expect(published[0]!.sessionName).toBe("route-agent");
+      expect(published[1]!.sessionName).not.toBe(published[0]!.sessionName);
+      expect(getSessionByName(published[1]!.sessionName)?.sessionKey).toContain(`:thread:${rootTs}`);
+      expect(authTest).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it("applies the configured new-thread reply mode to an unaddressed bot root message", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeBotService({
+      published,
+      authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
+      routingPolicy: { rootReplyMode: "new_thread" },
+    });
+    const ts = "1713000081.000100";
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({ envelopeId: "bot-new-thread", ts, text: "Atualização\nDetalhes completos", botId: "BFOREIGN" }),
+      ),
+    ).toBe("processed");
+    expect(published).toHaveLength(1);
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(source.threadId).toBe(ts);
+    expect(dbGetChat(source.canonicalChatId!)).toMatchObject({ platformChatId: `C123#${ts}`, chatType: "thread" });
+    expect(getSessionByName(published[0]!.sessionName)?.sessionKey).toContain(`:thread:${ts}`);
+    expect(
+      dbFindChatMessage({ channel: "slack", instanceId: UUID, chatId: source.canonicalChatId!, providerMessageId: ts }),
+    ).toMatchObject({ content: { text: "Atualização\nDetalhes completos", threadTs: null, outboundThreadTs: ts } });
+  });
+
+  for (const rejection of ["no route", "closed channel", "allowlisted channel"] as const) {
+    it(`applies ${rejection} rejection equally to human and bot messages with or without a mention`, async () => {
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const config = botRouterConfig();
+      config.routes =
+        rejection === "no route"
+          ? []
+          : [{ pattern: "*", accountId: SLUG, agent: "route-agent", priority: 0, channel: "slack" }];
+      config.accountAgents = {};
+      config.instances[SLUG]!.groupPolicy =
+        rejection === "closed channel" ? "closed" : rejection === "allowlisted channel" ? "allowlist" : "open";
+      const service = makeBotService({
+        published,
+        config,
+        authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
+      });
+
+      for (const [index, text] of ["Atualização sem destinatário", "<@ULOCAL> atualização"].entries()) {
+        for (const [senderIndex, isBot] of [false, true].entries()) {
+          const input = {
+            envelopeId: `rejected-${index}-${senderIndex}`,
+            ts: `1713000082.0001${index}${senderIndex}`,
+            text,
+          };
+          expect(
+            await service.handleEnvelope(isBot ? botEnvelope({ ...input, botId: "BFOREIGN" }) : humanEnvelope(input)),
+          ).toBe("processed");
+        }
+      }
+      expect(published).toHaveLength(0);
+      expect(getSessionByName("route-agent")).toBeNull();
     });
   }
 
@@ -3883,34 +4049,29 @@ describe("Slack Socket Mode foreign bot intake", () => {
     const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
     const service = makeBotService({ published, authTest });
 
+    for (const [index, identity] of [
+      { botId: "BLOCAL", userId: "UOTHER" },
+      { botId: "BOTHER", userId: "ULOCAL" },
+      { botId: "BLOCAL", subtype: null },
+      { userId: "ULOCAL" },
+    ].entries()) {
+      expect(
+        await service.handleEnvelope(
+          botEnvelope({
+            ...identity,
+            envelopeId: `self-echo-${index}`,
+            ts: `1713000100.00010${index}`,
+            text: "Mensagem própria\nSem destinatário",
+          }),
+        ),
+      ).toBe("ignored");
+    }
     expect(
       await service.handleEnvelope(
         botEnvelope({
-          envelopeId: "self-bot-id",
-          ts: "1713000100.000100",
-          text: "<@ULOCAL> loop",
-          botId: "BLOCAL",
-          userId: "UOTHER",
-        }),
-      ),
-    ).toBe("ignored");
-    expect(
-      await service.handleEnvelope(
-        botEnvelope({
-          envelopeId: "self-user-id",
-          ts: "1713000101.000100",
-          text: "<@ULOCAL> loop",
-          botId: "BOTHER",
-          userId: "ULOCAL",
-        }),
-      ),
-    ).toBe("ignored");
-    expect(
-      await service.handleEnvelope(
-        botEnvelope({
-          envelopeId: "foreign-mentioned",
+          envelopeId: "foreign-unaddressed",
           ts: "1713000102.000100",
-          text: "oi <@ULOCAL>",
+          text: "Atualização de outro bot",
           botId: "BFOREIGN",
         }),
       ),
@@ -3918,6 +4079,35 @@ describe("Slack Socket Mode foreign bot intake", () => {
 
     expect(authTest).toHaveBeenCalledTimes(1);
     expect(published).toHaveLength(1);
+  });
+
+  it("uses local-bot mentions as a prompt signal without changing foreign bot admission", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeBotService({
+      published,
+      authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
+    });
+    for (const [index, text] of [
+      "Atualização sem destinatário",
+      "Atualização\n<@ULOCAL> detalhes",
+      "  <@ULOCAL|ravi> atualização",
+      "<@UOTHER> atualização",
+    ].entries()) {
+      expect(
+        await service.handleEnvelope(
+          botEnvelope({
+            envelopeId: `bot-addressing-signal-${index}`,
+            ts: `1713000101.00010${index}`,
+            botId: "BFOREIGN",
+            text,
+          }),
+        ),
+      ).toBe("processed");
+      const entry = published[index]!;
+      expect(String(entry.payload.prompt).split("\n")[0]!.includes(" @mention]")).toBe(index === 1 || index === 2);
+      expect((entry.payload.context as MessageContext).botTag).toBe("<@ULOCAL>");
+    }
+    expect(published).toHaveLength(4);
   });
 
   it("uses the authorized installation while preserving a distinct Slack Connect origin", async () => {
@@ -4543,7 +4733,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     expect(published).toHaveLength(1);
   });
 
-  it("resolves one consistent agent across bot ids, preserves provenance, threads, and dedupe", async () => {
+  it("resolves an unaddressed multiline bot message while preserving agent identity, threads, and dedupe", async () => {
     const identity = upsertAgentPlatformIdentity({
       agentId: "foreign-one",
       channel: "slack",
@@ -4555,11 +4745,12 @@ describe("Slack Socket Mode foreign bot intake", () => {
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
     const service = makeBotService({ published, authTest });
+    const text = "Atualização completa\n\nPrimeiro detalhe.\nSegundo detalhe, sem mencionar ninguém.";
     const envelope = botEnvelope({
       envelopeId: "agent-thread",
       ts: "1713000130.000200",
       threadTs: "1713000130.000100",
-      text: "<@ULOCAL> consegue responder?",
+      text,
       userId: "UFOREIGN",
       botId: "BFOREIGN",
     });
@@ -4567,6 +4758,9 @@ describe("Slack Socket Mode foreign bot intake", () => {
     expect(await service.handleEnvelope(envelope)).toBe("processed");
     expect(await service.handleEnvelope(envelope)).toBe("duplicate");
     expect(published).toHaveLength(1);
+    expect(String(published[0]!.payload.prompt)).toEndWith(text);
+    expect(String(published[0]!.payload.prompt)).not.toContain("@mention");
+    expect(published[0]!.payload.deliveryBarrier).toBe("after_tool");
 
     const source = published[0]!.payload.source as MessageTarget;
     const context = published[0]!.payload.context as MessageContext;
@@ -4615,6 +4809,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     ).toMatchObject({
       actorType: "agent",
       agentId: "foreign-one",
+      content: { text, threadTs: "1713000130.000100", outboundThreadTs: "1713000130.000100" },
       platformIdentityId: identity.id,
       rawSenderId: "UFOREIGN",
       normalizedSenderId: "BFOREIGN",
@@ -4634,7 +4829,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     ]);
 
     const session = getSessionByName(published[0]!.sessionName)!;
-    const runtimePrompt: RuntimeLaunchPrompt = { prompt: "consegue responder?", source, context };
+    const runtimePrompt: RuntimeLaunchPrompt = { prompt: text, source, context };
     const { runtimeContext } = buildRuntimeRequestContext({
       dbSessionKey: session.sessionKey,
       sessionName: published[0]!.sessionName,
@@ -4658,7 +4853,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
   });
 
-  it("admits a bot-only alias message but keeps a contact-owned bot fail-closed", async () => {
+  it("admits an unaddressed bot-only message but keeps a contact-owned bot fail-closed", async () => {
     const contact = ensureContactFromInbound({
       channel: "slack",
       instanceId: UUID,
@@ -4672,7 +4867,6 @@ describe("Slack Socket Mode foreign bot intake", () => {
     const service = makeBotService({
       published,
       authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
-      routingPolicy: { botMessageAliasesByChat: { C123: ["Hana"] } },
     });
 
     expect(
@@ -4680,12 +4874,14 @@ describe("Slack Socket Mode foreign bot intake", () => {
         botEnvelope({
           envelopeId: "bot-only-contact",
           ts: "1713000140.000100",
-          text: "Hana—status",
+          text: "Status completo\nDetalhes da integração.",
           botId: "BFOREIGN",
         }),
       ),
     ).toBe("processed");
     expect(contact.platformIdentity).not.toBeNull();
+    expect(published).toHaveLength(1);
+    expectUnknownBotAuthority(published[0]!);
     const source = published[0]!.payload.source as MessageTarget;
     expect(source).toMatchObject({
       actorType: "unknown",
@@ -4719,7 +4915,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
         botId: "BFOREIGN",
       },
     });
-    expect(String(published[0]!.payload.prompt)).toContain("<@BFOREIGN>: Hana—status");
+    expect(String(published[0]!.payload.prompt)).toContain("<@BFOREIGN>: Status completo\nDetalhes da integração.");
   });
 
   it("resolves bot user_id and bot_id to one agent when both identities agree", async () => {
@@ -4810,6 +5006,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     expect(source.actorAgentId).toBeUndefined();
     expect(source.platformIdentityId).toBeUndefined();
     expect(source.identityProvenance).toMatchObject({ botIdentityReason: "conflicting_agents" });
+    expectUnknownBotAuthority(published[0]!);
   });
 
   it("fails closed when an agent bot id conflicts with a contact-owned user id", async () => {
@@ -4847,6 +5044,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
     expect(source.contactId).toBeUndefined();
     expect(source.actorAgentId).toBeUndefined();
     expect(source.identityProvenance).toMatchObject({ botIdentityReason: "conflicting_platform_owners" });
+    expectUnknownBotAuthority(published[0]!);
   });
 
   it("keeps canonical instance alias collisions fail-closed for bot identities", async () => {
@@ -4866,14 +5064,13 @@ describe("Slack Socket Mode foreign bot intake", () => {
     const service = makeBotService({
       published,
       authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
-      routingPolicy: { botMessageAliasesByChat: { C123: ["Hana"] } },
     });
 
     await service.handleEnvelope(
       botEnvelope({
         envelopeId: "alias-owner-conflict",
         ts: "1713000170.000100",
-        text: "Hana, status",
+        text: "Status sem destinatário",
         botId: "BFOREIGN",
       }),
     );
@@ -4885,6 +5082,7 @@ describe("Slack Socket Mode foreign bot intake", () => {
       reason: "ambiguous_instance_alias",
       botIdentityReason: "ambiguous_instance_alias",
     });
+    expectUnknownBotAuthority(published[0]!);
   });
 });
 
