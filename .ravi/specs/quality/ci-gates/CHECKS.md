@@ -27,6 +27,7 @@ status: active
 
 ## CI Integration Checks
 
+- Two consecutive CI attempts on the same commit MUST pass `Test Swift SDK` and log the pinned Swift version; a missing toolchain MUST fail rather than skip.
 - `bun test --timeout 20000 --preload ./src/test/isolated-runtime-preload.ts src/runtime/session-dispatcher.test.ts` passes and is selected by `test:runtime-host`.
 - Replacing fixture cleanup with the former unconditional removal of
   `RAVI_STATE_DIR` makes that command fail with `TEST_PRODUCTION_DB_BLOCKED`

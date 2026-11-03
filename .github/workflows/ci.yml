@@ -28,7 +28,7 @@ concurrency:
 jobs:
   quality-gate:
     name: Quality Gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
@@ -55,8 +55,15 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
+        with:
+          swift-version: "6.2.1"
+
       - name: Test Swift SDK
-        run: bun run test:swift-sdk
+        run: |
+          swift --version
+          bun run test:swift-sdk
 
       # The quality gate is diff-based and must evaluate the pull request delta.
       # Push events on long-lived branches can include merge commits or branch

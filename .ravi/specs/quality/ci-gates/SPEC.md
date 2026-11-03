@@ -32,6 +32,7 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 ## Invariants
 
 - CI MUST run for pull requests targeting any branch, including stacked PRs targeting another feature branch.
+- The Swift SDK gate MUST provision an exact Swift toolchain version on a supported runner OS, print `swift --version`, and run the tests without relying on preinstalled Swift or skipping when it is absent.
 - CI MUST run `ravi specs sync --json` for every PR that touches `.ravi/specs/**`.
 - CI MUST validate changed specs with `ravi specs get <spec_id> --mode full --json` and `ravi specs get <spec_id> --mode checks --json`.
 - CI MUST fail on spec id/path/kind mismatch, invalid frontmatter, missing required companion, or empty/non-verifiable CHECKS for changed specs.
