@@ -60,6 +60,18 @@ A PR follow owns its event producer, not just its trigger:
 4. a failure while ensuring watches is logged and counted, and never deletes the
    follow trigger.
 
+## PR Publication Regression
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/hooks/gh-pr-publish.test.ts src/hooks/gh-watch.test.ts src/hooks/gh-follow-sweep.test.ts` passes.
+- Creating through the API sets `draft: false`, creates the standard repo watch
+  and `gh-follow:<repo>#<number>` trigger, and routes it to the publishing session.
+- Repeating publication for an orphan ready PR or legacy draft creates no second
+  PR/follow. A stale follow is repaired in place, including a missing CI producer.
+- DB/CI producer/refresh/ready failures cannot produce a success response;
+  retry recovers the same PR, including refresh after a persisted trigger.
+- A missing publishing session, remote SHA mismatch, foreign head repo or a head
+  changing during publication fails closed. No unrelated PR is promoted.
+
 ## Trigger Regression
 
 Create a watch-trigger pair from a group chat.

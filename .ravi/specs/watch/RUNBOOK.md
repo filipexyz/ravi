@@ -1,5 +1,26 @@
 # Watch / RUNBOOK
 
+## Publish Or Reconcile A PR After Git Data API Upload
+
+From the publishing Ravi session and committed worktree, after verifying the
+uploaded Git tree and commit against the local SHA:
+
+```bash
+bun scripts/publish-pr.ts --repo owner/repo --base dev --title "Fix description" --body-file /tmp/pr-body.md
+```
+
+This command validates the branch SHA, creates a ready PR (or finds the existing
+one for that head/base), and registers its CI follow with the shared primitive.
+The JSON result reports PR, SHA, watch and trigger. Inspect the returned trigger
+and local watch to confirm routing and active CI coverage. It does not upload
+Git objects or replace commit hooks.
+
+If publication fails after creating a PR, run the identical command again in
+the same worktree/session. The PR and trigger are reused; a legacy draft is
+promoted only after its follow exists. Do not repair this by making another
+trigger or by editing Review Gate policy. Unrelated PRs are never reconciled by
+this command. Missing independent approval remains a legitimate review blocker.
+
 ## List Connectors
 
 ```bash

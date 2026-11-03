@@ -54,6 +54,7 @@ bun test <path>      # one focused suite
 ```
 
 - Pre-commit runs Biome on staged files. Pre-push runs `bun run sdk:check` (on drift it regenerates and blocks until you commit), then build, typecheck and `bun run test`. Never use `--no-verify`.
+- On the production host's sanctioned Git Data API path, finish with `bun scripts/publish-pr.ts --repo filipexyz/ravi --base dev --title "..." --body-file <file>` in the publishing Ravi session. It creates a ready PR and registers the standard CI follow; repeat it to reconcile an existing PR/follow after a partial failure. Verify uploaded tree/SHA and record literal publication commands in the PR. See `CONTRIBUTING.md`.
 - Changing a command's flags or return schema changes the generated SDKs and `openapi.json`/`docs/openapi.json`; `CONTRIBUTING.md` lists the regenerate commands.
 - `src/cli/execute-consumers.test.ts` checks exact command strings in `README.md`, `AGENTS.md`, skills and docs. When a command gains or loses its `--execute` brake, update that test and those files.
 - Try the CLI without touching a live install: `HOME=$(mktemp -d) ./bin/ravi <group> <command> --help`.

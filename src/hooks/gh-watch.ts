@@ -807,7 +807,7 @@ async function reconcileLocalWatch(
 }
 
 export async function ensureGhWatchFollow(
-  input: { repo: string; prNumber: number | null; context?: GhWatchFollowContext },
+  input: { repo: string; prNumber: number | null; context?: GhWatchFollowContext; reconcile?: boolean },
   deps: GhWatchFollowDeps = {},
 ): Promise<GhWatchFollowResult> {
   const context = input.context ?? {};
@@ -825,6 +825,16 @@ export async function ensureGhWatchFollow(
     return result;
   }
 
+  const resolved: GhWatchFollowContext = { ...context };
+  if (!resolved.accountId && resolved.agentId) {
+    try {
+      const { getAccountForAgent } = await import("../router/router-db.js");
+      resolved.accountId = (deps.resolveAccountForAgent ?? getAccountForAgent)(resolved.agentId);
+    } catch {
+      // Optional: fire-time routing can still resolve the account.
+    }
+  }
+  const desired = buildGhFollowTriggerInput(input.repo, input.prNumber, resolved);
   const listTriggers = deps.listTriggers ?? dbListTriggers;
   const existing = findExistingGhFollowTrigger(input.repo, input.prNumber, listTriggers());
   if (existing) {
@@ -833,37 +843,50 @@ export async function ensureGhWatchFollow(
     // A instrução envelhece: quando a declaração de eventos cresce (comentário),
     // o trigger antigo continua mandando o agente ler só ciclo de vida e CI. Sem
     // atualizar aqui, acompanhamentos existentes nunca recebem o texto novo.
-    const desired = buildGhFollowTriggerInput(input.repo, input.prNumber, context);
-    if (existing.message !== desired.message || existing.filter !== desired.filter) {
+    const patch: Partial<TriggerInput> = {};
+    if (existing.message !== desired.message) patch.message = desired.message;
+    if (existing.filter !== desired.filter) patch.filter = desired.filter;
+    if (existing.topic !== desired.topic) patch.topic = desired.topic;
+    // Explicit publication owns this follow; automatic observation does not
+    // steal another session's subscription or re-enable a deliberately paused one.
+    if (input.reconcile) {
+      for (const key of ["agentId", "accountId", "replySession", "replySource", "session"] as const) {
+        if (desired[key] !== undefined && JSON.stringify(existing[key]) !== JSON.stringify(desired[key])) {
+          Object.assign(patch, { [key]: desired[key] });
+        }
+      }
+      if (!existing.enabled) patch.enabled = true;
+    }
+    if (Object.keys(patch).length > 0) {
       try {
-        (deps.updateTrigger ?? dbUpdateTrigger)(existing.id, { message: desired.message, filter: desired.filter });
+        const updated = (deps.updateTrigger ?? dbUpdateTrigger)(existing.id, patch);
+        if (!updated) throw new Error(`Could not reconcile gh follow ${existing.id}`);
         result.triggerRepaired = true;
       } catch (error) {
+        if (input.reconcile) throw error;
         log.warn("Could not refresh gh follow instructions", { triggerId: existing.id, error });
+      }
+    }
+    if (result.triggerRepaired || input.reconcile) {
+      // Retry refresh even when the DB already matches: an earlier publication
+      // may have failed after persisting its trigger but before notifying the runner.
+      try {
+        await (deps.emitTriggersRefresh ?? defaultEmitTriggersRefresh)();
+      } catch (error) {
+        if (input.reconcile) throw error;
       }
     }
     return result;
   }
 
-  const resolved: GhWatchFollowContext = { ...context };
-  if (!resolved.accountId && resolved.agentId) {
-    try {
-      const { getAccountForAgent } = await import("../router/router-db.js");
-      resolved.accountId = (deps.resolveAccountForAgent ?? getAccountForAgent)(resolved.agentId);
-    } catch {
-      // Lookup opcional: o roteamento em fire-time ainda resolve a conta.
-    }
-  }
-
-  const trigger = (deps.createTrigger ?? dbCreateTrigger)(
-    buildGhFollowTriggerInput(input.repo, input.prNumber, resolved),
-  );
+  const trigger = (deps.createTrigger ?? dbCreateTrigger)(desired);
   result.triggerId = trigger.id;
   result.triggerReused = false;
 
   try {
     await (deps.emitTriggersRefresh ?? defaultEmitTriggersRefresh)();
-  } catch {
+  } catch (error) {
+    if (input.reconcile) throw error;
     // Durable: o daemon recarrega no próximo refresh/restart.
   }
   return result;
