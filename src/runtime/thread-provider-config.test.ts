@@ -6,6 +6,7 @@ import {
   markSlackThreadRootDelivered,
 } from "../channels/slack/thread-lifecycle-store.js";
 import { configureSlackThreadRuntime } from "../channels/slack/thread-runtime.js";
+import { configStore } from "../config-store.js";
 import * as pricing from "../costs/pricing-catalog.js";
 import { getRecentHistory, saveMessage } from "../db.js";
 import { nats } from "../nats.js";
@@ -18,14 +19,21 @@ import {
 } from "../router/sessions.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
+import { querySessionTrace } from "../session-trace/query.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { logger } from "../utils/logger.js";
 import { syncAgentSessionsToAgentRuntime } from "./agent-session-runtime-sync.js";
+import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
-import type { RuntimeHostStreamingSession, RuntimeMessageTarget } from "./host-session.js";
+import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
+import type { RuntimeLaunchPrompt } from "./message-types.js";
+import * as modelBrokerPlanning from "./model-broker-planning.js";
 import { createRuntimeProvider } from "./provider-registry.js";
 import { resolveEffectiveSessionRuntime } from "./runtime-selection.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
+import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 
 const AGENT_ID = "thread-runtime-config";
@@ -35,6 +43,7 @@ const PROVIDER_SESSION_AFTER = "claude-after-configuration";
 const USER_PROMPT = "Finish the active investigation.";
 const ASSISTANT_REPLY = "The active Claude turn finished its investigation.";
 const TURN_ID = "active-claude-turn";
+const NEXT_PROMPT = "Continue after the provider configuration.";
 
 let stateDir: string | null = null;
 let restoreEffects: () => void;
@@ -298,6 +307,142 @@ describe("Slack thread provider configuration during an active runtime turn", ()
   }
 });
 
+describe("Slack thread provider configuration through the live dispatcher", () => {
+  for (const provider of ["clear", "codex"] as const) {
+    it(`starts the next turn on Codex after ${provider} while Claude was active`, async () => {
+      await withActiveClaudeTurn(
+        true,
+        async (fixture) => {
+          configureSlackThreadRuntime(
+            {
+              parentSession: fixture.parent,
+              ref: REQUEST_ID,
+              provider,
+              model: provider === "clear" ? "clear" : "gpt-6-astra",
+            },
+            () => {},
+          );
+          fixture.expectUninterrupted();
+          await fixture.complete();
+          fixture.expectCompletionAccounting();
+          expect(fixture.resolveNextTurn().effective.provider.value).toBe("codex");
+
+          const dispatch = await fixture.dispatchNext();
+          expect(dispatch.pendingPrompts).toEqual([]);
+          expect(dispatch.startedProviders).toEqual(["codex"]);
+          expect(dispatch.oldHandleDone).toBe(true);
+          expect(dispatch.routing).toContainEqual({
+            eventType: "dispatch.restart_requested",
+            provider: "claude",
+            requestedProvider: "codex",
+          });
+          expect(dispatch.routing.some(({ eventType }) => eventType === "dispatch.push_existing")).toBe(false);
+        },
+        { allowDispatch: true },
+      );
+    });
+  }
+
+  it("keeps the fast live queue after clear to a compatible Claude default", async () => {
+    await withActiveClaudeTurn(
+      true,
+      async (fixture) => {
+        configureSlackThreadRuntime(
+          { parentSession: fixture.parent, ref: REQUEST_ID, provider: "clear", model: "clear" },
+          () => {},
+        );
+        await fixture.complete();
+        fixture.expectCompletionAccounting();
+        const dispatch = await fixture.dispatchNext();
+        expect(dispatch.pendingPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+        expect(dispatch.startedProviders).toEqual([]);
+        expect(dispatch.oldHandleDone).toBe(false);
+        expect(dispatch.planningCalls).toBe(0);
+        expect(dispatch.wakeCalls).toBe(1);
+        fixture.expectUninterrupted();
+      },
+      { allowDispatch: true, agentDefaultProvider: "claude" },
+    );
+  });
+
+  it("keeps an unchanged ephemeral Claude launch in the fast queue despite a stored Codex provider", async () => {
+    await withActiveClaudeTurn(
+      false,
+      async (fixture) => {
+        expect(fixture.resolveNextTurn().stored.runtimeProvider).toBe("codex");
+        const dispatch = await fixture.dispatchNext();
+        expect(dispatch.pendingPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+        expect(dispatch.startedProviders).toEqual([]);
+        expect(dispatch.oldHandleDone).toBe(false);
+        expect(dispatch.planningCalls).toBe(0);
+        // after_response stays queued until this active turn finishes.
+        expect(dispatch.wakeCalls).toBe(0);
+        fixture.expectUninterrupted();
+        await fixture.complete();
+      },
+      { allowDispatch: true, firstTurn: true, previousProvider: "codex", launchProviderOverride: "claude" },
+    );
+  });
+
+  it("moves only the queued successor to Codex when clear happens after it was queued on active Claude", async () => {
+    await withActiveClaudeTurn(
+      true,
+      async (fixture) => {
+        const queued = await fixture.dispatchNext();
+        expect(queued.pendingPrompts).toEqual([USER_PROMPT, expect.stringContaining(NEXT_PROMPT)]);
+        expect(queued.startedProviders).toEqual([]);
+        expect(queued.wakeCalls).toBe(0);
+        configureSlackThreadRuntime(
+          { parentSession: fixture.parent, ref: REQUEST_ID, provider: "clear", model: "clear" },
+          () => {},
+        );
+        fixture.expectUninterrupted();
+        await fixture.complete({ expectRetired: true });
+        expect(fixture.restartState()).toMatchObject({
+          reasons: ["provider_change"],
+          stashedPrompts: queued.pendingPrompts.slice(1),
+          interrupted: false,
+          terminalStatus: "complete",
+        });
+        expect(fixture.resolveNextTurn().resolved?.runtimeProviderId).toBe("codex");
+      },
+      { allowDispatch: true, includeCurrentPendingMessage: true },
+    );
+  });
+
+  it("rechecks a provider clear committed while asynchronous dispatch preflight is pending", async () => {
+    await withActiveClaudeTurn(
+      true,
+      async (fixture) => {
+        await fixture.complete();
+        const dispatch = await fixture.dispatchNext({
+          prompt: {
+            _observation: {
+              sourceSessionKey: fixture.parent.sessionKey,
+              sourceSessionName: fixture.parent.name!,
+              bindingId: "provider-config-observer",
+              ruleId: "provider-config-rule",
+              role: "review",
+              mode: "reactive",
+              eventIds: ["provider-config-event"],
+            },
+          },
+          duringPreflight: () => {
+            configureSlackThreadRuntime(
+              { parentSession: fixture.parent, ref: REQUEST_ID, provider: "clear", model: "clear" },
+              () => {},
+            );
+          },
+        });
+        expect(dispatch.pendingPrompts).toEqual([]);
+        expect(dispatch.startedProviders).toEqual(["codex"]);
+        expect(dispatch.oldHandleDone).toBe(true);
+      },
+      { allowDispatch: true },
+    );
+  });
+});
+
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -307,10 +452,26 @@ function deferred() {
 }
 
 interface ThreadFixtureOptions {
+  allowDispatch?: boolean;
+  includeCurrentPendingMessage?: boolean;
   agentDefaultProvider?: "claude" | "codex";
   previousProvider?: "claude" | "codex" | "unset";
   firstTurn?: boolean;
   launchProviderOverride?: "claude";
+}
+
+interface DispatchFixtureOptions {
+  prompt?: Partial<RuntimeLaunchPrompt>;
+  duringPreflight?: () => void;
+}
+
+interface DispatchFixtureResult {
+  pendingPrompts: string[];
+  startedProviders: string[];
+  oldHandleDone: boolean;
+  wakeCalls: number;
+  planningCalls: number;
+  routing: Array<{ eventType: string; provider: string | null; requestedProvider: unknown }>;
 }
 
 async function seedThread(explicitOverride: boolean, options: ThreadFixtureOptions) {
@@ -377,8 +538,16 @@ async function withActiveClaudeTurn(
   explicitOverride: boolean,
   run: (fixture: {
     parent: Awaited<ReturnType<typeof seedThread>>["parent"];
+    dispatchNext(options?: DispatchFixtureOptions): Promise<DispatchFixtureResult>;
+    restartState(): {
+      reasons: string[];
+      stashedPrompts: string[];
+      pendingOnOldHandle: number;
+      interrupted: boolean;
+      terminalStatus: string | undefined;
+    };
     expectUninterrupted(): void;
-    complete(): Promise<void>;
+    complete(options?: { expectRetired?: boolean }): Promise<void>;
     expectCompletionAccounting(): void;
     resolveNextTurn(): {
       stored: NonNullable<ReturnType<typeof getSession>>;
@@ -415,7 +584,7 @@ async function withActiveClaudeTurn(
   const allowEnd = deferred();
   const interrupt = mock(async () => {});
   const close = mock(async () => {});
-  const restart = mock(async () => {});
+  const restart = mock(async (_input: { sessionName: string; reason: string }) => {});
   const runtimeSession: RuntimeSessionHandle = {
     provider: "claude",
     events: (async function* (): AsyncGenerator<RuntimeEvent> {
@@ -443,14 +612,20 @@ async function withActiveClaudeTurn(
     canonicalChatId: record.threadCanonicalChatId!,
     threadId: record.providerThreadId!,
   };
+  const currentPending = options.includeCurrentPendingMessage
+    ? createQueuedRuntimeUserMessage({ prompt: USER_PROMPT, deliveryBarrier: "after_response" })
+    : undefined;
+  if (currentPending) currentPending.clientMessageId = "active-claude-input";
   const streaming: RuntimeHostStreamingSession = {
     agentId: AGENT_ID,
     queryHandle: runtimeSession,
+    runtimeProviderConfigRevision: child.runtimeProviderConfigRevision ?? 0,
     starting: false,
     abortController: new AbortController(),
     pushMessage: null,
     pendingWake: false,
-    pendingMessages: [],
+    pendingMessages: currentPending ? [currentPending] : [],
+    ...(currentPending ? { currentTurnPendingIds: [currentPending.pendingId!] } : {}),
     currentSource: source,
     currentModel: "opus",
     toolRunning: false,
@@ -488,7 +663,24 @@ async function withActiveClaudeTurn(
   streaming.currentTraceTurnId = trace.turnId;
   streaming.currentTraceTurnStartedAt = trace.startedAt;
   saveMessage(sessionName, "user", USER_PROMPT, child.providerSessionId);
-  const live = new Map([[sessionName, streaming]]);
+  const dispatchRecovery = options.allowDispatch
+    ? new RuntimeCrashRecoveryCoordinator({ instanceId: "provider-config-dispatch-test" })
+    : undefined;
+  dispatchRecovery?.start();
+  const dispatcher = dispatchRecovery
+    ? new RuntimeSessionDispatcher({
+        instanceId: "provider-config-dispatch-test",
+        maxConcurrentSessions: 2,
+        interactiveReservedSessions: 0,
+        safeEmit: async () => {},
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "gpt-6-astra",
+        crashRecovery: dispatchRecovery,
+      })
+    : undefined;
+  const live = dispatcher?.streamingSessions ?? new Map<string, RuntimeHostStreamingSession>();
+  live.set(sessionName, streaming);
+  const stashedMessages = dispatcher?.stashedMessages ?? new Map<string, RuntimeUserMessage[]>();
   const loop = runRuntimeEventLoop({
     runId: streaming.traceRunId!,
     sessionName,
@@ -501,7 +693,7 @@ async function withActiveClaudeTurn(
     instanceId: "provider-config-test",
     defaultRuntimeProviderId: "codex",
     streamingSessions: live,
-    stashedMessages: new Map(),
+    stashedMessages,
     safeEmit: async () => {},
     drainPendingStarts: () => {},
     restartStashedSession: restart,
@@ -530,8 +722,86 @@ async function withActiveClaudeTurn(
     await run({
       parent,
       expectUninterrupted,
-      complete: async () => {
+      restartState: () => ({
+        reasons: restart.mock.calls.map(([input]) => input.reason),
+        stashedPrompts: (stashedMessages.get(sessionName) ?? []).map((message) => String(message.message.content)),
+        pendingOnOldHandle: streaming.pendingMessages.length,
+        interrupted: streaming.interrupted,
+        terminalStatus: getSessionTurn(TURN_ID)?.status,
+      }),
+      dispatchNext: async (dispatchOptions = {}) => {
+        if (!dispatcher) throw new Error("This fixture did not enable the live dispatcher");
+        configStore.refresh();
+        const startedProviders: string[] = [];
+        const start = spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+          // Stop at the real launch resolver; no adapter process or service is started.
+          const resolution = resolveRuntimeSession({
+            sessionName: name,
+            prompt,
+            defaultRuntimeProviderId: "codex",
+          });
+          if (!resolution) throw new Error("The dispatched session could not be resolved");
+          startedProviders.push(resolution.runtimeProviderId);
+        });
+        const planning = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute");
+        const wake = mock(() => {});
+        streaming.pushMessage = wake;
+        try {
+          const pending = dispatcher.handlePromptImmediate(sessionName, {
+            prompt: NEXT_PROMPT,
+            _agentId: AGENT_ID,
+            deliveryBarrier: "after_response",
+            deliveryBarrierSource: "default",
+            _turnOrigin: buildSessionRelayTurnOrigin("send"),
+            ...dispatchOptions.prompt,
+          });
+          if (dispatchOptions.duringPreflight) {
+            // The actual planner is async, including its no-broker path. The
+            // caller mutates config after its invocation and before it settles.
+            expect(planning).toHaveBeenCalledTimes(1);
+            dispatchOptions.duringPreflight();
+          }
+          await pending;
+          return {
+            pendingPrompts: streaming.pendingMessages.map((message) => String(message.message.content)),
+            startedProviders,
+            oldHandleDone: streaming.done,
+            wakeCalls: wake.mock.calls.length,
+            planningCalls: planning.mock.calls.length,
+            routing: querySessionTrace({ sessionKey: child.sessionKey, sessionName })
+              .events.filter(
+                ({ eventType }) => eventType === "dispatch.push_existing" || eventType === "dispatch.restart_requested",
+              )
+              .map(({ eventType, provider, payloadJson }) => ({
+                eventType,
+                provider,
+                requestedProvider:
+                  payloadJson && typeof payloadJson === "object" && !Array.isArray(payloadJson)
+                    ? payloadJson.requestedProvider
+                    : undefined,
+              })),
+          };
+        } finally {
+          planning.mockRestore();
+          start.mockRestore();
+        }
+      },
+      complete: async ({ expectRetired = false } = {}) => {
         allowCompletion.resolve();
+        if (expectRetired) {
+          await Promise.race([
+            loop,
+            completed.promise.then(() => {
+              throw new Error(
+                "The configured provider's old handle accepted another iterator read instead of retiring",
+              );
+            }),
+          ]);
+          expect(streaming.done).toBe(true);
+          expect(live.has(sessionName)).toBe(false);
+          expect(streaming.turnActive).toBe(false);
+          return;
+        }
         await waitFor(completed);
         expectUninterrupted();
         expect(streaming.turnActive).toBe(false);
@@ -567,10 +837,15 @@ async function withActiveClaudeTurn(
       },
     });
   } finally {
+    // The fake provider never consumes a second prompt. Its queued content is
+    // asserted above, then discarded only for fixture teardown.
+    if (dispatcher) streaming.pendingMessages.length = 0;
     allowCompletion.resolve();
     allowEnd.resolve();
     await loop;
+    dispatcher?.shutdownAll();
+    if (dispatchRecovery?.acceptingDeliveries) dispatchRecovery.stopGracefully("test_cleanup");
   }
-  expect(interrupt).not.toHaveBeenCalled();
-  expect(restart).not.toHaveBeenCalled();
+  if (!dispatcher) expect(interrupt).not.toHaveBeenCalled();
+  if (!dispatcher) expect(restart).not.toHaveBeenCalled();
 }

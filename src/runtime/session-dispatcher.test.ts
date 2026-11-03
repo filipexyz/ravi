@@ -63,6 +63,7 @@ import {
   buildRuntimeModelBrokerPhysicalFingerprint,
   buildRuntimeModelBrokerSelectionCompatibilityKey,
 } from "./model-broker.js";
+import * as modelBrokerPlanning from "./model-broker-planning.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 
@@ -2773,6 +2774,141 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       ),
     ).toBe(true);
   });
+
+  it.each([
+    { provider: "codex", revision: 1, expected: true },
+    { provider: "claude", revision: 0, expected: true },
+    { provider: "claude", revision: 1, expected: false },
+  ])("checks provider revision without disturbing matching or unchanged live handles: %j", (configuration) => {
+    const existing = createActiveSession({ agentId: "main", runtimeProviderConfigRevision: 0 });
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "provider-revision",
+        existing,
+        { prompt: "next", deliveryBarrier: "after_response" },
+        "main",
+        undefined,
+        configuration,
+      ),
+    ).toBe(configuration.expected);
+  });
+
+  it.each(["model-change", "native-steer-fallback", "model-replacement", "steer-replacement"])(
+    "revalidates provider after awaited %s without duplicating history or prompt",
+    async (seam) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-await-");
+      const planning = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+      const config = configStore.getConfig();
+      const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+        ...config,
+        agents: { ...config.agents, main: { ...config.agents.main!, provider: "codex", model: "gpt-5.5" } },
+      });
+      try {
+        const sessionName = `provider-await-${seam}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "codex" });
+        const dispatcher = createDispatcher(2);
+        const interrupt = mock(async () => {});
+        const existing = createActiveSession({
+          agentId: "main",
+          currentModel: seam.startsWith("model") ? "gpt-5.4" : "gpt-5.5",
+          turnActive: true,
+          queryHandle: { provider: "codex", events: (async function* () {})(), interrupt },
+        });
+        dispatcher.streamingSessions.set(sessionName, existing);
+        const started: RuntimeLaunchPrompt[] = [];
+        dispatcher.startStreamingSession = mock(async (_name, prompt) => {
+          started.push(prompt);
+        });
+        let entered!: () => void;
+        let release!: () => void;
+        const reached = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const waiting = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const interception = seam.startsWith("model")
+          ? spyOn(dispatcher, "applySessionModelChange").mockImplementation(async () => {
+              entered();
+              await waiting;
+              return "applied";
+            })
+          : spyOn(
+              dispatcher as unknown as { tryNativeRuntimeSteer(): Promise<"accepted" | "fallback"> },
+              "tryNativeRuntimeSteer",
+            ).mockImplementation(async () => {
+              entered();
+              await waiting;
+              return "fallback";
+            });
+        try {
+          const dispatching = dispatcher.handlePromptImmediate(sessionName, {
+            prompt: "deliver once after provider change",
+            _agentId: "main",
+            deliveryBarrier: "after_tool",
+          });
+          await reached;
+          updateSessionRuntimeProviderOverride(sessionKey, "claude");
+          const replacement = seam.endsWith("replacement")
+            ? createActiveSession({
+                agentId: "main",
+                currentModel: "gpt-5.5",
+                turnActive: true,
+                queryHandle: { provider: "claude", events: (async function* () {})(), interrupt: mock(async () => {}) },
+              })
+            : undefined;
+          if (replacement) {
+            existing.done = true;
+            dispatcher.streamingSessions.set(sessionName, replacement);
+          }
+          release();
+          await dispatching;
+
+          expect(existing.done).toBe(true);
+          expect(existing.pendingMessages).toHaveLength(0);
+          if (replacement) {
+            expect(dispatcher.streamingSessions.get(sessionName)).toBe(replacement);
+            expect(replacement.done).toBe(false);
+            expect(replacement.pendingMessages).toHaveLength(1);
+            expect(replacement.pendingMessages[0]?.launchPrompt?.prompt).toBe("deliver once after provider change");
+            expect(replacement.queryHandle.interrupt).not.toHaveBeenCalled();
+            expect(started).toHaveLength(0);
+            expect(dispatcher.stashedMessages.get(sessionName) ?? []).toHaveLength(0);
+            expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+            return;
+          }
+          expect(interrupt).toHaveBeenCalledTimes(1);
+          expect(started).toHaveLength(1);
+          const stashed = dispatcher.stashedMessages.get(sessionName) ?? [];
+          const arrivals = [
+            ...stashed,
+            ...started.filter((prompt) => !prompt._resumeStashedMessages).map(createQueuedRuntimeUserMessage),
+          ];
+          expect(arrivals).toHaveLength(1);
+          expect(arrivals[0]?.launchPrompt?.prompt).toBe("deliver once after provider change");
+          const history = getRecentHistory(sessionName).filter((message) => message.role === "user");
+          expect(history.length + started.filter((prompt) => !prompt._resumeStashedMessages).length).toBe(1);
+          if (seam === "native-steer-fallback") {
+            expect(history).toHaveLength(1);
+            expect(started[0]?._resumeStashedMessages).toBe(true);
+          }
+          const restarts = querySessionTrace({ sessionKey, sessionName }).events.filter(
+            (event) => event.eventType === "dispatch.restart_requested",
+          );
+          expect(restarts).toHaveLength(1);
+          expect(restarts[0]?.payloadJson).toMatchObject({ reason: "provider_change", requestedProvider: "claude" });
+        } finally {
+          release();
+          interception.mockRestore();
+        }
+      } finally {
+        configuration.mockRestore();
+        planning.mockRestore();
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
 
   it("restarts a live Claude session after a persisted Codex provider override", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-switch-");

@@ -955,15 +955,22 @@ export class RuntimeSessionDispatcher {
     }
   }
 
-  async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+  async handlePromptImmediate(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    sessionKeyOverride?: string,
+  ): Promise<void> {
     const heldBeforeAdmission = this.heldSkipTurnMessages.get(sessionName);
     const bootstrapBeforeAdmission = this.deferredBootstraps.get(sessionName);
     if (!prompt._resumeStashedMessages) {
       this.runtimeRecoveryRestartAttempts.delete(sessionName);
     }
     const routerConfig = configStore.getConfig();
-    const sessionEntry = getSessionByName(sessionName) ?? getSession(sessionName);
-    const existing = this.streamingSessions.get(sessionName);
+    let sessionEntry = sessionKeyOverride
+      ? getSession(sessionKeyOverride)
+      : (getSessionByName(sessionName) ?? getSession(sessionName));
+    const canonicalSessionKey = sessionEntry?.sessionKey ?? sessionKeyOverride;
+    let existing = this.streamingSessions.get(sessionName);
     let daemonRestartMessages: RuntimeUserMessage[] | undefined;
     if (prompt._daemonRestartResume) {
       const needsColdStartStash =
@@ -1025,19 +1032,31 @@ export class RuntimeSessionDispatcher {
     prompt = withKnowledgePreamble(prompt, { agentId: agent.id, sessionName });
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    // Resolve next-turn provider before the live-queue shortcut so a persisted
-    // set-provider override can take provider_change. Last-used / agent-default
-    // mismatches must not block live_session_queue on their own.
-    let requestedProvider: RuntimeProviderId = resolveRequestedRuntimeProvider({
-      observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
-      sessionProviderOverride: sessionRuntimeProviderOverride,
-      lastUsedProvider: sessionEntry?.runtimeProvider,
-      restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
-      agent,
-    }).value;
+    let modelBrokerPlan: RuntimeModelBrokerPlan | undefined;
+    // A newer clear is intent too, even though its override is null. Unchanged
+    // last-used/default differences alone must not replace a live launch.
+    const resolveSelectedProvider = (): RuntimeProviderId =>
+      modelBrokerPlan?.lease.runtimeProvider ??
+      resolveRequestedRuntimeProvider({
+        observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
+        sessionProviderOverride: sessionEntry?.runtimeProviderOverride,
+        lastUsedProvider: sessionEntry?.runtimeProvider,
+        restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
+        agent,
+      }).value;
+    let requestedProvider = resolveSelectedProvider();
+    const refreshProviderSelection = () => {
+      sessionEntry = canonicalSessionKey
+        ? getSession(canonicalSessionKey)
+        : (getSessionByName(sessionName) ?? getSession(sessionName));
+      requestedProvider = resolveSelectedProvider();
+    };
     if (
       existing &&
-      shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, sessionRuntimeProviderOverride)
+      shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, sessionRuntimeProviderOverride, {
+        provider: requestedProvider,
+        revision: sessionEntry?.runtimeProviderConfigRevision ?? 0,
+      })
     ) {
       await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
         sessionEntry: sessionEntry ?? undefined,
@@ -1046,7 +1065,6 @@ export class RuntimeSessionDispatcher {
       });
       return;
     }
-    let modelBrokerPlan: RuntimeModelBrokerPlan | undefined;
     const modelBrokerTurnId = prompt._modelBrokerTurnId ?? createSessionTraceTurnId();
     modelBrokerPlan = await planRuntimeModelBrokerRoute({
       agent,
@@ -1057,26 +1075,28 @@ export class RuntimeSessionDispatcher {
     if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
       prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
     }
-    if (modelBrokerPlan) {
-      requestedProvider = modelBrokerPlan.lease.runtimeProvider;
-    }
+    // Preflight can yield while explicit provider configuration changes.
+    // The broker lease and observation override retain their higher priority.
+    refreshProviderSelection();
+    existing = this.streamingSessions.get(sessionName);
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
-      if (existing.agentId !== agent.id || existing.queryHandle.provider !== requestedProvider) {
-        const restartReason = existing.agentId !== agent.id ? "agent_change" : "provider_change";
+      const retireForRuntimeIdentityChange = (live: RuntimeHostStreamingSession): boolean => {
+        if (live.agentId === agent.id && live.queryHandle.provider === requestedProvider) return false;
+        const restartReason = live.agentId !== agent.id ? "agent_change" : "provider_change";
         log.info("Streaming: restarting session after runtime identity change", {
           sessionName,
           reason: restartReason,
-          activeAgentId: existing.agentId,
+          activeAgentId: live.agentId,
           requestedAgentId: agent.id,
-          activeProvider: existing.queryHandle.provider,
+          activeProvider: live.queryHandle.provider,
           requestedProvider,
-          queueSize: existing.pendingMessages.length,
+          queueSize: live.pendingMessages.length,
         });
 
-        if (existing.pendingMessages.length > 0) {
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
+        if (live.pendingMessages.length > 0) {
+          stashPendingRuntimeMessages(sessionName, live, this.stashedMessages, {
             crashRecovery: this.options.crashRecovery,
           });
         }
@@ -1084,34 +1104,38 @@ export class RuntimeSessionDispatcher {
         recordRuntimeTraceEvent({
           sessionKey: sessionEntry?.sessionKey ?? sessionName,
           sessionName,
-          agentId: existing.agentId,
-          runId: existing.traceRunId,
-          turnId: existing.currentTraceTurnId,
-          provider: existing.queryHandle.provider,
-          model: existing.currentModel,
+          agentId: live.agentId,
+          runId: live.traceRunId,
+          turnId: live.currentTraceTurnId,
+          provider: live.queryHandle.provider,
+          model: live.currentModel,
           eventType: "dispatch.restart_requested",
           eventGroup: "dispatch",
           status: "requested",
-          source: existing.currentSource,
+          source: live.currentSource,
           payloadJson: {
             reason: restartReason,
-            activeAgentId: existing.agentId,
+            activeAgentId: live.agentId,
             requestedAgentId: agent.id,
-            activeProvider: existing.queryHandle.provider,
+            activeProvider: live.queryHandle.provider,
             requestedProvider,
           },
         });
         recordStreamingTurnInterruptedTrace(
           this.options.crashRecovery,
           sessionName,
-          existing,
+          live,
           restartReason,
           sessionEntry?.sessionKey,
         );
-        shutdownRuntimeStreamingSession(existing, restartReason);
-        this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
-        retainReleasedSlot = true;
-      } else {
+        shutdownRuntimeStreamingSession(live, restartReason);
+        if (this.streamingSessions.get(sessionName) === live) {
+          this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+          retainReleasedSlot = true;
+        }
+        return true;
+      };
+      if (!retireForRuntimeIdentityChange(existing)) {
         const requestedRuntime = resolveRuntimeForPrompt({
           sessionName,
           prompt,
@@ -1174,8 +1198,20 @@ export class RuntimeSessionDispatcher {
             modelPresetId: requestedRuntime.modelPresetId ?? null,
             modelPresetVersion: requestedRuntime.modelPresetVersion ?? null,
           });
-          if (modelStatus === "restart-next-turn") {
+          refreshProviderSelection();
+          const afterModelChange = this.streamingSessions.get(sessionName);
+          if (modelStatus === "restart-next-turn" && !afterModelChange) {
             await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
+            return;
+          }
+          if (afterModelChange !== existing) {
+            // No history has been recorded yet. Re-admit on the replacement
+            // instead of retiring or pushing onto the completed handle.
+            await this.handlePromptImmediate(sessionName, prompt, canonicalSessionKey);
+            return;
+          }
+          if (retireForRuntimeIdentityChange(existing)) {
+            await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
             return;
           }
         }
@@ -1216,6 +1252,23 @@ export class RuntimeSessionDispatcher {
             model: existing.currentModel,
             source: prompt.source ?? existing.currentSource,
           });
+          return;
+        }
+
+        refreshProviderSelection();
+        existing = this.streamingSessions.get(sessionName);
+        if (!existing || existing.done || retireForRuntimeIdentityChange(existing)) {
+          if (existing?.done && this.streamingSessions.get(sessionName) === existing) {
+            this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+            retainReleasedSlot = true;
+          }
+          // The failed steer already recorded this user message. Carry its
+          // original atom into the replacement without recording it twice.
+          if (!prompt._resumeStashedMessages) {
+            stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+            prompt = { ...prompt, _resumeStashedMessages: true };
+          }
+          await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
           return;
         }
 
@@ -3030,6 +3083,7 @@ export function shouldQueuePromptOnLiveSession(
   prompt: RuntimeLaunchPrompt,
   agentId: string,
   sessionProviderOverride?: RuntimeProviderId | null,
+  providerConfiguration?: { provider: RuntimeProviderId; revision: number },
 ): boolean {
   if (existing.done || existing.agentId !== agentId) {
     return false;
@@ -3046,6 +3100,13 @@ export function shouldQueuePromptOnLiveSession(
   }
   const explicitSessionProvider = sessionProviderOverride?.trim();
   if (explicitSessionProvider && existing.queryHandle.provider !== explicitSessionProvider) {
+    return false;
+  }
+  if (
+    providerConfiguration &&
+    providerConfiguration.revision !== (existing.runtimeProviderConfigRevision ?? 0) &&
+    providerConfiguration.provider !== existing.queryHandle.provider
+  ) {
     return false;
   }
   const barrier = getRuntimePromptDeliveryBarrier(prompt);

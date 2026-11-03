@@ -89,6 +89,8 @@ export interface RuntimeHostStreamingSession {
   agentId: string;
   /** The runtime query handle */
   queryHandle: RuntimeSessionHandle;
+  /** Provider configuration captured before launching this handle. */
+  runtimeProviderConfigRevision?: number;
   /** True while the runtime provider is still bootstrapping */
   starting: boolean;
   /** Abort controller to kill the subprocess */

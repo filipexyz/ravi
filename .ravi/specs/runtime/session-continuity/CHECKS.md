@@ -3,6 +3,12 @@
 - `bun test src/runtime/thread-provider-config.test.ts` MUST exercise an active
   host event loop and its next-turn resolver: newer provider configuration wins
   over late completion, while compatible native continuity/output/usage survive.
+- The same regression MUST dispatch the actual next prompt through
+  `RuntimeSessionDispatcher`, covering clear, explicit override, compatible
+  reuse, unchanged launch overrides and a configuration change across an await.
+- Queue a successor before clear while the old turn is active: complete that
+  turn, preserve the successor, and select the new provider without replaying
+  the completed prompt or starting the successor on the old handle.
 
 ## Prompt Atom Ledger
 

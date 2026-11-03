@@ -86,6 +86,15 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
   writes MUST NOT advance that revision. A handle captures the revision before
   launch; after it changes, continuity is accepted only for a provider compatible
   with the current selection, including agent/global defaults.
+- Reusing a live handle for a successor turn MUST honor a newer provider
+  configuration, including `clear`. The dispatcher MUST compare the effective
+  provider with the handle's launch revision before admitting work. Compatible
+  handles keep the fast queue; unchanged launch overrides remain valid even
+  when last-used/default values differ. Configuration changes across awaited
+  routing work MUST be rechecked before reusing the handle.
+- Pending successor prompts accepted before a provider change MUST be retained
+  and dispatched through the current provider selection after the active turn,
+  rather than consumed by an incompatible old handle.
 - Login / not-logged-in stubs (for example `Not logged in · Please run /login`) MUST be classified as `turn.failed` / auth error. They MUST NOT be saved as assistant transcript rows and MUST NOT be emitted to a bound chat.
 - Ravi MUST NOT clear compatible provider state solely because a terminal callback is missing. When an adapter can reconcile an ambiguous delivery, Ravi MUST preserve session continuity and the stable logical delivery id through recovery.
 - A provider that supports fork MUST define how parent provider state maps into the child or rebased session.

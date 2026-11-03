@@ -3898,6 +3898,39 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           terminalSkillVisibility,
         );
 
+        // A successor accepted before configuration changed will not pass
+        // through the dispatcher again. Retire this handle before waking its
+        // generator, carrying only unconsumed successors into a fresh launch.
+        const configuredSession = getSession(session.sessionKey);
+        if (
+          configuredSession &&
+          (configuredSession.runtimeProviderConfigRevision ?? 0) !==
+            (streaming.runtimeProviderConfigRevision ?? session.runtimeProviderConfigRevision ?? 0) &&
+          resolveEffectiveSessionRuntime({
+            session: configuredSession,
+            agent: getAgent(configuredSession.agentId) ?? agent,
+          }).provider.value !== runtimeSession.provider
+        ) {
+          const successors = getPendingRuntimeTurnSuccessors(streaming);
+          if (successors.length > 0) {
+            stashedMessages.set(
+              sessionName,
+              successors.map((message) => ({ ...message })),
+            );
+            restartStashedReason = "provider_change";
+            streaming.internalAbortReason = "provider_change";
+            streaming.done = true;
+            recordTraceEvent({
+              eventType: "dispatch.restart_requested",
+              eventGroup: "dispatch",
+              status: "requested",
+              payloadJson: { reason: "provider_change", queuedSuccessors: successors.length },
+            });
+            signalTurnComplete();
+            break;
+          }
+        }
+
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
         scheduleIdleSessionEviction();

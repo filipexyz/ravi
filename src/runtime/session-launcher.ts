@@ -307,6 +307,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   const streamingSession: RuntimeHostStreamingSession = {
     agentId: agent.id,
     queryHandle: createPendingRuntimeHandle(runtimeProviderId),
+    runtimeProviderConfigRevision: session.runtimeProviderConfigRevision ?? 0,
     starting: true,
     abortController,
     pushMessage: null,
