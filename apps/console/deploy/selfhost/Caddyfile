@@ -1,0 +1,51 @@
+{
+  admin off
+  auto_https off
+  # Explicit task-local certificates. No ACME, public DNS or global trust changes.
+  servers {
+    protocols h1 h2
+  }
+}
+(private_tls) {
+  tls /run/tls/server.crt /run/tls/server.key
+  header -Server
+}
+https://console.nba-console.test {
+  import private_tls
+  @workflow path /.well-known/workflow/*
+  respond @workflow 404
+  reverse_proxy console:3000 {
+    header_up X-Forwarded-Proto https
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-For {remote_host}
+  }
+}
+https://idp.nba-console.test {
+  import private_tls
+  reverse_proxy keycloak:8080 {
+    header_up X-Forwarded-Proto https
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Port 443
+    header_up X-Forwarded-For {remote_host}
+  }
+}
+https://s3.nba-console.test {
+  import private_tls
+  reverse_proxy s3:8333
+}
+https://executor.nba-console.test {
+  import private_tls
+  reverse_proxy executor:4788 {
+    header_up X-Forwarded-Proto https
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-For {remote_host}
+  }
+}
+https://*.pages.nba-console.test {
+  import private_tls
+  reverse_proxy pages:8787 {
+    header_up X-Forwarded-Proto https
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-For {remote_host}
+  }
+}

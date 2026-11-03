@@ -4,7 +4,11 @@ import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
 import type { TaskRuntimeResolution } from "./types.js";
 
-afterAll(() => mock.restore());
+const actualSessionStream = { ...(await import("../omni/session-stream.js")) };
+afterAll(() => {
+  mock.restore();
+  mock.module("../omni/session-stream.js", () => actualSessionStream);
+});
 
 const publishCalls: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 
@@ -24,6 +28,7 @@ mock.module("../nats.js", () => ({
 }));
 
 mock.module("../omni/session-stream.js", () => ({
+  ...actualSessionStream,
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     publishCalls.push({ sessionName, payload });
   }),

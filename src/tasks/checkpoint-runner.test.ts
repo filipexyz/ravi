@@ -2,7 +2,11 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun
 import { readFileSync, writeFileSync } from "node:fs";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
-afterAll(() => mock.restore());
+const actualSessionStream = { ...(await import("../omni/session-stream.js")) };
+afterAll(() => {
+  mock.restore();
+  mock.module("../omni/session-stream.js", () => actualSessionStream);
+});
 
 const emittedEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 const publishCalls: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
@@ -27,6 +31,7 @@ mock.module("../nats.js", () => ({
 }));
 
 mock.module("../omni/session-stream.js", () => ({
+  ...actualSessionStream,
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     publishCalls.push({ sessionName, payload });
   }),

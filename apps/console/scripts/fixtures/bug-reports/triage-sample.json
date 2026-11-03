@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ravi.bug_triage/v1",
+  "model": "harness/manual",
+  "summary": "Harness-stored suggestion for ops smoke. Apply priority only; this is not a real incident ranking.",
+  "suggestedPriority": "p2",
+  "suggestedStatus": "triaging",
+  "similarBugIds": [],
+  "missingEvidence": ["daemon logs from the reporter host"],
+  "clarifyingQuestions": ["Does this reproduce after a fresh `ravi login`?"],
+  "surfaceNormalized": "harness",
+  "confidence": 0.61,
+  "priorityScore": 55,
+  "rawNotes": "e2e harness fixture; not model output"
+}

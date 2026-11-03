@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/.next
+**/dist
+**/.fleet-dist
+**/.env
+**/.env.*
+**/.private
+**/secrets
+**/backups
+**/evidence
+**/*.key
+**/*.pem
+**/*.sqlite
+**/*.db
+**/*.tsbuildinfo

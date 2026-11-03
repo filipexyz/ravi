@@ -1,0 +1,9 @@
+{
+  "name": "ravi-mcp-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "build": "wrangler deploy --config ../../wrangler.mcp.toml --dry-run"
+  }
+}

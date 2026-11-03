@@ -1,0 +1,2 @@
+DROP INDEX "runtime_trace_events_session_sequence_unique";--> statement-breakpoint
+CREATE INDEX "runtime_trace_events_session_time_idx" ON "runtime_trace_events" USING btree ("trace_session_id","occurred_at","sequence");

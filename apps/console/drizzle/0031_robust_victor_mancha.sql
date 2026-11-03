@@ -1,0 +1,2 @@
+DROP INDEX "event_plane_identities_binding_principal_active_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "event_plane_identities_binding_principal_active_unique" ON "event_plane_identities" USING btree ("binding_id","identity_type","principal_type","principal_id") WHERE "event_plane_identities"."status" IN ('provisioning', 'active', 'rotating', 'failed');

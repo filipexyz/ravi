@@ -1,0 +1,5 @@
+# Replace this nonsecret placeholder with the installation's EXACT organization UUID.
+# No metadata/list/delete/destroy/sys/token capability; no cross-org wildcard.
+path "console-fleet/data/__ORGANIZATION_UUID__/*" {
+  capabilities = ["create", "update", "read"]
+}

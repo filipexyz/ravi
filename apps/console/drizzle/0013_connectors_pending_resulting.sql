@@ -1,0 +1,1 @@
+ALTER TABLE "connector_grants_pending" ADD COLUMN "resulting_connection_id" uuid;

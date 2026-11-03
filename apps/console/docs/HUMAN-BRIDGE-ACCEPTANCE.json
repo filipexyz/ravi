@@ -1,0 +1,96 @@
+{
+  "at": "2026-10-31T11:07:00.288Z",
+  "identityKind": "two-synthetic-oidc-humans",
+  "realUi": true,
+  "realFleet": true,
+  "realSsh": true,
+  "realContainer": true,
+  "checks": [
+    "isolated_stack_ready",
+    "private_tls_idp_ready",
+    "fresh_oidc_owner",
+    "fresh_oidc_viewer",
+    "anonymous_denied",
+    "viewer_cannot_administer_console_policy",
+    "create_ui_real_transport",
+    "create_idempotency",
+    "empty_private_history",
+    "viewer_foreign_conversations.open",
+    "viewer_foreign_messages.list",
+    "viewer_foreign_events.read",
+    "owner_foreign_conversations.open",
+    "owner_foreign_messages.list",
+    "owner_foreign_events.read",
+    "owner_conversation_not_enumerated",
+    "foreign_cursor_denied",
+    "ssh_interruption_reconnect_draft",
+    "send_idempotency",
+    "single_user_message",
+    "durable_journal_replay",
+    "real_vps_model_reply",
+    "native_runtime_model_terminal",
+    "ui_history_after_reload",
+    "v2_received_console_grant",
+    "console_revoke_arrives_without_local_edit",
+    "console_grant_arrives_without_local_edit",
+    "console_explicit_send_denial",
+    "other_human_cannot_approve_real_pending_action",
+    "wrong_action_digest_denied",
+    "wrong_action_version_denied",
+    "owner_ui_approved_real_action",
+    "approved_tool_native_output_matches",
+    "native_sleep_observed",
+    "other_human_cannot_cancel_real_turn",
+    "ui_cancel_terminal",
+    "ui_cancel_stops_process",
+    "console_revocation_aborts_within_lease",
+    "console_revocation_stops_native_process",
+    "render_no_overflow_1280",
+    "render_no_overflow_390",
+    "no_local_enrollment_edit_during_permissions_test",
+    "baseline_preserved_after_test"
+  ],
+  "requestedMode": "full-model",
+  "pass": true,
+  "nativeModel": {
+    "models": [
+      [
+        "codex",
+        "deepseek-flash"
+      ]
+    ],
+    "terminalComplete": true,
+    "toolOutputMatched": null
+  },
+  "approvalEvidence": {
+    "models": [
+      [
+        "codex",
+        "deepseek-flash"
+      ]
+    ],
+    "terminalComplete": true,
+    "toolOutputMatched": true
+  },
+  "revocationEvidence": {
+    "authorizationExpiredMs": 919,
+    "processStopped": true
+  },
+  "status": "PASS",
+  "modelTested": true,
+  "modelAcceptance": "passed",
+  "personalOperatorIdentityUsed": false,
+  "processCancellation": {
+    "realProcessObserved": true,
+    "processStopped": true
+  },
+  "isolation": {
+    "publicPorts": 0,
+    "previousServicesPreserved": true
+  },
+  "testedCode": {
+    "ravi": "2db407edb3a508136dd85145d2907c11e4383666",
+    "fleet": "dbaf10fb00012c087ffcb8ece43157e2c207c38c"
+  },
+  "limit": "This records the private integration build. Publication compatibility fixes and current-base integration are separately tested locally; it is not an old hosted Console end-to-end test."
+}

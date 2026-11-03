@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "event_plane_org_bindings_org_cell_live_unique" ON "event_plane_org_bindings" USING btree ("organization_id","cell_id") WHERE "event_plane_org_bindings"."status" <> 'deleted';

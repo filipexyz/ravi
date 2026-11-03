@@ -1,0 +1,156 @@
+name: nba-console
+x-defaults: &defaults
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+  networks: [backend]
+services:
+  postgres:
+    <<: *defaults
+    image: ${POSTGRES_IMAGE:?pinned image required}
+    user: "999:999"
+    env_file: ../secrets/postgres.env
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-services.sh:ro
+    tmpfs: [/tmp, "/var/run/postgresql:uid=999,gid=999,mode=0770"]
+    shm_size: 256m
+    mem_limit: 2g
+    cpus: 1.0
+    pids_limit: 256
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  keycloak:
+    <<: *defaults
+    image: ${KEYCLOAK_IMAGE:?pinned image required}
+    command: [start, --import-realm]
+    user: "1000:0"
+    env_file: ../secrets/keycloak.env
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_HOSTNAME: https://idp.nba-console.test
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ACCESS_LOG_ENABLED: "false"
+      JAVA_OPTS_KC_HEAP: -Xms256m -Xmx768m
+    volumes:
+      - ../data/keycloak:/opt/keycloak/data
+      - ../secrets/realm.json:/opt/keycloak/data/import/console-staging-realm.json:ro
+    tmpfs: [/tmp]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 1400m
+    cpus: 1.0
+    pids_limit: 256
+  s3:
+    <<: *defaults
+    image: ${SEAWEED_IMAGE:?pinned image required}
+    command: [mini, -dir=/data, -ip=s3, -ip.bind=0.0.0.0]
+    user: "10003:10003"
+    env_file: ../secrets/s3.env
+    volumes: [../data/s3:/data]
+    tmpfs: [/tmp]
+    mem_limit: 1500m
+    cpus: 1.0
+    pids_limit: 256
+  console:
+    environment:
+      RAVI_PAGES_AI_ENABLED: "0"
+    <<: *defaults
+    profiles: [apps]
+    image: ${CONSOLE_IMAGE:-nba-console/console:pending}
+    user: "10000:10000"
+    env_file: ../secrets/console.env
+    volumes:
+      - ../secrets/tls/ca.crt:/run/tls/ca.crt:ro
+    read_only: true
+    tmpfs: [/tmp, "/app/.next/cache:uid=10000,gid=10000,mode=0700"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 3g
+    cpus: 1.5
+    pids_limit: 384
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/login',{redirect:'manual'}).then(r=>process.exit(r.status<400?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
+  pages:
+    environment:
+      RAVI_PAGES_AI_ENABLED: "0"
+    <<: *defaults
+    # Moby default-deny profile plus Chromium nested userns/chroot syscalls.
+    # Chromium sandbox stays enabled; no SYS_ADMIN or unconfined policy.
+    security_opt: [no-new-privileges:true, "seccomp=./chromium-seccomp.json"]
+    init: true
+    profiles: [apps]
+    image: ${PAGES_IMAGE:-nba-console/pages:pending}
+    user: "10001:10001"
+    env_file: ../secrets/pages.env
+    volumes:
+      - ../secrets/tls/ca.crt:/run/tls/ca.crt:ro
+      - ../data/pages:/var/lib/ravi-pages
+    read_only: true
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=1777"]
+    shm_size: 256m
+    mem_limit: 2g
+    cpus: 1.0
+    pids_limit: 512
+    stop_grace_period: 30s
+  executor:
+    <<: *defaults
+    init: true
+    profiles: [apps]
+    image: ${EXECUTOR_IMAGE:-nba-console/executor:pending}
+    user: "65532:65532"
+    env_file: ../secrets/executor.env
+    volumes:
+      - ../secrets/tls/ca.crt:/run/tls/ca.crt:ro
+      - ../data/executor:/data
+    read_only: true
+    tmpfs: ["/tmp:uid=65532,gid=65532,mode=1777"]
+    mem_limit: 1500m
+    cpus: 1.0
+    pids_limit: 256
+    stop_grace_period: 30s
+  proxy:
+    <<: *defaults
+    cap_add: [NET_BIND_SERVICE]
+    image: ${CADDY_IMAGE:?pinned image required}
+    user: "10002:10002"
+    # Only host loopback. SSH SOCKS preserves canonical HTTPS origin at port 443.
+    ports: [127.0.0.1:443:443]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../secrets/tls/server.crt:/run/tls/server.crt:ro
+      - ../secrets/tls/server.key:/run/tls/server.key:ro
+    read_only: true
+    tmpfs: [/tmp, "/data:uid=10002,gid=10002", "/config:uid=10002,gid=10002"]
+    mem_limit: 192m
+    cpus: 0.5
+    pids_limit: 128
+    networks:
+      backend:
+        aliases:
+          - console.nba-console.test
+          - idp.nba-console.test
+          - s3.nba-console.test
+          - executor.nba-console.test
+          - demo.pages.nba-console.test
+          - other.pages.nba-console.test
+          - console-staging-demo.pages.nba-console.test
+          - console-staging-other.pages.nba-console.test
+networks:
+  backend: {}

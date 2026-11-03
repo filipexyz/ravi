@@ -1,5 +1,14 @@
 # Ravi
 
+## This branch: OSS + Console integration
+
+Work only on `feat/oss-console-unified`. Luis explicitly requires deployment to the
+existing test environment as part of acceptance (03 November 2026). Verify its
+current inventory and runbooks, preserve unrelated services/data, deploy this
+branch, and record the URL, exact revision, service health and rendered journey.
+Local checks alone do not complete delivery. No merge into dev/main or production
+deployment is authorized. Do not create a parallel implementation branch/worker.
+
 Ravi is a local-first, multi-provider runtime for long-lived AI agents. Running under PM2, it takes messages from native Slack, from WhatsApp, Telegram and Discord through the Omni bridge, and from cron, triggers, heartbeats and the CLI, routes each one to an agent session, runs the turn with a runtime provider (Claude Code, Codex, Pi or Grok Build; the built-in default is `codex`) and delivers the reply. Pages, Bases and cloud auth go through the hosted Ravi Console.
 
 This file is for coding agents working in this repository. User docs: [docs.ravi.bot](https://docs.ravi.bot) (source in `docs/`). Contributor workflow: `CONTRIBUTING.md`. `CLAUDE.md` is a generated bridge that imports this file; edit `AGENTS.md`.

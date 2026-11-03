@@ -55,6 +55,7 @@ import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/ind
 import { startSignalsRunner, stopSignalsRunner } from "./signals/index.js";
 import { startKnowledgeLeaderRunners, stopKnowledgeLeaderRunners } from "./knowledge/runners.js";
 import { startSyncRunner, stopSyncRunner } from "./sync/index.js";
+import { startFleetRunner, stopFleetRunner } from "./fleet/runner.js";
 import { startLibraryPinRunner, stopLibraryPinRunner } from "./library/pin-runner.js";
 import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/request-runner.js";
 import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
@@ -290,6 +291,7 @@ async function shutdown(signal: string, exitCode = 0) {
     await stopInboxRunner();
     await stopLinkRequestWatcher();
     stopSlackApprovalClickFeedback();
+    await stopFleetRunner();
     await stopSyncRunner();
     await stopLibraryPinRunner();
     await stopLibraryRequestRunner();
@@ -571,6 +573,7 @@ export async function startDaemon() {
   log.info("Slack approval click feedback started");
 
   await startSyncRunner();
+  startFleetRunner();
   log.info("Sync runner started");
 
   await startLibraryPinRunner();

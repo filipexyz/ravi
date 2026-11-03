@@ -1,0 +1,2 @@
+DROP INDEX "runtime_trace_sessions_external_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "runtime_trace_sessions_installation_external_unique" ON "runtime_trace_sessions" USING btree ("organization_id","local_installation_id","external_trace_id");

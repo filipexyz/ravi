@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "ravi.bug_report/v1",
+  "title": "Harness smoke: CLI inbox never updates",
+  "summary": "e2e harness create. A CLI inbox poll returns 200 but no new items appear after a known watch event.",
+  "severity": "medium",
+  "surface": "harness",
+  "payload": {
+    "tag": "e2e",
+    "note": "e2e",
+    "steps": "1. ravi login 2. ravi inbox 3. trigger a watch event 4. poll again",
+    "expected": "new inbox item for the watch event",
+    "actual": "empty inbox, HTTP 200"
+  }
+}

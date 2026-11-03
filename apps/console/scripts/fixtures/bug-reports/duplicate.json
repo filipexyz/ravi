@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "ravi.bug_report/v1",
+  "title": "Harness smoke: CLI inbox never updates (duplicate candidate)",
+  "summary": "e2e harness second create. Same symptom as the minimal fixture so ops can exercise duplicateOf linking.",
+  "severity": "medium",
+  "surface": "harness",
+  "payload": {
+    "tag": "e2e",
+    "note": "e2e",
+    "duplicateCandidate": true,
+    "steps": "1. create the minimal harness report 2. create this report 3. admin status duplicate --duplicate <minimal-id>",
+    "expected": "second report can be marked duplicate of the first",
+    "actual": "used only for duplicate-path testing"
+  }
+}

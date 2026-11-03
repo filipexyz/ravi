@@ -35,6 +35,7 @@ export * from "./cloud-webhook.js";
 export * from "./cloud-worker.js";
 export * from "./commands.js";
 export * from "./connectors.js";
+export * from "./console.js";
 export * from "./contacts.js";
 export * from "./context.js";
 export * from "./costs.js";

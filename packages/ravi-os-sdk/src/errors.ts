@@ -157,7 +157,7 @@ export class RaviInternalError extends RaviError {
 
 /** Network failure, timeout, or unexpected gateway response shape. */
 export class RaviTransportError extends RaviError {
-  public readonly cause?: unknown;
+  public override readonly cause?: unknown;
   constructor(message: string, cause?: unknown, command: string | null = null) {
     super(message, 0, null, command);
     this.name = "RaviTransportError";

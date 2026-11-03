@@ -1,0 +1,11 @@
+import next from "next";
+import { createServer } from "node:https";
+import { readFile } from "node:fs/promises";
+const port = Number(process.env.FLEET_BROWSER_PORT);
+if (!Number.isSafeInteger(port) || port < 1024 || !/^postgresql:\/\/unified_test@127\.0\.0\.1:\d+\/unified_browser_[a-f0-9]{32}$/.test(process.env.DATABASE_URL ?? '')) throw new Error("Disposable database required");
+if (!process.env.FLEET_BROWSER_TLS_KEY?.includes("fleet-idp-test-") || !process.env.FLEET_BROWSER_TLS_CERT?.includes("fleet-idp-test-")) throw new Error("Disposable TLS required");
+const app = next({ dev: true, hostname: "127.0.0.1", port }); await app.prepare();
+const handle = app.getRequestHandler();
+const server = createServer({ key: await readFile(process.env.FLEET_BROWSER_TLS_KEY), cert: await readFile(process.env.FLEET_BROWSER_TLS_CERT) }, (request, response) => void handle(request, response));
+await new Promise<void>(resolve => server.listen(port, "127.0.0.1", resolve)); console.log("UNIFIED_NEXT_READY");
+process.on("SIGTERM", () => { server.closeAllConnections(); server.close(() => { void app.close().then(() => process.exit(0)); }); });

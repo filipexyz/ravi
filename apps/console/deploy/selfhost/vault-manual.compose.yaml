@@ -1,0 +1,72 @@
+# Optional manual-unseal TEMPLATE, not a deployment or custody decision.
+# Merge after compose.yaml. Read VAULT-MANUAL.md before enabling this profile.
+services:
+  vault:
+    profiles: [vault-manual]
+    image: ${VAULT_IMAGE:?approved hashicorp/vault image pinned by digest required}
+    entrypoint: [vault]
+    command: [server, -config=/vault/config/server.hcl]
+    user: "10004:10004"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      VAULT_ADDR: https://vault:8200
+      VAULT_CACERT: /vault/tls/ca.crt
+    networks: [fleet_secrets]
+    volumes:
+      - type: bind
+        source: ./vault-server.hcl
+        target: /vault/config/server.hcl
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ../secrets/vault-tls
+        target: /vault/tls
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ../data/vault
+        target: /vault/data
+        bind: {create_host_path: false}
+      - type: bind
+        source: ../data/vault-audit
+        target: /vault/audit
+        bind: {create_host_path: false}
+    tmpfs: ["/tmp:uid=10004,gid=10004,mode=0700"]
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 0.5
+    pids_limit: 128
+    ulimits: {core: {soft: 0, hard: 0}}
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, vault, status]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  console:
+    environment:
+      RAVI_FLEET_VAULT_ADDR: https://vault:8200
+      RAVI_FLEET_VAULT_MOUNT: console-fleet
+      RAVI_FLEET_VAULT_TOKEN_FILE: /run/fleet-vault/token
+      NODE_EXTRA_CA_CERTS: /run/fleet-vault-ca/ca-bundle.pem
+    networks: [backend, fleet_secrets]
+    volumes:
+      # Mount the directory, not the token inode: atomic replacement stays visible.
+      - type: bind
+        source: ../secrets/fleet-vault-client
+        target: /run/fleet-vault
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ../secrets/fleet-vault-ca
+        target: /run/fleet-vault-ca
+        read_only: true
+        bind: {create_host_path: false}
+networks:
+  fleet_secrets: {internal: true}

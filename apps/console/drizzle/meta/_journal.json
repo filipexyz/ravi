@@ -1,0 +1,580 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1778352971214,
+      "tag": "0000_milky_luckman",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778371226691,
+      "tag": "0001_noisy_tinkerer",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778417802146,
+      "tag": "0002_nifty_flatman",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778424872638,
+      "tag": "0003_add_missing_project_default_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778449165172,
+      "tag": "0004_familiar_mesmero",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778459520562,
+      "tag": "0005_blue_fat_cobra",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778513376917,
+      "tag": "0006_equal_calypso",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778544650391,
+      "tag": "0007_left_quicksilver",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778880220471,
+      "tag": "0008_whole_sabra",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778880220472,
+      "tag": "0008a_restore_agent_inbox_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778933789000,
+      "tag": "0009_remove_invalid_workos_org_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778945500000,
+      "tag": "0010_archive_generated_cli_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1778971040000,
+      "tag": "0011_restore_real_orgs_after_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778971040001,
+      "tag": "0011a_restore_inbox_installation_constraint",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779204847021,
+      "tag": "0012_connectors_v1",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1779206541738,
+      "tag": "0013_connectors_pending_resulting",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1779281725573,
+      "tag": "0014_connectors_project_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779333813688,
+      "tag": "0015_grey_sunspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1779379337058,
+      "tag": "0016_daffy_lady_ursula",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1780184040000,
+      "tag": "0017_channel_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1780233469592,
+      "tag": "0018_aberrant_sir_ram",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780250733155,
+      "tag": "0019_ancient_molly_hayes",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1780254684530,
+      "tag": "0020_eminent_jack_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1780255771410,
+      "tag": "0021_damp_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1780697774014,
+      "tag": "0022_busy_red_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781304275958,
+      "tag": "0023_loving_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782003718466,
+      "tag": "0024_colorful_golden_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1782435293604,
+      "tag": "0025_bitter_felicia_hardy",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1782759678031,
+      "tag": "0026_cultured_lizard",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1783525349552,
+      "tag": "0027_red_marrow",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783620566354,
+      "tag": "0028_nervous_zaladane",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1783719260190,
+      "tag": "0029_flippant_raza",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784084566658,
+      "tag": "0030_lethal_ozymandias",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784085886098,
+      "tag": "0031_robust_victor_mancha",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784086435827,
+      "tag": "0032_fuzzy_sunfire",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1784137086767,
+      "tag": "0033_clammy_quasimodo",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784162722898,
+      "tag": "0034_sleepy_leader",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1784175539523,
+      "tag": "0035_silent_xavin",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784322068344,
+      "tag": "0036_brave_stone_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785765836667,
+      "tag": "0037_unknown_cerise",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789257228488,
+      "tag": "0038_bug_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789258631028,
+      "tag": "0039_bug_report_admin_triage",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789260000000,
+      "tag": "0040_platform_operators",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789262627053,
+      "tag": "0041_bug_triage_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1789330000000,
+      "tag": "0042_bug_report_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1789569144021,
+      "tag": "0043_ravi_actor_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1790121095560,
+      "tag": "0044_bug_report_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1790644465224,
+      "tag": "0045_page_viewer_assertion_audiences",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791319202842,
+      "tag": "0046_bases",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791579806061,
+      "tag": "0047_ravi_link_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791645689626,
+      "tag": "0049_page_chat_rollout",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1791646509996,
+      "tag": "0050_personal_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1791900853787,
+      "tag": "0051_meeting_bots",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791921155539,
+      "tag": "0052_access_invites_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791921660279,
+      "tag": "0053_billing_contracts",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791926700000,
+      "tag": "0054_repair_access_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1791927500000,
+      "tag": "0055_repair_billing_contracts",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1791928516286,
+      "tag": "0056_access_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1792170362465,
+      "tag": "0057_library",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1792177224406,
+      "tag": "0058_library_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792181237665,
+      "tag": "0059_library_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792182674160,
+      "tag": "0060_agent_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1792184554110,
+      "tag": "0061_library_widgets_themes",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1792337321275,
+      "tag": "0062_knowledge_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1792343262646,
+      "tag": "0063_meeting_sharing",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1792357992697,
+      "tag": "0064_page_chat_rooms",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1792358276379,
+      "tag": "0065_calendar_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792364911117,
+      "tag": "0066_github_installations_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792379521868,
+      "tag": "0067_library_widget_script_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792452387490,
+      "tag": "0068_bases_h1_h2",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1792455382824,
+      "tag": "0069_cloud_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792544146405,
+      "tag": "0070_installation_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792731600000,
+      "tag": "0071_console_browser_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1792731601000,
+      "tag": "0072_executor_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1792794000000,
+      "tag": "0073_fleet_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1792795000000,
+      "tag": "0074_project_authorization",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1792866000000,
+      "tag": "0075_fleet_io_reservations",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1793128200000,
+      "tag": "0076_api_key_principals",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1793476800000,
+      "tag": "0077_gateway_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1793733000000,
+      "tag": "0078_fleet_outbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1793733000001,
+      "tag": "0079_fleet_verified_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1793745000000,
+      "tag": "0080_fleet_native_channels",
+      "breakpoints": true
+    }
+  ]
+}

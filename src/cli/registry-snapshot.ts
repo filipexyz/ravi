@@ -11,6 +11,7 @@
  */
 
 import "reflect-metadata";
+import type { OperationDescriptor } from "@ravi/operation-contracts";
 import type { ZodTypeAny } from "zod";
 import {
   getArgsMetadata,
@@ -89,7 +90,7 @@ export interface GroupRegistryEntry {
   hidden?: boolean;
 }
 
-export interface CommandRegistryEntry {
+export interface CommandRegistryEntry extends OperationDescriptor {
   /** Dot-separated group path. */
   groupPath: string;
   groupSegments: string[];

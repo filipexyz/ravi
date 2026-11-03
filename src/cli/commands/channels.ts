@@ -16,6 +16,7 @@ import { inspectManagedChannelRunner } from "../../channels/runner-liveness.js";
 import { buildRunnerPm2Env } from "../../channels/pm2-env.js";
 import { getCredentialConnection, listCredentialConnections } from "../../credentials/index.js";
 import { nats } from "../../nats.js";
+import { configureNativeChannel } from "../../channels/management.js";
 import {
   CHANNELS_PM2_PROCESS_NAME,
   buildPm2Env,
@@ -25,7 +26,7 @@ import {
   isPm2ProcessRunning,
   runPm2,
 } from "../../pm2.js";
-import { dbGetChannel, dbListChannels, dbUpdateChannel, dbUpsertChannel } from "../../router/router-db.js";
+import { dbGetChannel, dbListChannels, dbUpdateChannel } from "../../router/router-db.js";
 import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
@@ -594,12 +595,11 @@ export class ChannelsCommands {
     if (!resolvedProvider) fail("Missing --provider <provider>");
     const connection = credentialConnection?.trim();
     if (connection) requireCredentialConnectionForChannel("channels create", resolvedProvider, connection, asJson);
-    const channel = dbUpsertChannel({
+    const channel = configureNativeChannel({
       name,
       provider: resolvedProvider,
       credentialConnection: connection || undefined,
     });
-    emitConfigChanged();
     const payload = { status: "created", channel, changedCount: 1 };
     if (asJson) printJson(payload);
     else console.log(`Channel configured: ${channel.name} (${channel.provider})`);

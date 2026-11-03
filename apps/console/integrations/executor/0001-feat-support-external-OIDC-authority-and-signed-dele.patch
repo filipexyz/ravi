@@ -1,0 +1,1744 @@
+From fce0f24dbb2226a0735e9e0a860d3f309f3e979f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lu=C3=ADs=20Sousa?= <luis@filipe.xyz>
+Date: Fri, 23 Oct 2026 02:19:49 -0300
+Subject: [PATCH] feat: support external OIDC authority and signed delegated
+ operations
+
+---
+ apps/host-selfhost/package.json               |   1 +
+ apps/host-selfhost/scripts/check-sso-ui.ts    |  56 ++++++
+ .../account/better-auth-account-provider.ts   | 150 +++++++++++++----
+ apps/host-selfhost/src/admin/require-admin.ts |   4 +
+ apps/host-selfhost/src/app.ts                 |   6 +
+ apps/host-selfhost/src/auth/authority.ts      |  55 ++++++
+ apps/host-selfhost/src/auth/better-auth.ts    |   9 +-
+ .../src/auth/external-authority.test.ts       |  81 +++++++++
+ apps/host-selfhost/src/auth/identity.ts       |  36 +++-
+ apps/host-selfhost/src/auth/index.ts          |  21 ++-
+ .../src/auth/oidc-validation.test.ts          |  70 ++++++++
+ .../host-selfhost/src/auth/oidc-validation.ts | 124 ++++++++++++++
+ apps/host-selfhost/src/auth/sso.test.ts       |   5 +-
+ apps/host-selfhost/src/auth/sso.ts            |  12 +-
+ apps/host-selfhost/src/config.ts              |  52 +++++-
+ apps/host-selfhost/src/delegation/handler.ts  | 105 ++++++++++++
+ .../src/delegation/protocol.test.ts           | 159 ++++++++++++++++++
+ apps/host-selfhost/src/delegation/protocol.ts | 110 ++++++++++++
+ apps/host-selfhost/src/mcp/auth.ts            |  19 +++
+ apps/host-selfhost/src/mcp/index.ts           |  28 ++-
+ apps/host-selfhost/src/system/api.ts          |   1 +
+ apps/host-selfhost/src/system/handlers.ts     |   7 +-
+ apps/host-selfhost/web/auth-config.ts         |  34 ++--
+ apps/host-selfhost/web/login.tsx              |  92 +++++++---
+ bun.lock                                      |   3 +
+ 25 files changed, 1152 insertions(+), 88 deletions(-)
+ create mode 100644 apps/host-selfhost/scripts/check-sso-ui.ts
+ create mode 100644 apps/host-selfhost/src/auth/authority.ts
+ create mode 100644 apps/host-selfhost/src/auth/external-authority.test.ts
+ create mode 100644 apps/host-selfhost/src/auth/oidc-validation.test.ts
+ create mode 100644 apps/host-selfhost/src/auth/oidc-validation.ts
+ create mode 100644 apps/host-selfhost/src/delegation/handler.ts
+ create mode 100644 apps/host-selfhost/src/delegation/protocol.test.ts
+ create mode 100644 apps/host-selfhost/src/delegation/protocol.ts
+
+diff --git a/apps/host-selfhost/package.json b/apps/host-selfhost/package.json
+index 131057f..c0b13c5 100644
+--- a/apps/host-selfhost/package.json
++++ b/apps/host-selfhost/package.json
+@@ -46,6 +46,7 @@
+     "drizzle-orm": "catalog:",
+     "effect": "catalog:",
+     "esbuild": "^0.27.3",
++    "jose": "^6.2.3",
+     "react": "catalog:",
+     "react-dom": "catalog:",
+     "workerd": "1.20260708.1"
+diff --git a/apps/host-selfhost/scripts/check-sso-ui.ts b/apps/host-selfhost/scripts/check-sso-ui.ts
+new file mode 100644
+index 0000000..df44992
+--- /dev/null
++++ b/apps/host-selfhost/scripts/check-sso-ui.ts
+@@ -0,0 +1,56 @@
++// Render-only regression. It deliberately does not claim IdP/TLS acceptance.
++// Attach to a local instance configured for SSO-only; no credentials required.
++import { chromium } from "playwright";
++import { mkdir } from "node:fs/promises";
++import { join } from "node:path";
++
++const target = process.env.SSO_UI_TEST_URL ?? "http://127.0.0.1:14789";
++const output = process.env.SSO_UI_TEST_OUTPUT ?? "/tmp/executor-sso-ui-evidence";
++await mkdir(output, { recursive: true });
++const browser = await chromium.launch({ headless: true, channel: "chrome" });
++for (const width of [1280, 390, 320]) {
++  const context = await browser.newContext({ viewport: { width, height: 800 } });
++  await context.tracing.start({ screenshots: true, snapshots: true });
++  const page = await context.newPage();
++  const errors: string[] = [];
++  page.on("pageerror", (error) => errors.push(error.message));
++  await page.goto(`${target}/login`);
++  await page.getByRole("button", { name: "Continue with Organization" }).waitFor();
++  const passwordCount = await page.locator('input[type="password"]').count();
++  const inviteCount = await page.getByText("Have an invite code? Join", { exact: true }).count();
++  const overflow = await page.evaluate(
++    () => document.documentElement.scrollWidth > window.innerWidth,
++  );
++  if (passwordCount || inviteCount || overflow || errors.length) {
++    throw new Error(
++      `SSO render failed at ${width}: ${JSON.stringify({ passwordCount, inviteCount, overflow, errors })}`,
++    );
++  }
++  await page.screenshot({ path: join(output, `sso-${width}.png`), fullPage: true });
++  await context.tracing.stop({ path: join(output, `sso-${width}-trace.zip`) });
++  await context.close();
++}
++const context = await browser.newContext({ viewport: { width: 390, height: 800 } });
++const page = await context.newPage();
++await page.route("**/api/auth-config", (route) =>
++  route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
++);
++await page.goto(`${target}/login`);
++await page.getByRole("button", { name: "Retry", exact: true }).waitFor();
++if (await page.locator('input[type="password"]').count())
++  throw new Error("Failed config exposed password fallback");
++await page.screenshot({ path: join(output, "sso-error-390.png"), fullPage: true });
++await page.unroute("**/api/auth-config");
++await page.getByRole("button", { name: "Retry", exact: true }).click();
++await page.getByRole("button", { name: "Continue with Organization" }).waitFor();
++await context.close();
++await browser.close();
++console.log(
++  JSON.stringify({
++    status: "PASS",
++    widths: [1280, 390, 320],
++    failureAndRetry: true,
++    output,
++    scope: "render only; actual SSO/TLS must be tested separately",
++  }),
++);
+diff --git a/apps/host-selfhost/src/account/better-auth-account-provider.ts b/apps/host-selfhost/src/account/better-auth-account-provider.ts
+index 885ed74..3e1fef8 100644
+--- a/apps/host-selfhost/src/account/better-auth-account-provider.ts
++++ b/apps/host-selfhost/src/account/better-auth-account-provider.ts
+@@ -4,6 +4,7 @@ import { AccountProvider, type AccountHeaders } from "@executor-js/api/server";
+ import { AccountError, AccountUnauthorized } from "@executor-js/api";
+ 
+ import { BetterAuth } from "../auth/better-auth";
++import { authorityEnabled, resolveAuthorityIdentity } from "../auth/authority";
+ 
+ // ---------------------------------------------------------------------------
+ // Self-host AccountProvider — implements the provider-neutral account surface
+@@ -41,29 +42,57 @@ export const betterAuthAccountProvider: Layer.Layer<AccountProvider, never, Bett
+ 
+       const getSession = (headers: AccountHeaders) =>
+         Effect.tryPromise({
+-          try: () => auth.api.getSession({ headers: toHeaders(headers) }),
++          try: async () => {
++            const session = await auth.api.getSession({ headers: toHeaders(headers) });
++            if (
++              session &&
++              authorityEnabled() &&
++              !(await resolveAuthorityIdentity(auth, session.user.id))
++            )
++              return null;
++            return session;
++          },
+           catch: () => new AccountError({ message: "Failed to resolve session" }),
+         }).pipe(Effect.orElseSucceed(() => null));
+ 
+       // Run a Better Auth api call, mapping any rejection to a neutral
+       // AccountError with a stable, user-facing message.
+-      const call = <A>(message: string, run: () => Promise<A>) =>
+-        Effect.tryPromise({ try: run, catch: () => new AccountError({ message }) });
++      const call = <A>(
++        message: string,
++        run: () => Promise<A>,
++        headers: AccountHeaders,
++        localManagement = false,
++      ) =>
++        Effect.gen(function* () {
++          if (authorityEnabled() && localManagement)
++            return yield* new AccountError({
++              message: "Membership is managed by your identity provider",
++            });
++          const session = yield* getSession(headers);
++          if (!session) return yield* new AccountUnauthorized();
++          return yield* Effect.tryPromise({ try: run, catch: () => new AccountError({ message }) });
++        });
+ 
+       return AccountProvider.of({
+         me: (headers) =>
+           Effect.gen(function* () {
+             const resolved = yield* getSession(headers);
+             if (!resolved) return yield* new AccountUnauthorized();
++            const external = authorityEnabled()
++              ? yield* Effect.tryPromise(() =>
++                  resolveAuthorityIdentity(auth, resolved.user.id),
++                ).pipe(Effect.orElseSucceed(() => null))
++              : null;
++            if (authorityEnabled() && !external) return yield* new AccountUnauthorized();
+             return {
+               user: {
+-                id: resolved.user.id,
+-                email: resolved.user.email,
+-                name: resolved.user.name ?? null,
++                id: external?.userId ?? resolved.user.id,
++                email: external?.email ?? resolved.user.email,
++                name: external?.name ?? resolved.user.name ?? null,
+                 avatarUrl: resolved.user.image ?? null,
+               },
+               organization: {
+-                id: resolved.session.activeOrganizationId ?? organizationId,
++                id: external?.organizationId ?? organizationId,
+                 name: organizationName,
+                 slug: organizationSlug,
+               },
+@@ -71,8 +100,10 @@ export const betterAuthAccountProvider: Layer.Layer<AccountProvider, never, Bett
+           }),
+ 
+         listApiKeys: (headers) =>
+-          call("Failed to list API keys", () =>
+-            auth.api.listApiKeys({ headers: toHeaders(headers) }),
++          call(
++            "Failed to list API keys",
++            () => auth.api.listApiKeys({ headers: toHeaders(headers) }),
++            headers,
+           ).pipe(
+             Effect.map((result) => ({
+               apiKeys: result.apiKeys.map((key) => ({
+@@ -87,8 +118,10 @@ export const betterAuthAccountProvider: Layer.Layer<AccountProvider, never, Bett
+           ),
+ 
+         createApiKey: (headers, name) =>
+-          call("Failed to create API key", () =>
+-            auth.api.createApiKey({ body: { name }, headers: toHeaders(headers) }),
++          call(
++            "Failed to create API key",
++            () => auth.api.createApiKey({ body: { name }, headers: toHeaders(headers) }),
++            headers,
+           ).pipe(
+             Effect.map((key) => ({
+               id: key.id,
+@@ -102,8 +135,10 @@ export const betterAuthAccountProvider: Layer.Layer<AccountProvider, never, Bett
+           ),
+ 
+         revokeApiKey: (headers, apiKeyId) =>
+-          call("Failed to revoke API key", () =>
+-            auth.api.deleteApiKey({ body: { keyId: apiKeyId }, headers: toHeaders(headers) }),
++          call(
++            "Failed to revoke API key",
++            () => auth.api.deleteApiKey({ body: { keyId: apiKeyId }, headers: toHeaders(headers) }),
++            headers,
+           ).pipe(Effect.as({ success: true })),
+ 
+         // Better Auth has no organization-OWNED key concept: every key it
+@@ -136,9 +171,36 @@ export const betterAuthAccountProvider: Layer.Layer<AccountProvider, never, Bett
+         listMembers: (headers) =>
+           Effect.gen(function* () {
+             const resolved = yield* getSession(headers);
++            if (!resolved) return yield* new AccountUnauthorized();
++            if (authorityEnabled()) {
++              // Membership administration belongs to the common authority, not
++              // a stale second copy in this application's user directory.
++              const external = yield* Effect.tryPromise(() =>
++                resolveAuthorityIdentity(auth, resolved.user.id),
++              ).pipe(Effect.orElseSucceed(() => null));
++              if (!external) return yield* new AccountUnauthorized();
++              return {
++                members: [
++                  {
++                    id: external.userId,
++                    userId: external.userId,
++                    email: external.email,
++                    name: external.name,
++                    avatarUrl: resolved.user.image ?? null,
++                    role: external.role,
++                    status: "active",
++                    lastActiveAt: null,
++                    isCurrentUser: true,
++                  },
++                ],
++                seats: { used: 1, granted: 1, unlimited: true },
++              };
++            }
+             const currentUserId = resolved?.user.id;
+-            const result = yield* call("Failed to list members", () =>
+-              auth.api.listMembers({ headers: toHeaders(headers) }),
++            const result = yield* call(
++              "Failed to list members",
++              () => auth.api.listMembers({ headers: toHeaders(headers) }),
++              headers,
+             ).pipe(
+               Effect.catchTag("AccountError", () => Effect.succeed({ members: [], total: 0 })),
+             );
+@@ -171,36 +233,52 @@ export const betterAuthAccountProvider: Layer.Layer<AccountProvider, never, Bett
+           }),
+ 
+         inviteMember: (headers, body) =>
+-          call("Failed to invite member", () =>
+-            auth.api.createInvitation({
+-              // Narrow the free-form slug to the org plugin's role union (no cast).
+-              body: { email: body.email, role: orgRole(body.roleSlug) },
+-              headers: toHeaders(headers),
+-            }),
++          call(
++            "Failed to invite member",
++            () =>
++              auth.api.createInvitation({
++                // Narrow the free-form slug to the org plugin's role union (no cast).
++                body: { email: body.email, role: orgRole(body.roleSlug) },
++                headers: toHeaders(headers),
++              }),
++            headers,
++            true,
+           ).pipe(Effect.map((invite) => ({ id: invite.id, email: invite.email }))),
+ 
+         removeMember: (headers, membershipId) =>
+-          call("Failed to remove member", () =>
+-            auth.api.removeMember({
+-              body: { memberIdOrEmail: membershipId },
+-              headers: toHeaders(headers),
+-            }),
++          call(
++            "Failed to remove member",
++            () =>
++              auth.api.removeMember({
++                body: { memberIdOrEmail: membershipId },
++                headers: toHeaders(headers),
++              }),
++            headers,
++            true,
+           ).pipe(Effect.as({ success: true })),
+ 
+         updateMemberRole: (headers, membershipId, roleSlug) =>
+-          call("Failed to update member role", () =>
+-            auth.api.updateMemberRole({
+-              body: { memberId: membershipId, role: roleSlug },
+-              headers: toHeaders(headers),
+-            }),
++          call(
++            "Failed to update member role",
++            () =>
++              auth.api.updateMemberRole({
++                body: { memberId: membershipId, role: roleSlug },
++                headers: toHeaders(headers),
++              }),
++            headers,
++            true,
+           ).pipe(Effect.as({ success: true })),
+ 
+         updateOrgName: (headers, name) =>
+-          call("Failed to update organization name", () =>
+-            auth.api.updateOrganization({
+-              body: { data: { name }, organizationId },
+-              headers: toHeaders(headers),
+-            }),
++          call(
++            "Failed to update organization name",
++            () =>
++              auth.api.updateOrganization({
++                body: { data: { name }, organizationId },
++                headers: toHeaders(headers),
++              }),
++            headers,
++            true,
+           ).pipe(Effect.as({ name })),
+       });
+     }),
+diff --git a/apps/host-selfhost/src/admin/require-admin.ts b/apps/host-selfhost/src/admin/require-admin.ts
+index 794f217..72c1260 100644
+--- a/apps/host-selfhost/src/admin/require-admin.ts
++++ b/apps/host-selfhost/src/admin/require-admin.ts
+@@ -48,6 +48,7 @@
+ import { Effect } from "effect";
+ 
+ import { BetterAuth } from "../auth/better-auth";
++import { authorityEnabled } from "../auth/authority";
+ 
+ /**
+  * Why the caller was refused, in the vocabulary both planes share.
+@@ -110,6 +111,9 @@ export const requireInstanceAdmin = (
+   headers: Headers,
+ ): Effect.Effect<InstanceAdmin, AdminGateDenial, BetterAuth> =>
+   Effect.gen(function* () {
++    // Instance membership/user provisioning is owned by the external IdP and
++    // authority in this mode; a local admin record is never an escape hatch.
++    if (authorityEnabled()) return yield* Effect.fail<AdminGateDenial>("forbidden");
+     const { auth, organizationId } = yield* BetterAuth;
+ 
+     const session = yield* Effect.tryPromise(() => auth.api.getSession({ headers })).pipe(
+diff --git a/apps/host-selfhost/src/app.ts b/apps/host-selfhost/src/app.ts
+index 18bcdf9..54d215e 100644
+--- a/apps/host-selfhost/src/app.ts
++++ b/apps/host-selfhost/src/app.ts
+@@ -29,6 +29,7 @@ import { makeSelfHostMcpSeams } from "./mcp";
+ import { selfHostPlugins } from "./plugins";
+ import { ErrorCaptureLive } from "./observability";
+ import { oauthCallbackSignInRedirectLocation } from "./auth/oauth-callback-login";
++import { delegatedOperationHandler } from "./delegation/handler";
+ 
+ // ===========================================================================
+ // The self-hosted Executor app, as ONE `ExecutorApp.make` call.
+@@ -115,6 +116,11 @@ export const makeSelfHostApp = async (options: MakeSelfHostAppOptions = {}) => {
+     },
+     extensions: {
+       routes: [
++        HttpRouter.add(
++          "*",
++          "/api/delegated-operations",
++          HttpEffect.fromWebHandler(delegatedOperationHandler),
++        ),
+         // CLI device-login discovery, must precede the /api/auth/* wildcard
+         // below (Better Auth would otherwise 404 it). The verification page it
+         // points at (/device) is a console SPA route
+diff --git a/apps/host-selfhost/src/auth/authority.ts b/apps/host-selfhost/src/auth/authority.ts
+new file mode 100644
+index 0000000..a12c20a
+--- /dev/null
++++ b/apps/host-selfhost/src/auth/authority.ts
+@@ -0,0 +1,55 @@
++import type { Auth } from "./better-auth";
++import { hash, origin, setting, signCallback, stableJson } from "../delegation/protocol";
++
++export interface AuthorityIdentity {
++  userId: string;
++  organizationId: string;
++  email: string;
++  name: string | null;
++  role: string;
++}
++export const authorityEnabled = (): boolean =>
++  Boolean(process.env.EXECUTOR_IDENTITY_AUTHORITY_ORIGIN);
++
++/** Resolve the authenticated account by its stored provider subject, never by
++ * email or browser role claims. No cache: revocation applies to the next API
++ * request. A missing authority/link/membership fails closed. */
++export async function resolveAuthorityIdentity(
++  auth: Auth,
++  userId: string,
++): Promise<AuthorityIdentity | null> {
++  if (!authorityEnabled()) return null;
++  const authority = origin("EXECUTOR_IDENTITY_AUTHORITY_ORIGIN");
++  if (authority !== origin("EXECUTOR_DELEGATION_ISSUER")) return null;
++  const ctx = await auth.$context;
++  const user = await ctx.internalAdapter.findUserById(userId);
++  if (!user?.emailVerified) return null;
++  const account = await ctx.adapter.findOne<{ accountId: string }>({
++    model: "account",
++    where: [
++      { field: "userId", value: userId },
++      { field: "providerId", value: setting("EXECUTOR_SSO_PROVIDER_ID") },
++    ],
++  });
++  if (!account || typeof account.accountId !== "string") return null;
++  const body = { issuer: setting("EXECUTOR_IDENTITY_ISSUER"), subject: account.accountId };
++  const proof = await signCallback("identity-resolve", { bodyHash: hash(stableJson(body)) });
++  const response = await fetch(`${authority}/api/executor/identity/resolve`, {
++    method: "POST",
++    headers: { "content-type": "application/json", authorization: `Bearer ${proof}` },
++    body: JSON.stringify(body),
++    redirect: "error",
++    signal: AbortSignal.timeout(5_000),
++  });
++  if (!response.ok) return null;
++  const identity = (await response.json()) as Partial<AuthorityIdentity>;
++  if (
++    typeof identity.userId !== "string" ||
++    typeof identity.email !== "string" ||
++    typeof identity.role !== "string" ||
++    (identity.name !== null && typeof identity.name !== "string") ||
++    identity.organizationId !== setting("EXECUTOR_AUTHORITY_ORGANIZATION_ID")
++  )
++    return null;
++  return identity as AuthorityIdentity;
++}
+diff --git a/apps/host-selfhost/src/auth/better-auth.ts b/apps/host-selfhost/src/auth/better-auth.ts
+index 4031fdf..f043a61 100644
+--- a/apps/host-selfhost/src/auth/better-auth.ts
++++ b/apps/host-selfhost/src/auth/better-auth.ts
+@@ -134,7 +134,8 @@ const makeAuthOptions = (client: Client, getOrganizationId: () => string, gate?:
+     // Only an explicit opt-out is passed through, so that environment default
+     // stays in charge everywhere else.
+     ...(config.authRateLimit ? {} : { rateLimit: { enabled: false } }),
+-    emailAndPassword: { enabled: true },
++    emailAndPassword: { enabled: !config.ssoOnly },
++    account: { accountLinking: { enabled: !config.ssoOnly } },
+     // `apiKey` issues long-lived personal keys (the API-keys page). With
+     // `enableSessionForAPIKeys`, presenting a key resolves to its owner's
+     // session — so a key works as a Bearer token for the API + MCP endpoint.
+@@ -220,6 +221,12 @@ const makeAuthOptions = (client: Client, getOrganizationId: () => string, gate?:
+             user: {
+               create: {
+                 before: async (user, context) => {
++                  if (config.ssoOnly && context?.path === SIGNUP_PATH) {
++                    // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: Better Auth hook rejects local signup with its APIError contract
++                    throw new APIError("FORBIDDEN", {
++                      message: "Use your organization's sign-in provider.",
++                    });
++                  }
+                   if (context?.path !== SIGNUP_PATH) {
+                     // SSO sign-ups arrive on an OAuth callback path; the
+                     // verified-domain allowlist gates them in place of an
+diff --git a/apps/host-selfhost/src/auth/external-authority.test.ts b/apps/host-selfhost/src/auth/external-authority.test.ts
+new file mode 100644
+index 0000000..96e98c4
+--- /dev/null
++++ b/apps/host-selfhost/src/auth/external-authority.test.ts
+@@ -0,0 +1,81 @@
++import { mkdtempSync } from "node:fs";
++import { join } from "node:path";
++import { tmpdir } from "node:os";
++import { afterAll, expect, it, vi } from "@effect/vitest";
++
++// Boot the actual complete application. No IdP stub: authentication roundtrips
++// belong to the real-provider staging test; this exercises pre-auth negatives.
++const base = "https://executor.example.test";
++const issuer = "https://idp.example.test/realms/test";
++for (const [name, value] of Object.entries({
++  EXECUTOR_DATA_DIR: mkdtempSync(join(tmpdir(), "executor-authority-test-")),
++  EXECUTOR_SSO_ONLY: "true",
++  EXECUTOR_WEB_BASE_URL: base,
++  EXECUTOR_SSO_PROVIDER_ID: "customer-sso",
++  EXECUTOR_SSO_PROVIDER_NAME: "Organization",
++  EXECUTOR_SSO_CLIENT_ID: "synthetic-client",
++  EXECUTOR_SSO_CLIENT_SECRET: "synthetic-secret",
++  EXECUTOR_SSO_ALLOWED_DOMAINS: "example.test",
++  EXECUTOR_IDENTITY_ISSUER: issuer,
++  EXECUTOR_SSO_DISCOVERY_URL: `${issuer}/.well-known/openid-configuration`,
++  EXECUTOR_IDENTITY_AUTHORITY_ORIGIN: "https://authority.example.test",
++  EXECUTOR_DELEGATION_ISSUER: "https://authority.example.test",
++  BETTER_AUTH_SECRET: "synthetic-test-auth-secret-at-least-32-characters",
++  EXECUTOR_DISABLE_ANALYTICS: "true",
++}))
++  vi.stubEnv(name, value);
++vi.stubEnv("EXECUTOR_BOOTSTRAP_ADMIN_EMAIL", undefined);
++vi.stubEnv("EXECUTOR_BOOTSTRAP_ADMIN_PASSWORD", undefined);
++const { makeSelfHostApiHandler } = await import("../app");
++const { handler, dispose } = await makeSelfHostApiHandler();
++afterAll(async () => {
++  await dispose();
++  vi.unstubAllEnvs();
++});
++const post = (path: string, body: unknown) =>
++  handler(
++    new Request(`${base}${path}`, {
++      method: "POST",
++      headers: { "content-type": "application/json", origin: base },
++      body: JSON.stringify(body),
++    }),
++  );
++
++it("boots complete app without local bootstrap admin and advertises SSO-only", async () => {
++  expect((await handler(new Request(`${base}/api/health`))).status).toBe(200);
++  expect(await (await handler(new Request(`${base}/api/setup-status`))).json()).toEqual({
++    needsSetup: false,
++  });
++  expect(await (await handler(new Request(`${base}/api/auth-config`))).json()).toEqual({
++    passwordEnabled: false,
++    ssoProviders: [{ id: "customer-sso", name: "Organization" }],
++  });
++});
++it("refuses local signup and password sign-in without granting a session", async () => {
++  for (const path of ["/api/auth/sign-up/email", "/api/auth/sign-in/email"]) {
++    const response = await post(path, {
++      name: "Synthetic",
++      email: "user@example.test",
++      password: "synthetic-password",
++    });
++    expect(response.status).toBeGreaterThanOrEqual(400);
++    expect(response.headers.get("set-cookie") ?? "").not.toContain("session_token=");
++  }
++});
++it("refuses local authority management, account rebinding and unsigned delegation", async () => {
++  for (const path of [
++    "/api/auth/organization/create",
++    "/api/auth/admin/create-user",
++    "/api/auth/link-social",
++    "/api/auth/oauth2/link",
++    "/api/auth/unlink-account",
++    "/api/auth/change-email",
++  ]) {
++    const response = await post(path, {});
++    expect(response.status).toBe(403);
++    expect(await response.json()).toEqual({ error: "identity_managed_externally" });
++  }
++  expect(
++    (await post("/api/delegated-operations", { delegation: "forged", operation: {} })).status,
++  ).toBe(401);
++});
+diff --git a/apps/host-selfhost/src/auth/identity.ts b/apps/host-selfhost/src/auth/identity.ts
+index a637b12..aef7835 100644
+--- a/apps/host-selfhost/src/auth/identity.ts
++++ b/apps/host-selfhost/src/auth/identity.ts
+@@ -4,6 +4,7 @@ import { IdentityProvider, Unauthorized } from "@executor-js/api/server";
+ 
+ import { isPrivileged } from "../admin/require-admin";
+ import { BetterAuth, type BetterAuthHandle } from "./better-auth";
++import { authorityEnabled, resolveAuthorityIdentity } from "./authority";
+ 
+ // ---------------------------------------------------------------------------
+ // The self-host identity seam — the production implementation of the shared
+@@ -40,12 +41,16 @@ export const resolveSelfHostOrgRole = (
+   headers: Headers | Record<string, string>,
+   organizationId: string,
+ ): Effect.Effect<"admin" | "member"> =>
+-  Effect.tryPromise(() =>
+-    betterAuth.auth.api.getActiveMemberRole({
+-      headers,
+-      query: { organizationId },
+-    }),
+-  ).pipe(
++  Effect.tryPromise(async () => {
++    if (authorityEnabled()) {
++      const session = await betterAuth.auth.api.getSession({ headers });
++      const identity = session
++        ? await resolveAuthorityIdentity(betterAuth.auth, session.user.id)
++        : null;
++      return identity ? { role: identity.role } : null;
++    }
++    return betterAuth.auth.api.getActiveMemberRole({ headers, query: { organizationId } });
++  }).pipe(
+     Effect.orElseSucceed(() => null),
+     Effect.map((membership) => (membership && isPrivileged(membership.role) ? "admin" : "member")),
+   );
+@@ -90,6 +95,25 @@ export const betterAuthIdentityLayer: Layer.Layer<IdentityProvider, never, Bette
+             // No session resolved from any credential shape -> unauthenticated.
+             // The middleware's failure strategy renders this as a 401.
+             if (!resolved) return yield* new Unauthorized();
++            if (authorityEnabled()) {
++              const identity = yield* Effect.tryPromise(() =>
++                resolveAuthorityIdentity(auth, resolved.user.id),
++              ).pipe(Effect.orElseSucceed(() => null));
++              if (!identity) return yield* new Unauthorized();
++              return {
++                kind: "member" as const,
++                accountId: identity.userId,
++                organizationId: identity.organizationId,
++                organizationName,
++                organizationSlug,
++                email: identity.email,
++                name: identity.name,
++                avatarUrl: resolved.user.image ?? null,
++                roles: [identity.role],
++                orgRoleModel: "organization" as const,
++                orgRole: isPrivileged(identity.role) ? ("admin" as const) : ("member" as const),
++              };
++            }
+             // Single-org instance: every authenticated user belongs to the one
+             // seeded org. Cookie/bearer-session logins are pinned to it by the
+             // session hook; API-key-minted sessions carry no active org, so we
+diff --git a/apps/host-selfhost/src/auth/index.ts b/apps/host-selfhost/src/auth/index.ts
+index 1005970..ee67001 100644
+--- a/apps/host-selfhost/src/auth/index.ts
++++ b/apps/host-selfhost/src/auth/index.ts
+@@ -9,6 +9,8 @@ import { betterAuthIdentityLayer } from "./identity";
+ import { betterAuthMemberDirectoryLayer } from "./member-directory";
+ import { consentRedirectClientId, withClientName, withForcedMcpConsent } from "./force-mcp-consent";
+ import { rewriteInvalidOrigin } from "./invalid-origin-help";
++import { authorityEnabled } from "./authority";
++import { withOidcNonce } from "./oidc-validation";
+ 
+ export { BetterAuth, buildBetterAuth, type BetterAuthHandle } from "./better-auth";
+ export { betterAuthIdentityLayer } from "./identity";
+@@ -66,7 +68,24 @@ export const resolveAuthProviders = async (
+   // resulting consent redirect with the registered client name.
+   const config = loadConfig();
+   const authHandler = async (request: Request): Promise<Response> => {
+-    const response = await betterAuth.handler(withForcedMcpConsent(request));
++    // External membership authority is not editable through local auth APIs.
++    // In particular, linking a second account must not replace the admitted
++    // provider subject behind an existing application session.
++    const path = new URL(request.url).pathname;
++    if (
++      authorityEnabled() &&
++      (path.startsWith("/api/auth/admin/") ||
++        path.startsWith("/api/auth/organization/") ||
++        path === "/api/auth/link-social" ||
++        path === "/api/auth/oauth2/link" ||
++        path === "/api/auth/unlink-account" ||
++        path === "/api/auth/change-email")
++    )
++      return Response.json({ error: "identity_managed_externally" }, { status: 403 });
++    const run = () => betterAuth.handler(withForcedMcpConsent(request));
++    const response = config.ssoOnly
++      ? await withOidcNonce(request, config.authSecret, run)
++      : await run();
+     // Turn Better Auth's bare 403 "Invalid origin" into a setup instruction —
+     // on a fresh deploy it almost always means the public URL needs configuring.
+     const friendlier = await rewriteInvalidOrigin(request, response, config.webBaseUrl);
+diff --git a/apps/host-selfhost/src/auth/oidc-validation.test.ts b/apps/host-selfhost/src/auth/oidc-validation.test.ts
+new file mode 100644
+index 0000000..175f651
+--- /dev/null
++++ b/apps/host-selfhost/src/auth/oidc-validation.test.ts
+@@ -0,0 +1,70 @@
++import { afterEach, describe, expect, it, vi } from "@effect/vitest";
++import { oidcAuthorizationParams, withOidcNonce } from "./oidc-validation";
++import { fetchAuthConfig } from "../../web/auth-config";
++
++afterEach(() => vi.unstubAllGlobals());
++const secret = "synthetic-signing-secret-32-bytes-minimum";
++describe("OIDC nonce binding", () => {
++  it("issues a host-only signed nonce, validates it on callback, then clears it", async () => {
++    let nonce = "";
++    const start = await withOidcNonce(
++      new Request("https://executor.test/api/auth/sign-in/oauth2", { method: "POST" }),
++      secret,
++      async () => {
++        nonce = oidcAuthorizationParams().nonce!;
++        return Response.json({ status: "start" });
++      },
++    );
++    const cookie = start.headers.get("set-cookie")!;
++    expect(cookie).toContain("__Host-executor_oidc_nonce=");
++    expect(cookie).toContain("Secure; HttpOnly; SameSite=Lax");
++    expect(cookie).not.toContain("Domain=");
++    const callback = await withOidcNonce(
++      new Request("https://executor.test/api/auth/oauth2/callback/customer-sso", {
++        headers: { cookie: cookie.split(";")[0]! },
++      }),
++      secret,
++      async () => {
++        expect(oidcAuthorizationParams().nonce).toBe(nonce);
++        return Response.json({ status: "callback" });
++      },
++    );
++    expect(callback.status).toBe(200);
++    expect(callback.headers.get("set-cookie")).toContain("Max-Age=0");
++  });
++  it("refuses missing, malformed, or differently signed callback nonce before auth", async () => {
++    const run = vi.fn();
++    for (const cookie of ["", "__Host-executor_oidc_nonce=forged"]) {
++      const response = await withOidcNonce(
++        new Request("https://executor.test/api/auth/oauth2/callback/customer-sso", {
++          headers: { cookie },
++        }),
++        secret,
++        run,
++      );
++      expect(response.status).toBe(401);
++    }
++    expect(run).not.toHaveBeenCalled();
++    expect(() => oidcAuthorizationParams()).toThrow();
++  });
++});
++describe("SSO-only pre-login configuration", () => {
++  it("returns only the configured mode/provider metadata", async () => {
++    const config = {
++      passwordEnabled: false,
++      ssoProviders: [{ id: "customer-sso", name: "Organization" }],
++    };
++    vi.stubGlobal("fetch", async () => Response.json(config));
++    expect(await fetchAuthConfig()).toEqual(config);
++  });
++  it("never defaults an unavailable endpoint to local password signup", async () => {
++    for (const response of [
++      Response.json({}, { status: 503 }),
++      Response.json({ ssoProviders: [] }),
++      Response.json({ passwordEnabled: false, ssoProviders: [null] }),
++    ]) {
++      vi.stubGlobal("fetch", async () => response);
++      await expect(fetchAuthConfig()).rejects.toThrow();
++    }
++  });
++});
+diff --git a/apps/host-selfhost/src/auth/oidc-validation.ts b/apps/host-selfhost/src/auth/oidc-validation.ts
+new file mode 100644
+index 0000000..5f0d21c
+--- /dev/null
++++ b/apps/host-selfhost/src/auth/oidc-validation.ts
+@@ -0,0 +1,124 @@
++import { AsyncLocalStorage } from "node:async_hooks";
++import { randomBytes } from "node:crypto";
++import { createRemoteJWKSet, jwtVerify, SignJWT } from "jose";
++import type { SsoConfig } from "../config";
++
++const NONCE_COOKIE = "__Host-executor_oidc_nonce";
++const contexts = new AsyncLocalStorage<{ nonce: string | null }>();
++const keySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
++
++export const oidcAuthorizationParams = (): Record<string, string> => {
++  const nonce = contexts.getStore()?.nonce;
++  // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: Better Auth callback must reject requests outside the nonce context
++  if (!nonce) throw new Error("OIDC request context missing");
++  return { nonce };
++};
++
++/** The native genericOAuth default decodes id_token without verification. This
++ * configured hook validates it before Better Auth creates a user or session. */
++export async function verifiedOidcUserInfo(sso: SsoConfig, idToken: string | undefined) {
++  const nonce = contexts.getStore()?.nonce;
++  const issuer = process.env.EXECUTOR_IDENTITY_ISSUER;
++  if (
++    !nonce ||
++    !issuer ||
++    !idToken ||
++    sso.discoveryUrl !== `${issuer}/.well-known/openid-configuration`
++  )
++    return null;
++  const discoveryResponse = await fetch(sso.discoveryUrl, {
++    redirect: "error",
++    signal: AbortSignal.timeout(5_000),
++  });
++  if (!discoveryResponse.ok) return null;
++  const discovery = (await discoveryResponse.json()) as { issuer?: unknown; jwks_uri?: unknown };
++  if (discovery.issuer !== issuer || typeof discovery.jwks_uri !== "string") return null;
++  const jwksUrl = new URL(discovery.jwks_uri);
++  if (
++    jwksUrl.protocol !== "https:" ||
++    jwksUrl.origin !== new URL(issuer).origin ||
++    jwksUrl.username ||
++    jwksUrl.password
++  )
++    return null;
++  let keys = keySets.get(jwksUrl.href);
++  if (!keys) {
++    keys = createRemoteJWKSet(jwksUrl);
++    keySets.set(jwksUrl.href, keys);
++  }
++  const { payload } = await jwtVerify(idToken, keys, {
++    issuer,
++    audience: sso.clientId,
++    algorithms: ["RS256", "ES256"],
++    requiredClaims: ["sub", "iat", "exp", "nonce"],
++  });
++  if (
++    payload.nonce !== nonce ||
++    payload.email_verified !== true ||
++    typeof payload.email !== "string" ||
++    typeof payload.sub !== "string" ||
++    (Array.isArray(payload.aud) && payload.aud.length > 1 && payload.azp !== sso.clientId) ||
++    (payload.azp !== undefined && payload.azp !== sso.clientId)
++  )
++    return null;
++  return {
++    id: payload.sub,
++    email: payload.email,
++    emailVerified: true,
++    name: typeof payload.name === "string" ? payload.name : payload.email,
++    image: typeof payload.picture === "string" ? payload.picture : undefined,
++  };
++}
++
++export async function withOidcNonce(
++  request: Request,
++  authSecret: string,
++  run: () => Promise<Response>,
++): Promise<Response> {
++  const path = new URL(request.url).pathname;
++  const signingIn = path === "/api/auth/sign-in/oauth2";
++  const callback = path.startsWith("/api/auth/oauth2/callback/");
++  if (!signingIn && !callback) return run();
++  const key = new TextEncoder().encode(authSecret);
++  let nonce: string | null = signingIn ? randomBytes(32).toString("base64url") : null;
++  if (callback) {
++    const cookie = (request.headers.get("cookie") ?? "")
++      .split(";")
++      .map((entry) => entry.trim())
++      .find((entry) => entry.startsWith(`${NONCE_COOKIE}=`))
++      ?.slice(NONCE_COOKIE.length + 1);
++    if (cookie) {
++      // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: invalid jose cookie proof must become an HTTP denial, never a nonce
++      try {
++        const { payload } = await jwtVerify(cookie, key, {
++          algorithms: ["HS256"],
++          audience: "executor-oidc-nonce",
++          requiredClaims: ["exp", "iat"],
++        });
++        if (typeof payload.nonce === "string") nonce = payload.nonce;
++      } catch {
++        /* Invalid nonce fails closed in the profile verification hook. */
++      }
++    }
++    if (!nonce) return Response.json({ error: "oidc_nonce_invalid" }, { status: 401 });
++  }
++  const response = await contexts.run({ nonce }, run);
++  const headers = new Headers(response.headers);
++  if (signingIn) {
++    const cookie = await new SignJWT({ nonce })
++      .setProtectedHeader({ alg: "HS256" })
++      .setAudience("executor-oidc-nonce")
++      .setIssuedAt()
++      .setExpirationTime("10m")
++      .sign(key);
++    headers.append(
++      "set-cookie",
++      `${NONCE_COOKIE}=${cookie}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600`,
++    );
++  } else
++    headers.append(
++      "set-cookie",
++      `${NONCE_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`,
++    );
++  return new Response(response.body, { status: response.status, headers });
++}
+diff --git a/apps/host-selfhost/src/auth/sso.test.ts b/apps/host-selfhost/src/auth/sso.test.ts
+index 92f03d8..c20558e 100644
+--- a/apps/host-selfhost/src/auth/sso.test.ts
++++ b/apps/host-selfhost/src/auth/sso.test.ts
+@@ -178,7 +178,10 @@ describe("emailDomain", () => {
+ test("auth-config advertises the configured provider (id + name only)", async () => {
+   const res = await handler(new Request(`${BASE}/api/auth-config`));
+   expect(res.status).toBe(200);
+-  expect(await res.json()).toEqual({ ssoProviders: [{ id: "okta", name: "Okta" }] });
++  expect(await res.json()).toEqual({
++    ssoProviders: [{ id: "okta", name: "Okta" }],
++    passwordEnabled: true,
++  });
+ });
+ 
+ // --- The full OIDC round-trip against the emulated IdP -----------------------
+diff --git a/apps/host-selfhost/src/auth/sso.ts b/apps/host-selfhost/src/auth/sso.ts
+index 7d2d00a..97f19b8 100644
+--- a/apps/host-selfhost/src/auth/sso.ts
++++ b/apps/host-selfhost/src/auth/sso.ts
+@@ -1,4 +1,5 @@
+ import { type SsoConfig } from "../config";
++import { oidcAuthorizationParams, verifiedOidcUserInfo } from "./oidc-validation";
+ 
+ // Better Auth serves OAuth sign-in callbacks at `/oauth2/callback/:providerId`
+ // (genericOAuth) and `/callback/:providerId` (built-in social providers) — the
+@@ -40,7 +41,16 @@ export const ssoProviderConfig = (sso: SsoConfig) => ({
+   discoveryUrl: sso.discoveryUrl,
+   scopes: ["openid", "email", "profile"],
+   pkce: true,
+-  ...(sso.providerId === "google" && sso.allowedDomains.length === 1
++  ...(process.env.EXECUTOR_SSO_ONLY === "true"
++    ? {
++        issuer: process.env.EXECUTOR_IDENTITY_ISSUER,
++        authorizationUrlParams: oidcAuthorizationParams,
++        getUserInfo: (tokens: { idToken?: string }) => verifiedOidcUserInfo(sso, tokens.idToken),
++      }
++    : {}),
++  ...(process.env.EXECUTOR_SSO_ONLY !== "true" &&
++  sso.providerId === "google" &&
++  sso.allowedDomains.length === 1
+     ? { authorizationUrlParams: { hd: sso.allowedDomains[0]! } }
+     : {}),
+ });
+diff --git a/apps/host-selfhost/src/config.ts b/apps/host-selfhost/src/config.ts
+index 07dcc56..ceb91fa 100644
+--- a/apps/host-selfhost/src/config.ts
++++ b/apps/host-selfhost/src/config.ts
+@@ -18,6 +18,13 @@ import {
+ export const SELF_HOST_NAMESPACE = "executor_selfhost";
+ export const SELF_HOST_SCHEMA_VERSION = "1.0.0";
+ 
++// Secret mounts take precedence over environment values; never return a file
++// path or raw secret in configuration errors or logs.
++const secretSetting = (name: string): string | undefined => {
++  const file = process.env[`${name}_FILE`];
++  return (file ? readFileSync(file, "utf8") : process.env[name])?.trim();
++};
++
+ /**
+  * SSO sign-in for the self-host login page and the MCP OAuth connect flow: one
+  * OIDC provider (Google, Okta, Entra, any discovery-compliant IdP) resolved
+@@ -84,6 +91,8 @@ export interface SelfHostConfig {
+   readonly sandboxTimeoutMs: number | undefined;
+   /** SSO sign-in, or undefined when the operator hasn't configured it. */
+   readonly sso: SsoConfig | undefined;
++  /** Disable local credentials and first-visitor administrator claim. */
++  readonly ssoOnly?: boolean;
+   /**
+    * How long an MCP session may sit idle before the in-process store evicts it,
+    * or undefined for the store's own default (30 minutes). 0 disables eviction.
+@@ -110,7 +119,7 @@ let cachedSecretKey: string | undefined;
+  */
+ export const resolveSecretKey = (): string => {
+   if (cachedSecretKey) return cachedSecretKey;
+-  const fromEnv = process.env.EXECUTOR_SECRET_KEY?.trim();
++  const fromEnv = secretSetting("EXECUTOR_SECRET_KEY");
+   if (fromEnv) {
+     cachedSecretKey = fromEnv;
+     return fromEnv;
+@@ -140,7 +149,7 @@ let cachedAuthSecret: string | undefined;
+  */
+ export const resolveAuthSecret = (): string => {
+   if (cachedAuthSecret) return cachedAuthSecret;
+-  const fromEnv = (process.env.BETTER_AUTH_SECRET ?? process.env.AUTH_SECRET)?.trim();
++  const fromEnv = secretSetting("BETTER_AUTH_SECRET") ?? secretSetting("AUTH_SECRET");
+   if (fromEnv) {
+     cachedAuthSecret = fromEnv;
+     return fromEnv;
+@@ -189,6 +198,40 @@ export const loadConfig = (): SelfHostConfig => {
+   const port = Number.parseInt(process.env.PORT ?? "4788", 10);
+   const dataDir = resolveDataDir();
+   const webBaseUrl = resolveWebBaseUrl(port);
++  const sso = resolveSso();
++  const ssoOnly = process.env.EXECUTOR_SSO_ONLY === "true";
++  if (
++    ssoOnly &&
++    (!sso ||
++      process.env.EXECUTOR_BOOTSTRAP_ADMIN_EMAIL ||
++      process.env.EXECUTOR_BOOTSTRAP_ADMIN_PASSWORD)
++  ) {
++    // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: refuse boot with contradictory operator auth configuration
++    throw new Error(
++      "SSO-only requires a configured provider and forbids local bootstrap credentials",
++    );
++  }
++  if (
++    ssoOnly &&
++    (!webBaseUrl.startsWith("https://") ||
++      resolveTrustedOrigins(webBaseUrl).some((value) => !value.startsWith("https://")))
++  ) {
++    // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: refuse boot without secure cookie origins
++    throw new Error("SSO-only requires HTTPS origins");
++  }
++  if (process.env.EXECUTOR_IDENTITY_AUTHORITY_ORIGIN && !ssoOnly) {
++    // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: local credentials cannot bypass the external membership authority
++    throw new Error("External identity authority requires SSO-only");
++  }
++  if (
++    ssoOnly &&
++    (!process.env.EXECUTOR_IDENTITY_ISSUER?.startsWith("https://") ||
++      sso?.discoveryUrl !==
++        `${process.env.EXECUTOR_IDENTITY_ISSUER}/.well-known/openid-configuration`)
++  ) {
++    // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: pin the identity issuer before any authentication request
++    throw new Error("SSO-only requires the exact HTTPS identity issuer discovery URL");
++  }
+   return {
+     host: process.env.EXECUTOR_HOST ?? "127.0.0.1",
+     port,
+@@ -204,7 +247,8 @@ export const loadConfig = (): SelfHostConfig => {
+     organizationName: process.env.EXECUTOR_ORG_NAME ?? "Default",
+     orgSlug: resolveOrgSlug(),
+     sandboxTimeoutMs: resolveSandboxTimeoutMs(),
+-    sso: resolveSso(),
++    sso,
++    ssoOnly,
+     mcpSessionIdleTtlMs: resolveMcpSessionIdleTtlMs(),
+     toolsSyncTtlMs: resolveToolsSyncTtlMs(),
+   };
+@@ -229,7 +273,7 @@ const PROVIDER_ID_PATTERN = /^[a-z0-9-]{1,48}$/;
+ // the invite gate entirely.
+ const resolveSso = (): SsoConfig | undefined => {
+   const clientId = process.env.EXECUTOR_SSO_CLIENT_ID?.trim();
+-  const clientSecret = process.env.EXECUTOR_SSO_CLIENT_SECRET?.trim();
++  const clientSecret = secretSetting("EXECUTOR_SSO_CLIENT_SECRET");
+   if (!clientId && !clientSecret) return undefined;
+   if (!clientId || !clientSecret) {
+     // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: refuse to boot on half-configured SSO credentials
+diff --git a/apps/host-selfhost/src/delegation/handler.ts b/apps/host-selfhost/src/delegation/handler.ts
+new file mode 100644
+index 0000000..1a246cf
+--- /dev/null
++++ b/apps/host-selfhost/src/delegation/handler.ts
+@@ -0,0 +1,105 @@
++import { Data, Effect } from "effect";
++import { makeQuickJsExecutor } from "@executor-js/runtime-quickjs";
++import {
++  hash,
++  isDelegatedOperation,
++  origin,
++  signCallback,
++  verifyDelegation,
++  type DelegatedOperation,
++} from "./protocol";
++
++const BODY_LIMIT = 1024 * 1024;
++class DelegationTransportError extends Data.TaggedError("DelegationTransportError")<{}> {}
++async function boundedBody(request: Request): Promise<unknown> {
++  const reader = request.body?.getReader();
++  // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: bounded HTTP parser rejects missing request body
++  if (!reader) throw new Error("Missing body");
++  const chunks: Uint8Array[] = [];
++  let length = 0;
++  while (true) {
++    const { done, value } = await reader.read();
++    if (done) break;
++    length += value.byteLength;
++    if (length > BODY_LIMIT) {
++      await reader.cancel();
++      // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: stop reading before parsing an oversized HTTP request
++      throw new Error("Body too large");
++    }
++    chunks.push(value);
++  }
++  // oxlint-disable-next-line executor/no-json-parse -- boundary: bounded JSON input is structurally validated and cryptographically verified by the handler
++  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
++}
++
++/** A deliberately narrow host-tool bridge. Neither sandbox nor browser chooses
++ * code, URL, headers, approval policy, identity or credentials. The authority
++ * revalidates all resource authorization at the callback, including retries. */
++export async function delegatedOperationHandler(request: Request): Promise<Response> {
++  if (!process.env.EXECUTOR_DELEGATION_ISSUER)
++    return Response.json({ error: "not_found" }, { status: 404 });
++  if (request.method !== "POST")
++    return Response.json({ error: "method_not_allowed" }, { status: 405 });
++  let body: { delegation: string; operation: DelegatedOperation };
++  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: map parsing and jose verification exceptions to a non-disclosing HTTP denial
++  try {
++    const parsed = await boundedBody(request);
++    if (!parsed || typeof parsed !== "object")
++      return Response.json({ error: "executor_unauthorized" }, { status: 401 });
++    body = parsed as typeof body;
++    if (
++      Object.keys(body).some((key) => key !== "delegation" && key !== "operation") ||
++      typeof body.delegation !== "string" ||
++      body.delegation.length > 16_384 ||
++      !isDelegatedOperation(body.operation)
++    )
++      return Response.json({ error: "executor_unauthorized" }, { status: 401 });
++    await verifyDelegation(body.delegation, body.operation);
++  } catch {
++    return Response.json({ error: "executor_unauthorized" }, { status: 401 });
++  }
++
++  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: the public Fetch adapter maps failed Effect execution to a safe retryable HTTP response
++  try {
++    const proof = await signCallback("operation-callback", {
++      delegationHash: hash(body.delegation),
++    });
++    // Invoke the actual upstream QuickJS executor. The sandbox has exactly one
++    // zero-argument host tool and never receives the sensitive request envelope.
++    const sandbox = makeQuickJsExecutor({ timeoutMs: 15_000 });
++    const result = await Effect.runPromise(
++      sandbox.execute("return await tools.delegation.execute({});", {
++        invoke: ({ path, args }) =>
++          Effect.tryPromise({
++            try: async () => {
++              if (path !== "delegation.execute" || JSON.stringify(args) !== "{}")
++                return { status: 403, body: { error: "executor_action_forbidden" } };
++              const response = await fetch(
++                `${origin("EXECUTOR_DELEGATION_ISSUER")}/api/executor/operations/execute`,
++                {
++                  method: "POST",
++                  headers: { "content-type": "application/json", authorization: `Bearer ${proof}` },
++                  body: JSON.stringify(body),
++                  redirect: "error",
++                  signal: AbortSignal.timeout(12_000),
++                },
++              );
++              return { status: response.status, body: await response.json() };
++            },
++            catch: () => new DelegationTransportError(),
++          }),
++      }),
++    );
++    if (result.error || !result.result || typeof result.result !== "object")
++      return Response.json({ error: "executor_unavailable" }, { status: 503 });
++    const output = result.result as { status: number; body: unknown };
++    if (!Number.isInteger(output.status) || output.status < 200 || output.status > 599)
++      return Response.json({ error: "executor_unavailable" }, { status: 503 });
++    return Response.json(output.body, {
++      status: output.status,
++      headers: { "cache-control": "no-store" },
++    });
++  } catch {
++    return Response.json({ error: "executor_unavailable" }, { status: 503 });
++  }
++}
+diff --git a/apps/host-selfhost/src/delegation/protocol.test.ts b/apps/host-selfhost/src/delegation/protocol.test.ts
+new file mode 100644
+index 0000000..1d1f161
+--- /dev/null
++++ b/apps/host-selfhost/src/delegation/protocol.test.ts
+@@ -0,0 +1,159 @@
++import { generateKeyPairSync, randomUUID } from "node:crypto";
++import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
++import { importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose";
++import { delegatedOperationHandler } from "./handler";
++import { hash, signCallback, stableJson, verifyDelegation } from "./protocol";
++
++const keypair = () =>
++  generateKeyPairSync("ec", {
++    namedCurve: "P-256",
++    privateKeyEncoding: { type: "pkcs8", format: "pem" },
++    publicKeyEncoding: { type: "spki", format: "pem" },
++  });
++const authorityKey = keypair();
++const executorKey = keypair();
++const issuer = "https://authority.test";
++const audience = "https://executor.test";
++const operation = {
++  host: "page.test",
++  id: "ravi.bases.views.rows.create",
++  input: {
++    viewId: randomUUID(),
++    values: { title: "synthetic" },
++    idempotencyKey: "test-operation-1",
++  },
++  origin: "https://page.test",
++  pagesSession: "synthetic-session",
++  requestId: "request-one",
++};
++const actorId = randomUUID();
++const makeToken = async (changes: Record<string, unknown> = {}, wrongKey = false) => {
++  const now = Math.floor(Date.now() / 1000);
++  return new SignJWT({
++    kind: "page-operation",
++    actor: "human_viewer",
++    actorId,
++    sub: actorId,
++    organizationId: randomUUID(),
++    projectId: randomUUID(),
++    siteId: randomUUID(),
++    releaseId: randomUUID(),
++    bodyHash: hash(stableJson(operation)),
++    sessionHash: hash(operation.pagesSession),
++    iss: issuer,
++    aud: audience,
++    iat: now,
++    exp: now + 60,
++    jti: randomUUID(),
++    ...changes,
++  })
++    .setProtectedHeader({ alg: "ES256", typ: "executor-delegation+jwt" })
++    .sign(await importPKCS8((wrongKey ? executorKey : authorityKey).privateKey, "ES256"));
++};
++beforeEach(() => {
++  vi.stubEnv("EXECUTOR_DELEGATION_ISSUER", issuer);
++  vi.stubEnv("EXECUTOR_WEB_BASE_URL", audience);
++  vi.stubEnv("EXECUTOR_DELEGATION_PUBLIC_KEY_PEM", authorityKey.publicKey);
++  vi.stubEnv("EXECUTOR_CALLBACK_PRIVATE_KEY_PEM", executorKey.privateKey);
++});
++afterEach(() => {
++  vi.unstubAllEnvs();
++  vi.unstubAllGlobals();
++});
++
++describe("signed delegation boundary", () => {
++  it("verifies signed exact payload", async () => {
++    expect((await verifyDelegation(await makeToken(), operation)).actorId).toBe(actorId);
++  });
++  it("refuses changed site, actor, audience, input, credentials and expired proof", async () => {
++    const now = Math.floor(Date.now() / 1000);
++    for (const changes of [
++      { aud: issuer },
++      { iss: audience },
++      { actor: "admin" },
++      { sub: randomUUID() },
++      { iat: now - 120, exp: now - 60 },
++      { exp: now + 600 },
++    ]) {
++      await expect(verifyDelegation(await makeToken(changes), operation)).rejects.toThrow();
++    }
++    await expect(verifyDelegation(await makeToken({}, true), operation)).rejects.toThrow();
++    const token = await makeToken();
++    for (const changes of [
++      { host: "evil.test" },
++      { input: { confirmed: true } },
++      { pagesSession: "different" },
++      { origin: "https://evil.test" },
++    ]) {
++      await expect(verifyDelegation(token, { ...operation, ...changes })).rejects.toThrow();
++    }
++  });
++  it("signs independent callback proof bound to delegation", async () => {
++    const token = await signCallback("operation-callback", { delegationHash: hash("test") });
++    const { payload } = await jwtVerify(token, await importSPKI(executorKey.publicKey, "ES256"), {
++      issuer: audience,
++      audience: issuer,
++      algorithms: ["ES256"],
++    });
++    expect(payload.delegationHash).toBe(hash("test"));
++    expect(payload.exp! - payload.iat!).toBe(60);
++  });
++});
++
++describe("real QuickJS bridge (authority transport mocked, not staging acceptance)", () => {
++  const request = (body: unknown) =>
++    new Request(`${audience}/api/delegated-operations`, {
++      method: "POST",
++      body: JSON.stringify(body),
++    });
++  it("runs the fixed host tool without exposing session to arbitrary sandbox code", async () => {
++    const delegation = await makeToken();
++    let calls = 0;
++    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
++      calls++;
++      expect(url).toBe(`${issuer}/api/executor/operations/execute`);
++      expect(init.redirect).toBe("error");
++      expect(await new Response(init.body).json()).toEqual({ delegation, operation });
++      const proof = new Headers(init.headers).get("authorization")!.slice(7);
++      const verified = await jwtVerify(proof, await importSPKI(executorKey.publicKey, "ES256"), {
++        issuer: audience,
++        audience: issuer,
++      });
++      expect(verified.payload.delegationHash).toBe(hash(delegation));
++      return Response.json({ output: { rowId: "synthetic-row", version: 1 } });
++    });
++    const response = await delegatedOperationHandler(request({ delegation, operation }));
++    expect(response.status).toBe(200);
++    expect(await response.json()).toEqual({ output: { rowId: "synthetic-row", version: 1 } });
++    expect(calls).toBe(1);
++  });
++  it("refuses untrusted approval/code fields and unsigned direct calls before invocation", async () => {
++    const fetch = vi.fn();
++    vi.stubGlobal("fetch", fetch);
++    const delegation = await makeToken();
++    for (const body of [
++      { delegation: "forged", operation },
++      { delegation, operation, code: "return 1" },
++      { delegation, operation: { ...operation, confirmed: true } },
++    ]) {
++      expect((await delegatedOperationHandler(request(body))).status).toBe(401);
++    }
++    expect(fetch).not.toHaveBeenCalled();
++  });
++  it("preserves authorization denials and returns explicit recoverable error on transport loss", async () => {
++    const delegation = await makeToken();
++    vi.stubGlobal("fetch", async () =>
++      Response.json({ error: "approval_forbidden" }, { status: 403 }),
++    );
++    const denial = await delegatedOperationHandler(request({ delegation, operation }));
++    expect(denial.status).toBe(403);
++    expect(await denial.json()).toEqual({ error: "approval_forbidden" });
++    vi.stubGlobal("fetch", async () => {
++      // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: reproduce the native fetch rejection contract in a transport unit test
++      throw new Error("connection lost");
++    });
++    const interrupted = await delegatedOperationHandler(request({ delegation, operation }));
++    expect(interrupted.status).toBe(503);
++    expect(await interrupted.json()).toEqual({ error: "executor_unavailable" });
++  });
++});
+diff --git a/apps/host-selfhost/src/delegation/protocol.ts b/apps/host-selfhost/src/delegation/protocol.ts
+new file mode 100644
+index 0000000..2363ae7
+--- /dev/null
++++ b/apps/host-selfhost/src/delegation/protocol.ts
+@@ -0,0 +1,110 @@
++import { createHash, randomUUID } from "node:crypto";
++import { readFileSync } from "node:fs";
++import { importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose";
++
++export const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
++export const stableJson = (value: unknown): string => {
++  if (value === null || value === undefined) return "null";
++  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
++  if (typeof value !== "object") return JSON.stringify(value);
++  return `{${Object.entries(value)
++    .filter(([, v]) => v !== undefined)
++    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
++    .map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`)
++    .join(",")}}`;
++};
++export const setting = (name: string): string => {
++  const file = process.env[`${name}_FILE`];
++  const value = file ? readFileSync(file, "utf8").trim() : process.env[name]?.trim();
++  // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: synchronous configuration loader fails closed
++  if (!value) throw new Error("Delegation configuration unavailable");
++  return value;
++};
++export const origin = (name: string): string => {
++  const value = setting(name);
++  const url = new URL(value);
++  if (
++    url.protocol !== "https:" ||
++    value !== url.origin ||
++    url.username ||
++    url.password ||
++    url.hostname.includes("*")
++  ) {
++    // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: reject invalid operator origin before signing
++    throw new Error("Delegation requires pinned HTTPS origins");
++  }
++  return value;
++};
++export interface DelegatedOperation {
++  host: string;
++  id: string;
++  input: unknown;
++  origin: string | null;
++  pagesSession: string;
++  requestId: string;
++}
++export function isDelegatedOperation(value: unknown): value is DelegatedOperation {
++  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
++  const record = value as Record<string, unknown>;
++  const keys = ["host", "id", "input", "origin", "pagesSession", "requestId"];
++  if (Object.keys(record).some((key) => !keys.includes(key)) || !Object.hasOwn(record, "input"))
++    return false;
++  for (const [key, max] of [
++    ["host", 253],
++    ["id", 128],
++    ["pagesSession", 8192],
++    ["requestId", 128],
++  ] as const) {
++    if (typeof record[key] !== "string" || record[key].length < 1 || record[key].length > max)
++      return false;
++  }
++  return (
++    record.origin === null || (typeof record.origin === "string" && record.origin.length <= 1024)
++  );
++}
++export async function verifyDelegation(token: string, operation: DelegatedOperation) {
++  // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: match jose's rejecting Promise contract on invalid HTTP input
++  if (!isDelegatedOperation(operation)) throw new Error("Invalid operation");
++  const { payload, protectedHeader } = await jwtVerify(
++    token,
++    await importSPKI(setting("EXECUTOR_DELEGATION_PUBLIC_KEY_PEM"), "ES256"),
++    {
++      algorithms: ["ES256"],
++      issuer: origin("EXECUTOR_DELEGATION_ISSUER"),
++      audience: origin("EXECUTOR_WEB_BASE_URL"),
++      requiredClaims: ["iat", "exp", "jti", "sub"],
++      maxTokenAge: "60s",
++    },
++  );
++  if (
++    protectedHeader.typ !== "executor-delegation+jwt" ||
++    payload.kind !== "page-operation" ||
++    payload.actor !== "human_viewer" ||
++    payload.sub !== payload.actorId ||
++    typeof payload.actorId !== "string" ||
++    typeof payload.organizationId !== "string" ||
++    typeof payload.siteId !== "string" ||
++    typeof payload.projectId !== "string" ||
++    typeof payload.releaseId !== "string" ||
++    !Number.isInteger(payload.iat) ||
++    payload.exp! - payload.iat! !== 60 ||
++    payload.iat! > Math.floor(Date.now() / 1000) ||
++    payload.bodyHash !== hash(stableJson(operation)) ||
++    payload.sessionHash !== hash(operation.pagesSession)
++  ) {
++    // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: jose verification rejects invalid authenticated claims
++    throw new Error("Invalid delegation");
++  }
++  return payload;
++}
++export async function signCallback(kind: string, claims: Record<string, unknown>): Promise<string> {
++  const now = Math.floor(Date.now() / 1000);
++  return new SignJWT({ ...claims, kind })
++    .setProtectedHeader({ alg: "ES256", typ: "executor-callback+jwt" })
++    .setIssuer(origin("EXECUTOR_WEB_BASE_URL"))
++    .setAudience(origin("EXECUTOR_DELEGATION_ISSUER"))
++    .setJti(randomUUID())
++    .setIssuedAt(now)
++    .setExpirationTime(now + 60)
++    .sign(await importPKCS8(setting("EXECUTOR_CALLBACK_PRIVATE_KEY_PEM"), "ES256"));
++}
+diff --git a/apps/host-selfhost/src/mcp/auth.ts b/apps/host-selfhost/src/mcp/auth.ts
+index 967d425..62fbc9d 100644
+--- a/apps/host-selfhost/src/mcp/auth.ts
++++ b/apps/host-selfhost/src/mcp/auth.ts
+@@ -13,6 +13,7 @@ import {
+ 
+ import { isPrivileged } from "../admin/require-admin";
+ import { BetterAuth } from "../auth/better-auth";
++import { authorityEnabled, resolveAuthorityIdentity } from "../auth/authority";
+ import { MCP_ORIGINAL_PATH_HEADER, mcpResourcePathFromOriginalPath } from "./org-path";
+ 
+ // ---------------------------------------------------------------------------
+@@ -206,6 +207,24 @@ export const selfHostMcpAuth: Layer.Layer<McpAuthProvider, never, BetterAuth | I
+         Effect.gen(function* () {
+           const user = yield* Effect.promise(() => context.internalAdapter.findUserById(userId));
+           if (!user) return null;
++          if (authorityEnabled()) {
++            const identity = yield* Effect.tryPromise(() =>
++              resolveAuthorityIdentity(auth, user.id),
++            ).pipe(Effect.orElseSucceed(() => null));
++            if (!identity) return null;
++            return {
++              accountId: identity.userId,
++              organizationId: identity.organizationId,
++              organizationName,
++              organizationSlug,
++              email: identity.email,
++              name: identity.name,
++              avatarUrl: user.image ?? null,
++              roles: [identity.role],
++              orgRoleModel: "organization",
++              orgRole: isPrivileged(identity.role) ? "admin" : "member",
++            } satisfies Principal;
++          }
+           // The workspace role, read from the INSTANCE org's membership row
+           // (an OAuth token carries no session, so the header-based
+           // `getActiveMemberRole` gate is out of reach — the adapter query
+diff --git a/apps/host-selfhost/src/mcp/index.ts b/apps/host-selfhost/src/mcp/index.ts
+index c8a8683..3473ffe 100644
+--- a/apps/host-selfhost/src/mcp/index.ts
++++ b/apps/host-selfhost/src/mcp/index.ts
+@@ -10,6 +10,7 @@ import type {
+ 
+ import { BetterAuth, type BetterAuthHandle } from "../auth/better-auth";
+ import { resolveSelfHostOrgRole } from "../auth/identity";
++import { authorityEnabled, resolveAuthorityIdentity } from "../auth/authority";
+ import type { SelfHostDbHandle } from "../db/self-host-db";
+ import type { SelfHostConfig } from "../config";
+ import { selfHostMcpAuth } from "./auth";
+@@ -88,7 +89,31 @@ const principalFromSession = (
+   resolved: BetterAuthSession,
+   betterAuth: BetterAuthHandle,
+   headers: Headers,
+-): Effect.Effect<Principal> => {
++): Effect.Effect<Principal | null> => {
++  if (authorityEnabled())
++    return Effect.tryPromise(() =>
++      resolveAuthorityIdentity(betterAuth.auth, resolved.user.id),
++    ).pipe(
++      Effect.orElseSucceed(() => null),
++      Effect.map((identity) =>
++        identity
++          ? {
++              accountId: identity.userId,
++              organizationId: identity.organizationId,
++              organizationName: betterAuth.organizationName,
++              email: identity.email,
++              name: identity.name,
++              avatarUrl: resolved.user.image ?? null,
++              roles: [identity.role],
++              orgRoleModel: "organization" as const,
++              orgRole:
++                identity.role === "owner" || identity.role === "admin"
++                  ? ("admin" as const)
++                  : ("member" as const),
++            }
++          : null,
++      ),
++    );
+   const organizationId = resolved.session.activeOrganizationId ?? betterAuth.organizationId;
+   return resolveSelfHostOrgRole(betterAuth, headers, organizationId).pipe(
+     Effect.map((orgRole) => ({
+@@ -129,6 +154,7 @@ const makeApprovalHandler =
+     const principal = await Effect.runPromise(
+       principalFromSession(session, betterAuth, request.headers),
+     );
++    if (!principal) return jsonResponse({ error: "Unauthorized" }, 401);
+ 
+     return (
+       (await store.handlePausedRequest(request, principal)) ??
+diff --git a/apps/host-selfhost/src/system/api.ts b/apps/host-selfhost/src/system/api.ts
+index 01d8424..6d15f55 100644
+--- a/apps/host-selfhost/src/system/api.ts
++++ b/apps/host-selfhost/src/system/api.ts
+@@ -26,6 +26,7 @@ export const InviteStatusResponse = Schema.Struct({ valid: Schema.Boolean });
+ // Provider ids + display names only — never credentials or allowlists.
+ export const AuthConfigResponse = Schema.Struct({
+   ssoProviders: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
++  passwordEnabled: Schema.Boolean,
+ });
+ 
+ const InviteStatusParams = { code: Schema.String };
+diff --git a/apps/host-selfhost/src/system/handlers.ts b/apps/host-selfhost/src/system/handlers.ts
+index ece96d8..8d28bef 100644
+--- a/apps/host-selfhost/src/system/handlers.ts
++++ b/apps/host-selfhost/src/system/handlers.ts
+@@ -38,7 +38,7 @@ export const SystemHandlers = HttpApiBuilder.group(SystemHttpApi, "system", (han
+           try: () => countOrgMembers(auth, organizationId),
+           catch: () => new SystemError({ message: "failed to read setup status" }),
+         });
+-        return { needsSetup: count === 0 };
++        return { needsSetup: !loadConfig().ssoOnly && count === 0 };
+       }),
+     )
+     .handle("authConfig", () =>
+@@ -47,7 +47,10 @@ export const SystemHandlers = HttpApiBuilder.group(SystemHttpApi, "system", (han
+       // and boot-validated, so this read cannot fail.
+       Effect.sync(() => {
+         const sso = loadConfig().sso;
+-        return { ssoProviders: sso ? [{ id: sso.providerId, name: sso.providerName }] : [] };
++        return {
++          ssoProviders: sso ? [{ id: sso.providerId, name: sso.providerName }] : [],
++          passwordEnabled: !loadConfig().ssoOnly,
++        };
+       }),
+     )
+     .handle("inviteStatus", ({ params }) =>
+diff --git a/apps/host-selfhost/web/auth-config.ts b/apps/host-selfhost/web/auth-config.ts
+index 4fe7549..085d2bb 100644
+--- a/apps/host-selfhost/web/auth-config.ts
++++ b/apps/host-selfhost/web/auth-config.ts
+@@ -1,8 +1,7 @@
+ // Pre-login read of which SSO providers the operator configured, so the login
+ // page knows which provider buttons to render. Same boundary as setup-status: a
+-// plain same-origin fetch that runs before the atom registry exists. Fails soft
+-// to "no providers" — the email/password form is always available, so a hiccup
+-// here degrades to the baseline login, never a lockout.
++// plain same-origin fetch that runs before the atom registry exists. Never
++// infer password availability from an unavailable configuration endpoint.
+ 
+ export interface SsoProvider {
+   readonly id: string;
+@@ -15,15 +14,22 @@ const isSsoProvider = (value: unknown): value is SsoProvider =>
+   typeof (value as { id?: unknown }).id === "string" &&
+   typeof (value as { name?: unknown }).name === "string";
+ 
+-export const fetchSsoProviders = async (): Promise<readonly SsoProvider[]> => {
+-  const response = await fetch("/api/auth-config", { credentials: "same-origin" }).then(
+-    (r) => r,
+-    () => null,
+-  );
+-  if (!response?.ok) return [];
+-  const data = (await response.json().then(
+-    (d) => d,
+-    () => ({}),
+-  )) as { ssoProviders?: unknown };
+-  return Array.isArray(data.ssoProviders) ? data.ssoProviders.filter(isSsoProvider) : [];
++export interface AuthConfig {
++  readonly ssoProviders: readonly SsoProvider[];
++  readonly passwordEnabled: boolean;
++}
++
++export const fetchAuthConfig = async (): Promise<AuthConfig> => {
++  const response = await fetch("/api/auth-config", { credentials: "same-origin" });
++  // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: pre-login fetch precedes the Effect app and must fail closed
++  if (!response.ok) throw new Error("Sign-in configuration is unavailable.");
++  const data = (await response.json()) as Partial<AuthConfig>;
++  if (
++    typeof data.passwordEnabled !== "boolean" ||
++    !Array.isArray(data.ssoProviders) ||
++    !data.ssoProviders.every(isSsoProvider)
++  )
++    // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: reject malformed pre-login configuration rather than expose password fallback
++    throw new Error("Sign-in configuration is unavailable.");
++  return { passwordEnabled: data.passwordEnabled, ssoProviders: data.ssoProviders };
+ };
+diff --git a/apps/host-selfhost/web/login.tsx b/apps/host-selfhost/web/login.tsx
+index 09334ad..e3034e6 100644
+--- a/apps/host-selfhost/web/login.tsx
++++ b/apps/host-selfhost/web/login.tsx
+@@ -5,7 +5,7 @@ import { Input } from "@executor-js/react/components/input";
+ import { Label } from "@executor-js/react/components/label";
+ 
+ import { authClient } from "./auth-client";
+-import { fetchSsoProviders, type SsoProvider } from "./auth-config";
++import { fetchAuthConfig, type AuthConfig } from "./auth-config";
+ import { AuthLayout } from "./auth-layout";
+ import { postLoginTarget } from "../src/auth/return-to";
+ 
+@@ -29,17 +29,26 @@ export const LoginPage = () => {
+   const [code, setCode] = useState("");
+   const [error, setError] = useState<string | null>(null);
+   const [busy, setBusy] = useState(false);
+-  const [ssoProviders, setSsoProviders] = useState<readonly SsoProvider[]>([]);
++  const [config, setConfig] = useState<AuthConfig | null>(null);
++  const [configError, setConfigError] = useState(false);
++  const [attempt, setAttempt] = useState(0);
++  const ssoProviders = config?.ssoProviders ?? [];
+ 
+   useEffect(() => {
+     let cancelled = false;
+-    void fetchSsoProviders().then((providers) => {
+-      if (!cancelled) setSsoProviders(providers);
+-    });
++    setConfigError(false);
++    void fetchAuthConfig().then(
++      (value) => {
++        if (!cancelled) setConfig(value);
++      },
++      () => {
++        if (!cancelled) setConfigError(true);
++      },
++    );
+     return () => {
+       cancelled = true;
+     };
+-  }, []);
++  }, [attempt]);
+ 
+   const signIn = async (event: FormEvent) => {
+     event.preventDefault();
+@@ -87,12 +96,51 @@ export const LoginPage = () => {
+           </h1>
+           <p className="text-sm text-muted-foreground">
+             {mode === "signin"
+-              ? "Welcome back. Use your instance account."
++              ? config?.passwordEnabled === false
++                ? "Use your organization's sign-in provider."
++                : config
++                  ? "Welcome back. Use your instance account."
++                  : "Sign in to continue."
+               : "Enter the invite code you were given."}
+           </p>
+         </div>
+ 
+-        {mode === "signin" ? (
++        {!config ? (
++          configError ? (
++            <div role="alert" className="space-y-3">
++              <p className="text-sm text-destructive">Sign-in is temporarily unavailable.</p>
++              <Button className="w-full" onClick={() => setAttempt(attempt + 1)}>
++                Retry
++              </Button>
++            </div>
++          ) : (
++            <p role="status" className="text-sm text-muted-foreground">
++              Loading sign-in…
++            </p>
++          )
++        ) : !config.passwordEnabled ? (
++          <div className="space-y-3">
++            {ssoProviders.map((provider) => (
++              <Button
++                key={provider.id}
++                type="button"
++                disabled={busy}
++                onClick={() => void signInWithSso(provider.id)}
++                className="w-full"
++              >
++                {busy ? "Connecting…" : `Continue with ${provider.name}`}
++              </Button>
++            ))}
++            {ssoProviders.length === 0 && (
++              <p role="alert">No sign-in provider is available. Contact your administrator.</p>
++            )}
++            {error && (
++              <p role="alert" className="text-sm text-destructive">
++                {error}
++              </p>
++            )}
++          </div>
++        ) : mode === "signin" ? (
+           <form onSubmit={signIn} className="space-y-4">
+             <div className="space-y-1.5">
+               <Label htmlFor="email">Email</Label>
+@@ -163,19 +211,21 @@ export const LoginPage = () => {
+           </form>
+         )}
+ 
+-        <div className="text-center">
+-          <Button
+-            type="button"
+-            variant="ghost"
+-            onClick={() => {
+-              setMode(mode === "signin" ? "code" : "signin");
+-              setError(null);
+-            }}
+-            className="text-sm font-normal text-muted-foreground hover:text-foreground"
+-          >
+-            {mode === "signin" ? "Have an invite code? Join" : "Already have an account? Sign in"}
+-          </Button>
+-        </div>
++        {config?.passwordEnabled && (
++          <div className="text-center">
++            <Button
++              type="button"
++              variant="ghost"
++              onClick={() => {
++                setMode(mode === "signin" ? "code" : "signin");
++                setError(null);
++              }}
++              className="text-sm font-normal text-muted-foreground hover:text-foreground"
++            >
++              {mode === "signin" ? "Have an invite code? Join" : "Already have an account? Sign in"}
++            </Button>
++          </div>
++        )}
+       </div>
+     </AuthLayout>
+   );
+diff --git a/bun.lock b/bun.lock
+index 8b06d95..1dc4859 100644
+--- a/bun.lock
++++ b/bun.lock
+@@ -250,6 +250,7 @@
+         "drizzle-orm": "catalog:",
+         "effect": "catalog:",
+         "esbuild": "^0.27.3",
++        "jose": "^6.2.3",
+         "react": "catalog:",
+         "react-dom": "catalog:",
+         "workerd": "1.20260708.1",
+@@ -5971,6 +5972,8 @@
+ 
+     "@executor-js/host-selfhost/@executor-js/emulate": ["@executor-js/emulate@0.14.2", "", { "dependencies": { "@aws-sdk/client-s3": "^3.1031.0", "@aws-sdk/client-sqs": "^3.1075.0", "@azure/msal-node": "^5.3.0", "@clerk/backend": "^3.8.4", "@octokit/rest": "^22.0.1", "@okta/okta-auth-js": "^8.0.1", "@slack/web-api": "^7.16.0", "@vercel/sdk": "^1.28.4", "@workos-inc/node": "^8.13.0", "atlas-api-client": "^0.3.0", "autumn-js": "^1.2.8", "commander": "^14", "googleapis": "^173.0.0", "graphql": "^16.9.0", "graphql-request": "^7.4.0", "openid-client": "^6.8.4", "picocolors": "^1.1.1", "resend": "^6.16.0", "spotify-web-api-node": "^5.0.2", "stripe": "^22.3.0", "twitter-api-v2": "^1.29.0", "yaml": "^2" }, "bin": { "emulate": "dist/index.js" } }, "sha512-rUzfQFq1dO3qwzW83jL7kEikLLPXTjqLTSU9qpVdbYyqMF/Ef8YgwH+hw0tbqNEkuGFwuZKkMkDUPPfkidMamg=="],
+ 
++    "@executor-js/host-selfhost/jose": ["jose@6.2.13", "", {}, "sha512-7TIg10ZE1x82YediN+lcrPNvGMKge9yFHQD+Qho/b8y2adfugU3AsvvHfxV0fzyFllT6l9xCjf4RWY9g/Z9PJQ=="],
++
+     "@executor-js/mcporter/commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
+ 
+     "@executor-js/mcporter/rolldown": ["rolldown@1.0.1", "", { "dependencies": { "@oxc-project/types": "=0.130.0", "@rolldown/pluginutils": "^1.0.0" }, "optionalDependencies": { "@rolldown/binding-android-arm64": "1.0.1", "@rolldown/binding-darwin-arm64": "1.0.1", "@rolldown/binding-darwin-x64": "1.0.1", "@rolldown/binding-freebsd-x64": "1.0.1", "@rolldown/binding-linux-arm-gnueabihf": "1.0.1", "@rolldown/binding-linux-arm64-gnu": "1.0.1", "@rolldown/binding-linux-arm64-musl": "1.0.1", "@rolldown/binding-linux-ppc64-gnu": "1.0.1", "@rolldown/binding-linux-s390x-gnu": "1.0.1", "@rolldown/binding-linux-x64-gnu": "1.0.1", "@rolldown/binding-linux-x64-musl": "1.0.1", "@rolldown/binding-openharmony-arm64": "1.0.1", "@rolldown/binding-wasm32-wasi": "1.0.1", "@rolldown/binding-win32-arm64-msvc": "1.0.1", "@rolldown/binding-win32-x64-msvc": "1.0.1" }, "bin": { "rolldown": "bin/cli.mjs" } }, "sha512-X0KQHljNnEkWNqqiz9zJrGunh1B0HgOxLXvnFpCOcadzcy5qohZ3tqMEUg00vncoRovXuK3ZqCT9KnnKzoInFQ=="],

@@ -34,7 +34,7 @@
     "gen:plugins": "bun scripts/gen-plugins.ts",
     "prebuild": "bun run gen:commands",
     "build": "bun run build:cli && bun run build:tui && bun run gen:plugins",
-    "build:cli": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --keep-names --sourcemap=linked --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats --external '@elevenlabs/*' --external e2b && bun build src/bridge/stdio.ts --outfile dist/bundle/bridge-stdio.js --target bun --minify && bun build src/bridge/codex-hook.ts --outfile dist/bundle/bridge-hook.js --target bun --minify",
+    "build:cli": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --keep-names --sourcemap=linked --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats --external '@elevenlabs/*' --external e2b && bun build src/bridge/stdio.ts --outfile dist/bundle/bridge-stdio.js --target bun --minify && bun build src/bridge/codex-hook.ts --outfile dist/bundle/bridge-hook.js --target bun --minify && bun build src/fleet/http-node.ts --outfile dist/bundle/fleet-http.mjs --target node",
     "build:tui": "bun build src/tui/index.tsx --outdir dist/tui --target bun --keep-names --sourcemap=linked --external '@opentui/core' --external '@opentui/react' --external react --external nats",
     "prepack": "bun run build",
     "start": "bun src/index.ts",
@@ -66,7 +66,13 @@
     "docs:check-links": "bun scripts/docs-link-audit.mjs",
     "lint:docs": "bunx markdownlint-cli2 \"**/*.{md,mdx}\" \"#node_modules\" \"#docs/node_modules\"",
     "lint:docs:fix": "bunx markdownlint-cli2 --fix",
-    "check:docs": "bun run lint:docs && bun run docs:check-links"
+    "check:docs": "bun run lint:docs && bun run docs:check-links",
+    "console:dev": "bun run --cwd apps/console dev",
+    "console:build": "bun run --cwd apps/console build",
+    "console:typecheck": "bun run --cwd apps/console typecheck",
+    "console:sdk": "bun scripts/gen-console-sdk.ts",
+    "console:sdk:check": "bun scripts/gen-console-sdk.ts --check",
+    "console:install": "bun apps/console/scripts/prepare-installation.ts"
   },
   "keywords": [
     "ai",
@@ -91,6 +97,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentui/core": "0.5.6",
     "@opentui/react": "0.5.6",
+    "@peculiar/x509": "^3.1.0",
     "@strudel/web": "1.3.0",
     "agora-agent-server-sdk": "^1.3.2",
     "commander": "^14.0.2",
@@ -103,13 +110,15 @@
     "openai": "^6.17.0",
     "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0",
-    "react": "^19.2.4",
+    "react": "19.2.6",
     "reflect-metadata": "^0.2.2",
     "ws": "8.21.3",
-    "zod": "^4.3.6"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
+    "@ravi/operation-contracts": "workspace:*",
+    "@ravi/sdk-codegen": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/react": "^19.2.10",
@@ -129,5 +138,11 @@
     "@hono/node-server": "1.19.15",
     "body-parser": "2.3.0",
     "qs": "6.15.3"
-  }
+  },
+  "workspaces": [
+    "apps/console",
+    "packages/operation-contracts",
+    "packages/sdk-codegen",
+    "packages/console-sdk"
+  ]
 }

@@ -1,0 +1,214 @@
+/*
+ * Design tokens for the Console UI. Light is the default, dark follows the
+ * system, and `data-rv-theme` on <html> pins either one. Tailwind utilities
+ * read these through the @theme block below (bg-canvas, text-ink, border-line).
+ * The legacy screens keep their own tokens in globals.css.
+ */
+
+:root {
+  --rv-canvas: #f7f6f3;
+  --rv-surface: #ffffff;
+  --rv-hover: #f2f1ed;
+  --rv-sunken: #f0efea;
+  --rv-line: #e6e4de;
+  --rv-line-strong: #d3d0c8;
+  --rv-ink: #171716;
+  --rv-ink-2: #4f4d47;
+  --rv-ink-3: #6e6b64;
+  --rv-accent: #171716;
+  --rv-accent-ink: #f7f6f3;
+  --rv-accent-hover: #2d2c29;
+  --rv-brand: #b7f6d1;
+  --rv-brand-ink: #0d0d0d;
+  --rv-focus: #3d9a6a;
+  --rv-ok: #1f7a4a;
+  --rv-ok-soft: #e1f5e9;
+  --rv-warn: #8a5a00;
+  --rv-warn-soft: #fbf0d4;
+  --rv-err: #b42318;
+  --rv-err-soft: #fde8e6;
+  --rv-info: #2b5fb4;
+  --rv-info-soft: #e6eefb;
+  --rv-shadow: 0 1px 2px rgba(23, 23, 22, 0.06), 0 8px 24px rgba(23, 23, 22, 0.08);
+  --rv-scrim: rgba(23, 23, 22, 0.32);
+  /* Speakers in a recorded call, in order of how much they talked. */
+  --rv-speaker-1: #2f8f5b;
+  --rv-speaker-2: #6150c9;
+  --rv-speaker-3: #c0661a;
+  --rv-speaker-4: #2b6cb0;
+  --rv-speaker-5: #b83b6b;
+  --rv-speaker-6: #0f8585;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-rv-theme="light"]) {
+    --rv-canvas: #0d0d0d;
+    --rv-surface: #151514;
+    --rv-hover: #1c1c1b;
+    --rv-sunken: #0a0a0a;
+    --rv-line: #272725;
+    --rv-line-strong: #383835;
+    --rv-ink: #f3f2ef;
+    --rv-ink-2: #b8b7b1;
+    --rv-ink-3: #a4a29a;
+    --rv-accent: #f3f2ef;
+    --rv-accent-ink: #0d0d0d;
+    --rv-accent-hover: #dcdbd6;
+    --rv-focus: #8fe3b4;
+    --rv-ok: #8fe3b4;
+    --rv-ok-soft: rgba(143, 227, 180, 0.12);
+    --rv-warn: #f3d18a;
+    --rv-warn-soft: rgba(243, 209, 138, 0.12);
+    --rv-err: #ff8f84;
+    --rv-err-soft: rgba(255, 143, 132, 0.12);
+    --rv-info: #9cc2ff;
+    --rv-info-soft: rgba(156, 194, 255, 0.12);
+    --rv-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+    --rv-scrim: rgba(0, 0, 0, 0.6);
+    --rv-speaker-1: #7fd6a6;
+    --rv-speaker-2: #ab9ff2;
+    --rv-speaker-3: #f0a865;
+    --rv-speaker-4: #8cb8f0;
+    --rv-speaker-5: #f08fb4;
+    --rv-speaker-6: #6fd3d3;
+    color-scheme: dark;
+  }
+}
+
+/* Legacy frames (the /manage area) are dark; new components inside them use the dark tokens. */
+:root[data-rv-theme="dark"],
+.rv-legacy-dark {
+  --rv-canvas: #0d0d0d;
+  --rv-surface: #151514;
+  --rv-hover: #1c1c1b;
+  --rv-sunken: #0a0a0a;
+  --rv-line: #272725;
+  --rv-line-strong: #383835;
+  --rv-ink: #f3f2ef;
+  --rv-ink-2: #b8b7b1;
+  --rv-ink-3: #a4a29a;
+  --rv-accent: #f3f2ef;
+  --rv-accent-ink: #0d0d0d;
+  --rv-accent-hover: #dcdbd6;
+  --rv-focus: #8fe3b4;
+  --rv-ok: #8fe3b4;
+  --rv-ok-soft: rgba(143, 227, 180, 0.12);
+  --rv-warn: #f3d18a;
+  --rv-warn-soft: rgba(243, 209, 138, 0.12);
+  --rv-err: #ff8f84;
+  --rv-err-soft: rgba(255, 143, 132, 0.12);
+  --rv-info: #9cc2ff;
+  --rv-info-soft: rgba(156, 194, 255, 0.12);
+  --rv-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --rv-scrim: rgba(0, 0, 0, 0.6);
+  --rv-speaker-1: #7fd6a6;
+  --rv-speaker-2: #ab9ff2;
+  --rv-speaker-3: #f0a865;
+  --rv-speaker-4: #8cb8f0;
+  --rv-speaker-5: #f08fb4;
+  --rv-speaker-6: #6fd3d3;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-canvas: var(--rv-canvas);
+  --color-surface: var(--rv-surface);
+  --color-hover: var(--rv-hover);
+  --color-sunken: var(--rv-sunken);
+  --color-line: var(--rv-line);
+  --color-line-strong: var(--rv-line-strong);
+  --color-ink: var(--rv-ink);
+  --color-ink-2: var(--rv-ink-2);
+  --color-ink-3: var(--rv-ink-3);
+  --color-accent: var(--rv-accent);
+  --color-accent-ink: var(--rv-accent-ink);
+  --color-accent-hover: var(--rv-accent-hover);
+  --color-brand: var(--rv-brand);
+  --color-brand-ink: var(--rv-brand-ink);
+  --color-focus: var(--rv-focus);
+  --color-ok: var(--rv-ok);
+  --color-ok-soft: var(--rv-ok-soft);
+  --color-warn: var(--rv-warn);
+  --color-warn-soft: var(--rv-warn-soft);
+  --color-err: var(--rv-err);
+  --color-err-soft: var(--rv-err-soft);
+  --color-info: var(--rv-info);
+  --color-info-soft: var(--rv-info-soft);
+  --color-scrim: var(--rv-scrim);
+  --color-speaker-1: var(--rv-speaker-1);
+  --color-speaker-2: var(--rv-speaker-2);
+  --color-speaker-3: var(--rv-speaker-3);
+  --color-speaker-4: var(--rv-speaker-4);
+  --color-speaker-5: var(--rv-speaker-5);
+  --color-speaker-6: var(--rv-speaker-6);
+  --shadow-pop: var(--rv-shadow);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-sora), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Pages rendered with the new shell take over the document colors. */
+html:has(.rv-app),
+html:has(.rv-app) body {
+  background: var(--rv-canvas);
+  color: var(--rv-ink);
+  font-family: var(--font-sans);
+}
+
+/* The legacy stylesheet sets a 14px root; the new UI uses Tailwind's 16px rem scale. */
+html:has(.rv-app) {
+  font-size: 16px;
+}
+
+.rv-app ::selection {
+  background: color-mix(in srgb, var(--rv-brand) 70%, transparent);
+  color: var(--rv-brand-ink);
+}
+
+.rv-app *::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--rv-ink) 14%, transparent);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.rv-app :focus-visible {
+  outline: 2px solid var(--rv-focus);
+  outline-offset: 2px;
+}
+
+/* Headings and sections that receive focus on arrival are not controls: no ring. */
+.rv-app [tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
+/* A card's stretched link rings the whole card, inside its edge so lists that clip overflow keep it. */
+.rv-app .rv-card-link:focus-visible {
+  outline: none;
+}
+
+.rv-app .rv-card-link:focus-visible::after {
+  outline: 2px solid var(--rv-focus);
+  outline-offset: -2px;
+}
+
+.rv-app dialog::backdrop {
+  background: var(--rv-scrim);
+}
+
+/* Screens that were not redesigned keep the legacy look in a dark region. */
+.rv-legacy {
+  --bg: #0a0a0a;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  color-scheme: dark;
+}
+
+/* Select chevron. A data URI can't read tokens; ink-3 is close enough in both themes. */
+.rv-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2385827a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  background-size: 16px;
+}
