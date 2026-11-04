@@ -1250,9 +1250,9 @@ export class SlackSocketModeService {
    * authorizations must be an array whose extracted team ids include the local
    * team; without that field, exactly one legacy installation team must match.
    * This extraction does not validate every authorization entry. Self echoes,
-   * missing identities, unsupported events and empty text/file payloads return
-   * null. Human messages use cached bot identity or start background discovery
-   * without waiting for auth.test.
+   * missing identities and unsupported events return null, as do messages with
+   * neither nonblank extracted text nor normalized files. Human messages use
+   * cached bot identity or start background discovery without waiting for auth.test.
    */
   private async normalizeEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {
     const event = envelopeEvent(envelope);
