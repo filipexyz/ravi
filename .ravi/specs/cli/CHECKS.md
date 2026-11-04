@@ -31,6 +31,10 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 - `bun test src/sdk/gateway/dispatcher.test.ts` checks unknown `json` and
   `subjects` fields from gateway dispatch through remote CLI projection; field
   values and unsafe field names MUST remain absent from responses and audits.
+- Unknown identifier-shaped keys classified as secret keys (including
+  `password-hunter2`) MUST be hidden in flat and nested gateway validation
+  issues and remote CLI errors. Ordinary names such as `json`, `subjects`,
+  `secretary` and `passwordless` MUST remain visible.
 
 - `bun test src/sdk/gateway/dispatcher.test.ts` verifies that a missing task
   decision table produces HTTP 500 with caller-visible normalized cause and

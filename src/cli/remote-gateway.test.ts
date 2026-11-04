@@ -572,6 +572,48 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, message });
   });
 
+  it("redacts secret-bearing unknown keys while retaining ordinary field names", () => {
+    const secretKey = "password-hunter2";
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: {
+            code: "USAGE_ERROR",
+            message: "Invalid command input.",
+            issues: [
+              {
+                path: [],
+                code: "unrecognized_keys",
+                keys: [secretKey, "json", "subjects"],
+                message: "Unknown fields.",
+              },
+            ],
+            retryable: false,
+          },
+        }),
+      }),
+    );
+    expect(error).toMatchObject({
+      code: "USAGE_ERROR",
+      exitCode: 2,
+      message: "Unknown field.",
+      details: {
+        issues: [
+          { path: ["<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+          { path: ["json"], code: "unrecognized_keys", message: "Unknown field." },
+          { path: ["subjects"], code: "unrecognized_keys", message: "Unknown field." },
+        ],
+      },
+    });
+    expect(JSON.stringify(error?.envelope())).not.toContain(secretKey);
+  });
+
   it.each([
     "No capabilities found: token=unstructured-secret",
     "No capabilities found for rctx_secret_fixture",

@@ -1,7 +1,7 @@
 import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import { ContractError } from "./agent-contract.js";
-import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
+import { projectPublicIssues, publicValidationFieldName, sanitizePublicValue } from "./redaction.js";
 
 describe("public contract redaction", () => {
   it("sanitizes content, contextual secrets and paths without mutating safe metadata", () => {
@@ -118,6 +118,22 @@ describe("public contract redaction", () => {
       key: "custom.secretary",
       value: "Alice",
     });
+  });
+
+  it("hides secret-named unknown fields even when they fit the public identifier grammar", () => {
+    const keys = ["password-hunter2", "api_key_fixture", "clientSecretFixture", "token-fixture", "credential"];
+    for (const key of keys) expect(publicValidationFieldName(key)).toBeUndefined();
+    const issues = projectPublicIssues([{ path: ["input"], code: "unrecognized_keys", keys }]);
+    expect(issues).toEqual(
+      keys.map(() => ({ path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." })),
+    );
+    for (const key of keys) expect(JSON.stringify(issues)).not.toContain(key);
+  });
+
+  it("retains ordinary field identifiers without overmatching secret-related words", () => {
+    for (const key of ["json", "subjects", "secretary", "passwordless"]) {
+      expect(publicValidationFieldName(key)).toBe(key);
+    }
   });
 
   it("preserves typed secret metadata while redacting plural secret containers", () => {

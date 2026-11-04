@@ -75,7 +75,7 @@ export interface PublicValidationIssue {
 /** Unknown request keys are data; expose only bounded field-name identifiers. */
 export function publicValidationFieldName(value: unknown): string | undefined {
   if (typeof value !== "string" || !/^[a-z][A-Za-z0-9_-]{0,63}$/.test(value)) return undefined;
-  if (/^(?:ctx_|rctx_)/i.test(value) || sanitizePublicValue(value) !== value) return undefined;
+  if (/^(?:ctx_|rctx_)/i.test(value) || isSecretKey(value) || sanitizePublicValue(value) !== value) return undefined;
   return value;
 }
 

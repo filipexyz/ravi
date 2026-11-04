@@ -567,6 +567,36 @@ describe("dispatch — body shape (flat-only)", () => {
       expect(JSON.stringify(audits.events)).not.toContain(secret);
     },
   );
+
+  it.each(["password-hunter2", "clientSecretValue", "api_key_fixture"])(
+    "redacts secret-bearing unknown key %s in gateway and remote CLI errors",
+    async (field) => {
+      const audits = captureAudits();
+      const result = await dispatch(
+        findCmd("demo.echo"),
+        { name: "fixture", [field]: true },
+        {},
+        { emitAudit: audits.emit },
+      );
+      const body = await result.response.text();
+      const error = remoteGatewayErrorToContractError("demo echo", {
+        status: result.response.status,
+        ok: result.response.ok,
+        contentType: result.response.headers.get("content-type"),
+        body,
+      });
+      expect(result.response.status).toBe(400);
+      expect(error).toMatchObject({
+        code: "USAGE_ERROR",
+        exitCode: 2,
+        message: "Unknown field for demo.echo.",
+        details: { issues: [{ path: ["<unknown>"], code: "unrecognized_keys" }] },
+      });
+      expect(body).not.toContain(field);
+      expect(JSON.stringify(error?.envelope())).not.toContain(field);
+      expect(JSON.stringify(audits.events)).not.toContain(field);
+    },
+  );
 });
 
 describe("dispatch — validation", () => {
@@ -574,7 +604,7 @@ describe("dispatch — validation", () => {
     const audits = captureAudits();
     const result = await dispatch(
       findCmd("demo.strict-input"),
-      { input: { name: "fixture", extra: "PRIVATE_VALUE_7K2", PRIVATE_KEY_8F4: true } },
+      { input: { name: "fixture", extra: "PRIVATE_VALUE_7K2", PRIVATE_KEY_8F4: true, "password-hunter2": true } },
       {},
       { emitAudit: audits.emit },
     );
@@ -585,10 +615,12 @@ describe("dispatch — validation", () => {
         issues: [
           { path: ["input", "extra"], code: "unrecognized_keys", message: "Unknown field." },
           { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+          { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
         ],
       },
     });
     expect(JSON.stringify(body)).not.toContain("PRIVATE_");
+    expect(JSON.stringify(body)).not.toContain("password-hunter2");
     expect(JSON.stringify(audits.events)).not.toContain("PRIVATE_");
   });
 

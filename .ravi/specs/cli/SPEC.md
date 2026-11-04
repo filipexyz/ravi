@@ -252,6 +252,8 @@ details and policy outcome:
   be projected so CLI text and `--json` stay actionable. Unknown-field issues
   MUST retain bounded identifier-shaped field names (for example `json` or
   `subjects`), never their submitted values; unsafe names remain redacted.
+  A field name matching the shared secret-key classifier MUST be redacted even
+  when it fits the identifier grammar (for example `password-hunter2`).
   When no issue is available, usage errors MUST preserve safe bounded public
   message and next-action copy using the shared contract sanitizer, without
   depending on a domain-specific prefix or a duplicated error catalog. This privacy
