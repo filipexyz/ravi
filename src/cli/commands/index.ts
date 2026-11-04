@@ -38,6 +38,7 @@ export * from "./connectors.js";
 export * from "./contacts.js";
 export * from "./context.js";
 export * from "./costs.js";
+export * from "./credential-intake.js";
 export * from "./credentials.js";
 export * from "./crm.js";
 export * from "./cron.js";
