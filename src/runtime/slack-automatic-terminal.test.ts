@@ -58,6 +58,15 @@ afterEach(async () => {
   stateDir = null;
 });
 
+/**
+ * Creates a real accepted Slack binding in the suite's isolated state and
+ * captures responses and outputs while run drives the host loop with synthetic
+ * provider events. Bot output must match its persisted terminal manifest.
+ * The runtime sink calls onRuntimeTerminal synchronously for terminal_output
+ * and completed state events, before any injected runtime failure; the hook
+ * may therefore run more than once. failSink can also reject output capture.
+ * afterEach restores spies, unregisters sinks, and owns test-state teardown.
+ */
 async function fixture(
   senderKind: "bot" | "user" = "bot",
   failSink?: "runtime" | "output",

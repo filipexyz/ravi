@@ -3711,6 +3711,13 @@ describe("Slack Socket Mode foreign bot intake", () => {
     };
   }
 
+  /**
+   * Builds bot-message variants without treating envelope shape as actor authority.
+   * Undefined subtype/teamId select bot_message/T1 defaults; null omits those
+   * fields. Missing or null secondary team evidence is omitted independently.
+   * bot_id and user retain their independently supplied values, including
+   * undefined, so tests can vary identity evidence without filling either in.
+   */
   function botEnvelope(input: {
     envelopeId: string;
     ts: string;

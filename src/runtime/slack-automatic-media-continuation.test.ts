@@ -66,6 +66,16 @@ afterEach(async () => {
   stateDir = null;
 });
 
+/**
+ * Creates a real accepted Slack binding in the isolated state prepared by
+ * beforeEach, with bot/user provenance and captured responses and outputs.
+ * run feeds supplied events through the real host loop using a synthetic
+ * provider handle; provider identifies that handle without launching a provider.
+ * failSink injects terminal-runtime or output-sink failures. Bot output is
+ * checked against its persisted terminal manifest before capture.
+ * replaceStreaming rebuilds host state while retaining the binding and stash.
+ * afterEach restores spies, unregisters sinks, and owns test-state teardown.
+ */
 async function fixture(
   senderKind: "bot" | "user" = "bot",
   failSink?: "runtime" | "output",

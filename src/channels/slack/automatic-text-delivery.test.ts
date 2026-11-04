@@ -59,6 +59,14 @@ afterEach(async () => {
   stateDir = null;
 });
 
+/**
+ * Persists canonical ingress in the suite's prepared sandbox and optionally
+ * freezes a bot terminal response. job(wrapper) varies transport identities
+ * while retaining the canonical turn and destination; human provenance has
+ * no automatic bot context. For bot origins, freezeManifest() supports a later
+ * freeze but never replaces the captured manifest: an initially unfrozen
+ * fixture keeps omitting automaticTerminalResponseId from subsequent jobs.
+ */
 function fixture(
   turn = "turn-a",
   freeze = true,
@@ -134,6 +142,12 @@ function fixture(
   return { binding, context, manifest, freezeManifest, job };
 }
 
+/**
+ * Creates a delivery double that records each attempt before awaiting send.
+ * The optional hook can hold a claim in flight or reject; a synthetic Slack
+ * receipt is returned only after it resolves. Callers must release any barrier
+ * they install, and recorded requests represent attempts rather than real sends.
+ */
 function delivery(send?: (request: NativeTextDeliveryRequest) => Promise<void>) {
   const requests: NativeTextDeliveryRequest[] = [];
   const adapter: NativeTextDelivery = {
@@ -178,6 +192,13 @@ describe("frozen Slack text with a late egress guard", () => {
     deleteGuardedSession("synthetic-guard");
     closeKnowledgeDb();
   }
+  /**
+   * Pairs the real Slack text adapter with a fake HTTP client and restores the
+   * consumer's real knowledge guard by overriding the base bypass with undefined.
+   * Captures HTTP posts, emitted events and would-be persisted text separately.
+   * Consumer time stays fixed; NATS, tracing and message persistence are doubles.
+   * Guard installation/removal and isolated-state cleanup remain test-owned.
+   */
   function transport() {
     const posts: unknown[] = [];
     const events: Record<string, unknown>[] = [];
@@ -823,6 +844,14 @@ describe("canonical Slack terminal text delivery", () => {
   });
 });
 
+/**
+ * Runs real consumers and Slack text adapters in separate Bun processes against
+ * caller-owned isolated state, using a fixed consumer clock and fake HTTP.
+ * Requires an unused worker directory. Readiness and transport barriers expose
+ * overlapping claims before releasing simulated posts; their waits are bounded.
+ * Returns worker PIDs, results and captured posts. Finally kills and awaits
+ * remaining children; shared-state teardown belongs to the caller.
+ */
 async function raceTextProcesses(stateDir: string, jobs: ChannelOutboundJob[]) {
   const runDir = join(stateDir, "canonical-text-workers");
   const isolatedHome = join(runDir, "home");

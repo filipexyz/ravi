@@ -215,6 +215,13 @@ class SlackPeer {
     });
   }
 
+  /**
+   * Registers real native-driver sinks around this peer's substituted transports.
+   * Outbound publication passes through the durable outbox before consumption is
+   * queued on the harness. Installs the runtime teardown used by stop(); the
+   * harness must stop peers before removing their shared state to release sinks
+   * and socket lifecycle resources.
+   */
   async initialize(): Promise<void> {
     const driver = createSlackNativeChannelDriver(
       {},
@@ -297,6 +304,13 @@ class SlackPeer {
     expect(await this.service.handleEnvelope(this.envelope(text, options))).toBe("processed");
   }
 
+  /**
+   * Replaces this peer's wire callback with queued ingress for receiver.
+   * The harness advances logical time by delayMs when draining each item, then
+   * submits the sender's bot/user identity and destination channel/thread.
+   * Admission happens while draining the queue, outside the transport callback;
+   * delayMs does not cause a wall-clock sleep.
+   */
   connect(receiver: SlackPeer, delayMs = 0): void {
     this.onWire = (message) => {
       this.harness.work.push(async () => {
@@ -311,6 +325,13 @@ class SlackPeer {
     };
   }
 
+  /**
+   * Runs the substituted provider for an asserted published, non-skipped turn.
+   * Records a domain effect before invoking the provider, then drives real
+   * commentary and terminal projection with the reply. Terminal preparation
+   * precedes completion/failure projection so downstream suppression can be
+   * distinguished from skipped execution.
+   */
   async runProvider(turn: PublishedTurn): Promise<void> {
     const receipt = dbGetChannelBackendIngressReceiptByTurnId(turn.metadata.binding.turnId);
     expect(receipt?.state).toBe("published");
@@ -340,6 +361,12 @@ class SlackPeer {
     });
   }
 
+  /**
+   * Models the host's freeze-before-projection boundary for this text-only harness.
+   * Returns when no automatic bot origin applies; otherwise persists a terminal
+   * manifest containing trimmed final text or the generic safe-error message.
+   * Media is always empty, and private provider error details are not frozen.
+   */
   async prepareTerminal(turn: PublishedTurn, reply: ProviderReply): Promise<void> {
     const origin = resolveSlackAutomaticOutputContextFromBinding(turn.metadata.binding);
     if (!origin) return;

@@ -38,6 +38,13 @@ const config: OutboundAccountConfig = {
   instanceToAccount: { "instance-alias": "local" },
 };
 
+/**
+ * Builds mutable, linked ingress/message records without persisting them.
+ * Injected lookups always return these objects regardless of the requested key,
+ * while account resolution uses the real resolver with the fixture's aliases.
+ * Distinct acceptance, update and provider/message timestamps expose clock
+ * selection; callers can mutate the records to challenge provenance and linkage.
+ */
 function fixture() {
   const binding: ChannelBackendPromptMetadata["binding"] = {
     channelInstanceId: "local",

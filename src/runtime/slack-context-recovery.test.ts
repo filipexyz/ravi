@@ -58,6 +58,16 @@ afterEach(async () => {
   stateDir = null;
 });
 
+/**
+ * Creates a real channel session and accepted ingress in the suite's isolated
+ * state, using bot/user provenance and a thread destination only for Slack.
+ * run drives the host loop with synthetic provider events and can use a
+ * replacement host with the shared streaming and stash maps.
+ * Awaited runtime-sink and safeEmit hooks let tests interleave ownership changes;
+ * failSink injects terminal-runtime or output failures. Responses and outputs
+ * are captured, and restart requests are recorded without launching a provider.
+ * afterEach restores spies, unregisters sinks, and owns test-state teardown.
+ */
 async function fixture(
   senderKind: "bot" | "user" = "bot",
   failSink?: "runtime" | "output",
@@ -294,6 +304,12 @@ async function startQueuedTurn(f: Awaited<ReturnType<typeof fixture>>, restart =
   return generator;
 }
 
+/**
+ * Seeds the isolated circuit ledger with five fixed synthetic requests in one
+ * scope at the supplied time, then asserts and returns prior-4's suppressed
+ * decision. This mutates persisted test state without advancing the clock;
+ * five requests reflect this fixture's circuit configuration.
+ */
 function seedCooldown(scope: string, now: number) {
   for (let i = 0; i < 5; i++)
     reserveSlackAutomaticOutput({
@@ -309,6 +325,13 @@ function seedCooldown(scope: string, now: number) {
   return decision;
 }
 
+/**
+ * Builds a Slack text job from a backend output, preserving outputId as the
+ * emit and idempotency identity and deriving the destination, canonical chat,
+ * and automatic origin from its target and binding. Assistant messages use
+ * final_answer; other kinds use safe_error. Construction performs no delivery
+ * or receipt acquisition.
+ */
 function nativeJob(output: ChannelOutputEnvelope): ChannelOutboundJob {
   const destination = decodeSlackBackendConversationId(output.target.conversationId);
   return buildChannelTextOutboundJob({
@@ -331,6 +354,14 @@ function nativeJob(output: ChannelOutputEnvelope): ChannelOutboundJob {
   });
 }
 
+/**
+ * Processes jobs sequentially through the real consumer with a fixed injected
+ * time, returning captured text sends and processing results in order.
+ * Receipt and circuit decisions use the isolated ledger; delivery, event
+ * publication, flush, trace, delivered-message persistence, and the knowledge
+ * guard are test doubles. Captured sends do not establish external delivery
+ * or persistence of canonical delivered messages.
+ */
 async function consume(jobs: ChannelOutboundJob[], now: number, channelId = "slack") {
   const sends: string[] = [];
   const results = [];

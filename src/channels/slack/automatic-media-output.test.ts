@@ -46,6 +46,14 @@ afterEach(async () => {
   stateDir = null;
 });
 
+/**
+ * Combines mutable ingress/message doubles with real temporary media files and
+ * a persisted terminal manifest for resolved bot origins. The suite supplies
+ * and cleans isolated state; distinct indexes separate synthetic turns.
+ * Duplicate media retains separate ordinals, while unavailable media is removed
+ * before freezing. Human provenance leaves the manifest absent. input(part)
+ * preserves the selected descriptor and ordinal; ingress itself is not persisted.
+ */
 function fixture(index = 1, senderKind: "bot" | "user" = "bot", duplicateMedia = false, unavailableMedia = false) {
   const binding: ChannelBackendPromptMetadata["binding"] = {
     channelInstanceId: "local",
@@ -161,6 +169,14 @@ function callbacks(originDependencies: SlackAutomaticOutputOriginDependencies) {
   };
 }
 
+/**
+ * Persists canonical bot ingress and freezes a media manifest using real origin
+ * resolution in the suite's isolated state. Requires its agent/channel setup;
+ * failed admission or unresolved bot origin throws immediately.
+ * index separates turns and count defines media ordinals. unavailable removes
+ * the first file before freezing and therefore requires count > 0. Returns
+ * ordinal-based inputs and part keys; suite teardown owns files and state.
+ */
 function gatewayFixture(index = 1, count = 1, unavailable = false) {
   const chat = dbUpsertChat({ channel: "slack", instanceId: "local", platformChatId: "C123", chatType: "group" });
   const message = dbUpsertChatMessage({
@@ -398,6 +414,12 @@ describe("native bot automatic media terminal delivery", () => {
     const uploaded: Uint8Array[] = [];
     const deps = {
       ...callbacks(f.originDependencies),
+      /**
+       * Changes the source file after verification, then passes the verified buffer
+       * to the real Slack uploader. The fetch double simulates allocation, upload and
+       * completion and checks upload-body identity against that buffer, exposing any
+       * late path reread without making an external Slack request.
+       */
       send: async ({ media, fileBytes }: { media: ResponseMediaAttachment; fileBytes: Buffer }) => {
         writeFileSync(media.filePath, "changed between verification and transport");
         return sendSlackMedia(

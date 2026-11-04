@@ -247,6 +247,13 @@ function reserve(key: string, now: number, overrides: Partial<SlackAutomaticOutp
   return reserveSlackAutomaticOutput(input(key, now, overrides));
 }
 
+/**
+ * Races reservations in separate Bun processes sharing the caller's isolated
+ * SQLite state. Requires nonempty inputs and an unused directory derived from
+ * the first idempotency key; each worker initializes its schema before release.
+ * Returns decisions in input order and rejects on worker failure. Coordination
+ * cleanup kills and awaits remaining children; the caller owns disk-state teardown.
+ */
 async function raceProcesses(
   stateDir: string,
   inputs: SlackAutomaticOutputReservation[],
