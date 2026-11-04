@@ -37,6 +37,7 @@ import {
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
 import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { registerRuntimeCredentialRefreshHook, unregisterRuntimeCredentialRefreshHook } from "./credential-refresh.js";
 import { createRuntimeContext } from "./context-registry.js";
 import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
 import {
@@ -6525,6 +6526,130 @@ describe("runtime session trace instrumentation", () => {
       completedAt: recoveryAttempt?.completedAt,
     });
   });
+
+  it.each(["explicit abort", "replacement"] as const)(
+    "does not resume credential recovery after %s while refresh awaits",
+    async (transition) => {
+      const refreshEntered = runtimeRaceLatch();
+      const releaseRefresh = runtimeRaceLatch();
+      const refreshReasons: string[] = [];
+      registerRuntimeCredentialRefreshHook(PROVIDER, async ({ reason }) => {
+        refreshReasons.push(reason);
+        refreshEntered.release();
+        await releaseRefresh.promise;
+        return { action: "unsupported" };
+      });
+      const active = createQueuedRuntimeUserMessage({ prompt: "old credential request", source, _agentId: AGENT_ID });
+      const successor = createQueuedRuntimeUserMessage({
+        prompt: "independent successor",
+        deliveryBarrier: "after_response",
+        source,
+        _agentId: AGENT_ID,
+      });
+      const old = makeStreamingSession({
+        pendingMessages: [active, successor],
+        currentTurnPendingIds: [active.pendingId!],
+        currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_await_refresh"),
+      });
+      seedAdapterTrace(old, "turn-await-credential-refresh");
+      const attemptId = old.currentCrashRecoveryAttemptId!;
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "trace-test",
+        maxConcurrentSessions: 10,
+        interactiveReservedSessions: 0,
+        safeEmit: async () => {},
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => MODEL,
+        crashRecovery,
+      });
+      const live = dispatcher.streamingSessions;
+      const stash = dispatcher.stashedMessages;
+      live.set(SESSION_NAME, old);
+      const restarts: unknown[] = [];
+      let drains = 0;
+      const loop = runTraceLoop(
+        old,
+        makeRuntimeSession([
+          {
+            type: "turn.failed",
+            error: "rate limited",
+            recoverable: true,
+            rawEvent: { type: "error", status: 429, headers: { "retry-after": "60" } },
+          },
+        ]),
+        {
+          streamingSessions: live,
+          stashedMessages: stash,
+          restartStashedSession: async (input) => {
+            restarts.push(input);
+          },
+          drainPendingStarts: () => {
+            drains++;
+          },
+        },
+      );
+      try {
+        await refreshEntered.promise;
+        const terminalBeforeTransition = getSessionTurn("turn-await-credential-refresh");
+        expect(terminalBeforeTransition?.status).toBe("failed");
+        expect(stash.get(SESSION_NAME)?.map((message) => message.pendingId)).toEqual([active.pendingId]);
+        let replacement: RuntimeHostStreamingSession | undefined;
+        let replacementContextId: string | undefined;
+        if (transition === "explicit abort") {
+          expect(dispatcher.abortSession({ sessionName: SESSION_NAME, sessionKey: SESSION_KEY })).toBe(true);
+          expect(old.abortController.signal.aborted).toBe(true);
+          expect(live.has(SESSION_NAME)).toBe(false);
+        } else {
+          replacement = makeStreamingSession({ traceRunId: "run-credential-replacement" });
+          live.set(SESSION_NAME, replacement);
+          stash.set(SESSION_NAME, [successor]);
+          updateProviderSession(SESSION_KEY, PROVIDER, "native-credential-replacement", {
+            runtimeSessionParams: { sessionId: "native-credential-replacement", owner: "replacement" },
+            runtimeSessionDisplayId: "native-credential-replacement",
+          });
+          replacementContextId = createRuntimeContext({
+            kind: "turn-runtime",
+            agentId: AGENT_ID,
+            sessionKey: SESSION_KEY,
+            sessionName: SESSION_NAME,
+            capabilities: [],
+          }).contextId;
+        }
+        const retainedQueue = stash.get(SESSION_NAME);
+        expect(retainedQueue?.some((message) => message.pendingId === successor.pendingId)).toBe(true);
+        releaseRefresh.release();
+        await loop;
+
+        expect(refreshReasons).toEqual(["retryable_failure"]);
+        expect(restarts).toEqual([]);
+        expect(drains).toBe(0);
+        expect(stash.get(SESSION_NAME)).toBe(retainedQueue);
+        expect(live.get(SESSION_NAME)).toBe(replacement);
+        expect(getSessionTurn("turn-await-credential-refresh")).toMatchObject({
+          status: "failed",
+          completedAt: terminalBeforeTransition?.completedAt,
+        });
+        expect(getRuntimeTurnAttempt(attemptId)?.status).toBe("failed");
+        expect(listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "turn.failed")).toHaveLength(
+          1,
+        );
+        if (replacement) {
+          expect(replacement.done).toBe(false);
+          expect(replacement.abortController.signal.aborted).toBe(false);
+          expect(dbGetContext(replacementContextId!)?.revokedAt).toBeUndefined();
+          expect(getSession(SESSION_KEY)).toMatchObject({
+            runtimeProvider: PROVIDER,
+            providerSessionId: "native-credential-replacement",
+            runtimeSessionParams: { sessionId: "native-credential-replacement", owner: "replacement" },
+          });
+        }
+      } finally {
+        releaseRefresh.release();
+        await loop;
+        unregisterRuntimeCredentialRefreshHook(PROVIDER);
+      }
+    },
+  );
 
   it.each([
     {

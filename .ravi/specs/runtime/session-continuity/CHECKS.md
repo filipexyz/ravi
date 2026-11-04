@@ -24,6 +24,15 @@
   storage: no successor input is yielded until task release, including after
   failure/interruption. Keep replay-safe interrupted input ahead of successors,
   preserve legitimate recovery paths, and never resurrect cancelled work.
+- Derive Codex's pending tool-result-delivery barrier from canonical
+  `tool.started` and `tool.completed` events, then request a real dispatcher
+  abort before a recoverable failure. No recovery branch may restart B;
+  a later explicit C delivers B and C once without replaying A. Keep controls
+  for suppressed, credential and context recovery without an explicit abort.
+- Abort or replace the runtime while credential refresh awaits: the retired
+  handle cannot arm another retry. Reject an awaited failed-event emission
+  with cancellation pending: finalization retains the accepted terminal and
+  keeps B dormant, including its original envelope, until later admission.
 
 ## Prompt Atom Ledger
 

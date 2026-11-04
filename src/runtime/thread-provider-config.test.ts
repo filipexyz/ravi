@@ -32,6 +32,7 @@ import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMess
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import * as modelBrokerPlanning from "./model-broker-planning.js";
 import { createRuntimeProvider } from "./provider-registry.js";
+import { PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE } from "./public-failure.js";
 import { resolveEffectiveSessionRuntime } from "./runtime-selection.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
@@ -685,6 +686,155 @@ describe("provider configuration at every terminal generator boundary", () => {
   }
 });
 
+describe("Codex tool delivery cancellation at terminal boundaries", () => {
+  for (const terminal of ["complete", "failed", "interrupted", "recoverable"] as const) {
+    it(`keeps B dormant after actual Codex tool completion and explicit abort (${terminal})`, async () => {
+      await withGeneratedClaudeTurn(
+        {
+          terminal,
+          emitAssistant: false,
+          agentDefaultProvider: "claude",
+          originalProvider: "codex",
+          completeDynamicTool: true,
+        },
+        async (fixture) => {
+          fixture.clear();
+          await fixture.dispatch(NEXT_PROMPT);
+          fixture.expectActiveOriginal();
+          expect(fixture.snapshot()).toMatchObject({
+            originalStartedTool: true,
+            originalToolResultDeliveryPending: true,
+            originalPendingAbort: false,
+          });
+          // The real host derived this barrier from tool.completed. The default
+          // abort call does not inject flags and invokes the actual dispatcher.
+          fixture.abortOriginal();
+          expect(fixture.snapshot().originalPendingAbort).toBe(true);
+          await fixture.finishOriginal(true);
+          await fixture.waitForSuccessorSettlement();
+          const stopped = fixture.snapshot();
+          const acceptedTerminal = terminal === "recoverable" ? "interrupted" : terminal;
+          expect(stopped.originalAttemptStatus).toBe(acceptedTerminal);
+          expect(stopped.originalTraceStatus).toBe(acceptedTerminal);
+          expect(stopped.originalStartedTool).toBe(true);
+          expect(stopped.originalDone).toBe(true);
+          expect(stopped.oldInputs).toEqual([USER_PROMPT]);
+          expect(stopped.startedProviders).toEqual([]);
+          expect(stopped.restarts).toEqual([]);
+          expect(stopped.replacementInputs).toEqual([]);
+          expect(stopped.stashedPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+          expect(stopped.stashedPrompts[0]).not.toContain(USER_PROMPT);
+
+          const later = "Independent later admission C.";
+          await fixture.dispatch(later);
+          await fixture.waitForSuccessorInput();
+          const resumed = fixture.snapshot();
+          expect(resumed.startedProviders).toEqual(["claude"]);
+          expect(resumed.replacementInputs).toHaveLength(1);
+          const combined = resumed.replacementInputs[0]!;
+          expect(combined.split(NEXT_PROMPT).length - 1).toBe(1);
+          expect(combined.split(later).length - 1).toBe(1);
+          expect(combined).not.toContain(USER_PROMPT);
+          expect(resumed.oldInputs).toEqual([USER_PROMPT]);
+          expect(resumed.stashedPrompts).toEqual([]);
+          expect(resumed.restarts).toEqual([]);
+        },
+      );
+    });
+  }
+
+  for (const clear of [true, false]) {
+    it(`retains actual Codex open-tool recovery without cancellation (${clear ? "provider clear" : "unchanged config"})`, async () => {
+      await withGeneratedClaudeTurn(
+        {
+          terminal: "recoverable",
+          recoverableError: PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+          emitAssistant: false,
+          agentDefaultProvider: "claude",
+          originalProvider: "codex",
+          completeDynamicTool: true,
+        },
+        async (fixture) => {
+          if (clear) fixture.clear();
+          await fixture.dispatch(NEXT_PROMPT);
+          fixture.expectActiveOriginal();
+          expect(fixture.snapshot()).toMatchObject({
+            originalStartedTool: true,
+            originalToolResultDeliveryPending: true,
+            originalPendingAbort: false,
+          });
+          await fixture.finishOriginal(true);
+          fixture.expectTerminalAccounting("interrupted");
+          const settled = fixture.snapshot();
+          expect(settled.originalStartedTool).toBe(true);
+          expect(settled.originalMaterializedOutput).toBe(false);
+          expect(settled.oldInputs).toEqual([USER_PROMPT]);
+          expect(settled.replacementInputs).toHaveLength(1);
+          const successor = settled.replacementInputs[0]!;
+          expect(successor.split(NEXT_PROMPT).length - 1).toBe(1);
+          expect(successor).not.toContain(USER_PROMPT);
+          expect(settled.startedProviders).toEqual([clear ? "claude" : "codex"]);
+          expect(settled.restarts).toEqual(["open_tools_recoverable_failure"]);
+          expect(settled.stashedPrompts).toEqual([]);
+          expect(settled.assistantReplies).toEqual([]);
+        },
+      );
+    });
+  }
+
+  it("preserves B and the accepted failure when emission rejects during a Codex deferred abort", async () => {
+    await withGeneratedClaudeTurn(
+      {
+        terminal: "failed",
+        emitAssistant: false,
+        agentDefaultProvider: "claude",
+        originalProvider: "codex",
+        completeDynamicTool: true,
+        rejectFailedEmission: true,
+      },
+      async (fixture) => {
+        fixture.clear();
+        await fixture.dispatch(NEXT_PROMPT);
+        fixture.expectActiveOriginal();
+        expect(fixture.snapshot()).toMatchObject({
+          originalStartedTool: true,
+          originalToolResultDeliveryPending: true,
+          originalPendingAbort: false,
+        });
+        fixture.abortOriginal();
+        expect(fixture.snapshot().originalPendingAbort).toBe(true);
+        fixture.releaseOriginalTerminal();
+        await expect(fixture.waitForOldLoop()).rejects.toThrow("Fixture terminal emission rejected");
+
+        const stopped = fixture.snapshot();
+        expect(stopped.originalAttemptStatus).toBe("failed");
+        expect(stopped.originalTraceStatus).toBe("failed");
+        expect(stopped.originalStartedTool).toBe(true);
+        expect(stopped.originalDone).toBe(true);
+        expect(stopped.oldInputs).toEqual([USER_PROMPT]);
+        expect(stopped.startedProviders).toEqual([]);
+        expect(stopped.restarts).toEqual([]);
+        expect(stopped.replacementInputs).toEqual([]);
+        expect(stopped.stashedPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+        expect(stopped.stashedPrompts[0]).not.toContain(USER_PROMPT);
+
+        const later = "Independent later admission after terminal emission failure.";
+        await fixture.dispatch(later);
+        await fixture.waitForSuccessorInput();
+        const resumed = fixture.snapshot();
+        expect(resumed.startedProviders).toEqual(["claude"]);
+        expect(resumed.replacementInputs).toHaveLength(1);
+        const combined = resumed.replacementInputs[0]!;
+        expect(combined.split(NEXT_PROMPT).length - 1).toBe(1);
+        expect(combined.split(later).length - 1).toBe(1);
+        expect(combined).not.toContain(USER_PROMPT);
+        expect(resumed.stashedPrompts).toEqual([]);
+        expect(resumed.restarts).toEqual([]);
+      },
+    );
+  });
+});
+
 interface GeneratedTurnOptions {
   terminal?: "complete" | "failed" | "interrupted" | "recoverable";
   deliveryBarrier?: "after_response" | "after_task";
@@ -693,6 +843,10 @@ interface GeneratedTurnOptions {
   agentDefaultProvider?: "claude" | "codex";
   pausePricing?: boolean;
   rejectModelSwitch?: boolean;
+  originalProvider?: "claude" | "codex";
+  completeDynamicTool?: boolean;
+  recoverableError?: string;
+  rejectFailedEmission?: boolean;
 }
 
 interface GeneratedTurnFixture {
@@ -718,6 +872,9 @@ interface GeneratedTurnFixture {
     originalAttemptStatus: string | undefined;
     originalTraceStatus: string | undefined;
     originalMaterializedOutput: boolean | undefined;
+    originalStartedTool: boolean | undefined;
+    originalToolResultDeliveryPending: boolean;
+    originalPendingAbort: boolean;
     originalDone: boolean;
     oldInputs: string[];
     replacementInputs: string[];
@@ -734,7 +891,21 @@ async function withGeneratedClaudeTurn(
   options: GeneratedTurnOptions,
   run: (fixture: GeneratedTurnFixture) => Promise<void>,
 ) {
-  const { parent, child } = await seedThread(true, options);
+  let { parent, child } = await seedThread(true, options);
+  const originalProvider = options.originalProvider ?? "claude";
+  const originalModel = originalProvider === "codex" ? "gpt-6-astra" : "opus";
+  if (originalProvider === "codex") {
+    configureSlackThreadRuntime(
+      { parentSession: parent, ref: REQUEST_ID, provider: originalProvider, model: originalModel },
+      () => {},
+    );
+    updateRuntimeProviderState(child.sessionKey, originalProvider, {
+      providerSessionId: "codex-before-configuration",
+      runtimeSessionDisplayId: "codex-before-configuration",
+      runtimeSessionParams: { sessionId: "codex-before-configuration" },
+    });
+    child = getSession(child.sessionKey)!;
+  }
   const sessionName = child.name!;
   configStore.refresh();
   const recovery = new RuntimeCrashRecoveryCoordinator({ instanceId: "generated-provider-config" });
@@ -820,8 +991,8 @@ async function withGeneratedClaudeTurn(
     };
   };
   const original = newStreaming(
-    "claude",
-    "opus",
+    originalProvider,
+    originalModel,
     [createQueuedRuntimeUserMessage({ prompt: USER_PROMPT, deliveryBarrier: "after_response" })],
     child.runtimeProviderConfigRevision ?? 0,
   );
@@ -875,7 +1046,7 @@ async function withGeneratedClaudeTurn(
   const originalPrompts = makePrompts(original);
   const interrupt = mock(async () => {});
   const originalHandle: RuntimeSessionHandle = {
-    provider: "claude",
+    provider: originalProvider,
     events: (async function* (): AsyncGenerator<RuntimeEvent> {
       for await (const prompt of originalPrompts) {
         oldInputs.push(String(prompt.message.content));
@@ -892,6 +1063,21 @@ async function withGeneratedClaudeTurn(
           terminalProcessed.resolve();
         };
         if (options.emitAssistant !== false) yield { type: "assistant.message", text: ASSISTANT_REPLY };
+        if (options.completeDynamicTool) {
+          // Canonical adapter events exercise durable tool authorization and
+          // Codex's result-delivery barrier without executing a tool/provider.
+          yield {
+            type: "tool.started",
+            toolUse: { id: "generated-dynamic-tool", name: "Bash", input: { cmd: "fixture-no-execution" } },
+          };
+          yield {
+            type: "tool.completed",
+            toolUseId: "generated-dynamic-tool",
+            toolName: "Bash",
+            content: "fixture result",
+            metadata: { item: { type: "dynamic_tool_call" } },
+          };
+        }
         active.resolve();
         await terminalAllowed.promise;
         if (options.terminal === "failed") {
@@ -906,7 +1092,7 @@ async function withGeneratedClaudeTurn(
         } else if (options.terminal === "recoverable") {
           yield {
             type: "turn.failed",
-            error: "Provider transport disconnected before any output",
+            error: options.recoverableError ?? "Provider transport disconnected before any output",
             recoverable: true,
             failureKind: "transport",
             usage: { inputTokens: 10, outputTokens: 4 },
@@ -973,13 +1159,17 @@ async function withGeneratedClaudeTurn(
     agent: dbGetAgent(AGENT_ID)!,
     streaming: original,
     runtimeSession: originalHandle,
-    runtimeCapabilities: createRuntimeProvider("claude").getCapabilities(),
-    model: "opus",
+    runtimeCapabilities: createRuntimeProvider(originalProvider).getCapabilities(),
+    model: originalModel,
     instanceId: "generated-provider-config",
     defaultRuntimeProviderId: "codex",
     streamingSessions: dispatcher.streamingSessions,
     stashedMessages: dispatcher.stashedMessages,
-    safeEmit: async () => {},
+    safeEmit: async (topic, event) => {
+      if (options.rejectFailedEmission && topic.endsWith(".runtime") && event.type === "turn.failed") {
+        throw new Error("Fixture terminal emission rejected");
+      }
+    },
     drainPendingStarts: () => {},
     crashRecovery: recovery,
     restartStashedSession: async ({ reason }) => {
@@ -1043,8 +1233,8 @@ async function withGeneratedClaudeTurn(
         });
         expect(getSessionTurn(originalTurnId!)).toMatchObject({
           status: "complete",
-          provider: "claude",
-          model: "opus",
+          provider: originalProvider,
+          model: originalModel,
           inputTokens: 10,
           outputTokens: 4,
           costUsd: 0.03,
@@ -1056,8 +1246,8 @@ async function withGeneratedClaudeTurn(
         expect(attempt.status).toBe(status);
         expect(trace).toMatchObject({
           status,
-          provider: "claude",
-          model: "opus",
+          provider: originalProvider,
+          model: originalModel,
           inputTokens: 10,
           outputTokens: 4,
           completedAt: attempt.completedAt,
@@ -1132,6 +1322,9 @@ async function withGeneratedClaudeTurn(
         originalAttemptStatus: getRuntimeTurnAttempt(originalAttemptId!)?.status,
         originalTraceStatus: getSessionTurn(originalTurnId!)?.status,
         originalMaterializedOutput: getRuntimeTurnAttempt(originalAttemptId!)?.materializedOutput,
+        originalStartedTool: getRuntimeTurnAttempt(originalAttemptId!)?.startedTool,
+        originalToolResultDeliveryPending: original.toolResultDeliveryPending === true,
+        originalPendingAbort: original.pendingAbort,
         originalDone: original.done,
         oldInputs: [...oldInputs],
         replacementInputs: [...replacementInputs],
@@ -1157,7 +1350,8 @@ async function withGeneratedClaudeTurn(
     original.abortController.abort();
     original.onTurnComplete?.();
     original.pushMessage?.(null);
-    await loop;
+    if (options.rejectFailedEmission) await loop.catch(() => {});
+    else await loop;
     start.mockRestore();
     costGate?.mockRestore();
     dispatcher.shutdownAll();

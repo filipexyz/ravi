@@ -111,6 +111,10 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
   canonical terminal arrives first. Preserve that terminal's accounting, close
   the handle, and retain independent queued work dormant for later admission;
   a concurrent provider change MUST NOT resume it automatically.
+  This cancellation MUST take precedence over suppressed-interrupt, credential,
+  and session/context recovery restarts, including after asynchronous feedback
+  or projection. Without an explicit abort, those recovery policies remain in
+  effect. Suppressing a restart MUST NOT reclassify the accepted terminal.
 - Only the current live-slot owner may mutate shared successor stash, remove
   the live handle, reset session continuity, or publish its current-state
   snapshots. Ownership MUST be checked at the mutation after every intervening

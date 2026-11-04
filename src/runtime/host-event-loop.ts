@@ -1951,26 +1951,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
 
+  // Cancellation is distinct from provider selection: recovery exits must
+  // settle an explicit abort without turning it into a new physical delivery.
+  const finishPendingTerminalAbort = (pendingAbortBeforeCleanup?: string): boolean => {
+    if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) return false;
+    if (!streaming.pendingAbort && !pendingAbortBeforeCleanup) return false;
+    stashOwnedPendingMessages({ crashRecovery });
+    streaming.internalAbortReason = pendingAbortBeforeCleanup ?? streaming.internalAbortReason ?? "deferred_abort";
+    revokeAgentRuntimeContextsForSession(session.sessionKey, { reason: streaming.internalAbortReason });
+    restartStashedReason = undefined;
+    streaming.done = true;
+    streaming.pendingAbort = false;
+    markOwnedLiveIdle("turn interrupted");
+    return true;
+  };
+
   // Run after terminal accounting and replay decisions, before waking the
   // generator. Existing recovery branches retain their own restart path.
   const finishPendingTerminalTransition = (
     terminal: "complete" | "failed" | "interrupted",
     pendingAbortBeforeCleanup?: string,
   ): boolean => {
+    if (finishPendingTerminalAbort(pendingAbortBeforeCleanup)) return true;
     if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) return false;
-    if (streaming.pendingAbort || pendingAbortBeforeCleanup) {
-      // A terminal can arrive before the tool-result callback that was meant
-      // to finish an explicit abort. Preserve A's terminal and keep independent
-      // queued work dormant, as the ordinary deferred-abort path does.
-      stashOwnedPendingMessages({ crashRecovery });
-      streaming.internalAbortReason = streaming.internalAbortReason ?? pendingAbortBeforeCleanup ?? "deferred_abort";
-      revokeAgentRuntimeContextsForSession(session.sessionKey, { reason: streaming.internalAbortReason });
-      restartStashedReason = undefined;
-      streaming.done = true;
-      streaming.pendingAbort = false;
-      markOwnedLiveIdle("turn interrupted");
-      return true;
-    }
     const configuredSession = getSession(session.sessionKey);
     if (
       !configuredSession ||
@@ -4181,11 +4184,26 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const pendingAbortBeforeCleanup = streaming.pendingAbort
           ? (streaming.internalAbortReason ?? "deferred_abort")
           : undefined;
-        streaming.pendingAbort = false;
+        // Keep explicit cancellation latched until it is consumed, including
+        // if terminal projection/feedback throws before the normal tail.
         streaming.turnActive = false;
-        streaming.internalAbortReason = undefined;
+        streaming.internalAbortReason = pendingAbortBeforeCleanup;
+        const mayRecoverCurrentTurn = () =>
+          ownsRuntimeSlot() &&
+          !streaming.done &&
+          !streaming.abortController.signal.aborted &&
+          !pendingAbortBeforeCleanup &&
+          !streaming.pendingAbort;
 
         if (suppressedRecoverable) {
+          // Its interrupted terminal and usage were already recorded above.
+          // An explicit abort wins over the physical recovery restart.
+          if (finishPendingTerminalAbort(pendingAbortBeforeCleanup)) {
+            clearTraceTurnState();
+            streaming.currentChannelBackend = undefined;
+            signalTurnComplete();
+            break;
+          }
           const restartReason = recoveryReason ?? "recoverable_interrupt_failure";
           markOwnedLiveIdle("turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
@@ -4222,7 +4240,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const modelBrokerRetryApproved =
           streaming.currentRuntimeCredential?.authMethod !== "model-broker" ||
           credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
-        if (credentialFailureSignal?.retryableByCredential && modelBrokerRetryApproved) {
+        if (credentialFailureSignal?.retryableByCredential && modelBrokerRetryApproved && mayRecoverCurrentTurn()) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
           const stashedCount = stashOwnedCurrentTurnMessages({
             crashRecovery,
@@ -4260,6 +4278,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   error,
                 });
               }
+            }
+            // Refresh can yield to an explicit abort or a replacement handle.
+            // Do not arm a retry from the old ownership snapshot.
+            if (!mayRecoverCurrentTurn()) {
+              finishPendingTerminalAbort(pendingAbortBeforeCleanup);
+              clearTraceTurnState();
+              streaming.currentChannelBackend = undefined;
+              streaming.done = true;
+              signalTurnComplete();
+              break;
             }
             restartStashedReason = restartReason;
             log.info("Closing runtime after retryable credential failure", {
@@ -4306,7 +4334,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const sessionRecoveryHasStateToClear =
           sessionRecoveryFailure?.kind !== "provider_session_missing" || hasStoredProviderSessionId(session);
         const canRecoverSession = () =>
-          ownsRuntimeSlot() && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable;
+          mayRecoverCurrentTurn() && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable;
         if (sessionRecoveryFailure && canRecoverSession()) await projectRuntimeEventToChannel(event);
         if (sessionRecoveryFailure && canRecoverSession()) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
@@ -4554,6 +4582,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     log.info("Streaming session ended", { runId, sessionName });
 
     try {
+      // An awaited terminal sink can fail before its normal cancellation tail.
+      // Preserve the pending queue without arming recovery on that exit too.
+      finishPendingTerminalAbort();
       const terminalRecordedBeforeFinalization = Boolean(
         streaming.currentCrashRecoveryTerminal || streaming.currentTraceTurnTerminalRecorded,
       );
