@@ -66,3 +66,66 @@ Slack-client rendering. Native Slack validation still requires deployment and
 an authorized person's click. An earlier Chrome command-line screenshot clipped
 at its minimum window size; the CDP captures established the intended 390px
 viewport and did not reproduce a layout overflow.
+
+## Replay correction: rendered diagnosis before implementation
+
+Inspected `form-390.png` and `verify-390.png` from the existing local prototype
+before changing the callback. The objective remains delivering one credential to
+the reviewed destination. The natural order is purpose, destination, token, Save,
+then receipt; the token fields and Save must disappear together after submission.
+
+- **Hierarchy:** the form title and Save are dominant, while the terminal view
+  has one title, one explanation and Close. Preserve that order.
+- **Proximity / common region:** destination metadata and each label/input/hint
+  already form coherent groups inside the modal; no new status panel is needed.
+- **Similarity:** app and bot fields look alike but explicit labels distinguish
+  them. A repeated callback should produce the same receipt as the original.
+- **Continuity / alignment:** the vertical column and aligned footer remain
+  readable at 390px. Keep the complete replacement of the form.
+- **Figure-ground:** the modal separates the private operation from channel
+  conversation. Status must remain text, not rely on success/error colors.
+- **Closure:** the current replay failure contradicts the completed operation
+  and invites unnecessary re-entry. Stored replays must recover the receipt;
+  pending replays must say verification is needed and prohibit resending.
+- **Symmetry:** the balanced modal and right-aligned Close are sufficient;
+  adding Retry would introduce an unjustified competing action.
+- **Common fate:** fields, hints and Save disappear as one unit. A pending
+  callback must not visually revert any part of the task to a new submission.
+- **Pragnanz:** one request has one result. Do not expose callback IDs, one-use
+  claims or retry mechanics to explain a duplicate delivery.
+
+Density, whitespace, typography, contrast and rhythm remain those inspected in
+the prototype. The short verification text wraps without crowding; the existing
+receipt fits in one column. Empty input keeps native required-field feedback;
+processing removes editable input; known failure may request a new invitation;
+uncertain or pending storage must not claim failure; success shows the existing
+fingerprint and, for env, the reload notice. Progressive disclosure does not add
+technical detail. Native labeled controls and text-only status preserve the
+accessible composition, but keyboard, focus, screen reader and actual Slack
+contrast require validation in Slack and are not established by this prototype.
+
+Implementation direction: preserve the layout and native controls, validate the
+current actor plus account/workspace/user/view binding before consulting result
+state, and recover stored/pending results without asking for or storing another
+token. Validate actual builders again at 390px and 1200px after the change.
+
+## Replay correction: post-implementation validation
+
+Generated fresh HTML from the actual Block Kit builders with synthetic metadata,
+under the isolated-runtime test preload. Chrome CDP captured form, saving,
+stored, verify and failed at 390×844 and 1200×900 in
+`/tmp/ravi-credential-intake-f5-preview/`. Every document's scroll width matched
+its viewport; each complete modal fit vertically. Form retained two named token
+inputs and Cancel/Save; every status retained zero inputs and only Close. Visual
+inspection of mobile receipts/verification and desktop form/verification
+confirmed readable wrapping and the same hierarchy, grouping and closure as the
+initial composition. This validates the local equivalent, not live Slack,
+keyboard/focus behavior or assistive-technology behavior.
+
+The isolated callback tests verify stored and pending replays, including a
+get/claim race, never claim or write again and do not ask for another token.
+Stored replays retain the original fingerprint/reload instruction; pending and
+incomplete-result records retain verification. Status/fingerprint getter probes
+are untouched when account, workspace, user, current authority, canonical actor,
+view or callback validation fails. A failed replay ACK also preserves the known
+receipt instead of replacing success with failure.

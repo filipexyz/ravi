@@ -95,3 +95,23 @@ Keychain writes MUST carry secret bytes only on stdin, never argv/environment.
 The native command parser's bounded input limit MUST fail closed. Backend output
 MUST be discarded and errors typed, with a finite process timeout. Larger token
 bundles use the default file backend or Vault. No tests write the operator's real Keychain.
+
+## Repeated submissions and local env corrections
+
+After reauthorizing the current human and issuer and checking account, team,
+user, bound contact and view, a `stored` callback MUST show its existing receipt
+and activation notice. A `pending` callback MUST show processing/verification,
+without a new invitation or assertion of failure. Neither state may require or validate a new
+submitted token, claim again or write again. Raw payload sanitization still runs
+before any asynchronous handling. This applies to races between the
+initial read and claim and to expired completed requests: expiry prevents new
+writes, not authorized retrieval of their existing result. Wrong actors or
+bindings MUST NOT consult status/fingerprint. Failure to deliver an ACK/receipt
+MUST NOT relabel a known successful write as failed.
+
+The env sink MUST call the internal add-only primitive under the per-file lock
+specified by `cli/runtime-env`, not a preflight followed by unconditional set.
+Known precommit conflicts MUST remain failures with no mutation; presence of a
+competitor's value MUST NOT be mistaken for this request's uncertain success.
+An actual postcommit failure or unprovable outcome MUST remain pending for
+trusted reconciliation. No arbitrary path or remote env write is introduced.

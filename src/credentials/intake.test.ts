@@ -4,7 +4,13 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { getRaviEnvKey, RAVI_ENV_SECRET_KEYS, setRaviEnvKey } from "../runtime/ravi-env-file.js";
+import {
+  addRaviEnvKey,
+  getRaviEnvKey,
+  RAVI_ENV_SECRET_KEYS,
+  RaviEnvFileError,
+  setRaviEnvKey,
+} from "../runtime/ravi-env-file.js";
 import {
   closeCredentialsDb,
   createCredentialConnectionIfAbsent,
@@ -207,15 +213,36 @@ describe("credential intake boundary", () => {
     let written = false;
     await expect(
       storeIntakeSecret(request, `${TOKEN}-replacement`, {
-        setEnvKey: (...args) => {
+        addEnvKey: (...args) => {
           written = true;
-          return setRaviEnvKey(...args);
+          return addRaviEnvKey(...args);
         },
       }),
     ).rejects.toThrow("INTAKE_TARGET_EXISTS");
     expect(written).toBe(false);
     expect(getRaviEnvKey("ANTHROPIC_API_KEY").present).toBe(false);
     expect(getIntakeRequest(request.id)?.status).toBe("failed");
+  });
+
+  it("enforces add-only again inside the writer after a stale preflight", async () => {
+    const request = claimed();
+    let preflight = true;
+    await expect(
+      storeIntakeSecret(request, `${TOKEN}-loser`, {
+        getEnvKey: (key) => {
+          const result = getRaviEnvKey(key);
+          if (preflight) {
+            preflight = false;
+            setRaviEnvKey(key, `${TOKEN}-winner`);
+          }
+          return result;
+        },
+      }),
+    ).rejects.toThrow("INTAKE_TARGET_EXISTS");
+    const bytes = readFileSync(join(stateDir, ".env"), "utf8");
+    expect(bytes).toContain(`${TOKEN}-winner`);
+    expect(bytes).not.toContain("loser");
+    expect(getIntakeRequest(request.id)).toMatchObject({ status: "failed", errorCode: "INTAKE_TARGET_EXISTS" });
   });
 
   it("validates Slack payload and stores only its backend reference", async () => {
@@ -363,14 +390,27 @@ describe("credential intake boundary", () => {
     const request = claimed();
     await expect(
       storeIntakeSecret(request, TOKEN, {
-        setEnvKey: (...args) => {
-          setRaviEnvKey(...args);
+        addEnvKey: (...args) => {
+          addRaviEnvKey(...args);
           throw new Error(`Write response echoed ${TOKEN}`);
         },
       }),
     ).rejects.toThrow("INTAKE_RECONCILIATION_REQUIRED");
     expect(getRaviEnvKey("ANTHROPIC_API_KEY").present).toBe(true);
     expect(getIntakeRequest(request.id)?.status).toBe("pending");
+  });
+
+  it("keeps an explicit postcommit uncertainty pending even if the target is no longer present", async () => {
+    const request = claimed();
+    await expect(
+      storeIntakeSecret(request, TOKEN, {
+        addEnvKey: () => {
+          throw new RaviEnvFileError("ENV_WRITE_UNCERTAIN", "ENV_WRITE_UNCERTAIN");
+        },
+      }),
+    ).rejects.toThrow("INTAKE_RECONCILIATION_REQUIRED");
+    expect(getIntakeRequest(request.id)?.status).toBe("pending");
+    expect(auditRows().some((row) => (row as { outcome: string }).outcome === "failed")).toBe(false);
   });
 
   it("makes connection creation atomic even when the preflight check raced", () => {

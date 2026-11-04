@@ -2,7 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getDb } from "../router/router-db.js";
 import { parseSlackSecretPayload } from "../channels/slack/credentials.js";
-import { assertRaviEnvKey, getRaviEnvKey, isRaviEnvSecretKey, setRaviEnvKey } from "../runtime/ravi-env-file.js";
+import {
+  addRaviEnvKey,
+  assertRaviEnvKey,
+  getRaviEnvKey,
+  isRaviEnvSecretKey,
+  RaviEnvFileError,
+} from "../runtime/ravi-env-file.js";
 import { deleteSecret, writeSecret } from "./backends.js";
 import { createCredentialConnectionIfAbsent, getCredentialConnection, normalizeCredentialIdentifier } from "./store.js";
 
@@ -349,7 +355,7 @@ function audit(request: IntakeRequest, outcome: string, now: number): void {
 
 export interface IntakeSecretDeps {
   getEnvKey?: typeof getRaviEnvKey;
-  setEnvKey?: typeof setRaviEnvKey;
+  addEnvKey?: typeof addRaviEnvKey;
   getConnection?: typeof getCredentialConnection;
   writeSecret?: typeof writeSecret;
   deleteSecret?: typeof deleteSecret;
@@ -386,7 +392,7 @@ export async function storeIntakeSecret(
       const existing = (deps.getEnvKey ?? getRaviEnvKey)(target.key);
       if (existing.present || existing.processPresent) throw new IntakeError("INTAKE_TARGET_EXISTS");
       envWriteAttempted = true;
-      (deps.setEnvKey ?? setRaviEnvKey)(target.key, secret);
+      (deps.addEnvKey ?? addRaviEnvKey)(target.key, secret);
       secretWritten = true;
     } else {
       if (target.provider === "slack") parseSlackSecretPayload(secret);
@@ -423,6 +429,12 @@ export async function storeIntakeSecret(
     // A metadata commit or env write can fail after its durable side effect.
     // Never delete a referenced secret or tell the user an uncertain write did
     // not happen. The pending request keeps the target blocked for inspection.
+    // Typed writer rejections before rename are known to have made no write.
+    // An existing key may belong to a competing request, not this submission.
+    if (error instanceof RaviEnvFileError && error.code === "ENV_WRITE_UNCERTAIN") {
+      throw new IntakeError("INTAKE_RECONCILIATION_REQUIRED");
+    }
+    if (error instanceof RaviEnvFileError) envWriteAttempted = false;
     if (!secretWritten && envWriteAttempted && target.kind === "env") {
       try {
         secretWritten = (deps.getEnvKey ?? getRaviEnvKey)(target.key).present;
@@ -447,7 +459,14 @@ export async function storeIntakeSecret(
       }
     }
     if (secretWritten) throw new IntakeError("INTAKE_RECONCILIATION_REQUIRED");
-    const code = error instanceof IntakeError ? error.code : "INTAKE_STORE_FAILED";
+    const code =
+      error instanceof IntakeError
+        ? error.code
+        : error instanceof RaviEnvFileError && error.code === "ENV_KEY_EXISTS"
+          ? "INTAKE_TARGET_EXISTS"
+          : error instanceof RaviEnvFileError && error.code === "ENV_FILE_BUSY"
+            ? "INTAKE_TARGET_BUSY"
+            : "INTAKE_STORE_FAILED";
     try {
       complete(current.id, { status: "failed", errorCode: code });
     } catch {

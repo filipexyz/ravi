@@ -5,11 +5,15 @@ import { join } from "node:path";
 import { setApprovalGrantorRouterConfigForTest } from "../../approval/grantor.js";
 import { seedApprovalContact } from "../../approval/test-support.js";
 import {
+  cancelIntakeRequest,
+  claimIntakeRequest,
+  completeIntakeRequest,
   createIntakeRequest,
   getIntakeRequest,
   storeIntakeSecret,
   IntakeError,
   type IntakeMetadata,
+  type IntakeRequest,
 } from "../../credentials/intake.js";
 import { getCredentialConnection } from "../../credentials/store.js";
 import { dbCreateAgent, dbSetSetting, dbUpdateAgent, getDb } from "../../router/router-db.js";
@@ -252,7 +256,7 @@ describe("Slack private credential intake boundary", () => {
     expect(h.prompts).toEqual([]);
   });
 
-  it("refuses replay, identity spoofing, expiration and a revoked human permission", async () => {
+  it("prevents duplicate writes, identity spoofing, expiration and a revoked human permission", async () => {
     const writes: string[] = [];
     let authorized = true;
     const h = harness({
@@ -281,6 +285,237 @@ describe("Slack private credential intake boundary", () => {
     await h.service.handleEnvelope(submission(expired.id), h.ack);
     expect(writes).toEqual([SECRET]);
     expect(h.published).toEqual([]);
+  });
+
+  for (const target of ["env:ANTHROPIC_AUTH_TOKEN", "connection:slack:replay"]) {
+    it(`returns the persisted receipt for a duplicate ${target} callback without another token or write`, async () => {
+      const request = createIntakeRequest({
+        ...metadata,
+        target,
+        ...(target.startsWith("connection:") ? { backend: "file" as const } : {}),
+      });
+      const claim = mock(claimIntakeRequest);
+      const store = mock(async () => ({ fingerprint: "b".repeat(64), daemonReloadRequired: false }));
+      const h = harness({ store, dependencies: { claim } });
+      await h.open(request.id);
+      claimIntakeRequest(request.id, { ...metadata, actorContactId: "contact-1", viewId: "V1" });
+      completeIntakeRequest(request.id, { status: "stored", fingerprint: "a".repeat(64) });
+      const before = databaseSnapshot();
+      for (const includeToken of [true, false]) {
+        const envelope = submission(request.id);
+        if (!includeToken) delete ((envelope.payload as Record<string, unknown>).view as Record<string, unknown>).state;
+        await h.service.handleEnvelope(envelope, h.ack);
+        const visible = JSON.stringify(h.ack.mock.calls.at(-1)?.[1]);
+        expect(visible).toContain("Credencial salva");
+        expect(visible).toContain("aaaaaaaaaaaa");
+        expect(visible.includes("recarregar a configuração")).toBe(target.startsWith("env:"));
+        expect(visible).not.toContain("Solicite um novo convite");
+        expect(visible).not.toContain("plain_text_input");
+        expect(visible + JSON.stringify(envelope)).not.toContain(SECRET);
+        expect(visible + JSON.stringify(envelope)).not.toContain(RESPONSE_URL);
+      }
+      expect(claim).not.toHaveBeenCalled();
+      expect(store).not.toHaveBeenCalled();
+      expect(databaseSnapshot()).toBe(before);
+      expect(h.published).toEqual([]);
+      expect(h.prompts).toEqual([]);
+    });
+  }
+
+  for (const status of ["pending", "failed", "cancelled"] as const) {
+    it(`keeps a duplicate ${status} callback in its known state without claiming or writing again`, async () => {
+      const request = createIntakeRequest(metadata);
+      const claim = mock(claimIntakeRequest);
+      const store = mock(async () => ({ fingerprint: "a".repeat(64), daemonReloadRequired: true }));
+      const h = harness({ store, dependencies: { claim } });
+      await h.open(request.id);
+      const binding = { ...metadata, actorContactId: "contact-1", viewId: "V1" };
+      if (status === "cancelled") cancelIntakeRequest(request.id, binding);
+      else {
+        claimIntakeRequest(request.id, binding);
+        if (status === "failed") completeIntakeRequest(request.id, { status, errorCode: "INTAKE_SECRET_INVALID" });
+      }
+      const before = databaseSnapshot();
+      await h.service.handleEnvelope(submission(request.id), h.ack);
+      const visible = JSON.stringify(h.ack.mock.calls.at(-1)?.[1]);
+      if (status === "pending") {
+        expect(visible).toContain("Verificar gravação");
+        expect(visible).toContain("Não envie o token de novo");
+        expect(visible).not.toContain("Credencial não salva");
+        expect(visible).not.toContain("Solicite um novo convite");
+      } else expect(visible).toContain("Credencial não salva");
+      expect(visible).not.toContain("plain_text_input");
+      expect(visible).not.toContain(SECRET);
+      expect(claim).not.toHaveBeenCalled();
+      expect(store).not.toHaveBeenCalled();
+      expect(databaseSnapshot()).toBe(before);
+      expect(h.published).toEqual([]);
+      expect(h.prompts).toEqual([]);
+    });
+  }
+
+  for (const mismatch of ["account", "workspace", "user", "actor", "revoked", "view", "callback"] as const) {
+    it(`does not consult or disclose replay status before validating ${mismatch}`, async () => {
+      const request: IntakeRequest = {
+        ...metadata,
+        id: "protected-receipt",
+        status: "stored",
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        viewId: "V1",
+        actorContactId: "contact-1",
+      };
+      if (mismatch === "account") request.accountId = "other-account";
+      if (mismatch === "workspace") request.teamId = "T2";
+      if (mismatch === "user") request.userId = "U2";
+      const statusRead = mock(() => "stored");
+      const resultRead = mock(() => "a".repeat(64));
+      Object.defineProperties(request, {
+        status: { get: statusRead },
+        fingerprint: { get: resultRead },
+        errorCode: { get: resultRead },
+      });
+      const claim = mock(claimIntakeRequest);
+      const store = mock(async () => ({ fingerprint: "a".repeat(64), daemonReloadRequired: true }));
+      const h = harness({
+        store,
+        dependencies: {
+          getRequest: () => request,
+          claim,
+          authorize: () => (mismatch === "revoked" ? null : mismatch === "actor" ? "contact-other" : "contact-1"),
+        },
+      });
+      const envelope = submission(request.id);
+      const view = (envelope.payload as Record<string, unknown>).view as Record<string, unknown>;
+      if (mismatch === "view") view.id = "VFORGED";
+      if (mismatch === "callback") view.callback_id = "ravi_credential_intake:unknown";
+      await h.service.handleEnvelope(envelope, h.ack);
+      expect(statusRead).not.toHaveBeenCalled();
+      expect(resultRead).not.toHaveBeenCalled();
+      expect(claim).not.toHaveBeenCalled();
+      expect(store).not.toHaveBeenCalled();
+      const visible = JSON.stringify([h.ack.mock.calls, h.updates, h.feedback]);
+      expect(visible).not.toContain("aaaaaaaaaaaa");
+      expect(visible).not.toContain("Credencial salva");
+      expect(visible + JSON.stringify(envelope)).not.toContain(SECRET);
+      expect(h.published).toEqual([]);
+      expect(h.prompts).toEqual([]);
+    });
+  }
+
+  for (const status of ["stored", "pending"] as const) {
+    it(`recovers ${status} after another callback wins the claim race`, async () => {
+      const request = createIntakeRequest(metadata);
+      const authorize = mock(() => "contact-1");
+      const store = mock(async () => ({ fingerprint: "b".repeat(64), daemonReloadRequired: true }));
+      const h = harness({
+        store,
+        dependencies: {
+          authorize,
+          claim: (id, binding) => {
+            claimIntakeRequest(id, binding);
+            if (status === "stored") completeIntakeRequest(id, { status, fingerprint: "a".repeat(64) });
+            throw new IntakeError("INTAKE_ALREADY_USED");
+          },
+        },
+      });
+      await h.open(request.id);
+      authorize.mockClear();
+      await h.service.handleEnvelope(submission(request.id), h.ack);
+      expect(authorize).toHaveBeenCalledTimes(2);
+      expect(store).not.toHaveBeenCalled();
+      expect(getIntakeRequest(request.id)?.status).toBe(status);
+      const visible = JSON.stringify(h.ack.mock.calls.at(-1)?.[1]);
+      expect(visible).toContain(status === "stored" ? "aaaaaaaaaaaa" : "Não envie o token de novo");
+      expect(visible).not.toContain("Credencial não salva");
+      expect(visible).not.toContain(SECRET);
+      expect(h.published).toEqual([]);
+    });
+  }
+
+  for (const mismatch of ["revoked", "view", "actor"] as const) {
+    it(`revalidates ${mismatch} before consulting a result recovered after the claim race`, async () => {
+      const initial: IntakeRequest = {
+        ...metadata,
+        id: "claim-race",
+        status: "open",
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        viewId: "V1",
+        actorContactId: "contact-1",
+      };
+      let current = initial;
+      const statusRead = mock(() => "stored");
+      const resultRead = mock(() => "a".repeat(64));
+      const authorize = mock(() => (current !== initial && mismatch === "revoked" ? null : "contact-1"));
+      const store = mock(async () => ({ fingerprint: "b".repeat(64), daemonReloadRequired: true }));
+      const h = harness({
+        store,
+        dependencies: {
+          authorize,
+          getRequest: () => current,
+          claim: () => {
+            current = {
+              ...initial,
+              ...(mismatch === "view" ? { viewId: "VOTHER" } : {}),
+              ...(mismatch === "actor" ? { actorContactId: "contact-other" } : {}),
+            };
+            Object.defineProperties(current, {
+              status: { get: statusRead },
+              fingerprint: { get: resultRead },
+              errorCode: { get: resultRead },
+            });
+            throw new IntakeError("INTAKE_ALREADY_USED");
+          },
+        },
+      });
+      await h.service.handleEnvelope(submission(initial.id), h.ack);
+      expect(authorize).toHaveBeenCalledTimes(2);
+      expect(statusRead).not.toHaveBeenCalled();
+      expect(resultRead).not.toHaveBeenCalled();
+      expect(store).not.toHaveBeenCalled();
+      expect(JSON.stringify(h.ack.mock.calls)).not.toContain("aaaaaaaaaaaa");
+      expect(h.published).toEqual([]);
+    });
+  }
+
+  it("does not claim failure or invent a receipt when stored metadata is incomplete", async () => {
+    const request: IntakeRequest = {
+      ...metadata,
+      id: "incomplete-receipt",
+      status: "stored",
+      createdAt: Date.now(),
+      expiresAt: Date.now() - 1,
+      viewId: "V1",
+      actorContactId: "contact-1",
+    };
+    const claim = mock(claimIntakeRequest);
+    const store = mock(async () => ({ fingerprint: "b".repeat(64), daemonReloadRequired: true }));
+    const h = harness({ store, dependencies: { getRequest: () => request, claim } });
+    await h.service.handleEnvelope(submission(request.id), h.ack);
+    const visible = JSON.stringify(h.ack.mock.calls);
+    expect(visible).toContain("Verificar gravação");
+    expect(visible).not.toContain("Credencial não salva");
+    expect(visible).not.toContain("Fingerprint");
+    expect(claim).not.toHaveBeenCalled();
+    expect(store).not.toHaveBeenCalled();
+  });
+
+  it("preserves the existing receipt when acknowledging a replay fails", async () => {
+    const request = createIntakeRequest(metadata);
+    const store = mock(async () => ({ fingerprint: "b".repeat(64), daemonReloadRequired: true }));
+    const h = harness({ store });
+    await h.open(request.id);
+    claimIntakeRequest(request.id, { ...metadata, actorContactId: "contact-1", viewId: "V1" });
+    completeIntakeRequest(request.id, { status: "stored", fingerprint: "a".repeat(64) });
+    const before = databaseSnapshot();
+    await h.service.handleEnvelope(submission(request.id), async () => {
+      throw new Error("Duplicate ACK failed");
+    });
+    expect(store).not.toHaveBeenCalled();
+    expect(JSON.stringify(h.updates)).toContain("aaaaaaaaaaaa");
+    expect(JSON.stringify(h.updates)).not.toContain("Credencial não salva");
+    expect(databaseSnapshot()).toBe(before);
   });
 
   it("scrubs before ACK and contains malicious backend errors without logging their content", async () => {

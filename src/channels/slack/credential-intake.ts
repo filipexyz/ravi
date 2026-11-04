@@ -282,6 +282,7 @@ export async function handleCredentialIntakeEnvelope(input: {
   let storeStarted = false;
   let openedViewId: string | undefined;
   let feedbackRequest: IntakeRequest | undefined;
+  let replayView: Record<string, unknown> | undefined;
   const ack = async (response?: Record<string, unknown>) => {
     if (acknowledged) return;
     acknowledged = true;
@@ -289,11 +290,44 @@ export async function handleCredentialIntakeEnvelope(input: {
   };
   try {
     if (!input.directSocketMode || !requestId || !teamId || !userId) throw new Error("INTAKE_DENIED");
+    const authorizeRequest = (request: IntakeRequest | null): string => {
+      if (
+        !request ||
+        request.id !== requestId ||
+        request.accountId !== input.accountId ||
+        request.teamId !== teamId ||
+        request.userId !== userId
+      )
+        throw new Error("INTAKE_DENIED");
+      const actorContactId = deps.authorize(request, userId, input.instanceId);
+      if (!actorContactId || (request.actorContactId && request.actorContactId !== actorContactId))
+        throw new Error("INTAKE_DENIED");
+      return actorContactId;
+    };
+    const existingSubmissionView = (
+      request: IntakeRequest,
+      actorContactId: string,
+    ): Record<string, unknown> | undefined => {
+      // Replays are status reads, not new claims. Validate the persisted human
+      // and exact modal before inspecting status, fingerprint or error code.
+      if (!viewId || request.viewId !== viewId || request.actorContactId !== actorContactId)
+        throw new Error("INTAKE_DENIED");
+      if (request.status === "open") return undefined;
+      if (request.status === "stored") {
+        return request.fingerprint && /^[a-f0-9]{64}$/.test(request.fingerprint)
+          ? buildCredentialIntakeStatus("stored", {
+              fingerprint: request.fingerprint,
+              daemonReloadRequired: normalizeIntakeTarget(request.target).kind === "env",
+            })
+          : buildCredentialIntakeStatus("verify");
+      }
+      return buildCredentialIntakeStatus(
+        request.status === "pending" || request.errorCode === "INTAKE_RECONCILIATION_REQUIRED" ? "verify" : "failed",
+      );
+    };
     const request = deps.getRequest(requestId);
-    if (!request || request.accountId !== input.accountId || request.teamId !== teamId || request.userId !== userId)
-      throw new Error("INTAKE_DENIED");
-    const actorContactId = deps.authorize(request, userId, input.instanceId);
-    if (!actorContactId) throw new Error("INTAKE_DENIED");
+    const actorContactId = authorizeRequest(request);
+    if (!request) throw new Error("INTAKE_DENIED");
     feedbackRequest = request;
     const binding = { accountId: input.accountId, teamId, userId, actorContactId, ...(viewId ? { viewId } : {}) };
     if (kind === "view_closed") {
@@ -317,6 +351,16 @@ export async function handleCredentialIntakeEnvelope(input: {
       deps.bindView(requestId, binding, openedViewId);
       return true;
     }
+    if (kind !== "view_submission" || callbackId !== CREDENTIAL_INTAKE_SUBMIT || !viewId)
+      throw new Error("INTAKE_DENIED");
+    replayView = existingSubmissionView(request, actorContactId);
+    if (replayView) {
+      secret = undefined;
+      appToken = undefined;
+      botToken = undefined;
+      await ack({ response_action: "update", view: replayView });
+      return true;
+    }
     const target = normalizeIntakeTarget(request.target);
     if (target.kind === "connection" && target.provider === "slack") {
       if (!appToken || !botToken || appToken.length > 3000 || botToken.length > 3000) throw new Error("INTAKE_DENIED");
@@ -324,16 +368,23 @@ export async function handleCredentialIntakeEnvelope(input: {
       appToken = undefined;
       botToken = undefined;
     }
-    if (
-      kind !== "view_submission" ||
-      callbackId !== CREDENTIAL_INTAKE_SUBMIT ||
-      !viewId ||
-      !request.viewId ||
-      !secret ||
-      secret.length > 8192
-    )
-      throw new Error("INTAKE_DENIED");
-    const claimed = deps.claim(requestId, binding);
+    if (!secret || secret.length > 8192) throw new Error("INTAKE_DENIED");
+    let claimed: IntakeRequest;
+    try {
+      claimed = deps.claim(requestId, binding);
+    } catch (error) {
+      if (!(error instanceof IntakeError) || error.code !== "INTAKE_ALREADY_USED") throw error;
+      // Another process may have claimed/completed after our initial lookup.
+      // Reauthorize the fresh record before recovering its existing result.
+      const current = deps.getRequest(requestId);
+      const currentActorContactId = authorizeRequest(current);
+      if (!current) throw error;
+      replayView = existingSubmissionView(current, currentActorContactId);
+      if (!replayView) throw error;
+      secret = undefined;
+      await ack({ response_action: "update", view: replayView });
+      return true;
+    }
     pendingRequestId = claimed.id;
     await ack({ response_action: "update", view: buildCredentialIntakeStatus("saving") });
     storeStarted = true;
@@ -367,6 +418,7 @@ export async function handleCredentialIntakeEnvelope(input: {
       (storeStarted && !(error instanceof IntakeError))
         ? "verify"
         : "failed";
+    const failureView = replayView ?? buildCredentialIntakeStatus(failureState);
     if (pendingRequestId && !storeStarted) {
       try {
         deps.complete(pendingRequestId, { status: "failed", errorCode: "INTAKE_STORE_FAILED" });
@@ -375,22 +427,16 @@ export async function handleCredentialIntakeEnvelope(input: {
       }
     }
     if (openedViewId) {
-      await input.client
-        .viewsUpdate({ viewId: openedViewId, view: buildCredentialIntakeStatus(failureState) })
-        .catch(() => {
-          // no-cause: Closing an opened modal is best effort; preserve the safe failure without Slack diagnostics.
-        });
+      await input.client.viewsUpdate({ viewId: openedViewId, view: failureView }).catch(() => {
+        // no-cause: Closing an opened modal is best effort; preserve the safe failure without Slack diagnostics.
+      });
     }
     if (!acknowledged) {
-      await ack(
-        kind === "view_submission"
-          ? { response_action: "update", view: buildCredentialIntakeStatus(failureState) }
-          : undefined,
-      ).catch(() => {
+      await ack(kind === "view_submission" ? { response_action: "update", view: failureView } : undefined).catch(() => {
         // no-cause: Failed interaction acknowledgment must not forward raw Slack payload or response diagnostics.
       });
     } else if (kind === "view_submission" && viewId) {
-      await input.client.viewsUpdate({ viewId, view: buildCredentialIntakeStatus(failureState) }).catch(() => {
+      await input.client.viewsUpdate({ viewId, view: failureView }).catch(() => {
         // no-cause: Failure-view delivery is best effort; keep raw Slack diagnostics outside the intake response.
       });
     }

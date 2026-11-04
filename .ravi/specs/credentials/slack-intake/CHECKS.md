@@ -15,3 +15,10 @@
   encoded secret, and oversized stdin commands fail before spawning a process.
 - Review the rendered modal prototype at desktop and mobile sizes against
   `design/slack-credential-intake-ux.md`; no real credentials are used.
+
+- Stored/pending replay, including get-to-claim races and ACK failure, must return
+  the existing receipt or verification state with zero additional writes.
+- Status/fingerprint getters must not be accessed for revoked authorization,
+  foreign account/team/user/contact/view or a non-submission callback.
+- Stale env preflight followed by a competing add must leave the winner intact
+  and terminally reject the losing request; audit must not contain either token.
