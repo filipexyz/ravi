@@ -214,6 +214,142 @@ describe("identity, dismissal and current evidence", () => {
 });
 
 describe("complete API data or fail closed", () => {
+  function timelineFixture(pages: any[]) {
+    const fixtureState = fixture();
+    const original = fixtureState.api.graphql;
+    fixtureState.api.graphql = async (query: string, variables: any) => {
+      const result = await original(query, variables);
+      const pr = result.repository.pullRequest;
+      if (pr.timelineItems) {
+        const page = variables.cursor
+          ? pages.findIndex((entry) => entry.pageInfo.endCursor === variables.cursor) + 1
+          : 0;
+        pr.timelineItems = structuredClone(pages[page]);
+      }
+      return result;
+    };
+    return fixtureState;
+  }
+
+  const visibleTimeline = Array.from({ length: 10 }, (_, index) => ({
+    __typename: "IssueComment",
+    id: `event-${index}`,
+  }));
+  const timelinePage = {
+    totalCount: 12,
+    nodes: visibleTimeline,
+    pageInfo: { hasNextPage: false, endCursor: "last" },
+  };
+
+  test("timeline totalCount=12 with 10 visible nodes and a terminal page passes with an audit", async () => {
+    const { api, calls } = timelineFixture([timelinePage]);
+    const result = await evaluate(api, args);
+    expect(result.ok).toBe(true);
+    expect(result.audit.join("\n")).toContain("timelineItems: totalCount=12, fetched=10, difference=2");
+    expect(result.audit.join("\n")).toContain("hasNextPage=false, unique non-null ids and stable totalCount");
+    expect(calls.filter(({ query }) => query.includes("timelineItems(first:")).length).toBe(2);
+  });
+
+  test("timeline overcount is allowed across complete pages", async () => {
+    const { api } = timelineFixture([
+      { ...timelinePage, nodes: visibleTimeline.slice(0, 5), pageInfo: { hasNextPage: true, endCursor: "next" } },
+      { ...timelinePage, nodes: visibleTimeline.slice(5) },
+    ]);
+    expect((await evaluate(api, args)).ok).toBe(true);
+  });
+
+  test("timeline overcount does not waive unresolved threads or current-head approval", async () => {
+    const { api, state } = timelineFixture([timelinePage]);
+    state.reviewThreads[0].isResolved = false;
+    state.reviews[1].commit.oid = NEXT;
+    const result = await evaluate(api, args);
+    expect(result.ok).toBe(false);
+    expect(result.problems.join("\n")).toContain("Unresolved review thread");
+    expect(result.problems.join("\n")).toContain("No independent writer approval");
+    expect(result.audit.join("\n")).toContain("difference=2");
+  });
+
+  test("timeline totalCount=12 with 10 nodes and a repeated next cursor still blocks", async () => {
+    const { api } = timelineFixture([
+      { ...timelinePage, nodes: visibleTimeline.slice(0, 5), pageInfo: { hasNextPage: true, endCursor: "same" } },
+      { ...timelinePage, nodes: visibleTimeline.slice(5), pageInfo: { hasNextPage: true, endCursor: "same" } },
+    ]);
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: invalid pagination");
+  });
+
+  test.each([null, "", "   "])("timeline next page without a cursor blocks: %j", async (endCursor) => {
+    const { api } = timelineFixture([{ ...timelinePage, pageInfo: { hasNextPage: true, endCursor } }]);
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: invalid pagination");
+  });
+
+  test("empty nonterminal timeline page blocks", async () => {
+    const { api } = timelineFixture([
+      { ...timelinePage, nodes: [], pageInfo: { hasNextPage: true, endCursor: "next" } },
+    ]);
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: invalid pagination");
+  });
+
+  test.each([null, {}, visibleTimeline[0]])("null, missing or duplicate timeline id blocks: %j", async (node) => {
+    const { api } = timelineFixture([{ ...timelinePage, nodes: [...visibleTimeline, node] }]);
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: null/duplicate node");
+  });
+
+  test("timeline duplicate ids across pages block", async () => {
+    const { api } = timelineFixture([
+      { ...timelinePage, nodes: visibleTimeline.slice(0, 5), pageInfo: { hasNextPage: true, endCursor: "next" } },
+      { ...timelinePage, nodes: visibleTimeline.slice(4) },
+    ]);
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: null/duplicate node");
+  });
+
+  test("timeline count changing between pages blocks even with fewer visible nodes", async () => {
+    const { api } = timelineFixture([
+      { ...timelinePage, nodes: visibleTimeline.slice(0, 5), pageInfo: { hasNextPage: true, endCursor: "next" } },
+      { ...timelinePage, totalCount: 13, nodes: visibleTimeline.slice(5) },
+    ]);
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: count changed during pagination");
+  });
+
+  test("timeline count changing between evidence reads blocks even if nodes are identical", async () => {
+    const { api } = timelineFixture([timelinePage]);
+    const original = api.graphql;
+    let reads = 0;
+    api.graphql = async (...values: any[]) => {
+      const result = await original(...values);
+      const timeline = result.repository.pullRequest.timelineItems;
+      if (timeline && ++reads === 2) timeline.totalCount++;
+      return result;
+    };
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: evidence changed during evaluation");
+  });
+
+  test("timeline cannot deliver more nodes than totalCount", async () => {
+    const { api } = timelineFixture([{ ...timelinePage, totalCount: 9 }]);
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: more nodes than totalCount");
+  });
+
+  test("timeline pagination beyond the page limit blocks", async () => {
+    const pages = Array.from({ length: 1000 }, (_, index) => ({
+      totalCount: 1001,
+      nodes: [{ __typename: "IssueComment", id: `event-${index}` }],
+      pageInfo: { hasNextPage: true, endCursor: `cursor-${index}` },
+    }));
+    const { api } = timelineFixture(pages);
+    await expect(evaluate(api, args)).rejects.toThrow("timelineItems: pagination limit reached");
+  });
+
+  test.each(["reviewThreads", "reviews"])("%s still requires an exact totalCount", async (key) => {
+    const { api } = fixture();
+    const original = api.graphql;
+    api.graphql = async (...values: any[]) => {
+      const result = await original(...values);
+      const connection = result.repository.pullRequest[key];
+      if (connection) connection.totalCount++;
+      return result;
+    };
+    await expect(evaluate(api, args)).rejects.toThrow(`${key}: incomplete response`);
+  });
+
   test.each([
     "null PR",
     "missing nodes",

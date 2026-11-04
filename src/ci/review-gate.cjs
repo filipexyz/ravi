@@ -15,7 +15,8 @@ const FIELDS = {
     nodes { id state submittedAt body url author { login __typename } commit { oid } }
   }`,
   // Filtering timelineItems by itemTypes gives an UNFILTERED totalCount on GitHub.
-  // Fetch the whole connection and filter locally, so completeness is verifiable.
+  // Fetch the whole connection and filter locally. Even unfiltered totalCount can
+  // exceed the visible nodes; completeness uses pageInfo plus validated ids/counts.
   timelineItems: `timelineItems(first:100, after:$cursor) {
     totalCount pageInfo { hasNextPage endCursor }
     nodes { __typename ... on Node { id }
@@ -93,8 +94,8 @@ async function readConnection(api, repo, number, expectedSha, key) {
     }
     requireData(nodes.length <= total, `${key}: more nodes than totalCount`);
     if (!connection.pageInfo.hasNextPage) {
-      requireData(nodes.length === total, `${key}: incomplete response`);
-      return nodes;
+      requireData(key === "timelineItems" || nodes.length === total, `${key}: incomplete response`);
+      return { nodes, totalCount: total };
     }
     const next = connection.pageInfo.endCursor;
     requireData(connection.nodes.length > 0 && nonempty(next) && !cursors.has(next), `${key}: invalid pagination`);
@@ -108,11 +109,22 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
   requireData(SHA.test(expectedSha), "missing expected SHA");
   const repository = { owner, repo };
   const pr = await readPR(api, repository, number, expectedSha);
-  const threads = await readConnection(api, repository, number, expectedSha, "reviewThreads");
-  const reviews = await readConnection(api, repository, number, expectedSha, "reviews");
-  const timeline = await readConnection(api, repository, number, expectedSha, "timelineItems");
+  const connections = {};
+  for (const key of ["reviewThreads", "reviews", "timelineItems"]) {
+    connections[key] = await readConnection(api, repository, number, expectedSha, key);
+  }
+  const threads = connections.reviewThreads.nodes;
+  const reviews = connections.reviews.nodes;
+  const timeline = connections.timelineItems.nodes;
   const problems = [];
   const audit = [];
+  if (timeline.length < connections.timelineItems.totalCount) {
+    audit.push(
+      `timelineItems: totalCount=${connections.timelineItems.totalCount}, fetched=${timeline.length}, ` +
+        `difference=${connections.timelineItems.totalCount - timeline.length}; ` +
+        "complete via hasNextPage=false, unique non-null ids and stable totalCount across pages.",
+    );
+  }
   if (pr.isDraft) problems.push("PR is still a draft.");
 
   const permissions = new Map();
@@ -229,11 +241,7 @@ async function evaluate(api, { owner, repo, number, expectedSha }) {
   const current = await readPR(api, repository, number, expectedSha);
   requireData(current.baseRefName === pr.baseRefName && current.isDraft === pr.isDraft, "PR changed during evaluation");
   if (problems.length === 0) {
-    for (const [key, before] of [
-      ["reviewThreads", threads],
-      ["reviews", reviews],
-      ["timelineItems", timeline],
-    ]) {
+    for (const [key, before] of Object.entries(connections)) {
       const after = await readConnection(api, repository, number, expectedSha, key);
       requireData(JSON.stringify(before) === JSON.stringify(after), `${key}: evidence changed during evaluation`);
     }
