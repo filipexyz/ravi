@@ -5952,7 +5952,7 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "subscriptions", body: requestBody, as: SessionsSubscriptionsReturn.self)
   }
 
-  public func threadConfigure(_ thread: String, _ options: SessionsThreadConfigureOptions = .init()) async throws -> SessionsThreadConfigureReturn {
+  public func threadConfigure(_ thread: String, _ options: SessionsThreadConfigureOptions) async throws -> SessionsThreadConfigureReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["thread"] = try RaviJSON.fromEncodable(thread)
     try options.encodeBody(into: &requestBody)

@@ -77,6 +77,32 @@ describe("Slack parent thread runtime configuration", () => {
     expect(authorizeProviderChange).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [" \tOfF\n", "off"],
+    [" NoRmAl ", "normal"],
+    ["\rVeRbOsE\t", "verbose"],
+    [" \nClEaR\r ", null],
+  ] as const)("normalizes thinking %j and preserves it when later overrides omit it", async (thinking, expected) => {
+    const fixture = await seedThread();
+    const guard = mock(() => {});
+    const first = configureSlackThreadRuntime(
+      { parentSession: fixture.parent, ref: fixture.requestId, thinking },
+      guard,
+    );
+    expect(first.after).toEqual({ provider: "codex", model: "gpt-5.6", effort: "high", thinking: expected });
+
+    const second = configureSlackThreadRuntime(
+      { parentSession: fixture.parent, ref: fixture.requestId, model: "gpt-6-astra", effort: "ultra" },
+      guard,
+    );
+    expect(second.before).toEqual(first.after);
+    expect(second.after).toEqual({ provider: "codex", model: "gpt-6-astra", effort: "ultra", thinking: expected });
+    const persisted = getSession(fixture.child.sessionKey)!;
+    expect(persisted.thinkingLevel ?? null).toBe(expected);
+    expect(persisted).toMatchObject({ modelOverride: "gpt-6-astra", effortOverride: "ultra" });
+    expect(guard).not.toHaveBeenCalled();
+  });
+
   it.each(["name", "key", "requestId", "threadTs"])("accepts its child's %s", async (kind) => {
     const fixture = await seedThread();
     const refs = {

@@ -65,7 +65,9 @@ const agentChatActionCounts = new Map<string, { ownMessageCount: number; ownText
 let stickerCatalog: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
-let closeThreadError: Error | null = null;
+let closeThreadError: unknown = null;
+let reportSlackThreadError: unknown = null;
+let sendSlackThreadError: unknown = null;
 const closedSlackThreads: Array<{ session: Record<string, unknown>; returnResult?: string }> = [];
 const reportedSlackThreads: Array<{ session: Record<string, unknown>; message: string }> = [];
 const sentSlackThreadMessages: Array<{
@@ -82,7 +84,7 @@ const configuredSlackThreadCalls: Array<{
   effort?: string;
   thinking?: string;
 }> = [];
-let configureSlackThreadError: Error | null = null;
+let configureSlackThreadError: unknown = null;
 let configuredSlackThreadResult: Record<string, unknown>;
 let configuredThreadChild: Record<string, unknown>;
 const modifiedSessionRefs: string[] = [];
@@ -252,7 +254,7 @@ mock.module("../../channels/slack/thread-runtime.js", () => ({
     assertProviderAuthorized: (child: Record<string, unknown>, nextOverride: string | null) => void,
   ) => {
     configuredSlackThreadCalls.push(input);
-    if (configureSlackThreadError) throw configureSlackThreadError;
+    if (configureSlackThreadError !== null) throw configureSlackThreadError;
     expect(typeof assertProviderAuthorized).toBe("function");
     if (input.provider !== undefined) {
       const provider = input.provider.trim().toLowerCase();
@@ -284,6 +286,7 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
   }),
   reportSlackThreadProgress: async (session: Record<string, unknown>, message: string) => {
     reportedSlackThreads.push({ session, message });
+    if (reportSlackThreadError !== null) throw reportSlackThreadError;
     return {
       messageId: "slack-thread-report:slack-thread:req-1:m1",
       record: {
@@ -300,7 +303,10 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
     origin?: unknown;
   }) => {
     sentSlackThreadMessages.push(input);
-    if (input.ref === "missing") throw new Error("Slack thread not found for this session: missing");
+    if (sendSlackThreadError !== null) throw sendSlackThreadError;
+    if (input.ref === "missing") {
+      throw new CliExpectedError("Slack thread not found for this session: missing", "THREAD_NOT_FOUND", 1);
+    }
     if (input.ref === "vanished") {
       throw new CliExpectedError("Slack thread session not found: x", "THREAD_SESSION_MISSING", 1);
     }
@@ -320,7 +326,7 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
     parentReturnDelivered: false,
   }),
   closeSlackThread: async (session: Record<string, unknown>, returnResult?: string) => {
-    if (closeThreadError) throw closeThreadError;
+    if (closeThreadError !== null) throw closeThreadError;
     closedSlackThreads.push({ session, ...(returnResult ? { returnResult } : {}) });
     return {
       changed: true,
@@ -693,6 +699,8 @@ beforeEach(() => {
   createdSlackThreadLifecycles.length = 0;
   closedSlackThreads.length = 0;
   closeThreadError = null;
+  reportSlackThreadError = null;
+  sendSlackThreadError = null;
   reportedSlackThreads.length = 0;
   sentSlackThreadMessages.length = 0;
   configuredSlackThreadCalls.length = 0;
@@ -2866,6 +2874,132 @@ describe("SessionCommands prune", () => {
   });
 });
 
+describe("SessionCommands Slack thread error contract", () => {
+  const parentKey = "agent:dev:slack:ravi-slack:C123";
+  const childKey = fakeSlackThreadSummary.childSessionKey;
+  const childName = fakeSlackThreadSummary.childSessionName;
+
+  function setSessionContext(child: boolean): Record<string, unknown> {
+    const sessionKey = child ? childKey : parentKey;
+    const name = child ? childName : "dev-slack";
+    resolvedSession = { sessionKey, name, agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey, sessionName: name };
+    return resolvedSession;
+  }
+
+  for (const action of ["thread-configure", "close-thread", "report", "thread-send"] as const) {
+    describe(action, () => {
+      async function invoke(error: unknown): Promise<unknown> {
+        setSessionContext(action === "close-thread" || action === "report");
+        const commands = new SessionCommands();
+        switch (action) {
+          case "thread-configure":
+            configureSlackThreadError = error;
+            return commands.threadConfigure(childName, undefined, undefined, "ultra");
+          case "close-thread":
+            closeThreadError = error;
+            return commands.closeThread("done", undefined, true);
+          case "report":
+            reportSlackThreadError = error;
+            return commands.report("progress", undefined, true);
+          case "thread-send":
+            sendSlackThreadError = error;
+            return commands.threadSend(childName, "instructions", undefined, true);
+        }
+      }
+
+      it("preserves unexpected throwable identity and nested causes at the boundary", async () => {
+        const cause = new Error("thread lookup failed");
+        const error = new Error("thread operation failed", { cause });
+        const caught = await invoke(error).catch((thrown: unknown) => thrown);
+
+        expect(caught).toBe(error);
+        expect((caught as Error).cause).toBe(cause);
+        expect(mapExecutionErrorToContractError(`sessions ${action}`, caught)).toMatchObject({
+          code: "UNHANDLED_ERROR",
+          exitCode: 1,
+          details: {
+            cause: "thread operation failed\nCaused by: thread lookup failed",
+            context: { operation: `sessions ${action}` },
+          },
+        });
+      });
+
+      it("preserves SQLITE_FULL for SQLITE_CAPACITY boundary classification", async () => {
+        const error = Object.assign(new Error("SQLITE_FULL: database or disk is full"), { code: "SQLITE_FULL" });
+        const caught = await invoke(error).catch((thrown: unknown) => thrown);
+
+        expect(caught).toBe(error);
+        expect(mapExecutionErrorToContractError(`sessions ${action}`, caught)).toMatchObject({
+          code: "SQLITE_CAPACITY",
+          exitCode: 1,
+          details: { cause: error.message, retryable: false },
+        });
+      });
+
+      it.each([0, "upstream failure"])("preserves non-Error throwable %j", async (error) => {
+        const caught = await invoke(error).catch((thrown: unknown) => thrown);
+        expect(caught).toBe(error);
+        expect(mapExecutionErrorToContractError(`sessions ${action}`, caught).code).toBe("UNHANDLED_ERROR");
+      });
+
+      it.each([
+        ["THREAD_SESSION_MISSING", 1],
+        ["PERMISSION_DENIED", 1],
+        ["USAGE_ERROR", 2],
+      ] as const)("preserves typed %s refusal, exit and suggested action", async (code, exitCode) => {
+        const error = new CliExpectedError("Thread operation refused", code, exitCode, "Inspect the thread input");
+        const caught = await invoke(error).catch((thrown: unknown) => thrown);
+
+        expect(caught).toBe(error);
+        expect(mapExecutionErrorToContractError(`sessions ${action}`, caught)).toMatchObject({
+          code,
+          exitCode,
+          details: { suggestedAction: error.suggestedAction },
+        });
+      });
+
+      it("preserves ContractError identity and diagnostic details", async () => {
+        const error = new ContractError(`sessions ${action}`, "THREAD_PARENT_MISSING", "Parent is missing", 1, {
+          ...errorDiagnostic("Parent is missing", { operation: `sessions ${action}` }),
+          suggestedAction: "Inspect the owning parent",
+        });
+        await expect(invoke(error)).rejects.toBe(error);
+      });
+    });
+  }
+
+  it.each(["", " \t\n "])("rejects empty CLI message %j as USAGE_ERROR before lifecycle calls", async (message) => {
+    const commands = new SessionCommands();
+    await expect(commands.report(message, undefined, true)).rejects.toMatchObject({
+      code: "USAGE_ERROR",
+      exitCode: 2,
+    });
+    await expect(commands.threadSend(childName, message, undefined, true)).rejects.toMatchObject({
+      code: "USAGE_ERROR",
+      exitCode: 2,
+    });
+    expect(reportedSlackThreads).toEqual([]);
+    expect(sentSlackThreadMessages).toEqual([]);
+  });
+
+  it.each(["\\n", "\\r\\n"])("preserves the decoded-empty usage refusal for literal %j", async (message) => {
+    const child = setSessionContext(true);
+    reportSlackThreadError = new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
+    await expect(new SessionCommands().report(message, undefined, true)).rejects.toBe(reportSlackThreadError);
+    expect(reportedSlackThreads).toEqual([{ session: child, message: "\n" }]);
+
+    const parent = setSessionContext(false);
+    sendSlackThreadError = new CliExpectedError("Thread message is required", "USAGE_ERROR", 2);
+    await expect(new SessionCommands().threadSend(childName, message, undefined, true)).rejects.toBe(
+      sendSlackThreadError,
+    );
+    expect(sentSlackThreadMessages).toEqual([
+      { parentSession: parent, ref: childName, message: "\n", origin: toolContext },
+    ]);
+  });
+});
+
 describe("SessionCommands thread-configure", () => {
   const parentKey = "agent:dev:slack:ravi-slack:C123";
   const childName = fakeSlackThreadSummary.childSessionName;
@@ -4790,7 +4924,7 @@ describe("extractNormalizedTranscriptMessages", () => {
   });
 });
 
-const { ContractError } = await import("../agent-contract.js");
+const { ContractError, mapExecutionErrorToContractError } = await import("../agent-contract.js");
 
 describe("sessions agent-first contract", () => {
   function configureMessageActionFixture(channel: "slack" | "whatsapp") {

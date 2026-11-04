@@ -281,6 +281,8 @@ ravi sessions thread-send <sessão-da-thread|request-id|thread-ts> "instruções
 
 # No pai: configurar o próximo turno de uma filha pelo vínculo da thread
 ravi sessions thread-configure <sessão-da-thread|request-id|thread-ts> --effort ultra --json
+
+# No pai autorizado que possui a thread, para uma filha cujo provider efetivo já é codex
 ravi sessions thread-configure <sessão-da-thread> --model gpt-6-astra --effort ultra --json
 
 # Na thread: avisar a sessão do canal sem fechar, e fechar (com ou sem resultado)

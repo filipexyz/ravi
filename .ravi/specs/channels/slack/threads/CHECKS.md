@@ -44,6 +44,14 @@
       thread's name under another key), and the remote relay MUST show local
       copy for them instead of "Remote command failed."
       (`src/cli/commands/sessions.test.ts`, `src/cli/remote-gateway.test.ts`).
+- [ ] Empty and whitespace-only `report`/`thread-send` messages, including
+      literal `\n` decoded to an empty message, MUST yield `USAGE_ERROR`, exit
+      `2`, without publishing or changing lifecycle state
+      (`src/cli/commands/sessions.test.ts`, `src/channels/slack/thread-lifecycle.test.ts`).
+- [ ] `thread-configure`, `close-thread`, `report`, and `thread-send` MUST pass
+      the original throwable and nested cause to the shared CLI boundary.
+      Verify `UNHANDLED_ERROR`, `SQLITE_CAPACITY`, and unchanged typed refusal
+      codes, exit codes, and suggested actions (`src/cli/commands/sessions.test.ts`).
 - [ ] `thread.list` MUST mark an open thread whose child session is gone with
       `childSessionMissing: true`, and `thread-send` to it MUST fail with
       `THREAD_SESSION_MISSING` (`src/channels/slack/thread-lifecycle.test.ts`).
@@ -94,6 +102,14 @@ bun run build
   caller, missing child, agent mismatch, and explicit unauthorized `--session`.
 - Cover atomic provider/model updates, invalid provider/model/effort/thinking,
   empty patches, provider authority, `clear`, no-op, and closed-thread behavior.
+- The real registry and generated request schemas MUST reject thread-only and
+  thread-plus-session inputs, accept each runtime option individually and
+  several together, and preserve omitted overrides. Thinking MUST accept
+  `off|normal|verbose|clear` with case/whitespace variants and reject unknown,
+  empty, whitespace-only, null, and non-string values. Generated SDK signatures
+  MUST retain the thread and option fields and require the options bag. The
+  TypeScript union enforces at least one field; Swift/Dart constructors still
+  allow an explicit empty bag, so server validation remains required there.
 - Failed validation/authorization leaves all fields unchanged; successful
   configuration leaves history/subscriptions/status intact and publishes nothing.
 - Generic reset/delete/rename/read remain unauthorized without their own grant.

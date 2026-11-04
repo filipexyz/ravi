@@ -8388,7 +8388,7 @@ class SessionsNamespace {
     );
   }
 
-  Future<SessionsThreadConfigureReturn> threadConfigure(String thread, [SessionsThreadConfigureOptions options = const SessionsThreadConfigureOptions()]) async {
+  Future<SessionsThreadConfigureReturn> threadConfigure(String thread, SessionsThreadConfigureOptions options) async {
     final requestBody = <String, RaviJson>{};
     requestBody["thread"] = RaviJson.from(thread);
     options.encodeBody(requestBody);

@@ -8056,12 +8056,30 @@ export class RaviClient {
       });
     },
     /** Configure runtime options for a Slack thread owned by this parent session */
-    threadConfigure: async (thread: string, options?: {
-      effort?: string;
+    threadConfigure: async (thread: string, options: {
+      effort: string;
       model?: string;
       provider?: string;
       session?: string;
       thinking?: string;
+    } | {
+      effort?: string;
+      model: string;
+      provider?: string;
+      session?: string;
+      thinking?: string;
+    } | {
+      effort?: string;
+      model?: string;
+      provider: string;
+      session?: string;
+      thinking?: string;
+    } | {
+      effort?: string;
+      model?: string;
+      provider?: string;
+      session?: string;
+      thinking: string;
     }): Promise<SessionsThreadConfigureReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],

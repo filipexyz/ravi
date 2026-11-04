@@ -109964,6 +109964,148 @@ class RaviSchemas {
   static const sessionsThreadConfigureInputSchema = r'''
 {
   "additionalProperties": false,
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "effort",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "thinking",
+        "thread"
+      ],
+      "type": "object"
+    }
+  ],
   "properties": {
     "effort": {
       "description": "Reasoning effort, or clear to remove the override",
@@ -109982,7 +110124,8 @@ class RaviSchemas {
       "type": "string"
     },
     "thinking": {
-      "description": "Thinking level (off|normal|verbose), or clear",
+      "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+      "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
       "type": "string"
     },
     "thread": {

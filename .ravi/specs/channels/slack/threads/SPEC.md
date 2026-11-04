@@ -155,6 +155,14 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
   `THREAD_NOT_STARTED`, `THREAD_SESSION_MISSING`; also
   `THREAD_PARENT_MISSING` and `THREAD_PARENT_RETURN_PENDING`. The remote relay
   renders local copy for each code.
+- Empty `report` and `thread-send` messages, including messages empty after
+  literal line-break decoding and trimming, MUST refuse with `USAGE_ERROR`,
+  exit `2`, before publishing or changing lifecycle state.
+- The shared error path for `report`, `close-thread`, `thread-send`, and
+  `thread-configure` MUST preserve the original throwable and nested causes.
+  Typed refusals retain their code, exit, and suggested action; unexpected
+  failures reach the shared CLI boundary for classification as `UNHANDLED_ERROR` or
+  `SQLITE_CAPACITY`, rather than a message-only `COMMAND_FAILED`.
 - A thread record can outlive its child session. `threads` MUST mark that
   thread with `childSessionMissing: true` and MUST NOT report it as unstarted.
 - Renaming a session MUST update the thread registry's saved child and parent
@@ -176,9 +184,13 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
 - This operation grants only configuration of `provider`, `model`, `effort`, and
   `thinking` for that child. It MUST NOT grant generic session access or modify
   authority, propagate agent defaults, or enable reset/delete/rename/history.
-- At least one runtime option is required. Omitted fields preserve their current
-  override; `clear` removes that field's override. Thinking accepts
-  `off|normal|verbose`; effort uses the canonical runtime effort levels.
+- One or more of `provider`, `model`, `effort`, and `thinking` are required;
+  selecting the parent with `session` does not satisfy this requirement.
+  CLI and published request schemas MUST represent the same inclusive
+  requirement. Omitted fields preserve their current override; `clear` removes
+  that field's override. Thinking accepts `off|normal|verbose|clear`, ignoring
+  surrounding whitespace and case; effort uses the canonical runtime effort
+  levels.
 - The complete candidate provider/model pair and every supplied value MUST be
   validated before any write. A provider change MUST preserve the additional
   agent-configuration authority required by `sessions set-provider`; parenthood

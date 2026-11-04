@@ -21106,14 +21106,35 @@ export type SessionsSubscriptionsInput = {
 export type SessionsSubscriptionsReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.thread-configure`. */
-export type SessionsThreadConfigureInput = {
-  effort?: string;
+export type SessionsThreadConfigureInput = ({
+  effort: string;
   model?: string;
   provider?: string;
   session?: string;
   thinking?: string;
   thread: string;
-};
+}) | ({
+  effort?: string;
+  model: string;
+  provider?: string;
+  session?: string;
+  thinking?: string;
+  thread: string;
+}) | ({
+  effort?: string;
+  model?: string;
+  provider: string;
+  session?: string;
+  thinking?: string;
+  thread: string;
+}) | ({
+  effort?: string;
+  model?: string;
+  provider?: string;
+  session?: string;
+  thinking: string;
+  thread: string;
+});
 
 /** Return shape for `sessions.thread-configure`. */
 export type SessionsThreadConfigureReturn = {

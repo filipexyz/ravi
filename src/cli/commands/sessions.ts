@@ -2984,10 +2984,9 @@ function assertSlackThreadChildSession(action: "thread.report" | "thread.close",
   );
 }
 
-/** Keep a typed thread refusal; anything else stays a plain command failure. */
+/** Preserve typed refusals and original throwables for classification at the CLI boundary. */
 function rethrowSlackThreadError(error: unknown): never {
-  if (error instanceof CliExpectedError || error instanceof ContractError) throw error;
-  fail(error instanceof Error ? error.message : String(error));
+  throw error;
 }
 
 function failSessionNotFound(op: string, _ref: string, asJson?: boolean): never {
@@ -6985,8 +6984,7 @@ export class SessionCommands {
     asJson?: boolean,
   ) {
     if (!message.trim()) {
-      fail("Report message is required");
-      return;
+      throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
     }
     const target = sessionOverride?.trim() || resolveCurrentSessionRef();
     if (!target) {
@@ -7048,8 +7046,7 @@ export class SessionCommands {
     asJson?: boolean,
   ) {
     if (!message.trim()) {
-      fail("Thread message is required");
-      return;
+      throw new CliExpectedError("Thread message is required", "USAGE_ERROR", 2);
     }
     const target = sessionOverride?.trim() || resolveCurrentSessionRef();
     if (!target) {
@@ -7095,6 +7092,7 @@ export class SessionCommands {
   @Command({
     name: "thread-configure",
     description: "Configure runtime options for a Slack thread owned by this parent session",
+    requiredAnyOfOptions: ["provider", "model", "effort", "thinking"],
   })
   @CommandAccess(THREAD_CONFIGURE_COMMAND_ACCESS)
   threadConfigure(
@@ -7106,7 +7104,14 @@ export class SessionCommands {
     model?: string,
     @Option({ flags: "--effort <level>", description: "Reasoning effort, or clear to remove the override" })
     effort?: string,
-    @Option({ flags: "--thinking <level>", description: "Thinking level (off|normal|verbose), or clear" })
+    @Option({
+      flags: "--thinking <level>",
+      description: "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+      schema: z
+        .string()
+        .regex(/^\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\s*$/)
+        .optional(),
+    })
     thinking?: string,
     @Option({ flags: "--session <nameOrKey>", description: "Explicit authorized parent (defaults to current session)" })
     sessionOverride?: string,
