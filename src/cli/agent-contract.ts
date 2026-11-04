@@ -51,6 +51,23 @@ export interface ContractErrorDetails {
   [key: string]: unknown;
 }
 
+const PERMISSION_PROFILE_INSPECTION_COMMANDS = new Set([
+  "ravi skills show permissions",
+  "ravi tags list --kind system --source permissions --json",
+]);
+
+export function projectPermissionProfileInspectionCommands(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const commands = [
+    ...new Set(
+      value.filter(
+        (item): item is string => typeof item === "string" && PERMISSION_PROFILE_INSPECTION_COMMANDS.has(item),
+      ),
+    ),
+  ].slice(0, 8);
+  return commands.length ? commands : undefined;
+}
+
 export interface ContractErrorEnvelope {
   success: false;
   op: string;
@@ -341,6 +358,9 @@ function projectFailureDetails(details: ContractErrorDetails & ErrorDiagnostic):
   for (const field of CONTROL_FIELDS) {
     if (Object.hasOwn(details, field)) controls[field] = sanitizePublicValue(details[field], field);
   }
+  const inspectCommands = projectPermissionProfileInspectionCommands(details.inspectCommands);
+  if (inspectCommands) controls.inspectCommands = inspectCommands;
+  if (details.acceptedValuesTruncated === true) controls.acceptedValuesTruncated = true;
   // Control text is also egress: retaining a known field does not make its value public.
   for (const field of ["suggestedAction", "usage", "diff"] as const) {
     if (typeof details[field] === "string") controls[field] = redactDiagnosticText(details[field]);

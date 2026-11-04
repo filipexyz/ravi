@@ -39,6 +39,7 @@ import {
   ContractError,
   CONTRACT_EXIT_USAGE,
   permissionDeniedToContractError,
+  projectPermissionProfileInspectionCommands,
   sanitizePublicContractMessage,
   type ContractErrorDetails,
 } from "./agent-contract.js";
@@ -53,7 +54,7 @@ import {
   runtimeControlCatalogCopy,
 } from "../runtime/runtime-control-errors.js";
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
-import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
+import { isSafeLocalPayloadMessage, looksLikeProviderDump } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
 import { projectPublicationDetails, publicationRecoveryAction } from "../pr/contracts.js";
 
@@ -69,6 +70,10 @@ const REMOTE_CONTRACT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const REMOTE_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]{0,63}$/;
 const REMOTE_POSITIONAL_PATTERN = /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
 const REMOTE_SUGGESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const REMOTE_PROFILE_VALUE_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,127}$/;
+const REMOTE_PROFILE_CHOICES_MAX = 512;
+const REMOTE_PROFILE_INSPECTION_MESSAGE =
+  /^Unknown or empty permission profile: [a-z0-9][a-z0-9._:-]{0,159}\. Available profiles: [a-z0-9._:-]+(?:, (?:[a-z0-9._:-]+|\.\.\.))*\. Inspect built-ins with 'ravi skills show permissions' and stored profiles with 'ravi tags list --kind system --source permissions --json'\. Provide --capabilities <permission>:<objectType>:<objectId> to bootstrap a custom profile\.$/;
 // Canonical capability (`read:pages:list`, `admin:system:*`) and denial
 // metadata from the gateway envelope. Bounded so a hostile message cannot
 // smuggle free-form content through the denial projection.
@@ -466,13 +471,13 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         body.error === "BadRequest" ||
         (issues && result.status >= 400 && result.status < 500)
       ) {
-        return new ContractError(op, "USAGE_ERROR", remoteValidationFailureMessage(issues), CONTRACT_EXIT_USAGE, {
-          ...errorDiagnostic(remoteValidationFailureMessage(issues), { operation: op }),
-          ...{
-            suggestedAction: `Inspect '${op} --help' and retry with valid input`,
-            status: result.status,
-            ...(issues ? { issues } : {}),
-          },
+        const sourceMessage = body.message ?? nestedError?.message;
+        const message = remoteValidationFailureMessage(issues, sourceMessage);
+        return new ContractError(op, "USAGE_ERROR", message, CONTRACT_EXIT_USAGE, {
+          ...errorDiagnostic(message, { operation: op }),
+          suggestedAction: `Inspect '${op} --help' and retry with valid input`,
+          status: result.status,
+          ...(issues ? { issues } : {}),
         });
       }
     } catch {
@@ -1044,24 +1049,52 @@ function remoteContractFailureMessage(
 
 function remoteValidationFailureMessage(
   issues?: ReturnType<typeof projectPublicIssues>,
-  sourceMessage?: string,
+  sourceMessage?: unknown,
 ): string {
   const first = issues?.[0];
   if (first) {
     const path = first.path.filter((item) => item !== "<unknown>").join(".");
     return path ? `${path}: ${first.message}` : first.message;
   }
-  const safe = safeRemotePayloadMessage(sourceMessage);
-  if (safe) return safe;
+  const safe = boundedRemoteLine(sourceMessage, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (
+    safe &&
+    typeof sourceMessage === "string" &&
+    !looksLikeProviderDump(sourceMessage) &&
+    !/\bctx_/.test(sourceMessage)
+  ) {
+    if (
+      safe === sourceMessage &&
+      (REMOTE_PROFILE_INSPECTION_MESSAGE.test(safe) ||
+        safe ===
+          "No capabilities found for this profile. Provide --capabilities <permission>:<objectType>:<objectId> to create or bootstrap it." ||
+        safe === "Profile is unknown. Run 'ravi skills show permissions' to inspect built-in profiles.")
+    )
+      return safe;
+    const projected = projectPublicIssues([{ path: [], code: "invalid", message: safe }])?.[0]?.message;
+    if (projected && isSafeLocalPayloadMessage(projected)) return projected;
+  }
   return "Remote gateway rejected the command input.";
 }
 
-function safeRemotePayloadMessage(message?: string): string | undefined {
-  if (!message) return undefined;
-  const issues = projectPublicIssues([{ path: [], code: "invalid", message }]);
-  const projected = issues?.[0]?.message;
-  if (!projected || !isSafeLocalPayloadMessage(projected)) return undefined;
-  return projected;
+function projectRemoteProfileChoices(
+  value: unknown,
+): { acceptedValues: string[]; acceptedValuesTruncated?: true } | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const choices: string[] = [];
+  for (const item of value) {
+    if (
+      typeof item !== "string" ||
+      !REMOTE_PROFILE_VALUE_PATTERN.test(item) ||
+      /\b(?:ctx_|rctx_|sk-)/.test(item) ||
+      redactDiagnosticText(item) !== item
+    )
+      continue;
+    if (choices.length === REMOTE_PROFILE_CHOICES_MAX)
+      return { acceptedValues: choices, acceptedValuesTruncated: true };
+    choices.push(item);
+  }
+  return choices.length ? { acceptedValues: choices } : undefined;
 }
 
 function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["outcome"], code?: string): string {
@@ -1200,11 +1233,20 @@ function projectRemoteContractDetails(
   } else if (connectorCatalog) {
     details.suggestedAction = connectorCatalog.suggestedAction;
   } else if (typeof remote.suggestedAction === "string" || isRemoteWriteBrake(body)) {
+    const usageAction =
+      body.outcome === "usage_error" &&
+      typeof remote.suggestedAction === "string" &&
+      !looksLikeProviderDump(remote.suggestedAction) &&
+      !/\bctx_/.test(remote.suggestedAction)
+        ? boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX)
+        : undefined;
     details.suggestedAction =
-      body.outcome === "failed"
-        ? (boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX) ??
-          remoteSuggestedAction(op, body.outcome, remote.code))
-        : remoteSuggestedAction(op, body.outcome, remote.code);
+      body.outcome === "usage_error"
+        ? (usageAction ?? remoteSuggestedAction(op, body.outcome, remote.code))
+        : body.outcome === "failed"
+          ? (boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX) ??
+            remoteSuggestedAction(op, body.outcome, remote.code))
+          : remoteSuggestedAction(op, body.outcome, remote.code);
   }
   if (!details.suggestedAction) details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
   for (const key of ["field", "argument"] as const) {
@@ -1221,6 +1263,13 @@ function projectRemoteContractDetails(
   if (acceptedFlags) details.acceptedFlags = acceptedFlags;
   const acceptedPositionals = boundedStringList(remote.acceptedPositionals, REMOTE_POSITIONAL_PATTERN);
   if (acceptedPositionals) details.acceptedPositionals = acceptedPositionals;
+  const profileChoices = projectRemoteProfileChoices(remote.acceptedValues);
+  if (profileChoices) {
+    Object.assign(details, profileChoices);
+    if (remote.acceptedValuesTruncated === true) details.acceptedValuesTruncated = true;
+  }
+  const inspectCommands = projectPermissionProfileInspectionCommands(remote.inspectCommands);
+  if (inspectCommands) details.inspectCommands = inspectCommands;
   if (typeof remote.dryRun === "boolean") details.dryRun = remote.dryRun;
   const issues = projectPublicIssues(remote.issues);
   if (issues) details.issues = issues;
