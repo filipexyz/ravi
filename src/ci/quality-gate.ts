@@ -71,6 +71,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/route-sticky-attach.test.ts",
     // Route CRUD persistence: pattern normalize, dmScope updates, soft-delete.
     "src/router/router-db.routes.test.ts",
+    // Context authority metadata preserves provenance; revocations compose with caller transactions.
+    "src/router/router-db.contexts.test.ts",
     // Channel compaction notices stay off unless announceCompaction is true.
     "src/router/router-db.announce-compaction.test.ts",
     // Daemon restart ledger records resume vs notice, only for published events.

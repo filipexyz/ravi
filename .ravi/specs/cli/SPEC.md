@@ -73,6 +73,14 @@ The canonical failure value is a `ContractError` and its envelope:
 - `op` MUST identify the real operation path.
 - The envelope MAY add bounded structured details such as `suggestions`,
   `acceptedFlags`, `acceptedPositionals`, `dryRun` and `plan`.
+- Permission-profile discovery retains `acceptedValues` and `inspectCommands`
+  through the local envelope and remote usage-error relay. The remote projection
+  admits at most 512 validated profile identifiers, each at most 128 characters;
+  if more valid choices exist, `acceptedValuesTruncated: true` MUST survive later
+  relays. The listing command remains the complete discovery path. Inspection
+  commands are an allowlist of `ravi skills show permissions` and
+  `ravi tags list --kind system --source permissions --json`, not arbitrary shell
+  text. Malformed/credential-bearing choices and other commands are excluded.
 - The envelope is transport-independent. The process carries the exit code in
   the OS status; tools carry `exitCode` and `outcome` beside the content; the
   gateway adds `exitCode` and `outcome` to the JSON body.
@@ -249,7 +257,14 @@ details and policy outcome:
   Text mode then prints `Next: <suggestedAction>` when no issue carries it.
   HTTP `status` and structured `issues`
   (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST
-  be projected so CLI text and `--json` stay actionable. This privacy
+  be projected so CLI text and `--json` stay actionable. Unknown-field issues
+  MUST retain bounded identifier-shaped field names (for example `json` or
+  `subjects`), never their submitted values; unsafe names remain redacted.
+  A field name matching the shared secret-key classifier MUST be redacted even
+  when it fits the identifier grammar (for example `password-hunter2`).
+  When no issue is available, usage errors MUST preserve safe bounded public
+  message and next-action copy using the shared contract sanitizer, without
+  depending on a domain-specific prefix or a duplicated error catalog. This privacy
   projection is the permitted exception to byte-for-byte detail parity;
   semantic fields and taxonomy still remain equivalent.
 

@@ -139,7 +139,7 @@ export function materializeAgentDefaultCapabilities(
 
   const source = options.source ?? `agent-default-capabilities:agent:${agentId}`;
   return dedupeCapabilities([
-    ...profileCapabilities(config.profile, source),
+    ...materializeAgentRuntimeProfileCapabilities(config.profile, source),
     ...explicitCapabilities(config.capabilities, source),
   ]);
 }
@@ -227,7 +227,11 @@ function compactRuntimePermissionsConfig(config: AgentRuntimePermissionsConfig):
   };
 }
 
-function profileCapabilities(profile: AgentRuntimePermissionProfile | undefined, source: string): ContextCapability[] {
+/** Shared expansion for agent defaults and provider-owned profile grants. */
+export function materializeAgentRuntimeProfileCapabilities(
+  profile: AgentRuntimePermissionProfile | undefined,
+  source: string,
+): ContextCapability[] {
   if (profile !== "full-access") return [];
   // Break-glass: admin remains the snapshot short-circuit, but Bash PreToolUse
   // and turn inspection also need an explicit execute/use ceiling so operators
