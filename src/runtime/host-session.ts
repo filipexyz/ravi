@@ -5,6 +5,7 @@ import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import type { RuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
+import type { ProviderCapacityRetryState } from "./provider-capacity-retry.js";
 import type { SkillGatePersistedListener } from "./skill-gate.js";
 import type {
   ChannelBackendPromptMetadata,
@@ -73,6 +74,8 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   queuedAt?: number;
   /** Original work for a fresh continuation after yielding to another reply surface. */
   yieldedRequest?: string;
+  /** Bounded capacity retry budget travels with this logical input across physical attempts. */
+  providerCapacityRetry?: ProviderCapacityRetryState;
 }
 
 export function runtimeTurnAttemptTerminalEventType(

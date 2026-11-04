@@ -11,6 +11,11 @@ import {
 import { dbGetAgent } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
+import {
+  CodexAppServerRequestError,
+  isCodexCapacityError,
+  normalizeCodexProviderError,
+} from "./codex-provider-error.js";
 import { prepareBridgeCodexProfile } from "../bridge/codex-profile.js";
 import {
   createCodexTransport,
@@ -288,6 +293,7 @@ interface ToolCompletedEvent {
 }
 
 type PendingRequest = {
+  method: string;
   resolve(value: Record<string, unknown>): void;
   reject(error: unknown): void;
   timeout?: ReturnType<typeof setTimeout>;
@@ -805,6 +811,7 @@ async function* normalizeCodexEvents(
       let turnSessionId = previousSessionId;
       let activeTurnId: string | undefined;
       let lastErrorMessage: string | undefined;
+      let lastErrorEvent: Record<string, unknown> | undefined;
       const startedToolUseIds = new Set<string>();
       const completedToolUseIds = new Set<string>();
 
@@ -986,6 +993,7 @@ async function* normalizeCodexEvents(
 
           if (event.type === "error") {
             lastErrorMessage = extractCliErrorMessage(event) ?? lastErrorMessage;
+            lastErrorEvent = rawEvent;
             continue;
           }
 
@@ -1003,8 +1011,17 @@ async function* normalizeCodexEvents(
           }
 
           if (event.type === "turn.failed") {
+            previousSessionId = metadata.thread?.id ?? turnSessionId;
             const terminal: RuntimeEvent = {
               type: "turn.failed",
+              providerSessionId: previousSessionId,
+              session: buildCodexSessionState(
+                previousSessionId,
+                input.cwd,
+                buildCodexSkillVisibilitySnapshot(syncedSkillNames),
+                input.env?.CODEX_HOME,
+              ),
+              ...(event.preExecutionRejected === true ? { preExecutionRejected: true } : {}),
               error: extractCliFailureMessage(event) ?? lastErrorMessage ?? "Codex turn failed",
               usage: event.usage ? mapCliUsage(event.usage) : undefined,
               recoverable: true,
@@ -1089,7 +1106,7 @@ async function* normalizeCodexEvents(
           error: lastErrorMessage ?? `Codex CLI exited without a terminal event (${exitDetail})`,
           recoverable: true,
           failureKind: lastErrorMessage ? undefined : "transport",
-          rawEvent: buildCodexExitRawEvent(result, stderrTail),
+          rawEvent: { ...buildCodexExitRawEvent(result, stderrTail), ...lastErrorEvent },
           metadata,
         });
         if (terminal) {
@@ -1121,7 +1138,7 @@ async function* normalizeCodexEvents(
             // A Codex error event (an unavailable model, a usage limit) explains the
             // failure; replaying it would only fail again.
             failureKind: lastErrorMessage ? undefined : "transport",
-            rawEvent: { ...buildCodexExitRawEvent(result, stderrTail), error: error.message },
+            rawEvent: { ...buildCodexExitRawEvent(result, stderrTail), error: error.message, ...lastErrorEvent },
             metadata,
           });
           if (terminal) {
@@ -1191,6 +1208,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   const command = options.command ?? "codex";
 
   type AppServerTurnState = {
+    originalPrompt: string;
+    clientMessageId?: string;
     queue: AsyncQueue<CodexCliEvent>;
     result: Promise<CodexCliTurnResult>;
     resolveResult: (result: CodexCliTurnResult) => void;
@@ -1212,6 +1231,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     goalContinuation?: CodexCliEvent;
     completedNativeTurnIds: Set<string>;
     chainUsage?: CodexCliUsage;
+    lastFailure?: Record<string, unknown>;
+    failurePending?: boolean;
   };
 
   let child: ReturnType<typeof spawn> | null = null;
@@ -1465,7 +1486,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   ): Promise<Record<string, unknown>> {
     const id = String(nextRequestId++);
     return new Promise<Record<string, unknown>>((resolve, reject) => {
-      const pending: PendingRequest = { resolve, reject, onResponse: options.onResponse };
+      const pending: PendingRequest = { method, resolve, reject, onResponse: options.onResponse };
       if (options.timeoutMs !== undefined) {
         pending.timeout = setTimeout(() => {
           if (pendingRequests.get(id) !== pending) {
@@ -1488,6 +1509,54 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         reject(error);
       });
     });
+  }
+
+  async function finishCapacityFailure(
+    turn: AppServerTurnState,
+    terminal: CodexCliEvent,
+    nativeTurn: Record<string, unknown> | null,
+    threadId: string,
+    turnId: string,
+  ): Promise<void> {
+    // A notification may intentionally omit all items. Only a full snapshot
+    // (or an explicit full-history read) proves that no execution occurred.
+    const hasOnlyOriginalInput = (items: unknown): boolean => {
+      if (!Array.isArray(items)) return false;
+      if (items.length === 0) return true;
+      if (items.length !== 1) return false;
+      const item = asRecord(items[0]);
+      const content = Array.isArray(item?.content) ? item.content : [];
+      const text = content.length === 1 ? asRecord(content[0]) : null;
+      return (
+        item?.type === "userMessage" &&
+        text?.type === "text" &&
+        text.text === turn.originalPrompt &&
+        (item.clientId === undefined || item.clientId === null || item.clientId === turn.clientMessageId)
+      );
+    };
+    let rejectedBeforeExecution = nativeTurn?.itemsView === "full" && hasOnlyOriginalInput(nativeTurn.items);
+    if (!rejectedBeforeExecution) {
+      try {
+        const response = await sendRequest("thread/read", { threadId, includeTurns: true }, { timeoutMs: 2_000 });
+        const thread = asRecord(response.thread);
+        const turns = Array.isArray(thread?.turns) ? thread.turns : [];
+        const persisted = turns.map(asRecord).find((candidate) => candidate?.id === turnId);
+        rejectedBeforeExecution =
+          thread?.id === threadId &&
+          persisted?.status === "failed" &&
+          (persisted.itemsView === undefined || persisted.itemsView === "full") &&
+          hasOnlyOriginalInput(persisted.items);
+      } catch {
+        // Readback is optional evidence. Failure must never authorize replay.
+      }
+    }
+    if (turn.settled || activeTurn !== turn) return;
+    turn.queue.push({
+      ...terminal,
+      ...(rejectedBeforeExecution && !turn.interruptRequested ? { preExecutionRejected: true } : {}),
+    });
+    pendingDynamicToolResults.clear();
+    settleTurn(turn);
   }
 
   async function handleServerRequest(
@@ -1901,7 +1970,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           clearTimeout(pending.timeout);
         }
         if (message.error) {
-          pending.reject(new Error(extractJsonRpcError(message.error) ?? "Codex app-server request failed"));
+          pending.reject(new CodexAppServerRequestError(message.error, pending.method));
         } else {
           const result = asRecord(message.result) ?? {};
           try {
@@ -1950,8 +2019,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
       case "error": {
         if (turn && notificationMatchesActiveTurn(turn, params)) {
+          turn.lastFailure = normalizeCodexProviderError(params.error ?? params);
           turn.queue.push({
             type: "error",
+            source: "codex.app-server",
+            ...turn.lastFailure,
             message: extractAppServerErrorMessage(params) ?? "Codex app-server error",
           });
         }
@@ -2156,13 +2228,16 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 : undefined,
           });
         } else {
-          turn.queue.push({
+          const failure = completedTurn?.error
+            ? normalizeCodexProviderError(completedTurn.error)
+            : (turn.lastFailure ?? normalizeCodexProviderError({ message: `Codex turn ${status}` }));
+          const terminal: CodexCliEvent = {
             type: "turn.failed",
             source: "codex.app-server",
             thread_id: threadId,
             turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
-            error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
+            ...failure,
             usage:
               turn.turnUsage || turn.chainUsage
                 ? {
@@ -2172,7 +2247,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                       toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.turnUsage?.cached_input_tokens),
                   }
                 : undefined,
-          });
+          };
+          if (isCodexCapacityError(failure) && turnId && threadId && !turn.failurePending) {
+            turn.failurePending = true;
+            void finishCapacityFailure(turn, terminal, completedTurn, threadId, turnId);
+            break;
+          }
+          if (turn.failurePending) break;
+          turn.queue.push(terminal);
         }
         pendingDynamicToolResults.clear();
         settleTurn(turn);
@@ -2416,6 +2498,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       let resolveResult!: (result: CodexCliTurnResult) => void;
       const queue = createAsyncQueue<CodexCliEvent>();
       const turn: AppServerTurnState = {
+        originalPrompt: input.prompt,
+        clientMessageId: input.clientMessageId,
         queue,
         result: new Promise<CodexCliTurnResult>((resolve) => {
           resolveResult = resolve;
@@ -2599,6 +2683,35 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         } catch (error) {
           bufferingThreadNotifications = false;
           bufferedThreadNotifications.splice(0);
+          if (error instanceof CodexAppServerRequestError) {
+            const failedResult = { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) };
+            turn.queue.push({
+              type: "turn.failed",
+              source: "codex.app-server",
+              thread_id: turn.threadId ?? currentThreadId,
+              turn_id: turn.turnId,
+              ...error.failure,
+              ...(error.method === "turn/start" && !turn.turnId && isCodexCapacityError(error.failure)
+                ? { preExecutionRejected: true }
+                : {}),
+            });
+            // A live process is not necessarily initialized: an RPC rejection
+            // during initialize/thread bootstrap leaves ensureClient incomplete.
+            // Do not release the next prompt until that transport is closed.
+            const canReuseTransport = error.method === "turn/start" && Boolean(currentThreadId) && !bootstrapPromise;
+            if (!canReuseTransport) {
+              intentionalChildRestart = true;
+              try {
+                await close();
+              } finally {
+                intentionalChildRestart = false;
+                settleTurn(turn, failedResult);
+              }
+            } else {
+              settleTurn(turn, failedResult);
+            }
+            return;
+          }
           settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {
             signalCodexTransportProcess(child, "SIGKILL");
@@ -4002,14 +4115,6 @@ function accumulateAppServerUsage(
     cached_input_tokens: toNumber(turn.turnUsage?.cached_input_tokens) + toNumber(last.cached_input_tokens),
     output_tokens: toNumber(turn.turnUsage?.output_tokens) + toNumber(last.output_tokens),
   };
-}
-
-function extractAppServerTurnError(turn: Record<string, unknown> | null): string | undefined {
-  const error = asRecord(turn?.error);
-  if (error && typeof error.message === "string" && error.message.trim().length > 0) {
-    return error.message;
-  }
-  return undefined;
 }
 
 function extractJsonRpcError(error: unknown): string | undefined {

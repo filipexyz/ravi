@@ -428,16 +428,20 @@ export function getDeliverableRuntimeMessages(
   // An ambiguously stashed turn keeps its original delivery identity. Messages
   // that arrived later must wait for that turn to reconcile instead of being
   // folded into a different prompt and accidentally acknowledged with it.
-  const firstIsReplay = envelopeBounded[0]?.replay === true;
+  // Known capacity retries retain their input cohort for the same reason,
+  // while still receiving a fresh physical delivery id below.
+  const retainsAttemptInput = (message: RuntimeUserMessage) =>
+    message.replay === true || message.providerCapacityRetry !== undefined;
+  const firstIsReplay = envelopeBounded[0] !== undefined && retainsAttemptInput(envelopeBounded[0]);
   let replayBounded: RuntimeUserMessage[];
   if (!firstIsReplay) {
-    const firstReplayIndex = envelopeBounded.findIndex((message) => message.replay === true);
+    const firstReplayIndex = envelopeBounded.findIndex(retainsAttemptInput);
     replayBounded = firstReplayIndex < 0 ? envelopeBounded : envelopeBounded.slice(0, firstReplayIndex);
   } else {
     const firstReplayId = envelopeBounded[0]?.clientMessageId;
     const nextAttemptIndex = envelopeBounded.findIndex(
       (message) =>
-        message.replay !== true || (firstReplayId !== undefined && message.clientMessageId !== firstReplayId),
+        !retainsAttemptInput(message) || (firstReplayId !== undefined && message.clientMessageId !== firstReplayId),
     );
     replayBounded = nextAttemptIndex < 0 ? envelopeBounded : envelopeBounded.slice(0, nextAttemptIndex);
   }

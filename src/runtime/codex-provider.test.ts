@@ -4102,3 +4102,141 @@ rl.on("line", (line) => {
     }
   });
 });
+
+describe("Codex native capacity admission failures", () => {
+  it.each([
+    { mode: "rpc", expectedProof: true },
+    { mode: "full", expectedProof: true },
+    { mode: "readback", expectedProof: true },
+    { mode: "inputOnly", expectedProof: true },
+    { mode: "changedInput", expectedProof: false },
+    { mode: "extraInput", expectedProof: false },
+    { mode: "nonempty", expectedProof: false },
+    { mode: "unavailable", expectedProof: false },
+    { mode: "ordinary400", expectedProof: false },
+  ])("preserves structured errors and proves pre-execution rejection: $mode", async ({ mode, expectedProof }) => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-capacity-"));
+    const command = join(cwd, "fake-capacity.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+const mode = ${JSON.stringify(mode)};
+const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+const error = {message: "Selected model is at capacity. Please try a different model.",
+  codexErrorInfo: {httpConnectionFailed: {httpStatusCode: mode === "ordinary400" ? 400 : 503}},
+  headers: {"Retry-After": "4"}};
+createInterface({input: process.stdin}).on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") send({id:message.id,result:{}});
+  if (message.method === "thread/start") send({id:message.id,result:{thread:{id:"thread_capacity"}}});
+  if (message.method === "turn/start") {
+    if (mode === "rpc") return send({id:message.id,error:{code:-32000,message:error.message,data:error}});
+    send({id:message.id,result:{turn:{id:"turn_capacity",status:"inProgress",items:[]}}});
+    send({method:"error",params:{threadId:"thread_capacity",turnId:"turn_capacity",error,willRetry:false}});
+    send({method:"turn/completed",params:{threadId:"thread_capacity",turn:{id:"turn_capacity",status:"failed",
+      error,items:[],itemsView:mode === "full" ? "full" : "notLoaded"}}});
+  }
+  if (message.method === "thread/read") {
+    if (mode === "unavailable") return send({id:message.id,error:{code:-32601,message:"unavailable"}});
+    send({id:message.id,result:{thread:{id:"thread_capacity",turns:[{id:"turn_capacity",status:"failed",itemsView:"full",
+      items:mode === "nonempty" ? [{type:"commandExecution",id:"tool_one"}] :
+        ["inputOnly", "changedInput", "extraInput"].includes(mode) ?
+          [{type:"userMessage",id:"user_one",content:[{type:"text",text:mode === "changedInput" ? "changed" : "run"}]},
+           ...(mode === "extraInput" ? [{type:"userMessage",id:"user_two",content:[{type:"text",text:"steer"}]}] : [])] : []}]}}});
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+    const provider = createCodexRuntimeProvider({ command, syncSkills: () => [] });
+    const events = await collectEvents(provider.startSession(makeStartRequest(["run"], { cwd })).events);
+    const failures = findEventsByType(events, "turn.failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.error).toBe("Selected model is at capacity. Please try a different model.");
+    expect(failures[0]?.rawEvent).toMatchObject({
+      status: mode === "ordinary400" ? 400 : 503,
+      headers: { "retry-after": "4" },
+    });
+    expect(failures[0]?.preExecutionRejected === true).toBe(expectedProof);
+    expect(failures[0]?.providerSessionId).toBe("thread_capacity");
+    expect(failures[0]?.session?.displayId).toBe("thread_capacity");
+  });
+
+  it("preserves a newly created thread across failure and the next attempt", async () => {
+    const mock = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_first_failed" };
+          yield { type: "turn.failed", error: { message: "busy" }, status: 503 };
+        })(),
+      }),
+      () => ({
+        events: (async function* () {
+          yield { type: "turn.completed", usage: {} };
+        })(),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: mock.transport as any, syncSkills: () => [] });
+    const events = await collectEvents(provider.startSession(makeStartRequest(["first", "retry"])).events);
+    expect(mock.calls[1]?.resume).toBe("thread_first_failed");
+    expect(findEventsByType(events, "turn.failed")[0]?.providerSessionId).toBe("thread_first_failed");
+  });
+});
+
+describe("Codex rejected RPC transport lifecycle", () => {
+  it.each(["initialize", "thread/start", "thread/resume", "turn/start"])(
+    "reinitializes after rejected %s without losing the terminal failure",
+    async (rejectedMethod) => {
+      const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-bootstrap-rejection-"));
+      const command = join(cwd, "fake-bootstrap.mjs");
+      const marker = join(cwd, "rejected");
+      const initialized = join(cwd, "initializations.jsonl");
+      writeFileSync(
+        command,
+        `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+const rejectedMethod = ${JSON.stringify(rejectedMethod)};
+const marker = ${JSON.stringify(marker)};
+const initialized = ${JSON.stringify(initialized)};
+const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") appendFileSync(initialized, JSON.stringify(process.pid) + "\\n");
+  if (message.method === rejectedMethod && !existsSync(marker)) {
+    writeFileSync(marker, "yes");
+    return send({ id: message.id, error: {code: -32000, message: "Provider busy", data: {status: 503}} });
+  }
+  if (message.method === "initialize") send({id:message.id,result:{}});
+  if (message.method === "thread/start" || message.method === "thread/resume") {
+    send({id:message.id,result:{thread:{id:"thread_reinitialized"}}});
+  }
+  if (message.method === "thread/goal/get") send({id:message.id,result:{goal:null}});
+  if (message.method === "turn/start") {
+    send({id:message.id,result:{turn:{id:"turn_success",status:"inProgress",items:[]}}});
+    send({method:"turn/completed",params:{threadId:"thread_reinitialized",turn:{id:"turn_success",status:"completed",items:[]}}});
+  }
+});
+`,
+      );
+      chmodSync(command, 0o755);
+      const provider = createCodexRuntimeProvider({ command, syncSkills: () => [] });
+      const events = await collectEvents(
+        provider.startSession(
+          makeStartRequest(["first", "second"], {
+            cwd,
+            ...(rejectedMethod === "thread/resume" ? { resume: "thread_reinitialized" } : {}),
+          }),
+        ).events,
+      );
+      const failures = findEventsByType(events, "turn.failed");
+      expect(failures).toHaveLength(1);
+      expect(failures[0]?.rawEvent).toMatchObject({ status: 503 });
+      expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+      const processes = readFileSync(initialized, "utf8").trim().split("\n");
+      expect(processes).toHaveLength(rejectedMethod === "turn/start" ? 1 : 2);
+      if (rejectedMethod !== "turn/start") expect(processes[0]).not.toBe(processes[1]);
+    },
+  );
+});

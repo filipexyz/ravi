@@ -151,3 +151,7 @@ Check whether the Pi RPC error includes upstream provider, model, HTTP status, c
 5. Add provider-specific refresh hooks with locks and explicit write-back policy.
 6. Add cross-provider fallback chains and provider-unhealthy TTLs.
 7. Add provider session compatibility checks for Claude, Codex, and Pi.
+
+## Capacity retry
+
+Inspect the turn trace for structured capacity classification and scheduled retry delay. Three retries and a 30-second elapsed budget bound scheduling from the first failure; Retry-After can end that budget early. `provider_capacity_exhausted` indicates upstream saturation, while a replay-unsafe terminal means effects or uncertain execution prevented repetition. Compatible provider session state must remain present. Do not reset the session or rotate credentials to clear model capacity. Check adapter rejection proof when Codex produces no retry: omitted or summary items cannot prove absence of side effects.
