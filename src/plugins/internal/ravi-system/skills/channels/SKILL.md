@@ -134,3 +134,20 @@ ravi daemon logs              # Ver logs do daemon
 ravi daemon logs              # Ver erros de startup
 # Verificar configuração da instância e credenciais em ~/.ravi/.env
 ```
+
+## Versão carregada e arquivos no disco
+
+`ravi daemon status --json` e `ravi channels status --json` expõem
+`runtime.daemon` e `runtime.channels`: `runningVersion` vem do boot,
+`diskVersion` vem do pacote instalado, `startedAt` é o início do processo,
+`codeStale` e `envStale` indicam código e ambiente defasados. `stale` reúne
+esses sinais. Um runner saudável pode continuar com código antigo.
+
+`runningVersion: null` significa identidade de boot não verificável; não
+inferir a versão do processo pela versão do disco. `alignment: aligned`
+exige identidade verificada e atual nos processos gerenciados.
+
+Siga os comandos de `warnings`: `ravi daemon restart -m "reconcile runtime"`
+e `ravi channels restart`, daemon primeiro quando ambos precisam reiniciar.
+Status não reinicia nada. `ravi update` obrigatoriamente reconcilia os
+processos gerenciados após atualizar; edições de env apenas avisam.

@@ -1,4 +1,5 @@
 import { describe, expect, it, mock, spyOn } from "bun:test";
+import * as runtimeIdentity from "../runtime-process-identity.js";
 import {
   CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS,
   type ChannelOutboundPublishResult,
@@ -7,6 +8,8 @@ import {
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS,
+  ChannelRunner,
+  runChannelRunnerFromEnv,
   collectNativeRuntimeDeliveries,
   pruneChannelOutboundPublishOutbox,
   pruneChannelOutboundReceiptLedger,
@@ -643,5 +646,26 @@ describe("channel runner Slack health projection", () => {
       reason: "heartbeat_timeout",
       reconnectCount: 3,
     });
+  });
+});
+
+describe("managed runner boot identity", () => {
+  it("records its PID-bound boot receipt before starting adapters", async () => {
+    const order: string[] = [];
+    const receipt = spyOn(runtimeIdentity, "recordManagedRuntimeBoot").mockImplementation((name) => {
+      order.push(name);
+      return true;
+    });
+    const start = spyOn(ChannelRunner.prototype, "start").mockImplementation(async () => {
+      order.push("adapters");
+      throw new Error("stop before opening sockets");
+    });
+    try {
+      await expect(runChannelRunnerFromEnv()).rejects.toThrow("stop before opening sockets");
+      expect(order).toEqual(["ravi-channels", "adapters"]);
+    } finally {
+      start.mockRestore();
+      receipt.mockRestore();
+    }
   });
 });

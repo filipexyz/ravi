@@ -4,11 +4,13 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFil
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  buildManagedRuntimeIdentity,
   findRaviPackageRoot,
   managedRuntimeBundlePath,
+  managedRuntimeMatchesTarget,
+  managedRuntimeWarnings,
   normalizeRuntimePath,
   readRaviVersion,
-  resolveManagedRuntimeTargetFromBundle,
   resolveManagedRuntimeTargetFromPackageRoot,
   type ManagedRuntimeTarget,
 } from "../../managed-runtime.js";
@@ -28,7 +30,6 @@ export interface RaviUpdateOptions {
   stable?: boolean;
   version?: string;
   expectedIntegrity?: string;
-  restart?: boolean;
   json?: boolean;
 }
 
@@ -132,8 +133,9 @@ class UpdateFailure extends Error {
     message: string,
     readonly code = "UPDATE_FAILED",
     readonly exitCode = 1,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "UpdateFailure";
   }
 }
@@ -429,9 +431,22 @@ function describeManagedRuntime(processes: Pm2Process[]): Omit<ManagedRuntimeSta
     processes.find((process) => process.name === PM2_PROCESS_NAME) ??
     processes.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
   const bundlePath = managedRuntimeBundlePath(member);
-  const target = resolveManagedRuntimeTargetFromBundle(bundlePath);
-  const packageRoot = target?.cwd ?? findRaviPackageRoot(bundlePath);
-  return { managed, bundlePath, cwd: packageRoot, version: target?.version ?? readRaviVersion(packageRoot) };
+  const identity = buildManagedRuntimeIdentity(processes, bundlePath);
+  const runtime = member?.name === PM2_PROCESS_NAME ? identity.daemon : identity.channels;
+  return { managed, bundlePath, cwd: runtime.cwd, version: runtime.runningVersion };
+}
+
+function readManagedProcesses(): Pm2Process[] {
+  try {
+    return getPm2Processes({ strict: true });
+  } catch (cause) {
+    throw new UpdateFailure(
+      "Could not read PM2 runtime status, so Ravi cannot verify runtime reconciliation. Check `pm2 jlist` and retry.",
+      "UPDATE_FAILED",
+      1,
+      { cause },
+    );
+  }
 }
 
 async function verifyRegistryIntegrity(version: string, expectedIntegrity: string): Promise<void> {
@@ -493,7 +508,6 @@ export function nativeChannelRunnerUpdateWarning(
 }
 
 async function reconcileManagedRuntime(
-  restart: boolean,
   previousProcesses: Pm2Process[],
   target: ManagedRuntimeTarget,
   reporter: UpdateReporter,
@@ -506,21 +520,21 @@ async function reconcileManagedRuntime(
     return { restarted: false, runtime: { ...current, rebound: false } };
   }
 
-  if (!restart) {
-    reporter.line("Managed runtime reconciliation skipped; running processes were left unchanged.");
-    if (current.bundlePath) {
-      reporter.line(
-        `  daemon still runs Ravi ${current.version ?? "unknown"} from ${current.cwd ?? current.bundlePath}`,
-      );
-    }
-    return { restarted: false, runtime: { ...current, rebound: false } };
-  }
-
   reporter.log(`Rebinding managed runtime to Ravi ${target.version} (${target.cwd})`);
   const reconciled = await runManagedRuntimeRebindSupervisor(target, previousProcesses);
-  if (!reconciled) {
+  // A successfully exited bundle may not implement this supervisor protocol.
+  // Independently verify the live successors before claiming convergence.
+  const currentProcesses = readManagedProcesses();
+  if (
+    !reconciled ||
+    !managedRuntimeMatchesTarget(managedRuntimeSnapshot(previousProcesses), currentProcesses, target)
+  ) {
+    const warnings = managedRuntimeWarnings(buildManagedRuntimeIdentity(currentProcesses, target.bundlePath));
     fail(
-      "Ravi updated, but PM2 did not converge on the updated runtime. Run `ravi daemon status` before resuming traffic.",
+      "Ravi updated, but PM2 did not converge on the updated runtime. " +
+        'Reconcile ravi with `ravi daemon restart -m "reconcile update"` and ravi-channels with `ravi channels restart`; ' +
+        "then run `ravi daemon status` before resuming traffic." +
+        (warnings.length ? ` ${warnings.join(" ")}` : ""),
     );
   }
   reporter.ok(`Managed runtime reconciled to Ravi ${target.version} from ${target.cwd}; PM2 startup state saved`);
@@ -528,6 +542,12 @@ async function reconcileManagedRuntime(
     restarted: managedRuntimeSnapshot(previousProcesses).some((process) => process.status === "online"),
     runtime: { managed: true, rebound: true, bundlePath: target.bundlePath, cwd: target.cwd, version: target.version },
   };
+}
+
+function reportManagedRuntimeWarnings(target: ManagedRuntimeTarget, reporter: UpdateReporter): string[] {
+  const warnings = managedRuntimeWarnings(buildManagedRuntimeIdentity(readManagedProcesses(), target.bundlePath));
+  for (const warning of warnings) reporter.warn(`Warning: ${warning}`);
+  return warnings;
 }
 
 async function updateViaBun(packageTag: string, label: string, reporter: UpdateReporter): Promise<boolean> {
@@ -623,7 +643,7 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
   if (!exactVersion && (options.next || options.stable)) persistUpdateChannel(channel as UpdateChannel);
   if (exactVersion && expectedIntegrity) await verifyRegistryIntegrity(exactVersion, expectedIntegrity);
 
-  const previousProcesses = getPm2Processes();
+  const previousProcesses = readManagedProcesses();
   const installType = detectInstallationType();
   const sourceRoot = installType === "source" ? resolveSourceRoot() : null;
   // A source update rewrites the checkout, so "previous" must be the checkout's
@@ -665,16 +685,12 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
     });
     reportSourceUpdate(outcome, target, branch, previousVersion, reporter);
 
-    const { restarted, runtime } = await reconcileManagedRuntime(
-      options.restart !== false,
-      previousProcesses,
-      target,
-      reporter,
-    );
+    const { restarted, runtime } = await reconcileManagedRuntime(previousProcesses, target, reporter);
     if (runtime.rebound && outcome.pathCli && !outcome.pathCli.updated) {
       reporter.line("  The daemon now runs from this checkout; `ravi daemon status` from the PATH install reports");
       reporter.line("  drift until that install is updated too.");
     }
+    outcome.warnings.push(...reportManagedRuntimeWarnings(target, reporter));
     const runnerWarning = nativeChannelRunnerUpdateWarning(previousProcesses);
     if (runnerWarning) {
       outcome.warnings.push(runnerWarning);
@@ -747,12 +763,8 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
     reporter.warn(`Warning: ${warning}`);
   }
 
-  const { restarted, runtime } = await reconcileManagedRuntime(
-    options.restart !== false,
-    previousProcesses,
-    target,
-    reporter,
-  );
+  const { restarted, runtime } = await reconcileManagedRuntime(previousProcesses, target, reporter);
+  warnings.push(...reportManagedRuntimeWarnings(target, reporter));
   const runnerWarning = nativeChannelRunnerUpdateWarning(previousProcesses);
   if (runnerWarning) {
     warnings.push(runnerWarning);

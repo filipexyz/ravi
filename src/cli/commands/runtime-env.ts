@@ -3,6 +3,8 @@ import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 import { readNonInteractiveSecret } from "../secret-input.js";
+import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
+import { getPm2Processes, type Pm2Process } from "../../pm2.js";
 import {
   RAVI_ENV_ALLOWLIST,
   RaviEnvFileError,
@@ -157,6 +159,27 @@ function printEnvHuman(entry: {
   scope: "admin",
 })
 export class RuntimeEnvCommands {
+  constructor(
+    private readonly runtime = {
+      processes: (): Pm2Process[] => getPm2Processes(),
+      cliBundle: (): string | undefined => process.env.RAVI_BUNDLE ?? process.argv[1],
+    },
+  ) {}
+
+  private mutationPayload(mutation: RaviEnvMutation) {
+    return {
+      ...mutation,
+      warnings: managedRuntimeWarnings(buildManagedRuntimeIdentity(this.runtime.processes(), this.runtime.cliBundle())),
+    };
+  }
+
+  private printMutation(payload: ReturnType<RuntimeEnvCommands["mutationPayload"]>, asJson: boolean): void {
+    printPayload(payload, asJson, () => {
+      printEnvHuman(payload);
+      for (const warning of payload.warnings) console.warn(`Warning: ${warning}`);
+    });
+  }
+
   @Command({
     name: "set",
     description: "Atomically set one allowlisted key in the Ravi env file",
@@ -180,8 +203,8 @@ export class RuntimeEnvCommands {
   ) {
     try {
       const nextValue = await readNonInteractiveSecret({ provided: value, fromStdin, maxBytes: 8192 });
-      const payload = setRaviEnvKey(key, nextValue);
-      printPayload(payload, asJson, () => printEnvHuman(payload));
+      const payload = this.mutationPayload(setRaviEnvKey(key, nextValue));
+      this.printMutation(payload, asJson);
       return payload;
     } catch (err) {
       failEnv("runtime env set", err, asJson);
@@ -200,8 +223,8 @@ export class RuntimeEnvCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     try {
-      const payload = unsetRaviEnvKey(key);
-      printPayload(payload, asJson, () => printEnvHuman(payload));
+      const payload = this.mutationPayload(unsetRaviEnvKey(key));
+      this.printMutation(payload, asJson);
       return payload;
     } catch (err) {
       failEnv("runtime env unset", err, asJson);

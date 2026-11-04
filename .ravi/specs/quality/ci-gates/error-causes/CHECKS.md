@@ -11,6 +11,8 @@ status: active
 # Checks
 
 - `bun test scripts/error-cause-scan.test.ts` passes fixtures for missing bindings, ignored bindings at surfaces, concrete reasons, dynamic callbacks and shadowed identifiers.
+- Git-ref regressions verify missing immutable anchors and comparison refs report the exact ref, full-history/tag recovery instructions, and a nonzero subprocess exit. A missing baseline file in a valid commit remains allowed; malformed baseline JSON still fails.
+- On GitHub Actions, verify `Fetch error cause baseline anchor` and `Error cause ratchet` succeed for a PR using its target base SHA and a push using its previous SHA. Rerunning an old workflow does not incorporate this PR's workflow changes.
 - Adding `try { work(); } catch { fail("Failed"); }` to a new production file makes `bun scripts/error-cause-scan.ts` fail for an unlisted masking site.
 - Adding a no-binding `.catch` callback also fails.
 - Forwarding the caught error to the diagnostic constructor removes the violation.
