@@ -249,7 +249,12 @@ details and policy outcome:
   Text mode then prints `Next: <suggestedAction>` when no issue carries it.
   HTTP `status` and structured `issues`
   (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST
-  be projected so CLI text and `--json` stay actionable. This privacy
+  be projected so CLI text and `--json` stay actionable. Unknown-field issues
+  MUST retain bounded identifier-shaped field names (for example `json` or
+  `subjects`), never their submitted values; unsafe names remain redacted.
+  When no issue is available, usage errors MUST preserve safe bounded public
+  message and next-action copy using the shared contract sanitizer, without
+  depending on a domain-specific prefix or a duplicated error catalog. This privacy
   projection is the permitted exception to byte-for-byte detail parity;
   semantic fields and taxonomy still remain equivalent.
 

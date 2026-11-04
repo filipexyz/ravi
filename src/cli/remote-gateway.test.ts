@@ -486,7 +486,7 @@ describe("remote gateway exit taxonomy", () => {
       exitCode: 2,
       message: "html: --html file was not found: ./index.html",
     });
-    expect(error?.details.suggestedAction).toBe("Correct the command input and retry");
+    expect(error?.details.suggestedAction).toBe("correct the command input and retry");
     expect(JSON.stringify(error?.envelope())).toContain("--html file was not found: ./index.html");
   });
 
@@ -533,6 +533,67 @@ describe("remote gateway exit taxonomy", () => {
     );
 
     expect(error).toMatchObject({ op: "tasks create", code: "USAGE_ERROR", exitCode: 2, message });
+  });
+
+  it("preserves an issue-less permission profile failure and its inspection command", () => {
+    const message =
+      "No capabilities found for this profile. Provide --capabilities <permission>:<objectType>:<objectId> to create or bootstrap it.";
+    const suggestedAction = "Inspect built-in profiles with 'ravi skills show permissions'.";
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: { code: "USAGE_ERROR", message, suggestedAction, retryable: false },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({
+      op: "permissions allow",
+      code: "USAGE_ERROR",
+      exitCode: 2,
+      message,
+      details: { status: 400, suggestedAction },
+    });
+    expect(error?.envelope().error.message).toBe(message);
+  });
+
+  it("preserves a safe legacy validation message without issues", () => {
+    const message = "Profile is unknown. Run 'ravi skills show permissions' to inspect built-in profiles.";
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({ status: 400, body: JSON.stringify({ error: "ValidationError", message }) }),
+    );
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, message });
+  });
+
+  it.each([
+    "No capabilities found: token=unstructured-secret",
+    "No capabilities found for rctx_secret_fixture",
+    "No capabilities found for ctx_secret_fixture",
+    "No capabilities found: PRIVATE_PROVIDER_BODY_8K2R",
+    "Profile is unknown.\nPRIVATE_PROVIDER_BODY_8K2R",
+  ])("does not relay unsafe issue-less validation copy: %s", (message) => {
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: { code: "USAGE_ERROR", message, suggestedAction: message, retryable: false },
+        }),
+      }),
+    );
+    expect(error?.message).toBe("Remote gateway rejected the command input.");
+    expect(JSON.stringify(error?.envelope())).not.toContain(message);
   });
 
   it("preserves a missing task profile error from the gateway", () => {

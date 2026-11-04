@@ -72,6 +72,13 @@ export interface PublicValidationIssue {
   message: string;
 }
 
+/** Unknown request keys are data; expose only bounded field-name identifiers. */
+export function publicValidationFieldName(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^[a-z][A-Za-z0-9_-]{0,63}$/.test(value)) return undefined;
+  if (/^(?:ctx_|rctx_)/i.test(value) || sanitizePublicValue(value) !== value) return undefined;
+  return value;
+}
+
 function isValidationIssue(value: Readonly<Record<string, unknown>> | undefined): boolean {
   return Boolean(
     value && Array.isArray(value.path) && typeof value.code === "string" && typeof value.message === "string",
@@ -122,11 +129,19 @@ export function projectPublicIssues(value: unknown): PublicValidationIssue[] | u
     const record = item as Record<string, unknown>;
     if (typeof record.code !== "string" || !ISSUE_CODE_PATTERN.test(record.code)) return [];
     const path = projectIssuePath(record.path);
+    if (!path) return [];
+    if (record.code === "unrecognized_keys" && Array.isArray(record.keys)) {
+      return record.keys.slice(0, 32).map((key) => ({
+        path: [...path, publicValidationFieldName(key) ?? "<unknown>"],
+        code: "unrecognized_keys",
+        message: "Unknown field.",
+      }));
+    }
     const message = projectIssueMessage(record.message);
-    if (!path || !message) return [];
+    if (!message) return [];
     return [{ path, code: record.code, message }];
   });
-  return issues.length > 0 ? issues : undefined;
+  return issues.length > 0 ? issues.slice(0, 32) : undefined;
 }
 
 /** Sanitize values before they can cross CLI, tool, gateway or audit boundaries. */

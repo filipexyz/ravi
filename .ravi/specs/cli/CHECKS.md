@@ -25,6 +25,13 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   repeated projections MUST preserve normalized text. Core, relay (explicit
   cause and denial fallback), and SDK regressions exercise the 4096-character
   boundary after credential redaction.
+- `bun test src/cli/remote-gateway.test.ts src/cli/redaction.test.ts` covers
+  issue-less permission-profile HTTP 400 errors and safe next-action copy,
+  preserves field paths, and rejects secret/provider dumps and unsafe names.
+- `bun test src/sdk/gateway/dispatcher.test.ts` checks unknown `json` and
+  `subjects` fields from gateway dispatch through remote CLI projection; field
+  values and unsafe field names MUST remain absent from responses and audits.
+
 - `bun test src/sdk/gateway/dispatcher.test.ts` verifies that a missing task
   decision table produces HTTP 500 with caller-visible normalized cause and
   bounded diagnostic logging without a stack, and that restoring the schema

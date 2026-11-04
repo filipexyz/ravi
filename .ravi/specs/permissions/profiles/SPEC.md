@@ -238,6 +238,28 @@ Semantics:
 
 - `allow` and `resolve` MUST dry-run by default.
 - `--apply` MUST be explicit for every provider-owned mutation.
+- `allow` and `deny` MUST share profile resolution. Built-in `bootstrap`,
+  `chat-only`, `explicit-only`, and `full-access` MUST resolve before a
+  `permission-*` tag definition exists, with or without that prefix.
+- Built-in expansion MUST reuse the executor runtime materializers, never a
+  second hand-maintained capability list. `bootstrap` includes the runtime
+  birth floor; `full-access` includes the explicit admin/execute/use ceiling.
+  `chat-only` expands to zero even when explicit leftovers exist;
+  `explicit-only` has no floor and keeps only explicit capabilities.
+- A known zero-capability profile MUST remain grantable. A scoped empty grant
+  governs the chat and grants no authority; it MUST NOT be mistaken for an
+  unknown profile. Other covering grants remain additive.
+- Dry-run MUST show the expanded capabilities without creating a profile or
+  grant. Apply persists a provider-owned profile definition and the scoped
+  grant so `permissions list --chat` and contact materialization agree.
+- `allow`/`resolve` for unknown/empty custom profiles without bootstrap capabilities MUST fail with
+  actual built-in/stored profile choices and runnable inspection commands
+  (`ravi skills show permissions`, `ravi tags list --kind system --source permissions --json`).
+- `deny` MUST still revoke a stored grant when its definition is missing or
+  empty; it MUST NOT require granting authority in order to remove authority.
+- `full-access` remains break-glass: explicit operator approval is required
+  before `--apply`; profile resolution MUST NOT waive command authorization
+  or change the default profile.
 - Applying a profile to `agent:<id>` MUST ensure the executor-agent runtime
   config contains the concrete capabilities, without replacing existing
   explicit capabilities.

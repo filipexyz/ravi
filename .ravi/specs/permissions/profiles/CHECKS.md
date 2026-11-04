@@ -10,6 +10,15 @@ capability: profiles
 
 ## Regression Tests
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/permissions.test.ts`
+  covers all four built-ins before tag creation: dry-run without writes,
+  allow/deny expansion parity with the executor materializers, apply to a human
+  in a Slack chat, read-back with `permissions list --chat`, empty grants,
+  idempotent replay and revoke. A second contact stays at zero authority.
+- Unknown profiles MUST name the available profiles and concrete inspection
+  commands. A `full-access` preview MUST include the expanded ceiling and the
+  explicit operator-approval warning; only `--apply` persists it.
+
 - Materialize an agent with `agent.defaults.runtimePermissions.profile =
   "full-access"` and assert `admin system:*`, `execute executable:*`,
   `use tool:*`, and `use skill:*` appear with `agent-default-capabilities`

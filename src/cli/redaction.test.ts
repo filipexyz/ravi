@@ -75,6 +75,24 @@ describe("public contract redaction", () => {
     ]);
   });
 
+  it("projects unknown-key validation into bounded field paths without echoing unsafe names", () => {
+    const issues = projectPublicIssues([
+      {
+        path: ["input"],
+        code: "unrecognized_keys",
+        keys: ["json", "subjects", "PRIVATE_EXTRA_FIELD_6JQ8", "rctx_secret_fixture", "ctx_secret_fixture"],
+        message: "Unrecognized keys including PRIVATE_EXTRA_FIELD_6JQ8",
+      },
+    ]);
+    expect(issues).toEqual([
+      { path: ["input", "json"], code: "unrecognized_keys", message: "Unknown field." },
+      { path: ["input", "subjects"], code: "unrecognized_keys", message: "Unknown field." },
+      { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+      { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+      { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+    ]);
+  });
+
   it("redacts compound secret keys without matching unrelated words", () => {
     expect(
       sanitizePublicValue({

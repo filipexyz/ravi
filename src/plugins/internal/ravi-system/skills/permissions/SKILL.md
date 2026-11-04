@@ -44,6 +44,13 @@ existentes, como permission tags, grants de contato por chat e
 
 ## Grants para um usuário/contato (escopo de chat)
 
+`allow` e `deny` reconhecem `bootstrap`, `chat-only`, `explicit-only` e
+`full-access` sem uma tag previamente criada (também aceitam `permission-`
+antes do nome). O dry-run mostra as capabilities do runtime; `--apply` grava
+o profile e o grant. `chat-only` e `explicit-only` sem capabilities são grants
+válidos de zero autoridade. Outros grants do contato continuam somando;
+conceder um profile vazio não revoga grants existentes.
+
 Permissão de usuário é **por chat**. Threads herdam o chat. O efetivo no turno
 é `teto do agent ∩ caps do contato naquele chat`: o grant só destrava o que o
 agent já pode fazer.

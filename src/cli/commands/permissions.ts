@@ -31,9 +31,13 @@ import { getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import {
+  AGENT_RUNTIME_PERMISSION_PROFILES,
   isChatOnlyRuntimePermissions,
+  materializeAgentRuntimeProfileCapabilities,
+  normalizeAgentRuntimePermissionProfile,
   readAgentRuntimePermissionsConfig,
 } from "../../permissions/agent-default-capabilities-provider.js";
+import { bootstrapCapabilitiesFor } from "../../permissions/runtime-bootstrap-provider.js";
 import {
   buildAuthorizationGuidance,
   formatCanonicalCapability,
@@ -53,7 +57,7 @@ import {
   normalizePermissionProfileSlug,
   upsertPermissionProfileDefinition,
 } from "../../permissions/apply-grant.js";
-import { dbGetTagDefinition } from "../../tags/index.js";
+import { dbGetTagDefinition, dbListTagDefinitions } from "../../tags/index.js";
 import type { TagDefinition } from "../../tags/types.js";
 import type { OffsetPagination } from "../../utils/pagination.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
@@ -779,7 +783,7 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       : rejectScopeWithoutContacts(op, { ...input, force });
   const existingTag = dbGetTagDefinition(tagSlug);
   const explicitCapabilities = parseCapabilityList(input.capabilities);
-  const capabilities = resolveProfileCapabilities(op, existingTag, explicitCapabilities, input.asJson);
+  const capabilities = resolveProfileCapabilities(op, tagSlug, existingTag, explicitCapabilities, input.asJson);
   const label = input.label?.trim() || existingTag?.label || labelFromProfile(tagSlug);
   const description = input.description?.trim() || existingTag?.description;
   const governedBefore = new Map(scopes.map((scope) => [scope.label, isScopeGoverned(scope)]));
@@ -890,7 +894,6 @@ function buildPermissionDenyPlan(input: PermissionDenyInput): PermissionDenyPlan
   const profile = requiredOption(input.profile, "profile");
   const tagSlug = normalizePermissionTagSlug(profile);
   const existingTag = dbGetTagDefinition(tagSlug);
-  const capabilities = existingTag ? readPermissionTagCapabilities(existingTag) : [];
   const targets = parseSubjectRefs(input.subjects);
   if (targets.length === 0 || targets.some((target) => target.type !== "contact")) {
     contractFail(op, "USAGE_ERROR", "permissions deny revokes contact grants; pass --to contact:<id>.", {
@@ -913,6 +916,7 @@ function buildPermissionDenyPlan(input: PermissionDenyInput): PermissionDenyPlan
     requireKnownChat: false,
     suggest: (scopeFlags) => buildDenyCommand(input, scopeFlags),
   });
+  const capabilities = resolveProfileCapabilities(op, tagSlug, existingTag, undefined, input.asJson);
   const governedBefore = new Map(scopes.map((scope) => [scope.label, isScopeGoverned(scope)]));
   const operations: PermissionAllowOperation[] = [];
 
@@ -1417,8 +1421,11 @@ function buildAllowHints(input: {
   governedBefore: Map<string, boolean>;
   apply: boolean;
 }): string[] {
-  if (input.contacts.length === 0) return [];
   const hints: string[] = [];
+  if (input.tagSlug === "permission-full-access") {
+    hints.push("full-access is break-glass and requires explicit operator approval before --apply.");
+  }
+  if (input.contacts.length === 0) return hints;
   if (input.force) {
     const currentChat = readCurrentChatId();
     hints.push(
@@ -1449,7 +1456,9 @@ function buildAllowHints(input: {
       );
     }
   }
-  if (input.agentCeilings.length === 0) {
+  if (input.capabilityRefs.length === 0) {
+    hints.push("This profile grants no capabilities. Other covering grants remain additive.");
+  } else if (input.agentCeilings.length === 0) {
     hints.push(
       `Contact grants never exceed the executor agent ceiling. Pass --agent <id> to ensure the agent can use ${input.capabilityRefs.join(", ")}.`,
     );
@@ -1570,27 +1579,64 @@ function buildListCommand(input: PermissionListInput, scopeFlags: string[]): str
 
 function resolveProfileCapabilities(
   op: string,
+  tagSlug: string,
   existingTag: TagDefinition | null,
   explicitCapabilities: AuthorizationCapability[] | undefined,
   asJson?: boolean,
 ): AuthorizationCapability[] {
+  const normalized = normalizeAgentRuntimePermissionProfile(tagSlug.slice("permission-".length));
+  const builtin = normalized === "none" ? null : normalized;
+  // A known zero-authority profile is valid. chat-only never inherits stale
+  // explicit capabilities, matching the executor runtime's reception ceiling.
+  if (builtin === "chat-only") return [];
+  const profileCapabilities =
+    builtin === "bootstrap"
+      ? bootstrapCapabilitiesFor("agent")
+      : builtin
+        ? materializeAgentRuntimeProfileCapabilities(builtin, `permission-profile:${tagSlug}`)
+        : [];
   const existingCapabilities = existingTag ? readPermissionTagCapabilities(existingTag) : [];
-  const capabilities = dedupeCapabilities([...(existingCapabilities ?? []), ...(explicitCapabilities ?? [])]);
-  if (capabilities.length === 0) {
+  const capabilities = dedupeCapabilities([
+    ...profileCapabilities.map(({ permission, objectType, objectId }) => ({ permission, objectType, objectId })),
+    ...existingCapabilities,
+    ...(explicitCapabilities ?? []),
+  ]);
+  // Revocation must work even after a definition was removed or emptied:
+  // the stored grant identity is enough, and live contexts still need revoking.
+  if (capabilities.length === 0 && !builtin && op !== "permissions deny") {
+    const profiles = [
+      ...AGENT_RUNTIME_PERMISSION_PROFILES,
+      ...dbListTagDefinitions({ kind: "system", source: "permissions", limit: 500 })
+        .filter((tag) => tag.slug.startsWith("permission-"))
+        .map((tag) => tag.slug),
+    ];
+    const inspectCommands = [
+      "ravi skills show permissions",
+      "ravi tags list --kind system --source permissions --json",
+    ];
+    // Keep the diagnostic within the remote transport's safe-line budget.
+    // Complete discovery stays in the listing command and structured details.
+    const inlineProfiles: string[] = [];
+    for (const choice of profiles) {
+      if ([...inlineProfiles, choice].join(", ").length > 300) break;
+      inlineProfiles.push(choice);
+    }
+    const profileSummary = inlineProfiles.join(", ") + (inlineProfiles.length < profiles.length ? ", ..." : "");
     contractFail(
       op,
       "USAGE_ERROR",
-      "No capabilities found for this profile. Provide --capabilities <permission>:<objectType>:<objectId> to create or bootstrap it.",
+      `Unknown or empty permission profile: ${tagSlug.slice(0, 160)}. Available profiles: ${profileSummary}. ` +
+        `Inspect built-ins with '${inspectCommands[0]}' and stored profiles with '${inspectCommands[1]}'. ` +
+        "Provide --capabilities <permission>:<objectType>:<objectId> to bootstrap a custom profile.",
       {
-        ...{
-          asJson,
-          exitCode: CONTRACT_EXIT_USAGE,
-          details: { suggestedAction: "Re-run with --capabilities <permission>:<objectType>:<objectId>." },
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        diagnostic: errorDiagnostic(`Unknown or empty permission profile: ${tagSlug.slice(0, 160)}`, { operation: op }),
+        details: {
+          acceptedValues: profiles,
+          inspectCommands,
+          suggestedAction: `Run '${inspectCommands[0]}' for built-ins or '${inspectCommands[1]}' for stored profiles.`,
         },
-        diagnostic: errorDiagnostic(
-          "No capabilities found for this profile. Provide --capabilities <permission>:<objectType>:<objectId> to create or bootstrap it.",
-          { operation: op },
-        ),
       },
     );
   }
@@ -1872,7 +1918,7 @@ function planAgentCapabilityOperation(input: {
 function printPermissionAllowPlan(payload: PermissionAllowPlan): void {
   console.log(payload.dryRun ? "permission allow plan" : "permission allow applied");
   console.log(`profile: ${payload.tagSlug}`);
-  console.log(`capabilities: ${payload.capabilities.map(formatCanonicalCapability).join(", ")}`);
+  console.log(`capabilities: ${payload.capabilities.map(formatCanonicalCapability).join(", ") || "(none)"}`);
   if (payload.targets.length > 0) {
     console.log(`targets: ${payload.targets.map((target) => `${target.type}:${target.id}`).join(", ")}`);
   }

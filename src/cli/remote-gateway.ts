@@ -53,7 +53,6 @@ import {
   runtimeControlCatalogCopy,
 } from "../runtime/runtime-control-errors.js";
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
-import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
 import { projectPublicationDetails, publicationRecoveryAction } from "../pr/contracts.js";
 
@@ -466,13 +465,13 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         body.error === "BadRequest" ||
         (issues && result.status >= 400 && result.status < 500)
       ) {
-        return new ContractError(op, "USAGE_ERROR", remoteValidationFailureMessage(issues), CONTRACT_EXIT_USAGE, {
-          ...errorDiagnostic(remoteValidationFailureMessage(issues), { operation: op }),
-          ...{
-            suggestedAction: `Inspect '${op} --help' and retry with valid input`,
-            status: result.status,
-            ...(issues ? { issues } : {}),
-          },
+        const sourceMessage = body.message ?? nestedError?.message;
+        const message = remoteValidationFailureMessage(issues, sourceMessage);
+        return new ContractError(op, "USAGE_ERROR", message, CONTRACT_EXIT_USAGE, {
+          ...errorDiagnostic(message, { operation: op }),
+          suggestedAction: `Inspect '${op} --help' and retry with valid input`,
+          status: result.status,
+          ...(issues ? { issues } : {}),
         });
       }
     } catch {
@@ -1044,24 +1043,16 @@ function remoteContractFailureMessage(
 
 function remoteValidationFailureMessage(
   issues?: ReturnType<typeof projectPublicIssues>,
-  sourceMessage?: string,
+  sourceMessage?: unknown,
 ): string {
   const first = issues?.[0];
   if (first) {
     const path = first.path.filter((item) => item !== "<unknown>").join(".");
     return path ? `${path}: ${first.message}` : first.message;
   }
-  const safe = safeRemotePayloadMessage(sourceMessage);
+  const safe = boundedRemoteLine(sourceMessage, LIBRARY_REMOTE_MESSAGE_MAX);
   if (safe) return safe;
   return "Remote gateway rejected the command input.";
-}
-
-function safeRemotePayloadMessage(message?: string): string | undefined {
-  if (!message) return undefined;
-  const issues = projectPublicIssues([{ path: [], code: "invalid", message }]);
-  const projected = issues?.[0]?.message;
-  if (!projected || !isSafeLocalPayloadMessage(projected)) return undefined;
-  return projected;
 }
 
 function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["outcome"], code?: string): string {
@@ -1201,7 +1192,7 @@ function projectRemoteContractDetails(
     details.suggestedAction = connectorCatalog.suggestedAction;
   } else if (typeof remote.suggestedAction === "string" || isRemoteWriteBrake(body)) {
     details.suggestedAction =
-      body.outcome === "failed"
+      body.outcome === "failed" || body.outcome === "usage_error"
         ? (boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX) ??
           remoteSuggestedAction(op, body.outcome, remote.code))
         : remoteSuggestedAction(op, body.outcome, remote.code);

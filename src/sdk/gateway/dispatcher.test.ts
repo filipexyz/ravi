@@ -9,6 +9,7 @@ import { z } from "zod";
 import { RaviAppError } from "../../apps/types.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { pickFields } from "../../cli/agent-contract.js";
+import { remoteGatewayErrorToContractError } from "../../cli/remote-gateway.js";
 import { AppsCommands } from "../../cli/commands/apps.js";
 import { TaskCommands } from "../../cli/commands/tasks.js";
 import { TaskProfileCommands } from "../../cli/commands/tasks-profiles.js";
@@ -129,6 +130,12 @@ class GatewayDemoCommands {
   })
   redactedInvalid(@Arg("content", { schema: rejectedSensitiveInput }) content: string) {
     void content;
+  }
+
+  @Command({ name: "strict-input", description: "Validate a strict nested object" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "strict-input", risk: "low" })
+  strictInput(@Arg("input", { schema: z.object({ name: z.string() }).strict() }) input: { name: string }) {
+    void input;
   }
 
   @Command({ name: "void", description: "Returns nothing" })
@@ -497,9 +504,7 @@ describe("dispatch — body shape (flat-only)", () => {
     };
     expect(body.error.code).toBe("USAGE_ERROR");
     expect(body.error.issues).toHaveLength(2);
-    expect(body.error.issues.every((issue) => issue.path[0] === "<unknown>")).toBe(true);
-    expect(JSON.stringify(body)).not.toContain('"args"');
-    expect(JSON.stringify(body)).not.toContain('"options"');
+    expect(body.error.issues.map((issue) => issue.path)).toEqual([["args"], ["options"]]);
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]?.outcome).toBe("usage_error");
   });
@@ -533,9 +538,60 @@ describe("dispatch — body shape (flat-only)", () => {
     expect(audits.events).toHaveLength(1);
     expect(JSON.stringify(audits.events)).not.toContain(sentinel);
   });
+
+  it.each(["json", "subjects"])(
+    "names unknown field %s through remote CLI without echoing its value",
+    async (field) => {
+      const audits = captureAudits();
+      const secret = "PRIVATE_FIELD_VALUE_6JQ8";
+      const result = await dispatch(
+        findCmd("demo.echo"),
+        { name: "fixture", [field]: secret },
+        {},
+        { emitAudit: audits.emit },
+      );
+      const body = await result.response.text();
+      const error = remoteGatewayErrorToContractError("demo echo", {
+        status: result.response.status,
+        ok: result.response.ok,
+        contentType: result.response.headers.get("content-type"),
+        body,
+      });
+      expect(error).toMatchObject({
+        code: "USAGE_ERROR",
+        exitCode: 2,
+        message: `${field}: Unknown field for demo.echo.`,
+        details: { issues: [{ path: [field], code: "unrecognized_keys" }] },
+      });
+      expect(body).not.toContain(secret);
+      expect(JSON.stringify(audits.events)).not.toContain(secret);
+    },
+  );
 });
 
 describe("dispatch — validation", () => {
+  it("keeps the path of nested unknown fields without echoing private keys or values", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.strict-input"),
+      { input: { name: "fixture", extra: "PRIVATE_VALUE_7K2", PRIVATE_KEY_8F4: true } },
+      {},
+      { emitAudit: audits.emit },
+    );
+    const body = await result.response.json();
+    expect(result.response.status).toBe(400);
+    expect(body).toMatchObject({
+      error: {
+        issues: [
+          { path: ["input", "extra"], code: "unrecognized_keys", message: "Unknown field." },
+          { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+        ],
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain("PRIVATE_");
+    expect(JSON.stringify(audits.events)).not.toContain("PRIVATE_");
+  });
+
   it("defaults negated flags to false and honors explicit true over the gateway", async () => {
     const audits = captureAudits();
 
