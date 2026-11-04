@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { lstat, open, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
+import { logger } from "../utils/logger.js";
 import type { ResponseMediaAttachment } from "./message-types.js";
+
+const log = logger.child("runtime:generated-media-allocation");
 
 declare const allocationBrand: unique symbol;
 
@@ -85,6 +89,18 @@ function isMissing(error: unknown): boolean {
   return isObject(error) && "code" in error && error.code === "ENOENT";
 }
 
+/** Keep the raw cause internal while recording only the normalized diagnostic. */
+function cleanupFailure(
+  error: unknown,
+  filePath: string,
+  reason: "stat_failed" | "unlink_failed",
+): Extract<GeneratedMediaCleanupResult, { status: "failed" }> {
+  reportErrorDiagnostic(log, "Could not release a generated-media allocation", error, {
+    operation: `generated_media_cleanup_${reason}`,
+  });
+  return { status: "failed", filePath, reason, error };
+}
+
 /**
  * Each materialization owns a new exclusive path, independently of its semantic
  * idempotency key or display filename. Only this factory's WeakMap authenticates
@@ -102,7 +118,7 @@ export function createGeneratedMediaAllocator(deps: GeneratedMediaAllocatorDepen
       current = await fs.lstat(filePath);
     } catch (error) {
       if (isMissing(error)) return { status: "already_missing", filePath };
-      return { status: "failed", filePath, reason: "stat_failed", error };
+      return cleanupFailure(error, filePath, "stat_failed");
     }
     if (current.isSymbolicLink() || !current.isFile()) {
       return { status: "rejected", filePath, reason: "not_regular_file" };
@@ -117,7 +133,7 @@ export function createGeneratedMediaAllocator(deps: GeneratedMediaAllocatorDepen
       return { status: "released", filePath };
     } catch (error) {
       if (isMissing(error)) return { status: "already_missing", filePath };
-      return { status: "failed", filePath, reason: "unlink_failed", error };
+      return cleanupFailure(error, filePath, "unlink_failed");
     }
   }
 

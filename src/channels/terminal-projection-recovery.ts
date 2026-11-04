@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
+import { logger } from "../utils/logger.js";
 import {
   ChannelBackendRuntimeOwnershipLostError,
   dbGetChannelBackendIngressReceiptByTurnId,
@@ -17,6 +19,7 @@ type RecordResult = ReturnType<typeof dbRecordChannelBackendRuntimeEvent>;
 
 const MAX_ROUNDS = 2;
 const RETRY_DELAY_MS = 100;
+const log = logger.child("channels:terminal-projection-recovery");
 
 /** Bounded persistence diagnostics; codes never contain terminal content or raw exceptions. */
 export interface TerminalProjectionRecoveryState {
@@ -107,8 +110,11 @@ export async function recordTerminalProjectionWithRecovery(
   const notify = (state: TerminalProjectionRecoveryState): void => {
     try {
       onState?.(Object.freeze(state));
-    } catch {
+    } catch (error) {
       // Preserve the primary operation, including a successful commit.
+      reportErrorDiagnostic(log, "Terminal projection observer failed", error, {
+        operation: "terminal_projection_observer",
+      });
     }
   };
 
@@ -160,7 +166,10 @@ export async function recordTerminalProjectionWithRecovery(
   const ownsRecovery = (): boolean => {
     try {
       return mayRecover() === true && (!operation.mayWrite || operation.mayWrite() === true);
-    } catch {
+    } catch (error) {
+      reportErrorDiagnostic(log, "Terminal projection owner check failed", error, {
+        operation: "terminal_projection_owner",
+      });
       return false;
     }
   };
@@ -188,7 +197,10 @@ export async function recordTerminalProjectionWithRecovery(
     let snapshot: Snapshot;
     try {
       snapshot = readSnapshot(operation);
-    } catch {
+    } catch (error) {
+      reportErrorDiagnostic(log, "Terminal projection readback failed", error, {
+        operation: "terminal_projection_readback",
+      });
       return { kind: ownedBeforeRead && ownsRecovery() ? "unknown" : "owner_lost" };
     }
     const evidence = compareSnapshot(snapshot, baseline, operation);

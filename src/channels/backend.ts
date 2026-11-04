@@ -314,9 +314,9 @@ export class ChannelOutputSinkRegistry {
       result = restriction === undefined ? await sink.emit(envelope) : await sink.emit(envelope, restriction);
     } catch (error) {
       const evidence = known ? matchingChannelOutputHandoffEvidence(error, envelope, restriction) : undefined;
-      if (evidence) throw new ChannelOutputHandoffError(evidence);
+      if (evidence) throw new ChannelOutputHandoffError(evidence, { cause: error });
       if (error instanceof Error && error.name === "ChannelOutputHandoffError") {
-        throw unclassifiedChannelOutputHandoff(envelope);
+        throw unclassifiedChannelOutputHandoff(envelope, "UNCLASSIFIED", error);
       }
       throw error;
     }
@@ -356,15 +356,19 @@ export function matchingChannelOutputHandoffEvidence(
 function unclassifiedChannelOutputHandoff(
   envelope: ChannelOutputEnvelope,
   code: "UNCLASSIFIED" | "INVALID_CONFIRMATION" = "UNCLASSIFIED",
+  cause?: unknown,
 ): ChannelOutputHandoffError {
-  return new ChannelOutputHandoffError({
-    capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
-    schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
-    identity: createChannelOutputHandoffIdentity(envelope),
-    disposition: "unknown",
-    operationFinished: true,
-    code,
-  });
+  return new ChannelOutputHandoffError(
+    {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+      identity: createChannelOutputHandoffIdentity(envelope),
+      disposition: "unknown",
+      operationFinished: true,
+      code,
+    },
+    { cause },
+  );
 }
 
 /** Freezes the parsed clone so a sink cannot change the identity being checked. */

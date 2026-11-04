@@ -3,6 +3,8 @@ import type { Database } from "bun:sqlite";
 import { getDb } from "../router/router-db.js";
 import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import { type ChannelOutboundJob, publishChannelOutboundJob } from "./outbound-stream.js";
 import { isProviderUnavailableChatText } from "../runtime/public-failure.js";
@@ -125,8 +127,8 @@ export type ChannelOutboundPublishHandoffFailure = {
 export class ChannelOutboundPublishHandoffError extends Error {
   readonly evidence: ChannelOutboundPublishHandoffFailure;
 
-  constructor(evidence: ChannelOutboundPublishHandoffFailure) {
-    super(`Channel outbound publish ${evidence.disposition}: ${evidence.code}`);
+  constructor(evidence: ChannelOutboundPublishHandoffFailure, options?: ErrorOptions) {
+    super(`Channel outbound publish ${evidence.disposition}: ${evidence.code}`, options);
     this.name = "ChannelOutboundPublishHandoffError";
     this.evidence = Object.freeze({ ...evidence });
   }
@@ -534,25 +536,31 @@ export async function publishChannelOutboundJobDurably(
     let existing: ChannelOutboundPublishRecord | null;
     try {
       existing = store.get(key);
-    } catch {
+    } catch (readbackError) {
+      const cause = new Error(errorDiagnostic(readbackError, { operation: "outbound_publish_save_readback" }).cause, {
+        cause: error,
+      });
       // A typed immutable conflict remains permanent even if readback fails.
       if (error instanceof ChannelOutboundPublishHandoffError && error.evidence.disposition === "conflict") {
-        throw outboundPublishConflict(key, requestFingerprint);
+        throw outboundPublishConflict(key, requestFingerprint, cause);
       }
-      throw new ChannelOutboundPublishHandoffError({
-        disposition: "unknown",
-        code: "OUTBOX_READBACK_FAILED",
-        idempotencyKey: key,
-        requestFingerprint,
-        operationFinished: true,
-      });
+      throw new ChannelOutboundPublishHandoffError(
+        {
+          disposition: "unknown",
+          code: "OUTBOX_READBACK_FAILED",
+          idempotencyKey: key,
+          requestFingerprint,
+          operationFinished: true,
+        },
+        { cause },
+      );
     }
     if (existing !== null) {
       requireMatchingPublishRecord(existing, job, requestFingerprint);
       return confirmedPublishResult(existing, error);
     }
     if (error instanceof ChannelOutboundPublishHandoffError && error.evidence.disposition === "conflict") {
-      throw outboundPublishConflict(key, requestFingerprint);
+      throw outboundPublishConflict(key, requestFingerprint, error);
     }
     const code = channelOutputHandoffTransientCode(error);
     throw new ChannelOutboundPublishHandoffError(
@@ -571,6 +579,7 @@ export async function publishChannelOutboundJobDurably(
             requestFingerprint,
             operationFinished: true,
           },
+      { cause: error },
     );
   }
   requireMatchingPublishRecord(saved, job, requestFingerprint);
@@ -597,15 +606,21 @@ export async function publishChannelOutboundJobDurably(
       const failed = store.recordFailure(saved.idempotencyKey, error, now());
       requireMatchingPublishRecord(failed, job, requestFingerprint);
       return confirmedPublishResult(failed, error);
-    } catch {
+    } catch (bookkeepingError) {
+      reportErrorDiagnostic(log, "Channel outbound publication failure bookkeeping failed", bookkeepingError, {
+        operation: "outbound_publish_failure_bookkeeping",
+      });
       try {
         const current = store.get(saved.idempotencyKey);
         if (current !== null) {
           requireMatchingPublishRecord(current, job, requestFingerprint);
           return confirmedPublishResult(current, error);
         }
-      } catch {
+      } catch (readbackError) {
         // Retain the original positive save proof, never retry from the host.
+        reportErrorDiagnostic(log, "Channel outbound publication readback failed after save", readbackError, {
+          operation: "outbound_publish_saved_readback",
+        });
       }
       return confirmedPublishResult(saved, error, true);
     }
@@ -616,14 +631,18 @@ export async function publishChannelOutboundJobDurably(
 function outboundPublishConflict(
   idempotencyKey: string,
   requestFingerprint: string,
+  cause?: unknown,
 ): ChannelOutboundPublishHandoffError {
-  return new ChannelOutboundPublishHandoffError({
-    disposition: "conflict",
-    code: "REQUEST_FINGERPRINT_CONFLICT",
-    idempotencyKey,
-    requestFingerprint,
-    operationFinished: true,
-  });
+  return new ChannelOutboundPublishHandoffError(
+    {
+      disposition: "conflict",
+      code: "REQUEST_FINGERPRINT_CONFLICT",
+      idempotencyKey,
+      requestFingerprint,
+      operationFinished: true,
+    },
+    { cause },
+  );
 }
 
 /**

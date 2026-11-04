@@ -164,9 +164,9 @@ export type ChannelOutputHandoffEvidence = z.infer<typeof ChannelOutputHandoffEv
 export class ChannelOutputHandoffError extends Error {
   readonly evidence: ChannelOutputHandoffEvidence;
 
-  constructor(evidence: ChannelOutputHandoffEvidence) {
+  constructor(evidence: ChannelOutputHandoffEvidence, options?: ErrorOptions) {
     const parsed = ChannelOutputHandoffEvidenceSchema.parse(evidence);
-    super(`Channel output handoff ${parsed.disposition}: ${parsed.code}`);
+    super(`Channel output handoff ${parsed.disposition}: ${parsed.code}`, options);
     this.name = "ChannelOutputHandoffError";
     this.evidence = freezeHandoffValue(parsed);
   }

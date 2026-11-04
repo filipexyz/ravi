@@ -16,6 +16,8 @@ import {
 import { recordDeliveryTrace } from "../session-trace/channel-trace.js";
 import { type GuardedSession, guardedSessionForChat, guardTextForGuardedSession } from "../knowledge/egress/guard.js";
 import { logger } from "../utils/logger.js";
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
 import { markSlackThreadRootDelivered } from "./slack/thread-lifecycle-store.js";
 import { getChannelOutboundPublishJob, markChannelOutboundPublishJobSuppressed } from "./outbound-publish-outbox.js";
 import {
@@ -320,7 +322,7 @@ export async function processChannelOutboundJob(
   try {
     automatic = prepareSlackAutomaticText(inputJob);
   } catch (error) {
-    return { disposition: "nak", status: "failed", retryable: true, phase: "policy", error: errorMessage(error) };
+    return outboundProcessingFailure(error, { disposition: "nak", status: "failed", retryable: true, phase: "policy" });
   }
   // Always apply the last-hop guard. Frozen automatic parts additionally
   // require unchanged bytes before sending under their canonical identity.
@@ -551,7 +553,12 @@ export async function processChannelOutboundJob(
         );
       }
     } catch (error) {
-      return { disposition: "nak", status: "failed", retryable: true, phase: "policy", error: errorMessage(error) };
+      return outboundProcessingFailure(error, {
+        disposition: "nak",
+        status: "failed",
+        retryable: true,
+        phase: "policy",
+      });
     }
 
     let delivered: NativeOutboundDeliveryResult;
@@ -575,34 +582,37 @@ export async function processChannelOutboundJob(
         });
       }
       try {
-        await emitDelivery(emitEvent, traceRecorderForAttempt(recordTrace, deliveryAttempt), job, {
-          status: "failed",
-          reason: "send_error",
-          error: message,
-          retryable: failure.retryable,
-          ...(failure.reasonCode ? { unavailableReasonCode: failure.reasonCode } : {}),
-          target,
-          emitId,
-          idempotencyKey: receiptKey,
-          ...(receiptKey !== job.request.idempotencyKey
-            ? { publicationIdempotencyKey: job.request.idempotencyKey }
-            : {}),
-          ...outboundContentTelemetry(job),
-          durationMs: Date.now() - t0,
-        });
+        await emitDelivery(
+          emitEvent,
+          traceRecorderForAttempt(recordTrace, deliveryAttempt),
+          job,
+          outboundFailureTelemetry(error, {
+            status: "failed",
+            reason: "send_error",
+            retryable: failure.retryable,
+            ...(failure.reasonCode ? { unavailableReasonCode: failure.reasonCode } : {}),
+            target,
+            emitId,
+            idempotencyKey: receiptKey,
+            ...(receiptKey !== job.request.idempotencyKey
+              ? { publicationIdempotencyKey: job.request.idempotencyKey }
+              : {}),
+            ...outboundContentTelemetry(job),
+            durationMs: Date.now() - t0,
+          }),
+        );
       } catch (telemetryError) {
         log.warn("Failed to emit native channel send failure", {
           jobId: job.jobId,
           error: errorMessage(telemetryError),
         });
       }
-      return {
+      return outboundProcessingFailure(error, {
         disposition: failure.retryable ? "nak" : "ack",
         status: "failed",
         retryable: failure.retryable,
-        error: message,
         phase: "send",
-      };
+      });
     }
 
     try {
@@ -728,7 +738,10 @@ function prepareSlackAutomaticText(job: ChannelOutboundJob): PreparedSlackAutoma
   let partId: string;
   try {
     partId = assertSlackAutomaticTerminalPart(manifest, { type: "text", text: job.request.content.text });
-  } catch {
+  } catch (error) {
+    reportErrorDiagnostic(log, "Automatic terminal text identity rejected", error, {
+      operation: "outbound_terminal_part_identity",
+    });
     return suppressed("slack_bot_reply_identity_conflict");
   }
   // Wrapper emit IDs are correlation only. Every representation of this exact
@@ -838,14 +851,13 @@ async function acknowledgeSuppressedReceipt(
     // another attempt after a crash or connection failure. NAK retries only
     // that bookkeeping; an integrity failure is still non-retryable delivery.
     const integrityFailure = receipt.suppressionReason === SLACK_AUTOMATIC_EGRESS_CONFLICT;
-    return {
+    return outboundProcessingFailure(error, {
       disposition: "nak",
       status: "failed",
       retryable: !integrityFailure,
       ...(integrityFailure ? { nakDelayMs: CONSUMER_RETRY_DELAY_MS } : {}),
       phase: "telemetry_emit",
-      error: errorMessage(error),
-    };
+    });
   }
 }
 
@@ -1592,6 +1604,19 @@ async function emitDelivery(
   }
 
   await emitEvent(`ravi.session.${sessionName}.delivery`, payload);
+}
+
+/** Preserve delivery decisions while projecting the caught cause at the result boundary. */
+function outboundProcessingFailure(
+  error: unknown,
+  result: Omit<ChannelOutboundProcessingResult, "error"> & { phase: ChannelOutboundProcessingPhase },
+): ChannelOutboundProcessingResult {
+  return { ...result, error: errorDiagnostic(error, { operation: `channel_outbound_${result.phase}` }).cause };
+}
+
+/** Delivery telemetry contains only a bounded diagnostic, never the caught provider payload. */
+function outboundFailureTelemetry(error: unknown, payload: Record<string, unknown>): Record<string, unknown> {
+  return { ...payload, error: errorDiagnostic(error, { operation: "channel_outbound_send" }).cause };
 }
 
 function errorMessage(error: unknown): string {

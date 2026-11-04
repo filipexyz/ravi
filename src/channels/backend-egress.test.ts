@@ -18,6 +18,7 @@ import {
   CHANNEL_BACKEND_SCHEMA_VERSION,
   ChannelOutputEnvelopeSchema,
   ChannelOutputSinkRegistry,
+  ExternalChannelTargetSchema,
   type ChannelOutputEnvelope,
   type ExternalChannelTarget,
 } from "./backend.js";
@@ -25,6 +26,7 @@ import {
   CHANNEL_RUNTIME_EVENTS_PROTOCOL,
   CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
   ChannelRuntimeEventSinkRegistry,
+  KnownChannelRuntimeEventSchema,
   type KnownChannelRuntimeEvent,
 } from "./runtime-events.js";
 import {
@@ -126,6 +128,82 @@ describe("channel backend cross-process egress", () => {
     ).rejects.toMatchObject({ evidence: { disposition: "unknown", code: "TRANSPORT_FAILED" } });
     expect(request).toHaveBeenCalledTimes(1);
     expect(sink).not.toHaveBeenCalled();
+  });
+
+  it("never downgrades runtime_event when a v1 receiver rejects the external version", async () => {
+    const codec = JSONCodec<unknown>();
+    const oldRuntimeRequest = z.object({
+      protocol: z.literal(CHANNEL_BACKEND_EGRESS_PROTOCOL),
+      schemaVersion: z.literal(1),
+      kind: z.literal("runtime_event"),
+      target: ExternalChannelTargetSchema,
+      event: KnownChannelRuntimeEventSchema,
+    });
+    const oldValidRequest = {
+      protocol: CHANNEL_BACKEND_EGRESS_PROTOCOL,
+      schemaVersion: 1,
+      kind: "runtime_event",
+      target,
+      event: runtimeEvent,
+    };
+    expect(oldRuntimeRequest.safeParse(oldValidRequest).success).toBe(true);
+    const sink = mock(async () => {});
+    const request = mock(async (_subject: string, data: Uint8Array) => {
+      const received = codec.decode(data);
+      expect(received).toEqual({ ...oldValidRequest, schemaVersion: 2 });
+      const parsed = oldRuntimeRequest.safeParse(received);
+      expect(parsed.success).toBe(false);
+      if (parsed.success) await sink();
+      return {
+        data: codec.encode({
+          protocol: CHANNEL_BACKEND_EGRESS_PROTOCOL,
+          schemaVersion: 1,
+          ok: false,
+          reason: "invalid_request",
+        }),
+      };
+    });
+    const requester = createChannelBackendEgressRequester({ connect: async () => ({ request }) });
+
+    await expect(requester.emitRuntimeEvent(target, runtimeEvent)).rejects.toThrow();
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(sink).not.toHaveBeenCalled();
+  });
+
+  it("rejects runtime_event v1 requests before the current responder invokes a sink", async () => {
+    const connection = new InMemoryRequestReplyConnection();
+    const runtimeEventSinks = new ChannelRuntimeEventSinkRegistry();
+    const emit = mock(async () => {});
+    runtimeEventSinks.register(target, { emit });
+    const responder = startChannelBackendEgressResponder({ connection, runtimeEventSinks });
+    const codec = JSONCodec<unknown>();
+    try {
+      const response = await connection.request(
+        CHANNEL_BACKEND_EGRESS_SUBJECT,
+        codec.encode({
+          protocol: CHANNEL_BACKEND_EGRESS_PROTOCOL,
+          schemaVersion: 1,
+          kind: "runtime_event",
+          target,
+          event: runtimeEvent,
+        }),
+        { timeout: 1000 },
+      );
+      expect(codec.decode(response.data)).toEqual({
+        protocol: CHANNEL_BACKEND_EGRESS_PROTOCOL,
+        schemaVersion: 2,
+        ok: false,
+        reason: "invalid_request",
+      });
+      expect(emit).not.toHaveBeenCalled();
+
+      const requester = createChannelBackendEgressRequester({ connect: async () => connection });
+      await requester.emitRuntimeEvent(target, runtimeEvent);
+      expect(emit).toHaveBeenCalledTimes(1);
+      expect(emit).toHaveBeenCalledWith(runtimeEvent, target);
+    } finally {
+      await responder.stop();
+    }
   });
 
   it("rejects old requests and unknown restricted sink capability without invoking a sink", async () => {

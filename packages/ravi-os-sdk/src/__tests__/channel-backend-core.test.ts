@@ -278,4 +278,114 @@ describe("channel backend core contract", () => {
     registry.register(envelope.target, { handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY, emit });
     await expect(registry.emit(envelope)).rejects.toMatchObject({ evidence });
   });
+
+  it("does not invoke a sink removed while preparing the output identity", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const emit = mock(async () => {});
+    const unregister = registry.register(output.target, { emit });
+    const pending = registry.tryEmit(output);
+    unregister();
+
+    await expect(pending).resolves.toBe(false);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("rechecks a replacement sink capability after preparing identity", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const previous = mock(async () => {});
+    const replacement = mock(async () => {});
+    const unregister = registry.register(output.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      emit: previous,
+    });
+    const context = { capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY, expectedRequestFingerprint: "a".repeat(64) };
+    const pending = registry.emit(output, context);
+    unregister();
+    registry.register(output.target, { emit: replacement });
+
+    await expect(pending).rejects.toMatchObject({ evidence: {
+      disposition: "not_started", code: "UNSUPPORTED_CAPABILITY",
+    } });
+    expect(previous).not.toHaveBeenCalled();
+    expect(replacement).not.toHaveBeenCalled();
+  });
+
+  it("rechecks capability changed in place on the same registered object", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const emit = mock(async () => {});
+    const sink: { handoffCapability?: typeof CHANNEL_OUTPUT_HANDOFF_CAPABILITY; emit: typeof emit } = {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      emit,
+    };
+    registry.register(output.target, sink);
+    const pending = registry.emit(output, { capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY });
+    delete sink.handoffCapability;
+
+    await expect(pending).rejects.toMatchObject({ evidence: {
+      disposition: "not_started", code: "UNSUPPORTED_CAPABILITY",
+    } });
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("uses the current capable replacement without invoking the previous registration", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const previous = mock(async () => {});
+    const replacement = mock(async () => {});
+    const unregister = registry.register(output.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      emit: previous,
+    });
+    const context = { capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY };
+    const pending = registry.emit(output, context);
+    unregister();
+    registry.register(output.target, { handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY, emit: replacement });
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(previous).not.toHaveBeenCalled();
+    expect(replacement).toHaveBeenCalledTimes(1);
+    expect(replacement).toHaveBeenCalledWith(output, context);
+  });
+
+  it("keeps parsed output and context stable when callers mutate their inputs during digest preparation", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const expected = structuredClone(output);
+    const registry = new ChannelOutputSinkRegistry();
+    const context = { capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY, expectedRequestFingerprint: "a".repeat(64) };
+    const expectedContext = { ...context };
+    const confirmation: ChannelOutputHandoffConfirmation = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1,
+      identity: createChannelOutputHandoffIdentity(expected),
+      idempotencyKey: expected.outputId,
+      requestFingerprint: expectedContext.expectedRequestFingerprint,
+      durableSaveConfirmed: true,
+      disposition: "deferred",
+    };
+    const emit = mock(async (envelope: ChannelOutputEnvelope, restriction?: ChannelOutputEmissionContext) => {
+      expect(envelope).toEqual(expected);
+      expect(restriction).toEqual(expectedContext);
+      expect(Object.isFrozen(envelope)).toBe(true);
+      expect(Object.isFrozen(envelope.content[0])).toBe(true);
+      expect(Object.isFrozen(envelope.binding)).toBe(true);
+      expect(Object.isFrozen(envelope.target)).toBe(true);
+      expect(Object.isFrozen(restriction)).toBe(true);
+      return confirmation;
+    });
+    registry.register(expected.target, { handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY, emit });
+    const pending = registry.emit(output, context);
+    Object.assign(output.content[0], { text: "caller changed text" });
+    output.outputId = "caller-changed-output";
+    output.binding.turnId = "caller-changed-turn";
+    output.target.connectionId = "caller-changed-connection";
+    context.expectedRequestFingerprint = "b".repeat(64);
+
+    await expect(pending).resolves.toEqual(confirmation);
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(Object.isFrozen(output)).toBe(false);
+    expect(Object.isFrozen(context)).toBe(false);
+  });
 });

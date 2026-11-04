@@ -33,6 +33,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/runner.test.ts",
     "src/channels/session-prompt.test.ts",
     "src/channels/slack/media.test.ts",
+    // Automatic media receipts: durable suppression recovery and no-resend ambiguity fences.
+    "src/channels/slack/automatic-media-output.test.ts",
     "src/channels/slack/socket-mode.test.ts",
     // `channels start` liveness: PM2-online runner probed on its PID health subject, stale ones bounced.
     "src/channels/runner-liveness.test.ts",
@@ -91,6 +93,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Reset refusal must still settle its captured logical request under ownership fences.
+    "src/runtime/host-event-loop.reset-failure.test.ts",
     // Real host/generator retention, owner and cancellation fences under memory-only isolation.
     "src/runtime/direct-interrupted-retention.test.ts",
     "src/channels/backend.test.ts",

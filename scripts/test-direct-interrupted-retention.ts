@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statfsSync, writeFil
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { captureRetainedProtectedRoots, retainedMacProfile } from "../src/test/retained-preload-policy.js";
 
 const repo = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 const defaultTest = "src/runtime/direct-interrupted-retention.test.ts";
@@ -44,23 +45,6 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-/** Mirrors the original macOS no-removal/network profile using the actual operator home. */
-function macProfile(): string {
-  const privateDirectories = [".ravi", ".codex", ".ssh", ".omni", ".aws", ".config"];
-  const actualHome = realpathSync(homedir());
-  return [
-    "(version 1)",
-    "(allow default)",
-    "(deny network*)",
-    "(deny file-write-unlink)",
-    ...privateDirectories.map((name) =>
-      `(deny file-read* file-write* (subpath ${JSON.stringify(join(actualHome, name))}))`,
-    ),
-    `(deny file-read* (literal ${JSON.stringify(join(actualHome, ".npmrc"))}))`,
-    "",
-  ].join("\n");
-}
-
 /** Requires actual executed test evidence; skips, todo and zero selected tests are not validation. */
 function testCounts(output: string): { pass: number; fail: number; skip: number; todo: number; ran: number } {
   const clean = output.replace(/\u001b\[[0-9;]*m/g, "");
@@ -81,6 +65,7 @@ async function main(): Promise<number> {
     throw new Error(`Retained runner has no declared isolation path for ${process.platform}`);
   }
   const selected = options(process.argv.slice(2));
+  const protectedRoots = captureRetainedProtectedRoots(homedir());
   const space = statfsSync(repo);
   const freeBytes = Number(space.bavail) * Number(space.bsize);
   if (freeBytes < 512 * 1024 * 1024) throw new Error("Retained runner stopped: less than 512 MiB free");
@@ -94,6 +79,8 @@ async function main(): Promise<number> {
   mkdirSync(tmp);
   const sourcePaths = [
     selected.testFile, preload, fileURLToPath(import.meta.url),
+    join(repo, "src/test/retained-preload-policy.ts"),
+    join(repo, "src/test/retained-preload-sqlite.ts"),
     join(repo, "src/runtime/host-event-loop.ts"),
     join(repo, "src/runtime/delivery-queue.ts"),
     join(repo, "src/runtime/host-session.ts"),
@@ -114,6 +101,7 @@ async function main(): Promise<number> {
     TMPDIR: tmp,
     PR795_RETAINED_STATE: state,
     PR795_RUN_EVIDENCE: run,
+    PR795_PROTECTED_ROOTS: JSON.stringify(protectedRoots),
     RAVI_STATE_DIR: state,
     RAVI_SUPPRESS_AUDIT_EVENTS: "1",
     NATS_URL: "nats://127.0.0.1:1",
@@ -129,7 +117,7 @@ async function main(): Promise<number> {
   if (process.platform === "darwin") {
     if (!existsSync("/usr/bin/sandbox-exec")) throw new Error("macOS sandbox-exec is required for this runner");
     const profile = join(run, "no-removal.sb");
-    writeFileSync(profile, macProfile());
+    writeFileSync(profile, retainedMacProfile(protectedRoots));
     argv = ["/usr/bin/sandbox-exec", "-f", profile, ...testArgs];
   }
   const metadata: Record<string, unknown> = {

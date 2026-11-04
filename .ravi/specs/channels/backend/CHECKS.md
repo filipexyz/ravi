@@ -47,3 +47,17 @@
   with no pin, a matching pin or a different actual fingerprint. A later unknown
   fingerprint MUST stop the terminal retry without replacing the first pin or
   asserting completion; finished mismatches MUST remain conflicts.
+- `backend-egress.test.ts` MUST cover same-version delivery and unsupported
+  request/response versions for both `runtime_event` and `output`. Unsupported
+  requests MUST invoke no sink; rejected replies MUST cause no fallback request.
+- `runtime-events.test.ts` MUST cover remote runtime-notification refusal after
+  terminal persistence, preserving one assistant Message and the committed
+  sequence while attempting terminal output independently. Both suites MUST
+  remain in the CI `src/channels/` test selection.
+- SDK source tests MUST preserve void/generic-error semantics, immutable
+  handoff evidence and current-sink selection after digest preparation.
+- The emitted SDK package MUST be exercised through root and deep exports on
+  real Node 18 without a global-WebCrypto flag, including an operation requiring
+  a digest. Bun source tests or transpiler simulations MUST NOT be reported as
+  that platform proof. Browser/edge validation MUST exercise the portable
+  helper without a Node-module polyfill.

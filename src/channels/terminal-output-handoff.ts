@@ -1,3 +1,5 @@
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
+import { logger } from "../utils/logger.js";
 import { ChannelOutputEnvelopeSchema, type ChannelOutputEnvelope } from "./backend.js";
 import {
   CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
@@ -10,6 +12,7 @@ import {
 
 const RETRY_DELAYS_MS = [100, 400] as const;
 const MAX_ATTEMPTS = 1 + RETRY_DELAYS_MS.length;
+const log = logger.child("channels:terminal-output-handoff");
 
 /** Process-local handoff state; publication is never reported as Slack delivery. */
 export interface TerminalOutputHandoffState {
@@ -74,15 +77,17 @@ export async function handoffTerminalOutputWithRecovery(
   const notify = (state: TerminalOutputHandoffState): void => {
     try {
       options.onState?.(Object.freeze(state));
-    } catch {
+    } catch (error) {
       // Observers are outside the delivery decision.
+      reportErrorDiagnostic(log, "Terminal handoff observer failed", error, { operation: "terminal_handoff_observer" });
     }
   };
   /** A pure captured-owner fence is re-evaluated after every scheduled wait. */
   const owns = (): boolean => {
     try {
       return options.mayEmit() === true;
-    } catch {
+    } catch (error) {
+      reportErrorDiagnostic(log, "Terminal handoff owner check failed", error, { operation: "terminal_handoff_owner" });
       return false;
     }
   };

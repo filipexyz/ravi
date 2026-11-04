@@ -224,10 +224,27 @@ MUST retain its full identity, actual fingerprint and uncertainty through runtim
 SDK and egress normalization, including under a different immutable caller pin.
 Evidence for a completed conflicting operation MUST remain non-retryable.
 
-Internal egress version 2 MUST reject unsupported or unknown restrictive
-capabilities before sink invocation, without fallback or downgrade. A generic
+Internal egress version 2 applies to both `runtime_event` and `output`.
+Unsupported request versions and unknown restrictive capabilities MUST be
+rejected before sink invocation. Requesters MUST reject unsupported response
+versions without fallback or downgrade. A generic
 `ok: true` or resolved `Promise<void>` MUST NOT mean durable save or delivery.
 Only a validated known-adapter confirmation matching output/binding/target,
 key and pinned request fingerprint establishes durable handoff. Published,
 deferred and policy-suppressed dispositions MUST remain distinct from Slack ACK.
 No executable owner predicate may cross this transport boundary.
+
+The daemon and channel runner MUST use the same runtime bundle for normal
+traffic, following the coordinated update contract in `permissions/provider-runtime`.
+Stopping intake does not establish that accepted turns or egress calls have
+settled. Process-online status does not establish adapter or egress readiness.
+This contract does not guarantee lossless updates of work already in flight.
+
+The TypeScript SDK MUST support output identity preparation on Node 18 without
+requiring the global-WebCrypto flag, and MUST keep its common entrypoints free
+of Node-only imports. Browser/edge consumers MUST provide WebCrypto through a
+package resolver that selects the portable helper. The registry MUST prepare
+identity before invoking a present sink, reuse that identity for handoff evidence
+and confirmation, and recheck the current sink registration after asynchronous
+preparation. Digest failure MUST prevent invocation, including void sinks;
+`tryEmit` with no registered sink MUST remain false without requiring a digest.

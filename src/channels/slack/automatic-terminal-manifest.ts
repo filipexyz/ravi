@@ -3,6 +3,10 @@ import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import type { Database } from "bun:sqlite";
 import { getDb } from "../../router/router-db.js";
 import type { MessageTarget, ResponseMediaAttachment } from "../../runtime/message-types.js";
+import { reportErrorDiagnostic } from "../../utils/error-reporting.js";
+import { logger } from "../../utils/logger.js";
+
+const log = logger.child("channels:slack:automatic-terminal-manifest");
 
 export interface SlackAutomaticTerminalManifestInput {
   turnId: string;
@@ -57,10 +61,10 @@ export function prepareSlackAutomaticTerminalManifest(
   const mediaBytes = input.media.map((media) => {
     try {
       return { fingerprint: fingerprintMediaFile(media.filePath), error: null };
-    } catch {
+    } catch (error) {
       // Keep the failed ordinal in the complete terminal. A missing attachment
       // must not prevent text or other attachments from reaching delivery.
-      return { fingerprint: null, error: "file_unavailable" as const };
+      return unavailableMediaFingerprint(error);
     }
   });
   const content = {
@@ -77,6 +81,14 @@ export function prepareSlackAutomaticTerminalManifest(
     mediaAvailabilityErrors: mediaBytes.map((media) => media.error),
   };
   return { ...content, requestFingerprint: fingerprint(content) };
+}
+
+/** Diagnose the failure without adding mutable error details to immutable identity. */
+function unavailableMediaFingerprint(error: unknown): { fingerprint: null; error: "file_unavailable" } {
+  reportErrorDiagnostic(log, "Could not fingerprint an automatic-terminal media file", error, {
+    operation: "slack_terminal_media_fingerprint",
+  });
+  return { fingerprint: null, error: "file_unavailable" };
 }
 
 /**

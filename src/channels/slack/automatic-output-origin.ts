@@ -20,8 +20,8 @@ export interface SlackAutomaticOutputContext {
 export class SlackAutomaticOutputOriginError extends Error {
   readonly code = "SLACK_AUTOMATIC_OUTPUT_ORIGIN_INVALID";
 
-  constructor(reason: string) {
-    super(`Invalid Slack automatic output origin: ${reason}`);
+  constructor(reason: string, options?: ErrorOptions) {
+    super(`Invalid Slack automatic output origin: ${reason}`, options);
     this.name = "SlackAutomaticOutputOriginError";
   }
 }
@@ -106,8 +106,8 @@ export function resolveSlackAutomaticOutputContextFromBinding(
   let destination: ReturnType<typeof decodeSlackBackendConversationId>;
   try {
     destination = decodeSlackBackendConversationId(receipt.external.conversationId);
-  } catch {
-    return invalid("canonical destination malformed");
+  } catch (error) {
+    return invalid("canonical destination malformed", { cause: error });
   }
   if (!destination.channelId || message.rawChatId !== destination.channelId) invalid("canonical channel mismatch");
   const account = resolveNativeAccount(receipt.external.connectionId, dependencies);
@@ -234,6 +234,6 @@ function assertBinding(binding: ChannelBackendPromptMetadata["binding"]): void {
   }
 }
 
-function invalid(reason: string): never {
-  throw new SlackAutomaticOutputOriginError(reason);
+function invalid(reason: string, options?: ErrorOptions): never {
+  throw new SlackAutomaticOutputOriginError(reason, options);
 }

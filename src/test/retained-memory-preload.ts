@@ -3,6 +3,8 @@ import { afterAll, expect, mock } from "bun:test";
 import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseRetainedProtectedRoots, retainedProtectedRootUnion } from "./retained-preload-policy.js";
+import { type RetainedSqliteConnection, trackRetainedSqliteConnection } from "./retained-preload-sqlite.js";
 
 // Adapted from the immutable PR795 reviewer preload. Keep constructor/open
 // redirection, synthetic identity anchors and the single retained snapshot hook.
@@ -33,9 +35,7 @@ const allowedState = canonicalPath(stateRoot);
 const allowedEvidence = canonicalPath(evidenceRoot);
 if (!within(allowedEvidence, allowedState)) throw new Error("Retained state must belong to its evidence directory");
 const os = { ...(await import("node:os")) };
-const productionRoots = [".ravi", ".codex", ".ssh", ".omni", ".aws", ".config", ".npmrc"].map((name) =>
-  join(realpathSync(os.homedir()), name),
-);
+const productionRoots = retainedProtectedRootUnion(parseRetainedProtectedRoots(process.env.PR795_PROTECTED_ROOTS));
 if (productionRoots.some((root) => within(root, allowedEvidence))) {
   throw new Error("Retained evidence cannot live inside production state or configuration");
 }
@@ -48,7 +48,7 @@ const networkDenied: string[] = [];
 const retainedRemovals: Array<{ operation: string; path: string }> = [];
 const sqlite = { ...(await import("bun:sqlite")) };
 const OriginalDatabase = sqlite.Database;
-const opened: Array<{ requested: string; db: InstanceType<typeof OriginalDatabase> }> = [];
+const opened: RetainedSqliteConnection[] = [];
 
 /** Rejects non-synthetic paths before constructing a memory-only SQLite connection. */
 function openMemory(path: unknown): InstanceType<typeof OriginalDatabase> {
@@ -71,7 +71,7 @@ function openMemory(path: unknown): InstanceType<typeof OriginalDatabase> {
   if (!existsSync(identityAnchor)) writeFileSync(identityAnchor, "");
   Object.defineProperty(db, "filename", { value: identityAnchor, configurable: true });
   db.exec("PRAGMA temp_store = MEMORY");
-  opened.push({ requested: path, db });
+  opened.push(trackRetainedSqliteConnection(path, db));
   return db;
 }
 
@@ -163,7 +163,7 @@ function guardedFilesystem(original: Record<string, unknown>, promise: boolean):
     const originalMethod = original[operation];
     if (typeof originalMethod !== "function") continue;
     guarded[operation] = (...args: unknown[]) => {
-      assertFileAccess(args[0], operation.startsWith("rename"), operation);
+      assertFileAccess(args[0], operation.startsWith("rename") || operation.startsWith("link"), operation);
       assertFileAccess(args[1], true, operation);
       return Reflect.apply(originalMethod, original, args);
     };
@@ -228,8 +228,22 @@ for (const name of ["http", "https"]) {
 }
 await guardModule("http2", ["connect", "createServer", "createSecureServer"]);
 await guardModule("dgram", ["createSocket"]);
-await guardModule("dns", ["lookup", "lookupService", "resolve", "resolve4", "resolve6", "reverse"]);
-await guardModule("dns/promises", ["lookup", "lookupService", "resolve", "resolve4", "resolve6", "reverse"]);
+// Nested/default DNS aliases must share the same guarded promises object as
+// standalone imports; copying only the top-level namespace leaves native I/O.
+const dnsOperations = ["lookup", "lookupService", "resolve", "resolve4", "resolve6", "reverse"];
+const dnsPromises = { ...(await import("node:dns/promises")) } as Record<string, unknown>;
+const dns = { ...(await import("node:dns")), promises: dnsPromises } as Record<string, unknown>;
+for (const [name, module] of [
+  ["dns/promises", dnsPromises],
+  ["dns", dns],
+] as const) {
+  for (const operation of dnsOperations) {
+    if (typeof module[operation] === "function") module[operation] = () => denyNetwork(`${name}.${operation}`);
+  }
+  module.default = module;
+  mock.module(`node:${name}`, () => module);
+  mock.module(name, () => module);
+}
 await guardModule("child_process", ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"]);
 await guardModule("worker_threads", ["Worker"]);
 const bunRuntime = globalThis.Bun;
@@ -292,19 +306,7 @@ process.env.NATS_URL = "nats://127.0.0.1:1";
 // observations. It never deletes or closes retained state. JS API interception
 // on Linux is not an OS sandbox and does not claim protection against native code.
 afterAll(() => {
-  const snapshots = opened.map(({ requested, db }) => {
-    const tables: Record<string, unknown> = {};
-    try {
-      const names = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
-      for (const row of names as Array<{ name: string }>) {
-        const records = db.query(`SELECT * FROM "${row.name.replaceAll('"', '""')}"`).all();
-        if (records.length) tables[row.name] = records;
-      }
-      return { requested, journalMode: db.query("PRAGMA journal_mode").get(), tables };
-    } catch (error) {
-      return { requested, error: String(error), tables };
-    }
-  });
+  const snapshots = opened.map((connection) => connection.snapshot());
   writeFileSync(
     join(evidenceRoot, "memory-sql-snapshot.json"),
     JSON.stringify(

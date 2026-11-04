@@ -592,13 +592,11 @@ function virtualGeneratedMedia(f: Fixture) {
 }
 
 /**
- * Synthetic provider/yield boundary, not launcher or provider end-to-end proof.
- * The real host produces media; the real queue creates and consumes a yielded
- * continuation. Only the dispatcher's accepted-yield markers are supplied here.
- * No side-effect fence is cleared to manufacture replay eligibility: the real
- * generator starts each subsequent physical turn after the preceding terminal.
+ * The real queue refuses to interrupt an unfinished media-producing request
+ * for another chat surface. Keep that successor queued until this binding
+ * reaches a terminal; no continuation or replay permission is synthesized.
  */
-async function* generatedMediaContinuation(f: Fixture) {
+async function* generatedMediaWithQueuedSurface(f: Fixture) {
   await handoff(f);
   yield { type: "tool.started", toolUse: { id: "prior-image", name: "image_gen.imagegen", input: {} } } as RuntimeEvent;
   yield {
@@ -616,26 +614,16 @@ async function* generatedMediaContinuation(f: Fixture) {
     source: { ...f.active.launchPrompt!.source!, threadId: "2.000002" },
   });
   f.streaming.pendingMessages.push(successor);
-  const prepared = f.d.queue.prepareRuntimeInterruptSuccessor(f.session.name!, f.streaming);
-  const request = prepared?.continuation;
-  if (!request) throw new Error("Expected the real queue to create a yield continuation");
-  expect(request.launchPrompt?._channelBackend).toEqual(f.metadata);
-  f.streaming.currentTurnSuperseded = true;
-  f.streaming.currentTurnYieldContinuationId = request.pendingId;
-  f.streaming.interrupted = true;
-  yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } } as RuntimeEvent;
-  expectOpen(f);
-  await handoff(f);
-  expect(f.handoffs[1]?.ids).toEqual([successor.pendingId!]);
-  expect(f.streaming.currentChannelBackend).toBeUndefined();
-  yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } } as RuntimeEvent;
-  await handoff(f);
-  expect(f.handoffs[2]?.ids).toEqual([request.pendingId!]);
+  const queued = [...f.streaming.pendingMessages];
+  expect(f.d.queue.prepareRuntimeInterruptSuccessor(f.session.name!, f.streaming)).toBeNull();
+  expect(f.streaming.pendingMessages).toEqual(queued);
+  expect(f.streaming.currentTurnYieldContinuationId).toBeUndefined();
+  expect(f.streaming.currentTurnSuperseded).toBe(false);
   expect(f.streaming.currentChannelBackend).toEqual(f.metadata);
   expect(f.d.pending.getSlackAutomaticPendingReply(f.metadata)).toBe(reply);
   expect(f.outputs).toEqual([]);
   expect(f.responses).toEqual([]);
-  return { request, reply };
+  return { request: f.active, reply, successor };
 }
 
 /** Advances the actual generator, asserting this is direct replay without a yield continuation. */
@@ -727,7 +715,7 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
     });
   }
 
-  it("retains genuine private media across direct interruption and releases the complete bound final", async () => {
+  it("keeps genuine private media on its bound surface until the complete final before another chat", async () => {
     const f = await fixture({ durable: true });
     const media = virtualGeneratedMedia(f);
     const answer = "Complete final with the retained image\n1. First fact\n2. Second fact";
@@ -735,16 +723,14 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
     try {
       await f.run(
         (async function* () {
-          const { request, reply } = yield* generatedMediaContinuation(f);
+          const { request, reply, successor } = yield* generatedMediaWithQueuedSurface(f);
           const envelope = structuredClone(request.launchPrompt);
           const attachment = reply.media[0]!;
           const allocation = [...reply.ownedMediaAllocations][0]!;
           expect(media.files.get(attachment.filePath)?.bytes).toEqual(Buffer.from(imageBase64, "base64"));
-          yield { type: "turn.interrupted" };
-          const physical = f.streaming.currentCrashRecoveryTerminal;
-          expect(physical).toMatchObject({ status: "interrupted", startedTool: false, materializedOutput: false });
           expectOpen(f);
-          expect(f.streaming.pendingMessages).toEqual([request]);
+          expect(f.streaming.currentCrashRecoveryTerminal).toBeUndefined();
+          expect(f.streaming.pendingMessages).toEqual([request, successor]);
           expect(f.d.pending.getSlackAutomaticPendingReply(f.metadata)).toBe(reply);
           expect(reply.media).toEqual([attachment]);
           expect([...reply.ownedMediaAllocations]).toEqual([allocation]);
@@ -752,8 +738,7 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
           expect(media.operations).toEqual(["open", "stat", "write", "close"]);
           expect(f.outputs).toEqual([]);
           expect(f.responses).toEqual([]);
-          await handoff(f);
-          expect(f.handoffs[3]?.ids).toEqual(f.handoffs[2]?.ids);
+          expect(f.handoffs).toHaveLength(1);
           expect(request.launchPrompt).toEqual(envelope);
           expect(f.streaming.currentChannelBackend).toEqual(f.metadata);
           yield final(answer);
@@ -762,22 +747,34 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
           expect(f.responses).toEqual([]);
           expect(media.settlements).toEqual([]);
           yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } };
-          expect(physical?.status).toBe("interrupted");
+          expect(f.streaming.currentCrashRecoveryTerminal?.status).toBe("complete");
           expect(media.allocator.prepareDiscard(allocation, reply)).toBeUndefined();
           expect(f.d.pending.countSlackAutomaticPendingReplies()).toBe(0);
+          // The complete terminal must be delivered before another chat starts.
+          expect(f.outputs).toHaveLength(1);
+          expect(f.outputs[0]).toMatchObject({ binding: f.metadata.binding, target: f.metadata.target });
+          expect(f.d.driver.renderSlackBackendOutput(f.outputs[0]!)).toBe(answer);
+          const committedManifest = f.manifest()!;
+          expect(committedManifest).toMatchObject({ kind: "final_answer", target: destination });
+          expect(f.responses).toHaveLength(1);
+          expect(f.responses[0]).toMatchObject({
+            target: destination,
+            _automaticTerminalResponseId: committedManifest.responseId,
+            _automaticOutputOrigin: { binding: f.metadata.binding },
+          });
+          expect(f.responses[0]!.content).toHaveLength(1);
+          expect(f.responses[0]!.content![0]).toMatchObject({ type: "media", media: attachment });
+          await handoff(f);
+          expect(f.handoffs[1]?.ids).toEqual([successor.pendingId!]);
+          expect(f.streaming.currentChannelBackend).toBeUndefined();
+          expect(f.outputs[0]?.binding).toEqual(f.metadata.binding);
+          yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } };
         })(),
       );
-      expect(f.handoffs).toHaveLength(4);
-      expect(f.physicalEvents).toEqual([
-        { type: "turn.complete" },
-        { type: "turn.complete" },
-        { type: "turn.interrupted" },
-        { type: "turn.complete" },
-      ]);
+      expect(f.handoffs).toHaveLength(2);
+      expect(f.physicalEvents).toEqual([{ type: "turn.complete" }, { type: "turn.complete" }]);
       expect(f.attemptIds.map((id) => f.d.recoveryStore.getRuntimeTurnAttempt(id)?.status)).toEqual([
         "complete",
-        "complete",
-        "interrupted",
         "complete",
       ]);
       expect(f.logical()?.state).toBe("completed");
@@ -819,7 +816,7 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
   });
 
   for (const refused of [false, true]) {
-    it(`settles retained private media only after logical cancellation COMMIT (${refused ? "refused" : "accepted"})`, async () => {
+    it(`settles private media after logical cancellation COMMIT before another chat (${refused ? "refused" : "accepted"})`, async () => {
       const f = await fixture({ durable: true });
       const media = virtualGeneratedMedia(f);
       const database = f.d.router.getDb();
@@ -830,16 +827,14 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
       try {
         await f.run(
           (async function* () {
-            const { request, reply } = yield* generatedMediaContinuation(f);
+            const { request, reply, successor } = yield* generatedMediaWithQueuedSurface(f);
             const attachment = reply.media[0]!;
             const allocation = [...reply.ownedMediaAllocations][0]!;
-            yield { type: "turn.interrupted" };
             expectOpen(f);
-            expect(f.streaming.pendingMessages).toEqual([request]);
+            expect(f.streaming.pendingMessages).toEqual([request, successor]);
             expect(media.settlements).toEqual([]);
             expect(media.files.size).toBe(1);
-            await handoff(f);
-            expect(f.handoffs[3]?.ids).toEqual(f.handoffs[2]?.ids);
+            expect(f.handoffs).toHaveLength(1);
             expect(f.streaming.currentChannelBackend).toEqual(f.metadata);
             const beforeCancellation = structuredClone(f.logical());
             const originalExec = database.exec.bind(database);
@@ -877,9 +872,8 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
               expect(media.settlements).toEqual([]);
               expect(media.files.size).toBe(1);
             });
-            // A real started-tool fence makes this replay unsafe. The direct
-            // interruption must now cancel, without clearing that safety fence.
-            yield { type: "tool.started", toolUse: { id: "cancellation-fence", name: "read", input: {} } };
+            // The actual image tool already fenced replay. Interrupting it
+            // cancels this binding; the other surface cannot inherit its media.
             const beforeTerminal = structuredClone(f.logical());
             yield { type: "turn.interrupted" };
             expect(commitAttempts).toBe(1);
@@ -909,14 +903,25 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
               expect(media.allocator.prepareDiscard(allocation, reply)).toBeUndefined();
               expect(f.d.pending.countSlackAutomaticPendingReplies()).toBe(0);
             }
+            expect(f.streaming.pendingMessages).toEqual([successor]);
+            await handoff(f);
+            expect(f.handoffs[1]?.ids).toEqual([successor.pendingId!]);
+            expect(f.streaming.currentChannelBackend).toBeUndefined();
+            yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } };
+            if (refused) {
+              expectOpen(f);
+              expect(f.d.pending.getSlackAutomaticPendingReply(f.metadata)).toBe(reply);
+              expect(reply.media).toEqual([attachment]);
+              expect([...reply.ownedMediaAllocations]).toEqual([allocation]);
+            }
           })(),
         );
         expect(cancellationEmission).toBe(1);
-        expect(f.handoffs).toHaveLength(4);
+        expect(f.handoffs).toHaveLength(2);
         expect(f.outputs).toEqual([]);
         expect(f.responses).toEqual([]);
         expect(database.inTransaction).toBe(false);
-        expect(f.d.recoveryStore.getRuntimeTurnAttempt(f.attemptIds[3]!)?.status).toBe("interrupted");
+        expect(f.d.recoveryStore.getRuntimeTurnAttempt(f.attemptIds[0]!)?.status).toBe("interrupted");
         expect(media.files.size).toBe(refused ? 1 : 0);
         expect(media.operations).toEqual(
           refused

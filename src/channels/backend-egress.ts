@@ -1,5 +1,7 @@
 import { JSONCodec } from "nats";
 import { z } from "zod";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
+import { logger } from "../utils/logger.js";
 import {
   ChannelOutputEnvelopeSchema,
   ExternalChannelTargetSchema,
@@ -107,6 +109,7 @@ export interface ChannelBackendEgressResponder {
 }
 
 const codec = JSONCodec<unknown>();
+const log = logger.child("channels:backend-egress");
 
 export function createChannelBackendEgressRequester(
   options: { timeoutMs?: number; connect?: () => Promise<ChannelBackendEgressRequestConnection> } = {},
@@ -146,9 +149,9 @@ export function createChannelBackendEgressRequester(
       let response: ChannelBackendEgressResponse;
       try {
         response = await request(input);
-      } catch {
+      } catch (error) {
         // The remote call may still be saving. No absence or completion is inferred.
-        throw unknownOutputHandoff(input.envelope, "TRANSPORT_FAILED", false);
+        throw unknownOutputHandoff(input.envelope, "TRANSPORT_FAILED", false, error);
       }
       if (!response.ok) {
         if (response.evidence) {
@@ -244,6 +247,9 @@ function failureResponse(
   request?: ChannelBackendEgressRequest,
   explicitReason?: "sink_unavailable",
 ): ChannelBackendEgressResponse {
+  if (error !== undefined) {
+    reportErrorDiagnostic(log, "Channel backend egress request failed", error, { operation: "channel_backend_egress" });
+  }
   const evidence =
     request?.kind === "output"
       ? matchingChannelOutputHandoffEvidence(error, request.envelope, request.context)
@@ -269,15 +275,19 @@ function unknownOutputHandoff(
   envelope: ChannelOutputEnvelope,
   code: "TRANSPORT_FAILED" | "UNCLASSIFIED" | "INVALID_CONFIRMATION",
   operationFinished: boolean,
+  cause?: unknown,
 ): ChannelOutputHandoffError {
-  return new ChannelOutputHandoffError({
-    capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
-    schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
-    identity: createChannelOutputHandoffIdentity(envelope),
-    disposition: "unknown",
-    code,
-    operationFinished,
-  });
+  return new ChannelOutputHandoffError(
+    {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+      identity: createChannelOutputHandoffIdentity(envelope),
+      disposition: "unknown",
+      code,
+      operationFinished,
+    },
+    { cause },
+  );
 }
 
 async function defaultRequestConnection(): Promise<ChannelBackendEgressRequestConnection> {

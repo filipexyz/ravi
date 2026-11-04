@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { reportErrorDiagnostic } from "../../utils/error-reporting.js";
+import { logger } from "../../utils/logger.js";
 import type { MessageTarget, ResponseMediaAttachment, ResponseMessage } from "../../runtime/message-types.js";
 import {
   sqliteChannelOutboundReceiptStore,
@@ -17,6 +19,8 @@ import {
   readSlackAutomaticTerminalMediaBytes,
   slackAutomaticTerminalResponseId,
 } from "./automatic-terminal-manifest.js";
+
+const log = logger.child("channels:slack:automatic-media-output");
 
 export interface SlackAutomaticMediaInput {
   sessionName: string;
@@ -92,7 +96,10 @@ export async function deliverSlackAutomaticMedia(
       await dependencies.emitDelivery({ target: input.target, ...data });
       await dependencies.flushTelemetry?.();
       return true;
-    } catch {
+    } catch (error) {
+      reportErrorDiagnostic(log, "Could not report automatic-media delivery telemetry", error, {
+        operation: "slack_media_telemetry_emit",
+      });
       return false;
     }
   };
@@ -141,7 +148,10 @@ export async function deliverSlackAutomaticMedia(
       index: input.mediaIndex,
       media: { ...input.media, caption: input.originalMedia.caption },
     });
-  } catch {
+  } catch (error) {
+    reportErrorDiagnostic(log, "Could not validate the automatic-media origin or manifest", error, {
+      operation: "slack_media_origin_manifest_validate",
+    });
     return failed("slack_bot_reply_origin_or_manifest_invalid");
   }
   // The manifest itself durably closes unavailable members. Reappearing files
@@ -233,7 +243,10 @@ export async function deliverSlackAutomaticMedia(
         sourceReceivedAt: manifest.sourceReceivedAt,
         now: now(),
       });
-    } catch {
+    } catch (error) {
+      reportErrorDiagnostic(log, "Could not validate an existing automatic-media suppression decision", error, {
+        operation: "slack_media_suppression_read",
+      });
       // Without validated no-send proof, retain the original ambiguity policy.
       return pendingOrUnknown(receipt);
     }
@@ -251,7 +264,10 @@ export async function deliverSlackAutomaticMedia(
           suppressedAt: now(),
         }),
       );
-    } catch {
+    } catch (error) {
+      reportErrorDiagnostic(log, "Could not persist the automatic-media suppression tombstone", error, {
+        operation: "slack_media_suppression_persist",
+      });
       return failed("slack_media_suppression_persist", true, idempotencyKey);
     }
   };
@@ -259,7 +275,10 @@ export async function deliverSlackAutomaticMedia(
   let receipt: ChannelOutboundReceipt | null;
   try {
     receipt = store.get(idempotencyKey);
-  } catch {
+  } catch (error) {
+    reportErrorDiagnostic(log, "Could not read the automatic-media receipt", error, {
+      operation: "slack_media_receipt_read",
+    });
     return failed("slack_media_receipt_read", true, idempotencyKey);
   }
   if (receipt && receipt.requestFingerprint !== requestFingerprint)
@@ -294,7 +313,10 @@ export async function deliverSlackAutomaticMedia(
         now: now(),
         allowExpiredTakeover: false,
       });
-    } catch {
+    } catch (error) {
+      reportErrorDiagnostic(log, "Could not claim the automatic-media receipt", error, {
+        operation: "slack_media_receipt_claim",
+      });
       return failed("slack_media_receipt_claim", true, idempotencyKey);
     }
     receipt = claim.receipt;
@@ -316,7 +338,10 @@ export async function deliverSlackAutomaticMedia(
               suppressedAt: now(),
             }),
           );
-        } catch {
+        } catch (error) {
+          reportErrorDiagnostic(log, "Could not persist the automatic-media suppression tombstone", error, {
+            operation: "slack_media_suppression_persist",
+          });
           return failed("slack_media_suppression_persist", true, idempotencyKey);
         }
       }
@@ -326,7 +351,10 @@ export async function deliverSlackAutomaticMedia(
           index: input.mediaIndex,
           media: input.originalMedia,
         });
-      } catch {
+      } catch (error) {
+        reportErrorDiagnostic(log, "Could not verify the frozen automatic-media bytes", error, {
+          operation: "slack_media_content_verify",
+        });
         try {
           store.markSuppressed({
             idempotencyKey,
@@ -335,7 +363,10 @@ export async function deliverSlackAutomaticMedia(
             reason: "slack_bot_reply_media_content_conflict",
             suppressedAt: now(),
           });
-        } catch {
+        } catch (error) {
+          reportErrorDiagnostic(log, "Could not persist the automatic-media content-conflict tombstone", error, {
+            operation: "slack_media_content_conflict_persist",
+          });
           return failed("slack_media_content_conflict_persist", true, idempotencyKey);
         }
         return failed("slack_bot_reply_media_content_conflict", false, idempotencyKey);
@@ -343,7 +374,10 @@ export async function deliverSlackAutomaticMedia(
       let delivered;
       try {
         delivered = await dependencies.send({ target: context.target, media: input.media, fileBytes });
-      } catch {
+      } catch (error) {
+        reportErrorDiagnostic(log, "Automatic-media upload outcome is unknown", error, {
+          operation: "slack_media_send",
+        });
         try {
           store.recordError(
             idempotencyKey,
@@ -351,7 +385,11 @@ export async function deliverSlackAutomaticMedia(
             "Slack file upload outcome is unknown; automatic retry refused",
             now(),
           );
-        } catch {}
+        } catch (error) {
+          reportErrorDiagnostic(log, "Could not record the automatic-media upload error", error, {
+            operation: "slack_media_send_error_record",
+          });
+        }
         return unknown("slack_media_delivery_unknown");
       }
       try {
@@ -365,7 +403,10 @@ export async function deliverSlackAutomaticMedia(
           sentAt: now(),
         });
         newlySent = true;
-      } catch {
+      } catch (error) {
+        reportErrorDiagnostic(log, "Could not save the accepted automatic-media upload receipt", error, {
+          operation: "slack_media_receipt_write",
+        });
         try {
           store.recordError(
             idempotencyKey,
@@ -373,7 +414,11 @@ export async function deliverSlackAutomaticMedia(
             "Slack accepted upload but its receipt could not be saved; retry refused",
             now(),
           );
-        } catch {}
+        } catch (error) {
+          reportErrorDiagnostic(log, "Could not record the automatic-media receipt-write error", error, {
+            operation: "slack_media_receipt_write_error_record",
+          });
+        }
         return unknown("slack_media_delivery_unknown");
       }
     }
@@ -396,7 +441,10 @@ export async function deliverSlackAutomaticMedia(
     await dependencies.flushTelemetry?.();
     store.markTraceRecorded(idempotencyKey, now());
     store.markComplete(idempotencyKey, now());
-  } catch {
+  } catch (error) {
+    reportErrorDiagnostic(log, "Could not finish automatic-media delivery bookkeeping", error, {
+      operation: "slack_media_bookkeeping",
+    });
     try {
       store.recordError(
         idempotencyKey,
@@ -404,7 +452,11 @@ export async function deliverSlackAutomaticMedia(
         "Slack media bookkeeping incomplete; provider resend forbidden",
         now(),
       );
-    } catch {}
+    } catch (error) {
+      reportErrorDiagnostic(log, "Could not record the automatic-media bookkeeping error", error, {
+        operation: "slack_media_bookkeeping_error_record",
+      });
+    }
     return { handled: true, status: "failed", reason: "slack_media_bookkeeping", retryable: true, idempotencyKey };
   }
   return { handled: true, status: "delivered", newlySent, retryable: false, idempotencyKey };

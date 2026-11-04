@@ -4591,7 +4591,31 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           const queuedSuccessors = streaming.pendingMessages
             .filter((message) => !message.pendingId || !ownPendingIds.has(message.pendingId))
             .map((message) => ({ ...message }));
-          const resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
+          let resetApplied: boolean;
+          try {
+            resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
+          } catch (error) {
+            // The physical attempt is already terminal. Without a successful
+            // reset there is no recovery handoff to settle this logical request.
+            try {
+              if (capturedChannelTerminal) {
+                await projectRuntimeEventToChannel(
+                  capturedChannelTerminal.event,
+                  undefined,
+                  capturedChannelTerminal.metadata,
+                  () =>
+                    capturedChannelTerminal.ownsProjection() && (!crashRecovery || crashRecovery.acceptingDeliveries),
+                  capturedChannelTerminal,
+                );
+              }
+            } catch (projectionError) {
+              log.warn("Failed to settle channel request after provider-state reset failure", {
+                sessionName,
+                errorKind: projectionError instanceof Error ? projectionError.name : typeof projectionError,
+              });
+            }
+            throw error;
+          }
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
           session.runtimeProvider = undefined;

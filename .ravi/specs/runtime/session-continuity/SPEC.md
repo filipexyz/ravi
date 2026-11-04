@@ -165,6 +165,28 @@ An adapter that reconciles ambiguous delivery on resume MUST define its stable c
 
 The legacy `forkSession?: boolean` on `RuntimeStartRequest` SHOULD be replaced or wrapped by a structured `RuntimeForkRequest`.
 
+## Retained integration evidence
+
+The dedicated retained test runner MUST resolve every protected home child root
+before starting its sandbox. Both the OS profile and preload MUST deny the union
+of lexical and canonical roots; an absent child retains its lexical protection.
+Unexpected resolution errors MUST fail closed. The preload MUST consume that
+bootstrap contract rather than inspect protected roots from inside the sandbox.
+Hard-link creation MUST require write authority for both source and destination.
+The guarded DNS promises object MUST cover nested, default, bare and `node:`
+module imports as well as standalone promises imports, recording each refusal.
+
+Memory SQLite evidence MUST be captured per connection before its real close or
+disposal, including writes made by a close decorator before delegating to native
+close. A disposal that does not close the connection MUST leave capture live.
+Native return/throw behavior MUST remain intact. A failed close MUST
+not reuse a stale snapshot for a still-live connection. Final collection MUST
+read live connections afresh and use pre-close evidence only for connections
+whose close completed. Missing capture or a genuine capture failure MUST remain
+a validation failure even when the caller catches a close error. These tests
+MUST retain evidence and MUST NOT claim disk durability or native-code isolation
+from JavaScript interception alone.
+
 ## Acceptance Criteria
 
 - Editing an earlier channel message MUST rebuild the session so later channel messages remain available to the next turn.

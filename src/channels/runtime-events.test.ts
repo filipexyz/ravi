@@ -1017,6 +1017,52 @@ describe("channel runtime event projection", () => {
     ]);
   });
 
+  it("preserves terminal persistence and attempts output after remote notification refusal", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const refusal = new Error("synthetic incompatible runtime-event reply");
+    setChannelBackendEgressRequesterForRuntime({
+      async emitRuntimeEvent(_target, event) {
+        events.push(event);
+        if (event.kind === "turn.terminal_output") {
+          const committed = dbGetChannelBackendRuntimeState(metadata.binding.turnId);
+          expect(committed).toMatchObject({ state: "completed", lastSequence: 2 });
+          expect(dbGetChatMessage(committed!.assistantMessageId!)).toMatchObject({
+            content: { blocks: [{ type: "text", text: "Remote complete result" }] },
+          });
+          expect(terminalDatabaseCounts(metadata).assistants).toBe(1);
+          throw refusal;
+        }
+      },
+      async emitOutput(output) {
+        outputs.push(output);
+      },
+    });
+
+    await expect(
+      projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.complete", usage: { inputTokens: 2, outputTokens: 1 } },
+        responseText: "Remote complete result",
+        sinks: new ChannelRuntimeEventSinkRegistry(),
+      }),
+    ).rejects.toBe(refusal);
+
+    expect(events.map((event) => event.kind)).toEqual(["turn.state_changed", "turn.terminal_output"]);
+    expect(outputs).toEqual([
+      expect.objectContaining({
+        kind: "assistant_message",
+        content: [{ type: "text", text: "Remote complete result" }],
+      }),
+    ]);
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "completed",
+      lastSequence: 2,
+    });
+    expect(terminalDatabaseCounts(metadata).assistants).toBe(1);
+  });
+
   // The first CLI tool presentation loads the complete command registry. Keep
   // this integration check independent of cold-start scheduling on busy hosts.
   it("projects a real host runtime turn through its active channel binding", async () => {

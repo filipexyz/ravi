@@ -964,6 +964,7 @@ async function recordAndEmit(
 function reportAutomaticMediaDisposalFailure(turnId: string, details: Record<string, unknown>): void {
   try {
     log.warn("Discarded automatic media allocation could not be released", { turnId, ...details });
+    // no-cause: Logging already failed while reporting disposal; propagation would replace the accepted terminal or primary error.
   } catch {
     // A broken logging sink must not turn cleanup into a new terminal failure.
   }

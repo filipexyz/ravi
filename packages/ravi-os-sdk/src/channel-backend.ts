@@ -1,3 +1,4 @@
+import { digestSha256 } from "#ravi-sdk-sha256";
 import { z } from "zod";
 
 export const CHANNEL_BACKEND_PROTOCOL = "ravi.channel.backend" as const;
@@ -407,19 +408,7 @@ export class ChannelOutputSinkRegistry {
     input: ChannelOutputEnvelope,
     context?: ChannelOutputEmissionContext,
   ): Promise<ChannelOutputHandoffConfirmation | undefined> {
-    const envelope = freezeHandoffValue(ChannelOutputEnvelopeSchema.parse(input));
-    const result = await this.tryEmitWithHandoff(envelope, context);
-    if (!result.emitted) {
-      throw new ChannelOutputHandoffError({
-        capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
-        schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
-        identity: await createOutputHandoffIdentity(envelope),
-        disposition: "not_started",
-        operationFinished: true,
-        code: "SINK_UNAVAILABLE",
-      });
-    }
-    return result.confirmation;
+    return (await this.emitToCurrentSink(input, context, true)).confirmation;
   }
 
   /** True reports invocation only, never save or delivery. Context is preserved. */
@@ -427,22 +416,51 @@ export class ChannelOutputSinkRegistry {
     return (await this.tryEmitWithHandoff(input, context)).emitted;
   }
 
-  /** Refuses unsupported restricted invocations before entering the sink. */
+  /**
+   * Prepares immutable identity before effects, then rechecks the current sink.
+   * An absent sink still returns false without requiring a digest. Once a sink
+   * exists, digest failure prevents invocation, including unclassified void
+   * sinks; successful invocation alone never establishes durable handoff.
+   */
   async tryEmitWithHandoff(
     input: ChannelOutputEnvelope,
     context?: ChannelOutputEmissionContext,
   ): Promise<ChannelOutputSinkEmission> {
+    return this.emitToCurrentSink(input, context, false);
+  }
+
+  /** Shares one prepared identity with required-sink errors as well as sink outcomes. */
+  private async emitToCurrentSink(
+    input: ChannelOutputEnvelope,
+    context: ChannelOutputEmissionContext | undefined,
+    requireSink: boolean,
+  ): Promise<ChannelOutputSinkEmission> {
     const envelope = freezeHandoffValue(ChannelOutputEnvelopeSchema.parse(input));
     const restriction =
       context === undefined ? undefined : Object.freeze(ChannelOutputEmissionContextSchema.parse(context));
-    const sink = this.sinks.get(sinkKey(envelope.target.channelKind, envelope.target.connectionId));
-    if (!sink) return { emitted: false };
+    const key = sinkKey(envelope.target.channelKind, envelope.target.connectionId);
+    const hadSink = this.sinks.has(key);
+    if (!hadSink && !requireSink) return { emitted: false };
+    const identity = await createOutputHandoffIdentity(envelope);
+    // Digest preparation can yield while a registration is removed or replaced.
+    const sink = hadSink ? this.sinks.get(key) : undefined;
+    if (!sink) {
+      if (!requireSink) return { emitted: false };
+      throw new ChannelOutputHandoffError({
+        capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+        identity,
+        disposition: "not_started",
+        operationFinished: true,
+        code: "SINK_UNAVAILABLE",
+      });
+    }
     const known = sink.handoffCapability === CHANNEL_OUTPUT_HANDOFF_CAPABILITY;
     if (restriction && !known) {
       throw new ChannelOutputHandoffError({
         capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
         schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
-        identity: await createOutputHandoffIdentity(envelope),
+        identity,
         disposition: "not_started",
         operationFinished: true,
         code: "UNSUPPORTED_CAPABILITY",
@@ -453,7 +471,6 @@ export class ChannelOutputSinkRegistry {
       result = restriction === undefined ? await sink.emit(envelope) : await sink.emit(envelope, restriction);
     } catch (error) {
       if (!(error instanceof Error) || error.name !== "ChannelOutputHandoffError") throw error;
-      const identity = await createOutputHandoffIdentity(envelope);
       const parsed = ChannelOutputHandoffEvidenceSchema.safeParse("evidence" in error ? error.evidence : undefined);
       if (!known || !parsed.success ||
         canonicalOutputJson(parsed.data.identity) !== canonicalOutputJson(identity) ||
@@ -483,7 +500,6 @@ export class ChannelOutputSinkRegistry {
       throw new ChannelOutputHandoffError(evidence);
     }
     if (result === undefined) return { emitted: true };
-    const identity = await createOutputHandoffIdentity(envelope);
     const confirmation = ChannelOutputHandoffConfirmationSchema.safeParse(result);
     if (!known || !confirmation.success ||
       canonicalOutputJson(confirmation.data.identity) !== canonicalOutputJson(identity) ||
@@ -496,10 +512,10 @@ export class ChannelOutputSinkRegistry {
   }
 }
 
-/** Uses WebCrypto so this SDK mirror does not import runtime or Node-only code. */
+/** Resolves SHA-256 through the platform helper while retaining canonical UTF-8 and hexadecimal encoding. */
 async function createOutputHandoffIdentity(envelope: ChannelOutputEnvelope): Promise<ChannelOutputHandoffIdentity> {
   const bytes = new TextEncoder().encode(canonicalOutputJson(envelope));
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  const digest = await digestSha256(bytes);
   const outputFingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
   return freezeHandoffValue(ChannelOutputHandoffIdentitySchema.parse({
     outputId: envelope.outputId,

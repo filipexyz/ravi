@@ -36,6 +36,20 @@
 
 ## Safety
 
+- Run `bun --no-env-file run test:retained-preload` for the guard contracts.
+  Use only virtual private roots and hard links, inert original DNS sentinels
+  behind an independent network boundary, and real memory SQLite. Exercise
+  lexical/canonical aliases, nested/standalone DNS imports and source write
+  authority. Do not probe operator data or a real DNS resolver.
+- Verify close, strict-close failure, repeated close, disposal and two distinct
+  connections requesting the same path. A live connection snapshot must include
+  its latest row; a closed connection must retain its pre-close rows. Injected
+  capture errors remain fatal and must be distinguished from expected guard
+  refusals. A skipped fixture or setup failure is not passing validation.
+- Native disposal through a close decorator must retain both the initial row
+  and a row written by the decorator before actual close. A no-op replacement
+  close must leave the connection live and its later rows visible to capture.
+
 - Run `bun --no-env-file run test:runtime-direct-interrupted` for the direct
   interruption integration suite. Its dedicated runner supplies memory-only
   SQLite, retained identity anchors/snapshots and filesystem/network guards.
@@ -51,9 +65,11 @@
   Expire a real coordinator lease before an ownership failure is latched and
   require the alias alternative to refuse. A typed initial write failure after
   an alias mutation MUST NOT schedule another persistence attempt.
-- Join retained replay with private media: a final preserves its complete text
-  and members at the accepted destination; cancellation disposes only after an
-  accepted COMMIT, while rollback retains the collector. Use virtual files and
+- Join private media with a queued foreign surface: the real selector refuses
+  cross-surface interruption, and complete final text and media remain at the
+  original destination before the foreign handoff. Cancellation disposes only
+  after an accepted COMMIT; rollback preserves the original collector and
+  allocation even after the foreign request completes. Use virtual files and
   memory SQLite; these checks do not prove remote delivery or crash recovery.
 - Keep normal final, provider-event-only, started-tool, explicit shutdown and
   replacement-owner controls. Add full-envelope mismatch, successor-only,
