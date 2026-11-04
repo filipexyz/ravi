@@ -572,6 +572,146 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, message });
   });
 
+  it("preserves profile discovery controls across a complete local and remote usage-error envelope", () => {
+    const acceptedValues = [
+      "bootstrap",
+      "chat-only",
+      "explicit-only",
+      "full-access",
+      ...Array.from({ length: 501 }, (_, index) => `permission-profile-${index}`),
+    ];
+    const inspectCommands = [
+      "ravi skills show permissions",
+      "ravi tags list --kind system --source permissions --json",
+    ];
+    const message =
+      "Unknown or empty permission profile: permission-missing. Available profiles: bootstrap, chat-only, explicit-only, full-access, ... .";
+    const local = new ContractError("permissions allow", "USAGE_ERROR", message, 2, {
+      ...errorDiagnostic("Unknown permission profile", { operation: "permissions allow" }),
+      acceptedValues,
+      inspectCommands,
+    });
+    expect(local.envelope().error.inspectCommands).toEqual(inspectCommands);
+    const remote = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status: 422,
+        body: JSON.stringify({ ...local.envelope(), exitCode: 2, outcome: "usage_error" }),
+      }),
+    );
+    expect(remote?.details.acceptedValues).toEqual(acceptedValues);
+    expect(remote?.details.inspectCommands).toEqual(inspectCommands);
+    expect(remote?.details.acceptedValuesTruncated).toBeUndefined();
+    expect(remote?.envelope().error.inspectCommands).toEqual(inspectCommands);
+  });
+
+  it("bounds and validates remote profile discovery without relaying commands or credential-shaped values", () => {
+    const safeValues = Array.from({ length: 513 }, (_, index) => `permission-profile-${index}`);
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status: 422,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: {
+            code: "USAGE_ERROR",
+            message: "Unknown profile.",
+            retryable: false,
+            acceptedValues: [
+              null,
+              {},
+              4,
+              "bad value",
+              "x".repeat(129),
+              "ctx_fixture",
+              "rctx_fixture",
+              "PRIVATE_PROFILE",
+              ...safeValues,
+            ],
+            inspectCommands: [
+              "ravi skills show permissions",
+              "ravi tags list --kind system --source permissions --json",
+              "ravi permissions allow full-access --apply",
+              "ravi skills show permissions; echo unsafe",
+              "ravi skills show permissions\nprivate",
+              { command: "ravi skills show permissions" },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(error?.details.acceptedValues).toEqual(safeValues.slice(0, 512));
+    expect(error?.details.acceptedValuesTruncated).toBe(true);
+    expect(error?.envelope().error.acceptedValuesTruncated).toBe(true);
+    expect(error?.details.inspectCommands).toEqual([
+      "ravi skills show permissions",
+      "ravi tags list --kind system --source permissions --json",
+    ]);
+    const relayed = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status: 422,
+        body: JSON.stringify({ ...error!.envelope(), exitCode: 2, outcome: "usage_error" }),
+      }),
+    );
+    expect(relayed?.details.acceptedValues).toEqual(safeValues.slice(0, 512));
+    expect(relayed?.details.acceptedValuesTruncated).toBe(true);
+    const encoded = JSON.stringify(error?.envelope());
+    for (const forbidden of ["ctx_fixture", "PRIVATE_PROFILE", "full-access --apply", "echo unsafe", "private"])
+      expect(encoded).not.toContain(forbidden);
+  });
+
+  it.each([null, "bootstrap", {}, [null, {}, 3, "bad value"]])(
+    "drops malformed profile discovery controls: %j",
+    (value) => {
+      const error = remoteGatewayErrorToContractError(
+        "permissions allow",
+        result({
+          status: 422,
+          body: JSON.stringify({
+            success: false,
+            op: "permissions allow",
+            exitCode: 2,
+            outcome: "usage_error",
+            error: {
+              code: "USAGE_ERROR",
+              message: "Unknown profile.",
+              retryable: false,
+              acceptedValues: value,
+              inspectCommands: value,
+              acceptedValuesTruncated: true,
+            },
+          }),
+        }),
+      );
+      expect(error?.details.acceptedValues).toBeUndefined();
+      expect(error?.details.inspectCommands).toBeUndefined();
+      expect(error?.details.acceptedValuesTruncated).toBeUndefined();
+    },
+  );
+
+  it("preserves the bounded generated permission-profile diagnostic", () => {
+    const message =
+      "Unknown or empty permission profile: permission-missing. Available profiles: bootstrap, chat-only, explicit-only, full-access, permission-read:tasks-list. Inspect built-ins with 'ravi skills show permissions' and stored profiles with 'ravi tags list --kind system --source permissions --json'. Provide --capabilities <permission>:<objectType>:<objectId> to bootstrap a custom profile.";
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status: 422,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: { code: "USAGE_ERROR", message, retryable: false },
+        }),
+      }),
+    );
+    expect(error?.message).toBe(message);
+  });
+
   it("redacts secret-bearing unknown keys while retaining ordinary field names", () => {
     const secretKey = "password-hunter2";
     const error = remoteGatewayErrorToContractError(

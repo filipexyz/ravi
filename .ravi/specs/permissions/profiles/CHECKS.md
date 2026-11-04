@@ -77,3 +77,21 @@ bun test src/permissions/delegation.test.ts
 bun test src/cli/commands/agents.test.ts
 bun test src/cli/commands/permissions.test.ts src/cli/command-access.test.ts src/approval/service.test.ts
 ```
+
+## Shared definition reductions
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/permissions.test.ts`
+  MUST cover a legacy chat-only definition shared by multiple contacts and chat,
+  chat-tag and global grants: dry-run leaves snapshots live, apply revokes all
+  affected roots, descendants and actor projections, and another profile stays
+  live. A rejected context write MUST roll back the profile and all revocations.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/permissions/apply-grant.test.ts src/runtime/context-registry.test.ts`
+  MUST retain direct profile-source snapshot revocation and prove label-only and
+  additive updates leave existing contexts live.
+  Regressions MUST cover live issued children behind revoked roots/projections
+  and unrelated colon-bearing profile names that share the target's suffix.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/runtime-request-context.test.ts`
+  MUST revoke issued and chained relays after a shared profile reduction and
+  prevent queued relays from historical callers restoring the old authority.
+  Ordinary turn rotation MUST still allow queued relays to preserve their
+  original narrowing, and contact attribution MUST survive authority withdrawal.

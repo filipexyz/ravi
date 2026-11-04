@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
-import { createContact, getContact } from "../../contacts.js";
+import { addContactTag, createContact, getContact } from "../../contacts.js";
+import { authorizeContextCapabilities } from "../../permissions/context-capabilities-provider.js";
 import { dbEnsureContactChatGrant, dbListContactChatGrants } from "../../permissions/contact-chat-grants.js";
 import { recordPermissionDenial } from "../../permissions/denials.js";
 import {
@@ -10,7 +11,7 @@ import {
 } from "../../permissions/agent-default-capabilities-provider.js";
 import { bootstrapCapabilitiesFor } from "../../permissions/runtime-bootstrap-provider.js";
 import { resolveContactChatOverlay } from "../../permissions/contact-policy-permissions-provider.js";
-import { dbCreateAgent, dbUpdateAgent, dbUpsertChat } from "../../router/router-db.js";
+import { dbCreateAgent, dbUpdateAgent, dbUpsertChat, getDb } from "../../router/router-db.js";
 import { createRuntimeContext, resolveRuntimeContext } from "../../runtime/context-registry.js";
 import { attachTagSlugsToAsset, dbCreateTagDefinition, dbGetTagDefinition } from "../../tags/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -908,6 +909,129 @@ describe("PermissionsCommands provider-runtime surface", () => {
       }),
     );
     expect(resolveRuntimeContext(live.contextKey, { touch: false })).toBeNull();
+  });
+
+  it("reduces a shared chat-only definition across every live scope and derived context", () => {
+    const first = createContact({ phone: "+15550000791", name: "First profile holder" });
+    const second = createContact({ phone: "+15550000792", name: "Other profile holder" });
+    const chatA = groupChat("profile-reduction-a");
+    const chatB = groupChat("profile-reduction-b");
+    const profile = "permission-chat-only";
+    const capability = { permission: "read", objectType: "skills", objectId: "show" };
+    dbCreateTagDefinition({
+      slug: profile,
+      label: "Chat only",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["read:skills:show"] } },
+    });
+    dbEnsureContactChatGrant({ contactId: first.id, profileSlug: profile, scopeType: "chat", scopeId: chatA.id });
+    dbEnsureContactChatGrant({ contactId: first.id, profileSlug: profile, scopeType: "chat", scopeId: chatB.id });
+    dbEnsureContactChatGrant({ contactId: second.id, profileSlug: profile, scopeType: "chat_tag", scopeId: "ops" });
+    addContactTag(second.id, profile);
+    const snapshot = (contactId: string, grant: string) =>
+      createRuntimeContext({
+        kind: "turn-runtime",
+        capabilities: [capability],
+        metadata: { actorPrincipal: `contact:${contactId}`, userOverlayGrants: [grant] },
+      });
+    const affected = [
+      snapshot(first.id, `${profile}@chat:${chatA.id}`),
+      snapshot(first.id, `${profile}@chat:${chatB.id}`),
+      snapshot(second.id, `${profile}@chat-tag:ops`),
+      snapshot(second.id, `${profile}@global`),
+    ];
+    const child = createRuntimeContext({
+      capabilities: [capability],
+      metadata: { parentContextId: affected[1]!.contextId },
+    });
+    const projected = createRuntimeContext({
+      capabilities: [capability],
+      metadata: { actorProjection: { sourceContextId: affected[2]!.contextId } },
+    });
+    const unaffected = snapshot(second.id, "permission-chat-only-extra@global");
+    const commands = new PermissionsCommands();
+
+    commands.allow(
+      "chat-only",
+      `contact:${first.id}`,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      true,
+      chatA.id,
+    );
+    for (const context of affected) expect(resolveRuntimeContext(context.contextKey, { touch: false })).not.toBeNull();
+    expect(dbGetTagDefinition(profile)?.metadata?.permissions).toEqual({ capabilities: ["read:skills:show"] });
+
+    commands.allow(
+      "chat-only",
+      `contact:${first.id}`,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      true,
+      chatA.id,
+    );
+    expect(dbGetTagDefinition(profile)?.metadata?.permissions).toEqual({ capabilities: [] });
+    expect(resolveContactChatOverlay({ contactId: first.id, chatId: chatB.id }).capabilities).toEqual([]);
+    for (const context of [...affected, child, projected]) {
+      const live = resolveRuntimeContext(context.contextKey, { touch: false });
+      expect({
+        live: Boolean(live),
+        allowed: live ? authorizeContextCapabilities({ ...capability, context: live }).allowed : false,
+      }).toEqual({ live: false, allowed: false });
+    }
+    expect(resolveRuntimeContext(unaffected.contextKey, { touch: false })).not.toBeNull();
+  });
+
+  it("rolls back the profile reduction and every revocation when a context write fails", () => {
+    const contact = createContact({ phone: "+15550000793", name: "Atomic profile holder" });
+    const chat = groupChat("profile-reduction-rollback");
+    dbCreateTagDefinition({
+      slug: "permission-chat-only",
+      label: "Chat only",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["read:skills:show"] } },
+    });
+    const root = createRuntimeContext({
+      capabilities: [{ permission: "read", objectType: "skills", objectId: "show" }],
+      metadata: {
+        actorPrincipal: `contact:${contact.id}`,
+        userOverlayGrants: [`permission-chat-only@chat:${chat.id}`],
+      },
+    });
+    const child = createRuntimeContext({
+      contextId: "ctx_profile_reduction_rollback",
+      metadata: { parentContextId: root.contextId },
+    });
+    getDb().exec(
+      "CREATE TEMP TRIGGER refuse_profile_context_revoke BEFORE UPDATE OF revoked_at ON contexts WHEN OLD.context_id = 'ctx_profile_reduction_rollback' BEGIN SELECT RAISE(ABORT, 'profile revocation write refused'); END",
+    );
+    expect(() =>
+      new PermissionsCommands().allow(
+        "chat-only",
+        `contact:${contact.id}`,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+        chat.id,
+      ),
+    ).toThrow("profile revocation write refused");
+    expect(dbGetTagDefinition("permission-chat-only")?.metadata?.permissions).toEqual({
+      capabilities: ["read:skills:show"],
+    });
+    expect(resolveRuntimeContext(root.contextKey, { touch: false })).not.toBeNull();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).not.toBeNull();
+    expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
   });
 
   it("lists contact grants for a chat with the effective contact caps", () => {

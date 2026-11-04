@@ -246,6 +246,19 @@ Semantics:
   birth floor; `full-access` includes the explicit admin/execute/use ceiling.
   `chat-only` expands to zero even when explicit leftovers exist;
   `explicit-only` has no floor and keeps only explicit capabilities.
+- Reducing a shared profile definition MUST revoke all live authority snapshots
+  derived from that profile, across contacts and chat, chat-tag and global scopes,
+  together with their descendants and borrowed actor projections. Profile writes
+  and revocation MUST commit atomically; failure rolls back both. Dry-run,
+  label-only changes and additive capability updates MUST NOT revoke snapshots.
+  The shared provider-owned upsert is this boundary; narrowing only the command's
+  selected contact/scope leaves other holders' old authority live.
+  Historical roots and projections MUST remain usable for tracing authority to
+  still-live children after a non-cascading turn rotation. Profile identifiers
+  containing colons MUST be compared in full, never by an ambiguous source suffix.
+  Relays narrowed by those snapshots are dependents too, including chained relays.
+  Historical callers MUST record profile authority withdrawal separately from
+  ordinary turn rotation, so queued relays cannot revive withdrawn authority.
 - A known zero-capability profile MUST remain grantable. A scoped empty grant
   governs the chat and grants no authority; it MUST NOT be mistaken for an
   unknown profile. Other covering grants remain additive.

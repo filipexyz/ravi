@@ -792,6 +792,7 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
     contractFail(op, "FULL_ACCESS_APPROVAL_REQUIRED", FULL_ACCESS_APPROVAL_MESSAGE, {
       asJson: input.asJson,
       exitCode: CONTRACT_EXIT_POLICY,
+      diagnostic: errorDiagnostic(FULL_ACCESS_APPROVAL_MESSAGE, { operation: op }),
       details: {
         suggestedAction: "Preview without --apply. Use the operator approval flow for a full-access grant.",
       },

@@ -9,6 +9,12 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 
 ## Required checks
 
+- Remote profile-discovery regressions preserve more than one database page of
+  choices through a real local error envelope, bound the relay to 512 validated
+  identifiers, preserve truncation across multiple relays, and reject malformed
+  values and commands outside the two declared inspection operations. Existing
+  issue-less validation and complete usage-error redaction assertions stay intact.
+
 - Logger and unchanged `session-goals` tests verify SQLite capacity retries keep
   `sqliteCode`, `sqliteErrno`, `willRetry`, operation and memory instrumentation.
   Logger negatives reject malformed typed metadata, secrets and throwing getters.
