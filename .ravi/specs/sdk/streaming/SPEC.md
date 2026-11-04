@@ -117,6 +117,12 @@ permanecem permanentemente CLI-only — não fazem sentido remotos.
 
 - Nos canais NATS, auth Bearer é a mesma do gateway: `resolveRuntimeContext(token)`.
   `session-view` exige a [autoridade Console](#visão-privada-delegada-pelo-console).
+- Antes de abrir o SSE, contexto expirado MUST retornar HTTP 401 com
+  `CONTEXT_EXPIRED`; contexto revogado ou desconhecido MUST retornar HTTP 401
+  com `AUTH_REQUIRED`. Revogação prevalece se o contexto também expirou.
+  Contexto válido sem o grant do canal MUST retornar HTTP 403 com
+  `PERMISSION_DENIED`, nomeando a permissão exigida em `error.cause`.
+  Nenhuma dessas recusas inicia subscribe nem emite audit de abertura.
 - Cada channel NATS declara um escopo Permission Provider Runtime (ex: `events` → relação `view` em
   `system:events`). O gateway recusa subscribe sem permissão e emite
   `ravi.audit.denied` antes de fechar a conexão.
