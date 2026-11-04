@@ -354,7 +354,9 @@ export async function handleCredentialIntakeEnvelope(input: {
           threadTs: request.threadTs,
           text: `Credencial salva. Fingerprint: ${receipt.fingerprint.slice(0, 12)}.${receipt.daemonReloadRequired ? " O servidor precisa recarregar a configuração." : ""}`,
         })
-        .catch(() => {});
+        .catch(() => {
+          // no-cause: Receipt delivery is best effort after durable storage; Slack diagnostics must not escape.
+        });
     }
   } catch (error) {
     secret = undefined;
@@ -369,22 +371,28 @@ export async function handleCredentialIntakeEnvelope(input: {
       try {
         deps.complete(pendingRequestId, { status: "failed", errorCode: "INTAKE_STORE_FAILED" });
       } catch {
-        /* safe terminalization only */
+        // no-cause: Failed terminalization leaves the request blocked; persistence diagnostics must not enter Slack responses.
       }
     }
     if (openedViewId) {
       await input.client
         .viewsUpdate({ viewId: openedViewId, view: buildCredentialIntakeStatus(failureState) })
-        .catch(() => {});
+        .catch(() => {
+          // no-cause: Closing an opened modal is best effort; preserve the safe failure without Slack diagnostics.
+        });
     }
     if (!acknowledged) {
       await ack(
         kind === "view_submission"
           ? { response_action: "update", view: buildCredentialIntakeStatus(failureState) }
           : undefined,
-      ).catch(() => {});
+      ).catch(() => {
+        // no-cause: Failed interaction acknowledgment must not forward raw Slack payload or response diagnostics.
+      });
     } else if (kind === "view_submission" && viewId) {
-      await input.client.viewsUpdate({ viewId, view: buildCredentialIntakeStatus(failureState) }).catch(() => {});
+      await input.client.viewsUpdate({ viewId, view: buildCredentialIntakeStatus(failureState) }).catch(() => {
+        // no-cause: Failure-view delivery is best effort; keep raw Slack diagnostics outside the intake response.
+      });
     }
     if (kind === "block_actions" && feedbackRequest && input.client.postEphemeral) {
       await input.client
@@ -394,7 +402,9 @@ export async function handleCredentialIntakeEnvelope(input: {
           threadTs: feedbackRequest.threadTs,
           text: "Este convite não está disponível. Solicite um novo convite e confira suas permissões.",
         })
-        .catch(() => {});
+        .catch(() => {
+          // no-cause: Private denial feedback is best effort; do not expose raw Slack delivery diagnostics.
+        });
     }
   } finally {
     secret = undefined;

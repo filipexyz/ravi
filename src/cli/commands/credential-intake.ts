@@ -211,6 +211,7 @@ Example: ravi credentials request connection:slack:secondary --user U123ABC
           ...buildCredentialIntakeInvitation(request),
         });
       } catch {
+        // no-cause: Slack delivery diagnostics may echo request data; cancel the invitation and expose a fixed failure.
         this.deps.cancel(request.id, {
           accountId: request.accountId,
           teamId: request.teamId,

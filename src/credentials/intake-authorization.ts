@@ -23,6 +23,7 @@ export function authorizeIntakeSubject(
     const decision = authorizePermission(request);
     return decision.allowed && decision.decision === "allow";
   } catch {
+    // no-cause: Authorization failures deny intake without exposing internal permission or identity diagnostics.
     return false;
   }
 }

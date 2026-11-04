@@ -106,8 +106,7 @@ function writeKeychainSecret(provider: string, connection: string, secret: strin
       throw new Error("Keychain write failed");
     }
   } catch {
-    // Process errors may include spawn arguments or input. Neither the raw
-    // error nor its cause is allowed to cross the secret-store boundary.
+    // no-cause: Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape.
     throw new CredentialBrokerError("backend_unavailable", "The Keychain write failed or timed out.");
   }
   return secretRef;

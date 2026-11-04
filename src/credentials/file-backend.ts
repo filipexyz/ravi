@@ -96,21 +96,21 @@ export function writeFileSecret(input: { provider: string; connection: string; s
     temporary = undefined;
     return ref;
   } catch {
-    // No path, payload or raw filesystem cause crosses the broker boundary.
+    // no-cause: Filesystem diagnostics may expose secret paths or payloads; only the fixed broker error may escape.
     throw fixedError();
   } finally {
     if (fd !== undefined) {
       try {
         closeSync(fd);
       } catch {
-        /* Preserve the safe primary error. */
+        // no-cause: Descriptor cleanup must preserve the safe primary result without exposing filesystem diagnostics.
       }
     }
     if (temporary) {
       try {
         unlinkSync(temporary);
       } catch {
-        /* Only a request-owned temporary file. */
+        // no-cause: Removing this request's temporary file is best effort; preserve the safe primary error.
       }
     }
   }
@@ -126,13 +126,14 @@ export function readFileSecret(ref: string): string {
     if (info.size === 0 || info.size > MAX_SECRET_BYTES) throw new Error("Invalid local credential size");
     return readFileSync(fd, "utf8");
   } catch {
+    // no-cause: Secret reads expose only a fixed broker error; raw filesystem diagnostics disclose storage details.
     throw fixedError();
   } finally {
     if (fd !== undefined) {
       try {
         closeSync(fd);
       } catch {
-        /* Do not expose raw filesystem errors. */
+        // no-cause: Descriptor cleanup must preserve the safe primary result without exposing filesystem diagnostics.
       }
     }
   }
@@ -147,6 +148,7 @@ export function deleteFileSecret(ref: string): boolean {
     unlinkSync(path);
     return true;
   } catch (error) {
+    // no-cause: Missing files return false; other deletion failures expose only the fixed broker error, never storage details.
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw fixedError();
   }

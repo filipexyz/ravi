@@ -111,6 +111,7 @@ export function normalizeIntakeTarget(value: string): IntakeTarget {
       };
     }
   } catch {
+    // no-cause: Target validation errors can echo caller input; expose only the fixed intake code.
     throw new IntakeError("INTAKE_TARGET_INVALID");
   }
   throw new IntakeError("INTAKE_TARGET_INVALID");
@@ -418,6 +419,7 @@ export async function storeIntakeSecret(
     complete(current.id, { status: "stored", fingerprint });
     return { fingerprint, daemonReloadRequired: target.kind === "env" };
   } catch (error) {
+    // no-cause: Parser and backend diagnostics may contain the secret; retain only safe intake codes.
     // A metadata commit or env write can fail after its durable side effect.
     // Never delete a referenced secret or tell the user an uncertain write did
     // not happen. The pending request keeps the target blocked for inspection.
@@ -425,6 +427,7 @@ export async function storeIntakeSecret(
       try {
         secretWritten = (deps.getEnvKey ?? getRaviEnvKey)(target.key).present;
       } catch {
+        // no-cause: Env inspection diagnostics must not escape; keep the uncertain write blocked for reconciliation.
         throw new IntakeError("INTAKE_RECONCILIATION_REQUIRED");
       }
     }
@@ -432,14 +435,14 @@ export async function storeIntakeSecret(
       try {
         secretWritten = getConnection(target.provider, target.connection)?.secretRef === unreferencedSecretRef;
       } catch {
+        // no-cause: Failed reference lookup cannot prove ownership; preserve the secret and require reconciliation.
         throw new IntakeError("INTAKE_RECONCILIATION_REQUIRED");
       }
       if (!secretWritten) {
         try {
           await (deps.deleteSecret ?? deleteSecret)(unreferencedSecretRef);
         } catch {
-          // Cleanup is best-effort and only touches this request's new backend
-          // entry. A backend diagnostic must not enter audit or the response.
+          // no-cause: Request-owned secret cleanup is best effort; backend diagnostics must not enter audit or responses.
         }
       }
     }
@@ -448,6 +451,7 @@ export async function storeIntakeSecret(
     try {
       complete(current.id, { status: "failed", errorCode: code });
     } catch {
+      // no-cause: Failed completion leaves a non-replayable request; expose reconciliation without raw persistence diagnostics.
       throw new IntakeError("INTAKE_RECONCILIATION_REQUIRED");
     }
     throw new IntakeError(code);
