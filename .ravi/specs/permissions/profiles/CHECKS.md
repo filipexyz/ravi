@@ -80,6 +80,11 @@ bun test src/cli/commands/permissions.test.ts src/cli/command-access.test.ts src
 
 ## Shared definition reductions
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/router/router-db.contexts.test.ts`
+  MUST preserve context provenance, capabilities and lifecycle timestamps when
+  recording authority withdrawal. Metadata and descendant revocations MUST
+  commit or roll back together inside the caller's transaction; unrelated
+  contexts and existing lineage MUST remain intact.
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/permissions.test.ts`
   MUST cover a legacy chat-only definition shared by multiple contacts and chat,
   chat-tag and global grants: dry-run leaves snapshots live, apply revokes all
