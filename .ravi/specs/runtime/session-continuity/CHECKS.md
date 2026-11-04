@@ -29,6 +29,11 @@
   abort before a recoverable failure. No recovery branch may restart B;
   a later explicit C delivers B and C once without replaying A. Keep controls
   for suppressed, credential and context recovery without an explicit abort.
+- Pause canonical terminal emission with a real Codex tool-result abort pending,
+  then expire the real tool lease. Cancellation retains dormant B until a fresh
+  C admission; no inactivity notice or automatic restart may replace it. Cover
+  an unchanged lease, no-abort recovery, and replacement ownership across the
+  await without changing the accepted terminal's accounting.
 - Abort or replace the runtime while credential refresh awaits: the retired
   handle cannot arm another retry. Reject an awaited failed-event emission
   with cancellation pending: finalization retains the accepted terminal and

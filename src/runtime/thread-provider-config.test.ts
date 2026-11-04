@@ -36,6 +36,7 @@ import { PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE } from "./public-failure.js
 import { resolveEffectiveSessionRuntime } from "./runtime-selection.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
+import * as toolLiveness from "./tool-liveness.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 
@@ -835,6 +836,306 @@ describe("Codex tool delivery cancellation at terminal boundaries", () => {
   });
 });
 
+describe("deferred abort versus real tool lease during terminal emission", () => {
+  // Ordinary turn.failed clears the lease before emitting its terminal event;
+  // these terminals can still have a live lease while the sink awaits.
+  for (const terminal of ["complete", "interrupted", "recoverable"] as const) {
+    for (const expire of [false, true]) {
+      it(`keeps B dormant until C after accepted ${terminal} (lease expiry=${expire})`, async () => {
+        await withPausedTerminalLease({ terminal }, async ({ fixture, pause, release, expireLease }) => {
+          fixture.clear();
+          await fixture.dispatch(NEXT_PROMPT);
+          fixture.expectActiveOriginal();
+          expect(fixture.snapshot()).toMatchObject({
+            originalStartedTool: true,
+            originalToolResultDeliveryPending: true,
+            originalPendingAbort: false,
+          });
+          fixture.abortOriginal();
+          expect(fixture.snapshot().originalPendingAbort).toBe(true);
+          await pause();
+          const accepted = fixture.snapshot();
+          const acceptedStatus = terminal === "recoverable" ? "interrupted" : terminal;
+          expect(accepted.originalAttemptStatus).toBe(acceptedStatus);
+          expect(accepted.originalAttemptCompletedAt).not.toBeNull();
+
+          if (expire) expireLease();
+          release();
+          await fixture.waitForOldLoop();
+          if (acceptedStatus !== "complete") fixture.expectTerminalAccounting(acceptedStatus);
+          const stopped = fixture.snapshot();
+          expect(stopped.originalAttemptStatus).toBe(acceptedStatus);
+          expect(stopped.originalTraceStatus).toBe(acceptedStatus);
+          expect(stopped.originalAttemptCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+          expect(stopped.originalTraceCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+          expect(stopped.originalDone).toBe(true);
+          expect(stopped.originalPendingAbort).toBe(false);
+          expect(stopped.oldInputs).toEqual([USER_PROMPT]);
+          expect(stopped.startedProviders).toEqual([]);
+          expect(stopped.restarts).toEqual([]);
+          expect(stopped.replacementInputs).toEqual([]);
+          expect(stopped.stashedPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+          expect(stopped.stashedPrompts[0]).not.toContain(USER_PROMPT);
+          expect(stopped.stashedPrompts[0]).not.toContain("Inatividade");
+
+          const later = "Independent admission C after the terminal lease race.";
+          await fixture.dispatch(later);
+          await fixture.waitForSuccessorInput();
+          const resumed = fixture.snapshot();
+          expect(resumed.startedProviders).toEqual(["claude"]);
+          expect(resumed.replacementInputs).toHaveLength(1);
+          const combined = resumed.replacementInputs[0]!;
+          expect(combined.split(NEXT_PROMPT).length - 1).toBe(1);
+          expect(combined.split(later).length - 1).toBe(1);
+          expect(combined).not.toContain(USER_PROMPT);
+          expect(combined).not.toContain("Inatividade");
+          expect(resumed.oldInputs).toEqual([USER_PROMPT]);
+          expect(resumed.stashedPrompts).toEqual([]);
+          expect(resumed.restarts).toEqual([]);
+          expect(resumed.originalAttemptStatus).toBe(acceptedStatus);
+          expect(resumed.originalTraceStatus).toBe(acceptedStatus);
+          expect(resumed.originalAttemptCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+        });
+      });
+    }
+  }
+
+  for (const expire of [false, true]) {
+    it(`retains recovery without explicit abort while the terminal sink awaits (lease expiry=${expire})`, async () => {
+      await withPausedTerminalLease({ terminal: "recoverable" }, async ({ fixture, pause, release, expireLease }) => {
+        fixture.clear();
+        await fixture.dispatch(NEXT_PROMPT);
+        fixture.expectActiveOriginal();
+        expect(fixture.snapshot().originalPendingAbort).toBe(false);
+        await pause();
+        const accepted = fixture.snapshot();
+        expect(accepted.originalAttemptStatus).toBe("interrupted");
+        if (expire) {
+          expireLease();
+          const recovered = fixture.snapshot();
+          expect(recovered.originalDone).toBe(true);
+          expect(recovered.stashedPrompts.some((prompt) => prompt.includes("Inatividade"))).toBe(true);
+          expect(recovered.stashedPrompts.some((prompt) => prompt.includes(NEXT_PROMPT))).toBe(true);
+        }
+        release();
+        await fixture.waitForOldLoop();
+        await fixture.waitForSuccessorInput();
+        fixture.expectTerminalAccounting("interrupted");
+
+        const settled = fixture.snapshot();
+        expect(settled.originalAttemptStatus).toBe("interrupted");
+        expect(settled.originalTraceStatus).toBe("interrupted");
+        expect(settled.originalAttemptCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+        expect(settled.originalTraceCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+        expect(settled.oldInputs).toEqual([USER_PROMPT]);
+        expect(settled.startedProviders).toEqual(["claude"]);
+        expect(settled.restarts).toHaveLength(1);
+        expect(settled.replacementInputs).toHaveLength(1);
+        const combined = settled.replacementInputs[0]!;
+        expect(combined.split(NEXT_PROMPT).length - 1).toBe(1);
+        expect(combined).not.toContain(USER_PROMPT);
+        if (!expire) expect(settled.restarts).toEqual(["open_tools_recoverable_failure"]);
+        expect(settled.stashedPrompts).toEqual([]);
+      });
+    });
+  }
+
+  it("has already disarmed the real lease when an ordinary failure reaches the terminal sink", async () => {
+    await withPausedTerminalLease({ terminal: "failed" }, async ({ fixture, pause, release }) => {
+      fixture.clear();
+      await fixture.dispatch(NEXT_PROMPT);
+      fixture.abortOriginal();
+      await pause();
+      const accepted = fixture.snapshot();
+      expect(accepted.originalAttemptStatus).toBe("failed");
+      release();
+      await fixture.waitForOldLoop();
+      fixture.expectTerminalAccounting("failed");
+      const stopped = fixture.snapshot();
+      expect(stopped.originalAttemptCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+      expect(stopped.originalTraceCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+      expect(stopped.oldInputs).toEqual([USER_PROMPT]);
+      expect(stopped.startedProviders).toEqual([]);
+      expect(stopped.restarts).toEqual([]);
+      expect(stopped.replacementInputs).toEqual([]);
+      expect(stopped.stashedPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+      expect(stopped.stashedPrompts[0]).not.toContain(USER_PROMPT);
+    });
+  });
+
+  for (const rejectTerminalEmission of [false, true]) {
+    it(`settles an abort admitted after the terminal sink paused (sink rejects=${rejectTerminalEmission})`, async () => {
+      await withPausedTerminalLease(
+        { terminal: "recoverable", rejectTerminalEmission },
+        async ({ fixture, pause, release, expireLease }) => {
+          fixture.clear();
+          await fixture.dispatch(NEXT_PROMPT);
+          await pause();
+          const accepted = fixture.snapshot();
+          expect(accepted.originalAttemptStatus).toBe("interrupted");
+          expect(accepted.originalPendingAbort).toBe(false);
+          fixture.abortOriginal();
+          expect(fixture.snapshot().originalPendingAbort).toBe(true);
+          expireLease();
+          release();
+          if (rejectTerminalEmission) {
+            await expect(fixture.waitForOldLoop()).rejects.toThrow("Fixture paused terminal emission rejected");
+          } else await fixture.waitForOldLoop();
+          const stopped = fixture.snapshot();
+          expect(stopped.originalAttemptStatus).toBe("interrupted");
+          expect(stopped.originalTraceStatus).toBe("interrupted");
+          expect(stopped.originalAttemptCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+          expect(stopped.originalTraceCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+          expect(stopped.oldInputs).toEqual([USER_PROMPT]);
+          expect(stopped.startedProviders).toEqual([]);
+          expect(stopped.restarts).toEqual([]);
+          expect(stopped.replacementInputs).toEqual([]);
+          expect(stopped.stashedPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+          expect(stopped.stashedPrompts[0]).not.toContain(USER_PROMPT);
+          expect(stopped.stashedPrompts[0]).not.toContain("Inatividade");
+
+          const later = "Independent C after an abort admitted during terminal emission.";
+          await fixture.dispatch(later);
+          await fixture.waitForSuccessorInput();
+          const resumed = fixture.snapshot();
+          expect(resumed.startedProviders).toEqual(["claude"]);
+          expect(resumed.replacementInputs).toHaveLength(1);
+          const combined = resumed.replacementInputs[0]!;
+          expect(combined.split(NEXT_PROMPT).length - 1).toBe(1);
+          expect(combined.split(later).length - 1).toBe(1);
+          expect(combined).not.toContain(USER_PROMPT);
+          expect(combined).not.toContain("Inatividade");
+          expect(resumed.stashedPrompts).toEqual([]);
+          expect(resumed.restarts).toEqual([]);
+        },
+      );
+    });
+  }
+
+  it("leaves the replacement and stash untouched when the old lease expires during terminal emission", async () => {
+    await withPausedTerminalLease(
+      { terminal: "recoverable", rejectModelSwitch: true },
+      async ({ fixture, pause, release, expireLease }) => {
+        await fixture.dispatch(NEXT_PROMPT);
+        fixture.abortOriginal();
+        await pause();
+        const accepted = fixture.snapshot();
+        // Exercise the real dispatcher takeover after the physical delivery
+        // has terminalized, while its host still awaits the runtime sink.
+        expect(await fixture.changeModel("gpt-6.1")).toBe("restart-next-turn");
+        await fixture.waitForSuccessorInput();
+        const replacement = fixture.snapshot();
+        expect(replacement.replacementOwnsSlot).toBe(true);
+        expect(replacement.startedProviders).toEqual(["codex"]);
+        expect(replacement.replacementInputs).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+        expect(replacement.stashedPrompts).toEqual([]);
+        expect(replacement.owner).toMatchObject({ done: false, aborted: false, pendingAbort: false });
+
+        expireLease();
+        expect(fixture.snapshot().owner).toEqual(replacement.owner);
+        expect(fixture.snapshot().stashedPrompts).toEqual(replacement.stashedPrompts);
+        release();
+        await fixture.waitForOldLoop();
+        const settled = fixture.snapshot();
+        expect(settled.owner).toEqual(replacement.owner);
+        expect(settled.replacementOwnsSlot).toBe(true);
+        expect(settled.replacementInputs).toEqual(replacement.replacementInputs);
+        expect(settled.startedProviders).toEqual(replacement.startedProviders);
+        expect(settled.stashedPrompts).toEqual(replacement.stashedPrompts);
+        expect(settled.restarts).toEqual([]);
+        expect(settled.originalAttemptStatus).toBe("interrupted");
+        expect(settled.originalTraceStatus).toBe("interrupted");
+        expect(settled.originalAttemptCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+        expect(settled.originalTraceCompletedAt).toBe(accepted.originalAttemptCompletedAt);
+        expect(settled.replacementInputs[0]!.split(NEXT_PROMPT).length - 1).toBe(1);
+        expect(settled.replacementInputs[0]).not.toContain(USER_PROMPT);
+      },
+    );
+  });
+});
+
+async function withPausedTerminalLease(
+  options: Pick<GeneratedTurnOptions, "terminal" | "rejectModelSwitch" | "rejectTerminalEmission">,
+  run: (controls: {
+    fixture: GeneratedTurnFixture;
+    pause(): Promise<void>;
+    release(): void;
+    expireLease(): void;
+  }) => Promise<void>,
+) {
+  const entered = deferred();
+  const released = deferred();
+  let emissionSeen = false;
+  let expiry: (() => void) | undefined;
+  const scheduled: Array<{ callback: () => void; delay: number }> = [];
+  const createRealLease = toolLiveness.createToolLivenessLease;
+  // Replace only the clock. Generation fencing, progress rearming, the host's
+  // onInactive callback and dispatcher abort all execute their real code.
+  const leaseFactory = spyOn(toolLiveness, "createToolLivenessLease").mockImplementation((leaseOptions) =>
+    createRealLease({
+      ...leaseOptions,
+      schedule: (callback, delay) => {
+        scheduled.push({ callback, delay });
+        expiry = callback;
+        return () => {
+          if (expiry === callback) expiry = undefined;
+        };
+      },
+    }),
+  );
+  try {
+    await withGeneratedClaudeTurn(
+      {
+        ...options,
+        emitAssistant: false,
+        agentDefaultProvider: "claude",
+        originalProvider: "codex",
+        completeDynamicTool: true,
+        toolProgressBeforeCompletion: true,
+        recoverableError: PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
+        onTerminalEmission: async () => {
+          if (emissionSeen) return;
+          emissionSeen = true;
+          entered.resolve();
+          await released.promise;
+          if (options.rejectTerminalEmission) throw new Error("Fixture paused terminal emission rejected");
+        },
+      },
+      async (fixture) => {
+        try {
+          await run({
+            fixture,
+            pause: async () => {
+              fixture.releaseOriginalTerminal();
+              await entered.promise;
+              expect(scheduled).toHaveLength(2);
+              expect(scheduled.every(({ delay }) => delay > 0)).toBe(true);
+              if (options.terminal === "failed") expect(expiry).toBeUndefined();
+              else expect(expiry).toBeDefined();
+              const beforeStaleExpiry = fixture.snapshot();
+              scheduled[0]!.callback();
+              if (options.terminal === "failed") scheduled[1]!.callback();
+              expect(fixture.snapshot()).toEqual(beforeStaleExpiry);
+            },
+            release: released.resolve,
+            expireLease: () => {
+              expect(expiry).toBeDefined();
+              const fire = expiry!;
+              expiry = undefined;
+              fire();
+            },
+          });
+        } finally {
+          released.resolve();
+        }
+      },
+    );
+  } finally {
+    released.resolve();
+    leaseFactory.mockRestore();
+  }
+}
+
 interface GeneratedTurnOptions {
   terminal?: "complete" | "failed" | "interrupted" | "recoverable";
   deliveryBarrier?: "after_response" | "after_task";
@@ -847,6 +1148,9 @@ interface GeneratedTurnOptions {
   completeDynamicTool?: boolean;
   recoverableError?: string;
   rejectFailedEmission?: boolean;
+  toolProgressBeforeCompletion?: boolean;
+  onTerminalEmission?: () => Promise<void>;
+  rejectTerminalEmission?: boolean;
 }
 
 interface GeneratedTurnFixture {
@@ -871,6 +1175,8 @@ interface GeneratedTurnFixture {
   snapshot(): {
     originalAttemptStatus: string | undefined;
     originalTraceStatus: string | undefined;
+    originalAttemptCompletedAt: number | null | undefined;
+    originalTraceCompletedAt: number | null | undefined;
     originalMaterializedOutput: boolean | undefined;
     originalStartedTool: boolean | undefined;
     originalToolResultDeliveryPending: boolean;
@@ -884,6 +1190,14 @@ interface GeneratedTurnFixture {
     assistantReplies: string[];
     replacementOwnsSlot: boolean;
     modelSwitchCalls: string[];
+    owner: {
+      provider: string;
+      done: boolean;
+      aborted: boolean;
+      pendingAbort: boolean;
+      attemptId: string | undefined;
+      pendingPrompts: string[];
+    } | null;
   };
 }
 
@@ -1070,6 +1384,9 @@ async function withGeneratedClaudeTurn(
             type: "tool.started",
             toolUse: { id: "generated-dynamic-tool", name: "Bash", input: { cmd: "fixture-no-execution" } },
           };
+          if (options.toolProgressBeforeCompletion) {
+            yield { type: "tool.progress", toolUseId: "generated-dynamic-tool" };
+          }
           yield {
             type: "tool.completed",
             toolUseId: "generated-dynamic-tool",
@@ -1166,6 +1483,14 @@ async function withGeneratedClaudeTurn(
     streamingSessions: dispatcher.streamingSessions,
     stashedMessages: dispatcher.stashedMessages,
     safeEmit: async (topic, event) => {
+      if (
+        options.onTerminalEmission &&
+        topic.endsWith(".runtime") &&
+        typeof event.type === "string" &&
+        ["turn.complete", "turn.failed", "turn.interrupted"].includes(event.type)
+      ) {
+        await options.onTerminalEmission();
+      }
       if (options.rejectFailedEmission && topic.endsWith(".runtime") && event.type === "turn.failed") {
         throw new Error("Fixture terminal emission rejected");
       }
@@ -1321,6 +1646,8 @@ async function withGeneratedClaudeTurn(
       snapshot: () => ({
         originalAttemptStatus: getRuntimeTurnAttempt(originalAttemptId!)?.status,
         originalTraceStatus: getSessionTurn(originalTurnId!)?.status,
+        originalAttemptCompletedAt: getRuntimeTurnAttempt(originalAttemptId!)?.completedAt,
+        originalTraceCompletedAt: getSessionTurn(originalTurnId!)?.completedAt,
         originalMaterializedOutput: getRuntimeTurnAttempt(originalAttemptId!)?.materializedOutput,
         originalStartedTool: getRuntimeTurnAttempt(originalAttemptId!)?.startedTool,
         originalToolResultDeliveryPending: original.toolResultDeliveryPending === true,
@@ -1340,6 +1667,19 @@ async function withGeneratedClaudeTurn(
           ({ streaming }) => dispatcher.streamingSessions.get(sessionName) === streaming,
         ),
         modelSwitchCalls: [...modelSwitchCalls],
+        owner: (() => {
+          const owner = dispatcher.streamingSessions.get(sessionName);
+          return owner
+            ? {
+                provider: owner.queryHandle.provider,
+                done: owner.done,
+                aborted: owner.abortController.signal.aborted,
+                pendingAbort: owner.pendingAbort,
+                attemptId: owner.currentCrashRecoveryAttemptId,
+                pendingPrompts: owner.pendingMessages.map((message) => String(message.message.content)),
+              }
+            : null;
+        })(),
       }),
     });
   } finally {
@@ -1350,7 +1690,7 @@ async function withGeneratedClaudeTurn(
     original.abortController.abort();
     original.onTurnComplete?.();
     original.pushMessage?.(null);
-    if (options.rejectFailedEmission) await loop.catch(() => {});
+    if (options.rejectFailedEmission || options.rejectTerminalEmission) await loop.catch(() => {});
     else await loop;
     start.mockRestore();
     costGate?.mockRestore();

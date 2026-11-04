@@ -115,6 +115,10 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
   and session/context recovery restarts, including after asynchronous feedback
   or projection. Without an explicit abort, those recovery policies remain in
   effect. Suppressing a restart MUST NOT reclassify the accepted terminal.
+  Once a canonical terminal is accepted, inactivity callbacks MUST NOT replace
+  a pending explicit abort with recovery while terminal emission is awaiting.
+  Physical completion or an aborted signal does not consume that cancellation
+  intent; only the current owner may settle it and preserve successors dormant.
 - Only the current live-slot owner may mutate shared successor stash, remove
   the live handle, reset session continuity, or publish its current-state
   snapshots. Ownership MUST be checked at the mutation after every intervening

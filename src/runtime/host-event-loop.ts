@@ -1390,6 +1390,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     timeoutMs: number;
   }): void => {
     if (!ownsRuntimeSlot()) return;
+    // A terminal already accepted by the host is settling the explicit abort.
+    // A lease firing during its asynchronous emission must not replace that
+    // intent with inactivity recovery. Before a terminal, keep the watchdog.
+    if (streaming.pendingAbort && streaming.currentCrashRecoveryTerminal) return;
     const seconds = Math.round(input.timeoutMs / 1000);
     const subject = input.kind === "tool" ? `o tool \`${input.name}\`` : "o provider";
     const attempts = (inactivityRecoveryAttempts.get(sessionName) ?? 0) + 1;
@@ -1954,7 +1958,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   // Cancellation is distinct from provider selection: recovery exits must
   // settle an explicit abort without turning it into a new physical delivery.
   const finishPendingTerminalAbort = (pendingAbortBeforeCleanup?: string): boolean => {
-    if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) return false;
+    if (!ownsRuntimeSlot()) return false;
     if (!streaming.pendingAbort && !pendingAbortBeforeCleanup) return false;
     stashOwnedPendingMessages({ crashRecovery });
     streaming.internalAbortReason = pendingAbortBeforeCleanup ?? streaming.internalAbortReason ?? "deferred_abort";
