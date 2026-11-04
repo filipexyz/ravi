@@ -846,6 +846,7 @@ export interface ChannelBackendRuntimeStateRecord {
 }
 
 export class ChannelBackendRuntimeOwnershipLostError extends Error {
+  /** Identifies a rejected projection owner fence so callers can stop without emitting a terminal. */
   constructor() {
     super("Channel runtime projection no longer owns the request");
     this.name = "ChannelBackendRuntimeOwnershipLostError";
@@ -869,6 +870,7 @@ export interface RecordChannelBackendRuntimeEventInput {
 export interface RecordChannelBackendRuntimeEventResult {
   receipt: ChannelBackendIngressReceiptRecord;
   runtime: ChannelBackendRuntimeStateRecord;
+  /** Committed with the terminal; permits local readiness updates but does not prove sink delivery. */
   slackTerminalManifest?: SlackAutomaticTerminalManifest;
 }
 
@@ -3726,6 +3728,10 @@ const CHANNEL_OUTBOUND_RECEIPT_COLUMNS = [
 
 type ChannelOutboundReceiptTable = "channel_outbound_receipts" | "channel_outbound_receipts_next";
 
+/**
+ * Creates the receipt table within the caller's schema transaction. Suppression
+ * and identity-retention fields describe local resend policy, not remote delivery.
+ */
 function createChannelOutboundReceiptTable(database: Database, table: ChannelOutboundReceiptTable): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS ${table} (
@@ -3758,6 +3764,11 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
   `);
 }
 
+/**
+ * Locks before inspecting the receipt schema so concurrent initializers cannot
+ * migrate from stale metadata. Table reconciliation and indexes commit together;
+ * any failure rolls back rather than publishing a partially migrated schema.
+ */
 function ensureChannelOutboundReceiptSchema(database: Database): void {
   // Acquire the write lock before inspecting the schema. A daemon and CLI can
   // initialize the same database concurrently; reading metadata before this
@@ -3811,6 +3822,11 @@ function ensureChannelOutboundReceiptSchema(database: Database): void {
   }
 }
 
+/**
+ * Rebuilds receipts inside the caller's transaction, preserving available keys,
+ * recognized states and retention flags, with defaults for legacy columns.
+ * A missing idempotency_key column is rejected; this helper owns no transaction.
+ */
 function migrateChannelOutboundReceiptSchema(
   database: Database,
   columns: ReadonlySet<string>,
@@ -7490,12 +7506,22 @@ export function dbGetChannelBackendRuntimeState(turnId: string): ChannelBackendR
   return row ? rowToChannelBackendRuntimeState(row) : null;
 }
 
+/**
+ * Commits sequence/state, optional canonical assistant text and a prepared Slack
+ * manifest on one connection in executeWrite's synchronous retryable transaction.
+ * The manifest must match the accepted ingress and requested terminal kind.
+ * The pure owner fence is rechecked on each attempt and before mutations; a
+ * rejected owner, transition or manifest rolls back every new write in that
+ * attempt. Callers prepare hashes beforehand and defer cleanup, readiness and
+ * external output until this function returns a committed result.
+ */
 export function dbRecordChannelBackendRuntimeEvent(
   input: RecordChannelBackendRuntimeEventInput,
 ): RecordChannelBackendRuntimeEventResult {
   return executeWrite(
     getDb(),
     (database) => {
+      /** Rejects a lost owner inside the current transaction, allowing its writes to roll back. */
       const assertOwner = () => {
         if (input.mayWrite && input.mayWrite() !== true) throw new ChannelBackendRuntimeOwnershipLostError();
       };

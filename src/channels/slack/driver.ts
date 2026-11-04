@@ -32,6 +32,11 @@ export interface SlackNativeChannelDriverOptions {
 
 const log = logger.child("channels:slack:driver");
 
+/**
+ * Builds the Slack driver contract without starting a connection. Runtime
+ * creation resolves credentials and installs host sinks; outbound jobs use
+ * the durable publisher unless the caller supplies a replacement.
+ */
 export function createSlackNativeChannelDriver(
   env: NodeJS.ProcessEnv = process.env,
   options: SlackNativeChannelDriverOptions = {},
@@ -46,6 +51,12 @@ export function createSlackNativeChannelDriver(
 
   return {
     descriptor,
+    /**
+     * Resolves a native runtime for the configured channel and registers its
+     * terminal-output and commentary sinks. A missing runtime is a credentials
+     * contract error. The returned start/stop methods own the socket lifecycle;
+     * stop unregisters both sinks before awaiting socket shutdown.
+     */
     async createRuntime(context) {
       const channel: ChannelConfig = {
         name: context.channel.name,
@@ -87,6 +98,13 @@ export function createSlackNativeChannelDriver(
           connectionId: native.accountId,
         },
         {
+          /**
+           * Publishes final text or a safe error with binding-derived automatic
+           * provenance and a stable output-id key. Assistant output requires
+           * a canonical message id or fails before publication. Resolution is
+           * a publication handoff, not a Slack delivery receipt; a deferred
+           * result from the durable publisher is logged without rejecting.
+           */
           async emit(envelope) {
             const target = decodeSlackBackendConversationId(envelope.target.conversationId);
             const canonicalMessageId =
@@ -125,6 +143,12 @@ export function createSlackNativeChannelDriver(
           connectionId: native.accountId,
         },
         {
+          /**
+           * Projects commentary only, using the event id for publication
+           * identity and the binding for automatic-output policy. Commentary
+           * requires an external target; other runtime events are ignored.
+           * Publication completion does not establish provider delivery.
+           */
           async emit(event, externalTarget) {
             if (event.kind !== "turn.assistant_message" || event.payload.phase !== "commentary") return;
             if (!externalTarget) {

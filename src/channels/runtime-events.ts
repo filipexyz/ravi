@@ -408,6 +408,13 @@ export function setChannelRuntimeGenerationIdForTests(generationId?: string): vo
     : newRuntimeGenerationId();
 }
 
+/**
+ * Projects provider events onto the accepted channel binding, rechecking the
+ * optional owner fence after awaits and within each synchronous DB attempt.
+ * Terminal preparation has no persistence effects; afterRecordEvent runs only
+ * after the runtime state and any assistant row/manifest commit together.
+ * Sink failures propagate after projection and do not roll back committed state.
+ */
 export async function projectChannelRuntimeEvent(input: {
   metadata: ChannelBackendPromptMetadata;
   event: RuntimeEvent;
@@ -431,10 +438,12 @@ export async function projectChannelRuntimeEvent(input: {
   const sinks = input.sinks ?? channelRuntimeEventSinks;
   const projected: KnownChannelRuntimeEvent[] = [];
   let dispatchError: unknown;
+  /** Records only while authorized and retains the first post-commit dispatch error. */
   const append = async (eventInput: RecordAndEmitInput) => {
     if (input.beforeRecordEvent?.(eventInput.state) === false) return;
     const recorded = await recordAndEmit({
       ...eventInput,
+      /** Re-evaluates the pure owner fence per DB attempt; an installed fence must return true. */
       mayWrite: () => (input.beforeRecordEvent ? input.beforeRecordEvent(eventInput.state) === true : true),
       afterRecordEvent: input.afterRecordEvent,
       prepareTerminalManifest: input.prepareTerminalManifest,
@@ -721,6 +730,11 @@ interface RecordAndEmitInput {
   afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined, manifest?: SlackAutomaticTerminalManifest) => void;
 }
 
+/**
+ * Validates a terminal output envelope without emitting it. Only completed text
+ * or a failed turn's safe error produces an envelope; its semantic ID, binding
+ * and destination remain those of the accepted request.
+ */
 function prepareTerminalOutput(input: RecordAndEmitInput): ChannelOutputEnvelope | undefined {
   if (
     input.kind !== "turn.terminal_output" ||
@@ -748,6 +762,14 @@ function prepareTerminalOutput(input: RecordAndEmitInput): ChannelOutputEnvelope
   });
 }
 
+/**
+ * Prepares output before atomically recording runtime state and its manifest.
+ * Ownership loss returns without projection; other preparation/DB errors throw
+ * without consuming the pending reply. After commit, the local callback and
+ * registry cleanup precede notification and output, whose sinks are attempted
+ * independently. A returned dispatchError does not undo the commit or establish
+ * remote delivery, and this function provides no autonomous output retry.
+ */
 async function recordAndEmit(
   input: RecordAndEmitInput,
 ): Promise<{ event: KnownChannelRuntimeEvent; dispatchError?: unknown } | undefined> {

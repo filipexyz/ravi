@@ -22,6 +22,10 @@ export interface SlackMessageEventIgnoreOptions {
   readonly selfUserId?: string;
 }
 
+/**
+ * Returns a complete policy without mutating input. Each absent or unrecognized
+ * field independently falls back to the built-in policy, preserving valid peers.
+ */
 export function normalizeSlackRoutingPolicy(input: Partial<SlackRoutingPolicy> = {}): SlackRoutingPolicy {
   return {
     subscriptionScope: isSlackSubscriptionScope(input.subscriptionScope)
@@ -44,6 +48,10 @@ export function slackRoutingPolicyFromEnv(env: NodeJS.ProcessEnv = process.env):
   });
 }
 
+/**
+ * Resolves each field from valid channel defaults, then the environment, then
+ * built-in defaults. Invalid channel values do not mask a valid environment value.
+ */
 export function slackRoutingPolicyFromChannelDefaults(
   defaults: Record<string, unknown> | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -93,6 +101,12 @@ export function slackPeerKindForChannelType(channelType: string | undefined): "d
   return channelType === "im" ? "dm" : "group";
 }
 
+/**
+ * Rejects structurally unsupported events, unidentified senders and local-bot
+ * echoes. Bot candidates require at least one known local identity for the
+ * self check; eligible foreign bots need no mention or addressing prefix.
+ * Installation proof and route/channel admission remain caller responsibilities.
+ */
 export function shouldIgnoreSlackMessageEvent(
   event: SlackEventPayload,
   options: SlackMessageEventIgnoreOptions = {},

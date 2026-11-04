@@ -1144,6 +1144,17 @@ export class Gateway {
     }
   }
 
+  /**
+   * Traces a response, handles Knowledge markers and attempts its deliverable
+   * parts sequentially. Non-chat destinations, missing target/emit identity,
+   * silence and empty content produce dropped observations rather than sends.
+   * Original media descriptors and media-only ordinals survive normalization
+   * for frozen-manifest validation. Automatic generated files are cleaned only
+   * when every media part returns a cleanup candidate, preserving shared paths
+   * when a member remains pending, unknown or failed. Part delivery is not a
+   * transaction: a later failure cannot undo earlier remote output, and this
+   * handler supplies no durable publication/replay queue for media.
+   */
   private async handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void> {
     this.recordResponseTrace(sessionName, response);
 
@@ -1300,6 +1311,15 @@ export class Gateway {
     };
   }
 
+  /**
+   * Applies the Knowledge egress guard before constructing a part response or
+   * publishing/sending text. Native output enters the durable outbox and reports
+   * queued, policy-suppressed or failed publication separately; queued is not
+   * provider acceptance. A deferred publication reports its retry time, while
+   * a thrown local-outbox error is reported as nonretryable.
+   * Other transports send through Omni and schedule TTS after delivery telemetry.
+   * Drops and caught failures are observations, not a successful-send return value.
+   */
   private async deliverResponseTextPart(
     sessionName: string,
     response: ResponseMessage,
@@ -1447,6 +1467,18 @@ export class Gateway {
     }
   }
 
+  /**
+   * Routes automatic Slack media through manifest admission and durable receipt
+   * recovery before the ordinary event-deduplicated Slack/Omni send path.
+   * Returns a cleanup candidate only for automatic delivered or policy-suppressed
+   * outcomes, including a previously persisted delivery; this does not imply a
+   * fresh upload. Pending, unknown and failed outcomes retain their source files.
+   * Ordinary sends clean generated files per part after delivery telemetry.
+   *
+   * @param originalMedia Descriptor frozen before any Knowledge caption filtering.
+   * @param mediaIndex Ordinal within the complete media set, unlike partIndex,
+   * which also counts text parts in the deliverable response.
+   */
   private async deliverResponseMediaPart(
     sessionName: string,
     response: ResponseMessage,
@@ -1456,6 +1488,11 @@ export class Gateway {
     originalMedia: ResponseMediaAttachment = media,
     mediaIndex = 0,
   ): Promise<ResponseMediaAttachment | undefined> {
+    /**
+     * Adds normalized media metadata and the visible part index to observations,
+     * preserving a canonical receipt key supplied by automatic delivery instead
+     * of replacing it with the attachment's optional idempotency key.
+     */
     const emitDelivery = (data: Record<string, unknown>) =>
       this.emitDeliveryEvent(sessionName, response, {
         ...data,
@@ -1473,6 +1510,10 @@ export class Gateway {
       const automatic = await deliverSlackAutomaticMedia(
         { sessionName, response, target, media: { ...originalMedia, ...media }, originalMedia, mediaIndex },
         {
+          /**
+           * Uploads to the destination authorized by the automatic-media helper,
+           * passing its verified Buffer intact so the mutable path is not reread.
+           */
           send: ({ target: authorizedTarget, media: authorizedMedia, fileBytes }) =>
             sendSlackMedia({
               accountId: authorizedTarget.accountId,
@@ -1483,6 +1524,10 @@ export class Gateway {
               filename: authorizedMedia.filename,
               caption: authorizedMedia.caption,
             }),
+          /**
+           * Adds elapsed time to the receipt helper's observation. Connection
+           * flush confirmation remains the separate flushTelemetry callback.
+           */
           emitDelivery: (data) => emitDelivery({ ...data, durationMs: Date.now() - t0 }),
           flushTelemetry: flushNatsConnection,
         },

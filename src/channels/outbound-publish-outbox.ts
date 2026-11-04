@@ -152,6 +152,12 @@ export const sqliteChannelOutboundPublishOutboxStore: ChannelOutboundPublishOutb
   summary: getChannelOutboundPublishOutboxSummary,
 };
 
+/**
+ * Saves a pending publication in an IMMEDIATE transaction, checking permanent
+ * suppression before inserting payload. Reusing a key with the same request
+ * fingerprint preserves its disposition; a different fingerprint throws.
+ * A suppressed identity therefore cannot regain content or become pending.
+ */
 export function saveChannelOutboundPublishJob(job: ChannelOutboundJob, now = Date.now()): ChannelOutboundPublishRecord {
   ensureChannelOutboundPublishOutboxSchema();
   const key = requireText(job.request.idempotencyKey, "idempotencyKey");
@@ -196,6 +202,11 @@ export function saveChannelOutboundPublishJob(job: ChannelOutboundJob, now = Dat
     .immediate();
 }
 
+/**
+ * Looks up publication state, preferring its permanent suppression tombstone.
+ * Suppressed results deliberately have no job payload; absence returns null.
+ * Neither an active record nor its publication status confirms provider delivery.
+ */
 export function getChannelOutboundPublishJob(idempotencyKey: string): ChannelOutboundPublishRecord | null {
   ensureChannelOutboundPublishOutboxSchema();
   const key = requireText(idempotencyKey, "idempotencyKey");
@@ -227,6 +238,11 @@ export function listDueChannelOutboundPublishJobs(
   return rows.map(rowToPublishRecord);
 }
 
+/**
+ * Records publisher success without reopening a suppressed identity or
+ * replacing its first published timestamp. Returns current state, which may
+ * already be suppressed by a competing consumer; this is not a send receipt.
+ */
 export function markChannelOutboundPublishJobPublished(
   idempotencyKey: string,
   publishedAt = Date.now(),
@@ -248,7 +264,12 @@ export function markChannelOutboundPublishJobPublished(
   return requireChannelOutboundPublishJob(key);
 }
 
-/** Policy suppression is a terminal disposition, never a successful publication. */
+/**
+ * Updates the publication and copies its compact suppression tombstone in one
+ * IMMEDIATE transaction. Replays preserve the original terminal reason and
+ * prior publication timing. Suppression does not prove the absence of an
+ * earlier publish, nor cancel a publisher that already holds a pending snapshot.
+ */
 export function markChannelOutboundPublishJobSuppressed(
   idempotencyKey: string,
   reason: string,
@@ -276,6 +297,11 @@ export function markChannelOutboundPublishJobSuppressed(
     .immediate();
 }
 
+/**
+ * Records an error and the next backoff only while the publication is pending.
+ * Published/suppressed state wins over this update, including races; callers
+ * must inspect the returned status before assuming a retry was scheduled.
+ */
 export function recordChannelOutboundPublishJobFailure(
   idempotencyKey: string,
   error: unknown,
@@ -414,6 +440,12 @@ export function getChannelOutboundPublishOutboxSummary(_now = Date.now()): Chann
   };
 }
 
+/**
+ * Prunes payload rows by publishedAt for published jobs, or updatedAt for
+ * suppressed jobs only when a same-fingerprint compact tombstone exists.
+ * Never deletes those terminal tombstones. Rejects nonfinite/future cutoffs
+ * and returns the number of payload rows removed.
+ */
 export function prunePublishedChannelOutboundPublishJobs(cutoff: number, now = Date.now()): number {
   ensureChannelOutboundPublishOutboxSchema();
   const normalizedCutoff = finiteNumber(cutoff);
@@ -434,6 +466,15 @@ export function prunePublishedChannelOutboundPublishJobs(cutoff: number, now = D
     .run(normalizedCutoff, normalizedCutoff).changes;
 }
 
+/**
+ * Saves before calling the publisher, then reports published, suppressed, or
+ * deferred with the stored retry time. Existing terminal state skips publishing;
+ * state is read back after the await and on failure so suppression cannot reopen.
+ * A concurrent suppression may yield `publishedNow: false` even though this
+ * call reached the publisher. A deferred record can already be published if
+ * another writer won; queue publication never proves provider delivery.
+ * Save/store errors can still propagate instead of producing a deferred result.
+ */
 export async function publishChannelOutboundJobDurably(
   job: ChannelOutboundJob,
   options: {
@@ -474,6 +515,14 @@ export async function publishChannelOutboundJobDurably(
   }
 }
 
+/**
+ * Publishes a bounded due batch and records retry backoff on failure. Coalesces
+ * only recognized provider-unavailable notices sharing the full destination,
+ * checking bounded backlog candidates outside the due batch as well.
+ * Suppression is rechecked around publishing, but this is not a publisher lock:
+ * competing calls can overlap. `attempted` counts selected candidates, including
+ * ones later skipped as suppressed, rather than actual publisher invocations.
+ */
 export async function reconcileDueChannelOutboundPublishes(
   options: {
     store?: ChannelOutboundPublishOutboxStore;
@@ -638,6 +687,12 @@ const COPY_SUPPRESSION_TOMBSTONES_SQL = `
          attempt_count, published_at, COALESCE(suppression_reason, 'outbound_policy'), created_at, updated_at
   FROM channel_outbound_publish_jobs WHERE status = 'suppressed'`;
 
+/**
+ * Acquires an IMMEDIATE lock before inspecting/upgrading the schema; the local
+ * table-creation helper shares that transaction. Backfills compact tombstones
+ * before suppressed payloads become eligible for pruning. Caches initialization
+ * per database object only after commit, and rolls back a failed upgrade.
+ */
 function ensureChannelOutboundPublishOutboxSchema(): void {
   const database = getDb();
   if (initializedPublishDatabases.has(database)) return;
@@ -721,6 +776,11 @@ function selectChannelOutboundPublishRow(idempotencyKey: string): ChannelOutboun
   );
 }
 
+/**
+ * Requires a record, giving a permanent tombstone precedence over payload.
+ * Throws when neither exists; callers must discriminate status before reading
+ * job content because suppressed results intentionally omit it.
+ */
 function requireChannelOutboundPublishJob(idempotencyKey: string): ChannelOutboundPublishRecord {
   const suppressed = selectChannelOutboundSuppression(idempotencyKey);
   if (suppressed) return rowToSuppressedPublishRecord(suppressed);
@@ -729,6 +789,11 @@ function requireChannelOutboundPublishJob(idempotencyKey: string): ChannelOutbou
   return rowToPublishRecord(row);
 }
 
+/**
+ * Discriminates suppression before parsing payload JSON, so suppressed records
+ * never expose or require job content. Active records parse their stored job
+ * and propagate malformed JSON errors to the caller.
+ */
 function rowToPublishRecord(row: ChannelOutboundPublishRow): ChannelOutboundPublishRecord {
   if (row.status === "suppressed") return rowToSuppressedPublishRecord(row);
   const parsed = JSON.parse(row.payload_json) as ChannelOutboundJob;
@@ -751,6 +816,10 @@ function rowToPublishRecord(row: ChannelOutboundPublishRow): ChannelOutboundPubl
   };
 }
 
+/**
+ * Reads the compact terminal identity for the exact key, or null if absent.
+ * Assumes schema initialization; performs no reservation or state transition.
+ */
 function selectChannelOutboundSuppression(idempotencyKey: string): ChannelOutboundSuppressionRow | null {
   return (
     (getDb()
@@ -759,6 +828,11 @@ function selectChannelOutboundSuppression(idempotencyKey: string): ChannelOutbou
   );
 }
 
+/**
+ * Maps a compact tombstone without reading/parsing payload JSON. Keeps any
+ * earlier publishedAt value: terminal suppression does not prove the job was
+ * never published, and the returned record intentionally carries no content.
+ */
 function rowToSuppressedPublishRecord(row: ChannelOutboundSuppressionRow): ChannelOutboundSuppressedPublishRecord {
   return {
     idempotencyKey: row.idempotency_key,

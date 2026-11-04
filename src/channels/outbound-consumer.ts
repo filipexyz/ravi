@@ -295,6 +295,22 @@ export function acknowledgeChannelOutboundMessage(
   msg.nak(result.retryable ? (result.nakDelayMs ?? missingAdapterRetryDelayMs(undefined)) : result.nakDelayMs);
 }
 
+/**
+ * Processes a publication wrapper, using a validated automatic text part's
+ * canonical key/fingerprint for its send receipt and provider token. Automatic
+ * origins still use the ledger when `persistDelivery` is false; ordinary jobs
+ * may explicitly bypass it. On the ledger path only an acquired owner sends;
+ * busy leases defer, while sent/persisted receipts resume missing bookkeeping.
+ *
+ * The last-hop guard runs before delivery. Changed frozen bytes close the part
+ * as an integrity failure; an observed send resumes with its original text.
+ * Provider acceptance before receipt persistence remains ambiguous and cannot
+ * be rolled back or treated as an exactly-once guarantee.
+ *
+ * `disposition` controls queue ACK/NAK, independently of delivery `status` and
+ * `retryable`: a delivered result may need bookkeeping retried, and a terminal
+ * integrity failure may NAK with a delay solely to retry its telemetry.
+ */
 export async function processChannelOutboundJob(
   inputJob: ChannelOutboundJob,
   options: ChannelOutboundConsumerOptions,
@@ -667,6 +683,15 @@ type PreparedSlackAutomaticText =
   | { kind: "suppressed"; reason: string }
   | { kind: "terminal"; manifest: SlackAutomaticTerminalManifest; partId: string; partFingerprint: string };
 
+/**
+ * Classifies a job as unrelated, suppressed, or an exact frozen terminal text
+ * part by checking durable origin, session/chat/destination, manifest and bytes.
+ * A terminal fingerprint combines the manifest fingerprint and canonical part
+ * ID; publication/emit IDs only correlate wrappers and do not define the part.
+ * Expected origin and membership failures become suppression classifications;
+ * unexpected origin-resolution or manifest-read errors propagate for retry.
+ * This preparation neither reserves admission nor writes a send receipt.
+ */
 function prepareSlackAutomaticText(job: ChannelOutboundJob): PreparedSlackAutomaticText {
   const suppressed = (reason: string): PreparedSlackAutomaticText => ({ kind: "suppressed", reason });
   let context;
@@ -714,6 +739,11 @@ function prepareSlackAutomaticText(job: ChannelOutboundJob): PreparedSlackAutoma
   return { kind: "terminal", manifest, partId, partFingerprint };
 }
 
+/**
+ * Reserves durable admission for a terminal response, shared by all its parts;
+ * this is not a read-only policy check. Returns a reason closing this candidate,
+ * or null for admitted/unrelated output, preserving any prepared suppression.
+ */
 function automaticSlackSuppressionReason(automatic: PreparedSlackAutomaticText, now: number): string | null {
   if (automatic.kind === "unrelated") return null;
   if (automatic.kind === "suppressed") return automatic.reason;
@@ -729,6 +759,14 @@ function automaticSlackSuppressionReason(automatic: PreparedSlackAutomaticText, 
   return decision.status === "suppressed" ? (decision.reason ?? "slack_bot_reply_cooldown") : null;
 }
 
+/**
+ * Finalizes a terminal receipt readback without reopening its send. An egress
+ * integrity conflict stays failed/nonretryable and never creates a policy
+ * outbox tombstone; telemetry failure NAKs with a delay to retry reporting only.
+ * Other reasons close an existing active publication after fingerprint checks,
+ * then emit/flush a dropped policy disposition before ACK. Those retries may
+ * repeat publication bookkeeping and telemetry, but cannot send the part.
+ */
 async function acknowledgeSuppressedReceipt(
   job: ChannelOutboundJob,
   receipt: ChannelOutboundReceipt,
@@ -888,6 +926,12 @@ function findNativeOutboundAdapter(
     : options.actionDeliveries?.find((candidate) => candidate.supports(target));
 }
 
+/**
+ * Calls the native adapter; the caller owns claim acquisition and receipt
+ * persistence. An automatic argument must come from validated preparation:
+ * its canonical part supplies the token and frozen target, and only that text
+ * path receives `_trustedFrozenTarget`. Missing adapter capabilities throw.
+ */
 async function executeNativeOutbound(
   job: ChannelOutboundJob,
   adapter: NativeOutboundDelivery,
@@ -1342,6 +1386,14 @@ function deliveryResultFromReceipt(receipt: ChannelOutboundReceipt): NativeOutbo
   };
 }
 
+/**
+ * Projects an observed send receipt into telemetry without emitting it.
+ * `idempotencyKey` identifies the receipt's send unit, which may render as multiple
+ * physical posts; a distinct wrapper key is retained as `publicationIdempotencyKey`.
+ * The receipt supplies the delivery result and provider timestamp; chat-action
+ * metadata may override providerMessageId/canonicalMessageId with the action's
+ * target. Publication success alone is not sufficient input for this helper.
+ */
 function deliveredPayload(
   job: ChannelOutboundJob,
   receipt: ChannelOutboundReceipt,
@@ -1388,6 +1440,13 @@ function outboundContentTelemetry(job: ChannelOutboundJob): Record<string, unkno
   return { contentType: String((content as { type?: unknown }).type ?? "unknown") };
 }
 
+/**
+ * Reports an observed provider send with a failed follow-up phase, recording
+ * the phase against the receipt when possible. Canonical-persistence contract
+ * errors ACK; other errors NAK while retaining delivery status. A `receipt_write`
+ * failure may leave only a claim, so this result does not guarantee a durable
+ * send receipt or restrict every later attempt to bookkeeping.
+ */
 function postSendPhaseFailure(
   job: ChannelOutboundJob,
   receipt: ChannelOutboundReceipt | null,
@@ -1427,6 +1486,12 @@ function postSendPhaseFailure(
   };
 }
 
+/**
+ * Closes a permanent canonical-persistence rejection after a durable send.
+ * The provider effect remains delivered: emit/flush the rejection before
+ * terminalizing its receipt. Reporting or completion failure NAKs so a later
+ * attempt can finish bookkeeping from that receipt without another send.
+ */
 async function finalizePermanentCanonicalPersistenceError(input: {
   job: ChannelOutboundJob;
   receipt: ChannelOutboundReceipt;

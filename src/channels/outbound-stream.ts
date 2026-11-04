@@ -269,6 +269,13 @@ export async function publishChannelOutboundJob(job: ChannelOutboundJob): Promis
   throw lastError;
 }
 
+/**
+ * Builds, but does not publish, a text job; returns a reason when target, emit
+ * ID or text is missing, or the text is a silence-only marker. Slack Markdown
+ * travels unchanged and automatic origin metadata is copied for later checks.
+ * The wrapper key derives from session, emit and destination; it is distinct
+ * from the canonical automatic part identity validated by the consumer.
+ */
 export function buildChannelOutboundJobFromResponse(
   sessionName: string,
   response: ResponseMessage,
@@ -334,6 +341,12 @@ export function buildChannelOutboundJobFromResponse(
   };
 }
 
+/**
+ * Builds an unsent job, trimming required identifiers and rejecting blank text
+ * while retaining the original text bytes and target object. Copies automatic
+ * origin metadata but does not validate a terminal manifest or grant frozen
+ * target treatment/authority; those checks belong to the delivery boundary.
+ */
 export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput): ChannelOutboundJob {
   const requestId = input.requestId.trim();
   const sessionName = input.sessionName.trim();

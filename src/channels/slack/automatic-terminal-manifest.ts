@@ -33,7 +33,16 @@ export interface SlackAutomaticTerminalManifest {
   mediaAvailabilityErrors: readonly ("file_unavailable" | null)[];
 }
 
-/** Hash identities and part membership only; do not duplicate bodies or file paths in the ledger. */
+/**
+ * Prepare terminal identity and ordered membership without persisting anything.
+ * The caller must supply an already authorized canonical target and trusted local
+ * acceptance time. Descriptor hashes and file-byte hashes are separate; an
+ * unavailable file retains its ordinal with a sanitized error and null byte hash.
+ *
+ * This records digests, not bodies, file paths or a snapshot of attachment bytes.
+ * It does not Object.freeze the result: keep the prepared object unchanged until
+ * persistence, and verify current bytes again before a fresh upload.
+ */
 export function prepareSlackAutomaticTerminalManifest(
   input: SlackAutomaticTerminalManifestInput,
 ): SlackAutomaticTerminalManifest {
@@ -70,7 +79,16 @@ export function prepareSlackAutomaticTerminalManifest(
   return { ...content, requestFingerprint: fingerprint(content) };
 }
 
-/** Persist within the caller's transaction, without reading attachment files again. */
+/**
+ * Persist an unchanged prepared manifest using the caller's initialized Database
+ * and transaction, without opening a transaction or rereading attachment files.
+ * To commit it atomically with runtime terminal state, both writes must share
+ * that same Database and transaction.
+ *
+ * Reusing an ID with the same fingerprint returns the saved manifest. A conflicting
+ * fingerprint leaves the original row intact and throws; this does not recompute
+ * hashes, authorize the target, reserve quota or prove transport delivery.
+ */
 export function persistPreparedSlackAutomaticTerminalManifest(
   database: Database,
   prepared: SlackAutomaticTerminalManifest,
@@ -86,6 +104,12 @@ export function persistPreparedSlackAutomaticTerminalManifest(
   return saved;
 }
 
+/**
+ * Prepare outside an IMMEDIATE transaction, then persist within it. This wrapper
+ * records only the manifest, not a runtime terminal event; use prepare/persist
+ * with the caller's shared transaction when both records must commit together.
+ * Reinvocation hashes files again and can conflict if their bytes changed.
+ */
 export function freezeSlackAutomaticTerminalManifest(
   input: SlackAutomaticTerminalManifestInput,
 ): SlackAutomaticTerminalManifest {
@@ -94,6 +118,12 @@ export function freezeSlackAutomaticTerminalManifest(
   return database.transaction(() => persistPreparedSlackAutomaticTerminalManifest(database, prepared)).immediate();
 }
 
+/**
+ * Derive one response ID from turn, account, instance, chat and optional thread.
+ * Content, outcome, source and canonicalChatId are excluded from this ID; changes
+ * to those manifest fields instead conflict through the full request fingerprint.
+ * The target must already use authorized canonical account names, not aliases.
+ */
 export function slackAutomaticTerminalResponseId(turnId: string, target: MessageTarget): string {
   requireText(turnId, "turnId");
   const destination = canonicalTarget(target);
@@ -106,13 +136,23 @@ export function slackAutomaticTerminalResponseId(turnId: string, target: Message
   ])}`;
 }
 
+/**
+ * Read a saved manifest or null from the initialized database. Lookup neither
+ * admits output nor authorizes its destination or checks attachment availability.
+ */
 export function getSlackAutomaticTerminalManifest(responseId: string): SlackAutomaticTerminalManifest | null {
   requireText(responseId, "responseId");
   const database = getDb();
   return readManifest(database, responseId);
 }
 
-/** Returns a stable delivery identity for this exact frozen part, never for newly appended content. */
+/**
+ * Check membership and return the stable :text or :media:index delivery identity.
+ * Cancelled manifests reject every part; text must match its hash, and media must
+ * match the descriptor at a safe nonnegative ordinal. Equal descriptors at two
+ * ordinals remain distinct parts. This checks no current file bytes and does not
+ * establish manifest persistence, quota admission or delivery authorization.
+ */
 export function assertSlackAutomaticTerminalPart(
   manifest: SlackAutomaticTerminalManifest,
   part: { type: "text"; text: string } | { type: "media"; index: number; media: ResponseMediaAttachment },
@@ -134,7 +174,13 @@ export function assertSlackAutomaticTerminalPart(
   return `${manifest.responseId}:media:${part.index}`;
 }
 
-/** Read only for a fresh upload. Receipted retries must not need the local file. */
+/**
+ * Read only after receipt lookup establishes that a fresh upload is required;
+ * receipted retries must not depend on the local file. Reject a nonmember,
+ * originally unavailable member, unreadable file or changed byte digest.
+ * Pass the exact verified Buffer to transport rather than reopening its path,
+ * so upload uses the bytes checked here. This function does not persist the bytes.
+ */
 export function readSlackAutomaticTerminalMediaBytes(
   manifest: SlackAutomaticTerminalManifest,
   part: { index: number; media: ResponseMediaAttachment },
@@ -153,6 +199,11 @@ export function readSlackAutomaticTerminalMediaBytes(
   return bytes;
 }
 
+/**
+ * Hash observed file bytes with SHA-256 in 64 KiB chunks and close the descriptor
+ * even on read failure. Errors propagate for preparation to sanitize; this does
+ * not lock the file or retain a byte snapshot against concurrent modification.
+ */
 function fingerprintMediaFile(filePath: string): string {
   const descriptor = openSync(filePath, "r");
   try {
@@ -166,6 +217,11 @@ function fingerprintMediaFile(filePath: string): string {
   }
 }
 
+/**
+ * Copy the supported Slack destination fields, requiring nonblank account,
+ * instance and chat strings and retaining truthy optional IDs. Values remain
+ * unnormalized: callers must resolve aliases and authorize the destination first.
+ */
 function canonicalTarget(target: MessageTarget): MessageTarget {
   if (target.channel !== "slack") throw new Error("Slack automatic terminal requires a Slack destination");
   requireText(target.accountId, "target.accountId");
@@ -181,6 +237,12 @@ function canonicalTarget(target: MessageTarget): MessageTarget {
   };
 }
 
+/**
+ * Hash JSON with recursively sorted object keys and original array order.
+ * JSON serialization semantics and SHA-256 together define persisted manifest
+ * identity; this is distinct from hashing raw file bytes. Unsupported top-level
+ * values or serialization errors throw rather than yielding an identity.
+ */
 function fingerprint(value: unknown): string {
   const canonical = JSON.stringify(value, (_key, item: unknown) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return item;
@@ -192,6 +254,10 @@ function fingerprint(value: unknown): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
+/**
+ * Deserialize a trusted stored row or return null. This neither validates the
+ * manifest shape nor recomputes its fingerprint; malformed stored JSON throws.
+ */
 function readManifest(database: Database, responseId: string): SlackAutomaticTerminalManifest | null {
   const row = database
     .prepare("SELECT manifest_json FROM slack_automatic_terminal_manifests WHERE response_id = ?")
@@ -199,6 +265,7 @@ function readManifest(database: Database, responseId: string): SlackAutomaticTer
   return row ? (JSON.parse(row.manifest_json) as SlackAutomaticTerminalManifest) : null;
 }
 
+/** Reject blank identity fields without trimming the values used in fingerprints. */
 function requireText(value: unknown, field: string): asserts value is string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
 }

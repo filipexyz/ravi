@@ -161,6 +161,17 @@ export function getChannelOutboundReceipt(idempotencyKey: string): ChannelOutbou
   return row ? rowToReceipt(row) : null;
 }
 
+/**
+ * Atomically inserts or claims a matching key/fingerprint for an owner.
+ * Returns acquired for that owner, busy for a competing protected claim,
+ * existing for a post-claim state, or conflict for a different fingerprint.
+ * Reacquiring as the same owner does not renew the lease. Another owner can
+ * take over an expired/absent lease only when resend has not been prohibited.
+ *
+ * Matching requests may monotonically set `resendProhibited` (no takeover and
+ * no pruning) or `retainIdentity` (no pruning, but takeover remains possible).
+ * A fingerprint conflict returns before either flag can be promoted.
+ */
 export function claimChannelOutboundReceipt(input: {
   idempotencyKey: string;
   requestFingerprint: string;
@@ -399,7 +410,14 @@ export function markChannelOutboundReceiptComplete(
   return requireReceipt(key);
 }
 
-/** A policy disposition is terminal without claiming that any provider send occurred. */
+/**
+ * Closes a claimed key/fingerprint by owner-checked compare-and-swap, clearing
+ * owner/lease and retaining a terminal reason without asserting a provider send.
+ * Replay with the same fingerprint and reason returns the existing tombstone;
+ * any other lost claim throws. The physical suppressed state can also retain
+ * an integrity failure: callers must interpret its reason before reporting
+ * policy suppression or allowing cleanup.
+ */
 export function markChannelOutboundReceiptSuppressed(input: {
   idempotencyKey: string;
   requestFingerprint: string;
@@ -472,6 +490,12 @@ export function recordChannelOutboundReceiptError(
   return getChannelOutboundReceipt(key);
 }
 
+/**
+ * Removes rows last updated at/before cutoff and returns the number removed.
+ * Preserves suppressed, resend-prohibited and retain-identity rows regardless
+ * of age, plus claims whose lease is active at `now`. Both timestamps must be
+ * finite; expiring a lease does not discard the permanent retention flags.
+ */
 export function pruneExpiredChannelOutboundReceipts(cutoff: number, now = Date.now()): number {
   const normalizedCutoff = finiteNumber(cutoff);
   if (normalizedCutoff === null) throw new Error("cutoff must be a finite number");
@@ -503,6 +527,11 @@ function requireReceipt(idempotencyKey: string): ChannelOutboundReceipt {
   return rowToReceipt(row);
 }
 
+/**
+ * Projects SQL optional fields and permanent retention/resend flags without
+ * deriving a delivery outcome. In particular, suppressed state alone proves
+ * neither a send nor a policy disposition/cleanup permission; read its reason.
+ */
 function rowToReceipt(row: ChannelOutboundReceiptRow): ChannelOutboundReceipt {
   return {
     idempotencyKey: row.idempotency_key,

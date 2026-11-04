@@ -970,7 +970,14 @@ export interface RunRuntimeEventLoopOptions {
   onToolBarrierReleased?(sessionName: string): void | Promise<void>;
 }
 
-/** Process provider events from a streaming runtime session. */
+/**
+ * Processes a physical provider attempt while preserving the accepted logical
+ * channel request across authorized continuations. Physical trace/accounting is
+ * separate from logical terminal projection and its owner fences across awaits.
+ * Automatic Slack terminals commit with their manifest before output is released;
+ * pending media survives in-process handoff, not process loss. Publication does
+ * not establish remote delivery or exactly-once execution.
+ */
 export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): Promise<void> {
   const {
     runId,
@@ -1125,9 +1132,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const turnOutputCounts = { final: 0, commentary: 0 };
   let reportedTerminalUsage: Extract<RuntimeEvent, { type: "turn.complete" }>["usage"] | undefined;
   const turnToolContinuation = createTurnToolContinuationLedger();
+  /** Resolves or creates the pending reply for this logical binding, rejecting identity reuse after closure. */
   const automaticSlackReply = (
     metadata: ChannelBackendPromptMetadata | undefined = streaming.currentChannelBackend,
   ): AutomaticSlackReply | undefined => getSlackAutomaticPendingReply(metadata);
+  /**
+   * Releases members only from a frozen final manifest to its authorized destination.
+   * mediaReleased records that core NATS emit returned, not an upload receipt or
+   * remote delivery; attachment payloads are not persisted here for crash replay.
+   */
   const releaseAutomaticSlackMedia = async (reply: AutomaticSlackReply, metadata?: RuntimeEventMetadata) => {
     const manifest = reply.manifest;
     if (!manifest || manifest.kind !== "final_answer" || reply.mediaReleased || reply.media.length === 0) return;
@@ -1153,6 +1166,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     pendingGeneratedMedia = [];
     generatedMediaKeys.clear();
   };
+  /**
+   * Deduplicates generated attachments by key within the logical bot reply, or
+   * the existing per-attempt queue for other turns. Bot members remain in memory
+   * until terminal preparation; additions after a manifest exists are rejected.
+   */
   const queueGeneratedMedia = (attachment: ResponseMediaAttachment): boolean => {
     const key = attachment.idempotencyKey ?? attachment.filePath;
     const automaticReply = automaticSlackReply();
@@ -2060,6 +2078,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (pending) pending.safetyFenced = true;
   };
 
+  /**
+   * Projects against the supplied request binding and revalidated owner fence.
+   * A yielding physical attempt leaves its logical request open. For automatic
+   * Slack replies, preparation has no DB/cleanup effects and local readiness
+   * changes only after terminal/manifest commit; a later sink failure does not
+   * prevent releasing the committed final's media through its separate sink.
+   */
   const projectRuntimeEventToChannel = async (
     event: RuntimeEvent,
     projectedResponseText?: string,
@@ -2106,6 +2131,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
         ...(automaticReply
           ? {
+              /** Prepares terminal identity without DB writes or cleanup; only a final retains media. */
               prepareTerminalManifest: ({ state, output }) => {
                 const kind = state === "interrupted" ? "cancelled" : state === "failed" ? "safe_error" : "final_answer";
                 return prepareSlackAutomaticTerminalManifest({
@@ -2115,6 +2141,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   media: kind === "final_answer" ? automaticReply!.media : [],
                 });
               },
+              /** Marks local readiness only after commit and discards members of non-final terminals. */
               afterRecordEvent: (_state, manifest) => {
                 if (!manifest) return;
                 // The DB terminal and complete manifest committed together.
@@ -4058,6 +4085,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           streaming.pendingAbort ||
           isExplicitLocalRuntimeAbort(internalAbortReason) ||
           isExplicitLocalRuntimeAbort(streaming.internalAbortReason);
+        /**
+         * Rechecks logical projection ownership. An absent slot is sufficient
+         * only with a positive explicit-cancellation witness; physical closure
+         * or a replacement owner does not authorize this request's terminal.
+         */
         const mayProjectInterruptedRequest = () => {
           const owner = streamingSessions.get(sessionName);
           return (
@@ -4068,6 +4100,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 isExplicitLocalRuntimeAbort(streaming.internalAbortReason)))
           );
         };
+        /** Projects interruption for the captured accepted binding under the live owner fence. */
         const projectInterruptedRequest = async () => {
           if (!interruptedChannelBackend) return;
           await projectRuntimeEventToChannel(
@@ -4176,6 +4209,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // A physically closed/aborted handle is not evidence of an explicit
           // cancel request. Retain the existing replay fences and require the
           // current owner plus a positive cancellation check at the stash boundary.
+          /**
+           * Allows stashing only for the exact owner with no explicit cancellation.
+           * Physical done/abort flags are not cancellation witnesses; existing
+           * replay fences still govern stash acceptance, and callers must prove
+           * that the stash contains this full binding before deferring its terminal.
+           */
           const mayContinueInterruptedRequest = () =>
             streamingSessions.get(sessionName) === streaming &&
             !interruptedRecoveryCancelled &&

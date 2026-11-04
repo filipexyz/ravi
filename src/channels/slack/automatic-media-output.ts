@@ -30,6 +30,14 @@ export interface SlackAutomaticMediaInput {
   mediaIndex: number;
 }
 
+/**
+ * Distinguishes unrelated output from observed delivery, policy suppression,
+ * pending work, ambiguous upload and failure. newlySent concerns this invocation,
+ * not whether an earlier upload succeeded. Retryability and cleanup are separate:
+ * only delivered/policy-suppressed members are cleanup candidates. Integrity
+ * conflicts stay failed and nonretryable on replay; admission or telemetry alone
+ * never establishes delivery.
+ */
 export type SlackAutomaticMediaResult =
   | { handled: false }
   | {
@@ -55,9 +63,17 @@ export interface SlackAutomaticMediaDependencies {
 }
 
 /**
- * The terminal response owns the admission; its exact media members own send
- * receipts. An expired/failed upload claim is ambiguous and is never retried:
- * Slack's file upload API has no proven idempotency key for this operation.
+ * Delivers a validated bot terminal member with response-wide admission and a
+ * receipt keyed by its frozen ordinal. `originalMedia` is the frozen descriptor,
+ * not stored file bytes; only a filtered caption may differ in the delivery copy.
+ * A fresh upload reads/verifies bytes and passes that same Buffer to the sender.
+ *
+ * Without proven remote upload idempotency, an expired claim or upload/receipt
+ * write error is unknown and cannot be taken over for another upload. Durable
+ * success resumes bookkeeping without reopening the source file. Members
+ * unavailable at freeze and later content conflicts remain explicit failures.
+ * Returns handled:false for unrelated/human output. This helper deletes no
+ * files and its results do not grant cleanup for failed or ambiguous members.
  */
 export async function deliverSlackAutomaticMedia(
   input: SlackAutomaticMediaInput,
@@ -67,6 +83,10 @@ export async function deliverSlackAutomaticMedia(
   if (origin === undefined && input.response._automaticTerminalResponseId === undefined) return { handled: false };
   const now = dependencies.now ?? Date.now;
   const store = dependencies.receiptStore ?? sqliteChannelOutboundReceiptStore;
+  /**
+   * Emits and optionally flushes telemetry, converting reporting errors to
+   * false. This outcome says nothing about upload acceptance or receipt state.
+   */
   const emit = async (data: Record<string, unknown>): Promise<boolean> => {
     try {
       await dependencies.emitDelivery({ target: input.target, ...data });
@@ -76,6 +96,11 @@ export async function deliverSlackAutomaticMedia(
       return false;
     }
   };
+  /**
+   * Reports handled/failed with the caller's reason and retryability unchanged
+   * even if telemetry fails. Integrity failures remain failures, never a policy
+   * suppression or a signal that success cleanup is safe.
+   */
   const failed = async (
     reason: string,
     retryable = false,
@@ -128,6 +153,11 @@ export async function deliverSlackAutomaticMedia(
   const requestFingerprint = createHash("sha256")
     .update(JSON.stringify([manifest.requestFingerprint, idempotencyKey]))
     .digest("hex");
+  /**
+   * Reports an ambiguous upload without releasing/changing its claim owner,
+   * allowing a still-running owner to record a late result. Expiry or restart
+   * cannot authorize another upload, and telemetry failure stays nonretryable.
+   */
   const unknown = async (reason: string): Promise<SlackAutomaticMediaResult> => {
     // Keep the claim, including its owner, so even a late retry after restart
     // cannot treat this as an unsent fresh file. A still-running owner may
@@ -141,6 +171,11 @@ export async function deliverSlackAutomaticMedia(
       idempotencyKey,
     };
   };
+  /**
+   * Classifies a claimed receipt as pending only while its lease is active and
+   * no send/receipt-write error is recorded. Missing/expired leases or those
+   * errors return unknown, which must not be retried as a fresh upload.
+   */
   const pendingOrUnknown = async (receipt: ChannelOutboundReceipt): Promise<SlackAutomaticMediaResult> => {
     if (
       receipt.lastErrorPhase === "send" ||
@@ -153,6 +188,12 @@ export async function deliverSlackAutomaticMedia(
     await emit({ status: "queued", reason: "slack_media_claim_busy", retryable: true, idempotencyKey });
     return { handled: true, status: "pending", reason: "slack_media_claim_busy", retryable: true, idempotencyKey };
   };
+  /**
+   * Reads the tombstone reason, preserving media-content conflicts as failed
+   * and nonretryable on every replay. Policy/cooldown suppression has a distinct
+   * disposition that callers may clean up; its telemetry failure requests only
+   * a reporting retry and leaves the terminal upload identity closed.
+   */
   const suppressed = async (receipt: ChannelOutboundReceipt): Promise<SlackAutomaticMediaResult> => {
     const reason = receipt.suppressionReason ?? "slack_bot_reply_cooldown";
     // Content conflicts use the same terminal no-resend tombstone, but remain

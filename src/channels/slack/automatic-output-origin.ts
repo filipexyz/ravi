@@ -34,7 +34,11 @@ export interface SlackAutomaticOutputOriginDependencies {
 
 const bindingFields = ["channelInstanceId", "agentId", "chatId", "messageId", "sessionId", "turnId"] as const;
 
-/** Snapshot at projection time; the queue must not retain a mutable binding object. */
+/**
+ * Validate the six required binding strings, copy the binding, and freeze both
+ * objects so later mutation of the input cannot redirect queued output. This
+ * snapshot preserves field values; it does not establish ingress provenance.
+ */
 export function createChannelBackendAutomaticOutputOrigin(
   binding: ChannelBackendPromptMetadata["binding"],
 ): ChannelAutomaticOutputOrigin {
@@ -42,7 +46,17 @@ export function createChannelBackendAutomaticOutputOrigin(
   return Object.freeze({ kind: "channel_backend", binding: Object.freeze({ ...binding }) });
 }
 
-/** Resolve only the durable native ingress. Unknown actors are human when the canonical senderKind is user. */
+/**
+ * Match the complete binding to its durable ingress receipt and canonical input.
+ * Return null for non-Slack ingress, the sanctioned Ravi actor producer, or a
+ * canonical user sender regardless of actor resolution. Invalid native ingress
+ * throws SlackAutomaticOutputOriginError instead of escaping the automatic guard.
+ *
+ * Bot context uses the receipt's local acceptance time and authorized destination.
+ * Source and destination account aliases must resolve to the same installation;
+ * its quota scope is shared across threads in a channel, while the frozen target
+ * preserves the specific thread. No mutable session latest-source state is used.
+ */
 export function resolveSlackAutomaticOutputContextFromBinding(
   binding: ChannelBackendPromptMetadata["binding"],
   dependencies: SlackAutomaticOutputOriginDependencies = {},
@@ -117,7 +131,14 @@ export function resolveSlackAutomaticOutputContextFromBinding(
   });
 }
 
-/** Explicit actions and non-native responses have no automatic binding and remain outside this projection. */
+/**
+ * Resolve a job's durable automatic origin and validate both its request-level
+ * destination and nested target, including every supplied account/instance alias.
+ * A missing origin is out of scope only without an automatic terminal ID; other
+ * invalid origins or redirected destinations throw SlackAutomaticOutputOriginError.
+ * A null binding context remains outside this guard. A valid context establishes
+ * provenance and destination, not terminal membership or quota admission.
+ */
 export function resolveSlackAutomaticOutputContext(
   job: ChannelOutboundJob,
   dependencies: SlackAutomaticOutputOriginDependencies = {},
@@ -150,7 +171,13 @@ export function resolveSlackAutomaticOutputContext(
   return context;
 }
 
-/** Media uses this same destination check without fabricating a text delivery job. */
+/**
+ * Require Slack, the exact authorized chat/thread, and the same installation for
+ * every supplied account/instance alias. The context must already come from
+ * validated durable ingress; this check does not establish its provenance.
+ * Throws SlackAutomaticOutputOriginError on mismatch and also serves media
+ * without requiring a text delivery job.
+ */
 export function assertSlackAutomaticOutputTarget(
   context: SlackAutomaticOutputContext,
   target: MessageTarget,
@@ -173,6 +200,10 @@ export function assertSlackAutomaticOutputTarget(
   }
 }
 
+/**
+ * Resolve an alias only to a native Slack account; another adapter/provider is
+ * rejected with SlackAutomaticOutputOriginError rather than used as a fallback.
+ */
 function resolveNativeAccount(
   accountId: string,
   dependencies: SlackAutomaticOutputOriginDependencies,
@@ -184,10 +215,19 @@ function resolveNativeAccount(
   return account;
 }
 
+/**
+ * Define installation equivalence by the trimmed credential connection, falling
+ * back to channel name, then lowercasing. This normalization is part of persisted
+ * quota identity, so aliases of the same installation share the channel budget.
+ */
 function installationKey(account: Extract<OutboundAccountResolution, { kind: "native" }>): string {
   return (account.channel.credentialConnection?.trim() || account.channelName).toLowerCase();
 }
 
+/**
+ * Check required fields without normalizing their values; durable receipt
+ * comparison, not string presence, establishes the binding's provenance.
+ */
 function assertBinding(binding: ChannelBackendPromptMetadata["binding"]): void {
   if (!binding || bindingFields.some((field) => typeof binding[field] !== "string" || !binding[field].trim())) {
     invalid("binding malformed");

@@ -31,10 +31,25 @@ export interface SlackAutomaticPendingReply {
 // to a replaceable Database or RuntimeHostStreamingSession object.
 const pendingByDatabase = new Map<string, Map<string, SlackAutomaticPendingReply>>();
 
+/**
+ * Key process-local state by the SQLite file's real path, merging path aliases
+ * and surviving Database object reopen. The database path must exist and resolve.
+ */
 function databaseKey(): string {
   return realpathSync(getDb().filename);
 }
 
+/**
+ * Get or create the mutable reply accumulator for this physical database and
+ * turn after validating durable ingress. Return undefined for out-of-scope input;
+ * mismatched source, acceptance time, scope, target or binding throws.
+ * A persisted manifest or terminal runtime state discards the registry entry
+ * and throws, preventing a terminal logical reply from being opened again.
+ *
+ * The accumulator survives provider relaunch and Database reopen in this process,
+ * but is lost on process exit. Its media descriptors are not a durable outbox,
+ * and a locally prepared manifest alone does not establish durable terminal state.
+ */
 export function getSlackAutomaticPendingReply(
   metadata: ChannelBackendPromptMetadata | undefined,
 ): SlackAutomaticPendingReply | undefined {
@@ -79,7 +94,11 @@ export function getSlackAutomaticPendingReply(
   return reply;
 }
 
-/** Remove registry ownership; an in-flight terminal still owns its local copy. */
+/**
+ * Idempotently remove registry ownership for the current database and turn.
+ * In-flight work keeps its local copy; this neither cancels it, removes files,
+ * nor changes durable manifests or delivery receipts.
+ */
 export function discardSlackAutomaticPendingReply(binding: ChannelBackendPromptMetadata["binding"]): void {
   const key = databaseKey();
   const entries = pendingByDatabase.get(key);

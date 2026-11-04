@@ -57,6 +57,18 @@ export function resolveSlackMediaChannel(
   return findNativeChannelAccount(channels, accountId, { provider: "slack" });
 }
 
+/**
+ * Resolves the configured Slack account and performs the external-upload
+ * ticket, byte upload and completion sequence for the requested chat/thread.
+ * Supplied fileBytes are used directly without reopening filePath; their
+ * integrity must already have been checked by the automatic-delivery caller.
+ * Otherwise the file is read once. Successful completion returns a file id
+ * and, when Slack includes share metadata, a message timestamp.
+ *
+ * Configuration, file and provider errors reject. An error after an external
+ * request may leave accepted remote work: this helper has no receipt ledger,
+ * retry/idempotency guarantee or local-file cleanup.
+ */
 export async function sendSlackMedia(
   input: SlackMediaSendInput,
   dependencies: SlackMediaSendDependencies = {},

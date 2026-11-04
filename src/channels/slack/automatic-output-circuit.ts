@@ -53,9 +53,17 @@ interface ScopeRow {
 const initializedDatabases = new WeakSet<Database>();
 
 /**
- * Reserve one complete immutable automatic terminal response, not one message
- * or media part. The caller must exclude commentary and validate provenance.
- * Allowed retries reuse their admission; suppressed responses never revive.
+ * Reserve quota for one complete terminal response under an IMMEDIATE writer
+ * transaction. The caller supplies its fixed manifest identity, excludes
+ * commentary, and validates provenance and local acceptance time beforehand.
+ * Identifiers remain untrimmed; timestamps must be safe nonnegative integers
+ * in local epoch milliseconds.
+ *
+ * Identical retries return the original decision without another debit, even
+ * after cooldown. Conflicting identity returns suppression without overwriting
+ * that decision. Suppressed identities remain terminal; after cooldown, new
+ * identities require an input accepted strictly after the recovery floor.
+ * Quota counts admissions, not delivery, and does not stop every slow bot loop.
  */
 export function reserveSlackAutomaticOutput(input: SlackAutomaticOutputReservation): SlackAutomaticOutputDecision {
   const idempotencyKey = requireText(input.idempotencyKey, "idempotencyKey");
@@ -154,7 +162,11 @@ export function reserveSlackAutomaticOutput(input: SlackAutomaticOutputReservati
     .immediate();
 }
 
-/** Audit lookup only; delivery must reserve with the complete frozen identity. */
+/**
+ * Return the original stored decision or null for audit, including after a
+ * conflicting reservation attempt. This key-only lookup neither compares the
+ * full terminal identity nor authorizes delivery; delivery must reserve it.
+ */
 export function getSlackAutomaticOutputDecision(idempotencyKey: string): SlackAutomaticOutputDecision | null {
   const key = requireText(idempotencyKey, "idempotencyKey");
   const database = getDb();
@@ -163,6 +175,12 @@ export function getSlackAutomaticOutputDecision(idempotencyKey: string): SlackAu
   return row ? rowToDecision(row) : null;
 }
 
+/**
+ * Initialize the quota schema in an IMMEDIATE transaction once per Database.
+ * Decisions, suppression tombstones and recovery floors have no age-based
+ * expiry: pruning them could debit a replay again or revive suppressed output.
+ * Retained rows contain identities and decisions, never message or media bodies.
+ */
 function ensureSchema(database: Database): void {
   if (initializedDatabases.has(database)) return;
   database
@@ -213,11 +231,16 @@ function rowToDecision(row: DecisionRow): SlackAutomaticOutputDecision {
   };
 }
 
+/** Reject blank identifiers while preserving the original string used as identity. */
 function requireText(value: string, name: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required`);
   return value;
 }
 
+/**
+ * Check only safe integer range and nonnegativity; the caller must supply trusted
+ * local epoch milliseconds rather than a provider timestamp or another unit.
+ */
 function requireTimestamp(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a nonnegative integer timestamp`);
   return value;
