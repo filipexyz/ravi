@@ -22,6 +22,9 @@ normative: true
 # Gateway error observability
 
 - Every gateway HTTP 4xx/5xx MUST carry the canonical error envelope: `success:false`, `op`, `exitCode`, `outcome`, and `error:{code,message,retryable,suggestedAction,requestId}`.
+- A supplied invalid runtime credential MUST fail authentication before command access, including on `scope=open` command routes. Open routes MAY still omit authentication where their command policy allows it.
+- An expired runtime credential MUST produce HTTP 401 with `CONTEXT_EXPIRED` and guidance to renew or reissue the credential. It MUST NOT become `PERMISSION_DENIED` or suggest increasing grants. A valid credential lacking authority MUST continue to produce HTTP 403 with `PERMISSION_DENIED`.
+- A rejected context record MAY be inspected to distinguish expiry from revocation, but MUST NOT be reused for authorization. Registry and bridge revocation checks remain authoritative; raw context keys MUST NOT appear in the error envelope.
 - Request ids MUST be server-generated UUIDs, isolated across concurrent requests, also exposed as `x-request-id`. Caller-supplied ids MUST NOT be trusted or logged.
 - Validation MUST identify fields in `issues[].path`; missing required handler flags (`--flag is required`) MUST additionally carry `field`, `argument`, `VALIDATION_ERROR`, exit 2 and HTTP 422. Schema/body usage errors remain HTTP 400, exit 2.
 - CLI and SDK MUST preserve correlation ids and typed field/argument information. The CLI MUST show the request id in text mode as well as JSON mode.

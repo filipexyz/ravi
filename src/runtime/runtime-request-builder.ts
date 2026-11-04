@@ -53,6 +53,7 @@ import {
   buildRuntimeRequestContext,
   buildRuntimeRequestEnv,
   refreshRuntimeRequestContextForTurn,
+  startActiveRuntimeRequestContextLease,
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
@@ -986,11 +987,14 @@ async function buildRuntimeStartRequestInternal(
       return runtimeResolution;
     }
   };
+  let stopActiveContextLease: (() => void) | undefined;
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,
     session: streamingSession,
     stashedMessages,
     beforeTurnStart: (input) => {
+      stopActiveContextLease?.();
+      stopActiveContextLease = undefined;
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
       const turnPrompt = queuedTurnPrompt ?? prompt;
       const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
@@ -1089,6 +1093,25 @@ async function buildRuntimeStartRequestInternal(
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
       streamingSession.currentBridgeTurnId = boundTurnPrompt._bridgeTurnId;
+      stopActiveContextLease = startActiveRuntimeRequestContextLease({
+        runtimeContext,
+        dbSessionKey,
+        sessionName,
+        sessionCwd,
+        agent,
+        prompt: boundTurnPrompt,
+        runtimeProviderId,
+        model: streamingSession.currentModel || effectiveModel,
+        runtimeResolution: turnRuntimeResolution,
+        resolvedSource: turnSource,
+        approvalSource,
+        isActive: () => streamingSession.turnActive && !streamingSession.done,
+        signal: streamingSession.abortController.signal,
+      });
+    },
+    afterTurnEnd: () => {
+      stopActiveContextLease?.();
+      stopActiveContextLease = undefined;
     },
     transformTurnPrompt: ({ combinedPrompt }) => {
       // Only the first physical turn needs the transcript. Keep the original
