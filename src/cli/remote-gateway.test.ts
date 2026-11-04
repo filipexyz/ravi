@@ -1256,32 +1256,34 @@ describe("remote gateway exit taxonomy", () => {
 });
 
 describe("ravi link failures over the gateway", () => {
-  it.each(["CONTACT_REQUIRED", "LINK_DM_UNSUPPORTED", "LINK_DM_FAILED", "AUTH_REQUIRED"] as const)(
-    "keeps the local message and next step for %s",
-    async (code) => {
-      const local = cloudErrorToContractError(
-        "identity link",
-        new CloudAuthError(code, "Identity service rejected the link request; token=LINK_RELAY_SECRET_798"),
-      );
-      const response = contractErrorResponse(local);
+  it.each([
+    ["CONTACT_REQUIRED", "ravi link needs the current chat message to come from a known person (a resolved contact)."],
+    ["LINK_DM_UNSUPPORTED", "Ravi cannot send a private message to this person on this channel."],
+    ["LINK_DM_FAILED", "Ravi could not send the private message to the person who asked."],
+    ["AUTH_REQUIRED", "Console authentication is required."],
+  ] as const)("keeps the local message and next step for %s", async (code, reason) => {
+    const local = cloudErrorToContractError(
+      "identity link",
+      new CloudAuthError(code, "Identity service rejected the link request; token=LINK_RELAY_SECRET_798"),
+    );
+    const response = contractErrorResponse(local);
 
-      const error = remoteGatewayErrorToContractError(
-        "identity link",
-        result({ status: response.status, body: await response.text() }),
-      );
+    const error = remoteGatewayErrorToContractError(
+      "identity link",
+      result({ status: response.status, body: await response.text() }),
+    );
 
-      expect(error).toMatchObject({
-        op: "identity link",
-        code,
-        message: local.message,
-        details: { suggestedAction: local.details.suggestedAction },
-      });
-      expect(error?.message).not.toBe("Remote command failed.");
-      const serialized = JSON.stringify(error?.envelope());
-      expect(error?.details.cause).toBe("Identity service rejected the link request; token=[redacted:token]");
-      expect(serialized).not.toContain("LINK_RELAY_SECRET_798");
-    },
-  );
+    expect(error).toMatchObject({
+      op: "identity link",
+      code,
+      message: local.message,
+      details: { suggestedAction: local.details.suggestedAction },
+    });
+    expect(error?.message).not.toBe("Remote command failed.");
+    const serialized = JSON.stringify(error?.envelope());
+    expect(error?.details.cause).toBe(`${reason}\nCaused by: [redacted:provider.body]`);
+    expect(serialized).not.toContain("LINK_RELAY_SECRET_798");
+  });
 });
 
 describe("personal connector blocks over the gateway", () => {
@@ -1655,7 +1657,9 @@ describe("personal connector blocks over the gateway", () => {
       code: "CONNECTOR_TOOL_BLOCKED",
       message: "The account owner or the organization blocked this tool.",
     });
-    expect(remote?.details.cause).toBe("Connector policy blocked the tool; token=[redacted:token]");
+    expect(remote?.details.cause).toBe(
+      "The account owner or the organization blocked this tool.\nCaused by: [redacted:provider.body]",
+    );
     expect(JSON.stringify(remote?.envelope())).not.toContain("CONNECTOR_RELAY_SECRET_798");
 
     const auth = await relay(
@@ -1667,7 +1671,7 @@ describe("personal connector blocks over the gateway", () => {
       message: "Console authentication is required.",
       details: { suggestedAction: "run 'ravi login' and retry" },
     });
-    expect(auth.remote?.details.cause).toBe("Console rejected the credential; token=[redacted:token]");
+    expect(auth.remote?.details.cause).toBe("Console authentication is required.\nCaused by: [redacted:provider.body]");
     expect(JSON.stringify(auth.remote?.envelope())).not.toContain("AUTH_RELAY_SECRET_798");
   });
 

@@ -442,8 +442,9 @@ describe("global cloud failure contract", () => {
       error: {
         code: "RATE_LIMITED",
         message: "Console request was rate limited.",
-        cause: "Provider quota exhausted; token=[redacted:token]",
-        context: { operation: "cloud fixture fail", code: "RATE_LIMITED", status: 429 },
+        cause: "Console request was rate limited.\nCaused by: [redacted:provider.body]",
+        context: { operation: "cloud fixture fail", code: "RATE_LIMITED", provider: "console", status: 429 },
+        suggestedAction: "wait for the provider rate limit to reset, then retry",
         retryable: true,
         status: 429,
       },

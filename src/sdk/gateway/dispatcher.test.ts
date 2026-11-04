@@ -822,27 +822,31 @@ describe("dispatch — error path", () => {
   });
 
   it.each([
-    ["demo.cloud-auth-error", 401, "AUTH_REQUIRED", "Provider rejected expired authentication"],
-    ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED", "Provider denied the project scope"],
-    ["demo.cloud-rate-error", 429, "RATE_LIMITED", "Provider quota exhausted"],
-  ] as const)("preserves CloudAuthError HTTP status and real cause for %s", async (command, status, code, reason) => {
-    const result = await dispatch(findCmd(command), {}, {}, { contextRecord: demoContext });
+    ["demo.cloud-auth-error", 401, "AUTH_REQUIRED", "Console authentication is required."],
+    ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED", "Console project access was denied."],
+    ["demo.cloud-rate-error", 429, "RATE_LIMITED", "Console request was rate limited."],
+  ] as const)(
+    "preserves CloudAuthError HTTP status and normalized cause for %s",
+    async (command, status, code, reason) => {
+      const result = await dispatch(findCmd(command), {}, {}, { contextRecord: demoContext });
 
-    expect(result.response.status).toBe(status);
-    const body = await result.response.json();
-    expect(body).toMatchObject({
-      success: false,
-      exitCode: 1,
-      outcome: "failed",
-      error: {
-        code,
-        cause: `${reason}; token=[redacted:token]`,
-        context: { operation: command.replaceAll(".", " "), code, status },
-      },
-    });
-    expect(JSON.stringify(body)).not.toContain("PRIVATE_PROVIDER_BODY_798");
-    expect(JSON.stringify(body)).not.toContain("PRIVATE_PROVIDER_TOKEN_798");
-  });
+      expect(result.response.status).toBe(status);
+      const body = await result.response.json();
+      expect(body).toMatchObject({
+        success: false,
+        exitCode: 1,
+        outcome: "failed",
+        error: {
+          code,
+          message: reason,
+          cause: `${reason}\nCaused by: [redacted:provider.body]`,
+          context: { operation: command.replaceAll(".", " "), code, provider: "console", status },
+        },
+      });
+      expect(JSON.stringify(body)).not.toContain("PRIVATE_PROVIDER_BODY_798");
+      expect(JSON.stringify(body)).not.toContain("PRIVATE_PROVIDER_TOKEN_798");
+    },
+  );
 
   it("falls back to the contract status for an invalid provider HTTP status", async () => {
     const result = await dispatch(findCmd("demo.cloud-invalid-status"), {}, {}, { contextRecord: demoContext });
