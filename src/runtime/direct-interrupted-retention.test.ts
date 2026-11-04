@@ -1,7 +1,10 @@
 import { describe, expect, it, spyOn } from "bun:test";
+import * as nodeFs from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { ChannelOutputEnvelope } from "../channels/backend.js";
+import type { KnownChannelRuntimeEvent } from "../channels/runtime-events.js";
+import type { GeneratedMediaFileSystem } from "./generated-media-allocation.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
 import type { ChannelBackendPromptMetadata, ResponseMessage } from "./message-types.js";
 import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
@@ -56,6 +59,8 @@ async function dependencies() {
     trace: await import("../session-trace/runtime-trace.js"),
     brokers: await import("./model-broker-registry.js"),
     dispatcher: await import("./session-dispatcher.js"),
+    media: await import("./generated-media-allocation.js"),
+    pending: await import("../channels/slack/automatic-pending-reply.js"),
   };
 }
 
@@ -89,7 +94,9 @@ function final(text: string): RuntimeEvent {
  * NATS delivery and provider events are supplied by the fixture; replay safety,
  * queue selection, terminal transactions and Slack manifests remain real.
  */
-async function fixture(options: { senderKind?: "bot" | "user"; provider?: string; durable?: boolean } = {}) {
+async function fixture(
+  options: { senderKind?: "bot" | "user"; provider?: string; durable?: boolean; now?: () => number } = {},
+) {
   const state = await retainedStateRoot();
   const d = await dependencies();
   const id = `direct-${++fixtureSequence}`;
@@ -175,10 +182,15 @@ async function fixture(options: { senderKind?: "bot" | "user"; provider?: string
   const restarts: Array<{ sessionName: string; reason: string }> = [];
   let emissionHook: (() => Promise<void>) | undefined;
   let brokerHook: (() => Promise<void>) | undefined;
+  let runtimeSinkHook: ((event: KnownChannelRuntimeEvent) => Promise<void>) | undefined;
   const emit = spyOn(d.bus.nats, "emit").mockImplementation(async (topic, data) => {
     if (topic === `ravi.session.${sessionName}.response`) responses.push(data as ResponseMessage);
   });
-  const unbindRuntimeSink = d.runtimeEvents.channelRuntimeEventSinks.register(target, { async emit() {} });
+  const unbindRuntimeSink = d.runtimeEvents.channelRuntimeEventSinks.register(target, {
+    async emit(event) {
+      if (runtimeSinkHook) await runtimeSinkHook(event);
+    },
+  });
   const unbindOutputSink = d.backend.channelOutputSinks.register(target, {
     async emit(output) {
       if (senderKind === "bot") {
@@ -231,7 +243,7 @@ async function fixture(options: { senderKind?: "bot" | "user"; provider?: string
   });
   streaming.pendingMessages = [active];
   const coordinator = options.durable
-    ? new d.recovery.RuntimeCrashRecoveryCoordinator({ instanceId: `synthetic-${id}` })
+    ? new d.recovery.RuntimeCrashRecoveryCoordinator({ instanceId: `synthetic-${id}`, now: options.now })
     : undefined;
   coordinator?.start();
   const dispatcher = coordinator
@@ -321,6 +333,7 @@ async function fixture(options: { senderKind?: "bot" | "user"; provider?: string
 
   return {
     d,
+    coordinator,
     session,
     streaming,
     streamingSessions,
@@ -356,6 +369,10 @@ async function fixture(options: { senderKind?: "bot" | "user"; provider?: string
     /** Injects races at the real awaited physical terminal emission, after host receipt. */
     onEmission(hook: () => Promise<void>) {
       emissionHook = hook;
+    },
+    /** Injects a race through the already registered runtime notification sink. */
+    onRuntimeSink(hook: (event: KnownChannelRuntimeEvent) => Promise<void>) {
+      runtimeSinkHook = hook;
     },
     /** Injects races inside the registered broker's real awaited feedback call. */
     onBroker(hook: () => Promise<void>) {
@@ -435,6 +452,191 @@ async function fixture(options: { senderKind?: "bot" | "user"; provider?: string
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+const imageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
+/**
+ * Real capability allocator over an entirely virtual filesystem. Producer and
+ * projector share all five delegated methods and therefore the same WeakMap;
+ * spying on allocate alone would give the projector an unauthentic token.
+ * No native file creation/removal, global filesystem no-op or cleanup is used.
+ */
+function virtualGeneratedMedia(f: Fixture) {
+  const files = new Map<string, { ino: number; bytes: Buffer }>();
+  const operations: string[] = [];
+  const settlements: Array<{
+    action: string;
+    state?: string;
+    kind?: string;
+    mediaCount?: number;
+    inTransaction: boolean;
+  }> = [];
+  let sequence = 0;
+  const snapshot = (action: string) => {
+    const manifest = f.manifest();
+    settlements.push({
+      action,
+      state: f.logical()?.state,
+      kind: manifest?.kind,
+      mediaCount: manifest?.mediaFingerprints.length,
+      inTransaction: f.d.router.getDb().inTransaction,
+    });
+  };
+  const stat = (file: { ino: number }) => ({
+    dev: 1,
+    ino: file.ino,
+    isFile: () => true,
+    isSymbolicLink: () => false,
+  });
+  const fs: GeneratedMediaFileSystem = {
+    async open(path, flags, mode) {
+      expect(flags).toBe("wx");
+      expect(mode).toBe(0o600);
+      if (files.has(path)) throw Object.assign(new Error("EEXIST"), { code: "EEXIST" });
+      const file = { ino: sequence, bytes: Buffer.alloc(0) };
+      files.set(path, file);
+      operations.push("open");
+      return {
+        async stat() {
+          operations.push("stat");
+          return stat(file);
+        },
+        async writeFile(bytes) {
+          operations.push("write");
+          file.bytes = Buffer.from(bytes);
+        },
+        async close() {
+          operations.push("close");
+        },
+      };
+    },
+    async lstat(path) {
+      operations.push("lstat");
+      const file = files.get(path);
+      if (!file) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      return stat(file);
+    },
+    async unlink(path) {
+      operations.push("unlink");
+      snapshot("unlink");
+      if (!files.delete(path)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    },
+  };
+  const allocator = f.d.media.createGeneratedMediaAllocator({
+    fs,
+    tmpdir: () => join("/virtual/retained-generated-media", f.session.name!),
+    randomUUID: () => `00000000-0000-4000-8000-${(++sequence).toString(16).padStart(12, "0")}`,
+  });
+  // The real manifest hashes and verifies bytes through synchronous reads.
+  // Intercept only this VFS's paths/descriptors; unrelated reads stay native.
+  const readers = new Map<number, { bytes: Buffer; offset: number }>();
+  let descriptorSequence = 0;
+  const originalOpen = nodeFs.openSync;
+  const originalRead = nodeFs.readSync;
+  const originalClose = nodeFs.closeSync;
+  const originalReadFile = nodeFs.readFileSync;
+  const spies = [
+    spyOn(nodeFs, "openSync").mockImplementation((...args) => {
+      const file = typeof args[0] === "string" ? files.get(args[0]) : undefined;
+      if (!file) return originalOpen(...args);
+      expect(args[1]).toBe("r");
+      const descriptor = --descriptorSequence;
+      readers.set(descriptor, { bytes: file.bytes, offset: 0 });
+      return descriptor;
+    }),
+    spyOn(nodeFs, "readSync").mockImplementation(((...args: unknown[]) => {
+      const [descriptor, buffer, offset, length, position] = args;
+      const reader = typeof descriptor === "number" ? readers.get(descriptor) : undefined;
+      if (!reader) return Reflect.apply(originalRead, nodeFs, args) as number;
+      if (!Buffer.isBuffer(buffer) || typeof offset !== "number" || typeof length !== "number") {
+        throw new Error("Virtual manifest reader requires the bounded Buffer read overload");
+      }
+      expect(position).toBeNull();
+      const read = reader.bytes.copy(buffer, offset, reader.offset, reader.offset + length);
+      reader.offset += read;
+      return read;
+    }) as typeof nodeFs.readSync),
+    spyOn(nodeFs, "closeSync").mockImplementation((descriptor) => {
+      if (!readers.delete(descriptor)) originalClose(descriptor);
+    }),
+    spyOn(nodeFs, "readFileSync").mockImplementation(((...args: unknown[]) => {
+      const file = typeof args[0] === "string" ? files.get(args[0]) : undefined;
+      if (!file) return Reflect.apply(originalReadFile, nodeFs, args);
+      expect(args[1]).toBeUndefined();
+      return Buffer.from(file.bytes);
+    }) as typeof nodeFs.readFileSync),
+    spyOn(f.d.media.generatedMediaAllocations, "allocate").mockImplementation(allocator.allocate),
+    spyOn(f.d.media.generatedMediaAllocations, "adopt").mockImplementation(allocator.adopt),
+    spyOn(f.d.media.generatedMediaAllocations, "retain").mockImplementation((allocation, owner) => {
+      snapshot("retain");
+      allocator.retain(allocation, owner);
+    }),
+    spyOn(f.d.media.generatedMediaAllocations, "prepareDiscard").mockImplementation((allocation, owner) => {
+      snapshot("discard");
+      return allocator.prepareDiscard(allocation, owner);
+    }),
+    spyOn(f.d.media.generatedMediaAllocations, "prepareUnadoptedDiscard").mockImplementation(
+      allocator.prepareUnadoptedDiscard,
+    ),
+  ];
+  return {
+    files,
+    operations,
+    settlements,
+    allocator,
+    readers,
+    restore: () => {
+      for (const spy of spies) spy.mockRestore();
+    },
+  };
+}
+
+/**
+ * Synthetic provider/yield boundary, not launcher or provider end-to-end proof.
+ * The real host produces media; the real queue creates and consumes a yielded
+ * continuation. Only the dispatcher's accepted-yield markers are supplied here.
+ * No side-effect fence is cleared to manufacture replay eligibility: the real
+ * generator starts each subsequent physical turn after the preceding terminal.
+ */
+async function* generatedMediaContinuation(f: Fixture) {
+  await handoff(f);
+  yield { type: "tool.started", toolUse: { id: "prior-image", name: "image_gen.imagegen", input: {} } } as RuntimeEvent;
+  yield {
+    type: "tool.completed",
+    toolUseId: "prior-image",
+    toolName: "image_gen.imagegen",
+    content: { id: "prior-image", result: imageBase64 },
+    metadata: { provider: "codex", item: { id: "prior-image", type: "imageGeneration", status: "completed" } },
+  } as RuntimeEvent;
+  const reply = f.d.pending.getSlackAutomaticPendingReply(f.metadata)!;
+  expect(reply.media).toHaveLength(1);
+  expect(reply.ownedMediaAllocations.size).toBe(1);
+  const successor = f.d.queue.createQueuedRuntimeUserMessage({
+    prompt: "Synthetic intervening thread",
+    source: { ...f.active.launchPrompt!.source!, threadId: "2.000002" },
+  });
+  f.streaming.pendingMessages.push(successor);
+  const prepared = f.d.queue.prepareRuntimeInterruptSuccessor(f.session.name!, f.streaming);
+  const request = prepared?.continuation;
+  if (!request) throw new Error("Expected the real queue to create a yield continuation");
+  expect(request.launchPrompt?._channelBackend).toEqual(f.metadata);
+  f.streaming.currentTurnSuperseded = true;
+  f.streaming.currentTurnYieldContinuationId = request.pendingId;
+  f.streaming.interrupted = true;
+  yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } } as RuntimeEvent;
+  expectOpen(f);
+  await handoff(f);
+  expect(f.handoffs[1]?.ids).toEqual([successor.pendingId!]);
+  expect(f.streaming.currentChannelBackend).toBeUndefined();
+  yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } } as RuntimeEvent;
+  await handoff(f);
+  expect(f.handoffs[2]?.ids).toEqual([request.pendingId!]);
+  expect(f.streaming.currentChannelBackend).toEqual(f.metadata);
+  expect(f.d.pending.getSlackAutomaticPendingReply(f.metadata)).toBe(reply);
+  expect(f.outputs).toEqual([]);
+  expect(f.responses).toEqual([]);
+  return { request, reply };
+}
 
 /** Advances the actual generator, asserting this is direct replay without a yield continuation. */
 async function handoff(f: Fixture): Promise<void> {
@@ -524,6 +726,421 @@ describe.skipIf(!retainedConfigured)("direct interrupted retention / retained me
       }
     });
   }
+
+  it("retains genuine private media across direct interruption and releases the complete bound final", async () => {
+    const f = await fixture({ durable: true });
+    const media = virtualGeneratedMedia(f);
+    const answer = "Complete final with the retained image\n1. First fact\n2. Second fact";
+    const destination = f.d.origin.resolveSlackAutomaticOutputContextFromBinding(f.metadata.binding)!.target;
+    try {
+      await f.run(
+        (async function* () {
+          const { request, reply } = yield* generatedMediaContinuation(f);
+          const envelope = structuredClone(request.launchPrompt);
+          const attachment = reply.media[0]!;
+          const allocation = [...reply.ownedMediaAllocations][0]!;
+          expect(media.files.get(attachment.filePath)?.bytes).toEqual(Buffer.from(imageBase64, "base64"));
+          yield { type: "turn.interrupted" };
+          const physical = f.streaming.currentCrashRecoveryTerminal;
+          expect(physical).toMatchObject({ status: "interrupted", startedTool: false, materializedOutput: false });
+          expectOpen(f);
+          expect(f.streaming.pendingMessages).toEqual([request]);
+          expect(f.d.pending.getSlackAutomaticPendingReply(f.metadata)).toBe(reply);
+          expect(reply.media).toEqual([attachment]);
+          expect([...reply.ownedMediaAllocations]).toEqual([allocation]);
+          expect(media.settlements).toEqual([]);
+          expect(media.operations).toEqual(["open", "stat", "write", "close"]);
+          expect(f.outputs).toEqual([]);
+          expect(f.responses).toEqual([]);
+          await handoff(f);
+          expect(f.handoffs[3]?.ids).toEqual(f.handoffs[2]?.ids);
+          expect(request.launchPrompt).toEqual(envelope);
+          expect(f.streaming.currentChannelBackend).toEqual(f.metadata);
+          yield final(answer);
+          expectOpen(f);
+          expect(f.outputs).toEqual([]);
+          expect(f.responses).toEqual([]);
+          expect(media.settlements).toEqual([]);
+          yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } };
+          expect(physical?.status).toBe("interrupted");
+          expect(media.allocator.prepareDiscard(allocation, reply)).toBeUndefined();
+          expect(f.d.pending.countSlackAutomaticPendingReplies()).toBe(0);
+        })(),
+      );
+      expect(f.handoffs).toHaveLength(4);
+      expect(f.physicalEvents).toEqual([
+        { type: "turn.complete" },
+        { type: "turn.complete" },
+        { type: "turn.interrupted" },
+        { type: "turn.complete" },
+      ]);
+      expect(f.attemptIds.map((id) => f.d.recoveryStore.getRuntimeTurnAttempt(id)?.status)).toEqual([
+        "complete",
+        "complete",
+        "interrupted",
+        "complete",
+      ]);
+      expect(f.logical()?.state).toBe("completed");
+      expect(f.outputs).toHaveLength(1);
+      expect(f.outputs[0]).toMatchObject({ binding: f.metadata.binding, target: f.metadata.target });
+      expect(f.d.driver.renderSlackBackendOutput(f.outputs[0]!)).toBe(answer);
+      const manifest = f.manifest()!;
+      expect(manifest).toMatchObject({ kind: "final_answer", target: destination, mediaAvailabilityErrors: [null] });
+      expect(manifest.mediaFingerprints).toHaveLength(1);
+      expect(manifest.mediaByteFingerprints[0]).toMatch(/^[a-f0-9]{64}$/);
+      expect(f.responses).toHaveLength(1);
+      const response = f.responses[0]!;
+      expect(response).toMatchObject({
+        response: "",
+        target: destination,
+        _automaticOutputOrigin: { binding: f.metadata.binding },
+        _automaticTerminalResponseId: manifest.responseId,
+        _emitId: `${manifest.responseId}:media`,
+      });
+      expect(response.content).toHaveLength(1);
+      const part = response.content![0]!;
+      if (part.type !== "media") throw new Error("Expected the genuine retained media member");
+      expect(
+        f.d.manifest.assertSlackAutomaticTerminalPart(manifest, { type: "media", index: 0, media: part.media }),
+      ).toBe(`${manifest.responseId}:media:0`);
+      expect(f.d.manifest.readSlackAutomaticTerminalMediaBytes(manifest, { index: 0, media: part.media })).toEqual(
+        Buffer.from(imageBase64, "base64"),
+      );
+      expect(media.files.size).toBe(1);
+      expect(media.operations).not.toContain("unlink");
+      expect(media.readers.size).toBe(0);
+      expect(media.settlements).toEqual([
+        { action: "retain", state: "completed", kind: "final_answer", mediaCount: 1, inTransaction: false },
+      ]);
+    } finally {
+      await f.release();
+      media.restore();
+    }
+  });
+
+  for (const refused of [false, true]) {
+    it(`settles retained private media only after logical cancellation COMMIT (${refused ? "refused" : "accepted"})`, async () => {
+      const f = await fixture({ durable: true });
+      const media = virtualGeneratedMedia(f);
+      const database = f.d.router.getDb();
+      let restoreCommit: (() => void) | undefined;
+      let commitAttempts = 0;
+      let committed = 0;
+      let cancellationEmission = 0;
+      try {
+        await f.run(
+          (async function* () {
+            const { request, reply } = yield* generatedMediaContinuation(f);
+            const attachment = reply.media[0]!;
+            const allocation = [...reply.ownedMediaAllocations][0]!;
+            yield { type: "turn.interrupted" };
+            expectOpen(f);
+            expect(f.streaming.pendingMessages).toEqual([request]);
+            expect(media.settlements).toEqual([]);
+            expect(media.files.size).toBe(1);
+            await handoff(f);
+            expect(f.handoffs[3]?.ids).toEqual(f.handoffs[2]?.ids);
+            expect(f.streaming.currentChannelBackend).toEqual(f.metadata);
+            const beforeCancellation = structuredClone(f.logical());
+            const originalExec = database.exec.bind(database);
+            const exec = spyOn(database, "exec").mockImplementation((sql, ...rest) => {
+              if (
+                commitAttempts > 0 ||
+                sql !== "COMMIT" ||
+                f.logical()?.state !== "interrupted" ||
+                f.manifest()?.kind !== "cancelled"
+              ) {
+                return originalExec(sql, ...rest);
+              }
+              commitAttempts++;
+              expect(database.inTransaction).toBe(true);
+              expect(cancellationEmission).toBe(1);
+              expect(media.settlements).toEqual([]);
+              expect(reply.media).toEqual([attachment]);
+              expect([...reply.ownedMediaAllocations]).toEqual([allocation]);
+              expect(media.files.get(attachment.filePath)?.bytes).toEqual(Buffer.from(imageBase64, "base64"));
+              expect(media.operations).not.toContain("unlink");
+              // Fault injection at a real in-memory SQLite COMMIT boundary.
+              // executeWrite performs its own rollback; no DB/manifest repair.
+              if (refused) throw new Error("Synthetic cancellation COMMIT refusal");
+              const result = originalExec(sql, ...rest);
+              expect(database.inTransaction).toBe(false);
+              committed++;
+              media.operations.push("commit");
+              return result;
+            });
+            restoreCommit = () => exec.mockRestore();
+            f.onEmission(async () => {
+              cancellationEmission++;
+              expect(f.streaming.currentCrashRecoveryTerminal?.status).toBe("interrupted");
+              expectOpen(f);
+              expect(media.settlements).toEqual([]);
+              expect(media.files.size).toBe(1);
+            });
+            // A real started-tool fence makes this replay unsafe. The direct
+            // interruption must now cancel, without clearing that safety fence.
+            yield { type: "tool.started", toolUse: { id: "cancellation-fence", name: "read", input: {} } };
+            const beforeTerminal = structuredClone(f.logical());
+            yield { type: "turn.interrupted" };
+            expect(commitAttempts).toBe(1);
+            expect(committed).toBe(refused ? 0 : 1);
+            expect(f.streaming.currentCrashRecoveryTerminal).toMatchObject({
+              status: "interrupted",
+              startedTool: true,
+            });
+            if (refused) {
+              expectOpen(f);
+              expect(f.logical()).toEqual(beforeTerminal);
+              expect(f.logical()?.state).toBe(beforeCancellation?.state);
+              expect(f.d.pending.getSlackAutomaticPendingReply(f.metadata)).toBe(reply);
+              expect(reply.media).toEqual([attachment]);
+              expect([...reply.ownedMediaAllocations]).toEqual([allocation]);
+              expect(media.files.get(attachment.filePath)?.bytes).toEqual(Buffer.from(imageBase64, "base64"));
+            } else {
+              expect(f.logical()?.state).toBe("interrupted");
+              expect(f.manifest()).toMatchObject({
+                kind: "cancelled",
+                target: reply.context.target,
+                mediaFingerprints: [],
+                mediaByteFingerprints: [],
+              });
+              expect(reply.media).toEqual([]);
+              expect(reply.ownedMediaAllocations.size).toBe(0);
+              expect(media.allocator.prepareDiscard(allocation, reply)).toBeUndefined();
+              expect(f.d.pending.countSlackAutomaticPendingReplies()).toBe(0);
+            }
+          })(),
+        );
+        expect(cancellationEmission).toBe(1);
+        expect(f.handoffs).toHaveLength(4);
+        expect(f.outputs).toEqual([]);
+        expect(f.responses).toEqual([]);
+        expect(database.inTransaction).toBe(false);
+        expect(f.d.recoveryStore.getRuntimeTurnAttempt(f.attemptIds[3]!)?.status).toBe("interrupted");
+        expect(media.files.size).toBe(refused ? 1 : 0);
+        expect(media.operations).toEqual(
+          refused
+            ? ["open", "stat", "write", "close"]
+            : ["open", "stat", "write", "close", "commit", "lstat", "unlink"],
+        );
+        expect(media.settlements).toEqual(
+          refused
+            ? []
+            : [
+                { action: "discard", state: "interrupted", kind: "cancelled", mediaCount: 0, inTransaction: false },
+                { action: "unlink", state: "interrupted", kind: "cancelled", mediaCount: 0, inTransaction: false },
+              ],
+        );
+      } finally {
+        restoreCommit?.();
+        try {
+          await f.release();
+        } finally {
+          media.restore();
+        }
+      }
+    });
+  }
+
+  for (const change of [
+    "backend-replaced",
+    "owner-replaced",
+    "owner-absent",
+    "query-handle",
+    "trace-id",
+    "latch-cleared",
+    "latch-replaced",
+    "boot-epoch",
+    "ownership-failure",
+    "lease-expired",
+  ] as const) {
+    it(`refuses initial alias cancellation after ${change} replaces an accepted witness`, async () => {
+      let expiredAt: number | undefined;
+      const durable = change === "boot-epoch" || change === "ownership-failure" || change === "lease-expired";
+      const f = await fixture({ durable, now: () => expiredAt ?? Date.now() });
+      let replacement: RuntimeHostStreamingSession | undefined;
+      let originalState: ReturnType<typeof f.logical>;
+      let restoreWitness: (() => void) | undefined;
+      let changed = false;
+      const record = spyOn(f.d.router, "dbRecordChannelBackendRuntimeEvent");
+      try {
+        f.onEmission(async () => {
+          await Promise.resolve();
+          originalState = structuredClone(f.logical());
+          const originalBackend = f.streaming.currentChannelBackend!;
+          // Force the alias path; an equal clone can still pass the legacy strict branch.
+          originalBackend.target.conversationId = "different-live-destination";
+          f.streaming.pendingMessages = [];
+          if (change === "backend-replaced") {
+            f.streaming.currentChannelBackend = structuredClone(originalBackend);
+            expect(f.streaming.currentChannelBackend).not.toBe(originalBackend);
+          }
+          if (change === "owner-replaced") replacement = replaceOwner(f);
+          if (change === "owner-absent") f.streamingSessions.delete(f.session.name!);
+          if (change === "query-handle") f.streaming.queryHandle = { ...f.streaming.queryHandle! };
+          if (change === "trace-id") f.streaming.currentTraceTurnId = "replacement-physical-trace";
+          if (change === "latch-cleared") f.streaming.currentCrashRecoveryTerminal = undefined;
+          if (change === "latch-replaced") {
+            f.streaming.currentCrashRecoveryTerminal = { ...f.streaming.currentCrashRecoveryTerminal! };
+          }
+          if (change === "boot-epoch" || change === "ownership-failure") {
+            const key = change === "boot-epoch" ? "bootEpoch" : "ownershipFailure";
+            Object.defineProperty(f.coordinator!, key, {
+              configurable: true,
+              get: () => (change === "boot-epoch" ? "replacement-boot" : new Error("Synthetic ownership failure")),
+            });
+            restoreWitness = () => {
+              Reflect.deleteProperty(f.coordinator!, key);
+            };
+          }
+          if (change === "lease-expired") {
+            const epoch = f.coordinator!.bootEpoch;
+            expect(f.coordinator!.ownershipFailure).toBeNull();
+            expect(f.coordinator!.acceptingDeliveries).toBe(true);
+            expiredAt = f.coordinator!.boot!.leaseExpiresAt;
+            // Real coordinator clock/lease check, before any heartbeat latches failure.
+            expect(f.coordinator!.bootEpoch).toBe(epoch);
+            expect(f.coordinator!.ownershipFailure).toBeNull();
+            expect(f.coordinator!.acceptingDeliveries).toBe(false);
+          }
+          changed = true;
+        });
+        await f.run(
+          (async function* () {
+            await handoff(f);
+            yield { type: "turn.interrupted" };
+          })(),
+        );
+        expect(changed).toBe(true);
+        expect(f.logical()).toEqual(originalState!);
+        expect(f.manifest()).toBeNull();
+        expect(f.outputs).toEqual([]);
+        expect(f.responses).toEqual([]);
+        expect(record.mock.calls.filter(([input]) => input.state === "interrupted")).toEqual([]);
+        expect(f.physicalEvents).toEqual([{ type: "turn.interrupted" }]);
+        if (replacement) {
+          expect(f.streamingSessions.get(f.session.name!)).toBe(replacement);
+          expect(replacement).toMatchObject({ starting: true, done: false, currentChannelBackend: undefined });
+          expect(replacement.abortController.signal.aborted).toBe(false);
+        }
+        if (change === "lease-expired") expect(f.coordinator!.ownershipFailure).toBeNull();
+      } finally {
+        record.mockRestore();
+        restoreWitness?.();
+        await f.release();
+        // Retire only this expired test coordinator's in-memory heartbeat timer.
+        // This observes the existing expired lease; it never renews or resets it.
+        if (change === "lease-expired") {
+          try {
+            f.coordinator!.heartbeatNow();
+          } catch {
+            /* Expected expired-lease refusal. */
+          }
+        }
+      }
+    });
+  }
+
+  it("rechecks alias ownership after the awaited running sink before cancellation", async () => {
+    const f = await fixture();
+    let replacement: RuntimeHostStreamingSession | undefined;
+    f.onRuntimeSink(async (event) => {
+      if (!replacement && event.kind === "turn.state_changed" && event.payload.state === "running") {
+        await Promise.resolve();
+        replacement = replaceOwner(f);
+      }
+    });
+    try {
+      f.onEmission(async () => {
+        await Promise.resolve();
+        f.streaming.currentChannelBackend!.target.conversationId = "different-live-destination";
+      });
+      await f.run(
+        (async function* () {
+          await handoff(f);
+          yield { type: "turn.interrupted" };
+        })(),
+      );
+      expect(replacement).toBeDefined();
+      expect(f.streamingSessions.get(f.session.name!)).toBe(replacement);
+      expect(replacement).toMatchObject({ starting: true, done: false, currentChannelBackend: undefined });
+      expect(replacement!.abortController.signal.aborted).toBe(false);
+      expect(f.logical()?.state).toBe("running");
+      expect(f.manifest()).toBeNull();
+      expect(f.outputs).toEqual([]);
+      expect(f.responses).toEqual([]);
+      expect(f.physicalEvents).toEqual([{ type: "turn.interrupted" }]);
+    } finally {
+      await f.release();
+    }
+  });
+
+  it("preserves strict initial cancellation for a structurally equal backend clone", async () => {
+    const f = await fixture();
+    try {
+      f.onEmission(async () => {
+        await Promise.resolve();
+        const original = f.streaming.currentChannelBackend!;
+        f.streaming.currentChannelBackend = structuredClone(original);
+        f.streaming.pendingMessages = [];
+        expect(f.streaming.currentChannelBackend).not.toBe(original);
+        expect(f.streaming.currentChannelBackend).toEqual(f.metadata);
+      });
+      await f.run(
+        (async function* () {
+          await handoff(f);
+          yield { type: "turn.interrupted" };
+        })(),
+      );
+      expectCancelled(f);
+    } finally {
+      await f.release();
+    }
+  });
+
+  it("does not authorize an extra persistence attempt after initial alias write refusal", async () => {
+    const f = await fixture();
+    const originalRecord = f.d.router.dbRecordChannelBackendRuntimeEvent;
+    const originalTimeout = globalThis.setTimeout;
+    const retryDelays: number[] = [];
+    let refused = false;
+    let terminalCalls = 0;
+    const record = spyOn(f.d.router, "dbRecordChannelBackendRuntimeEvent").mockImplementation((input) => {
+      if (input.state !== "interrupted") return originalRecord(input);
+      terminalCalls++;
+      expect(input.turnId).toBe(f.metadata.binding.turnId);
+      expect(input.mayWrite?.()).toBe(true);
+      refused = true;
+      throw Object.assign(new Error("Synthetic initial recorder lock refusal"), { code: "SQLITE_BUSY" });
+    });
+    const timer = spyOn(globalThis, "setTimeout").mockImplementation(((...args: Parameters<typeof setTimeout>) => {
+      if (refused && args[1] === 100) retryDelays.push(args[1]);
+      return Reflect.apply(originalTimeout, globalThis, args);
+    }) as typeof setTimeout);
+    try {
+      f.onEmission(async () => {
+        await Promise.resolve();
+        f.streaming.currentChannelBackend!.target.conversationId = "different-live-destination";
+      });
+      await f.run(
+        (async function* () {
+          await handoff(f);
+          yield { type: "turn.interrupted" };
+        })(),
+      );
+      expect(terminalCalls).toBe(1);
+      expect(retryDelays).toEqual([]);
+      expect(f.logical()?.state).toBe("running");
+      expect(f.manifest()).toBeNull();
+      expect(f.outputs).toEqual([]);
+      expect(f.responses).toEqual([]);
+      expect(f.physicalEvents).toEqual([{ type: "turn.interrupted" }]);
+    } finally {
+      timer.mockRestore();
+      record.mockRestore();
+      await f.release();
+    }
+  });
 
   it("projects an ordinary final without interruption", async () => {
     const f = await fixture();

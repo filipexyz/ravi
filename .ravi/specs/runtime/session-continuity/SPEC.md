@@ -79,6 +79,17 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
   A genuine terminal interruption still cancels the captured request, without
   reopening terminal rows, manifests or quota. Physical trace/accounting and
   provider/tool/output/input-mutation fences remain unchanged.
+- An in-place mutation of the accepted backend envelope MUST NOT prevent its
+  first canonical cancellation solely because that mutation disallows replay.
+  This initial alias alternative MUST use immutable captured metadata and
+  require the original backend object, query handle, trace identity and the
+  same accepted `interrupted` latch. It MUST retain the existing exact-owner
+  or positive explicit-cancellation absent-slot rule. With crash recovery,
+  the captured boot epoch MUST still match, ownership failure MUST be absent
+  and the lease MUST still accept deliveries at each transaction guard.
+  Replacement or missing witnesses MUST NOT gain authority from the alias.
+  Extra persistence attempts and text handoff MUST retain strict metadata and
+  lifecycle validation; this alternative grants neither replay nor new retries.
 - Ravi MUST record assistant outputs with enough turn/atom correlation to build a replay transcript when native fork is unavailable.
 - Provider-native fork MUST NOT be exposed as canonical Ravi fork until it can be mapped to Ravi fork points, persistence, traces, and parent/child session state.
 - `supportsSessionFork` MUST mean "this provider can materialize a Ravi fork plan for at least one declared fork point type", not merely "the provider has a native command named fork".

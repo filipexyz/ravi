@@ -3215,6 +3215,33 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       );
       const directInterruptedRequest =
         event.type === "turn.interrupted" ? captureDirectInterruptedRequest(streaming) : undefined;
+      const directInterruptedWitness =
+        directInterruptedRequest && streaming.currentCrashRecoveryTerminal?.status === "interrupted"
+          ? {
+              backend: streaming.currentChannelBackend,
+              handle: streaming.queryHandle,
+              traceTurnId: streaming.currentTraceTurnId,
+              terminal: streaming.currentCrashRecoveryTerminal,
+              bootEpoch: crashRecovery?.bootEpoch,
+            }
+          : undefined;
+      /**
+       * An in-place queue mutation rejects retention without transferring the
+       * accepted physical attempt. Only its first canonical cancellation may
+       * use this alias witness; added recovery keeps the strict snapshot fence.
+       */
+      const ownsInitialInterruptedAlias = () =>
+        directInterruptedWitness !== undefined &&
+        directInterruptedWitness.backend !== undefined &&
+        streaming.currentChannelBackend === directInterruptedWitness.backend &&
+        streaming.queryHandle === directInterruptedWitness.handle &&
+        streaming.currentTraceTurnId === directInterruptedWitness.traceTurnId &&
+        streaming.currentCrashRecoveryTerminal === directInterruptedWitness.terminal &&
+        directInterruptedWitness.terminal.status === "interrupted" &&
+        (!crashRecovery ||
+          (crashRecovery.bootEpoch === directInterruptedWitness.bootEpoch &&
+            !crashRecovery.ownershipFailure &&
+            crashRecovery.acceptingDeliveries));
       /** Project only the accepted request, rechecking the current owner inside the DB boundary. */
       const projectDirectInterruption = async (mayTerminalize: () => boolean = () => true) => {
         if (event.type !== "turn.interrupted" || !directInterruptedRequest?.channelBackend || !capturedChannelTerminal)
@@ -3231,7 +3258,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               streamingSessions.get(sessionName),
             ) &&
             mayTerminalize() &&
-            capturedChannelTerminal.ownsProjection(),
+            (capturedChannelTerminal.ownsProjection() || ownsInitialInterruptedAlias()),
           capturedChannelTerminal,
         );
       };

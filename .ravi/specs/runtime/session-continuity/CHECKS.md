@@ -43,6 +43,18 @@
 - Direct `turn.interrupted` without a yield continuation: a bot and a human
   accepted request retained by the real generator can produce a later final
   under the same complete binding. Preserve physical interrupted accounting.
+- Keep the existing mutation controls: in-place binding, destination and
+  ingress/correlation changes reject retention but still settle the original
+  captured interruption. Separately replace the backend object with different
+  values, or replace owner, handle, trace, latch or boot witnesses, and require
+  no old-owner cancellation. An equal clone may still pass the strict branch.
+  Expire a real coordinator lease before an ownership failure is latched and
+  require the alias alternative to refuse. A typed initial write failure after
+  an alias mutation MUST NOT schedule another persistence attempt.
+- Join retained replay with private media: a final preserves its complete text
+  and members at the accepted destination; cancellation disposes only after an
+  accepted COMMIT, while rollback retains the collector. Use virtual files and
+  memory SQLite; these checks do not prove remote delivery or crash recovery.
 - Keep normal final, provider-event-only, started-tool, explicit shutdown and
   replacement-owner controls. Add full-envelope mismatch, successor-only,
   supersession, materialized-output/input-mutation and awaited cancellation

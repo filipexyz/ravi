@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { runInNewContext } from "node:vm";
 import * as ts from "typescript";
+import * as outputHandoff from "../channels/output-handoff.js";
 import {
   createGeneratedMediaAllocator,
   type GeneratedMediaAllocation,
@@ -412,7 +413,7 @@ describe("accepted-recorder media disposal", () => {
 
   type Stage = "record" | "callback" | "payload" | "schema" | "event" | "output" | "logger";
   type State = "failed" | "interrupted" | "completed";
-  async function projectorFixture() {
+  async function projectorFixture(dependencies: Record<string, unknown> = {}) {
     const { fs, allocator, allocate } = fixture();
     const allocated = await allocate();
     const binding = { turnId: "virtual-turn", sessionKey: "virtual-session" };
@@ -427,6 +428,7 @@ describe("accepted-recorder media disposal", () => {
     const trace: string[] = [];
     const logs: unknown[] = [];
     let pending = true;
+    let pendingReply = reply;
     const step = (stage: Stage) => {
       trace.push(stage);
       if (faults[stage]) throw faults[stage];
@@ -473,13 +475,13 @@ describe("accepted-recorder media disposal", () => {
         trace.push("detach");
         if (!pending) return undefined;
         pending = false;
-        return reply;
+        return pendingReply;
       },
       channelBackendEgressRequester: undefined,
       channelOutputSinks: {
-        tryEmit: async () => {
+        tryEmitWithHandoff: async () => {
           step("output");
-          return true;
+          return { emitted: true, confirmation: undefined };
         },
       },
       log: {
@@ -488,6 +490,7 @@ describe("accepted-recorder media disposal", () => {
           step("logger");
         },
       },
+      ...dependencies,
     });
     const terminal = (state: State, overrides: Record<string, unknown> = {}) =>
       module.exports.recordAndEmit({
@@ -511,7 +514,23 @@ describe("accepted-recorder media disposal", () => {
         },
         ...overrides,
       });
-    return { fs, allocator, allocated, reply, faults, trace, logs, terminal, pending: () => pending };
+    return {
+      fs,
+      allocator,
+      allocate,
+      allocated,
+      binding,
+      reply,
+      faults,
+      trace,
+      logs,
+      terminal,
+      pending: () => pending,
+      replacePendingReply: (replacement: typeof reply) => {
+        pendingReply = replacement;
+        pending = true;
+      },
+    };
   }
 
   it.each([
@@ -584,5 +603,299 @@ describe("accepted-recorder media disposal", () => {
     expect(h.trace.indexOf("unlink")).toBeGreaterThan(h.trace.indexOf("output"));
     expect(h.trace.filter((stage) => stage === "unlink")).toHaveLength(1);
     expect(h.logs).toEqual([expect.objectContaining({ status: "failed", error: h.fs.unlinkError })]);
+  });
+
+  describe("terminal recovery and private media ownership join", () => {
+    /**
+     * The source projector, recovery/readback comparisons, commit acknowledgement,
+     * text handoff and private allocator are real. Only the synchronous DB/witness
+     * boundary, schemas, registry, timers and sinks are simulated. This is NOT SQL
+     * COMMIT evidence; terminal-projection-recovery.test.ts supplies that separately.
+     * No router DB import, native fixture, filesystem removal or provider send runs.
+     */
+    const recoverySource = ["terminal-projection-recovery.ts", "terminal-output-handoff.ts"]
+      .map((filename) => {
+        const moduleSource = ts.createSourceFile(
+          filename,
+          readFileSync(new URL(`../channels/${filename}`, import.meta.url), "utf8"),
+          ts.ScriptTarget.Latest,
+          true,
+        );
+        return moduleSource.statements
+          .filter((statement) => !ts.isImportDeclaration(statement))
+          .map((statement) => statement.getText(moduleSource))
+          .join("\n");
+      })
+      .join("\n");
+    const recoveryCompiled = ts.transpileModule(recoverySource, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+      reportDiagnostics: true,
+    });
+    expect(recoveryCompiled.diagnostics?.filter((item) => item.category === ts.DiagnosticCategory.Error)).toEqual([]);
+
+    type Boundary = "accepted" | "readback" | "refused" | "unknown" | "uncommitted";
+    async function joinedFixture(boundary: Boundary, loseOwner = false) {
+      const receipt = {
+        id: "virtual-receipt",
+        turnId: "virtual-turn",
+        channelInstanceId: "virtual-instance",
+        agentId: "virtual-agent",
+        chatId: "virtual-chat",
+        messageId: "virtual-message",
+        sessionKey: "virtual-session",
+        sessionName: "virtual-session",
+        idempotencyKey: "virtual-request",
+        requestFingerprint: "virtual-request-fingerprint",
+        initialRequestId: "virtual-ingress",
+        external: { channelKind: "slack", conversationId: "virtual-conversation" },
+        prompt: "virtual prompt",
+        acceptedAt: 1,
+      };
+      let runtime: Record<string, unknown> = {
+        turnId: receipt.turnId,
+        state: "running",
+        runtimeGenerationId: "virtual-generation",
+        lastSequence: 1,
+        lastDeltaSequence: 0,
+        updatedAt: 2,
+      };
+      let manifest: { responseId: string; requestFingerprint: string } | undefined;
+      let owns = true;
+      let recordCalls = 0;
+      let snapshots = 0;
+      const persistenceStates: string[] = [];
+      const outputStates: string[] = [];
+      const delays: number[] = [];
+      const persistenceError = new Error(
+        boundary === "refused" ? "Slack automatic terminal manifest identity conflict" : "ambiguous recorder outcome",
+      );
+      const database = {
+        inTransaction: false,
+        transaction: (read: () => unknown) => ({
+          deferred: () => {
+            snapshots += 1;
+            if (boundary === "unknown" && snapshots > 1) throw new Error("readback unavailable");
+            return read();
+          },
+        }),
+        prepare: () => ({
+          get: () =>
+            manifest
+              ? {
+                  response_id: manifest.responseId,
+                  request_fingerprint: manifest.requestFingerprint,
+                  manifest_json: JSON.stringify(manifest),
+                }
+              : null,
+        }),
+      };
+      const module = { exports: {} as Record<string, unknown> };
+      runInNewContext(recoveryCompiled.outputText, {
+        module,
+        exports: module.exports,
+        Error,
+        isDeepStrictEqual,
+        ...outputHandoff,
+        ChannelBackendRuntimeOwnershipLostError: class extends Error {},
+        ChannelOutputEnvelopeSchema: { parse: (value: unknown) => structuredClone(value) },
+        getDb: () => database,
+        dbGetChannelBackendIngressReceiptByTurnId: () => receipt,
+        dbGetChannelBackendRuntimeState: () => runtime,
+        dbGetChatMessage: () => null,
+        dbRecordChannelBackendRuntimeEvent: (operation: Record<string, unknown>) => {
+          recordCalls += 1;
+          if (boundary === "refused" || boundary === "unknown") throw persistenceError;
+          runtime = {
+            ...runtime,
+            state: operation.state,
+            lastSequence: 2,
+            updatedAt: operation.occurredAt,
+            terminalError: operation.terminalError,
+          };
+          manifest = operation.slackTerminalManifest as typeof manifest;
+          if (loseOwner) owns = false;
+          if (boundary === "uncommitted") database.inTransaction = true;
+          if (boundary !== "accepted") throw persistenceError;
+          return { receipt, runtime, slackTerminalManifest: manifest };
+        },
+        setTimeout: (resume: () => void, delay: number) => {
+          delays.push(delay);
+          queueMicrotask(resume);
+        },
+      });
+      const h = await projectorFixture(module.exports);
+      const terminal = (state: State, overrides: Record<string, unknown> = {}) =>
+        h.terminal(state, {
+          terminalRecovery: {
+            mayRecover: () => owns,
+            onState: (outcome: { status: string }) => persistenceStates.push(outcome.status),
+            onOutputState: (outcome: { status: string }) => outputStates.push(outcome.status),
+          },
+          prepareTerminalManifest: () => ({
+            responseId: "virtual-response",
+            requestFingerprint: "virtual-manifest-fingerprint",
+            turnId: receipt.turnId,
+            kind: state === "completed" ? "final_answer" : "cancelled",
+          }),
+          ...overrides,
+        });
+      return {
+        ...h,
+        terminal,
+        persistenceError,
+        persistenceStates,
+        outputStates,
+        delays,
+        recordCalls: () => recordCalls,
+        snapshots: () => snapshots,
+      };
+    }
+
+    it.each([
+      { boundary: "accepted" as const, throwsUndefined: false },
+      { boundary: "readback" as const, throwsUndefined: false },
+      { boundary: "accepted" as const, throwsUndefined: true },
+      { boundary: "readback" as const, throwsUndefined: true },
+    ])(
+      "captures before callback and awaits one cleanup after $boundary and owner loss (throw undefined: $throwsUndefined)",
+      async ({ boundary, throwsUndefined }) => {
+        const h = await joinedFixture(boundary, true);
+        const original = throwsUndefined ? undefined : new Error("callback after owner loss");
+        let callbacks = 0;
+        let settled = false;
+        let releaseCleanup!: () => void;
+        let markCleanupStarted!: () => void;
+        const cleanupStarted = new Promise<void>((resolve) => {
+          markCleanupStarted = resolve;
+        });
+        const cleanupGate = new Promise<void>((resolve) => {
+          releaseCleanup = resolve;
+        });
+        const unlink = h.fs.unlink.bind(h.fs);
+        h.fs.unlink = async (filePath) => {
+          markCleanupStarted();
+          await cleanupGate;
+          await unlink(filePath);
+        };
+        const outcome = h
+          .terminal("failed", {
+            afterRecordEvent: () => {
+              callbacks += 1;
+              expect(h.reply.ownedMediaAllocations.size).toBe(0);
+              expect(h.reply.media).toEqual([]);
+              expect(h.reply.mediaKeys.size).toBe(0);
+              expect(h.fs.operations.some((operation) => operation.op === "lstat")).toBe(false);
+              throw original;
+            },
+          })
+          .then(
+            () => ({ rejected: false, error: undefined }),
+            (error: unknown) => ({ rejected: true, error }),
+          )
+          .finally(() => {
+            settled = true;
+          });
+        try {
+          expect(await Promise.race([cleanupStarted.then(() => "cleanup"), outcome.then(() => "settled")])).toBe(
+            "cleanup",
+          );
+          expect(settled).toBe(false);
+          expect(h.fs.files.has(h.allocated.attachment.filePath)).toBe(true);
+          expect(callbacks).toBe(1);
+          expect(h.persistenceStates).toEqual(["recorded"]);
+        } finally {
+          releaseCleanup();
+        }
+        const result = await outcome;
+        expect(result.rejected).toBe(true);
+        expect(result.error).toBe(original);
+        expect(callbacks).toBe(1);
+        expect(h.persistenceStates).toEqual(["recorded"]);
+        expect(h.recordCalls()).toBe(1);
+        expect(h.snapshots()).toBe(boundary === "readback" ? 2 : 1);
+        expect(h.delays).toEqual([]);
+        expect(h.trace.filter((stage) => stage === "detach")).toHaveLength(1);
+        expect(h.trace.filter((stage) => stage === "unlink")).toHaveLength(1);
+        expect(h.trace).not.toContain("event");
+        expect(h.trace).not.toContain("output");
+        expect(h.fs.files.size).toBe(0);
+        expect(h.allocator.prepareDiscard(h.allocated.allocation, h.reply)).toBeUndefined();
+      },
+    );
+
+    it.each(["refused", "unknown", "uncommitted"] as const)(
+      "does not acquire disposal authority at the simulated %s DB boundary",
+      async (boundary) => {
+        const h = await joinedFixture(boundary);
+        await expect(h.terminal("failed")).rejects.toMatchObject({
+          cause: h.persistenceError,
+          outcome: { status: boundary === "refused" ? "non_retryable" : "outcome_unknown" },
+        });
+        expect(h.recordCalls()).toBe(1);
+        expect(h.persistenceStates).not.toContain("recorded");
+        expect(h.delays).toEqual(boundary === "refused" ? [] : [100]);
+        expect(h.trace).toEqual([]);
+        expect(h.pending()).toBe(true);
+        expect(h.reply.ownedMediaAllocations.has(h.allocated.allocation)).toBe(true);
+        expect(h.reply.media).toHaveLength(1);
+        expect(h.fs.files.has(h.allocated.attachment.filePath)).toBe(true);
+        expect(h.fs.operations.some((operation) => operation.op === "lstat" || operation.op === "unlink")).toBe(false);
+      },
+    );
+
+    it("never captures a successor installed by the callback or retries the acknowledged terminal", async () => {
+      const h = await joinedFixture("readback", true);
+      const next = await h.allocate();
+      const successor = {
+        origin: { binding: { ...h.binding, turnId: "successor-turn" } },
+        ownedMediaAllocations: new Set([next.allocation]),
+        media: [next.attachment],
+        mediaKeys: new Set([next.attachment.idempotencyKey]),
+      };
+      h.allocator.adopt(next, successor);
+      await h.terminal("interrupted", { afterRecordEvent: () => h.replacePendingReply(successor) });
+      await expect(h.terminal("interrupted")).rejects.toMatchObject({ outcome: { errorCode: "ALREADY_TERMINAL" } });
+      expect(h.recordCalls()).toBe(1);
+      expect(h.trace.filter((stage) => stage === "detach")).toHaveLength(1);
+      expect(h.fs.operations.filter((operation) => operation.op === "unlink")).toEqual([
+        { op: "unlink", filePath: h.allocated.attachment.filePath },
+      ]);
+      expect(h.pending()).toBe(true);
+      expect(successor.ownedMediaAllocations.has(next.allocation)).toBe(true);
+      expect(successor.media).toEqual([next.attachment]);
+      expect(h.fs.files.has(next.attachment.filePath)).toBe(true);
+    });
+
+    it("does not capture an allocation returned under another binding", async () => {
+      const h = await joinedFixture("accepted");
+      h.reply.origin.binding = { ...h.binding, sessionKey: "other-session" };
+      await h.terminal("interrupted");
+      expect(h.persistenceStates).toEqual(["recorded"]);
+      expect(h.trace.filter((stage) => stage === "callback")).toHaveLength(1);
+      expect(h.reply.ownedMediaAllocations.has(h.allocated.allocation)).toBe(true);
+      expect(h.reply.media).toHaveLength(1);
+      expect(h.trace).not.toContain("unlink");
+      expect(h.fs.files.has(h.allocated.attachment.filePath)).toBe(true);
+    });
+
+    it.each(["failed", "completed"] as const)(
+      "keeps independent sinks and %s media settlement when output delivery is unknown",
+      async (state) => {
+        const h = await joinedFixture("accepted");
+        h.faults.event = new Error("notification failure");
+        h.faults.output = new Error("unknown output delivery");
+        expect((await h.terminal(state))?.dispatchError).toBe(h.faults.event);
+        expect(h.recordCalls()).toBe(1);
+        expect(h.persistenceStates).toEqual(["recorded"]);
+        expect(h.outputStates).toEqual(["outcome_unknown"]);
+        expect(h.trace.filter((stage) => stage === "callback")).toHaveLength(1);
+        expect(h.trace.filter((stage) => stage === "event")).toHaveLength(1);
+        expect(h.trace.filter((stage) => stage === "output")).toHaveLength(1);
+        expect(h.delays).toEqual([]);
+        expect(h.trace.filter((stage) => stage === "unlink")).toHaveLength(state === "failed" ? 1 : 0);
+        expect(h.fs.files.has(h.allocated.attachment.filePath)).toBe(state === "completed");
+        expect(h.allocator.prepareDiscard(h.allocated.allocation, h.reply)).toBeUndefined();
+      },
+    );
   });
 });
