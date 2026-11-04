@@ -48,3 +48,55 @@ específico, fora deste modal. O fluxo exige Socket Mode direto; gateway de nuve
 é recusado antes de mostrar o campo secreto. A confirmação fica no modal e só
 contém fingerprint. Env salva pode exigir recarregar os processos pelo fluxo
 normal de operação; o cadastro não reinicia o servidor.
+
+## Salvar uma chave em um servidor registrado
+
+O destino remoto é `remote:<destino>:<VARIAVEL>`. O fluxo está implementado no
+código; habilitar um servidor exige instalação e autorização explícitas do
+operador. O agente recebe somente o pedido e o recibo. Nunca salve um `.env`
+local para copiar por SCP, nem leia o arquivo remoto para preparar um merge.
+
+```bash
+ravi credentials request remote:api-prod:PAYMENTS_API_TOKEN --user UEXAMPLE --reason "Configurar a integração de pagamento solicitada" --json
+ravi credentials request remote:api-prod:PAYMENTS_API_TOKEN --user UEXAMPLE --reason "Configurar a integração de pagamento solicitada" --json --execute
+ravi credentials request-status remote:api-prod:PAYMENTS_API_TOKEN <request-id> --json
+```
+
+O humano confere ambiente, host, arquivo e variável antes do campo secreto. O
+handler envia o token diretamente por SSH autenticado a um gravador restrito,
+com host key fixada e política no receptor. A gravação adiciona somente uma
+chave ausente, preserva as demais e recusa sobrescrita, versão alterada, links,
+arquivo inseguro e sintaxe não suportada. O perfil inicial aceita tokens ASCII
+de uma linha, até 8 KiB, sem espaços, aspas, interpolação ou quebras de linha.
+
+`request-status` reconcilia estado e exige o agente, sessão, conversa e humano
+autorizado do pedido original. É uma mutação: pode bloquear duravelmente um
+pedido remoto ainda ausente/reservado para impedir uma gravação atrasada. Em
+timeout, use o mesmo request-id; `stored` é sucesso, `uncertain` exige
+reconciliação confiável. Não peça o segredo novamente nem tente outra gravação
+às cegas. Salvar não significa ativar: o aplicativo é recarregado pelo fluxo
+operacional normal.
+
+A administração fica exclusivamente no CLI local:
+
+```bash
+ravi credentials destinations discover --config /absolute/operator/ssh-config --json
+ravi credentials destinations list --json
+ravi credentials destinations show api-prod --json
+ravi credentials destinations export-helper --out /absolute/operator/ravi-credential-writer --json
+ravi credentials destinations register api-prod --ssh-alias api-host --config /absolute/operator/ssh-config --host-key "ssh-ed25519 <VERIFIED_SERVER_PUBLIC_KEY>" --identity-file /absolute/private/api-writer-key --user apiwriter --path /srv/api/.env --remote-target api --keys PAYMENTS_API_TOKEN --label "API produção" --json
+```
+
+O registro mostra a prévia e sai com 3; `--execute` cadastra o destino sem
+instalar helper, criar chaves ou conceder permissões. A descoberta lê aliases
+literais como metadados e não executa configuração SSH. O usuário e a chave
+pessoais do alias não são herdados. IDs registrados não são substituídos.
+`export-helper` cria somente um arquivo novo e recusa overwrite.
+
+O operador instala o helper como forced command, com conta/chave dedicadas,
+sem shell livre ou forwarding, e política fixa em
+`/etc/ravi/credential-writer.json`, fora do workspace do agente. Política e
+helper precisam de controle do operador; env e estado precisam de isolamento
+do processo do agente. Se o agente tiver a mesma conta, chave administrativa,
+sudo ou puder alterar o aplicativo para extrair seu ambiente, `0600` não garante
+que ele nunca verá o segredo. O registro não cria esse isolamento sozinho.

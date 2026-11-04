@@ -3583,6 +3583,18 @@ class CredentialsNamespace {
       decode: credentialsRequestReturnFromJson,
     );
   }
+
+  Future<CredentialsRequestStatusReturn> requestStatus(String target, String requestId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    requestBody["request-id"] = RaviJson.from(requestId);
+    return _transport.callJson(
+      groupSegments: const ["credentials"],
+      command: "request-status",
+      body: requestBody,
+      decode: credentialsRequestStatusReturnFromJson,
+    );
+  }
 }
 
 class CredentialsConnectionsNamespace {

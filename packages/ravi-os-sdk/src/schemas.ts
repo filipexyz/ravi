@@ -63471,7 +63471,7 @@ export const CredentialsRequestInputSchema = {
       "type": "string"
     },
     "target": {
-      "description": "env:<key> or connection:<provider>:<connection>",
+      "description": "env:<key>, connection:<provider>:<connection> or remote:<destination>:<KEY>",
       "type": "string"
     },
     "user": {
@@ -63508,6 +63508,56 @@ export const CredentialsRequestReturnSchema = {
     "target",
     "expiresAt",
     "delivery"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `credentials.request-status`. */
+export const CredentialsRequestStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "request-id": {
+      "description": "Opaque request ID returned by credentials request",
+      "type": "string"
+    },
+    "target": {
+      "description": "remote:<destination>:<KEY>",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request-id",
+    "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `credentials.request-status`. */
+export const CredentialsRequestStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "activation": {
+      "const": "not_requested",
+      "type": "string"
+    },
+    "receipt": {
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target",
+    "status",
+    "activation"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

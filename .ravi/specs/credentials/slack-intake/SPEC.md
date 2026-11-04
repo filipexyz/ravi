@@ -29,12 +29,15 @@ hold `mutate:credentials.secrets:<target>`. Request authority MUST NOT imply wri
 read, broker execution, use, or permission-grant authority. Existing `@CliOnly`
 credential operations MUST remain CLI-only. No new grants are installed.
 
-Targets are `env:<key>` and `connection:<provider>:<connection>`. Env keys MUST be
+Targets are `env:<key>`, `connection:<provider>:<connection>` and
+`remote:<registered-destination>:<KEY>`. Env keys MUST be
 in the existing allowlist and its secret-key subset; the OAuth token destination
 is excluded from this direct API-token intake. Non-secret process configuration,
 unknown keys and arbitrary paths MUST fail closed. A connection MUST reuse the
 existing identifier/backend validation and the provider's existing secret parser
 where present (Slack's token bundle). Existing targets MUST NOT be overwritten.
+Remote destinations MUST use the immutable registered endpoint, path and key
+contract in `credentials/remote-env`; arbitrary per-request paths are forbidden.
 
 Scope MUST be truthful: env is host-wide; a connection belongs to its provider
 and existing use permissions. This intake MUST NOT imply agent/session isolation
@@ -59,11 +62,13 @@ rotation and new permission grants are separate operations.
 - The raw payload MUST be erased before async processing. Secret values and
   `response_url` MUST NOT reach messages, logs, traces, artifacts, permission
   audit, general event storage or generic CLI arguments.
-- The only durable secret sinks are the approved backend or the existing atomic
-  mode-0600 allowlisted env writer. Parser/backend/API errors MUST be replaced
+- The only durable secret sinks are the approved backend, the existing atomic
+  mode-0600 allowlisted env writer, or the isolated registered remote writer.
+  Parser/backend/API errors MUST be replaced
   with fixed error codes without a raw cause.
 - Audit MUST include actor, request, issuer, target, scope, result and fingerprint,
-  never input values or raw exceptions. Fingerprints identify high-entropy API
+  never input values or raw exceptions. Remote results MUST use random opaque
+  receipts rather than hashes of secret values. Fingerprints identify high-entropy API
   tokens; password hashing is not a supported use of this flow.
 - Submission replaces the input view with a processing view and then a receipt
   containing a fingerprint. Confirmation MUST stay in the modal; no public
@@ -114,4 +119,9 @@ specified by `cli/runtime-env`, not a preflight followed by unconditional set.
 Known precommit conflicts MUST remain failures with no mutation; presence of a
 competitor's value MUST NOT be mistaken for this request's uncertain success.
 An actual postcommit failure or unprovable outcome MUST remain pending for
-trusted reconciliation. No arbitrary path or remote env write is introduced.
+trusted reconciliation. Registered remote writes use `credentials/remote-env`.
+`credentials request-status <target> <request-id>` MUST enforce the same issuing
+agent, session and Slack source, plus current issuer/human target authorization.
+Its remote `not_found` result MUST be durably fenced against a late write before
+the local pending request is failed. This is a reconciliation operation, not a
+passive existence query. Stored receipts do not assert application activation.

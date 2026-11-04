@@ -2660,6 +2660,13 @@ public struct CredentialsNamespace: Sendable {
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["credentials"], command: "request", body: requestBody, as: CredentialsRequestReturn.self)
   }
+
+  public func requestStatus(_ target: String, _ requestId: String) async throws -> CredentialsRequestStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["target"] = try RaviJSON.fromEncodable(target)
+    requestBody["request-id"] = try RaviJSON.fromEncodable(requestId)
+    return try await transport.call(groupSegments: ["credentials"], command: "request-status", body: requestBody, as: CredentialsRequestStatusReturn.self)
+  }
 }
 
 public struct CredentialsConnectionsNamespace: Sendable {

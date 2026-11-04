@@ -11425,6 +11425,32 @@ class CredentialsRequestReturn {
 
 CredentialsRequestReturn credentialsRequestReturnFromJson(Object? json) => CredentialsRequestReturn.fromJsonValue(json);
 
+class CredentialsRequestStatusReturn {
+  const CredentialsRequestStatusReturn({required this.activation, this.receipt, required this.requestId, required this.status, required this.target});
+
+  final String activation;
+  final String? receipt;
+  final String requestId;
+  final String status;
+  final String target;
+
+  factory CredentialsRequestStatusReturn.fromJson(Map<String, Object?> json) {
+    return CredentialsRequestStatusReturn(
+      activation: raviJsonAsString(json["activation"]),
+      receipt: json["receipt"] == null ? null : raviJsonAsString(json["receipt"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      status: raviJsonAsString(json["status"]),
+      target: raviJsonAsString(json["target"]),
+    );
+  }
+
+  static CredentialsRequestStatusReturn fromJsonValue(Object? json) {
+    return CredentialsRequestStatusReturn.fromJson(raviJsonObject(json, "CredentialsRequestStatusReturn"));
+  }
+}
+
+CredentialsRequestStatusReturn credentialsRequestStatusReturnFromJson(Object? json) => CredentialsRequestStatusReturn.fromJsonValue(json);
+
 class CrmAccountReturn {
   const CrmAccountReturn({required this.crm, required this.target});
 

@@ -13570,6 +13570,30 @@ public struct CredentialsRequestReturn: Codable, Sendable {
   }
 }
 
+public struct CredentialsRequestStatusReturn: Codable, Sendable {
+  public var activation: String
+  public var receipt: String?
+  public var requestId: String
+  public var status: String
+  public var target: String
+
+  public init(activation: String, receipt: String? = nil, requestId: String, status: String, target: String) {
+    self.activation = activation
+    self.receipt = receipt
+    self.requestId = requestId
+    self.status = status
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case activation = "activation"
+    case receipt = "receipt"
+    case requestId = "requestId"
+    case status = "status"
+    case target = "target"
+  }
+}
+
 public struct CrmAccountReturn: Codable, Sendable {
   public var crm: [String: RaviJSON]
   public var target: String
