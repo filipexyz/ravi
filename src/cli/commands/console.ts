@@ -17,13 +17,20 @@ export class ConsoleCommands {
     @Option({ flags: "--url <origin>", description: "Trusted HTTPS Console origin" }) url?: string,
     @Option({ flags: "--name <name>", description: "Installation name" }) name?: string,
     @Option({ flags: "--no-open", description: "Print the association link for a headless machine" }) noOpen?: boolean,
+    @Option({ flags: "--json", description: "Return association metadata as JSON; browser instructions go to stderr" })
+    asJson?: boolean,
   ) {
-    if (!url) contractFail("console connect", "USAGE_ERROR", "Specify --url with your trusted Console HTTPS origin");
+    if (!url)
+      contractFail("console connect", "USAGE_ERROR", "Specify --url with your trusted Console HTTPS origin", {
+        asJson,
+      });
     const result = await connectInstallation({
       consoleUrl: url,
       name,
       onLink: async (link, fingerprint) => {
-        console.log(`Confirme esta instalação no Console:\n${link}\nIdentidade: ${fingerprint}`);
+        const instructions = `Confirme esta instalação no Console:\n${link}\nIdentidade: ${fingerprint}`;
+        if (asJson) console.error(instructions);
+        else console.log(instructions);
         if (!noOpen && process.platform !== "win32") {
           const child = spawn(process.platform === "darwin" ? "open" : "xdg-open", [link], {
             stdio: "ignore",
@@ -34,16 +41,23 @@ export class ConsoleCommands {
         }
       },
     });
-    console.log(
-      `Instalação associada: ${result.installationId}. O daemon estabelece a conexão automaticamente. Sem daemon, use ravi console run.`,
-    );
+    if (asJson) console.log(JSON.stringify({ associated: true, ...result }));
+    else
+      console.log(
+        `Instalação associada: ${result.installationId}. O daemon estabelece a conexão automaticamente. Sem daemon, use ravi console run.`,
+      );
+    return { associated: true, ...result };
   }
 
   @Command({ name: "run", description: "Run the outbound management connection in the foreground" })
   @CommandAccess({ kind: "mutate", resource: "fleet", action: "run", risk: "high", localOperator: true })
   @CliOnly()
-  async run() {
-    if (!(await readFleetIdentity())) contractFail("console run", "NOT_ASSOCIATED", "Run ravi console connect first");
+  async run(
+    @Option({ flags: "--json", description: "Stream connection state changes as newline-delimited JSON" })
+    asJson?: boolean,
+  ) {
+    if (!(await readFleetIdentity()))
+      contractFail("console run", "NOT_ASSOCIATED", "Run ravi console connect first", { asJson });
     const controller = new AbortController();
     const stop = () => controller.abort();
     process.once("SIGINT", stop);
@@ -52,7 +66,7 @@ export class ConsoleCommands {
       await runFleetConnection({
         signal: controller.signal,
         execute: executeFleetOperation,
-        onState: (state) => console.log(`Console: ${state}`),
+        onState: (state) => console.log(asJson ? JSON.stringify({ state }) : `Console: ${state}`),
       });
     } finally {
       process.off("SIGINT", stop);
@@ -63,7 +77,9 @@ export class ConsoleCommands {
   @Command({ name: "status", description: "Show safe local association metadata" })
   @CommandAccess({ kind: "read", resource: "fleet", action: "status", risk: "low", localOperator: true })
   @CliOnly()
-  async status() {
+  async status(
+    @Option({ flags: "--json", description: "Return safe association metadata as JSON" }) _asJson?: boolean,
+  ) {
     const identity = await readFleetIdentity();
     console.log(
       JSON.stringify(
@@ -84,11 +100,16 @@ export class ConsoleCommands {
   @Command({ name: "disconnect", description: "Remove this installation's local Console credentials" })
   @CommandAccess({ kind: "mutate", resource: "fleet", action: "disconnect", risk: "low", localOperator: true })
   @CliOnly()
-  async disconnect() {
+  async disconnect(
+    @Option({ flags: "--json", description: "Return the disconnection result as JSON" }) asJson?: boolean,
+  ) {
     for (const file of ["identity.json", "association.json", "rotation.json"])
       await rm(join(fleetDirectory(), file), { force: true });
-    console.log(
-      "Credenciais locais removidas. Para revogar uma cópia em outra máquina, use Gerenciar instalações no Console.",
-    );
+    if (asJson) console.log(JSON.stringify({ associated: false }));
+    else
+      console.log(
+        "Credenciais locais removidas. Para revogar uma cópia em outra máquina, use Gerenciar instalações no Console.",
+      );
+    return { associated: false };
   }
 }
