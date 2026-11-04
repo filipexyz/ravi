@@ -6077,6 +6077,7 @@ describe("runtime session trace instrumentation", () => {
       successes?: number;
       inputMutated?: boolean;
       elapsedDuringWaitMs?: number;
+      retryAfterSeconds?: number;
       wait?: (delayMs: number, signal: AbortSignal, streaming: RuntimeHostStreamingSession) => Promise<void>;
     } = {},
   ) {
@@ -6114,7 +6115,12 @@ describe("runtime session trace instrumentation", () => {
             yield {
               type: "turn.failed",
               error: "Selected model is at capacity. Please try a different model.",
-              rawEvent: { status: options.status ?? 503 },
+              rawEvent: {
+                status: options.status ?? 503,
+                ...(options.retryAfterSeconds === undefined
+                  ? {}
+                  : { headers: { "Retry-After": String(options.retryAfterSeconds) } }),
+              },
               preExecutionRejected: options.proof ?? true,
               providerSessionId: "capacity-thread",
               session: { displayId: "capacity-thread", params: { sessionId: "capacity-thread" } },
@@ -6235,6 +6241,53 @@ describe("runtime session trace instrumentation", () => {
     expect(successor.providerCapacityRetry).toBeUndefined();
   });
 
+  it("checkpoints the exact capacity retry cohort and remaining Retry-After while its physical attempt is failed", async () => {
+    const successor = createQueuedRuntimeUserMessage({
+      prompt: "independent later request",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const checkpoints: NonNullable<RuntimeHostStreamingSession["pendingCapacityRetry"]>[] = [];
+    const result = await runCapacityScenario({
+      failures: 2,
+      successes: 2,
+      retryAfterSeconds: 10,
+      wait: async (delay, _signal, streaming) => {
+        const checkpoint = streaming.pendingCapacityRetry;
+        expect(checkpoint).toBeDefined();
+        expect(streaming.currentCrashRecoveryTerminal).toMatchObject({
+          status: "failed",
+          startedTool: false,
+          materializedOutput: false,
+        });
+        expect(checkpoint?.pendingIds).toEqual(streaming.currentTurnPendingIds!);
+        expect(checkpoint?.state).toEqual({ startedAt: 1_000, retries: checkpoints.length + 1 });
+        expect(checkpoint?.notBefore).toBe(1_000 + (checkpoints.length + 1) * 10_000);
+        expect(delay).toBe(10_000);
+        if (checkpoints.length === 0) streaming.pendingMessages.push(successor);
+        expect(checkpoint?.pendingIds).not.toContain(successor.pendingId!);
+        const ownMessages = streaming.pendingMessages.filter((message) =>
+          checkpoint?.pendingIds.includes(message.pendingId!),
+        );
+        expect(ownMessages).toHaveLength(1);
+        expect(ownMessages[0]?.providerCapacityRetry).toEqual(checkpoint!.state);
+        checkpoints.push(structuredClone(checkpoint!));
+      },
+    });
+
+    expect(checkpoints).toHaveLength(2);
+    expect(checkpoints[0]?.pendingIds).toEqual(checkpoints[1]?.pendingIds);
+    expect(result.inputs).toEqual([
+      "capacity request",
+      "capacity request",
+      "capacity request",
+      "independent later request",
+    ]);
+    expect(result.waits).toEqual([10_000, 10_000]);
+    expect(successor.providerCapacityRetry).toBeUndefined();
+    expect(result.streaming.pendingCapacityRetry).toBeUndefined();
+  });
+
   it("does not replay a capacity failure after native input mutation", async () => {
     const result = await runCapacityScenario({ inputMutated: true });
     expect(result.attempts).toBe(1);
@@ -6311,6 +6364,19 @@ describe("runtime session trace instrumentation", () => {
     expect(result.attempts).toBe(1);
     expect(result.waits).toEqual([500]);
     expect(result.emitted.filter((entry) => entry.data.type === "turn.failed")).toHaveLength(0);
+  });
+
+  it.each([true, false])("keeps a snapshotted capacity retry logically open on daemon shutdown: %s", async (saved) => {
+    const result = await runCapacityScenario({
+      wait: async (_delay, _signal, streaming) => {
+        streaming.capacityRetrySnapshotSaved = saved;
+        streaming.internalAbortReason = "shutdown_all";
+        streaming.abortController.abort();
+      },
+    });
+    expect(result.attempts).toBe(1);
+    expect(result.emitted.filter((entry) => entry.data.type === "turn.failed")).toHaveLength(0);
+    expect(result.emitted.filter((entry) => entry.data.type === "turn.interrupted")).toHaveLength(saved ? 0 : 1);
   });
 
   it("does not stash an unmanaged authentication failure into the credential retry lane", async () => {

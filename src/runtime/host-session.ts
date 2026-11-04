@@ -221,6 +221,14 @@ export interface RuntimeHostStreamingSession {
     materializedOutput: boolean;
     inputMutated?: boolean;
   };
+  /** Host-authorized next capacity attempt; distinct from the consumed physical turn. */
+  pendingCapacityRetry?: {
+    pendingIds: string[];
+    state: ProviderCapacityRetryState;
+    notBefore: number;
+  };
+  /** This scheduled retry was durably copied before daemon shutdown. */
+  capacityRetrySnapshotSaved?: boolean;
   /** Durable handoff failed before the prompt reached the provider. */
   durableTurnPreparationFailed?: boolean;
   /** Managed runtime credential selected for this provider process, if any. */

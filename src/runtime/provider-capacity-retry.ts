@@ -16,6 +16,25 @@ const MAX_DELAY_MS = 8_000;
 export interface ProviderCapacityRetryState {
   startedAt: number;
   retries: number;
+  /** Persisted next-attempt deadline; consumed before a restored input is handed off. */
+  notBefore?: number;
+}
+
+/** A carried retry budget alone is not authority to schedule another attempt. */
+export function isScheduledProviderCapacityRetry(
+  state: ProviderCapacityRetryState | undefined,
+): state is ProviderCapacityRetryState & { notBefore: number } {
+  return Boolean(
+    state &&
+      Number.isFinite(state.startedAt) &&
+      Number.isInteger(state.retries) &&
+      state.retries >= 1 &&
+      state.retries <= PROVIDER_CAPACITY_MAX_RETRIES &&
+      typeof state.notBefore === "number" &&
+      Number.isFinite(state.notBefore) &&
+      state.notBefore >= state.startedAt &&
+      state.notBefore < state.startedAt + PROVIDER_CAPACITY_MAX_ELAPSED_MS,
+  );
 }
 
 export type ProviderCapacityRetryDecision =

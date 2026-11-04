@@ -4111,6 +4111,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
           if (capacityDecision.action === "retry" && safeToRetry && ownMessages.length > 0 && brokerAllowsRetry) {
             for (const message of ownMessages) message.providerCapacityRetry = capacityDecision.state;
+            // The failed physical attempt stays terminal. Only this separately
+            // authorized next attempt may survive a restart during its wait.
+            streaming.pendingCapacityRetry = {
+              pendingIds: ownMessages.map((message) => message.pendingId!),
+              state: { ...capacityDecision.state },
+              notBefore: (options.capacityRetryRuntime?.now?.() ?? Date.now()) + capacityDecision.delayMs,
+            };
             updateRuntimeLiveState(sessionName, {
               activity: "thinking",
               summary: "model busy; retrying shortly",
@@ -4129,8 +4136,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               (options.capacityRetryRuntime?.now?.() ?? Date.now()) - capacityDecision.state.startedAt >=
               PROVIDER_CAPACITY_MAX_ELAPSED_MS;
             if (continueRetry && budgetExpired) {
+              streaming.pendingCapacityRetry = undefined;
               capacityTerminalReason = PROVIDER_CAPACITY_EXHAUSTED_REASON;
             } else {
+              if (!continueRetry) streaming.pendingCapacityRetry = undefined;
               recordTerminalTraceOnce({
                 status: "failed",
                 eventType: "turn.failed",
@@ -4146,13 +4155,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 },
               });
               if (!continueRetry) {
-                await projectRuntimeEventToChannel({ type: "turn.interrupted", metadata: event.metadata });
-                await emitRuntimeEvent({
-                  type: "turn.interrupted",
-                  provider: runtimeSession.provider,
-                  reason: streaming.internalAbortReason ?? "provider_capacity_retry_cancelled",
-                  metadata: event.metadata,
-                });
+                if (
+                  streaming.internalAbortReason === "shutdown_all" &&
+                  streaming.capacityRetrySnapshotSaved &&
+                  !streaming.currentTurnSuperseded
+                ) {
+                  // The snapshot owns the pending logical retry now. Closing
+                  // its channel binding here would poison the resumed request.
+                  streaming.currentChannelBackend = undefined;
+                } else {
+                  await projectRuntimeEventToChannel({ type: "turn.interrupted", metadata: event.metadata });
+                  await emitRuntimeEvent({
+                    type: "turn.interrupted",
+                    provider: runtimeSession.provider,
+                    reason: streaming.internalAbortReason ?? "provider_capacity_retry_cancelled",
+                    metadata: event.metadata,
+                  });
+                }
               }
               await releasePendingProviderRawEvent(correlatedProviderRawEvent);
               suppressProviderRawForCurrentTurn = false;
