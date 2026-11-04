@@ -37,3 +37,11 @@ mutate counterparts in the stores that remain authoritative across runs. It
 does not rewrite historical runtime contexts. A broad or prefix read wildcard
 is expanded only across the finite versioned inventory of operations it already
 authorized, producing exact mutate grants instead of a broader mutate wildcard.
+
+## Preserve diagnosis, redact secrets
+
+The 2026-11-04 masking audit confirmed that `71ba6108` removed the entire
+media/transcription cause and shared projections conflated EACCES, paths and
+provider reasons with credentials. An agent cannot recover from an unknown
+failure. Diagnostic cause/context now use secret-value redaction, independently
+of audit and dry-run privacy projections. See `design/error-cause-inventory.md`.

@@ -22,6 +22,7 @@
  * structured issues) are preserved so file/project failures stay actionable.
  */
 
+import { projectDiagnosticContext, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { request as httpRequest } from "node:http";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -410,7 +411,10 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         );
       }
       if (body.error === "PermissionDenied") {
-        const denied = permissionDeniedToContractError(op, "Remote gateway denied the command.");
+        const denied = permissionDeniedToContractError(
+          op,
+          typeof body.reason === "string" ? redactDiagnosticText(body.reason) : "Remote gateway denied the command.",
+        );
         return new ContractError(denied.op, denied.code, denied.message, denied.exitCode, {
           ...denied.details,
           status: result.status,
@@ -964,7 +968,7 @@ function remoteContractFailureMessage(
   sourceMessage?: string,
   code?: string,
 ): string {
-  if (outcome === "denied") return "Remote gateway denied the command.";
+  if (outcome === "denied") return sanitizePublicContractMessage(sourceMessage) ?? "Remote gateway denied the command.";
   if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
   if (op === PAGES_DOMAINS_OP && code === "DOMAIN_SETUP_REQUIRED" && sourceMessage) {
     return safeDomainSetupMessage(sourceMessage);
@@ -1101,7 +1105,15 @@ function projectRemoteContractDetails(
   status: number,
 ): ContractErrorDetails {
   const remote = body.error;
-  const details: ContractErrorDetails = { retryable: remote.retryable, status };
+  const details: ContractErrorDetails = {
+    retryable: remote.retryable,
+    status,
+    ...(typeof remote.cause === "string" ? { cause: redactDiagnosticText(remote.cause) } : {}),
+    ...(remote.context ? { context: projectDiagnosticContext(remote.context) } : {}),
+    ...(body.outcome === "denied" && typeof remote.cause !== "string"
+      ? { cause: redactDiagnosticText(remote.message), context: { operation: op, status } }
+      : {}),
+  };
   if (safeRequestId(remote.diagnosticRequestId))
     details.diagnosticRequestId = safeRequestId(remote.diagnosticRequestId);
   const denial = projectRemoteDenial(body);

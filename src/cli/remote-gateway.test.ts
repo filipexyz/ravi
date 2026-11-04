@@ -209,7 +209,10 @@ describe("remote gateway exit taxonomy", () => {
       result({
         status: 403,
         contentType: "application/json",
-        body: JSON.stringify({ error: "PermissionDenied", reason: "PRIVATE_MESSAGE_8K2R" }),
+        body: JSON.stringify({
+          error: "PermissionDenied",
+          reason: "Permission denied: executable ffmpeg is blocked; api_key=opaque",
+        }),
       }),
     );
 
@@ -217,10 +220,40 @@ describe("remote gateway exit taxonomy", () => {
       op: "commands list",
       code: "PERMISSION_DENIED",
       exitCode: 1,
-      message: "Remote gateway denied the command.",
+      message: "Permission denied: executable ffmpeg is blocked; api_key=[redacted]",
     });
     expect(error?.envelope()).toMatchObject({ success: false, error: { code: "PERMISSION_DENIED" } });
-    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(error?.envelope())).not.toContain("opaque");
+  });
+
+  it("preserves transcription cause and diagnostic context through gateway and remote CLI", async () => {
+    const local = new ContractError("transcribe file", "TRANSCRIBE_FAILED", "Audio transcription failed.", 1, {
+      cause: "HTTP 429: quota exhausted; api_key=fixture-token",
+      context: {
+        operation: "transcribe file",
+        provider: "openai",
+        model: "whisper-1",
+        status: 429,
+        file: "/tmp/voice.mp3",
+        code: "insufficient_quota",
+        authorization: "fixture-token",
+      },
+    });
+    const response = contractErrorResponse(local);
+    const remote = remoteGatewayErrorToContractError(
+      "transcribe file",
+      result({ status: response.status, body: await response.text() }),
+    );
+    expect(remote?.details.cause).toBe("HTTP 429: quota exhausted; api_key=[redacted]");
+    expect(remote?.details.context).toEqual({
+      operation: "transcribe file",
+      provider: "openai",
+      model: "whisper-1",
+      status: 429,
+      file: "/tmp/voice.mp3",
+      code: "insufficient_quota",
+    });
+    expect(JSON.stringify(remote?.envelope())).not.toContain("fixture-token");
   });
 
   it("redacts malformed remote failures without encouraging retries of an uncertain write", () => {
@@ -292,7 +325,7 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_REMOTE_TEXT");
   });
 
-  it("keeps the generic failure for DOMAIN_SETUP_REQUIRED outside pages domains", () => {
+  it("preserves the cause for DOMAIN_SETUP_REQUIRED outside pages domains", () => {
     const error = remoteGatewayErrorToContractError(
       "pages ship",
       result({
@@ -302,12 +335,12 @@ describe("remote gateway exit taxonomy", () => {
           op: "pages ship",
           exitCode: 1,
           outcome: "failed",
-          error: { code: "DOMAIN_SETUP_REQUIRED", message: "PRIVATE_REMOTE_TEXT", retryable: false },
+          error: { code: "DOMAIN_SETUP_REQUIRED", message: "Domain is not configured", retryable: false },
         }),
       }),
     );
 
-    expect(error?.message).toContain("pages ship failed (DOMAIN_SETUP_REQUIRED)");
+    expect(error?.message).toBe("Domain is not configured");
   });
 
   it("shows the DNS to add on a pages domains dry-run through the gateway", () => {
@@ -619,13 +652,8 @@ describe("remote gateway exit taxonomy", () => {
   });
 
   it.each([
-    [
-      1,
-      "failed",
-      "COMMAND_FAILED",
-      "commands list failed (COMMAND_FAILED). Check the input with 'commands list --help'; report the requestId if it persists.",
-    ],
-    [1, "denied", "PERMISSION_DENIED", "Remote gateway denied the command."],
+    [1, "failed", "COMMAND_FAILED", "Command refused; token=[redacted]"],
+    [1, "denied", "PERMISSION_DENIED", "Command refused; token=[redacted]"],
     [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],
     [
       3,
@@ -650,7 +678,7 @@ describe("remote gateway exit taxonomy", () => {
             plan: { token: "SENTINEL_SECRET_7M4Q" },
             error: {
               code,
-              message: "PRIVATE_MESSAGE_8K2R",
+              message: "Command refused; token=opaque",
               retryable: true,
               metadata: { secret: "SENTINEL_SECRET_7M4Q" },
             },
@@ -662,6 +690,7 @@ describe("remote gateway exit taxonomy", () => {
       expect(error?.envelope().error.message).toBe(message);
       const serialized = JSON.stringify(error?.envelope());
       expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(serialized).not.toContain("opaque");
       expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
       expect(serialized).not.toContain("providerBody");
       expect(serialized).not.toContain("metadata");
@@ -701,10 +730,11 @@ describe("remote gateway exit taxonomy", () => {
         denialId: 42,
       },
     });
-    expect(error?.envelope().error.message).toBe("Remote gateway denied the command.");
+    expect(error?.envelope().error.message).toContain("agent:main cannot execute pages published");
+    expect(error?.details.cause).toContain("Missing capability: read:pages:list");
   });
 
-  it("keeps a remote denial without a capability but does not relay raw server copy", () => {
+  it("preserves a denial reason even without a capability", () => {
     const error = remoteGatewayErrorToContractError(
       "pages published",
       result({
@@ -729,7 +759,7 @@ describe("remote gateway exit taxonomy", () => {
     });
     expect(error?.details.capability).toBeUndefined();
     const serialized = JSON.stringify(error?.envelope());
-    expect(serialized).not.toContain("PRIVATE_REASON_9X2");
+    expect(serialized).toContain("PRIVATE_REASON_9X2");
   });
 
   it("drops a remote capability field that is not a canonical capability", () => {
@@ -1087,7 +1117,7 @@ describe("remote gateway exit taxonomy", () => {
     },
   );
 
-  it("keeps unknown media failures private with operation and code", () => {
+  it("preserves unknown media failure causes", () => {
     const error = remoteGatewayErrorToContractError(
       "media send",
       result({
@@ -1099,7 +1129,7 @@ describe("remote gateway exit taxonomy", () => {
           outcome: "failed",
           error: {
             code: "COMMAND_FAILED",
-            message: "PRIVATE_MESSAGE_8K2R",
+            message: "Remote media service timed out",
             retryable: true,
           },
         }),
@@ -1109,10 +1139,10 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({
       op: "media send",
       code: "COMMAND_FAILED",
-      message: expect.stringContaining("media send failed (COMMAND_FAILED)"),
+      message: "Remote media service timed out",
       details: { retryable: true },
     });
-    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(error?.message).toBe("Remote media service timed out");
   });
 
   it("does not apply the media catalog when a different op reuses a catalog code", () => {
@@ -1127,7 +1157,7 @@ describe("remote gateway exit taxonomy", () => {
           outcome: "failed",
           error: {
             code: FILE_NOT_FOUND_CODE,
-            message: "PRIVATE_MESSAGE_8K2R",
+            message: "Audio file /tmp/audio.wav was not found",
             retryable: false,
           },
         }),
@@ -1137,10 +1167,10 @@ describe("remote gateway exit taxonomy", () => {
     expect(error).toMatchObject({
       op: "transcribe file",
       code: FILE_NOT_FOUND_CODE,
-      message: expect.stringContaining("transcribe file failed (FILE_NOT_FOUND)"),
+      message: "Audio file /tmp/audio.wav was not found",
     });
     expect(error?.message).not.toBe(FILE_NOT_FOUND_MESSAGE);
-    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(error?.message).toContain("/tmp/audio.wav");
   });
 });
 
@@ -1148,7 +1178,10 @@ describe("ravi link failures over the gateway", () => {
   it.each(["CONTACT_REQUIRED", "LINK_DM_UNSUPPORTED", "LINK_DM_FAILED", "AUTH_REQUIRED"] as const)(
     "keeps the local message and next step for %s",
     async (code) => {
-      const local = cloudErrorToContractError("identity link", new CloudAuthError(code, "PRIVATE_MESSAGE_8K2R U0LUIS"));
+      const local = cloudErrorToContractError(
+        "identity link",
+        new CloudAuthError(code, "Audio file /tmp/audio.wav was not found U0LUIS"),
+      );
       const response = contractErrorResponse(local);
 
       const error = remoteGatewayErrorToContractError(
@@ -1164,7 +1197,7 @@ describe("ravi link failures over the gateway", () => {
       });
       expect(error?.message).not.toBe("Remote command failed.");
       const serialized = JSON.stringify(error?.envelope());
-      expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(serialized).not.toContain("Audio file /tmp/audio.wav was not found");
       expect(serialized).not.toContain("U0LUIS");
     },
   );
@@ -1736,16 +1769,16 @@ describe("Library refusals over the gateway", () => {
     expect(remoteNextStepLine(remote!)).toContain(String(remote?.details.requestId));
   });
 
-  it("leaves other commands with the generic relay copy", async () => {
-    const local = new ContractError("transcribe file", "CONFLICT", "PRIVATE_MESSAGE_8K2R", 1, {
-      suggestedAction: "PRIVATE_ACTION",
+  it("preserves diagnostic copy from other commands", async () => {
+    const local = new ContractError("transcribe file", "CONFLICT", "Audio resource is locked", 1, {
+      suggestedAction: "Retry after unlocking the resource",
     });
     const response = contractErrorResponse(local);
     const remote = remoteGatewayErrorToContractError(
       "transcribe file",
       result({ status: response.status, body: await response.text() }),
     );
-    expect(remote?.message).toContain("transcribe file failed (CONFLICT)");
+    expect(remote?.message).toBe("Audio resource is locked");
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
     expect(remoteNextStepLine(remote!)).toContain(String(remote?.details.requestId));
   });
@@ -1964,7 +1997,7 @@ describe("sessions runtime remote relay", () => {
       new ContractError("media send", RUNTIME_CONTROL_DISABLED, "PRIVATE_8K2R", 1, { suggestedAction: "x" }),
     );
 
-    expect(remote?.message).toContain("media send failed (RUNTIME_CONTROL_DISABLED)");
+    expect(remote?.message).toBe("PRIVATE_8K2R");
   });
 });
 
@@ -2051,14 +2084,15 @@ describe("thread command remote relay", () => {
     }
   });
 
-  it("keeps the generic failure for unknown codes, prototype keys and other commands", async () => {
+  it("preserves the cause for unknown codes, prototype keys and other commands", async () => {
     for (const [op, code] of [
       ["sessions report", "COMMAND_FAILED"],
       ["sessions report", "toString"],
       ["sessions list", "THREAD_NOT_THREAD_CHILD"],
     ] as const) {
       const remote = await relay(op, new ContractError(op, code, "PRIVATE_8K2R", 1));
-      expect(remote?.message).toContain(op);
+      if (code === "toString") expect(remote?.message).toContain("without a valid error envelope");
+      else expect(remote?.message).toBe("PRIVATE_8K2R");
       expect(remote?.message).not.toContain("Remote command failed");
     }
   });

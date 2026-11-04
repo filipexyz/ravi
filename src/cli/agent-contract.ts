@@ -23,7 +23,7 @@ import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write
 import { isRuntimeContextError } from "../runtime/context-errors.js";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
-import { looksLikeProviderDump, redactAbsolutePathsInText } from "./payload-error-message.js";
+import { errorDiagnostic, projectDiagnosticContext, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { sanitizePublicValue } from "./redaction.js";
 
 export const GENERIC_COMMAND_FAILED_MESSAGE = "Command could not be completed.";
@@ -57,13 +57,17 @@ export class ContractError extends Error {
   readonly details: ContractErrorDetails;
 
   constructor(op: string, code: string, message: string, exitCode: number, details: ContractErrorDetails = {}) {
-    super(message);
+    super(redactDiagnosticText(message));
     const canonicalExitCode = validateContractTaxonomy(code, exitCode);
     this.name = "ContractError";
     this.op = op;
     this.code = code;
     this.exitCode = canonicalExitCode;
-    this.details = sanitizePublicValue(details) as ContractErrorDetails;
+    this.details = {
+      ...(sanitizePublicValue(details) as ContractErrorDetails),
+      ...(typeof details.cause === "string" ? { cause: redactDiagnosticText(details.cause) } : {}),
+      ...(details.context ? { context: projectDiagnosticContext(details.context) } : {}),
+    };
   }
 
   envelope(): ContractErrorEnvelope {
@@ -127,13 +131,14 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
   });
 }
 
-export function unexpectedErrorToContractError(op: string): ContractError {
+export function unexpectedErrorToContractError(op: string, error?: unknown): ContractError {
   return new ContractError(
     op,
     "UNHANDLED_ERROR",
     `${op} failed internally. Report the operation to the operator before retrying.`,
     CONTRACT_EXIT_ERROR,
     {
+      ...errorDiagnostic(error, { operation: op }),
       suggestedAction: "Report the operation to the operator; do not automatically retry the command",
     },
   );
@@ -161,7 +166,7 @@ export function mapExecutionErrorToContractError(op: string, error: unknown): Co
     expectedErrorToContractError(op, error) ??
     runtimeContextErrorToContractError(op, error) ??
     sqliteCapacityToContractError(op, error) ??
-    unexpectedErrorToContractError(op)
+    unexpectedErrorToContractError(op, error)
   );
 }
 
@@ -171,6 +176,7 @@ export function permissionDeniedToContractError(
   details: ContractErrorDetails = {},
 ): ContractError {
   return new ContractError(op, "PERMISSION_DENIED", reason, CONTRACT_EXIT_ERROR, {
+    ...errorDiagnostic(reason, { operation: op }),
     suggestedAction: "Request the required provider-owned permission and retry",
     ...details,
   });
@@ -231,6 +237,14 @@ export function renderContractError(error: ContractError, asJson: boolean | unde
     return;
   }
   console.error(envelope.error.message);
+  if (typeof envelope.error.cause === "string" && envelope.error.cause !== envelope.error.message) {
+    console.error(`Cause: ${envelope.error.cause}`);
+  }
+  if (envelope.error.context) {
+    for (const [field, value] of Object.entries(projectDiagnosticContext(envelope.error.context))) {
+      console.error(`${field}: ${value}`);
+    }
+  }
   const issues = envelope.error.issues;
   if (!Array.isArray(issues) || issues.length === 0) return;
   if (typeof envelope.error.status === "number") {
@@ -261,24 +275,9 @@ export function sanitizePublicContractMessage(message: string | undefined): stri
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .trim();
   if (!cleaned) return undefined;
-  if (looksLikeProviderDump(cleaned)) return undefined;
-  if (/\bctx_[A-Za-z0-9_-]+/.test(cleaned)) return undefined;
-  if (
-    /["']?(?:[A-Za-z0-9_-]*(?:password|secret|token|credential|api[-_]?key|access[-_]?key)[A-Za-z0-9_-]*|authorization|cookie)["']?\s*[:=]/i.test(
-      cleaned,
-    )
-  )
-    return undefined;
-  const sanitized = sanitizePublicValue(cleaned);
-  if (typeof sanitized !== "string") return undefined;
-  const trimmed = sanitized.trim();
-  if (!trimmed || trimmed === "[REDACTED:path]" || trimmed.startsWith("[REDACTED:content")) {
-    return undefined;
-  }
-  const redacted = redactAbsolutePathsInText(trimmed);
-  if (!redacted.trim() || redacted === "[REDACTED:path]") return undefined;
+  const redacted = redactDiagnosticText(cleaned);
   return redacted.length > MAX_PUBLIC_CONTRACT_MESSAGE_LENGTH
-    ? `${redacted.slice(0, MAX_PUBLIC_CONTRACT_MESSAGE_LENGTH - 3)}...`
+    ? `${redacted.slice(0, MAX_PUBLIC_CONTRACT_MESSAGE_LENGTH)} [truncated]`
     : redacted;
 }
 

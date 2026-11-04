@@ -10,7 +10,7 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 ## Required checks
 
 - `bun test src/sdk/gateway/dispatcher.test.ts` verifies that a missing task
-  decision table produces a private HTTP 500 plus a local cause/stack, and that
+  decision table produces a HTTP 500 with caller-visible cause plus a local stack, and that
   restoring the schema DDL in a fixture recovers show and dry-run dispatch.
 - Unexpected-error diagnostics exclude sentinel context/bearer tokens and
   arbitrary exception payloads while preserving the diagnostic cause.
@@ -28,7 +28,7 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   same stable code for the same failure.
 - A denied operation produces one `PERMISSION_DENIED` envelope, exit `1` and
   outcome `denied` on every transport. Remote context/transport failures are
-  canonical and redact raw endpoint/provider details.
+  canonical and redact credentials while preserving provider/OS cause.
 - Remote dispatch is authorized by the target gateway, accepts only a complete
   coherent contract body for the expected `op`, preserves exit `1/2/3`, and
   fails closed on invalid gateway configuration with exit `2`.
@@ -41,21 +41,21 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   canonical flag/positional shapes, HTTP `status`, sanitized validation
   `issues`, and explicitly projected typed plan metadata; sentinel free text,
   paths, URLs, tokens and arbitrary nested objects MUST be absent from the
-  resulting envelope. 400/422 gateway validation failures MUST keep `status`
+  plan projection. Diagnostic cause/context preserve actionable paths. 400/422 gateway validation failures MUST keep `status`
   and `issues` visible in both CLI text and `--json`. Isolated `media send`
   catalog codes (`MEDIA_SEND_FAILED`, `OMNI_AUTH_FAILED`, `FILE_NOT_FOUND`)
   MUST keep the code and use the local catalog message / `suggestedAction`;
-  generic `COMMAND_FAILED` stays `Remote command failed.`
+  generic `COMMAND_FAILED` preserves the sanitized source message.
 - Non-success binary responses and return-shape failures produce canonical,
   redacted gateway envelopes and matching `failed`/`denied` audit outcomes.
 - A handler using the compatibility `fail()` helper produces one parseable
   `COMMAND_FAILED` envelope in JSON CLI, tool and gateway calls. The envelope
   `message` MUST preserve the sanitized expected cause; the generic headline is
-  only used when the cause is empty or unsafe. A throw-site `suggestedAction`
+  only used when the cause is empty. A throw-site `suggestedAction`
   MUST survive the envelope. An unexpected raw exception produces one redacted
   `UNHANDLED_ERROR` envelope, exit `1`, and the same operation/error code in
   audit. Gateway HTTP status may remain `500`, but its response body must not
-  expose the raw exception.
+  expose credentials, stacks or arbitrary exception properties.
 - Every implementation with persistent mutation, outbound effect, paid
   generation, provider mutation or triggered execution uses
   `@CommandAccess({ kind: "mutate" })`.
@@ -190,3 +190,11 @@ Do not mark this spec `active`, update the ledger as passed, or approve the PR
 until the focused groups and the four validation steps (build, typecheck, test
 and quality gate) are green for the exact current head. Compare failures by
 test identity and platform evidence, not only totals.
+
+- `bun test src/utils/error-diagnostic.test.ts` proves idempotent secret-value
+  redaction, preservation of paths/cause chains, and projection of metadata.
+- `bun test src/cli/transport-contract.test.ts` proves an OS exception reaches
+  exported tool content and the gateway with its original cause.
+- `bun test src/cli/remote-gateway.test.ts src/sdk/gateway/error-contract.test.ts`
+  proves cause/context survive the daemon-to-CLI relay and permission reasons
+  retain actor/operation while real credential values are redacted.

@@ -86,20 +86,29 @@ The canonical failure value is a `ContractError` and its envelope:
   are normalized at the shared transport boundary as `COMMAND_FAILED`, exit
   `1`. JSON CLI, tools and gateway MUST receive one canonical envelope whose
   `message` keeps the sanitized expected/daemon cause (or the generic headline
-  only when that cause is empty or unsafe). Text CLI keeps the same concise
+  only when that cause is empty). Text CLI keeps the same concise
   message. A throw-site `suggestedAction` (for example
   `--allow-runtime-mismatch`) MUST reach the envelope. This fallback is not a
   substitute for a domain-specific code or `USAGE_ERROR` when the handler can
   classify the failure more precisely.
 - An unexpected exception is normalized as `UNHANDLED_ERROR`, exit `1`, with
-  the real operation path and a safe generic message. Process CLI, exported
-  tools, gateway and audit MUST NOT expose the raw exception, provider detail
-  or stack. The gateway MAY retain HTTP `500` for this internal-fault class,
-  but its body remains the canonical contract envelope.
-- The gateway MUST retain an unexpected handler's cause and stack in its local
-  diagnostic log, together with the command identity. Diagnostics MUST redact
-  credential tokens and MUST NOT copy the request body, runtime context key or
-  arbitrary exception properties. Public envelopes and audit MUST NOT contain the exception or stack. Gateway failures MUST carry the operation, a stable code, an actionable message and a server-generated requestId. Repeated diagnostics MUST be rate-limited and remain traceable to the first request.
+  the real operation, a failure headline and an explicit `cause`. The cause
+  MUST retain the original exception/provider/OS message and nested cause
+  chain. Only secret values are replaced by `[redacted]`; the presence of a
+  secret MUST NOT discard the rest of the diagnosis.
+- Diagnostic `context` MUST preserve available `operation`, `provider`,
+  `model`, `status`, `file`, `code` and `syscall`. Paths and OS error codes are
+  diagnostic information, not credentials. Context uses this explicit
+  projection; arbitrary request bodies, headers, exception properties and
+  stacks MUST NOT be copied into the envelope.
+- CLI text, exported tools, gateway and remote relay MUST retain `cause` and
+  diagnostic context. Human text prints the cause and context after the
+  headline, even without validation issues. Permission denial MUST say which
+  operation/principal/policy refused it whenever the source supplies them.
+- The gateway retains local stack diagnostics, correlation via requestId and
+  rate limiting. This supplements the caller's cause; it MUST NOT replace it
+  with an instruction to look in private logs. Audit remains a separate,
+  content-minimized projection.
 - A return-shape violation is `RETURN_SHAPE_ERROR`, exit `1`, outcome `failed`
   and MAY retain HTTP `500`. A non-success binary response is normalized to a
   safe stable code before it reaches SDK callers or audit; provider response
@@ -135,10 +144,11 @@ details and policy outcome:
   remote contract body only when `success`, `op`, `exitCode`, `outcome` and the
   error shape are coherent; partial, mismatched or legacy failures are
   normalized to the same safe envelope. Invalid gateway configuration is a
-  usage error (`REMOTE_GATEWAY_INVALID`, exit `2`). Remote failures MUST NOT
-  print raw URLs, credentials, provider responses or exception text.
+  usage error (`REMOTE_GATEWAY_INVALID`, exit `2`). Remote failure diagnostics MUST redact credential values; provider/OS cause
+  text and actionable paths MUST survive the relay.
 - Remote details MUST be projected through a local allowlist instead of copied
-  blindly. `suggestions` may preserve only bounded stable identifiers. A
+  blindly. `cause` and diagnostic `context` are explicit members of that
+  projection and use secret-only redaction, separately from dry-run plans. `suggestions` may preserve only bounded stable identifiers. A
   remote `plan` may preserve typed booleans/numbers and identifier/ref/enum
   strings that match restricted grammars; free text, paths, URLs,
   token-shaped values, commands and arbitrary objects are discarded. Flags

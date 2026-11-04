@@ -10,6 +10,7 @@ import {
   type ContractErrorEnvelope,
   type ContractFailureOutcome,
 } from "../../cli/agent-contract.js";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { logGatewayFailure } from "./diagnostics.js";
 import { gatewayRequestContext } from "./request-context.js";
 
@@ -84,6 +85,9 @@ export function errorResponse(status: number, error: string, extras: Record<stri
       [400, 405, 413, 422].includes(status) ? 2 : 1,
       {
         suggestedAction,
+        ...(typeof extras.reason === "string" || typeof extras.message === "string"
+          ? errorDiagnostic(extras.reason ?? extras.message, { operation: gatewayRequestContext().op, status })
+          : {}),
         ...(Array.isArray(extras.issues) ? { issues: extras.issues } : {}),
         ...(typeof extras.limitBytes === "number" ? { limitBytes: extras.limitBytes } : {}),
       },

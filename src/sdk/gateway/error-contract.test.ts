@@ -177,7 +177,7 @@ describe("gateway error contract end to end", () => {
     expect(remote.details.suggestedAction).toBe("List the available fixtures before retrying");
   });
 
-  it("correlates a private stack/cause with a safe HTTP 500 and CLI requestId", async () => {
+  it("preserves the exception cause through HTTP 500 and remote CLI with requestId", async () => {
     const stderr = spyOn(process.stderr, "write").mockImplementation((() => true) as never);
     try {
       const response = (await handleGatewayRequest(request("failure/internal"), ctx))!;
@@ -190,7 +190,8 @@ describe("gateway error contract end to end", () => {
       expect(log).toContain("error-contract.test.ts");
       expect(remote.code).toBe("UNHANDLED_ERROR");
       expect(remote.details.retryable).toBe(false);
-      expect(JSON.stringify(remote.envelope())).not.toContain("fixture_table");
+      expect(remote.details.cause).toContain("no such table: fixture_table");
+      expect(JSON.stringify(remote.envelope())).not.toContain("error-contract.test.ts");
       expect(log).not.toContain("caller-secret");
     } finally {
       stderr.mockRestore();

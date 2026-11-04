@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { pagesLinkGuardReason } from "../../hooks/pages-link-guard.js";
 import { readFileSync } from "node:fs";
@@ -691,8 +692,8 @@ export class ContextCommands {
         eventData: { command, toolUseId: payload.tool_use_id ?? null },
       });
       output = decision.approved ? {} : buildPreToolUseDenyResult(decision.reason ?? "Action denied");
-    } catch {
-      output = buildPreToolUseDenyResult("Bridge command authority is unavailable");
+    } catch (error) {
+      output = buildPreToolUseDenyResult(`Bridge command authority is unavailable: ${errorDiagnostic(error).cause}`);
     }
     console.log(JSON.stringify(output));
     return output;

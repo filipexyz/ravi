@@ -15,6 +15,7 @@ tags:
 applies_to:
   - src/cli/commands/transcribe.ts
   - src/transcribe/service.ts
+  - src/transcribe/openai.ts
   - src/cli/agent-contract.ts
 owners:
   - ravi-dev
@@ -41,6 +42,15 @@ cost limit or reliable preflight estimate, so the command runs immediately.
    (`retryable: true`).
 5. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
+6. Failures MUST retain `cause` with the original provider or operating-system
+   reason and `context` with the operation and requested file. Provider failures
+   MUST also retain the selected provider/model and its HTTP status/code when
+   supplied. Both text and JSON tool/CLI output MUST expose that diagnostic.
+7. Diagnostic redaction MUST replace actual credential values with `[redacted]`
+   while preserving their field names and the rest of the reason. File paths,
+   HTTP statuses and ordinary provider messages MUST NOT be erased merely
+   because they are diagnostic text. Arbitrary provider response payloads and
+   request headers MUST NOT be copied into the error contract.
 
 ## Write classification (brake decision per op)
 

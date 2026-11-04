@@ -32,11 +32,26 @@ class CloudFailureCommands {
     throw new CloudAuthError("RATE_LIMITED", "PRIVATE_PROVIDER_BODY_8K2R", { status: 429 });
   }
 
+  @Command({ name: "os-failure", description: "OS failure fixture" })
+  @CommandAccess({ kind: "read", resource: "cloud.fixture", action: "os-failure", risk: "low" })
+  osFailure() {
+    throw Object.assign(
+      new Error("Cannot read audio", {
+        cause: new Error("EACCES: permission denied, open /tmp/audio.wav; token=fixture-token"),
+      }),
+      {
+        code: "EACCES",
+        path: "/tmp/audio.wav",
+        syscall: "open",
+      },
+    );
+  }
+
   @Command({ name: "expected", description: "Raise a compatibility failure" })
   @CommandAccess({ kind: "read", resource: "cloud.fixture", action: "expected", risk: "low" })
   @Returns(z.object({ ok: z.literal(true) }))
   expected(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean) {
-    throw new CliExpectedError("PRIVATE_EXPECTED_MESSAGE_7M4Q");
+    throw new CliExpectedError("HTTP 401: invalid key; api_key=fixture-token");
   }
 
   @Command({ name: "safe-expected", description: "Raise a safe expected failure" })
@@ -81,6 +96,7 @@ const runtimeContext: ContextRecord = {
   kind: "test-runtime",
   agentId: "transport-test",
   capabilities: [
+    { permission: "read", objectType: "cloud.fixture", objectId: "os-failure", source: "test" },
     { permission: "read", objectType: "cloud.fixture", objectId: "fail", source: "test" },
     { permission: "read", objectType: "cloud.fixture", objectId: "expected", source: "test" },
     { permission: "read", objectType: "cloud.fixture", objectId: "safe-expected", source: "test" },
@@ -116,18 +132,18 @@ afterAll(() => {
 });
 
 describe("global cloud failure contract", () => {
-  it("keeps unsafe CliExpectedError dumps out of the internal contract error", () => {
+  it("redacts only secret values from expected error causes", () => {
     const contract = expectedErrorToContractError(
       "cloud fixture custom",
-      new CliExpectedError("PRIVATE_CUSTOM_EXPECTED_4N7K", "CUSTOM_EXPECTED", 1),
+      new CliExpectedError("HTTP 429 quota exhausted; token=fixture-token", "CUSTOM_EXPECTED", 1),
     );
 
     expect(contract).toMatchObject({
       code: "CUSTOM_EXPECTED",
-      message: "Command could not be completed.",
+      message: "HTTP 429 quota exhausted; token=[redacted]",
       exitCode: 1,
     });
-    expect(JSON.stringify(contract)).not.toContain("PRIVATE_CUSTOM_EXPECTED_4N7K");
+    expect(JSON.stringify(contract)).not.toContain("HTTP 429 quota exhausted; token=fixture-token");
   });
 
   it("preserves a safe CliExpectedError cause and throw-site suggestedAction", () => {
@@ -403,7 +419,7 @@ describe("global cloud failure contract", () => {
     expect(JSON.stringify(cliEnvelope)).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
   });
 
-  it("keeps unsafe CliExpectedError dumps private across CLI, tool and gateway", async () => {
+  it("preserves expected error causes with redacted secrets across CLI, tool and gateway", async () => {
     const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
     const originalExit = process.exit;
     const originalLog = console.log;
@@ -457,7 +473,7 @@ describe("global cloud failure contract", () => {
       ...cliEnvelope,
       error: {
         ...cliEnvelope.error,
-        message: "cloud fixture expected failed (COMMAND_FAILED). Report this requestId to the operator.",
+        message: "HTTP 401: invalid key; api_key=[redacted]",
         requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       },
     });
@@ -466,11 +482,38 @@ describe("global cloud failure contract", () => {
       op: "cloud fixture expected",
       error: {
         code: "COMMAND_FAILED",
-        message: "Command could not be completed.",
+        message: "HTTP 401: invalid key; api_key=[redacted]",
         retryable: false,
       },
     });
-    expect(JSON.stringify(cliEnvelope)).not.toContain("PRIVATE_EXPECTED_MESSAGE_7M4Q");
+    expect(JSON.stringify(cliEnvelope)).not.toContain("HTTP 401: invalid key; api_key=fixture-token");
+  });
+
+  it("preserves an OS cause in exported tool content and through the gateway", async () => {
+    const tool = extractTools([CloudFailureCommands]).find(
+      (candidate) => candidate.name === "cloud_fixture_os-failure",
+    )!;
+    const output = await runWithContext({ agentId: runtimeContext.agentId, context: runtimeContext }, () =>
+      tool.handler({}),
+    );
+    const envelope = JSON.parse(output.content[0]!.text);
+    expect(envelope.error.cause).toBe(
+      "Cannot read audio\nCaused by: EACCES: permission denied, open /tmp/audio.wav; token=[redacted]",
+    );
+    expect(envelope.error.context).toMatchObject({
+      operation: "cloud fixture os-failure",
+      code: "EACCES",
+      syscall: "open",
+      file: "/tmp/audio.wav",
+    });
+    expect(JSON.stringify(envelope)).not.toContain("fixture-token");
+    const command = buildRegistry([CloudFailureCommands]).commands.find(
+      (candidate) => candidate.fullName === "cloud.fixture.os-failure",
+    )!;
+    const gateway = await dispatch(command, {}, {}, { contextRecord: runtimeContext, emitAudit: () => {} });
+    const body = await gateway.response.json();
+    expect(body.error.cause).toBe(envelope.error.cause);
+    expect(body.error.context).toEqual(envelope.error.context);
   });
 
   it("preserves a safe CliExpectedError cause across CLI, tool and gateway", async () => {

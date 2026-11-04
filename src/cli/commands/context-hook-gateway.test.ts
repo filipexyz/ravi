@@ -146,9 +146,9 @@ describe("Codex hook through the host gateway", () => {
       expectDeny(output);
       const reason = output.hookSpecificOutput.permissionDecisionReason as string;
       expect(reason).toContain("Ravi denied tool use in this turn (missing capability: read:context:codex-bash-hook)");
-      expect(reason).toContain("no linked contact");
-      expect(reason).toContain("never granted this permission");
-      expect(reason).not.toContain("HTTP 403");
+      expect(reason).toContain("PERMISSION_DENIED");
+      expect(reason).toContain("cause=Permission denied:");
+      expect(reason).toContain("HTTP 403");
     }, 20_000);
   }
 
@@ -178,6 +178,43 @@ describe("Codex hook through the host gateway", () => {
       }
     }, 20_000);
   }
+
+  it("carries the exact denied operation and provider reason with credential values redacted", async () => {
+    const server = serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        Response.json(
+          {
+            success: false,
+            op: "context codex-bash-hook",
+            exitCode: 1,
+            outcome: "denied",
+            error: {
+              code: "PERMISSION_DENIED",
+              message:
+                "Policy provider fixture denied agent:worker: executable ffmpeg is blocked; api_key=fixture-token",
+              retryable: false,
+            },
+          },
+          { status: 403 },
+        ),
+    });
+    try {
+      const output = await callHook(JSON.stringify({ tool_input: { command: "ffmpeg --version" } }), {
+        gatewayUrl: server.url.href,
+      });
+      expectDeny(output);
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      expect(reason).toContain("executable ffmpeg is blocked");
+      expect(reason).toContain("agent:worker");
+      expect(reason).toContain("HTTP 403");
+      expect(reason).toContain("api_key=[redacted]");
+      expect(reason).not.toContain("fixture-token");
+    } finally {
+      await server.stop(true);
+    }
+  }, 20_000);
 
   it("does not read daemon stdin when a gateway caller omits the payload", async () => {
     const result = await dispatchRemote({

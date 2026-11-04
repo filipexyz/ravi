@@ -6,6 +6,7 @@
 import OpenAI from "openai";
 import { logger } from "../utils/logger.js";
 import { getAudioDuration, splitAudioChunks } from "./chunker.js";
+import { errorDiagnostic, type ErrorDiagnosticContext } from "../utils/error-diagnostic.js";
 
 const log = logger.child("transcribe");
 
@@ -100,15 +101,31 @@ async function transcribeChunk(
   const filename = `audio.${ext}`;
   const file = new File([buffer], filename, { type: mimetype });
 
-  const response = await provider.client.audio.transcriptions.create({
-    file,
-    model: provider.model,
-    language: options.language ?? "pt",
-    response_format: "verbose_json",
-    timestamp_granularities: ["segment"],
-  });
+  try {
+    const response = await provider.client.audio.transcriptions.create({
+      file,
+      model: provider.model,
+      language: options.language ?? "pt",
+      response_format: "verbose_json",
+      timestamp_granularities: ["segment"],
+    });
 
-  return normalizeTranscriptionResponse(response);
+    return normalizeTranscriptionResponse(response);
+  } catch (error) {
+    // Preserve the provider's original exception and add the identity known at
+    // this boundary. A generic CLI headline must not erase its diagnostic.
+    throw transcriptionFailure(error, {
+      operation: "audio.transcriptions.create",
+      provider: provider.name,
+      model: provider.model,
+    });
+  }
+}
+
+function transcriptionFailure(error: unknown, context: ErrorDiagnosticContext): Error {
+  return Object.assign(new Error(error instanceof Error ? error.message : String(error), { cause: error }), {
+    context: errorDiagnostic(error, context).context,
+  });
 }
 
 function extensionForMimeType(mimetype: string): string {
@@ -241,11 +258,16 @@ export async function transcribeAudio(
 
   // Long audio — split into chunks and transcribe each
   log.info("Audio exceeds threshold, chunking", { duration, threshold: CHUNK_THRESHOLD_SEC });
-  const chunks = await splitAudioChunks(buffer, ext, {
-    chunkDuration: CHUNK_THRESHOLD_SEC,
-    overlap: 15,
-    durationHintSec: duration,
-  });
+  let chunks: Awaited<ReturnType<typeof splitAudioChunks>>;
+  try {
+    chunks = await splitAudioChunks(buffer, ext, {
+      chunkDuration: CHUNK_THRESHOLD_SEC,
+      overlap: 15,
+      durationHintSec: duration,
+    });
+  } catch (error) {
+    throw transcriptionFailure(error, { operation: "audio.split", provider: "ffmpeg" });
+  }
 
   const texts: string[] = [];
   const segments: TranscriptionSegment[] = [];

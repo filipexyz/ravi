@@ -23,21 +23,15 @@ describe("publicContractMessage", () => {
     expect(sanitizePublicContractMessage("   ")).toBeUndefined();
   });
 
-  it("uses the generic headline only when the cause is unsafe", () => {
-    expect(publicContractMessage("COMMAND_FAILED", "PRIVATE_EXPECTED_MESSAGE_7M4Q")).toBe(
-      GENERIC_COMMAND_FAILED_MESSAGE,
+  it("redacts only credential values and preserves non-secret diagnostics", () => {
+    expect(publicContractMessage("COMMAND_FAILED", "HTTP 429: quota exhausted; api_key=opaque")).toBe(
+      "HTTP 429: quota exhausted; api_key=[redacted]",
     );
-    expect(publicContractMessage("COMMAND_FAILED", "leak sk-ant-abcdefghijklmnopqrstuv")).toBe(
-      GENERIC_COMMAND_FAILED_MESSAGE,
+    expect(publicContractMessage("COMMAND_FAILED", "leak sk-ant-abcdefghijklmnopqrstuv")).toBe("leak [redacted]");
+    expect(publicContractMessage("COMMAND_FAILED", "Cannot read file /tmp/config.json")).toBe(
+      "Cannot read file /tmp/config.json",
     );
-    expect(publicContractMessage("COMMAND_FAILED", "/tmp/secret-config.json")).toBe(GENERIC_COMMAND_FAILED_MESSAGE);
-    expect(sanitizePublicContractMessage("SENTINEL_SECRET_7M4Q")).toBeUndefined();
-  });
-
-  it("redacts an embedded absolute path but keeps the surrounding cause", () => {
-    expect(publicContractMessage("COMMAND_FAILED", "Cannot read file /tmp/secret-config.json")).toBe(
-      "Cannot read file [REDACTED:path]",
-    );
+    expect(sanitizePublicContractMessage("PRIVATE_EXPECTED_MESSAGE_7M4Q")).toBe("PRIVATE_EXPECTED_MESSAGE_7M4Q");
   });
 
   it("does not rewrite non-COMMAND_FAILED codes", () => {
@@ -96,11 +90,16 @@ describe("expectedErrorToContractError", () => {
     expect(contract?.envelope().error.suggestedAction).toBe(suggestedAction);
   });
 
-  it("uses the generic message and action only when the expected copy is empty or unsafe", () => {
+  it("uses generic copy only when empty and retains sanitized guidance", () => {
     const empty = expectedErrorToContractError("sessions runtime list", new CliExpectedError(""));
     const unsafe = expectedErrorToContractError(
       "sessions runtime list",
-      new CliExpectedError("PRIVATE_DAEMON_BODY_8K2R", "COMMAND_FAILED", 1, "PRIVATE_NEXT_STEP_8K2R"),
+      new CliExpectedError(
+        "HTTP 401: invalid API key; api_key=opaque",
+        "COMMAND_FAILED",
+        1,
+        "Replace the api_key=opaque",
+      ),
     );
 
     expect(empty?.envelope().error).toMatchObject({
@@ -110,11 +109,10 @@ describe("expectedErrorToContractError", () => {
     });
     expect(unsafe?.envelope().error).toMatchObject({
       code: "COMMAND_FAILED",
-      message: GENERIC_COMMAND_FAILED_MESSAGE,
-      suggestedAction: "Inspect the command input and retry 'sessions runtime list'",
+      message: "HTTP 401: invalid API key; api_key=[redacted]",
+      suggestedAction: "Replace the api_key=[redacted]",
     });
-    expect(JSON.stringify(unsafe?.envelope())).not.toContain("PRIVATE_DAEMON_BODY_8K2R");
-    expect(JSON.stringify(unsafe?.envelope())).not.toContain("PRIVATE_NEXT_STEP_8K2R");
+    expect(JSON.stringify(unsafe?.envelope())).not.toContain("opaque");
   });
 });
 
@@ -131,10 +129,13 @@ describe("CliExpectedError default code", () => {
 });
 
 describe("public expected-error credentials", () => {
-  it.each(["password=opaque", "access_token=opaque", "apiKey=opaque", "ctx_fixture_secret"])(
+  it.each(["password=opaque", "access_token=opaque", "apiKey=opaque", "rctx_fixture_secret"])(
     "does not relay a secret embedded in public error copy: %s",
     (secret) => {
-      expect(sanitizePublicContractMessage(`Lookup failed: ${secret}`)).toBeUndefined();
+      const result = sanitizePublicContractMessage(`Lookup failed: ${secret}`);
+      expect(result).toContain("Lookup failed:");
+      expect(result).toContain("[redacted]");
+      expect(result).not.toContain(secret);
     },
   );
 });

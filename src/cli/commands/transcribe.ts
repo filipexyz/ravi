@@ -10,6 +10,7 @@ import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorato
 import { fail } from "../context.js";
 import { contractFail } from "../agent-contract.js";
 import { SUPPORTED_AUDIO_EXTENSIONS, inferAudioMimeType, transcribeFile } from "../../transcribe/service.js";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 
 const transcribeFileReturnSchema = z.object({
   success: z.literal(true),
@@ -58,6 +59,11 @@ export class TranscribeCommands {
       contractFail("transcribe file", "FILE_NOT_FOUND", "Audio file was not found.", {
         asJson,
         details: {
+          ...errorDiagnostic("The requested audio file does not exist.", {
+            operation: "transcribe file",
+            file: absPath,
+            code: "ENOENT",
+          }),
           suggestedAction: "Check the local audio file path and re-run",
         },
       });
@@ -70,12 +76,13 @@ export class TranscribeCommands {
     let result: Awaited<ReturnType<typeof transcribeFile>>;
     try {
       result = await transcribeFile({ filePath: absPath, mimeType: mimetype, language: _lang ?? "pt" });
-    } catch {
+    } catch (error) {
       contractFail("transcribe file", "TRANSCRIBE_FAILED", "Audio transcription failed.", {
         asJson,
         details: {
+          ...errorDiagnostic(error, { operation: "transcribe file", file: absPath }),
           retryable: true,
-          suggestedAction: "Check OPENAI_API_KEY and the audio file, then retry",
+          suggestedAction: "Resolve the reported provider or file error, then retry",
         },
       });
     }

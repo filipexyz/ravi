@@ -19,7 +19,8 @@ Terms and transport names follow the normative definitions in
    retain its own non-500 status mapping.
    Inspect `gateway:dispatcher` / `Unhandled command exception` in the local
    daemon log for the original cause and stack. Access logs alone only contain
-   the resulting status. Never add the raw exception to the HTTP response.
+   the resulting status. Inspect the envelope cause/context first. Keep stack traces and arbitrary
+   payloads in local diagnostics; redact secret values, not the failure cause.
 6. In remote mode, verify the target gateway performs authorization. Reject a
    response as non-canonical if `success`, `op`, `exitCode`, `outcome` and the
    error shape are incomplete or incoherent; never trust or print its raw body.

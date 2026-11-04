@@ -414,7 +414,7 @@ void bootstrapCli().catch(async (error: unknown) => {
     return;
   }
   const contractError =
-    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap");
+    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap", error);
   renderContractError(contractError, process.argv.includes("--json"));
   await emitCliAuditEvent({
     group: "cli",

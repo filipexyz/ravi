@@ -745,7 +745,7 @@ describe("dispatch — error path", () => {
     }
   });
 
-  it("logs the original SQLite cause and stack while keeping the HTTP 500 private", async () => {
+  it("returns the original SQLite cause while keeping the stack in local diagnostics", async () => {
     const fixture = new Database(":memory:");
     const handler = spyOn(GatewayDemoCommands.prototype, "boom").mockImplementation(() => {
       fixture.query("SELECT * FROM task_decisions").all();
@@ -757,7 +757,8 @@ describe("dispatch — error path", () => {
       expect(result.response.status).toBe(500);
       const body = JSON.stringify(await result.response.json());
       expect(body).toContain("UNHANDLED_ERROR");
-      expect(body).not.toContain("task_decisions");
+      expect(body).toContain("no such table: task_decisions");
+      expect(body).not.toContain("dispatcher.test.ts");
       const diagnostic = stderr.mock.calls.map((call) => String(call[0])).join("");
       expect(diagnostic).toContain("no such table: task_decisions");
       expect(diagnostic).toContain("command=demo boom");
@@ -935,7 +936,7 @@ describe("dispatch — error path", () => {
         message: "demo boom failed internally. Report the requestId to the operator before retrying.",
       },
     });
-    expect(JSON.stringify(body)).not.toContain("kaboom");
+    expect(body).toMatchObject({ error: { cause: "kaboom", context: { operation: "demo boom" } } });
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]).toMatchObject({ isError: true, errorCode: "UNHANDLED_ERROR", exitCode: 1 });
   });
