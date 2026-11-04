@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { runInNewContext } from "node:vm";
 import * as ts from "typescript";
 import * as outputHandoff from "../channels/output-handoff.js";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
 import {
   createGeneratedMediaAllocator,
   type GeneratedMediaAllocation,
@@ -609,29 +610,31 @@ describe("accepted-recorder media disposal", () => {
     /**
      * The source projector, recovery/readback comparisons, commit acknowledgement,
      * text handoff and private allocator are real. Only the synchronous DB/witness
-     * boundary, schemas, registry, timers and sinks are simulated. This is NOT SQL
-     * COMMIT evidence; terminal-projection-recovery.test.ts supplies that separately.
+     * boundary, schemas, registry, timers and sinks (including logging) are simulated.
+     * This is NOT SQL COMMIT evidence; terminal-projection-recovery.test.ts supplies that separately.
      * No router DB import, native fixture, filesystem removal or provider send runs.
      */
-    const recoverySource = ["terminal-projection-recovery.ts", "terminal-output-handoff.ts"]
-      .map((filename) => {
-        const moduleSource = ts.createSourceFile(
-          filename,
-          readFileSync(new URL(`../channels/${filename}`, import.meta.url), "utf8"),
-          ts.ScriptTarget.Latest,
-          true,
-        );
-        return moduleSource.statements
-          .filter((statement) => !ts.isImportDeclaration(statement))
-          .map((statement) => statement.getText(moduleSource))
-          .join("\n");
-      })
-      .join("\n");
-    const recoveryCompiled = ts.transpileModule(recoverySource, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-      reportDiagnostics: true,
+    const recoveryCompiled = ["terminal-projection-recovery.ts", "terminal-output-handoff.ts"].map((filename) => {
+      const moduleSource = ts.createSourceFile(
+        filename,
+        readFileSync(new URL(`../channels/${filename}`, import.meta.url), "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+      );
+      const moduleText = moduleSource.statements
+        .filter((statement) => !ts.isImportDeclaration(statement))
+        .map((statement) => statement.getText(moduleSource))
+        .join("\n");
+      return ts.transpileModule(moduleText, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+        reportDiagnostics: true,
+      });
     });
-    expect(recoveryCompiled.diagnostics?.filter((item) => item.category === ts.DiagnosticCategory.Error)).toEqual([]);
+    expect(
+      recoveryCompiled
+        .flatMap((compiledModule) => compiledModule.diagnostics ?? [])
+        .filter((item) => item.category === ts.DiagnosticCategory.Error),
+    ).toEqual([]);
 
     type Boundary = "accepted" | "readback" | "refused" | "unknown" | "uncommitted";
     async function joinedFixture(boundary: Boundary, loseOwner = false) {
@@ -689,13 +692,12 @@ describe("accepted-recorder media disposal", () => {
               : null,
         }),
       };
-      const module = { exports: {} as Record<string, unknown> };
-      runInNewContext(recoveryCompiled.outputText, {
-        module,
-        exports: module.exports,
+      const dependencies = {
         Error,
         isDeepStrictEqual,
         ...outputHandoff,
+        logger: { child: () => ({ warn: () => undefined }) },
+        reportErrorDiagnostic,
         ChannelBackendRuntimeOwnershipLostError: class extends Error {},
         ChannelOutputEnvelopeSchema: { parse: (value: unknown) => structuredClone(value) },
         getDb: () => database,
@@ -722,8 +724,14 @@ describe("accepted-recorder media disposal", () => {
           delays.push(delay);
           queueMicrotask(resume);
         },
-      });
-      const h = await projectorFixture(module.exports);
+      };
+      const recoveryExports: Record<string, unknown> = {};
+      for (const compiledModule of recoveryCompiled) {
+        const module = { exports: {} as Record<string, unknown> };
+        runInNewContext(compiledModule.outputText, { ...dependencies, module, exports: module.exports });
+        Object.assign(recoveryExports, module.exports);
+      }
+      const h = await projectorFixture(recoveryExports);
       const terminal = (state: State, overrides: Record<string, unknown> = {}) =>
         h.terminal(state, {
           terminalRecovery: {
