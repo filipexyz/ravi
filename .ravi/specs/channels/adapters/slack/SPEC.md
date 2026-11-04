@@ -376,13 +376,28 @@ closed or internally aborted handle alone is not an explicit cancellation witnes
 A physical diagnostic failure before continuation commits MUST retain normal
 logical terminal cleanup. A replacement owner MUST NOT be mutated by the old
 handler. Ownership validation before a write MUST be pure and repeated after
-awaited sinks. A cancelled manifest and terminal collector cleanup MUST occur
-only after the DB accepts the logical transition, before another await; a
-rejected transition MUST NOT freeze or clear pending output. These callbacks
+awaited sinks. A cancelled manifest MUST commit atomically with the logical transition.
+Terminal collector cleanup MUST occur only after that commit, before another
+await; a rejected transition MUST NOT freeze or clear pending output. These callbacks
 are internal runtime capabilities, never accepted from serialized channel/API
 envelopes. After permitted replay, the complete final MUST reach the native output
 path with coherent logical completion; history alone or absence of `cancelled`
 is not proof. Bot cooldown/suppression and human output policy remain unchanged.
+
+For eligible native bot terminals, runtime state and sequence, any canonical
+assistant row, and the validated complete terminal manifest MUST share one
+synchronous transaction on the same SQLite connection. This applies to complete
+text, media-only completion, safe error and logical cancellation. Deterministic
+manifest preparation MUST NOT publish, persist, consume pending media or mark
+local readiness. Internal ownership predicates MUST remain pure and run within
+each existing bounded write attempt before mutation. Identity, transition,
+ownership or persistence refusal MUST roll back every new write in that unit
+without changing a previously accepted immutable manifest. Manifest schema
+initialization MUST NOT cache uncommitted DDL as ready. Only a successful commit
+may assign the local manifest/readiness, clear cancelled or failed media, or
+discard registry ownership; runtime notifications and output follow that commit.
+This atomicity contract adds no delivery retry, availability guarantee after
+write retries exhaust, durable media payload or core NATS replay.
 
 The adapter MAY skip reapplying reply-mode policy only for an internal delivery
 request derived from a validated manifest and durable origin. An external flag,

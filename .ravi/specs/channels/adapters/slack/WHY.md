@@ -150,3 +150,9 @@ answer would not satisfy the contract.
 Logical projection now follows the actual authorized stash/continuation result, with full backend-envelope equality and current ownership/cancellation checks. Physical trace and accounting remain terminal for the failed attempt. Existing fences still decide whether any input can replay. Internal physical handle closure does not establish an operator cancellation; explicit cancellation has its own positive witness. No terminal DB row is reopened and no automatic allowance is reset.
 
 This correction is validated with synthetic provider events and actual queue/generator, SQLite and native output/consumer paths. Controlled launcher/driver bridges do not establish full live dispatcher or provider-outage recovery, and do not attribute the historical Pi incident.
+
+## One terminal acceptance transaction
+
+`FREEZE-AFTER-TERMINAL-01` was introduced when automatic bot grouping added a separate manifest transaction after the existing terminal write and an awaited runtime notification. A competing SQLite writer could then prevent manifest persistence after the canonical final and terminal state were already committed. Registry cleanup also consumed the pending members. Readback retained text but did not retry delivery.
+
+Terminal state, sequence, any canonical assistant row and complete manifest therefore share the existing synchronous write transaction and its bounded lock retries. Preparation remains outside the transaction; local readiness and collector cleanup follow commit. The schema is initialized centrally rather than cached after potentially rolled-back DDL. This closes the partial terminal/manifest acceptance window without adding an outbox or claiming availability when the first write exhausts its retries. Later sink failure and process/core NATS media loss remain separate limits.

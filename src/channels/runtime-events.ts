@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { nats } from "../nats.js";
+import type { SlackAutomaticTerminalManifest } from "./slack/automatic-terminal-manifest.js";
 import { discardSlackAutomaticPendingReply } from "./slack/automatic-pending-reply.js";
 import {
+  ChannelBackendRuntimeOwnershipLostError,
   dbClaimChannelBackendRuntimeInterrupt,
   dbGetChatMessage,
   dbGetChannelBackendIngressReceiptByTurnId,
@@ -416,10 +418,13 @@ export async function projectChannelRuntimeEvent(input: {
   sinks?: ChannelRuntimeEventSinkRegistry;
   /** Internal pure owner guard, rechecked after prior awaits and before each DB write. */
   beforeRecordEvent?: (state: ChannelBackendRuntimeState | undefined) => boolean;
-  /** Internal synchronous hook: DB transition accepted, no delivery await has occurred. */
-  afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined) => void;
-  /** Freeze a terminal delivery manifest before any output sink can release it. */
-  beforeTerminalOutput?: (output: ChannelOutputEnvelope) => void | Promise<void>;
+  /** Internal synchronous preparation; no persistence, publication, or local cleanup. */
+  prepareTerminalManifest?: (terminal: {
+    state: ChannelBackendRuntimeState;
+    output?: ChannelOutputEnvelope;
+  }) => SlackAutomaticTerminalManifest;
+  /** The whole DB unit committed; no notification or output await has occurred. */
+  afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined, manifest?: SlackAutomaticTerminalManifest) => void;
 }): Promise<KnownChannelRuntimeEvent[]> {
   const metadata = parseChannelBackendMetadata(input.metadata);
   const occurredAt = input.occurredAt ?? Date.now();
@@ -430,9 +435,11 @@ export async function projectChannelRuntimeEvent(input: {
     if (input.beforeRecordEvent?.(eventInput.state) === false) return;
     const recorded = await recordAndEmit({
       ...eventInput,
+      mayWrite: () => (input.beforeRecordEvent ? input.beforeRecordEvent(eventInput.state) === true : true),
       afterRecordEvent: input.afterRecordEvent,
-      beforeTerminalOutput: input.beforeTerminalOutput,
+      prepareTerminalManifest: input.prepareTerminalManifest,
     });
+    if (!recorded) return;
     projected.push(recorded.event);
     dispatchError ??= recorded.dispatchError;
   };
@@ -706,28 +713,73 @@ interface RecordAndEmitInput {
   payload: unknown | EventPayloadFactory;
   occurredAt: number;
   sinks: ChannelRuntimeEventSinkRegistry;
-  afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined) => void;
-  beforeTerminalOutput?: (output: ChannelOutputEnvelope) => void | Promise<void>;
+  mayWrite?: () => boolean;
+  prepareTerminalManifest?: (terminal: {
+    state: ChannelBackendRuntimeState;
+    output?: ChannelOutputEnvelope;
+  }) => SlackAutomaticTerminalManifest;
+  afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined, manifest?: SlackAutomaticTerminalManifest) => void;
+}
+
+function prepareTerminalOutput(input: RecordAndEmitInput): ChannelOutputEnvelope | undefined {
+  if (
+    input.kind !== "turn.terminal_output" ||
+    !((input.state === "completed" && input.assistantText) || (input.state === "failed" && input.safeError))
+  )
+    return undefined;
+  return ChannelOutputEnvelopeSchema.parse({
+    protocol: CHANNEL_BACKEND_PROTOCOL,
+    schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+    outputId: semanticEventId("output", input.metadata.binding.turnId, "terminal"),
+    correlationId: input.metadata.correlationId,
+    causationId: input.metadata.ingressRequestId,
+    binding: input.metadata.binding,
+    target: input.metadata.target,
+    ...(input.state === "completed" && input.assistantText
+      ? {
+          kind: "assistant_message",
+          content: input.assistantContent ?? channelTextContent(input.assistantText),
+        }
+      : {
+          kind: "safe_error",
+          error: input.safeError,
+        }),
+    emittedAt: new Date(input.occurredAt).toISOString(),
+  });
 }
 
 async function recordAndEmit(
   input: RecordAndEmitInput,
-): Promise<{ event: KnownChannelRuntimeEvent; dispatchError?: unknown }> {
-  const persisted = dbRecordChannelBackendRuntimeEvent({
-    turnId: input.metadata.binding.turnId,
-    state: input.state,
-    assistantDelta: input.assistantDelta,
-    assistantText: input.assistantText,
-    runtimeGenerationId: channelRuntimeGenerationId,
-    terminalError: input.safeError,
-    occurredAt: input.occurredAt,
-  });
+): Promise<{ event: KnownChannelRuntimeEvent; dispatchError?: unknown } | undefined> {
+  if (input.mayWrite && input.mayWrite() !== true) return;
+  const output = prepareTerminalOutput(input);
+  const preparedManifest =
+    input.state && isTerminalState(input.state)
+      ? input.prepareTerminalManifest?.({ state: input.state, output })
+      : undefined;
+  let persisted: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>;
+  try {
+    persisted = dbRecordChannelBackendRuntimeEvent({
+      turnId: input.metadata.binding.turnId,
+      state: input.state,
+      assistantDelta: input.assistantDelta,
+      assistantText: input.assistantText,
+      runtimeGenerationId: channelRuntimeGenerationId,
+      terminalError: input.safeError,
+      occurredAt: input.occurredAt,
+      mayWrite: input.mayWrite,
+      slackTerminalManifest: preparedManifest,
+    });
+  } catch (error) {
+    if (error instanceof ChannelBackendRuntimeOwnershipLostError) return;
+    throw error;
+  }
+  input.afterRecordEvent?.(input.state, persisted.slackTerminalManifest);
   if (input.state === "completed" || input.state === "failed" || input.state === "interrupted") {
     // Clear registry ownership only after the terminal transition succeeds.
     // A host currently freezing/releasing this terminal still owns its copy.
     discardSlackAutomaticPendingReply(input.metadata.binding);
   }
-  input.afterRecordEvent?.(input.state);
   const payload =
     typeof input.payload === "function"
       ? input.payload(
@@ -766,31 +818,8 @@ async function recordAndEmit(
     dispatchError = error;
   }
 
-  if (
-    input.kind === "turn.terminal_output" &&
-    ((input.state === "completed" && input.assistantText) || (input.state === "failed" && input.safeError))
-  ) {
+  if (output) {
     try {
-      const output = ChannelOutputEnvelopeSchema.parse({
-        protocol: CHANNEL_BACKEND_PROTOCOL,
-        schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
-        outputId: semanticEventId("output", input.metadata.binding.turnId, "terminal"),
-        correlationId: input.metadata.correlationId,
-        causationId: input.metadata.ingressRequestId,
-        binding: input.metadata.binding,
-        target: input.metadata.target,
-        ...(input.state === "completed" && input.assistantText
-          ? {
-              kind: "assistant_message",
-              content: input.assistantContent ?? channelTextContent(input.assistantText),
-            }
-          : {
-              kind: "safe_error",
-              error: input.safeError,
-            }),
-        emittedAt: new Date(input.occurredAt).toISOString(),
-      });
-      await input.beforeTerminalOutput?.(output);
       const deliveredLocally = await channelOutputSinks.tryEmit(output);
       if (!deliveredLocally) {
         if (!channelBackendEgressRequester) {

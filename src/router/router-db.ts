@@ -24,6 +24,10 @@ import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js"
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
 import {
+  persistPreparedSlackAutomaticTerminalManifest,
+  type SlackAutomaticTerminalManifest,
+} from "../channels/slack/automatic-terminal-manifest.js";
+import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateAgentDefaultsRecord,
   migrateLegacyReadCapabilityInputs,
@@ -841,11 +845,22 @@ export interface ChannelBackendRuntimeStateRecord {
   updatedAt: number;
 }
 
+export class ChannelBackendRuntimeOwnershipLostError extends Error {
+  constructor() {
+    super("Channel runtime projection no longer owns the request");
+    this.name = "ChannelBackendRuntimeOwnershipLostError";
+  }
+}
+
 export interface RecordChannelBackendRuntimeEventInput {
   turnId: string;
   state?: ChannelBackendRuntimeState;
   assistantDelta?: boolean;
   assistantText?: string;
+  /** Internal pure predicate, rechecked inside each synchronous transaction attempt. */
+  mayWrite?: () => boolean;
+  /** Trusted host preparation; no hashing, delivery, or local cleanup inside this transaction. */
+  slackTerminalManifest?: SlackAutomaticTerminalManifest;
   runtimeGenerationId: string;
   terminalError?: Record<string, unknown>;
   occurredAt?: number;
@@ -854,6 +869,7 @@ export interface RecordChannelBackendRuntimeEventInput {
 export interface RecordChannelBackendRuntimeEventResult {
   receipt: ChannelBackendIngressReceiptRecord;
   runtime: ChannelBackendRuntimeStateRecord;
+  slackTerminalManifest?: SlackAutomaticTerminalManifest;
 }
 
 export interface ChannelBackendRuntimeInterruptRecord {
@@ -1782,6 +1798,12 @@ function getDb(): Database {
       runtime_generation_id TEXT,
       terminal_error_json TEXT,
       updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS slack_automatic_terminal_manifests (
+      response_id TEXT PRIMARY KEY,
+      request_fingerprint TEXT NOT NULL,
+      manifest_json TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS channel_backend_runtime_interrupts (
@@ -7474,6 +7496,10 @@ export function dbRecordChannelBackendRuntimeEvent(
   return executeWrite(
     getDb(),
     (database) => {
+      const assertOwner = () => {
+        if (input.mayWrite && input.mayWrite() !== true) throw new ChannelBackendRuntimeOwnershipLostError();
+      };
+      assertOwner();
       const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
       const runtimeGenerationId = normalizeOpaqueCanonicalId(input.runtimeGenerationId, "runtimeGenerationId");
       const occurredAt = input.occurredAt ?? Date.now();
@@ -7502,6 +7528,26 @@ export function dbRecordChannelBackendRuntimeEvent(
       const nextState = input.state ?? current.state;
       assertChannelBackendRuntimeTransition(current.state, nextState);
 
+      const preparedManifest = input.slackTerminalManifest;
+      if (preparedManifest) {
+        const expectedKind =
+          input.state === "completed"
+            ? "final_answer"
+            : input.state === "failed"
+              ? "safe_error"
+              : input.state === "interrupted"
+                ? "cancelled"
+                : undefined;
+        if (
+          expectedKind === undefined ||
+          preparedManifest.kind !== expectedKind ||
+          preparedManifest.turnId !== turnId ||
+          preparedManifest.sourceId !== receipt.messageId ||
+          preparedManifest.sourceReceivedAt !== receipt.acceptedAt
+        )
+          throw new Error("Slack terminal manifest does not match the channel runtime transition");
+      }
+
       let assistantMessageId = current.assistantMessageId;
       if (input.assistantText !== undefined) {
         if (nextState !== "completed") {
@@ -7511,6 +7557,7 @@ export function dbRecordChannelBackendRuntimeEvent(
         if (!assistantText) {
           throw new Error("assistantText must not be empty");
         }
+        assertOwner();
         const messageResult = upsertChatMessage(database, {
           chatId: receipt.chatId,
           channel: receipt.external.channelKind,
@@ -7539,6 +7586,7 @@ export function dbRecordChannelBackendRuntimeEvent(
       const nextSequence = current.lastSequence + 1;
       const nextDeltaSequence = current.lastDeltaSequence + (input.assistantDelta ? 1 : 0);
       const terminalErrorJson = input.terminalError === undefined ? undefined : JSON.stringify(input.terminalError);
+      assertOwner();
       database
         .prepare(
           `
@@ -7585,7 +7633,12 @@ export function dbRecordChannelBackendRuntimeEvent(
       if (!runtimeRow) {
         throw new Error(`Channel backend runtime state not found after update for turn ${turnId}`);
       }
+      assertOwner();
+      const slackTerminalManifest = preparedManifest
+        ? persistPreparedSlackAutomaticTerminalManifest(database, preparedManifest)
+        : undefined;
       return {
+        ...(slackTerminalManifest ? { slackTerminalManifest } : {}),
         receipt,
         runtime: rowToChannelBackendRuntimeState(runtimeRow),
       };

@@ -33,10 +33,8 @@ export interface SlackAutomaticTerminalManifest {
   mediaAvailabilityErrors: readonly ("file_unavailable" | null)[];
 }
 
-const initializedDatabases = new WeakSet<Database>();
-
 /** Hash identities and part membership only; do not duplicate bodies or file paths in the ledger. */
-export function freezeSlackAutomaticTerminalManifest(
+export function prepareSlackAutomaticTerminalManifest(
   input: SlackAutomaticTerminalManifestInput,
 ): SlackAutomaticTerminalManifest {
   requireText(input.turnId, "turnId");
@@ -69,22 +67,31 @@ export function freezeSlackAutomaticTerminalManifest(
     mediaByteFingerprints: mediaBytes.map((media) => media.fingerprint),
     mediaAvailabilityErrors: mediaBytes.map((media) => media.error),
   };
-  const manifest = { ...content, requestFingerprint: fingerprint(content) };
-  const database = getDb();
-  ensureSchema(database);
-  return database
-    .transaction(() => {
-      database
-        .prepare(`INSERT OR IGNORE INTO slack_automatic_terminal_manifests
+  return { ...content, requestFingerprint: fingerprint(content) };
+}
+
+/** Persist within the caller's transaction, without reading attachment files again. */
+export function persistPreparedSlackAutomaticTerminalManifest(
+  database: Database,
+  prepared: SlackAutomaticTerminalManifest,
+): SlackAutomaticTerminalManifest {
+  database
+    .prepare(`INSERT OR IGNORE INTO slack_automatic_terminal_manifests
       (response_id, request_fingerprint, manifest_json) VALUES (?, ?, ?)`)
-        .run(responseId, manifest.requestFingerprint, JSON.stringify(manifest));
-      const saved = readManifest(database, responseId);
-      if (!saved || saved.requestFingerprint !== manifest.requestFingerprint) {
-        throw new Error("Slack automatic terminal manifest identity conflict");
-      }
-      return saved;
-    })
-    .immediate();
+    .run(prepared.responseId, prepared.requestFingerprint, JSON.stringify(prepared));
+  const saved = readManifest(database, prepared.responseId);
+  if (!saved || saved.requestFingerprint !== prepared.requestFingerprint) {
+    throw new Error("Slack automatic terminal manifest identity conflict");
+  }
+  return saved;
+}
+
+export function freezeSlackAutomaticTerminalManifest(
+  input: SlackAutomaticTerminalManifestInput,
+): SlackAutomaticTerminalManifest {
+  const prepared = prepareSlackAutomaticTerminalManifest(input);
+  const database = getDb();
+  return database.transaction(() => persistPreparedSlackAutomaticTerminalManifest(database, prepared)).immediate();
 }
 
 export function slackAutomaticTerminalResponseId(turnId: string, target: MessageTarget): string {
@@ -102,7 +109,6 @@ export function slackAutomaticTerminalResponseId(turnId: string, target: Message
 export function getSlackAutomaticTerminalManifest(responseId: string): SlackAutomaticTerminalManifest | null {
   requireText(responseId, "responseId");
   const database = getDb();
-  ensureSchema(database);
   return readManifest(database, responseId);
 }
 
@@ -184,14 +190,6 @@ function fingerprint(value: unknown): string {
   });
   if (canonical === undefined) throw new Error("Slack automatic terminal value cannot be fingerprinted");
   return createHash("sha256").update(canonical).digest("hex");
-}
-
-function ensureSchema(database: Database): void {
-  if (initializedDatabases.has(database)) return;
-  database.exec(`CREATE TABLE IF NOT EXISTS slack_automatic_terminal_manifests (
-    response_id TEXT PRIMARY KEY, request_fingerprint TEXT NOT NULL, manifest_json TEXT NOT NULL
-  )`);
-  initializedDatabases.add(database);
 }
 
 function readManifest(database: Database, responseId: string): SlackAutomaticTerminalManifest | null {

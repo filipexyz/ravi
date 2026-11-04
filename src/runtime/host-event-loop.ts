@@ -8,13 +8,9 @@ import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.j
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import {
   getSlackAutomaticPendingReply,
-  discardSlackAutomaticPendingReply,
   type SlackAutomaticPendingReply as AutomaticSlackReply,
 } from "../channels/slack/automatic-pending-reply.js";
-import {
-  freezeSlackAutomaticTerminalManifest,
-  type SlackAutomaticTerminalManifest,
-} from "../channels/slack/automatic-terminal-manifest.js";
+import { prepareSlackAutomaticTerminalManifest } from "../channels/slack/automatic-terminal-manifest.js";
 import { renderSlackBackendOutput } from "../channels/slack/driver.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
 import { isCommentaryMetadata, isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
@@ -1132,23 +1128,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const automaticSlackReply = (
     metadata: ChannelBackendPromptMetadata | undefined = streaming.currentChannelBackend,
   ): AutomaticSlackReply | undefined => getSlackAutomaticPendingReply(metadata);
-  const freezeAutomaticSlackReply = (
-    reply: AutomaticSlackReply,
-    kind: SlackAutomaticTerminalManifest["kind"],
-    text: string,
-  ): void => {
-    reply.manifest = freezeSlackAutomaticTerminalManifest({
-      ...reply.context,
-      kind,
-      text,
-      media: kind === "final_answer" ? reply.media : [],
-    });
-    discardSlackAutomaticPendingReply(reply.origin.binding);
-    if (kind !== "final_answer") {
-      reply.media = [];
-      reply.mediaKeys.clear();
-    }
-  };
   const releaseAutomaticSlackMedia = async (reply: AutomaticSlackReply, metadata?: RuntimeEventMetadata) => {
     const manifest = reply.manifest;
     if (!manifest || manifest.kind !== "final_answer" || reply.mediaReleased || reply.media.length === 0) return;
@@ -2118,32 +2097,34 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     let terminalManifestReady = false;
     try {
       automaticReply = automaticSlackReply(metadata);
-      if (automaticReply && event.type === "turn.complete" && !projectedResponseText?.trim()) {
-        // A media-only answer has no text output envelope to run the hook below.
-        freezeAutomaticSlackReply(automaticReply, "final_answer", "");
-        terminalManifestReady = true;
-      }
       await projectChannelRuntimeEvent({
         metadata,
         event: stripRuntimeRawEvent(event),
         // Initial running-state sinks can yield to another owner. The pure
-        // guard runs again at each write; cancellation freezes only after DB acceptance.
+        // guard is checked again inside each synchronous DB transaction attempt.
         beforeRecordEvent: mayProject,
-        afterRecordEvent: (state) => {
-          if (automaticReply && state === "interrupted") {
-            freezeAutomaticSlackReply(automaticReply, "cancelled", "");
-          }
-        },
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
         ...(automaticReply
           ? {
-              beforeTerminalOutput: (output: Parameters<typeof renderSlackBackendOutput>[0]) => {
-                freezeAutomaticSlackReply(
-                  automaticReply!,
-                  output.kind === "safe_error" ? "safe_error" : "final_answer",
-                  renderSlackBackendOutput(output),
-                );
+              prepareTerminalManifest: ({ state, output }) => {
+                const kind = state === "interrupted" ? "cancelled" : state === "failed" ? "safe_error" : "final_answer";
+                return prepareSlackAutomaticTerminalManifest({
+                  ...automaticReply!.context,
+                  kind,
+                  text: output ? renderSlackBackendOutput(output) : "",
+                  media: kind === "final_answer" ? automaticReply!.media : [],
+                });
+              },
+              afterRecordEvent: (_state, manifest) => {
+                if (!manifest) return;
+                // The DB terminal and complete manifest committed together.
+                // No tentative attempt may consume pending media or readiness.
+                automaticReply!.manifest = manifest;
                 terminalManifestReady = true;
+                if (manifest.kind !== "final_answer") {
+                  automaticReply!.media = [];
+                  automaticReply!.mediaKeys.clear();
+                }
               },
             }
           : {}),

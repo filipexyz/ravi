@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { Database } from "bun:sqlite";
 import { getHistory } from "../db.js";
 import { nats } from "../nats.js";
 import {
@@ -6,7 +7,9 @@ import {
   dbCreateAgent,
   dbGetAgent,
   dbGetChatMessage,
+  dbGetChannelBackendIngressReceiptByTurnId,
   dbGetChannelBackendRuntimeState,
+  dbRecordChannelBackendRuntimeEvent,
   getDb,
 } from "../router/router-db.js";
 import { resolveSession } from "../router/sessions.js";
@@ -44,6 +47,13 @@ import {
 } from "./runtime-events.js";
 import { persistDeliveredMessage } from "./outbound-consumer.js";
 import { buildChannelTextOutboundJob } from "./outbound-stream.js";
+import {
+  assertSlackAutomaticTerminalPart,
+  freezeSlackAutomaticTerminalManifest,
+  getSlackAutomaticTerminalManifest,
+  prepareSlackAutomaticTerminalManifest,
+  type SlackAutomaticTerminalManifestInput,
+} from "./slack/automatic-terminal-manifest.js";
 
 let stateDir: string | null = null;
 let unregisterOutput: (() => void) | undefined;
@@ -74,10 +84,20 @@ afterEach(async () => {
 });
 
 describe("channel runtime event projection", () => {
-  it("freezes the exact terminal envelope before releasing an output sink", async () => {
+  it("commits the terminal, assistant and exact manifest before notifying or releasing output", async () => {
     const metadata = await acceptedMetadata();
     const order: string[] = [];
     let frozen: ChannelOutputEnvelope | undefined;
+    const text = "Complete terminal\nwith every line";
+    const prepared = prepareSlackAutomaticTerminalManifest(terminalManifestInput(metadata, text));
+    const sinks = new ChannelRuntimeEventSinkRegistry();
+    sinks.register(metadata.target, {
+      async emit(event) {
+        if (event.kind !== "turn.terminal_output") return;
+        expect(getSlackAutomaticTerminalManifest(prepared.responseId)).toEqual(prepared);
+        order.push("notification");
+      },
+    });
     unregisterOutput = channelOutputSinks.register(metadata.target, {
       async emit(output) {
         expect(output).toEqual(frozen!);
@@ -87,15 +107,32 @@ describe("channel runtime event projection", () => {
     await projectChannelRuntimeEvent({
       metadata,
       event: { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } },
-      responseText: "Complete terminal\nwith every line",
-      sinks: runtimeSinks(metadata, []),
-      beforeTerminalOutput: async (output) => {
+      responseText: text,
+      sinks,
+      prepareTerminalManifest: ({ state, output }) => {
+        expect(state).toBe("completed");
         frozen = output;
-        expect(output.kind).toBe("assistant_message");
-        order.push("freeze");
+        expect(output?.kind).toBe("assistant_message");
+        expect(getDb().inTransaction).toBe(false);
+        expect(getSlackAutomaticTerminalManifest(prepared.responseId)).toBeNull();
+        order.push("prepare");
+        return prepared;
+      },
+      afterRecordEvent: (state, manifest) => {
+        if (state !== "completed") return;
+        expect(getDb().inTransaction).toBe(false);
+        expect(manifest).toEqual(prepared);
+        expect(getSlackAutomaticTerminalManifest(prepared.responseId)).toEqual(prepared);
+        const runtime = dbGetChannelBackendRuntimeState(metadata.binding.turnId)!;
+        expect(runtime.state).toBe("completed");
+        expect(dbGetChatMessage(runtime.assistantMessageId!)?.content).toEqual({
+          blocks: [{ type: "text", text }],
+        });
+        expect(assertSlackAutomaticTerminalPart(manifest!, { type: "text", text })).toBe(`${prepared.responseId}:text`);
+        order.push("commit");
       },
     });
-    expect(order).toEqual(["freeze", "delivery"]);
+    expect(order).toEqual(["prepare", "commit", "notification", "delivery"]);
   });
 
   it("does not release a terminal when its manifest cannot be frozen", async () => {
@@ -107,23 +144,32 @@ describe("channel runtime event projection", () => {
         metadata,
         event: { type: "turn.failed", error: "provider unavailable" },
         sinks: runtimeSinks(metadata, []),
-        beforeTerminalOutput: (output) => {
-          expect(output.kind).toBe("safe_error");
+        prepareTerminalManifest: ({ state, output }) => {
+          expect(state).toBe("failed");
+          expect(output?.kind).toBe("safe_error");
           throw new Error("manifest persistence unavailable");
         },
       }),
     ).rejects.toThrow("manifest persistence unavailable");
     expect(send).not.toHaveBeenCalled();
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "running",
+      lastSequence: 1,
+    });
+    expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 0, manifests: 0 });
   });
 
-  it("installs durable runtime state and interrupt outbox tables", () => {
+  it("installs runtime, interrupt and terminal manifest tables in the central schema", () => {
     const tables = getDb()
       .prepare(
         `
         SELECT name
         FROM sqlite_master
         WHERE type = 'table'
-          AND name IN ('channel_backend_runtime_state', 'channel_backend_runtime_interrupts')
+          AND name IN (
+            'channel_backend_runtime_state', 'channel_backend_runtime_interrupts',
+            'slack_automatic_terminal_manifests'
+          )
         ORDER BY name
       `,
       )
@@ -139,6 +185,7 @@ describe("channel runtime event projection", () => {
     expect(tables.map((table) => table.name)).toEqual([
       "channel_backend_runtime_interrupts",
       "channel_backend_runtime_state",
+      "slack_automatic_terminal_manifests",
     ]);
     expect(stateColumns).toEqual(
       new Set([
@@ -152,6 +199,271 @@ describe("channel runtime event projection", () => {
         "updated_at",
       ]),
     );
+    expect(getDb().prepare("PRAGMA table_info(slack_automatic_terminal_manifests)").all()).toMatchObject([
+      { name: "response_id", pk: 1 },
+      { name: "request_fingerprint", notnull: 1 },
+      { name: "manifest_json", notnull: 1 },
+    ]);
+  });
+
+  it("retries a real SQLITE_BUSY at COMMIT with one preparation and one committed terminal", async () => {
+    const metadata = await acceptedMetadata();
+    const before = startRunningRuntime(metadata);
+    const database = getDb();
+    database.exec("PRAGMA journal_mode = DELETE");
+    database.exec("PRAGMA busy_timeout = 0");
+    const reader = new Database(database.filename, { create: false, readwrite: true });
+    reader.exec("BEGIN");
+    reader.prepare("SELECT state FROM channel_backend_runtime_state WHERE turn_id = ?").get(metadata.binding.turnId);
+    const prepared = prepareSlackAutomaticTerminalManifest(terminalManifestInput(metadata));
+    const prepare = mock(() => prepared);
+    const afterCommit = mock(() => {
+      expect(database.inTransaction).toBe(false);
+      expect(getSlackAutomaticTerminalManifest(prepared.responseId)).toEqual(prepared);
+    });
+    const send = mock(async () => {});
+    unregisterOutput = channelOutputSinks.register(metadata.target, { emit: send });
+    const events: KnownChannelRuntimeEvent[] = [];
+    const originalExec = database.exec.bind(database);
+    let attempts = 0;
+    let busyCommits = 0;
+    const exec = spyOn(database, "exec").mockImplementation((sql, ...rest) => {
+      if (sql === "BEGIN IMMEDIATE") attempts += 1;
+      try {
+        return originalExec(sql, ...rest);
+      } catch (error) {
+        if (sql !== "COMMIT") throw error;
+        busyCommits += 1;
+        try {
+          expect(error).toMatchObject({ code: "SQLITE_BUSY" });
+          expect(database.inTransaction).toBe(true);
+          expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("completed");
+          expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 1, manifests: 1 });
+          expect(
+            reader
+              .prepare("SELECT state, last_sequence FROM channel_backend_runtime_state WHERE turn_id = ?")
+              .get(metadata.binding.turnId),
+          ).toEqual({ state: before.state, last_sequence: before.lastSequence });
+          expect(reader.prepare("SELECT COUNT(*) AS count FROM slack_automatic_terminal_manifests").get()).toEqual({
+            count: 0,
+          });
+          expect(afterCommit).not.toHaveBeenCalled();
+          expect(send).not.toHaveBeenCalled();
+        } finally {
+          reader.exec("ROLLBACK");
+        }
+        // Re-throw SQLite's original lock error so executeWrite owns the retry.
+        throw error;
+      }
+    });
+    try {
+      await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } },
+        responseText: "Complete terminal",
+        sinks: runtimeSinks(metadata, events),
+        prepareTerminalManifest: prepare,
+        afterRecordEvent: afterCommit,
+      });
+      expect(attempts).toBe(2);
+      expect(busyCommits).toBe(1);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(afterCommit).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ kind: "turn.terminal_output", sequence: 2 });
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+        state: "completed",
+        lastSequence: 2,
+      });
+      expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 1, manifests: 1 });
+    } finally {
+      exec.mockRestore();
+      if (reader.inTransaction) reader.exec("ROLLBACK");
+      reader.close();
+    }
+  });
+
+  it("rolls back the assistant and runtime when manifest INSERT fails and allows the same terminal to retry", async () => {
+    const metadata = await acceptedMetadata();
+    const before = startRunningRuntime(metadata);
+    const prepared = prepareSlackAutomaticTerminalManifest(terminalManifestInput(metadata));
+    const afterCommit = mock(() => {});
+    const send = mock(async () => {});
+    const events: KnownChannelRuntimeEvent[] = [];
+    unregisterOutput = channelOutputSinks.register(metadata.target, { emit: send });
+    getDb().exec(`CREATE TRIGGER reject_terminal_manifest BEFORE INSERT ON slack_automatic_terminal_manifests
+      BEGIN SELECT RAISE(ABORT, 'manifest insert rejected'); END`);
+    const project = () =>
+      projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } },
+        responseText: "Complete terminal",
+        sinks: runtimeSinks(metadata, events),
+        prepareTerminalManifest: () => prepared,
+        afterRecordEvent: afterCommit,
+      });
+    await expect(project()).rejects.toThrow("manifest insert rejected");
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toEqual(before);
+    expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 0, manifests: 0 });
+    expect(afterCommit).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+    getDb().exec("DROP TRIGGER reject_terminal_manifest");
+    await project();
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "completed",
+      lastSequence: 2,
+    });
+    expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 1, manifests: 1 });
+    expect(afterCommit).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  for (const boundary of ["transaction entry", "assistant write", "runtime write"] as const) {
+    it(`keeps the terminal uncommitted when ownership is refused at ${boundary}`, async () => {
+      const metadata = await acceptedMetadata();
+      const before = startRunningRuntime(metadata);
+      const prepared = prepareSlackAutomaticTerminalManifest(terminalManifestInput(metadata));
+      const prepare = mock(() => prepared);
+      const afterCommit = mock(() => {});
+      const send = mock(async () => {});
+      const events: KnownChannelRuntimeEvent[] = [];
+      unregisterOutput = channelOutputSinks.register(metadata.target, { emit: send });
+      const projected = await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } },
+        responseText: "Complete terminal",
+        sinks: runtimeSinks(metadata, events),
+        beforeRecordEvent: () => {
+          if (!getDb().inTransaction) return true;
+          if (boundary === "transaction entry") return false;
+          if (boundary === "assistant write") return terminalDatabaseCounts(metadata).assistants === 0;
+          return dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state !== "completed";
+        },
+        prepareTerminalManifest: prepare,
+        afterRecordEvent: afterCommit,
+      });
+      expect(projected).toEqual([]);
+      expect(events).toEqual([]);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(afterCommit).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toEqual(before);
+      expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 0, manifests: 0 });
+    });
+  }
+
+  it("does not prepare or commit a terminal after the running notification yields to another owner", async () => {
+    const metadata = await acceptedMetadata();
+    let ownsRequest = true;
+    const sinks = new ChannelRuntimeEventSinkRegistry();
+    sinks.register(metadata.target, {
+      async emit(event) {
+        expect(event).toMatchObject({ kind: "turn.state_changed", payload: { state: "running" } });
+        await Promise.resolve();
+        ownsRequest = false;
+      },
+    });
+    const prepare = mock(() => prepareSlackAutomaticTerminalManifest(terminalManifestInput(metadata)));
+    const afterCommit = mock(() => {});
+    const send = mock(async () => {});
+    unregisterOutput = channelOutputSinks.register(metadata.target, { emit: send });
+    const projected = await projectChannelRuntimeEvent({
+      metadata,
+      event: { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } },
+      responseText: "Complete terminal",
+      sinks,
+      beforeRecordEvent: () => ownsRequest,
+      prepareTerminalManifest: prepare,
+      afterRecordEvent: afterCommit,
+    });
+    expect(projected).toHaveLength(1);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(afterCommit).toHaveBeenCalledTimes(1);
+    expect(afterCommit).toHaveBeenCalledWith("running", undefined);
+    expect(send).not.toHaveBeenCalled();
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "running",
+      lastSequence: 1,
+    });
+    expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 0, manifests: 0 });
+  });
+
+  for (const field of ["turnId", "sourceId", "sourceReceivedAt", "kind"] as const) {
+    it(`rejects a terminal manifest with the wrong ${field} without changing an existing manifest`, async () => {
+      const metadata = await acceptedMetadata();
+      const before = startRunningRuntime(metadata);
+      const source = terminalManifestInput(metadata);
+      const existing = freezeSlackAutomaticTerminalManifest(source);
+      const mismatch = prepareSlackAutomaticTerminalManifest({
+        ...source,
+        ...(field === "turnId" ? { turnId: "other-turn" } : {}),
+        ...(field === "sourceId" ? { sourceId: "other-source" } : {}),
+        ...(field === "sourceReceivedAt" ? { sourceReceivedAt: source.sourceReceivedAt + 1 } : {}),
+        ...(field === "kind" ? { kind: "safe_error" as const } : {}),
+      });
+      expect(() =>
+        dbRecordChannelBackendRuntimeEvent({
+          turnId: metadata.binding.turnId,
+          state: "completed",
+          assistantText: "Complete terminal",
+          runtimeGenerationId: "runtime-generation-a",
+          slackTerminalManifest: mismatch,
+        }),
+      ).toThrow("does not match the channel runtime transition");
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toEqual(before);
+      expect(getSlackAutomaticTerminalManifest(existing.responseId)).toEqual(existing);
+      expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 0, manifests: 1 });
+    });
+  }
+
+  it("rolls back a conflicting manifest identity without replacing the existing ledger entry", async () => {
+    const metadata = await acceptedMetadata();
+    const before = startRunningRuntime(metadata);
+    const source = terminalManifestInput(metadata);
+    const existing = freezeSlackAutomaticTerminalManifest(source);
+    const conflicting = prepareSlackAutomaticTerminalManifest({ ...source, text: "Changed terminal" });
+    expect(() =>
+      dbRecordChannelBackendRuntimeEvent({
+        turnId: metadata.binding.turnId,
+        state: "completed",
+        assistantText: "Changed terminal",
+        runtimeGenerationId: "runtime-generation-a",
+        slackTerminalManifest: conflicting,
+      }),
+    ).toThrow("identity conflict");
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toEqual(before);
+    expect(getSlackAutomaticTerminalManifest(existing.responseId)).toEqual(existing);
+    expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 0, manifests: 1 });
+  });
+
+  it("preserves the committed terminal and manifest when a later terminal transition is rejected", async () => {
+    const metadata = await acceptedMetadata();
+    startRunningRuntime(metadata);
+    const source = terminalManifestInput(metadata);
+    const prepared = prepareSlackAutomaticTerminalManifest(source);
+    const committed = dbRecordChannelBackendRuntimeEvent({
+      turnId: metadata.binding.turnId,
+      state: "completed",
+      assistantText: "Complete terminal",
+      runtimeGenerationId: "runtime-generation-a",
+      slackTerminalManifest: prepared,
+    });
+    const assistant = dbGetChatMessage(committed.runtime.assistantMessageId!);
+    expect(() =>
+      dbRecordChannelBackendRuntimeEvent({
+        turnId: metadata.binding.turnId,
+        state: "failed",
+        runtimeGenerationId: "runtime-generation-b",
+        terminalError: { code: "RUNTIME_FAILED" },
+        slackTerminalManifest: prepareSlackAutomaticTerminalManifest({ ...source, kind: "safe_error", text: "Failed" }),
+      }),
+    ).toThrow("already terminal");
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toEqual(committed.runtime);
+    expect(dbGetChatMessage(committed.runtime.assistantMessageId!)).toEqual(assistant);
+    expect(getSlackAutomaticTerminalManifest(prepared.responseId)).toEqual(prepared);
+    expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 1, manifests: 1 });
   });
 
   it("adds readback metadata columns to an existing runtime state table", () => {
@@ -1287,6 +1599,52 @@ describe("channel runtime interruption", () => {
     expect(publish).not.toHaveBeenCalled();
   });
 });
+
+function startRunningRuntime(metadata: ChannelBackendPromptMetadata) {
+  return dbRecordChannelBackendRuntimeEvent({
+    turnId: metadata.binding.turnId,
+    state: "running",
+    runtimeGenerationId: "runtime-generation-a",
+    occurredAt: Date.parse("2026-07-24T18:00:01.000Z"),
+  }).runtime;
+}
+
+function terminalManifestInput(
+  metadata: ChannelBackendPromptMetadata,
+  text = "Complete terminal",
+): SlackAutomaticTerminalManifestInput {
+  const receipt = dbGetChannelBackendIngressReceiptByTurnId(metadata.binding.turnId)!;
+  // These DB/projector tests supply trusted internal prepared metadata. The
+  // custom ingress is not Slack admission or authority; native bot origin and
+  // destination resolution are exercised by the Slack host/origin suites.
+  return {
+    turnId: receipt.turnId,
+    sourceId: receipt.messageId,
+    sourceReceivedAt: receipt.acceptedAt,
+    scope: "fixture-installation:C123",
+    target: {
+      channel: "slack",
+      accountId: "fixture-slack",
+      instanceId: "fixture-slack",
+      chatId: "C123",
+      canonicalChatId: receipt.chatId,
+    },
+    kind: "final_answer",
+    text,
+    media: [],
+  };
+}
+
+function terminalDatabaseCounts(metadata: ChannelBackendPromptMetadata) {
+  const database = getDb();
+  const assistants = database
+    .prepare("SELECT COUNT(*) AS count FROM chat_messages WHERE chat_id = ? AND actor_type = 'agent'")
+    .get(metadata.binding.chatId) as { count: number };
+  const manifests = database.prepare("SELECT COUNT(*) AS count FROM slack_automatic_terminal_manifests").get() as {
+    count: number;
+  };
+  return { assistants: assistants.count, manifests: manifests.count };
+}
 
 function runtimeSinks(
   metadata: ChannelBackendPromptMetadata,
