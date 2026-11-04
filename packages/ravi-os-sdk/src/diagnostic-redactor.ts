@@ -68,6 +68,8 @@ function normalizeContainers(text: string, options: DiagnosticRedactionOptions, 
     if (text[i] !== "{" && text[i] !== "[") continue;
     if (
       text.slice(i, i + 9).toLowerCase() === "[redacted" ||
+      // Commander emits this exact, data-free token in CLI usage text.
+      text.startsWith("[options]", i) ||
       text.startsWith("[circular cause]", i) ||
       text.startsWith("[cause chain truncated]", i) ||
       text.startsWith(TRUNCATION_MARKER.trimStart(), i)

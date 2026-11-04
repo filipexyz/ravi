@@ -83,6 +83,27 @@ describe("error diagnostics", () => {
     expect(redactDiagnosticText(expected)).toBe(expected);
   });
 
+  it.each([
+    "ravi crm board [options]",
+    "ravi crm opportunity show [options] <opportunity>",
+    "missing argument\nusage: ravi crm opportunity show [options] <opportunity>",
+  ])("preserves the exact Commander usage placeholder: %s", (usage) => {
+    expect(redactDiagnosticText(usage)).toBe(usage);
+    expect(redactDiagnosticText(redactDiagnosticText(usage))).toBe(usage);
+  });
+
+  it.each([
+    ["[options,PRIVATE_BODY]", "[redacted:opaque]"],
+    ['["PRIVATE_BODY"]', "[redacted:provider.body]"],
+    ["[options PRIVATE_BODY", "[redacted:opaque]"],
+    ['["[options]", "PRIVATE_BODY"]', "[redacted:provider.body]"],
+    ['{"usage":"[options]","body":"PRIVATE_BODY"}', "[redacted:provider.body]"],
+    ["password=[options]PRIVATE_BODY", "password=[redacted:password]"],
+  ])("does not exempt payloads that resemble or contain usage: %s", (source, expected) => {
+    expect(redactDiagnosticText(source)).toBe(expected);
+    expect(redactDiagnosticText(expected)).toBe(expected);
+  });
+
   it("redacts a known credential inside allowed context fields at egress", () => {
     const error = diagnosticError(
       new Error("provider denied"),

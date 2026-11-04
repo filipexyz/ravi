@@ -3101,7 +3101,7 @@ function basesSuggestedAction(
     case "version_conflict": {
       const version = details.current?.version;
       return version
-        ? `the current row is in error.current; merge your change and retry with --expected-version ${version}`
+        ? `re-read the row identified by error.current, merge your change and retry with --expected-version ${version}`
         : "re-read the row with 'ravi bases rows get' and retry with its current --expected-version";
     }
     case "schema_version_conflict":

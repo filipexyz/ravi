@@ -1,4 +1,10 @@
-import { errorDiagnostic, projectFailureDiagnostic, redactDiagnosticText } from "./error-diagnostic.js";
+import {
+  errorDiagnostic,
+  projectDiagnosticContext,
+  projectFailureDiagnostic,
+  redactDiagnosticText,
+} from "./error-diagnostic.js";
+import { safeDiagnosticField } from "../../packages/ravi-os-sdk/src/diagnostic-redactor.js";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -35,6 +41,27 @@ interface LogContext {
   sessionKey?: string;
   agentId?: string;
   [key: string]: unknown;
+}
+
+/** Operational instrumentation is separate from the diagnostic wire context. */
+function projectOperationalLogData(source: unknown): Record<string, string | number | boolean> {
+  const result: Record<string, string | number | boolean> = {};
+  const operation = projectDiagnosticContext({ operation: safeDiagnosticField(source, "operation") }).operation;
+  if (operation) result.operation = operation;
+  const sqliteCode = safeDiagnosticField(source, "sqliteCode");
+  if (typeof sqliteCode === "string" && /^SQLITE_[A-Z][A-Z0-9_]{0,63}$/.test(sqliteCode))
+    result.sqliteCode = sqliteCode;
+  const willRetry = safeDiagnosticField(source, "willRetry");
+  if (typeof willRetry === "boolean") result.willRetry = willRetry;
+  for (const key of ["sqliteErrno", "attempt", "suppressed"] as const) {
+    const value = safeDiagnosticField(source, key);
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) result[key] = value;
+  }
+  for (const key of ["statementsAgeMs", "rssMb", "heapUsedMb", "heapTotalMb", "externalMb"] as const) {
+    const value = safeDiagnosticField(source, key);
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) result[key] = value;
+  }
+  return result;
 }
 
 class Logger {
@@ -192,27 +219,29 @@ class Logger {
     if (!this.shouldLog(level)) return;
 
     // Error-level metadata is an untrusted exception boundary. Keep only the
-    // diagnostic plus explicit logger correlation fields, never arbitrary data.
-    let normalizedData = this.normalizeLogData(data);
+    // diagnostic plus typed instrumentation/correlation, never arbitrary data.
+    let normalizedData: unknown;
     if (level === "error" && data && typeof data === "object") {
       const source = data as Record<string, unknown>;
-      const diagnostic = errorDiagnostic(source.error ?? source.cause ?? data);
+      const diagnostic = errorDiagnostic(
+        safeDiagnosticField(source, "error") ?? safeDiagnosticField(source, "cause") ?? data,
+      );
       const projected = projectFailureDiagnostic(source);
       const correlation: Record<string, unknown> = {};
-      for (const key of ["sessionKey", "agentId", "requestId", "command"] as const)
-        if (typeof source[key] === "string") correlation[key] = redactDiagnosticText(source[key]);
+      for (const key of ["sessionKey", "agentId", "requestId", "command"] as const) {
+        const value = safeDiagnosticField(source, key);
+        if (typeof value === "string") correlation[key] = redactDiagnosticText(value);
+      }
       normalizedData = {
-        ...(Number.isInteger(source.suppressed) && Number(source.suppressed) >= 0
-          ? { suppressed: source.suppressed }
-          : {}),
+        ...projectOperationalLogData(source),
         ...correlation,
         ...projected,
         ...diagnostic,
-        ...(source.context ? { context: projected.context } : {}),
+        ...(safeDiagnosticField(source, "context") ? { context: projected.context } : {}),
         error: diagnostic.cause,
         failureDetails: diagnostic.cause,
       };
-    }
+    } else normalizedData = this.normalizeLogData(data);
     const terminalLine = this.formatForTerminal(level, redactDiagnosticText(message), normalizedData);
     const fileLine = this.formatForFile(level, redactDiagnosticText(message), normalizedData);
 

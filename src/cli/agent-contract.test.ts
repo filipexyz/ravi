@@ -206,6 +206,62 @@ describe("public expected-error credentials", () => {
 });
 
 describe("diagnostic identifier egress", () => {
+  it("preserves typed resolution controls while excluding provider row contents and arbitrary nested fields", () => {
+    const error = new ContractError("bases rows update", "VERSION_CONFLICT", "Row changed.", 1, {
+      ...errorDiagnostic(new Error("Row changed.")),
+      consoleError: "version_conflict",
+      current: { rowId: "row_1", version: 4, values: { email: "PRIVATE_ROW_VALUE" }, body: "PRIVATE_ROW_BODY" },
+      schemaVersion: 2,
+      inputsHash: "fedcba9876543210",
+      retryAfterMs: 1000,
+      missingScopes: ["console.bases.read", "scope?token=PRIVATE_SCOPE"],
+      organization: { name: "Acme", body: "PRIVATE_ORG_BODY" },
+      currentChat: "chat_1",
+      importProgress: { failedBatch: 0, batches: 2, rowsCreated: 0, firstFailedLine: null, body: "PRIVATE_IMPORT" },
+    });
+    expect(error.envelope().error).toMatchObject({
+      consoleError: "version_conflict",
+      current: { rowId: "row_1", version: 4 },
+      schemaVersion: 2,
+      inputsHash: "fedcba9876543210",
+      retryAfterMs: 1000,
+      missingScopes: ["console.bases.read"],
+      organization: { name: "Acme" },
+      currentChat: "chat_1",
+      importProgress: { failedBatch: 0, batches: 2, rowsCreated: 0, firstFailedLine: null },
+    });
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_");
+  });
+
+  it("rejects invalid control types and redacts permitted text", () => {
+    const error = new ContractError("demo", "CONFLICT", "Conflict.", 1, {
+      ...errorDiagnostic(new Error("Conflict.")),
+      consoleError: "code?key=PRIVATE_CODE",
+      current: { rowId: "row_1", version: -1 },
+      schemaVersion: NaN,
+      retryAfterMs: Infinity,
+      inputsHash: "PRIVATE_HASH",
+      currentChat: "chat?token=PRIVATE_CHAT",
+      missingScopes: [12, { scope: "PRIVATE_SCOPE" }],
+      organization: { name: "Acme https://example.test?key=PRIVATE_ORG" },
+      diff: "+ theirs https://example.test?key=PRIVATE_DIFF",
+    });
+    const envelope = error.envelope().error;
+    for (const key of [
+      "consoleError",
+      "current",
+      "schemaVersion",
+      "retryAfterMs",
+      "inputsHash",
+      "currentChat",
+      "missingScopes",
+    ])
+      expect(envelope).not.toHaveProperty(key);
+    expect(envelope.organization).toEqual({ name: "Acme https://example.test?[redacted:url-query]" });
+    expect(envelope.diff).toContain("+ theirs");
+    expect(JSON.stringify(envelope)).not.toContain("PRIVATE_");
+  });
+
   it("rejects credential-bearing code and operation fields without discarding the cause", () => {
     const error = new ContractError(
       "upload?key=PRIVATE_OP",

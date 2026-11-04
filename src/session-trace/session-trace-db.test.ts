@@ -93,8 +93,8 @@ describe("session trace db", () => {
     expect(first.preview).toBe(`Authorization: [redacted:authorization]`);
     expect(first.error).toBe(`OPENAI_API_KEY=[redacted:openai_api_key]`);
     expect(first.payloadJson).toEqual({
-      message: "Error object has no message or cause",
-      cause: "Error object has no message or cause",
+      message: "OPENAI_API_KEY=[redacted:openai_api_key]",
+      cause: "OPENAI_API_KEY=[redacted:openai_api_key]",
       context: {},
     });
 

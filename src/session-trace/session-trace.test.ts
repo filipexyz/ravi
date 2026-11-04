@@ -76,6 +76,115 @@ describe("session trace query", () => {
       expect(JSON.stringify({ stored, blob })).not.toContain(secret);
   });
 
+  it("keeps typed failure lifecycle controls and uses the event's original cause", () => {
+    const controls = {
+      reason: "no_agent",
+      stage: "dispatch",
+      agentId: "main",
+      userFacing: true,
+      abort_reason: "runtime_credential_rate_limited",
+      autoRecovered: false,
+      recoverable: true,
+      suppressedRecoverable: false,
+      credentialRetry: true,
+      credentialFailureKind: "rate_limited",
+      recoveryKind: "provider_session_missing",
+      resumeStashedMessages: true,
+      userResponseSuppressed: false,
+      is_error: true,
+      restartAttempts: 2,
+      stashedQueueSize: 0,
+      previousModel: "openai/gpt-5.5",
+      nextModel: "openai/gpt-4.1",
+      strategy: "direct-set",
+      fallback: "restart-next-turn",
+    };
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "dispatch.intake_failed",
+      eventGroup: "dispatch",
+      error: "Runtime prompt intake failed (no_agent)",
+      payloadJson: { ...controls, arbitrary: "PRIVATE_FIELD", body: "PRIVATE_BODY", stack: "PRIVATE_STACK" },
+    });
+    expect(event.payloadJson).toEqual({
+      ...controls,
+      message: "Runtime prompt intake failed (no_agent)",
+      cause: "Runtime prompt intake failed (no_agent)",
+      context: {},
+    });
+    expect(JSON.stringify(event.payloadJson)).not.toContain("PRIVATE_");
+  });
+
+  it("preserves the canonical redaction marker in diagnostic artifacts", () => {
+    const blob = recordSessionBlob({
+      kind: "tool.error",
+      contentJson: { message: "provider denied", cause: "OPENAI_API_KEY=PRIVATE_CREDENTIAL" },
+    });
+    expect(getSessionTraceBlob(blob.sha256)?.contentJson).toEqual({
+      message: "provider denied",
+      cause: "OPENAI_API_KEY=[redacted:openai_api_key]",
+      context: {},
+    });
+  });
+
+  it("rejects secret or malformed lifecycle controls without reading arbitrary properties", () => {
+    let unknownReads = 0;
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "turn.failed",
+      eventGroup: "turn",
+      error: "provider denied",
+      payloadJson: {
+        reason: "no_agent?key=PRIVATE_QUERY",
+        stage: "PRIVATE_STAGE",
+        agentId: "sk-PRIVATE_IDENTIFIER",
+        autoRecovered: "PRIVATE_BOOLEAN",
+        restartAttempts: Infinity,
+        stashedQueueSize: -1,
+        previousModel: "model?key=PRIVATE_QUERY",
+        nextModel: "sk-PRIVATE_MODEL",
+        strategy: "PRIVATE_STRATEGY",
+        fallback: "PRIVATE_FALLBACK",
+        get recoverable() {
+          throw new Error("PRIVATE_GETTER");
+        },
+        get arbitrary() {
+          unknownReads++;
+          throw new Error("PRIVATE_UNKNOWN_GETTER");
+        },
+      },
+    });
+    expect(event.payloadJson).toEqual({ message: "provider denied", cause: "provider denied", context: {} });
+    expect(unknownReads).toBe(0);
+  });
+
+  it("normalizes a provider event's cause without retaining raw bodies or headers", () => {
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "turn.failed",
+      eventGroup: "turn",
+      error: "model unavailable",
+      payloadJson: {
+        recoverable: false,
+        rawEvent: {
+          message: "provider returned 401; cookie=PRIVATE_COOKIE; PRIVATE_TAIL",
+          status: 401,
+          body: { transcript: "PRIVATE_BODY" },
+          headers: { authorization: "PRIVATE_HEADER" },
+          stack: "PRIVATE_STACK",
+          arbitrary: "PRIVATE_FIELD",
+        },
+      },
+    });
+    expect(event.payloadJson).toEqual({
+      recoverable: false,
+      message: "model unavailable",
+      cause: "model unavailable\nCaused by: provider returned 401; cookie=[redacted:cookie]",
+      context: { status: 401 },
+    });
+    expect(JSON.stringify(event.payloadJson)).not.toContain("PRIVATE_");
+  });
+
   it("applies stream suppression before the bounded timeline limit", () => {
     recordTraceEvent("channel.message.received", "channel", 1000);
     recordTraceEvent("adapter.raw", "adapter", 1100);

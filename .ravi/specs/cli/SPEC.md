@@ -137,6 +137,21 @@ The canonical failure value is a `ContractError` and its envelope:
   bounded context and rate limiting remain available; private logs are not a
   substitute for the caller-visible reason. Audit remains a separate,
   content-minimized projection.
+  SQLite retry instrumentation keeps its explicit typed fields (`sqliteCode`,
+  `sqliteErrno`, `willRetry`, `attempt`, `statementsAgeMs`, `rssMb`, `heapUsedMb`,
+  `heapTotalMb`, `externalMb`) alongside normalized `operation`. Invalid types,
+  non-finite/negative metrics, arbitrary metadata and database paths are excluded;
+  diagnostic projection MUST NOT discard these operational facts.
+  Domain conflict diffs remain bounded, redacted text in the separate control
+  projection so callers can choose how to resolve a Library update conflict.
+  Resolution controls retain validated scopes/identifiers/hashes and nonnegative
+  retry/schema/import counters. A version conflict exposes only the current row
+  ID/version and instructs the caller to re-read it; it MUST NOT copy row values
+  or body into the failure. Organization guidance projects only its redacted name.
+  Failure trace payloads retain typed lifecycle controls (intake reason/stage,
+  agent ID, recovery/abort classification, retry counters and boolean state).
+  A payload containing only those controls uses the event's error as its cause;
+  nested provider events contribute normalized diagnostics, never raw payloads.
 - TypeScript shares the versioned redactor. Swift and Dart preserve the same
   typed diagnostic envelope received from the server; their shape/decoding
   contract is not evidence of an identical native redaction implementation.

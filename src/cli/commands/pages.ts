@@ -1,4 +1,4 @@
-import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { errorDiagnostic, redactDiagnosticText } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
@@ -2430,13 +2430,19 @@ function artifactInputToCloudError(error: unknown): unknown {
  */
 function failPagesNotFoundFromConsole(op: string, error: CloudAuthError, asJson?: boolean): void {
   const message = error.message;
+  const diagnostic = errorDiagnostic(error, { operation: op });
+  // Pages lookup failures may name private hosts/routes. Keep the provider's
+  // reason and cause chain while treating those URLs as private input.
+  diagnostic.cause = redactDiagnosticText(diagnostic.cause, {
+    secrets: diagnostic.cause.match(/\bhttps?:\/\/\S+/gi) ?? [],
+  });
   if (/route\b.*not.?found|not.?found.*\broute/i.test(message)) {
     contractFail(op, "ROUTE_NOT_FOUND", "Pages route was not found.", {
       ...{
         asJson,
         details: { suggestedAction: "List published routes with: ravi pages published --json" },
       },
-      diagnostic: errorDiagnostic(error, { operation: op }),
+      diagnostic,
     });
   }
   if (/(site|pages host)\b.*not.?found|not.?found.*\bsite/i.test(message)) {
@@ -2445,7 +2451,7 @@ function failPagesNotFoundFromConsole(op: string, error: CloudAuthError, asJson?
         asJson,
         details: { suggestedAction: "List Pages sites with: ravi pages list --json" },
       },
-      diagnostic: errorDiagnostic(error, { operation: op }),
+      diagnostic,
     });
   }
 }

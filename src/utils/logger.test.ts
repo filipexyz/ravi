@@ -71,6 +71,127 @@ describe("logger terminal stream", () => {
       expect(output).not.toContain(secret);
   });
 
+  it("preserves typed SQLite retry instrumentation without exposing the database path or exception payload", () => {
+    logger.error("SQLite statement failed", {
+      error: new Error("out of memory"),
+      operation: "session-goals.get",
+      sqliteCode: "SQLITE_NOMEM",
+      sqliteErrno: 7,
+      willRetry: false,
+      attempt: 2,
+      statementsAgeMs: 0,
+      rssMb: 128.5,
+      heapUsedMb: 32,
+      heapTotalMb: 64,
+      externalMb: 4,
+      suppressed: 3,
+      dbPath: "/PRIVATE_DB_PATH/database.sqlite",
+      body: "PRIVATE_PROVIDER_BODY",
+      stack: "PRIVATE_STACK",
+      arbitrary: { value: "PRIVATE_ARBITRARY" },
+    });
+    const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+    for (const field of [
+      "operation=session-goals.get",
+      "sqliteCode=SQLITE_NOMEM",
+      "sqliteErrno=7",
+      "willRetry=false",
+      "attempt=2",
+      "statementsAgeMs=0",
+      "rssMb=128.5",
+      "heapUsedMb=32",
+      "heapTotalMb=64",
+      "externalMb=4",
+      "suppressed=3",
+      "cause=out of memory",
+    ])
+      expect(output).toContain(field);
+    expect(output).not.toContain("PRIVATE_");
+    expect(output).not.toContain("dbPath=");
+  });
+
+  it("rejects credentials and malformed values under allowed instrumentation names", () => {
+    logger.error("SQLite statement failed", {
+      error: new Error("out of memory"),
+      operation: "get?key=PRIVATE_OPERATION",
+      sqliteCode: "SQLITE_NOMEM?token=PRIVATE_CODE",
+      willRetry: "PRIVATE_BOOLEAN",
+      attempt: "PRIVATE_ATTEMPT",
+      sqliteErrno: { code: "PRIVATE_ERRNO" },
+      rssMb: "PRIVATE_MEMORY",
+    });
+    const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+    expect(output).toContain("cause=out of memory");
+    expect(output).not.toContain("PRIVATE_");
+    for (const key of ["operation", "sqliteCode", "willRetry", "attempt", "sqliteErrno", "rssMb"])
+      expect(output).not.toContain(`${key}=`);
+  });
+
+  it.each([NaN, Infinity, -Infinity, -1, "12", null, { value: 12 }])(
+    "rejects invalid numeric instrumentation %p without coercing it",
+    (value) => {
+      logger.error("SQLite statement failed", {
+        error: new Error("out of memory"),
+        sqliteErrno: value,
+        attempt: value,
+        suppressed: value,
+        statementsAgeMs: value,
+        rssMb: value,
+        heapUsedMb: value,
+        heapTotalMb: value,
+        externalMb: value,
+      });
+      const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+      expect(output).toContain("cause=out of memory");
+      for (const key of [
+        "sqliteErrno",
+        "attempt",
+        "suppressed",
+        "statementsAgeMs",
+        "rssMb",
+        "heapUsedMb",
+        "heapTotalMb",
+        "externalMb",
+      ])
+        expect(output).not.toContain(`${key}=`);
+    },
+  );
+
+  it("rejects fractional and unsafe integer counters", () => {
+    logger.error("SQLite statement failed", {
+      error: new Error("out of memory"),
+      sqliteErrno: 7.5,
+      attempt: Number.MAX_SAFE_INTEGER + 1,
+      suppressed: 0.5,
+    });
+    const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+    for (const key of ["sqliteErrno", "attempt", "suppressed"]) expect(output).not.toContain(`${key}=`);
+  });
+
+  it("keeps the cause when an allowed field getter throws and never reads unknown properties", () => {
+    let unknownReads = 0;
+    const data = {
+      error: new Error("out of memory"),
+      sqliteCode: "SQLITE_NOMEM",
+      get operation() {
+        throw new Error("PRIVATE_GETTER_FAILURE");
+      },
+      get rssMb() {
+        throw new Error("PRIVATE_MEMORY_FAILURE");
+      },
+      get arbitrary() {
+        unknownReads++;
+        throw new Error("PRIVATE_UNKNOWN_FAILURE");
+      },
+    };
+    expect(() => logger.error("SQLite statement failed", data)).not.toThrow();
+    const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+    expect(output).toContain("cause=out of memory");
+    expect(output).toContain("sqliteCode=SQLITE_NOMEM");
+    expect(output).not.toContain("PRIVATE_");
+    expect(unknownReads).toBe(0);
+  });
+
   it("keeps NATS lifecycle logs off stdout", () => {
     const natsLog = logger.child("nats");
 

@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { projectFailureDiagnostic, redactDiagnosticText } from "../utils/error-diagnostic.js";
+import {
+  errorDiagnostic,
+  projectDiagnosticContext,
+  projectFailureDiagnostic,
+  redactDiagnosticText,
+} from "../utils/error-diagnostic.js";
+import { safeDiagnosticField } from "../../packages/ravi-os-sdk/src/diagnostic-redactor.js";
 import { getDb } from "../router/router-db.js";
 import { normalizeLimitOffsetPage, normalizePageLimit, type ListPage } from "../utils/pagination.js";
 import type {
@@ -414,12 +420,77 @@ function rowToSessionTurn(row: SessionTurnRow): SessionTurnRecord {
   };
 }
 
+function projectFailureEventPayload(input: RecordSessionEventInput): Record<string, unknown> {
+  const source = input.payloadJson;
+  const controls: Record<string, string | number | boolean> = {};
+  for (const field of ["reason", "abort_reason", "agentId", "credentialFailureKind", "recoveryKind"] as const) {
+    const value = safeDiagnosticField(source, field);
+    if (
+      typeof value === "string" &&
+      /^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,159}$/.test(value) &&
+      redactDiagnosticText(value) === value
+    )
+      controls[field] = value;
+  }
+  const stage = safeDiagnosticField(source, "stage");
+  if (stage === "dispatch" || stage === "launch") controls.stage = stage;
+  for (const field of ["previousModel", "nextModel"] as const) {
+    const model = projectDiagnosticContext({ model: safeDiagnosticField(source, field) }).model;
+    if (model) controls[field] = model;
+  }
+  const strategy = safeDiagnosticField(source, "strategy");
+  if (strategy === "direct-set" || strategy === "restart-next-turn") controls.strategy = strategy;
+  const fallback = safeDiagnosticField(source, "fallback");
+  if (fallback === "restart-next-turn") controls.fallback = fallback;
+  for (const field of [
+    "userFacing",
+    "autoRecovered",
+    "recoverable",
+    "suppressedRecoverable",
+    "credentialRetry",
+    "resumeStashedMessages",
+    "userResponseSuppressed",
+    "is_error",
+  ] as const) {
+    const value = safeDiagnosticField(source, field);
+    if (typeof value === "boolean") controls[field] = value;
+  }
+  for (const field of ["restartAttempts", "stashedQueueSize"] as const) {
+    const value = safeDiagnosticField(source, field);
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) controls[field] = value;
+  }
+
+  const hasDiagnostic = (value: unknown): boolean =>
+    typeof value === "string" ||
+    value instanceof Error ||
+    ["message", "cause", "error"].some((field) => safeDiagnosticField(value, field) != null);
+  if (hasDiagnostic(source)) return { ...controls, ...projectFailureDiagnostic(source) };
+
+  // Event payloads often contain only lifecycle controls. The actual failure
+  // lives on the event; provider details contribute only their diagnostic shape.
+  const rawEvent = safeDiagnosticField(source, "rawEvent");
+  const diagnostic = errorDiagnostic({
+    message: input.error,
+    cause: hasDiagnostic(rawEvent) ? rawEvent : undefined,
+    context: safeDiagnosticField(source, "context"),
+    provider: input.provider,
+    model: input.model,
+  });
+  return {
+    ...controls,
+    message: typeof input.error === "string" ? redactDiagnosticText(input.error) : diagnostic.cause,
+    ...diagnostic,
+  };
+}
+
 export function recordSessionEvent(input: RecordSessionEventInput): SessionEventRecord {
   const db = getDb();
   const now = Date.now();
   const failure = Boolean(input.error) || /(?:^|[._-])(?:error|failed|failure)(?:$|[._-])/.test(input.eventType);
   const payload = hasOwn(input, "payloadJson")
-    ? redactJson(failure ? projectFailureDiagnostic(input.payloadJson) : input.payloadJson)
+    ? failure
+      ? { value: projectFailureEventPayload(input) }
+      : redactJson(input.payloadJson)
     : null;
   const preview =
     input.preview === undefined || input.preview === null
@@ -514,7 +585,9 @@ export function recordSessionBlob(input: RecordSessionBlobInput): SessionTraceBl
     storedContent = contentText;
   } else {
     const failure = /(?:^|[._-])(?:error|failure|diagnostic)(?:$|[._-])/.test(kind);
-    const result = redactJson(failure ? projectFailureDiagnostic(input.contentJson) : input.contentJson);
+    const result = failure
+      ? { value: projectFailureDiagnostic(input.contentJson), redacted: true }
+      : redactJson(input.contentJson);
     contentJson = stableStringifyJson(result.value);
     redacted = failure || result.redacted;
     storedContent = contentJson;

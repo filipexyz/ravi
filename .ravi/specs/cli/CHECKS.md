@@ -9,6 +9,15 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 
 ## Required checks
 
+- Logger and unchanged `session-goals` tests verify SQLite capacity retries keep
+  `sqliteCode`, `sqliteErrno`, `willRetry`, operation and memory instrumentation.
+  Logger negatives reject malformed typed metadata, secrets and throwing getters.
+  Library conflict tests retain the actionable diff while removing URL query secrets.
+- Typed resolution controls preserve version/scopes/retry/import guidance without
+  copying row content, arbitrary nested provider properties or malformed values.
+  CLI `[options]` remains readable; malformed/opaque payload containers stay redacted.
+- Runtime intake/trace tests preserve typed lifecycle controls and the event's
+  failure cause, with raw provider body, stack and cookie sentinels absent.
 - Diagnostic limits include the truncation marker and any path anonymization;
   repeated projections MUST preserve normalized text. Core, relay (explicit
   cause and denial fallback), and SDK regressions exercise the 4096-character

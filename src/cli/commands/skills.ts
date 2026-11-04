@@ -234,6 +234,13 @@ function failSkillSource(op: string, error: SkillSourceError, options: { asJson?
     error.code === "SKILL_ALREADY_INSTALLED" && error.skillName
       ? failure.suggestedAction.replace("<skill>", error.skillName)
       : failure.suggestedAction;
+  // Read the private input from the original wrapper message, before the
+  // diagnostic projection appends nested causes that must remain visible.
+  const privateSource =
+    error.code === "SKILL_SOURCE_NOT_FOUND"
+      ? /^(?:Local skill source|Skill source path) not found: ([\s\S]+)/.exec(error.message)?.[1]
+      : undefined;
+  const diagnostic = errorDiagnostic(error, { operation: op }, { secrets: privateSource ? [privateSource] : [] });
   contractFail(op, error.code, error.publicMessage, {
     ...{
       asJson: options.asJson,
@@ -245,7 +252,7 @@ function failSkillSource(op: string, error: SkillSourceError, options: { asJson?
         issues: skillContractIssues([failure.path], error.code, error.publicMessage, suggestedAction),
       },
     },
-    diagnostic: errorDiagnostic(error, { operation: op }),
+    diagnostic,
   });
 }
 

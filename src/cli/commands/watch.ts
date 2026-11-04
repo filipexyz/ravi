@@ -1,4 +1,4 @@
-import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { errorDiagnostic, redactDiagnosticText } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import {
@@ -595,6 +595,12 @@ async function runWatchCommand<T>(
         diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
+    const diagnostic = errorDiagnostic(error, { operation: op });
+    // Unexpected provider errors can echo private watch endpoint URLs. Keep
+    // the surrounding reason and nested failures, but not the endpoint itself.
+    diagnostic.cause = redactDiagnosticText(diagnostic.cause, {
+      secrets: diagnostic.cause.match(/\bhttps?:\/\/\S+/gi) ?? [],
+    });
     contractFail(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", {
       ...{
         asJson,
@@ -603,7 +609,7 @@ async function runWatchCommand<T>(
           suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
         },
       },
-      diagnostic: errorDiagnostic(error, { operation: op }),
+      diagnostic,
     });
   }
 }

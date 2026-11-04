@@ -576,7 +576,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/pages.ts | 516 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:90f0a2961f7492d920025729 |
 | cli | src/cli/commands/pages.ts | 1531 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2403 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:362b802d766dcf83c4cb7620 |
-| cli | src/cli/commands/pages.ts | 2823 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa |
+| cli | src/cli/commands/pages.ts | 2829 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa |
 | cli | src/cli/commands/pr.ts | 133 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/pr.ts:d5e03ff8271ee2697dc04e7f |
 | cli | src/cli/commands/pr.ts | 164 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:321ad057284dc26938438dc5 |
 | cli | src/cli/commands/projects.ts | 178 | fixed | binding retained / no recognized error surface | src/cli/commands/projects.ts:865c35ce0a8d92d905d8f4ee |
@@ -687,10 +687,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/signals.ts | 700 | fixed | binding retained / no recognized error surface | src/cli/commands/signals.ts:603f37fd18d9117515774eae |
 | cli | src/cli/commands/signals.ts | 720 | fixed | binding retained / no recognized error surface | src/cli/commands/signals.ts:223a5dc4b0f566498b9e6e81 |
 | cli | src/cli/commands/signals.ts | 805 | fixed | binding retained / no recognized error surface | src/cli/commands/signals.ts:e3050a6b0d6af56d9acae045 |
-| cli | src/cli/commands/skills.ts | 392 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a4f862163432fd05a57f443 |
-| cli | src/cli/commands/skills.ts | 595 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/skills.ts:91561788503f4ec039ff70e4 |
-| cli | src/cli/commands/skills.ts | 2326 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a9f0453330a52261d46eb59 |
-| cli | src/cli/commands/skills.ts | 2381 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:920bb9fc0b0ebd544d4fce27 |
+| cli | src/cli/commands/skills.ts | 399 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a4f862163432fd05a57f443 |
+| cli | src/cli/commands/skills.ts | 602 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/skills.ts:91561788503f4ec039ff70e4 |
+| cli | src/cli/commands/skills.ts | 2333 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a9f0453330a52261d46eb59 |
+| cli | src/cli/commands/skills.ts | 2388 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:920bb9fc0b0ebd544d4fce27 |
 | channels-slack | src/cli/commands/slack.ts | 320 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:66b5de83e6fd5acb8fb35160 |
 | channels-slack | src/cli/commands/slack.ts | 426 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:d99046dd6a6e969b9e90eb63 |
 | channels-slack | src/cli/commands/slack.ts | 437 | triaged-follow-up | catch-without-binding | src/cli/commands/slack.ts:8f52890620905e69730b310f |
@@ -747,7 +747,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/update.ts | 486 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:93e288a912d18b45a71a8cd0 |
 | cli | src/cli/commands/update.ts | 536 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:4182d0cbe2f493f2d9b69f88 |
 | cli | src/cli/commands/update.ts | 786 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:974e56d137c76411bf3a0617 |
-| cli | src/cli/commands/watch.ts | 556 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:5b7e658a29396f7594b12352 |
+| cli | src/cli/commands/watch.ts | 556 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |
 | cli | src/cli/commands/work-objects.ts | 370 | fixed | binding retained / no recognized error surface | src/cli/commands/work-objects.ts:8cbfe85b7901d7339492b04d |
@@ -1862,7 +1862,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/session-trace/cloud-trace-export.ts | 778 | triaged-follow-up | catch-without-binding | src/session-trace/cloud-trace-export.ts:52f0dc39144af918c411ac4a |
 | sessions | src/session-trace/query.ts | 179 | triaged-follow-up | catch-without-binding | src/session-trace/query.ts:14202130aaa2cf2d2fd61990 |
 | sessions | src/session-trace/runtime-trace.ts | 423 | fixed | binding retained / no recognized error surface | src/session-trace/runtime-trace.ts:4a90ea5c5e4fc15bd77f9646 |
-| sessions | src/session-trace/session-trace-db.ts | 305 | triaged-follow-up | catch-without-binding | src/session-trace/session-trace-db.ts:771a8d88db835c82ff03906c |
+| sessions | src/session-trace/session-trace-db.ts | 311 | triaged-follow-up | catch-without-binding | src/session-trace/session-trace-db.ts:771a8d88db835c82ff03906c |
 | signals | src/signals/oob.ts | 226 | triaged-follow-up | rejection-without-binding | src/signals/oob.ts:fb903dd11c46c25950072bcd |
 | signals | src/signals/oob.ts | 262 | fixed | binding retained / no recognized error surface | src/signals/oob.ts:a7dd60d3f094c94f8209fd1b |
 | signals | src/signals/page.ts | 42 | triaged-follow-up | catch-without-binding | src/signals/page.ts:89a6134831399dcd705e65bc |
@@ -1985,8 +1985,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | tui | src/tui/index.tsx | 15 | fixed | binding retained / no recognized error surface | src/tui/index.tsx:e9e34e915d63b949a11bf3f4 |
 | tui | src/tui/lib/input-history.ts | 14 | triaged-follow-up | catch-without-binding | src/tui/lib/input-history.ts:307d7d7adaa92d5a3705559b |
 | tui | src/tui/lib/input-history.ts | 24 | triaged-follow-up | catch-without-binding | src/tui/lib/input-history.ts:c2418d294c4b5fca100de629 |
-| utils | src/utils/logger.ts | 69 | triaged-follow-up | catch-without-binding | src/utils/logger.ts:935ba522170a6a284b28cb9f |
-| utils | src/utils/logger.ts | 181 | triaged-follow-up | catch-without-binding | src/utils/logger.ts:97f59f76dcee4f8994d1c0ee |
+| utils | src/utils/logger.ts | 96 | triaged-follow-up | catch-without-binding | src/utils/logger.ts:935ba522170a6a284b28cb9f |
+| utils | src/utils/logger.ts | 208 | triaged-follow-up | catch-without-binding | src/utils/logger.ts:97f59f76dcee4f8994d1c0ee |
 | utils | src/utils/media.ts | 107 | fixed | binding retained / no recognized error surface | src/utils/media.ts:e85d09c87a86f91d76567fa0 |
 | utils | src/utils/media.ts | 148 | fixed | binding retained / no recognized error surface | src/utils/media.ts:8183f7c489bd5f6b712e34e8 |
 | utils | src/utils/request-reply.ts | 62 | fixed | binding retained / no recognized error surface | src/utils/request-reply.ts:57e0cf423f87fcd48a6dc644 |

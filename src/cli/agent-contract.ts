@@ -31,6 +31,7 @@ import {
 } from "../utils/error-diagnostic.js";
 export { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { sanitizePublicValue } from "./redaction.js";
+import { safeDiagnosticField } from "../../packages/ravi-os-sdk/src/diagnostic-redactor.js";
 
 export const GENERIC_COMMAND_FAILED_MESSAGE = "Command could not be completed.";
 const MAX_PUBLIC_CONTRACT_MESSAGE_LENGTH = 4096;
@@ -134,13 +135,62 @@ const CONTROL_FIELDS = [
   "disabledReason",
 ] as const;
 
-function projectFailureDetails(details: ContractErrorDetails & ErrorDiagnostic): ContractErrorDetails {
+/** Domain controls describe the next action, never the underlying provider payload. */
+function projectOperationalControls(details: unknown): Record<string, unknown> {
   const controls: Record<string, unknown> = {};
+  const read = (key: string) => safeDiagnosticField(details, key);
+  const identifier = (value: unknown): value is string =>
+    typeof value === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value) &&
+    redactDiagnosticText(value) === value;
+  const counter = (value: unknown): value is number =>
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  const consoleError = read("consoleError");
+  if (typeof consoleError === "string" && /^[a-z][a-z0-9_]{0,95}$/.test(consoleError))
+    controls.consoleError = consoleError;
+  const inputsHash = read("inputsHash");
+  if (typeof inputsHash === "string" && /^[0-9a-f]{16}$/i.test(inputsHash)) controls.inputsHash = inputsHash;
+  const currentChat = read("currentChat");
+  if (identifier(currentChat)) controls.currentChat = currentChat;
+  for (const key of ["retryAfterMs", "schemaVersion"] as const) {
+    const value = read(key);
+    if (counter(value)) controls[key] = value;
+  }
+  const missingScopes = read("missingScopes");
+  if (Array.isArray(missingScopes)) {
+    const scopes = missingScopes
+      .slice(0, 32)
+      .filter(
+        (value): value is string => identifier(value) && /^[a-z][a-z0-9_-]*(?:[.:][a-z][a-z0-9_-]*)+$/.test(value),
+      );
+    if (scopes.length) controls.missingScopes = scopes;
+  }
+  const current = read("current");
+  const rowId = safeDiagnosticField(current, "rowId");
+  const version = safeDiagnosticField(current, "version");
+  if (identifier(rowId) && counter(version)) controls.current = { rowId, version };
+  const name = safeDiagnosticField(read("organization"), "name");
+  if (typeof name === "string" && name.trim())
+    controls.organization = { name: redactDiagnosticText(name).slice(0, 200) };
+  const progress = read("importProgress");
+  if (progress && typeof progress === "object") {
+    const projected: Record<string, number | null> = {};
+    for (const key of ["failedBatch", "batches", "rowsCreated", "firstFailedLine"] as const) {
+      const value = safeDiagnosticField(progress, key);
+      if (counter(value) || (key === "firstFailedLine" && value === null)) projected[key] = value;
+    }
+    if (Object.keys(projected).length) controls.importProgress = projected;
+  }
+  return controls;
+}
+
+function projectFailureDetails(details: ContractErrorDetails & ErrorDiagnostic): ContractErrorDetails {
+  const controls = projectOperationalControls(details);
   for (const field of CONTROL_FIELDS) {
     if (Object.hasOwn(details, field)) controls[field] = sanitizePublicValue(details[field], field);
   }
   // Control text is also egress: retaining a known field does not make its value public.
-  for (const field of ["suggestedAction", "usage"] as const) {
+  for (const field of ["suggestedAction", "usage", "diff"] as const) {
     if (typeof details[field] === "string") controls[field] = redactDiagnosticText(details[field]);
   }
   return {
