@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { configStore } from "../../config-store.js";
+import type { CredentialBrokerAuthority } from "../../credentials/broker.js";
 import type { ChannelConfig } from "../../router/router-db.js";
 import { findNativeChannelAccount } from "../account-resolution.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
@@ -36,6 +37,7 @@ export interface SlackMediaSendInput {
 export interface SlackMediaSendDependencies {
   readonly channels?: Record<string, ChannelConfig>;
   readonly resolveSecret?: SlackCredentialResolver;
+  readonly authority?: CredentialBrokerAuthority;
   readonly fetchImpl?: typeof fetch;
   readonly apiBaseUrl?: string;
 }
@@ -84,6 +86,7 @@ export async function sendSlackMedia(
     channel,
     channels,
     resolveSecret: dependencies.resolveSecret,
+    authority: dependencies.authority,
   });
   if (!credentials) {
     throw new Error(`Slack credentials not configured for channel "${channel.name}".`);

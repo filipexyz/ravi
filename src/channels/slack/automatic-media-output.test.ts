@@ -905,7 +905,8 @@ describe("native bot automatic media through the real gateway", () => {
     dbUpsertChannel({ name: "local", provider: "slack", credentialConnection: "test-installation" });
     configStore.refresh();
     flushSpy = spyOn(natsModule, "flushNats").mockResolvedValue(undefined);
-    sendSpy = spyOn(slackMedia, "sendSlackMedia").mockImplementation(async (input) => {
+    sendSpy = spyOn(slackMedia, "sendSlackMedia").mockImplementation(async (input, dependencies) => {
+      expect(dependencies).toEqual({ authority: { kind: "internal-service", service: "slack-delivery" } });
       if (!input.fileBytes) throw new Error("Expected the verified buffer at the Slack boundary");
       uploads.push({ filename: input.filename, bytes: Buffer.from(input.fileBytes) });
       return {

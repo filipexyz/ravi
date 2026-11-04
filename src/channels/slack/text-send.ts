@@ -1,4 +1,5 @@
 import { configStore } from "../../config-store.js";
+import type { CredentialBrokerAuthority } from "../../credentials/broker.js";
 import type { ChannelConfig } from "../../router/router-db.js";
 import { findNativeChannelAccount } from "../account-resolution.js";
 import type { SlackBlockKitBlock } from "./block-kit.js";
@@ -28,6 +29,7 @@ export interface SlackTextUpdateInput {
 export interface SlackTextSendDependencies {
   readonly channels?: Record<string, ChannelConfig>;
   readonly resolveSecret?: SlackCredentialResolver;
+  readonly authority?: CredentialBrokerAuthority;
   readonly fetchImpl?: typeof fetch;
   readonly apiBaseUrl?: string;
 }
@@ -223,6 +225,7 @@ async function createSlackTextClient(
     channel,
     channels,
     resolveSecret: dependencies.resolveSecret,
+    authority: dependencies.authority,
   });
   if (!credentials) {
     throw new Error(`Slack credentials not configured for channel "${channel.name}".`);

@@ -221,7 +221,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // A revoked context held in memory no longer authorizes host tools.
     "src/runtime/context-liveness.test.ts",
   ],
-  "src/apps/": ["src/apps/router.test.ts"],
+  "src/apps/": [
+    "src/apps/router.test.ts",
+    "src/apps/youtube/client.test.ts",
+    "src/apps/youtube/credential-authority.test.ts",
+  ],
+  "src/apps/router.ts": ["src/apps/router.test.ts"],
+  "src/apps/youtube/": ["src/apps/youtube/client.test.ts", "src/apps/youtube/credential-authority.test.ts"],
   "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
 };
 
