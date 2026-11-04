@@ -1,6 +1,12 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   BASELINE_COMMIT,
+  BASELINE_PATH,
+  FROZEN_PATH,
   checkSurfaceCoverage,
   concreteNoCauseReason,
   makeBaseline,
@@ -12,6 +18,78 @@ import {
 
 const file = "src/cli/fixture.ts";
 const scan = (text: string) => scanSource(file, text);
+
+describe("error cause Git refs", () => {
+  let root: string;
+  const env = { ...process.env };
+  // Hooks export repository paths; fixtures must never write to the caller's repo.
+  for (const key of execFileSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf8" }).trim().split("\n")) {
+    delete env[key];
+  }
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, env, encoding: "utf8" });
+  const run = (code: string) => Bun.spawnSync([
+    process.execPath,
+    "--eval",
+    `import { baselineAtRef, scanCommit } from ${JSON.stringify(join(import.meta.dir, "error-cause-scan.ts"))}; ${code}`,
+  ], { cwd: root, env });
+  const commit = () => {
+    git("add", ".");
+    git("-c", "user.name=Ratchet test", "-c", "user.email=ratchet@example.invalid", "commit", "--quiet", "-m", "fixture");
+  };
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "error-cause-refs-"));
+    git("init", "--quiet");
+    mkdirSync(join(root, "scripts"));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("missing_immutable_anchor_fails_the_cli_with_fetch_instructions", () => {
+    copyFileSync(join(import.meta.dir, "error-cause-scan.ts"), join(root, "scripts/error-cause-scan.ts"));
+    symlinkSync(resolve(import.meta.dir, "../node_modules"), join(root, "node_modules"), "dir");
+    for (const path of [BASELINE_PATH, FROZEN_PATH]) {
+      writeFileSync(join(root, path), JSON.stringify(makeBaseline([])));
+    }
+    const result = Bun.spawnSync([process.execPath, "scripts/error-cause-scan.ts"], { cwd: root, env });
+    const stderr = result.stderr.toString();
+    expect(result.exitCode).not.toBe(0);
+    expect(stderr).toContain(`cannot resolve Git commit "${BASELINE_COMMIT}" in this clone`);
+    expect(stderr).toContain("fetch-depth: 0");
+    expect(stderr).toContain("git fetch origin refs/tags/error-cause-baseline:refs/tags/error-cause-baseline");
+    expect(stderr).not.toContain("fatal: not a tree object");
+  });
+
+  it("missing_comparison_ref_fails_with_the_ref_and_event_recovery_instructions", () => {
+    const ref = "0123456789abcdef0123456789abcdef01234567";
+    const result = run(`baselineAtRef(process.cwd(), "${ref}");`);
+    const stderr = result.stderr.toString();
+    expect(result.exitCode).not.toBe(0);
+    expect(stderr).toContain(`cannot resolve Git commit "${ref}" in this clone`);
+    expect(stderr).toContain("pull_request.base.sha");
+    expect(stderr).toContain("event.before");
+    expect(stderr).not.toContain("fatal: not a tree object");
+  });
+
+  it("valid_commit_without_baseline_remains_allowed_and_source_can_be_scanned", () => {
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "src/fixture.ts"), "try { work(); } catch {}");
+    commit();
+    const result = run(`console.log(JSON.stringify({
+      absent: baselineAtRef(process.cwd(), "HEAD") === undefined,
+      violation: scanCommit(process.cwd(), "HEAD")[0]?.violation,
+    }));`);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout.toString())).toEqual({ absent: true, violation: "catch-without-binding" });
+  });
+
+  it("malformed_baseline_json_still_fails_in_a_valid_commit", () => {
+    writeFileSync(join(root, BASELINE_PATH), "{broken");
+    commit();
+    const result = run('baselineAtRef(process.cwd(), "HEAD");');
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr.toString()).toContain("SyntaxError");
+  });
+});
 
 describe("error cause AST gate", () => {
   it("rejects_new_catch_without_binding", () => {
