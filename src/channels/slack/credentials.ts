@@ -162,7 +162,7 @@ function parseJsonSecret(secret: string): Record<string, unknown> {
   try {
     parsed = JSON.parse(secret);
   } catch {
-    // SyntaxError messages can quote the provider token. Keep no raw cause.
+    // no-cause: JSON syntax errors can quote raw provider tokens; never retain the input or exception.
     throw new Error("Slack credential JSON secret is invalid.");
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {

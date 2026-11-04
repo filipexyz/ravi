@@ -1867,6 +1867,7 @@ export class Gateway {
       await finalizeStoredSlackApprovalDelivery({ requestId: data.requestId, messageId: data.messageId });
       response = { success: true };
     } catch {
+      // no-cause: Approval delivery errors may contain provider credentials; emit only the fixed failure notice.
       response = { success: false, error: "Slack approval finalization failed." };
     }
     if (typeof data.replyTopic === "string" && /^ravi\._reply\.[A-Za-z0-9-]+$/.test(data.replyTopic)) {
