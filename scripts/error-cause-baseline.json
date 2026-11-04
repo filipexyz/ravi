@@ -913,13 +913,6 @@
       "count": 1
     },
     {
-      "id": "src/cli/commands/daemon.ts:856ea3002874c849353bda69",
-      "file": "src/cli/commands/daemon.ts",
-      "boundary": "cli",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/cli/commands/daemon.ts:8c46f6c2c9d709aec06f9076",
       "file": "src/cli/commands/daemon.ts",
       "boundary": "cli",
@@ -4056,13 +4049,6 @@
       "count": 1
     },
     {
-      "id": "src/pm2.ts:06c7a281e54ebd8733f87c5a",
-      "file": "src/pm2.ts",
-      "boundary": "pm2.ts",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/pm2.ts:2a2f85c9a2eb78c2bcd0180d",
       "file": "src/pm2.ts",
       "boundary": "pm2.ts",
@@ -5968,7 +5954,7 @@
     }
   ],
   "totals": {
-    "violations": 893,
+    "violations": 891,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5987,11 +5973,11 @@
       "src/channels/slack": 15,
       "src/ci": 1,
       "src/cli": 34,
-      "src/cli/commands": 145,
+      "src/cli/commands": 144,
       "src/cloud-agents": 30,
       "src/cloud-auth": 11,
       "src/console-scope": 5,
-      "src": 46,
+      "src": 45,
       "src/costs": 2,
       "src/crm": 1,
       "src/cron": 5,

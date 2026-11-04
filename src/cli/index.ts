@@ -217,7 +217,6 @@ program
   .option("--expected-integrity <sri>", "Require the npm sha512 SRI for an exact release")
   .option("--next", "Switch to dev builds (npm @next tag)")
   .option("--stable", "Switch to stable releases (npm @latest tag)")
-  .option("--no-restart", "Do not restart managed Ravi processes after updating")
   .option("--json", "Print a machine-readable result")
   .action(async (options: RaviUpdateOptions) => {
     refuseRootCommandInRuntimeSession("update", options.json);

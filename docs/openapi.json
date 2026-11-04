@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "3ebc8e2fb65fd374"
+    "version": "2a9847d23e4f1b9c"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -37231,6 +37231,19 @@
                         "channels": {
                           "additionalProperties": false,
                           "properties": {
+                            "bundlePath": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "codeStale": {
+                              "type": "boolean"
+                            },
                             "cpu": {
                               "anyOf": [
                                 {
@@ -37241,8 +37254,44 @@
                                 }
                               ]
                             },
+                            "cwd": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "diskVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "envStale": {
+                              "type": "boolean"
+                            },
+                            "identityVerified": {
+                              "type": "boolean"
+                            },
                             "managed": {
                               "type": "boolean"
+                            },
+                            "matchesCli": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
                             "memoryBytes": {
                               "anyOf": [
@@ -37267,6 +37316,9 @@
                             "name": {
                               "type": "string"
                             },
+                            "online": {
+                              "type": "boolean"
+                            },
                             "pid": {
                               "anyOf": [
                                 {
@@ -37290,8 +37342,37 @@
                             "running": {
                               "type": "boolean"
                             },
+                            "runningVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "status": {
                               "type": "string"
+                            },
+                            "warnings": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "required": [
@@ -37303,7 +37384,19 @@
                             "pmId",
                             "cpu",
                             "memoryBytes",
-                            "memoryMb"
+                            "memoryMb",
+                            "online",
+                            "bundlePath",
+                            "cwd",
+                            "runningVersion",
+                            "diskVersion",
+                            "startedAt",
+                            "stale",
+                            "codeStale",
+                            "envStale",
+                            "identityVerified",
+                            "warnings",
+                            "matchesCli"
                           ],
                           "type": "object"
                         },
@@ -37611,12 +37704,330 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "runtime": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "alignment": {
+                              "enum": [
+                                "aligned",
+                                "drifted",
+                                "unknown",
+                                "not_running"
+                              ],
+                              "type": "string"
+                            },
+                            "channels": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "codeStale": {
+                                  "type": "boolean"
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "diskVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "envStale": {
+                                  "type": "boolean"
+                                },
+                                "identityVerified": {
+                                  "type": "boolean"
+                                },
+                                "managed": {
+                                  "type": "boolean"
+                                },
+                                "matchesCli": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "online": {
+                                  "type": "boolean"
+                                },
+                                "pid": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runningVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "stale": {
+                                  "type": "boolean"
+                                },
+                                "startedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "warnings": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "managed",
+                                "online",
+                                "status",
+                                "pid",
+                                "bundlePath",
+                                "cwd",
+                                "runningVersion",
+                                "diskVersion",
+                                "startedAt",
+                                "stale",
+                                "codeStale",
+                                "envStale",
+                                "identityVerified",
+                                "warnings",
+                                "matchesCli"
+                              ],
+                              "type": "object"
+                            },
+                            "cli": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "version": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "bundlePath",
+                                "cwd",
+                                "version"
+                              ],
+                              "type": "object"
+                            },
+                            "daemon": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "codeStale": {
+                                  "type": "boolean"
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "diskVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "envStale": {
+                                  "type": "boolean"
+                                },
+                                "identityVerified": {
+                                  "type": "boolean"
+                                },
+                                "managed": {
+                                  "type": "boolean"
+                                },
+                                "matchesCli": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "online": {
+                                  "type": "boolean"
+                                },
+                                "pid": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runningVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "stale": {
+                                  "type": "boolean"
+                                },
+                                "startedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "warnings": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "managed",
+                                "online",
+                                "status",
+                                "pid",
+                                "bundlePath",
+                                "cwd",
+                                "runningVersion",
+                                "diskVersion",
+                                "startedAt",
+                                "stale",
+                                "codeStale",
+                                "envStale",
+                                "identityVerified",
+                                "warnings",
+                                "matchesCli"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "alignment",
+                            "cli",
+                            "daemon",
+                            "channels"
+                          ],
+                          "type": "object"
+                        },
+                        "warnings": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "required": [
                         "pm2Available",
                         "processName",
                         "channels",
+                        "runtime",
+                        "warnings",
                         "processes"
                       ],
                       "type": "object"
@@ -37969,6 +38380,19 @@
                         "channels": {
                           "additionalProperties": false,
                           "properties": {
+                            "bundlePath": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "codeStale": {
+                              "type": "boolean"
+                            },
                             "cpu": {
                               "anyOf": [
                                 {
@@ -37979,8 +38403,44 @@
                                 }
                               ]
                             },
+                            "cwd": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "diskVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "envStale": {
+                              "type": "boolean"
+                            },
+                            "identityVerified": {
+                              "type": "boolean"
+                            },
                             "managed": {
                               "type": "boolean"
+                            },
+                            "matchesCli": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
                             "memoryBytes": {
                               "anyOf": [
@@ -38005,6 +38465,9 @@
                             "name": {
                               "type": "string"
                             },
+                            "online": {
+                              "type": "boolean"
+                            },
                             "pid": {
                               "anyOf": [
                                 {
@@ -38028,8 +38491,37 @@
                             "running": {
                               "type": "boolean"
                             },
+                            "runningVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "status": {
                               "type": "string"
+                            },
+                            "warnings": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "required": [
@@ -38041,7 +38533,19 @@
                             "pmId",
                             "cpu",
                             "memoryBytes",
-                            "memoryMb"
+                            "memoryMb",
+                            "online",
+                            "bundlePath",
+                            "cwd",
+                            "runningVersion",
+                            "diskVersion",
+                            "startedAt",
+                            "stale",
+                            "codeStale",
+                            "envStale",
+                            "identityVerified",
+                            "warnings",
+                            "matchesCli"
                           ],
                           "type": "object"
                         },
@@ -38349,12 +38853,330 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "runtime": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "alignment": {
+                              "enum": [
+                                "aligned",
+                                "drifted",
+                                "unknown",
+                                "not_running"
+                              ],
+                              "type": "string"
+                            },
+                            "channels": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "codeStale": {
+                                  "type": "boolean"
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "diskVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "envStale": {
+                                  "type": "boolean"
+                                },
+                                "identityVerified": {
+                                  "type": "boolean"
+                                },
+                                "managed": {
+                                  "type": "boolean"
+                                },
+                                "matchesCli": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "online": {
+                                  "type": "boolean"
+                                },
+                                "pid": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runningVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "stale": {
+                                  "type": "boolean"
+                                },
+                                "startedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "warnings": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "managed",
+                                "online",
+                                "status",
+                                "pid",
+                                "bundlePath",
+                                "cwd",
+                                "runningVersion",
+                                "diskVersion",
+                                "startedAt",
+                                "stale",
+                                "codeStale",
+                                "envStale",
+                                "identityVerified",
+                                "warnings",
+                                "matchesCli"
+                              ],
+                              "type": "object"
+                            },
+                            "cli": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "version": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "bundlePath",
+                                "cwd",
+                                "version"
+                              ],
+                              "type": "object"
+                            },
+                            "daemon": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "codeStale": {
+                                  "type": "boolean"
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "diskVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "envStale": {
+                                  "type": "boolean"
+                                },
+                                "identityVerified": {
+                                  "type": "boolean"
+                                },
+                                "managed": {
+                                  "type": "boolean"
+                                },
+                                "matchesCli": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "online": {
+                                  "type": "boolean"
+                                },
+                                "pid": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runningVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "stale": {
+                                  "type": "boolean"
+                                },
+                                "startedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "warnings": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "managed",
+                                "online",
+                                "status",
+                                "pid",
+                                "bundlePath",
+                                "cwd",
+                                "runningVersion",
+                                "diskVersion",
+                                "startedAt",
+                                "stale",
+                                "codeStale",
+                                "envStale",
+                                "identityVerified",
+                                "warnings",
+                                "matchesCli"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "alignment",
+                            "cli",
+                            "daemon",
+                            "channels"
+                          ],
+                          "type": "object"
+                        },
+                        "warnings": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "required": [
                         "pm2Available",
                         "processName",
                         "channels",
+                        "runtime",
+                        "warnings",
                         "processes"
                       ],
                       "type": "object"
@@ -38426,6 +39248,19 @@
                     "channels": {
                       "additionalProperties": false,
                       "properties": {
+                        "bundlePath": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "codeStale": {
+                          "type": "boolean"
+                        },
                         "cpu": {
                           "anyOf": [
                             {
@@ -38436,8 +39271,44 @@
                             }
                           ]
                         },
+                        "cwd": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "diskVersion": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "envStale": {
+                          "type": "boolean"
+                        },
+                        "identityVerified": {
+                          "type": "boolean"
+                        },
                         "managed": {
                           "type": "boolean"
+                        },
+                        "matchesCli": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "memoryBytes": {
                           "anyOf": [
@@ -38462,6 +39333,9 @@
                         "name": {
                           "type": "string"
                         },
+                        "online": {
+                          "type": "boolean"
+                        },
                         "pid": {
                           "anyOf": [
                             {
@@ -38485,8 +39359,37 @@
                         "running": {
                           "type": "boolean"
                         },
+                        "runningVersion": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "stale": {
+                          "type": "boolean"
+                        },
+                        "startedAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "status": {
                           "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "required": [
@@ -38498,7 +39401,19 @@
                         "pmId",
                         "cpu",
                         "memoryBytes",
-                        "memoryMb"
+                        "memoryMb",
+                        "online",
+                        "bundlePath",
+                        "cwd",
+                        "runningVersion",
+                        "diskVersion",
+                        "startedAt",
+                        "stale",
+                        "codeStale",
+                        "envStale",
+                        "identityVerified",
+                        "warnings",
+                        "matchesCli"
                       ],
                       "type": "object"
                     },
@@ -38806,12 +39721,330 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "runtime": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alignment": {
+                          "enum": [
+                            "aligned",
+                            "drifted",
+                            "unknown",
+                            "not_running"
+                          ],
+                          "type": "string"
+                        },
+                        "channels": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "bundlePath": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "codeStale": {
+                              "type": "boolean"
+                            },
+                            "cwd": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "diskVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "envStale": {
+                              "type": "boolean"
+                            },
+                            "identityVerified": {
+                              "type": "boolean"
+                            },
+                            "managed": {
+                              "type": "boolean"
+                            },
+                            "matchesCli": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "online": {
+                              "type": "boolean"
+                            },
+                            "pid": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "runningVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "warnings": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "managed",
+                            "online",
+                            "status",
+                            "pid",
+                            "bundlePath",
+                            "cwd",
+                            "runningVersion",
+                            "diskVersion",
+                            "startedAt",
+                            "stale",
+                            "codeStale",
+                            "envStale",
+                            "identityVerified",
+                            "warnings",
+                            "matchesCli"
+                          ],
+                          "type": "object"
+                        },
+                        "cli": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "bundlePath": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "cwd": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "version": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "bundlePath",
+                            "cwd",
+                            "version"
+                          ],
+                          "type": "object"
+                        },
+                        "daemon": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "bundlePath": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "codeStale": {
+                              "type": "boolean"
+                            },
+                            "cwd": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "diskVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "envStale": {
+                              "type": "boolean"
+                            },
+                            "identityVerified": {
+                              "type": "boolean"
+                            },
+                            "managed": {
+                              "type": "boolean"
+                            },
+                            "matchesCli": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "online": {
+                              "type": "boolean"
+                            },
+                            "pid": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "runningVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "warnings": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "managed",
+                            "online",
+                            "status",
+                            "pid",
+                            "bundlePath",
+                            "cwd",
+                            "runningVersion",
+                            "diskVersion",
+                            "startedAt",
+                            "stale",
+                            "codeStale",
+                            "envStale",
+                            "identityVerified",
+                            "warnings",
+                            "matchesCli"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "alignment",
+                        "cli",
+                        "daemon",
+                        "channels"
+                      ],
+                      "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
                     "pm2Available",
                     "processName",
                     "channels",
+                    "runtime",
+                    "warnings",
                     "processes"
                   ],
                   "type": "object"
@@ -38900,6 +40133,19 @@
                         "channels": {
                           "additionalProperties": false,
                           "properties": {
+                            "bundlePath": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "codeStale": {
+                              "type": "boolean"
+                            },
                             "cpu": {
                               "anyOf": [
                                 {
@@ -38910,8 +40156,44 @@
                                 }
                               ]
                             },
+                            "cwd": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "diskVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "envStale": {
+                              "type": "boolean"
+                            },
+                            "identityVerified": {
+                              "type": "boolean"
+                            },
                             "managed": {
                               "type": "boolean"
+                            },
+                            "matchesCli": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
                             "memoryBytes": {
                               "anyOf": [
@@ -38936,6 +40218,9 @@
                             "name": {
                               "type": "string"
                             },
+                            "online": {
+                              "type": "boolean"
+                            },
                             "pid": {
                               "anyOf": [
                                 {
@@ -38959,8 +40244,37 @@
                             "running": {
                               "type": "boolean"
                             },
+                            "runningVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "status": {
                               "type": "string"
+                            },
+                            "warnings": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "required": [
@@ -38972,7 +40286,19 @@
                             "pmId",
                             "cpu",
                             "memoryBytes",
-                            "memoryMb"
+                            "memoryMb",
+                            "online",
+                            "bundlePath",
+                            "cwd",
+                            "runningVersion",
+                            "diskVersion",
+                            "startedAt",
+                            "stale",
+                            "codeStale",
+                            "envStale",
+                            "identityVerified",
+                            "warnings",
+                            "matchesCli"
                           ],
                           "type": "object"
                         },
@@ -39280,12 +40606,330 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "runtime": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "alignment": {
+                              "enum": [
+                                "aligned",
+                                "drifted",
+                                "unknown",
+                                "not_running"
+                              ],
+                              "type": "string"
+                            },
+                            "channels": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "codeStale": {
+                                  "type": "boolean"
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "diskVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "envStale": {
+                                  "type": "boolean"
+                                },
+                                "identityVerified": {
+                                  "type": "boolean"
+                                },
+                                "managed": {
+                                  "type": "boolean"
+                                },
+                                "matchesCli": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "online": {
+                                  "type": "boolean"
+                                },
+                                "pid": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runningVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "stale": {
+                                  "type": "boolean"
+                                },
+                                "startedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "warnings": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "managed",
+                                "online",
+                                "status",
+                                "pid",
+                                "bundlePath",
+                                "cwd",
+                                "runningVersion",
+                                "diskVersion",
+                                "startedAt",
+                                "stale",
+                                "codeStale",
+                                "envStale",
+                                "identityVerified",
+                                "warnings",
+                                "matchesCli"
+                              ],
+                              "type": "object"
+                            },
+                            "cli": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "version": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "bundlePath",
+                                "cwd",
+                                "version"
+                              ],
+                              "type": "object"
+                            },
+                            "daemon": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "bundlePath": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "codeStale": {
+                                  "type": "boolean"
+                                },
+                                "cwd": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "diskVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "envStale": {
+                                  "type": "boolean"
+                                },
+                                "identityVerified": {
+                                  "type": "boolean"
+                                },
+                                "managed": {
+                                  "type": "boolean"
+                                },
+                                "matchesCli": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "online": {
+                                  "type": "boolean"
+                                },
+                                "pid": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "runningVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "stale": {
+                                  "type": "boolean"
+                                },
+                                "startedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "warnings": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "managed",
+                                "online",
+                                "status",
+                                "pid",
+                                "bundlePath",
+                                "cwd",
+                                "runningVersion",
+                                "diskVersion",
+                                "startedAt",
+                                "stale",
+                                "codeStale",
+                                "envStale",
+                                "identityVerified",
+                                "warnings",
+                                "matchesCli"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "alignment",
+                            "cli",
+                            "daemon",
+                            "channels"
+                          ],
+                          "type": "object"
+                        },
+                        "warnings": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "required": [
                         "pm2Available",
                         "processName",
                         "channels",
+                        "runtime",
+                        "warnings",
                         "processes"
                       ],
                       "type": "object"
@@ -72861,6 +74505,9 @@
                                 }
                               ]
                             },
+                            "codeStale": {
+                              "type": "boolean"
+                            },
                             "cwd": {
                               "anyOf": [
                                 {
@@ -72870,6 +74517,22 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "diskVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "envStale": {
+                              "type": "boolean"
+                            },
+                            "identityVerified": {
+                              "type": "boolean"
                             },
                             "managed": {
                               "type": "boolean"
@@ -72900,10 +74563,7 @@
                                 }
                               ]
                             },
-                            "status": {
-                              "type": "string"
-                            },
-                            "version": {
+                            "runningVersion": {
                               "anyOf": [
                                 {
                                   "type": "string"
@@ -72912,6 +74572,28 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "warnings": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "required": [
@@ -72922,7 +74604,14 @@
                             "pid",
                             "bundlePath",
                             "cwd",
-                            "version",
+                            "runningVersion",
+                            "diskVersion",
+                            "startedAt",
+                            "stale",
+                            "codeStale",
+                            "envStale",
+                            "identityVerified",
+                            "warnings",
                             "matchesCli"
                           ],
                           "type": "object"
@@ -72981,6 +74670,9 @@
                                 }
                               ]
                             },
+                            "codeStale": {
+                              "type": "boolean"
+                            },
                             "cwd": {
                               "anyOf": [
                                 {
@@ -72990,6 +74682,22 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "diskVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "envStale": {
+                              "type": "boolean"
+                            },
+                            "identityVerified": {
+                              "type": "boolean"
                             },
                             "managed": {
                               "type": "boolean"
@@ -73020,10 +74728,7 @@
                                 }
                               ]
                             },
-                            "status": {
-                              "type": "string"
-                            },
-                            "version": {
+                            "runningVersion": {
                               "anyOf": [
                                 {
                                   "type": "string"
@@ -73032,6 +74737,28 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "startedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "warnings": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "required": [
@@ -73042,7 +74769,14 @@
                             "pid",
                             "bundlePath",
                             "cwd",
-                            "version",
+                            "runningVersion",
+                            "diskVersion",
+                            "startedAt",
+                            "stale",
+                            "codeStale",
+                            "envStale",
+                            "identityVerified",
+                            "warnings",
                             "matchesCli"
                           ],
                           "type": "object"
@@ -73055,6 +74789,12 @@
                         "channels"
                       ],
                       "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -73063,6 +74803,7 @@
                     "ravi",
                     "infrastructure",
                     "runtime",
+                    "warnings",
                     "processes"
                   ],
                   "type": "object"
@@ -109234,6 +110975,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -109354,6 +111101,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
                     }
                   },
                   "required": [
@@ -110995,6 +112748,12 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "warnings": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "required": [

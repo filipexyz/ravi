@@ -35479,6 +35479,19 @@ public enum RaviSchemas {
           "channels": {
             "additionalProperties": false,
             "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cpu": {
                 "anyOf": [
                   {
@@ -35489,8 +35502,44 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
               "managed": {
                 "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "memoryBytes": {
                 "anyOf": [
@@ -35515,6 +35564,9 @@ public enum RaviSchemas {
               "name": {
                 "type": "string"
               },
+              "online": {
+                "type": "boolean"
+              },
               "pid": {
                 "anyOf": [
                   {
@@ -35538,8 +35590,37 @@ public enum RaviSchemas {
               "running": {
                 "type": "boolean"
               },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "status": {
                 "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -35551,7 +35632,19 @@ public enum RaviSchemas {
               "pmId",
               "cpu",
               "memoryBytes",
-              "memoryMb"
+              "memoryMb",
+              "online",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
             ],
             "type": "object"
           },
@@ -35859,12 +35952,330 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "alignment": {
+                "enum": [
+                  "aligned",
+                  "drifted",
+                  "unknown",
+                  "not_running"
+                ],
+                "type": "string"
+              },
+              "channels": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              },
+              "cli": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "version": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "bundlePath",
+                  "cwd",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "daemon": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "alignment",
+              "cli",
+              "daemon",
+              "channels"
+            ],
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "pm2Available",
           "processName",
           "channels",
+          "runtime",
+          "warnings",
           "processes"
         ],
         "type": "object"
@@ -36183,6 +36594,19 @@ public enum RaviSchemas {
           "channels": {
             "additionalProperties": false,
             "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cpu": {
                 "anyOf": [
                   {
@@ -36193,8 +36617,44 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
               "managed": {
                 "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "memoryBytes": {
                 "anyOf": [
@@ -36219,6 +36679,9 @@ public enum RaviSchemas {
               "name": {
                 "type": "string"
               },
+              "online": {
+                "type": "boolean"
+              },
               "pid": {
                 "anyOf": [
                   {
@@ -36242,8 +36705,37 @@ public enum RaviSchemas {
               "running": {
                 "type": "boolean"
               },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "status": {
                 "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -36255,7 +36747,19 @@ public enum RaviSchemas {
               "pmId",
               "cpu",
               "memoryBytes",
-              "memoryMb"
+              "memoryMb",
+              "online",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
             ],
             "type": "object"
           },
@@ -36563,12 +37067,330 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "alignment": {
+                "enum": [
+                  "aligned",
+                  "drifted",
+                  "unknown",
+                  "not_running"
+                ],
+                "type": "string"
+              },
+              "channels": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              },
+              "cli": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "version": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "bundlePath",
+                  "cwd",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "daemon": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "alignment",
+              "cli",
+              "daemon",
+              "channels"
+            ],
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "pm2Available",
           "processName",
           "channels",
+          "runtime",
+          "warnings",
           "processes"
         ],
         "type": "object"
@@ -36616,6 +37438,19 @@ public enum RaviSchemas {
       "channels": {
         "additionalProperties": false,
         "properties": {
+          "bundlePath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "codeStale": {
+            "type": "boolean"
+          },
           "cpu": {
             "anyOf": [
               {
@@ -36626,8 +37461,44 @@ public enum RaviSchemas {
               }
             ]
           },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diskVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "envStale": {
+            "type": "boolean"
+          },
+          "identityVerified": {
+            "type": "boolean"
+          },
           "managed": {
             "type": "boolean"
+          },
+          "matchesCli": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "memoryBytes": {
             "anyOf": [
@@ -36652,6 +37523,9 @@ public enum RaviSchemas {
           "name": {
             "type": "string"
           },
+          "online": {
+            "type": "boolean"
+          },
           "pid": {
             "anyOf": [
               {
@@ -36675,8 +37549,37 @@ public enum RaviSchemas {
           "running": {
             "type": "boolean"
           },
+          "runningVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -36688,7 +37591,19 @@ public enum RaviSchemas {
           "pmId",
           "cpu",
           "memoryBytes",
-          "memoryMb"
+          "memoryMb",
+          "online",
+          "bundlePath",
+          "cwd",
+          "runningVersion",
+          "diskVersion",
+          "startedAt",
+          "stale",
+          "codeStale",
+          "envStale",
+          "identityVerified",
+          "warnings",
+          "matchesCli"
         ],
         "type": "object"
       },
@@ -36996,12 +37911,330 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "runtime": {
+        "additionalProperties": false,
+        "properties": {
+          "alignment": {
+            "enum": [
+              "aligned",
+              "drifted",
+              "unknown",
+              "not_running"
+            ],
+            "type": "string"
+          },
+          "channels": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "online",
+              "status",
+              "pid",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
+            ],
+            "type": "object"
+          },
+          "cli": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "bundlePath",
+              "cwd",
+              "version"
+            ],
+            "type": "object"
+          },
+          "daemon": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "online",
+              "status",
+              "pid",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "alignment",
+          "cli",
+          "daemon",
+          "channels"
+        ],
+        "type": "object"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       }
     },
     "required": [
       "pm2Available",
       "processName",
       "channels",
+      "runtime",
+      "warnings",
       "processes"
     ],
     "type": "object"
@@ -37066,6 +38299,19 @@ public enum RaviSchemas {
           "channels": {
             "additionalProperties": false,
             "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cpu": {
                 "anyOf": [
                   {
@@ -37076,8 +38322,44 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
               "managed": {
                 "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "memoryBytes": {
                 "anyOf": [
@@ -37102,6 +38384,9 @@ public enum RaviSchemas {
               "name": {
                 "type": "string"
               },
+              "online": {
+                "type": "boolean"
+              },
               "pid": {
                 "anyOf": [
                   {
@@ -37125,8 +38410,37 @@ public enum RaviSchemas {
               "running": {
                 "type": "boolean"
               },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "status": {
                 "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -37138,7 +38452,19 @@ public enum RaviSchemas {
               "pmId",
               "cpu",
               "memoryBytes",
-              "memoryMb"
+              "memoryMb",
+              "online",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
             ],
             "type": "object"
           },
@@ -37446,12 +38772,330 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "alignment": {
+                "enum": [
+                  "aligned",
+                  "drifted",
+                  "unknown",
+                  "not_running"
+                ],
+                "type": "string"
+              },
+              "channels": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              },
+              "cli": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "version": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "bundlePath",
+                  "cwd",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "daemon": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "alignment",
+              "cli",
+              "daemon",
+              "channels"
+            ],
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "pm2Available",
           "processName",
           "channels",
+          "runtime",
+          "warnings",
           "processes"
         ],
         "type": "object"
@@ -66169,6 +67813,9 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cwd": {
                 "anyOf": [
                   {
@@ -66178,6 +67825,22 @@ public enum RaviSchemas {
                     "type": "null"
                   }
                 ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
               },
               "managed": {
                 "type": "boolean"
@@ -66208,10 +67871,7 @@ public enum RaviSchemas {
                   }
                 ]
               },
-              "status": {
-                "type": "string"
-              },
-              "version": {
+              "runningVersion": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -66220,6 +67880,28 @@ public enum RaviSchemas {
                     "type": "null"
                   }
                 ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -66230,7 +67912,14 @@ public enum RaviSchemas {
               "pid",
               "bundlePath",
               "cwd",
-              "version",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
               "matchesCli"
             ],
             "type": "object"
@@ -66289,6 +67978,9 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cwd": {
                 "anyOf": [
                   {
@@ -66298,6 +67990,22 @@ public enum RaviSchemas {
                     "type": "null"
                   }
                 ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
               },
               "managed": {
                 "type": "boolean"
@@ -66328,10 +68036,7 @@ public enum RaviSchemas {
                   }
                 ]
               },
-              "status": {
-                "type": "string"
-              },
-              "version": {
+              "runningVersion": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -66340,6 +68045,28 @@ public enum RaviSchemas {
                     "type": "null"
                   }
                 ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -66350,7 +68077,14 @@ public enum RaviSchemas {
               "pid",
               "bundlePath",
               "cwd",
-              "version",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
               "matchesCli"
             ],
             "type": "object"
@@ -66363,6 +68097,12 @@ public enum RaviSchemas {
           "channels"
         ],
         "type": "object"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       }
     },
     "required": [
@@ -66371,6 +68111,7 @@ public enum RaviSchemas {
       "ravi",
       "infrastructure",
       "runtime",
+      "warnings",
       "processes"
     ],
     "type": "object"
@@ -97553,6 +99294,12 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       }
     },
     "required": [
@@ -97637,6 +99384,12 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       }
     },
     "required": [
@@ -98954,6 +100707,12 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [

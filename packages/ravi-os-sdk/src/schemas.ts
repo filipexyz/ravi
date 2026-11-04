@@ -35219,6 +35219,19 @@ export const ChannelsRestartReturnSchema = {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -35229,8 +35242,44 @@ export const ChannelsRestartReturnSchema = {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -35255,6 +35304,9 @@ export const ChannelsRestartReturnSchema = {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -35278,8 +35330,37 @@ export const ChannelsRestartReturnSchema = {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -35291,7 +35372,19 @@ export const ChannelsRestartReturnSchema = {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -35599,12 +35692,330 @@ export const ChannelsRestartReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -35917,6 +36328,19 @@ export const ChannelsStartReturnSchema = {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -35927,8 +36351,44 @@ export const ChannelsStartReturnSchema = {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -35953,6 +36413,9 @@ export const ChannelsStartReturnSchema = {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -35976,8 +36439,37 @@ export const ChannelsStartReturnSchema = {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -35989,7 +36481,19 @@ export const ChannelsStartReturnSchema = {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -36297,12 +36801,330 @@ export const ChannelsStartReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -36348,6 +37170,19 @@ export const ChannelsStatusReturnSchema = {
     "channels": {
       "additionalProperties": false,
       "properties": {
+        "bundlePath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "codeStale": {
+          "type": "boolean"
+        },
         "cpu": {
           "anyOf": [
             {
@@ -36358,8 +37193,44 @@ export const ChannelsStatusReturnSchema = {
             }
           ]
         },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diskVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "envStale": {
+          "type": "boolean"
+        },
+        "identityVerified": {
+          "type": "boolean"
+        },
         "managed": {
           "type": "boolean"
+        },
+        "matchesCli": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "memoryBytes": {
           "anyOf": [
@@ -36384,6 +37255,9 @@ export const ChannelsStatusReturnSchema = {
         "name": {
           "type": "string"
         },
+        "online": {
+          "type": "boolean"
+        },
         "pid": {
           "anyOf": [
             {
@@ -36407,8 +37281,37 @@ export const ChannelsStatusReturnSchema = {
         "running": {
           "type": "boolean"
         },
+        "runningVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "status": {
           "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -36420,7 +37323,19 @@ export const ChannelsStatusReturnSchema = {
         "pmId",
         "cpu",
         "memoryBytes",
-        "memoryMb"
+        "memoryMb",
+        "online",
+        "bundlePath",
+        "cwd",
+        "runningVersion",
+        "diskVersion",
+        "startedAt",
+        "stale",
+        "codeStale",
+        "envStale",
+        "identityVerified",
+        "warnings",
+        "matchesCli"
       ],
       "type": "object"
     },
@@ -36728,12 +37643,330 @@ export const ChannelsStatusReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "enum": [
+            "aligned",
+            "drifted",
+            "unknown",
+            "not_running"
+          ],
+          "type": "string"
+        },
+        "channels": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "online",
+            "status",
+            "pid",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
+          ],
+          "type": "object"
+        },
+        "cli": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "bundlePath",
+            "cwd",
+            "version"
+          ],
+          "type": "object"
+        },
+        "daemon": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "online",
+            "status",
+            "pid",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "alignment",
+        "cli",
+        "daemon",
+        "channels"
+      ],
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
     "pm2Available",
     "processName",
     "channels",
+    "runtime",
+    "warnings",
     "processes"
   ],
   "type": "object"
@@ -36796,6 +38029,19 @@ export const ChannelsStopReturnSchema = {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -36806,8 +38052,44 @@ export const ChannelsStopReturnSchema = {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -36832,6 +38114,9 @@ export const ChannelsStopReturnSchema = {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -36855,8 +38140,37 @@ export const ChannelsStopReturnSchema = {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -36868,7 +38182,19 @@ export const ChannelsStopReturnSchema = {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -37176,12 +38502,330 @@ export const ChannelsStopReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -65527,6 +67171,9 @@ export const DaemonStatusReturnSchema = {
                 }
               ]
             },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cwd": {
               "anyOf": [
                 {
@@ -65536,6 +67183,22 @@ export const DaemonStatusReturnSchema = {
                   "type": "null"
                 }
               ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
             },
             "managed": {
               "type": "boolean"
@@ -65566,10 +67229,7 @@ export const DaemonStatusReturnSchema = {
                 }
               ]
             },
-            "status": {
-              "type": "string"
-            },
-            "version": {
+            "runningVersion": {
               "anyOf": [
                 {
                   "type": "string"
@@ -65578,6 +67238,28 @@ export const DaemonStatusReturnSchema = {
                   "type": "null"
                 }
               ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -65588,7 +67270,14 @@ export const DaemonStatusReturnSchema = {
             "pid",
             "bundlePath",
             "cwd",
-            "version",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
             "matchesCli"
           ],
           "type": "object"
@@ -65647,6 +67336,9 @@ export const DaemonStatusReturnSchema = {
                 }
               ]
             },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cwd": {
               "anyOf": [
                 {
@@ -65656,6 +67348,22 @@ export const DaemonStatusReturnSchema = {
                   "type": "null"
                 }
               ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
             },
             "managed": {
               "type": "boolean"
@@ -65686,10 +67394,7 @@ export const DaemonStatusReturnSchema = {
                 }
               ]
             },
-            "status": {
-              "type": "string"
-            },
-            "version": {
+            "runningVersion": {
               "anyOf": [
                 {
                   "type": "string"
@@ -65698,6 +67403,28 @@ export const DaemonStatusReturnSchema = {
                   "type": "null"
                 }
               ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -65708,7 +67435,14 @@ export const DaemonStatusReturnSchema = {
             "pid",
             "bundlePath",
             "cwd",
-            "version",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
             "matchesCli"
           ],
           "type": "object"
@@ -65721,6 +67455,12 @@ export const DaemonStatusReturnSchema = {
         "channels"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -65729,6 +67469,7 @@ export const DaemonStatusReturnSchema = {
     "ravi",
     "infrastructure",
     "runtime",
+    "warnings",
     "processes"
   ],
   "type": "object"
@@ -96451,6 +98192,12 @@ export const RuntimeEnvSetReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -96533,6 +98280,12 @@ export const RuntimeEnvUnsetReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -97832,6 +99585,12 @@ export const RuntimeProvidersClaudeConfigureReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [

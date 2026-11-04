@@ -6465,15 +6465,27 @@ export type ChannelsRestartReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6534,6 +6546,51 @@ export type ChannelsRestartReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -6600,15 +6657,27 @@ export type ChannelsStartReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6669,6 +6738,51 @@ export type ChannelsStartReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -6683,15 +6797,27 @@ export type ChannelsStatusInput = Record<string, never>;
 /** Return shape for `channels.status`. */
 export type ChannelsStatusReturn = {
   channels: {
+    bundlePath: string | null;
+    codeStale: boolean;
     cpu: number | null;
+    cwd: string | null;
+    diskVersion: string | null;
+    envStale: boolean;
+    identityVerified: boolean;
     managed: boolean;
+    matchesCli: boolean | null;
     memoryBytes: number | null;
     memoryMb: number | null;
     name: string;
+    online: boolean;
     pid: number | null;
     pmId: number | null;
     running: boolean;
+    runningVersion: string | null;
+    stale: boolean;
+    startedAt: number | null;
     status: string;
+    warnings: string[];
   };
   health?: {
     checkedAt: number;
@@ -6752,6 +6878,51 @@ export type ChannelsStatusReturn = {
     schemaVersion: 1;
     startedAt: number | null;
   }) | null;
+  runtime: {
+    alignment: "aligned" | "drifted" | "unknown" | "not_running";
+    channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
+      managed: boolean;
+      matchesCli: boolean | null;
+      name: string;
+      online: boolean;
+      pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
+      status: string;
+      warnings: string[];
+    };
+    cli: {
+      bundlePath: string | null;
+      cwd: string | null;
+      version: string | null;
+    };
+    daemon: {
+      bundlePath: string | null;
+      codeStale: boolean;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
+      managed: boolean;
+      matchesCli: boolean | null;
+      name: string;
+      online: boolean;
+      pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
+      status: string;
+      warnings: string[];
+    };
+  };
+  warnings: string[];
 };
 
 /** Input shape for `channels.stop`. */
@@ -6770,15 +6941,27 @@ export type ChannelsStopReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6839,6 +7022,51 @@ export type ChannelsStopReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -12474,14 +12702,21 @@ export type DaemonStatusReturn = {
     alignment: "aligned" | "drifted" | "unknown" | "not_running";
     channels: {
       bundlePath: string | null;
+      codeStale: boolean;
       cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
       matchesCli: boolean | null;
       name: string;
       online: boolean;
       pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
-      version: string | null;
+      warnings: string[];
     };
     cli: {
       bundlePath: string | null;
@@ -12490,16 +12725,24 @@ export type DaemonStatusReturn = {
     };
     daemon: {
       bundlePath: string | null;
+      codeStale: boolean;
       cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
       matchesCli: boolean | null;
       name: string;
       online: boolean;
       pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
-      version: string | null;
+      warnings: string[];
     };
   };
+  warnings: string[];
   [k: string]: unknown;
 };
 
@@ -18550,6 +18793,7 @@ export type RuntimeEnvSetReturn = {
   redacted: boolean;
   secret: boolean;
   value: string | null;
+  warnings?: string[];
 };
 
 /** Input shape for `runtime.env.unset`. */
@@ -18569,6 +18813,7 @@ export type RuntimeEnvUnsetReturn = {
   redacted: boolean;
   secret: boolean;
   value: string | null;
+  warnings?: string[];
 };
 
 /** Input shape for `runtime.presets.create`. */
@@ -18851,6 +19096,7 @@ export type RuntimeProvidersClaudeConfigureReturn = {
     redacted: boolean;
     secret: boolean;
     value: string | null;
+    warnings?: string[];
   };
 };
 

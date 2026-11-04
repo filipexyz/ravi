@@ -6924,7 +6924,7 @@ class ChannelsStartReturn {
 ChannelsStartReturn channelsStartReturnFromJson(Object? json) => ChannelsStartReturn.fromJsonValue(json);
 
 class ChannelsStatusReturn {
-  const ChannelsStatusReturn({required this.channels, this.health, required this.pm2Available, required this.processName, required this.processes, this.runner});
+  const ChannelsStatusReturn({required this.channels, this.health, required this.pm2Available, required this.processName, required this.processes, this.runner, required this.runtime, required this.warnings});
 
   final RaviJson channels;
   final RaviJson? health;
@@ -6932,6 +6932,8 @@ class ChannelsStatusReturn {
   final String processName;
   final List<RaviJson> processes;
   final RaviJson? runner;
+  final RaviJson runtime;
+  final List<String> warnings;
 
   factory ChannelsStatusReturn.fromJson(Map<String, Object?> json) {
     return ChannelsStatusReturn(
@@ -6941,6 +6943,8 @@ class ChannelsStatusReturn {
       processName: raviJsonAsString(json["processName"]),
       processes: raviJsonAsList(json["processes"], RaviJson.from),
       runner: json["runner"] == null ? null : RaviJson.from(json["runner"]),
+      runtime: RaviJson.from(json["runtime"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -13560,7 +13564,7 @@ class DaemonStartReturn {
 DaemonStartReturn daemonStartReturnFromJson(Object? json) => DaemonStartReturn.fromJsonValue(json);
 
 class DaemonStatusReturn {
-  const DaemonStatusReturn({required this.infrastructure, required this.pm2Available, required this.processName, required this.processes, required this.ravi, required this.runtime});
+  const DaemonStatusReturn({required this.infrastructure, required this.pm2Available, required this.processName, required this.processes, required this.ravi, required this.runtime, required this.warnings});
 
   final Map<String, RaviJson> infrastructure;
   final bool pm2Available;
@@ -13568,6 +13572,7 @@ class DaemonStatusReturn {
   final List<Map<String, RaviJson>> processes;
   final Map<String, RaviJson> ravi;
   final RaviJson runtime;
+  final List<String> warnings;
 
   factory DaemonStatusReturn.fromJson(Map<String, Object?> json) {
     return DaemonStatusReturn(
@@ -13577,6 +13582,7 @@ class DaemonStatusReturn {
       processes: raviJsonAsList(json["processes"], raviJsonAsRaviJsonMap),
       ravi: raviJsonAsRaviJsonMap(json["ravi"]),
       runtime: RaviJson.from(json["runtime"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -22436,7 +22442,7 @@ class RuntimeEnvSetOptions {
 }
 
 class RuntimeEnvSetReturn {
-  const RuntimeEnvSetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});
+  const RuntimeEnvSetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value, this.warnings});
 
   final String action;
   final bool daemonReloadRequired;
@@ -22448,6 +22454,7 @@ class RuntimeEnvSetReturn {
   final bool redacted;
   final bool secret;
   final RaviJson value;
+  final List<String>? warnings;
 
   factory RuntimeEnvSetReturn.fromJson(Map<String, Object?> json) {
     return RuntimeEnvSetReturn(
@@ -22461,6 +22468,7 @@ class RuntimeEnvSetReturn {
       redacted: raviJsonAsBool(json["redacted"]),
       secret: raviJsonAsBool(json["secret"]),
       value: RaviJson.from(json["value"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -22472,7 +22480,7 @@ class RuntimeEnvSetReturn {
 RuntimeEnvSetReturn runtimeEnvSetReturnFromJson(Object? json) => RuntimeEnvSetReturn.fromJsonValue(json);
 
 class RuntimeEnvUnsetReturn {
-  const RuntimeEnvUnsetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});
+  const RuntimeEnvUnsetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value, this.warnings});
 
   final String action;
   final bool daemonReloadRequired;
@@ -22484,6 +22492,7 @@ class RuntimeEnvUnsetReturn {
   final bool redacted;
   final bool secret;
   final RaviJson value;
+  final List<String>? warnings;
 
   factory RuntimeEnvUnsetReturn.fromJson(Map<String, Object?> json) {
     return RuntimeEnvUnsetReturn(
@@ -22497,6 +22506,7 @@ class RuntimeEnvUnsetReturn {
       redacted: raviJsonAsBool(json["redacted"]),
       secret: raviJsonAsBool(json["secret"]),
       value: RaviJson.from(json["value"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
