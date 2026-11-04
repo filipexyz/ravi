@@ -250,16 +250,25 @@ Semantics:
   governs the chat and grants no authority; it MUST NOT be mistaken for an
   unknown profile. Other covering grants remain additive.
 - Dry-run MUST show the expanded capabilities without creating a profile or
-  grant. Apply persists a provider-owned profile definition and the scoped
-  grant so `permissions list --chat` and contact materialization agree.
+  grant. For profiles eligible for apply, it persists a provider-owned profile
+  definition and the scoped grant so `permissions list --chat` and contact
+  materialization agree.
 - `allow`/`resolve` for unknown/empty custom profiles without bootstrap capabilities MUST fail with
   actual built-in/stored profile choices and runnable inspection commands
   (`ravi skills show permissions`, `ravi tags list --kind system --source permissions --json`).
+  Structured `acceptedValues` MUST include all stored permission profiles,
+  including those beyond the first database page; inline copy remains bounded.
 - `deny` MUST still revoke a stored grant when its definition is missing or
   empty; it MUST NOT require granting authority in order to remove authority.
 - `full-access` remains break-glass: explicit operator approval is required
   before `--apply`; profile resolution MUST NOT waive command authorization
   or change the default profile.
+- `allow`/`resolve --profile full-access` MUST reject `--apply` with
+  `FULL_ACCESS_APPROVAL_REQUIRED` (exit 3) until this path consumes verified
+  operator approval. Command authority, a caller-supplied flag and a hint are
+  not proof of approval. Rejection MUST precede profile, contact grant and
+  executor-ceiling writes. Dry-run expansion and revocation remain available;
+  preview MUST NOT advertise an apply command that will always be rejected.
 - Applying a profile to `agent:<id>` MUST ensure the executor-agent runtime
   config contains the concrete capabilities, without replacing existing
   explicit capabilities.

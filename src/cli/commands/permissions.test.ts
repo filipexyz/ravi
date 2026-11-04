@@ -288,7 +288,9 @@ describe("PermissionsCommands provider-runtime surface", () => {
   });
 
   for (const profile of AGENT_RUNTIME_PERMISSION_PROFILES) {
-    it(`plans, grants, reads and revokes built-in ${profile} for a human in a governed Slack chat`, () => {
+    const behavior =
+      profile === "full-access" ? "previews and blocks unapproved apply of" : "plans, grants, reads and revokes";
+    it(`${behavior} built-in ${profile} for a human in a governed Slack chat`, () => {
       const contact = createContact({ phone: "+15550000031", name: "Profile Grant User" });
       const other = createContact({ phone: "+15550000032", name: "Other Chat Member" });
       const chat = dbUpsertChat({
@@ -338,8 +340,22 @@ describe("PermissionsCommands provider-runtime surface", () => {
         expect(capabilityStrings).toContain("execute:executable:*");
         expect(capabilityStrings).toContain("use:skill:*");
         expect(preview.hints).toContain(
-          "full-access is break-glass and requires explicit operator approval before --apply.",
+          "full-access requires verified operator approval. This command cannot consume an operator approval; --apply is blocked.",
         );
+        expect(preview.nextCommand).toBeUndefined();
+        const denied = captureContractError(() =>
+          commands.allow(slug, subject, undefined, undefined, undefined, undefined, true, true, chat.id),
+        );
+        expect(denied.code).toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+        expect(denied.exitCode).toBe(3);
+        expect(dbGetTagDefinition(slug)).toBeNull();
+        expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+        dbEnsureContactChatGrant({ contactId: contact.id, profileSlug: slug, scopeType: "chat", scopeId: chat.id });
+        expect(commands.deny(profile, subject, chat.id, undefined, undefined, true, true).changedCount).toBe(1);
+        expect(
+          commands.list(subject, chat.id, undefined, undefined, profile, undefined, undefined, true).grants,
+        ).toEqual([]);
+        return;
       } else if (profile === "bootstrap") {
         expect(capabilityStrings).toContain("read:bases.views:query");
         expect(capabilityStrings).not.toContain("admin:system:*");
@@ -379,6 +395,45 @@ describe("PermissionsCommands provider-runtime surface", () => {
     });
   }
 
+  for (const profile of ["full-access", "permission-full-access", "FULL ACCESS"]) {
+    it(`blocks ${profile} apply before profile, scoped grant or executor ceiling writes`, () => {
+      const contact = createContact({ phone: "+15550000038", name: "Unapproved Grant User" });
+      const chat = groupChat("unapproved-full-access");
+      dbCreateAgent({ id: "grant-target", cwd: "/tmp" });
+      dbCreateAgent({ id: "grant-executor", cwd: "/tmp" });
+      dbCreateTagDefinition({
+        slug: "permission-full-access",
+        label: "Existing profile",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["read:skills:show"] } },
+      });
+      const before = dbGetTagDefinition("permission-full-access");
+      const error = captureContractError(() =>
+        runWithContext({ agentId: "grant-executor" }, () =>
+          new PermissionsCommands().allow(
+            profile,
+            `contact:${contact.id},agent:grant-target`,
+            "grant-executor",
+            undefined,
+            "Changed label",
+            undefined,
+            true,
+            true,
+            chat.id,
+          ),
+        ),
+      );
+      expect(error.code).toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+      expect(error.exitCode).toBe(3);
+      expect(dbGetTagDefinition("permission-full-access")).toEqual(before);
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+      expect(getContact(contact.id)?.tags).not.toContain("permission-full-access");
+      expect(readAgentRuntimePermissionsConfig("grant-target")).toBeNull();
+      expect(readAgentRuntimePermissionsConfig("grant-executor")).toBeNull();
+    });
+  }
+
   it("keeps unknown-profile diagnostics within the remote message budget with many stored profiles", () => {
     for (let index = 0; index < 30; index++) {
       dbCreateTagDefinition({
@@ -393,6 +448,24 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(error.message).toContain("ravi skills show permissions");
     expect(error.message).toContain("ravi tags list --kind system --source permissions --json");
     expect(error.details.acceptedValues).toHaveLength(34);
+  });
+
+  it("discovers every stored profile across pages of newer non-profile permission tags", () => {
+    const profileSlugs = Array.from({ length: 505 }, (_, index) => `permission-archived-workflow-${index}`);
+    for (const slug of profileSlugs) {
+      dbCreateTagDefinition({ slug, label: slug, kind: "system", source: "permissions" });
+    }
+    for (let index = 0; index < 505; index++) {
+      const slug = `unrelated-permission-metadata-${index}`;
+      dbCreateTagDefinition({ slug, label: slug, kind: "system", source: "permissions" });
+    }
+
+    const error = captureContractError(() => new PermissionsCommands().allow("unknown", "agent:main"));
+    const acceptedValues = error.details.acceptedValues as string[];
+    expect(acceptedValues).toHaveLength(AGENT_RUNTIME_PERMISSION_PROFILES.length + profileSlugs.length);
+    expect(new Set(acceptedValues)).toEqual(new Set([...AGENT_RUNTIME_PERMISSION_PROFILES, ...profileSlugs]));
+    expect(error.message.length).toBeLessThanOrEqual(1200);
+    expect(error.message).toContain("ravi tags list --kind system --source permissions --json");
   });
 
   it("keeps explicit-only capabilities and discards chat-only leftovers like the runtime", () => {
@@ -989,6 +1062,27 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(readAgentRuntimePermissionsConfig("overlay-agent")?.capabilities).toEqual([
       { permission: "mutate", objectType: "image", objectId: "generate" },
     ]);
+  });
+
+  it("blocks resolve --profile full-access before any provider write", () => {
+    dbCreateAgent({ id: "blocked-resolve-agent", cwd: "/tmp" });
+    const denial = recordPermissionDenial({
+      subjectType: "agent",
+      subjectId: "blocked-resolve-agent",
+      relation: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      agentId: "blocked-resolve-agent",
+    });
+    const commands = new PermissionsCommands();
+    const preview = commands.resolve(String(denial!.id), "full-access", undefined, false, true);
+    expect(preview.nextCommand).toBeUndefined();
+    const error = captureContractError(() =>
+      commands.resolve(String(denial!.id), "full-access", undefined, true, true),
+    );
+    expect(error).toMatchObject({ op: "permissions resolve", code: "FULL_ACCESS_APPROVAL_REQUIRED", exitCode: 3 });
+    expect(dbGetTagDefinition("permission-full-access")).toBeNull();
+    expect(readAgentRuntimePermissionsConfig("blocked-resolve-agent")).toBeNull();
   });
 
   it("resolves an agent-identity denial into an agent-owned recurring profile workflow", () => {

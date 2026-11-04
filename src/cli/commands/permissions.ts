@@ -26,7 +26,7 @@ import {
 import { dbGetChat, dbGetThreadParentChat, dbListChatsByRef, type ChatRecord } from "../../router/router-db.js";
 import { revokeLiveRuntimeContextsForContactGrant } from "../../runtime/context-registry.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, tryNormalizeTagSlug } from "../../tags/index.js";
-import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 import { getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -58,7 +58,7 @@ import {
   upsertPermissionProfileDefinition,
 } from "../../permissions/apply-grant.js";
 import { dbGetTagDefinition, dbListTagDefinitions } from "../../tags/index.js";
-import type { TagDefinition } from "../../tags/types.js";
+import type { TagDefinition, TagListCursor } from "../../tags/types.js";
 import type { OffsetPagination } from "../../utils/pagination.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import {
@@ -76,6 +76,8 @@ const CHAT_OPTION_DESCRIPTION =
 const CHAT_TAG_OPTION_DESCRIPTION = "Scope contact grants to every chat carrying this chat tag";
 const FORCE_OPTION_DESCRIPTION =
   "Explicitly use the global (all chats) contact scope. Prefer --chat; ask the human before going global.";
+const FULL_ACCESS_APPROVAL_MESSAGE =
+  "full-access requires verified operator approval. This command cannot consume an operator approval; --apply is blocked.";
 
 const providerSchema = z.object({
   id: z.string(),
@@ -784,6 +786,17 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
   const existingTag = dbGetTagDefinition(tagSlug);
   const explicitCapabilities = parseCapabilityList(input.capabilities);
   const capabilities = resolveProfileCapabilities(op, tagSlug, existingTag, explicitCapabilities, input.asJson);
+  // Command authority and --apply do not prove operator approval. Until this
+  // command can consume a verified approval, fail before any provider write.
+  if (input.apply && tagSlug === "permission-full-access") {
+    contractFail(op, "FULL_ACCESS_APPROVAL_REQUIRED", FULL_ACCESS_APPROVAL_MESSAGE, {
+      asJson: input.asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: {
+        suggestedAction: "Preview without --apply. Use the operator approval flow for a full-access grant.",
+      },
+    });
+  }
   const label = input.label?.trim() || existingTag?.label || labelFromProfile(tagSlug);
   const description = input.description?.trim() || existingTag?.description;
   const governedBefore = new Map(scopes.map((scope) => [scope.label, isScopeGoverned(scope)]));
@@ -862,7 +875,7 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       apply: input.apply,
     }),
   };
-  if (!input.apply) {
+  if (!input.apply && tagSlug !== "permission-full-access") {
     payload.nextCommand = buildAllowApplyCommand(input);
   }
   return payload;
@@ -1423,7 +1436,7 @@ function buildAllowHints(input: {
 }): string[] {
   const hints: string[] = [];
   if (input.tagSlug === "permission-full-access") {
-    hints.push("full-access is break-glass and requires explicit operator approval before --apply.");
+    hints.push(FULL_ACCESS_APPROVAL_MESSAGE);
   }
   if (input.contacts.length === 0) return hints;
   if (input.force) {
@@ -1604,12 +1617,24 @@ function resolveProfileCapabilities(
   // Revocation must work even after a definition was removed or emptied:
   // the stored grant identity is enough, and live contexts still need revoking.
   if (capabilities.length === 0 && !builtin && op !== "permissions deny") {
-    const profiles = [
-      ...AGENT_RUNTIME_PERMISSION_PROFILES,
-      ...dbListTagDefinitions({ kind: "system", source: "permissions", limit: 500 })
-        .filter((tag) => tag.slug.startsWith("permission-"))
-        .map((tag) => tag.slug),
-    ];
+    const profiles: string[] = [...AGENT_RUNTIME_PERMISSION_PROFILES];
+    const pageSize = 500;
+    let cursor: TagListCursor | undefined;
+    for (;;) {
+      const page = dbListTagDefinitions({
+        kind: "system",
+        source: "permissions",
+        limit: pageSize,
+        sort: "updated",
+        order: "desc",
+        cursor,
+      });
+      profiles.push(...page.filter((tag) => tag.slug.startsWith("permission-")).map((tag) => tag.slug));
+      // Advance over every tag, including pages containing no profiles.
+      const lastTag = page.at(-1);
+      if (!lastTag || page.length < pageSize) break;
+      cursor = { sort: "updated", order: "desc", value: lastTag.updatedAt, id: lastTag.id };
+    }
     const inspectCommands = [
       "ravi skills show permissions",
       "ravi tags list --kind system --source permissions --json",

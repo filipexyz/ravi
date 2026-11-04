@@ -12,12 +12,17 @@ capability: profiles
 
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/permissions.test.ts`
   covers all four built-ins before tag creation: dry-run without writes,
-  allow/deny expansion parity with the executor materializers, apply to a human
-  in a Slack chat, read-back with `permissions list --chat`, empty grants,
+  allow/deny expansion parity with the executor materializers, apply of eligible
+  profiles to a human in a Slack chat, read-back with `permissions list --chat`, empty grants,
   idempotent replay and revoke. A second contact stays at zero authority.
 - Unknown profiles MUST name the available profiles and concrete inspection
   commands. A `full-access` preview MUST include the expanded ceiling and the
-  explicit operator-approval warning; only `--apply` persists it.
+  explicit operator-approval requirement. `allow`/`resolve --profile full-access
+  --apply` MUST fail with `FULL_ACCESS_APPROVAL_REQUIRED` before any profile,
+  contact grant or agent-ceiling write while verified approval consumption is
+  unavailable. The dry-run MUST NOT suggest that blocked apply command.
+- More than 500 stored profiles, including older rows behind newer non-profile
+  tags, MUST all appear in `acceptedValues`; the inline diagnostic stays bounded.
 
 - Materialize an agent with `agent.defaults.runtimePermissions.profile =
   "full-access"` and assert `admin system:*`, `execute executable:*`,
