@@ -326,7 +326,10 @@ export class SlackTextDelivery implements NativeTextDelivery {
   }
 
   async deliverText(request: NativeTextDeliveryRequest): Promise<NativeTextDeliveryResult> {
-    const threadTs = this.routingPolicy.threadReplyMode === "channel_root" ? undefined : request.target.threadId;
+    const threadTs =
+      !request._trustedFrozenTarget && this.routingPolicy.threadReplyMode === "channel_root"
+        ? undefined
+        : request.target.threadId;
     // Packet conversations post with unfurls off, so no link preview leaks page content.
     let guarded = false;
     try {

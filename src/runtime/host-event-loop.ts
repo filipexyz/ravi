@@ -5,6 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
+import {
+  createChannelBackendAutomaticOutputOrigin,
+  resolveSlackAutomaticOutputContextFromBinding,
+  type SlackAutomaticOutputContext,
+} from "../channels/slack/automatic-output-origin.js";
+import {
+  freezeSlackAutomaticTerminalManifest,
+  type SlackAutomaticTerminalManifest,
+} from "../channels/slack/automatic-terminal-manifest.js";
+import { renderSlackBackendOutput } from "../channels/slack/driver.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
 import { isCommentaryMetadata, isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
@@ -129,7 +139,12 @@ import type {
 } from "./types.js";
 import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
-import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
+import type {
+  ChannelAutomaticOutputOrigin,
+  ChannelBackendPromptMetadata,
+  ResponseContentPart,
+  ResponseMediaAttachment,
+} from "./message-types.js";
 import {
   createApprovalWaitLeaseTracker,
   createToolLivenessLease,
@@ -1117,6 +1132,69 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const turnOutputCounts = { final: 0, commentary: 0 };
   let reportedTerminalUsage: Extract<RuntimeEvent, { type: "turn.complete" }>["usage"] | undefined;
   const turnToolContinuation = createTurnToolContinuationLedger();
+  interface AutomaticSlackReply {
+    context: SlackAutomaticOutputContext;
+    origin: ChannelAutomaticOutputOrigin;
+    media: ResponseMediaAttachment[];
+    mediaKeys: Set<string>;
+    manifest?: SlackAutomaticTerminalManifest;
+    mediaReleased?: boolean;
+  }
+  // Logical channel requests can span physical provider turns. Keep their generated
+  // attachments with the immutable request, never the generic per-turn media buffer.
+  const automaticSlackReplies = new Map<string, AutomaticSlackReply>();
+  const automaticSlackReply = (
+    metadata: ChannelBackendPromptMetadata | undefined = streaming.currentChannelBackend,
+  ): AutomaticSlackReply | undefined => {
+    if (metadata?.target.channelKind !== "slack") return undefined;
+    const existing = automaticSlackReplies.get(metadata.binding.turnId);
+    if (existing) return existing;
+    const context = resolveSlackAutomaticOutputContextFromBinding(metadata.binding);
+    if (!context) return undefined;
+    const reply: AutomaticSlackReply = {
+      context,
+      origin: createChannelBackendAutomaticOutputOrigin(metadata.binding),
+      media: [],
+      mediaKeys: new Set(),
+    };
+    automaticSlackReplies.set(context.turnId, reply);
+    return reply;
+  };
+  const freezeAutomaticSlackReply = (
+    reply: AutomaticSlackReply,
+    kind: SlackAutomaticTerminalManifest["kind"],
+    text: string,
+  ): void => {
+    reply.manifest = freezeSlackAutomaticTerminalManifest({
+      ...reply.context,
+      kind,
+      text,
+      media: kind === "final_answer" ? reply.media : [],
+    });
+    if (kind !== "final_answer") {
+      reply.media = [];
+      reply.mediaKeys.clear();
+    }
+  };
+  const releaseAutomaticSlackMedia = async (reply: AutomaticSlackReply, metadata?: RuntimeEventMetadata) => {
+    const manifest = reply.manifest;
+    if (!manifest || manifest.kind !== "final_answer" || reply.mediaReleased || reply.media.length === 0) return;
+    // No attach/latest-source resolution: text and every attachment retain the
+    // same authorized ingress destination and one immutable terminal manifest.
+    await nats.emit(`ravi.session.${sessionName}.response`, {
+      response: "",
+      content: reply.media.map((media) => ({ type: "media", media })),
+      target: manifest.target,
+      ...(metadata ? { metadata } : {}),
+      _automaticOutputOrigin: reply.origin,
+      _automaticTerminalResponseId: manifest.responseId,
+      _emitId: `${manifest.responseId}:media`,
+      _instanceId: instanceId,
+      _pid: process.pid,
+      _v: 2,
+    });
+    reply.mediaReleased = true;
+  };
   let pendingGeneratedMedia: ResponseMediaAttachment[] = [];
   const generatedMediaKeys = new Set<string>();
   const clearPendingGeneratedMedia = () => {
@@ -1125,6 +1203,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
   const queueGeneratedMedia = (attachment: ResponseMediaAttachment): boolean => {
     const key = attachment.idempotencyKey ?? attachment.filePath;
+    const automaticReply = automaticSlackReply();
+    if (automaticReply) {
+      if (automaticReply.manifest) throw new Error("Generated media arrived after the Slack terminal was frozen");
+      if (automaticReply.mediaKeys.has(key)) return false;
+      automaticReply.mediaKeys.add(key);
+      automaticReply.media.push(attachment);
+      return true;
+    }
     if (generatedMediaKeys.has(key)) return false;
     generatedMediaKeys.add(key);
     pendingGeneratedMedia.push(attachment);
@@ -2022,7 +2108,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (pending) pending.safetyFenced = true;
   };
 
-  const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
+  const projectRuntimeEventToChannel = async (
+    event: RuntimeEvent,
+    projectedResponseText?: string,
+    automaticReplyContinues = false,
+  ) => {
     const metadata = streaming.currentChannelBackend;
     if (!metadata) return;
     // The physical turn ends, but its queued continuation still owns this channel request.
@@ -2051,11 +2141,34 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   }),
             }
           : {};
+    let automaticReply: AutomaticSlackReply | undefined;
+    let terminalManifestReady = false;
     try {
+      automaticReply = automaticSlackReply(metadata);
+      if (automaticReply && event.type === "turn.interrupted" && !automaticReplyContinues) {
+        freezeAutomaticSlackReply(automaticReply, "cancelled", "");
+      }
+      if (automaticReply && event.type === "turn.complete" && !projectedResponseText?.trim()) {
+        // A media-only answer has no text output envelope to run the hook below.
+        freezeAutomaticSlackReply(automaticReply, "final_answer", "");
+        terminalManifestReady = true;
+      }
       await projectChannelRuntimeEvent({
         metadata,
         event: stripRuntimeRawEvent(event),
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
+        ...(automaticReply
+          ? {
+              beforeTerminalOutput: (output: Parameters<typeof renderSlackBackendOutput>[0]) => {
+                freezeAutomaticSlackReply(
+                  automaticReply!,
+                  output.kind === "safe_error" ? "safe_error" : "final_answer",
+                  renderSlackBackendOutput(output),
+                );
+                terminalManifestReady = true;
+              },
+            }
+          : {}),
         ...toolProjection,
       });
     } catch (error) {
@@ -2065,6 +2178,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         eventType: event.type,
         errorKind: error instanceof Error ? error.name : typeof error,
       });
+    }
+    // Runtime notification and text publication have their own failure paths.
+    // Once this terminal froze successfully, neither may discard its media.
+    if (automaticReply && terminalManifestReady && event.type === "turn.complete") {
+      try {
+        await releaseAutomaticSlackMedia(automaticReply, event.metadata);
+      } catch (error) {
+        log.warn("Automatic Slack media release failed", {
+          sessionName,
+          turnId: metadata.binding.turnId,
+          errorKind: error instanceof Error ? error.name : typeof error,
+        });
+      }
     }
   };
 
@@ -3993,10 +4119,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         );
 
         if (suppressedRecoverable) {
-          await projectRuntimeEventToChannel({
-            type: "turn.interrupted",
-            metadata: event.metadata,
-          });
+          await projectRuntimeEventToChannel(
+            { type: "turn.interrupted", metadata: event.metadata },
+            undefined,
+            // Recovery already decides which inputs survive. Do not close the
+            // logical reply while that exact backend request is being replayed.
+            getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery).some(
+              (message) =>
+                message.launchPrompt?._channelBackend?.binding.turnId ===
+                streaming.currentChannelBackend?.binding.turnId,
+            ),
+          );
           await emitRuntimeEvent({
             type: "turn.interrupted",
             provider: runtimeSession.provider,

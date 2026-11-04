@@ -34,6 +34,7 @@ import {
   LocalChannelMessageBindingSchema,
   channelOutputSinks,
   type ChannelContent,
+  type ChannelOutputEnvelope,
   type ChannelSafeError,
   type ExternalChannelTarget,
   type LocalChannelMessageBinding,
@@ -412,6 +413,8 @@ export async function projectChannelRuntimeEvent(input: {
   toolDurationMs?: number;
   occurredAt?: number;
   sinks?: ChannelRuntimeEventSinkRegistry;
+  /** Freeze a terminal delivery manifest before any output sink can release it. */
+  beforeTerminalOutput?: (output: ChannelOutputEnvelope) => void | Promise<void>;
 }): Promise<KnownChannelRuntimeEvent[]> {
   const metadata = parseChannelBackendMetadata(input.metadata);
   const occurredAt = input.occurredAt ?? Date.now();
@@ -419,7 +422,7 @@ export async function projectChannelRuntimeEvent(input: {
   const projected: KnownChannelRuntimeEvent[] = [];
   let dispatchError: unknown;
   const append = async (eventInput: RecordAndEmitInput) => {
-    const recorded = await recordAndEmit(eventInput);
+    const recorded = await recordAndEmit({ ...eventInput, beforeTerminalOutput: input.beforeTerminalOutput });
     projected.push(recorded.event);
     dispatchError ??= recorded.dispatchError;
   };
@@ -693,6 +696,7 @@ interface RecordAndEmitInput {
   payload: unknown | EventPayloadFactory;
   occurredAt: number;
   sinks: ChannelRuntimeEventSinkRegistry;
+  beforeTerminalOutput?: (output: ChannelOutputEnvelope) => void | Promise<void>;
 }
 
 async function recordAndEmit(
@@ -769,6 +773,7 @@ async function recordAndEmit(
             }),
         emittedAt: new Date(input.occurredAt).toISOString(),
       });
+      await input.beforeTerminalOutput?.(output);
       const deliveredLocally = await channelOutputSinks.tryEmit(output);
       if (!deliveredLocally) {
         if (!channelBackendEgressRequester) {

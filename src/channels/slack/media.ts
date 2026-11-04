@@ -26,6 +26,8 @@ export interface SlackMediaSendInput {
   readonly accountId: string;
   readonly chatId: string;
   readonly filePath: string;
+  /** Internal automatic delivery: bytes verified against a frozen terminal. Never reopen filePath when supplied. */
+  readonly fileBytes?: Buffer;
   readonly filename: string;
   readonly caption?: string;
   readonly threadId?: string;
@@ -75,7 +77,7 @@ export async function sendSlackMedia(
     throw new Error(`Slack credentials not configured for channel "${channel.name}".`);
   }
 
-  const bytes = await readFile(input.filePath);
+  const bytes = input.fileBytes ?? (await readFile(input.filePath));
   const fetchImpl = dependencies.fetchImpl ?? fetch;
   const apiBaseUrl = (dependencies.apiBaseUrl ?? credentials.apiBaseUrl ?? DEFAULT_SLACK_API_BASE_URL).replace(
     /\/+$/,

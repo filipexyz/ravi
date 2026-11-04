@@ -105,3 +105,20 @@ Hermes' Slack gateway shows the operational details that matter before real work
 - Commands in threads may need text normalization because Slack does not support native slash commands everywhere.
 
 Ravi should borrow these behaviors while keeping the ownership boundary different: Slack adapter delivers channel events; Ravi runtime owns sessions and agents.
+
+## Why Contain Output Instead of Bot Input
+
+Bot notices are real work. Dropping them or recording them without processing
+would recreate the reported inbound bug. Two deterministic peers can still
+amplify each other's ordinary replies, so the mitigation acts on automatic
+terminal projection after processing. Commentary is optional and cannot spend
+the final response's allowance. A complete frozen response shares one decision
+across text and media, preserving long content instead of introducing another
+truncation path.
+
+Slack supplies conversation identity, not reliable cross-bot causality. The
+aggregate channel scope trades some automatic acknowledgements during bursts
+for a bound on rapid logical reply admission. It recovers on new input without
+human intervention, but slow feedback and authorized explicit sends remain
+outside that guarantee. Tests retain these counterexamples so the mitigation
+cannot be mistaken for universal loop prevention.

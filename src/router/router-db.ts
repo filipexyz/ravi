@@ -3692,6 +3692,9 @@ const CHANNEL_OUTBOUND_RECEIPT_COLUMNS = [
   "persisted_at",
   "trace_recorded_at",
   "completed_at",
+  "suppression_reason",
+  "resend_prohibited",
+  "retain_identity",
   "last_error_phase",
   "last_error_message",
   "last_error_at",
@@ -3709,7 +3712,7 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
       job_id                TEXT NOT NULL,
       request_id            TEXT NOT NULL,
       session_name          TEXT NOT NULL,
-      state                 TEXT NOT NULL CHECK(state IN ('claimed','sent','persisted','complete')),
+      state                 TEXT NOT NULL CHECK(state IN ('claimed','sent','persisted','complete','suppressed')),
       provider              TEXT NOT NULL,
       delivery_message_id   TEXT,
       platform_message_id   TEXT,
@@ -3721,6 +3724,9 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
       persisted_at          INTEGER,
       trace_recorded_at     INTEGER,
       completed_at          INTEGER,
+      suppression_reason    TEXT,
+      resend_prohibited     INTEGER NOT NULL DEFAULT 0 CHECK(resend_prohibited IN (0,1)),
+      retain_identity       INTEGER NOT NULL DEFAULT 0 CHECK(retain_identity IN (0,1)),
       last_error_phase      TEXT,
       last_error_message    TEXT,
       last_error_at         INTEGER,
@@ -3752,8 +3758,9 @@ function ensureChannelOutboundReceiptSchema(database: Database): void {
       const missingColumns = CHANNEL_OUTBOUND_RECEIPT_COLUMNS.filter((column) => !columns.has(column));
       const legacyColumns = ["provider_raw_json", "telemetry_emitted_at"].filter((column) => columns.has(column));
       const acceptsClaimedState = tableRow.sql?.includes("'claimed'") === true;
+      const acceptsSuppressedState = tableRow.sql?.includes("'suppressed'") === true;
 
-      if (missingColumns.length > 0 || legacyColumns.length > 0 || !acceptsClaimedState) {
+      if (missingColumns.length > 0 || legacyColumns.length > 0 || !acceptsClaimedState || !acceptsSuppressedState) {
         migrateChannelOutboundReceiptSchema(database, columns, missingColumns, legacyColumns);
       }
     }
@@ -3803,7 +3810,7 @@ function migrateChannelOutboundReceiptSchema(
   const idempotencyKey = "CAST(idempotency_key AS TEXT)";
   const legacyFingerprint = `'legacy:' || ${idempotencyKey}`;
   const state = columns.has("state")
-    ? "CASE WHEN state IN ('claimed','sent','persisted','complete') THEN state ELSE 'sent' END"
+    ? "CASE WHEN state IN ('claimed','sent','persisted','complete','suppressed') THEN state ELSE 'sent' END"
     : "'sent'";
   const createdAt = coalesce(["created_at", "sent_at", "updated_at"], String(now));
   const updatedAt = coalesce(["updated_at", "created_at", "sent_at"], String(now));
@@ -3816,7 +3823,7 @@ function migrateChannelOutboundReceiptSchema(
            idempotency_key, request_fingerprint, job_id, request_id, session_name,
            state, provider, delivery_message_id, platform_message_id, provider_timestamp,
            canonical_message_id, claim_owner, claim_expires_at, sent_at, persisted_at,
-           trace_recorded_at, completed_at, last_error_phase, last_error_message,
+           trace_recorded_at, completed_at, suppression_reason, resend_prohibited, retain_identity, last_error_phase, last_error_message,
            last_error_at, created_at, updated_at
          )
          SELECT
@@ -3837,6 +3844,9 @@ function migrateChannelOutboundReceiptSchema(
            ${nullable("persisted_at")},
            ${nullable("trace_recorded_at")},
            ${nullable("completed_at")},
+           ${nullable("suppression_reason")},
+           ${coalesce(["resend_prohibited"], "0")},
+           ${coalesce(["retain_identity"], "0")},
            ${nullable("last_error_phase")},
            ${nullable("last_error_message")},
            ${nullable("last_error_at")},

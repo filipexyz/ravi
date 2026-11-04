@@ -24,6 +24,7 @@ import {
   type ChannelOutboundReceiptStore,
 } from "./outbound-receipts.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
+import { getChannelOutboundPublishJob, saveChannelOutboundPublishJob } from "./outbound-publish-outbox.js";
 import { upsertGuardedSession } from "../knowledge/egress/guard.js";
 import { closeKnowledgeDb, getKnowledgeDbPath } from "../knowledge/store/db.js";
 import { existsSync } from "node:fs";
@@ -531,6 +532,54 @@ describe("channel outbound consumer", () => {
     afterEach(async () => {
       await cleanupIsolatedRaviState(stateDir);
       stateDir = null;
+    });
+
+    it("resumes terminal suppression after telemetry failure without sending or reopening the outbox", async () => {
+      const job = makeJob();
+      const fingerprint = channelOutboundRequestFingerprint(job);
+      saveChannelOutboundPublishJob(job, 100);
+      sqliteChannelOutboundReceiptStore.claim({
+        idempotencyKey: job.request.idempotencyKey,
+        requestFingerprint: fingerprint,
+        owner: "policy-runner",
+        jobId: job.jobId,
+        requestId: job.request.requestId,
+        sessionName: job.request.origin.sessionName,
+        provider: "slack",
+        now: 100,
+      });
+      sqliteChannelOutboundReceiptStore.markSuppressed({
+        idempotencyKey: job.request.idempotencyKey,
+        requestFingerprint: fingerprint,
+        owner: "policy-runner",
+        reason: "slack_bot_reply_cooldown",
+        suppressedAt: 110,
+      });
+      const delivery = makeDelivery();
+      const first = await processChannelOutboundJob(job, {
+        deliveries: [delivery],
+        emitEvent: async () => {
+          throw new Error("telemetry disconnected");
+        },
+      });
+      expect(first).toMatchObject({ disposition: "nak", phase: "telemetry_emit" });
+      const emitEvent = mock(async () => {});
+      const retried = await processChannelOutboundJob(job, { deliveries: [delivery], emitEvent, now: () => 900_000 });
+      expect(retried).toMatchObject({ disposition: "ack", status: "dropped", retryable: false });
+      expect(delivery.deliverText).not.toHaveBeenCalled();
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)).toMatchObject({
+        state: "suppressed",
+        completedAt: 110,
+      });
+      expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toMatchObject({ status: "suppressed" });
+      expect(emitEvent).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          status: "dropped",
+          policyDisposition: "suppressed",
+          reason: "slack_bot_reply_cooldown",
+        }),
+      );
     });
 
     it("delivers once from a fresh ledger and exposes canonical provider identity in telemetry", async () => {

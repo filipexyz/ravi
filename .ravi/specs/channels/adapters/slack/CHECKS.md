@@ -48,3 +48,16 @@
 - [ ] New writes MUST use the canonical instance reference and stay duplicate-free across retries.
 - [ ] An explicit alias owner collision MUST fail closed even when a chat participant was cached from an earlier non-conflicting resolution; the participant fast path MUST NOT mask a later slug/UUID conflict.
 - [ ] A resolved Slack actor MUST keep the same owner, non-zero agent-identity authority, and allowed representative capability across consecutive turns and turn-context rotations.
+- [ ] Ten independent unmentioned bot notices, including a burst beyond the output allowance, MUST all reach normal processing and produce durable effects.
+- [ ] A real two-peer loop fed by mocked Slack delivery into opposite Socket Mode intake MUST drain under the fast bound. Restart/time advance MUST NOT replay suppression; a new accepted input after recovery MUST work without a human.
+- [ ] A slow-loop control MUST remain explicit evidence that the policy does not prove universal termination.
+- [ ] Multiple commentary events MUST NOT consume the complete final's permit. Long output requiring more than four posts and multiple attachments MUST preserve its existing complete delivery behavior.
+- [ ] Concurrent workers MUST share the last terminal allowance and retry the same manifest without another debit. Changed content, parts or outcome MUST fail frozen identity checks.
+- [ ] Account aliases, shared sessions, root/thread/channel_root destinations and unknown human actors MUST retain correct scope/provenance. Changing attach MUST NOT redirect a bot terminal or its media.
+- [ ] Final, safe-error, cancellation, pre-complete media, transport retry and explicit-send boundaries MUST be covered separately; no test may substitute prompt counts for actual output feedback.
+- [ ] Different publication/output wrappers for the same canonical terminal part MUST converge on one receipt/provider token across concurrent workers, retries, restart and pruning. Original publication identities MUST remain auditable.
+- [ ] Distinct equal-content parts and a new turn repeating the same text MUST remain independently deliverable. Changed bytes at the same path/reference or changed content/destination for an existing part MUST conflict explicitly.
+- [ ] Text and media MUST preserve their frozen thread/root destination across restart and reply-mode changes in either direction. External/nested flags, copied hashes and public requests MUST NOT assert internal manifest trust or bypass installation/authority.
+- [ ] Media retry with persisted success MUST work after local-file cleanup; fresh upload MUST pass the exact verified bytes to the provider. Acceptance before receipt persistence MUST be reported as ambiguous, not exactly-once success.
+- [ ] A missing attachment at freeze MUST fail that member explicitly while preserving full text and other available files. Restart/file reappearance MUST NOT revive the failed member.
+- [ ] A notification/text sink failure after a valid final freeze MUST NOT silently discard its media. An interruption accepted by existing recovery MUST NOT add a cancelled-manifest tombstone; real terminal cancellation MUST still close the manifest.

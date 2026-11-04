@@ -18,6 +18,7 @@ import {
   type SlackNativeRuntime,
   type SlackSocketModeStatus,
 } from "./socket-mode.js";
+import { createChannelBackendAutomaticOutputOrigin } from "./automatic-output-origin.js";
 
 export interface SlackNativeChannelDriverOptions {
   readonly createRuntime?: (
@@ -110,6 +111,7 @@ export function createSlackNativeChannelDriver(
                 text: renderSlackBackendOutput(envelope),
                 format: "markdown",
                 responsePhase: envelope.kind === "assistant_message" ? "final_answer" : "safe_error",
+                automatic: createChannelBackendAutomaticOutputOrigin(envelope.binding),
                 ...(canonicalMessageId ? { canonicalMessageId } : {}),
                 ...(options.now ? { now: options.now() } : {}),
               }),
@@ -146,6 +148,7 @@ export function createSlackNativeChannelDriver(
                 text: renderSlackContent(event.payload.content),
                 format: "markdown",
                 responsePhase: "commentary",
+                automatic: createChannelBackendAutomaticOutputOrigin(event.correlation.binding),
                 ...(options.now ? { now: options.now() } : {}),
               }),
             );

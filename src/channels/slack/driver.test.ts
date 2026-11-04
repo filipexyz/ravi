@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ChannelOutputSink } from "../backend.js";
 import type { ChannelOutboundJob } from "../outbound-stream.js";
+import type { ChannelRuntimeEventSink } from "../runtime-events.js";
 import {
   createSlackNativeChannelDriver,
   renderSlackBackendOutput,
@@ -124,6 +125,7 @@ describe("createSlackNativeChannelDriver", () => {
     );
 
     let outputSink: ChannelOutputSink | undefined;
+    let runtimeEventSink: ChannelRuntimeEventSink | undefined;
     await driver.createRuntime({
       channel: {
         name: "slack-a",
@@ -135,7 +137,10 @@ describe("createSlackNativeChannelDriver", () => {
           outputSink = sink;
           return mock(() => {});
         }),
-        registerRuntimeEventSink: mock(() => mock(() => {})),
+        registerRuntimeEventSink: mock((_target, sink: ChannelRuntimeEventSink) => {
+          runtimeEventSink = sink;
+          return mock(() => {});
+        }),
       } as never,
     });
 
@@ -165,6 +170,37 @@ describe("createSlackNativeChannelDriver", () => {
       type: "text",
       text: "**Ready.** See [runbook](https://example.com/runbook).",
       format: "markdown",
+    });
+    expect(published[0]?.request.origin.automatic).toEqual({ kind: "channel_backend", binding });
+    expect(published[0]?.request.origin.automatic?.binding).not.toBe(binding);
+
+    await runtimeEventSink!.emit(
+      {
+        eventId: "commentary-a",
+        kind: "turn.assistant_message",
+        correlation: { binding },
+        payload: { phase: "commentary", content: [{ type: "text", text: "Working" }] },
+      } as never,
+      { channelKind: "slack", connectionId: "slack-a", conversationId: "C123~1713000000.000100" },
+    );
+    expect(published[1]?.request.origin).toMatchObject({
+      responsePhase: "commentary",
+      automatic: { kind: "channel_backend", binding },
+    });
+    await outputSink!.emit({
+      protocol: "ravi.channel.backend",
+      schemaVersion: 1,
+      outputId: "safe-error-a",
+      correlationId: "correlation-a",
+      binding,
+      target: { channelKind: "slack", connectionId: "slack-a", conversationId: "C123~1713000000.000100" },
+      kind: "safe_error",
+      error: { code: "INTERNAL", category: "internal", retryable: false },
+      emittedAt: "2026-09-22T12:00:00.000Z",
+    });
+    expect(published[2]?.request.origin).toMatchObject({
+      responsePhase: "safe_error",
+      automatic: { kind: "channel_backend", binding },
     });
   });
 });

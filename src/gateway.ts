@@ -34,7 +34,7 @@ import { extractKnowledgeMarkers, handleKnowledgeMarkers } from "./knowledge/mar
 import { KNOWLEDGE_CURATOR_CHANNEL } from "./knowledge/types.js";
 import { isEmptyOrExactSilentText, isExactSilentTokenText, isSilentTokenText, SILENT_TOKEN } from "./silent-token.js";
 import { unlink } from "node:fs/promises";
-import { nats } from "./nats.js";
+import { nats, flushNats as flushNatsConnection } from "./nats.js";
 import type { ResponseContentPart, ResponseMediaAttachment, ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
@@ -70,6 +70,7 @@ import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
+import { deliverSlackAutomaticMedia } from "./channels/slack/automatic-media-output.js";
 import { sendSlackPrivateCards, sendSlackText } from "./channels/slack/text-send.js";
 import { SessionResponseQueue } from "./gateway-response-order.js";
 
@@ -1219,14 +1220,35 @@ export class Gateway {
       return;
     }
 
+    // Native bot manifests fingerprint the host's exact descriptors. Keep
+    // optional fields (for example voiceNote:false) across normalization.
+    const originalMediaParts =
+      response._automaticOutputOrigin && Array.isArray(response.content)
+        ? response.content.flatMap((part) =>
+            part?.type === "media" && normalizeResponseMediaAttachment(part.media) ? [part.media] : [],
+          )
+        : [];
+    let mediaIndex = 0;
+    const automaticMediaCleanup: ResponseMediaAttachment[] = [];
     for (let index = 0; index < deliverableParts.length; index++) {
       const part = deliverableParts[index]!;
       if (part.type === "media") {
+        const ordinal = mediaIndex++;
+        const originalMedia = originalMediaParts[ordinal] ?? part.media;
         const media =
           guarded && part.media.caption
             ? { ...part.media, caption: guardTextForGuardedSession(part.media.caption, guarded).text }
             : part.media;
-        await this.deliverResponseMediaPart(sessionName, response, target, media, index);
+        const cleanup = await this.deliverResponseMediaPart(
+          sessionName,
+          response,
+          target,
+          media,
+          index,
+          originalMedia,
+          ordinal,
+        );
+        if (cleanup) automaticMediaCleanup.push(cleanup);
       } else {
         await this.deliverResponseTextPart(
           sessionName,
@@ -1237,6 +1259,17 @@ export class Gateway {
           deliverableParts.length,
           guarded,
         );
+      }
+    }
+    // A complete manifest may contain distinct parts referencing the same
+    // local file. Keep bytes until every part is settled; retryable/unknown
+    // bundles retain their files, while confirmed receipts never upload again.
+    if (automaticMediaCleanup.length === mediaIndex) {
+      const paths = new Set<string>();
+      for (const media of automaticMediaCleanup) {
+        if (paths.has(media.filePath)) continue;
+        paths.add(media.filePath);
+        await this.cleanupResponseMediaFile(media);
       }
     }
   }
@@ -1306,7 +1339,15 @@ export class Gateway {
       }
       try {
         const published = await publishChannelOutboundJobDurably(built.job);
-        if (published.ok) {
+        if (published.ok && published.disposition === "suppressed") {
+          await emitDelivery({
+            status: "dropped",
+            reason: published.record.suppressionReason ?? "outbound_policy",
+            policyDisposition: "suppressed",
+            jobId: built.job.jobId,
+            target,
+          });
+        } else if (published.ok) {
           await emitDelivery({
             status: "queued",
             reason: "native_channel_outbound",
@@ -1412,7 +1453,9 @@ export class Gateway {
     target: NonNullable<ResponseMessage["target"]>,
     media: ResponseMediaAttachment,
     partIndex: number,
-  ): Promise<void> {
+    originalMedia: ResponseMediaAttachment = media,
+    mediaIndex = 0,
+  ): Promise<ResponseMediaAttachment | undefined> {
     const emitDelivery = (data: Record<string, unknown>) =>
       this.emitDeliveryEvent(sessionName, response, {
         ...data,
@@ -1420,11 +1463,43 @@ export class Gateway {
         mediaType: media.type,
         filename: media.filename,
         mimeType: media.mimeType,
-        idempotencyKey: media.idempotencyKey,
+        idempotencyKey: data.idempotencyKey ?? media.idempotencyKey,
         partIndex,
       });
     const channel = target.channel.toLowerCase();
     const t0 = Date.now();
+
+    if (response._automaticOutputOrigin || response._automaticTerminalResponseId) {
+      const automatic = await deliverSlackAutomaticMedia(
+        { sessionName, response, target, media: { ...originalMedia, ...media }, originalMedia, mediaIndex },
+        {
+          send: ({ target: authorizedTarget, media: authorizedMedia, fileBytes }) =>
+            sendSlackMedia({
+              accountId: authorizedTarget.accountId,
+              chatId: authorizedTarget.chatId,
+              threadId: authorizedTarget.threadId,
+              filePath: authorizedMedia.filePath,
+              fileBytes,
+              filename: authorizedMedia.filename,
+              caption: authorizedMedia.caption,
+            }),
+          emitDelivery: (data) => emitDelivery({ ...data, durationMs: Date.now() - t0 }),
+          flushTelemetry: flushNatsConnection,
+        },
+      );
+      if (automatic.handled) {
+        if (automatic.status === "delivered") {
+          if (automatic.newlySent) {
+            this.recordOutboundContactInteraction(sessionName, target);
+            this.schedulePostDeliveryPresenceRenewal(sessionName, target);
+          }
+          return media;
+        } else if (automatic.status === "suppressed") {
+          return media;
+        }
+        return;
+      }
+    }
 
     if (this.wasResponseMediaDelivered(sessionName, media.idempotencyKey, target)) {
       log.info("Skipping already delivered response media", {

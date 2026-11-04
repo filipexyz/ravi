@@ -265,3 +265,102 @@ The default working reaction is `hourglass_flowing_sand`.
 The adapter MUST remove the working reaction when the runtime turn reaches a terminal presence event.
 
 Slack typing indicators are not available through Socket Mode or the Web API bot token path. Real Slack typing MAY be added later only as an explicit optional capability backed by an RTM-compatible token/session. If RTM returns `not_allowed_token_type`, the adapter MUST degrade to reaction-based working presence rather than pretending to type.
+
+## Automatic Replies Triggered by Bots
+
+Every eligible foreign bot input MUST continue normal intake and runtime
+processing. Output containment MUST NOT introduce a generation quota,
+record-only handling, `_skipTurn`, mention/alias requirement or human reset.
+It MUST NOT grant tool authority to an unknown bot.
+
+For native-backend turns whose durable canonical ingress has
+`rawProvenance.senderKind=bot`, optional commentary MUST be suppressed as a
+terminal delivery decision without consuming the terminal allowance. Human
+inputs, including actors with unknown identity but `senderKind=user`, MUST
+keep their normal streaming and automatic media behavior.
+
+The admission unit is one complete immutable terminal response (final OR
+safe-error) for a trusted originating turn and its authorized destination,
+including all associated rendered parts and automatic media. A durable
+manifest MUST freeze the source, destination, outcome and part fingerprints
+before any part is released. All parts MUST share one atomic durable admission
+decision. An additional part or changed terminal outcome MUST NOT reuse that
+decision. Retries MUST NOT charge the same response again. The existing
+renderer and content limits MUST be preserved; there is no new post, file or
+byte cap. Optional progress MUST NOT deprive the full final of its allowance.
+
+Canonical part identity MUST derive from the frozen terminal and part position,
+not a transient output/publication wrapper or content hash alone. Equivalent
+wrappers MUST share the durable send receipt and provider token while retaining
+their separate publication identities for audit. Identical content in distinct
+parts or a new turn MUST remain distinct. Changed content, destination or bytes
+under the same identity MUST fail closed. Media fingerprints MUST cover the
+actual file bytes; a fresh upload MUST use the same verified bytes, without
+reopening a mutable path after verification. Observed success with a persisted
+receipt MUST resume bookkeeping without requiring the original local file.
+The manifest is an immutable admission and membership boundary, not a remote
+all-or-nothing transaction: a later part failing file verification or delivery
+cannot roll back earlier successful Slack posts. Hashing adds work proportional
+to attachment size; it MUST NOT introduce a new size cap.
+An attachment unavailable at freeze MUST remain an explicit failed member of
+that immutable manifest. It MUST NOT prevent projection of the complete text
+or delivery of other available members, and appearing later at the same path
+MUST NOT reactivate it. No provider success or policy suppression may be
+fabricated for that local file failure.
+
+The default policy admits four terminal responses within a rolling five-minute
+window for the canonical local installation/account and actual Slack channel.
+The next candidate opens a fixed five-minute cooldown. All threads and
+sessions in that channel share the state; mentions, sender aliases and new
+threads do not reset it. Other accounts/channels have independent state.
+These are product defaults, not Slack limits: four permits preserve a small
+burst of independent acknowledgements while containing a fast automated
+exchange. Suppression can also affect legitimate automatic acknowledgements
+in a busy channel; their inputs and processing MUST still continue.
+
+Suppression MUST be terminal and auditable under `channels/delivery`. New
+suppressed candidates MUST NOT prolong the deadline. After expiry, only a
+response to an input accepted locally after the recovery deadline may obtain
+a new permit. Passing time, reconnecting or restarting MUST NOT release old
+suppressed output. Existing admitted bundles retain their decision while
+completing remaining delivery phases; they do not obtain a fresh allowance.
+No Slack notification of suppression or recovery is emitted automatically.
+
+Provenance MUST be validated against the durable backend binding and exact
+canonical input, using local `acceptedAt`, not provider timestamps, actor
+authority, text similarity or the session's mutable latest source. Automatic
+bot media MUST use the same frozen authorized projection destination as the
+terminal, including root/thread policy; changing session attach mid-turn
+MUST NOT redirect it. Native bot media is deferred until that logical terminal;
+human media and explicit tool sends retain their existing paths. Safe-error
+and cancellation discard still-deferred attachments rather than releasing
+partial work as a later successful terminal.
+Only logical terminal cancellation may freeze a cancelled manifest; a physical
+interruption accepted by the existing recovery path MUST NOT add a premature
+cancelled-manifest tombstone. This does not change the runtime's recovery state
+machine. Failure in a notification/text sink MUST NOT silently discard media
+whose final manifest already froze successfully; their delivery outcomes remain
+independent. The separate text outbox and core media path do not guarantee
+physical text-before-media delivery order.
+
+The adapter MAY skip reapplying reply-mode policy only for an internal delivery
+request derived from a validated manifest and durable origin. An external flag,
+copied response hash or nested payload MUST NOT grant that treatment or any
+authority. Freezing root/thread projection does not bypass installation or
+authorization checks. Deferred media is held in the running logical turn until
+the manifest freezes; recovery of attachments lost before that point is not
+guaranteed. The compact manifest retains identities and hashes, not file bytes.
+Automatic media still travels on the existing core NATS response path, without
+a durable media publication outbox or automatic replay into the gateway. A
+post-freeze event lost before gateway handling is therefore not guaranteed to
+recover either. Restart receipt tests re-present the same payload to prove
+safe phase resumption; they MUST NOT imply autonomous recovery of pending media.
+Text retains its durable outbound publication/workqueue path.
+
+This bounds admitted logical responses, NOT physical Slack posts, uploads,
+bytes, provider retries or their delivery time. Multipart replies remain
+complete. A slow bot exchange below the threshold can continue indefinitely;
+the policy is volume mitigation, not proof of causal-loop termination.
+Separately authorized explicit send tools remain outside this automatic
+projection and MUST retain their own authority checks. The circuit MUST NOT
+be described as universal protection against tool-driven or slow feedback.

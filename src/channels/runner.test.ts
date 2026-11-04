@@ -161,6 +161,7 @@ describe("channel runner native delivery registry", () => {
       if (publishAttempt !== 1) return undefined;
       return {
         ok: false,
+        disposition: "deferred",
         record: {
           idempotencyKey: job.request.idempotencyKey,
           requestFingerprint: "test-fingerprint",

@@ -74,6 +74,48 @@ afterEach(async () => {
 });
 
 describe("channel runtime event projection", () => {
+  it("freezes the exact terminal envelope before releasing an output sink", async () => {
+    const metadata = await acceptedMetadata();
+    const order: string[] = [];
+    let frozen: ChannelOutputEnvelope | undefined;
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        expect(output).toEqual(frozen!);
+        order.push("delivery");
+      },
+    });
+    await projectChannelRuntimeEvent({
+      metadata,
+      event: { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } },
+      responseText: "Complete terminal\nwith every line",
+      sinks: runtimeSinks(metadata, []),
+      beforeTerminalOutput: async (output) => {
+        frozen = output;
+        expect(output.kind).toBe("assistant_message");
+        order.push("freeze");
+      },
+    });
+    expect(order).toEqual(["freeze", "delivery"]);
+  });
+
+  it("does not release a terminal when its manifest cannot be frozen", async () => {
+    const metadata = await acceptedMetadata();
+    const send = mock(async () => {});
+    unregisterOutput = channelOutputSinks.register(metadata.target, { emit: send });
+    await expect(
+      projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.failed", error: "provider unavailable" },
+        sinks: runtimeSinks(metadata, []),
+        beforeTerminalOutput: (output) => {
+          expect(output.kind).toBe("safe_error");
+          throw new Error("manifest persistence unavailable");
+        },
+      }),
+    ).rejects.toThrow("manifest persistence unavailable");
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("installs durable runtime state and interrupt outbox tables", () => {
     const tables = getDb()
       .prepare(

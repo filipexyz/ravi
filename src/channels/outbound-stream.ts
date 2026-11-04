@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { ensureConnected, getNats } from "../nats.js";
-import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
+import type { ChannelAutomaticOutputOrigin, MessageTarget, ResponseMessage } from "../runtime/message-types.js";
 import { isSilentTokenText } from "../silent-token.js";
 import { logger } from "../utils/logger.js";
 import type { ChannelChatActionContent } from "./chat-actions.js";
@@ -47,6 +47,8 @@ export interface ChannelOutboundRequest {
     runtimePid?: number;
     responsePhase?: string;
     canonicalMessageId?: string;
+    automatic?: ChannelAutomaticOutputOrigin;
+    automaticTerminalResponseId?: string;
   };
   content:
     | {
@@ -87,6 +89,8 @@ export interface ChannelTextOutboundJobInput {
   format?: "markdown";
   responsePhase?: string;
   canonicalMessageId?: string;
+  automatic?: ChannelAutomaticOutputOrigin;
+  automaticTerminalResponseId?: string;
   metadata?: ResponseMessage["metadata"];
   now?: number;
 }
@@ -312,6 +316,10 @@ export function buildChannelOutboundJobFromResponse(
           runtimePid:
             typeof (response as { _pid?: unknown })._pid === "number" ? (response as { _pid: number })._pid : undefined,
           responsePhase: response.metadata?.item?.phase,
+          ...(response._automaticOutputOrigin ? { automatic: structuredClone(response._automaticOutputOrigin) } : {}),
+          ...(response._automaticTerminalResponseId
+            ? { automaticTerminalResponseId: response._automaticTerminalResponseId }
+            : {}),
         },
         content: {
           type: "text",
@@ -358,6 +366,10 @@ export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput):
         emitId,
         ...(input.responsePhase ? { responsePhase: input.responsePhase } : {}),
         ...(canonicalMessageId ? { canonicalMessageId } : {}),
+        ...(input.automatic ? { automatic: structuredClone(input.automatic) } : {}),
+        ...(input.automaticTerminalResponseId
+          ? { automaticTerminalResponseId: input.automaticTerminalResponseId }
+          : {}),
       },
       content: {
         type: "text",

@@ -144,6 +144,12 @@ export interface ChannelBackendPromptMetadata {
   };
 }
 
+/** Host-owned reference to the durable input; never inferred from the reply target or latest session sender. */
+export interface ChannelAutomaticOutputOrigin {
+  readonly kind: "channel_backend";
+  readonly binding: Readonly<ChannelBackendPromptMetadata["binding"]>;
+}
+
 export type SessionRelayAction = "send" | "ask" | "answer" | "execute" | "inform";
 
 export interface RuntimeTurnOriginPrincipal {
@@ -347,6 +353,10 @@ export interface ResponseMessage {
   metadata?: RuntimeEventMetadata | null;
   /** Unique emit ID to detect ghost/duplicate responses */
   _emitId?: string;
+  /** Immutable native-turn provenance, independently carried when the output target is reconstructed. */
+  _automaticOutputOrigin?: ChannelAutomaticOutputOrigin;
+  /** Frozen complete native bot reply, shared by its terminal text and generated attachments. */
+  _automaticTerminalResponseId?: string;
   usage?: {
     input_tokens: number;
     output_tokens: number;

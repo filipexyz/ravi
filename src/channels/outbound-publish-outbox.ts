@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Database } from "bun:sqlite";
 import { getDb } from "../router/router-db.js";
 import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
@@ -14,16 +15,14 @@ export const CHANNEL_OUTBOUND_PUBLISH_RECONCILE_INTERVAL_MS = 30_000;
 export const CHANNEL_OUTBOUND_PUBLISH_RECONCILE_LIMIT = 25;
 export const CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS = CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS;
 
-export type ChannelOutboundPublishStatus = "pending" | "published";
+export type ChannelOutboundPublishStatus = "pending" | "published" | "suppressed";
 
-export interface ChannelOutboundPublishRecord {
+interface ChannelOutboundPublishMetadata {
   idempotencyKey: string;
   requestFingerprint: string;
   jobId: string;
   sessionName: string;
   channelId: string;
-  status: ChannelOutboundPublishStatus;
-  job: ChannelOutboundJob;
   attemptCount: number;
   nextAttemptAt: number;
   lastErrorMessage?: string;
@@ -33,6 +32,19 @@ export interface ChannelOutboundPublishRecord {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ChannelOutboundActivePublishRecord extends ChannelOutboundPublishMetadata {
+  status: "pending" | "published";
+  job: ChannelOutboundJob;
+}
+
+/** Permanent compact identity: suppression never requires retaining message content. */
+export interface ChannelOutboundSuppressedPublishRecord extends ChannelOutboundPublishMetadata {
+  status: "suppressed";
+  suppressionReason: string;
+}
+
+export type ChannelOutboundPublishRecord = ChannelOutboundActivePublishRecord | ChannelOutboundSuppressedPublishRecord;
 
 export interface ChannelOutboundPublishOutboxSummary {
   pendingCount: number;
@@ -59,9 +71,24 @@ interface ChannelOutboundPublishRow {
   last_error_at: number | null;
   published_at: number | null;
   superseded_by: string | null;
+  suppression_reason: string | null;
   created_at: number;
   updated_at: number;
 }
+
+type ChannelOutboundSuppressionRow = Pick<
+  ChannelOutboundPublishRow,
+  | "idempotency_key"
+  | "request_fingerprint"
+  | "job_id"
+  | "session_name"
+  | "channel_id"
+  | "attempt_count"
+  | "published_at"
+  | "suppression_reason"
+  | "created_at"
+  | "updated_at"
+>;
 
 /**
  * Delivery destination of a provider-unavailable notice. Coalescing must never
@@ -81,12 +108,20 @@ export type ChannelOutboundPublisher = (job: ChannelOutboundJob) => Promise<void
 export type ChannelOutboundPublishResult =
   | {
       ok: true;
-      record: ChannelOutboundPublishRecord;
+      disposition: "published";
+      record: ChannelOutboundActivePublishRecord;
       publishedNow: boolean;
     }
   | {
+      ok: true;
+      disposition: "suppressed";
+      record: ChannelOutboundSuppressedPublishRecord;
+      publishedNow: false;
+    }
+  | {
       ok: false;
-      record: ChannelOutboundPublishRecord;
+      disposition: "deferred";
+      record: ChannelOutboundActivePublishRecord;
       error: unknown;
       nextAttemptAt: number;
     };
@@ -96,6 +131,7 @@ export interface ChannelOutboundPublishOutboxStore {
   get(idempotencyKey: string): ChannelOutboundPublishRecord | null;
   listDue(options?: { now?: number; limit?: number }): ChannelOutboundPublishRecord[];
   markPublished(idempotencyKey: string, publishedAt?: number): ChannelOutboundPublishRecord;
+  markSuppressed(idempotencyKey: string, reason: string, suppressedAt?: number): ChannelOutboundPublishRecord;
   recordFailure(idempotencyKey: string, error: unknown, failedAt?: number): ChannelOutboundPublishRecord;
   supersede(idempotencyKey: string, supersededBy: string, supersededAt?: number): ChannelOutboundPublishRecord;
   listPendingNoticeCandidates(scope: ChannelOutboundNoticeScope, limit?: number): ChannelOutboundPublishRecord[];
@@ -108,6 +144,7 @@ export const sqliteChannelOutboundPublishOutboxStore: ChannelOutboundPublishOutb
   get: getChannelOutboundPublishJob,
   listDue: listDueChannelOutboundPublishJobs,
   markPublished: markChannelOutboundPublishJobPublished,
+  markSuppressed: markChannelOutboundPublishJobSuppressed,
   recordFailure: recordChannelOutboundPublishJobFailure,
   supersede: markChannelOutboundPublishJobSuperseded,
   listPendingNoticeCandidates: listPendingNoticeCandidates,
@@ -122,37 +159,49 @@ export function saveChannelOutboundPublishJob(job: ChannelOutboundJob, now = Dat
   const requestFingerprint = channelOutboundPublishRequestFingerprint(job);
   const database = getDb();
 
-  return database.transaction(() => {
-    database
-      .prepare(
-        `INSERT OR IGNORE INTO channel_outbound_publish_jobs (
+  return database
+    .transaction(() => {
+      const suppressed = selectChannelOutboundSuppression(key);
+      if (suppressed) {
+        if (suppressed.request_fingerprint !== requestFingerprint) {
+          throw new Error(`Channel outbound publish job conflict for idempotency key: ${key}`);
+        }
+        return rowToSuppressedPublishRecord(suppressed);
+      }
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO channel_outbound_publish_jobs (
            idempotency_key, request_fingerprint, job_id, session_name, channel_id,
            status, payload_json, attempt_count, next_attempt_at, last_error_message,
            last_error_at, published_at, created_at, updated_at
          ) VALUES (?, ?, ?, ?, ?, 'pending', ?, 0, 0, NULL, NULL, NULL, ?, ?)`,
-      )
-      .run(
-        key,
-        requestFingerprint,
-        requireText(job.jobId, "jobId"),
-        requireText(job.request.origin.sessionName, "sessionName"),
-        requireText(job.request.channelId, "channelId"),
-        payloadJson,
-        now,
-        now,
-      );
+        )
+        .run(
+          key,
+          requestFingerprint,
+          requireText(job.jobId, "jobId"),
+          requireText(job.request.origin.sessionName, "sessionName"),
+          requireText(job.request.channelId, "channelId"),
+          payloadJson,
+          now,
+          now,
+        );
 
-    const record = requireChannelOutboundPublishJob(key);
-    if (record.requestFingerprint !== requestFingerprint) {
-      throw new Error(`Channel outbound publish job conflict for idempotency key: ${key}`);
-    }
-    return record;
-  })();
+      const record = requireChannelOutboundPublishJob(key);
+      if (record.requestFingerprint !== requestFingerprint) {
+        throw new Error(`Channel outbound publish job conflict for idempotency key: ${key}`);
+      }
+      return record;
+    })
+    .immediate();
 }
 
 export function getChannelOutboundPublishJob(idempotencyKey: string): ChannelOutboundPublishRecord | null {
   ensureChannelOutboundPublishOutboxSchema();
-  const row = selectChannelOutboundPublishRow(requireText(idempotencyKey, "idempotencyKey"));
+  const key = requireText(idempotencyKey, "idempotencyKey");
+  const suppressed = selectChannelOutboundSuppression(key);
+  if (suppressed) return rowToSuppressedPublishRecord(suppressed);
+  const row = selectChannelOutboundPublishRow(key);
   return row ? rowToPublishRecord(row) : null;
 }
 
@@ -185,7 +234,7 @@ export function markChannelOutboundPublishJobPublished(
   ensureChannelOutboundPublishOutboxSchema();
   const key = requireText(idempotencyKey, "idempotencyKey");
   const now = finiteNumber(publishedAt) ?? Date.now();
-  const result = getDb()
+  getDb()
     .prepare(
       `UPDATE channel_outbound_publish_jobs
           SET status = 'published',
@@ -193,11 +242,38 @@ export function markChannelOutboundPublishJobPublished(
               last_error_message = NULL,
               last_error_at = NULL,
               updated_at = ?
-        WHERE idempotency_key = ?`,
+        WHERE idempotency_key = ? AND status != 'suppressed'`,
     )
     .run(now, now, key);
-  if (result.changes === 0) throw new Error(`Channel outbound publish job not found: ${key}`);
   return requireChannelOutboundPublishJob(key);
+}
+
+/** Policy suppression is a terminal disposition, never a successful publication. */
+export function markChannelOutboundPublishJobSuppressed(
+  idempotencyKey: string,
+  reason: string,
+  suppressedAt = Date.now(),
+): ChannelOutboundPublishRecord {
+  ensureChannelOutboundPublishOutboxSchema();
+  const key = requireText(idempotencyKey, "idempotencyKey");
+  const normalizedReason = requireText(reason, "reason");
+  const at = finiteNumber(suppressedAt) ?? Date.now();
+  const database = getDb();
+  return database
+    .transaction(() => {
+      const existing = requireChannelOutboundPublishJob(key);
+      if (existing.status === "suppressed") return existing;
+      database
+        .prepare(
+          `UPDATE channel_outbound_publish_jobs
+         SET status = 'suppressed', suppression_reason = ?, next_attempt_at = 0, updated_at = ?
+         WHERE idempotency_key = ? AND status != 'suppressed'`,
+        )
+        .run(normalizedReason, at, key);
+      database.prepare(`${COPY_SUPPRESSION_TOMBSTONES_SQL} AND idempotency_key = ?`).run(key);
+      return requireChannelOutboundPublishJob(key);
+    })
+    .immediate();
 }
 
 export function recordChannelOutboundPublishJobFailure(
@@ -208,7 +284,7 @@ export function recordChannelOutboundPublishJobFailure(
   ensureChannelOutboundPublishOutboxSchema();
   const key = requireText(idempotencyKey, "idempotencyKey");
   const existing = requireChannelOutboundPublishJob(key);
-  if (existing.status === "published") return existing;
+  if (existing.status !== "pending") return existing;
   const now = finiteNumber(failedAt) ?? Date.now();
   const attemptCount = existing.attemptCount + 1;
   const nextAttemptAt = now + channelOutboundPublishRetryDelayMs(attemptCount);
@@ -348,11 +424,14 @@ export function prunePublishedChannelOutboundPublishJobs(cutoff: number, now = D
   return getDb()
     .prepare(
       `DELETE FROM channel_outbound_publish_jobs
-       WHERE status = 'published'
-         AND published_at IS NOT NULL
-         AND published_at <= ?`,
+       WHERE (status = 'published' AND published_at IS NOT NULL AND published_at <= ?)
+          OR (status = 'suppressed' AND updated_at <= ? AND EXISTS (
+            SELECT 1 FROM channel_outbound_publish_suppressions AS suppression
+            WHERE suppression.idempotency_key = channel_outbound_publish_jobs.idempotency_key
+              AND suppression.request_fingerprint = channel_outbound_publish_jobs.request_fingerprint
+          ))`,
     )
-    .run(normalizedCutoff).changes;
+    .run(normalizedCutoff, normalizedCutoff).changes;
 }
 
 export async function publishChannelOutboundJobDurably(
@@ -366,18 +445,28 @@ export async function publishChannelOutboundJobDurably(
   const store = options.store ?? sqliteChannelOutboundPublishOutboxStore;
   const now = options.now ?? Date.now;
   const saved = store.save(job, now());
+  if (saved.status === "suppressed") {
+    return { ok: true, disposition: "suppressed", record: saved, publishedNow: false };
+  }
   if (saved.status === "published") {
-    return { ok: true, record: saved, publishedNow: false };
+    return { ok: true, disposition: "published", record: saved, publishedNow: false };
   }
 
   try {
     await (options.publisher ?? publishChannelOutboundJob)(saved.job);
     const published = store.markPublished(saved.idempotencyKey, now());
-    return { ok: true, record: published, publishedNow: true };
+    if (published.status === "suppressed") {
+      return { ok: true, disposition: "suppressed", record: published, publishedNow: false };
+    }
+    return { ok: true, disposition: "published", record: published, publishedNow: true };
   } catch (error) {
     const failed = store.recordFailure(saved.idempotencyKey, error, now());
+    if (failed.status === "suppressed") {
+      return { ok: true, disposition: "suppressed", record: failed, publishedNow: false };
+    }
     return {
       ok: false,
+      disposition: "deferred",
       record: failed,
       error,
       nextAttemptAt: failed.nextAttemptAt,
@@ -407,8 +496,9 @@ export async function reconcileDueChannelOutboundPublishes(
   // only ever applies to the mapped provider-transport notice text, never to
   // arbitrary chat messages.
   const keepByCoalesceKey = new Map<string, { idempotencyKey: string; scope: ChannelOutboundNoticeScope }>();
-  const candidates: ChannelOutboundPublishRecord[] = [];
+  const candidates: ChannelOutboundActivePublishRecord[] = [];
   for (const record of due) {
+    if (record.status !== "pending") continue;
     const scope = coalescibleProviderUnavailableScope(record.job);
     if (scope === null) {
       candidates.push(record);
@@ -435,6 +525,7 @@ export async function reconcileDueChannelOutboundPublishes(
   // only the due batch is ever delivered.
   for (const kept of keepByCoalesceKey.values()) {
     for (const backlogRecord of store.listPendingNoticeCandidates(kept.scope)) {
+      if (backlogRecord.status !== "pending") continue;
       if (backlogRecord.idempotencyKey === kept.idempotencyKey) continue;
       const backlogScope = coalescibleProviderUnavailableScope(backlogRecord.job);
       if (backlogScope === null || noticeScopeKey(backlogScope) !== noticeScopeKey(kept.scope)) continue;
@@ -449,8 +540,12 @@ export async function reconcileDueChannelOutboundPublishes(
 
   for (const record of candidates) {
     try {
+      // A consumer may have terminally suppressed a previously published copy
+      // while this reconciler held an older pending snapshot.
+      if (store.get(record.idempotencyKey)?.status === "suppressed") continue;
       await (options.publisher ?? publishChannelOutboundJob)(record.job);
       const updated = store.markPublished(record.idempotencyKey, now());
+      if (updated.status === "suppressed") continue;
       published++;
       await emitQueuedDelivery(updated.job, options.emitEvent ?? nats.emit, "native_channel_outbound_reconciled").catch(
         (error) => {
@@ -461,8 +556,9 @@ export async function reconcileDueChannelOutboundPublishes(
         },
       );
     } catch (error) {
-      failed++;
       const updated = store.recordFailure(record.idempotencyKey, error, now());
+      if (updated.status === "suppressed") continue;
+      failed++;
       log.warn("Deferred channel outbound publish; will retry", {
         jobId: updated.jobId,
         attemptCount: updated.attemptCount,
@@ -533,43 +629,87 @@ export function channelOutboundPublishRetryDelayMs(attemptCount: number): number
   return Math.min(CHANNEL_OUTBOUND_PUBLISH_RETRY_BASE_MS * 2 ** exponent, CHANNEL_OUTBOUND_PUBLISH_RETRY_MAX_MS);
 }
 
-function ensureChannelOutboundPublishOutboxSchema(): void {
-  getDb().exec(`
-    CREATE TABLE IF NOT EXISTS channel_outbound_publish_jobs (
-      idempotency_key      TEXT PRIMARY KEY,
-      request_fingerprint  TEXT NOT NULL,
-      job_id               TEXT NOT NULL,
-      session_name         TEXT NOT NULL,
-      channel_id           TEXT NOT NULL,
-      status               TEXT NOT NULL CHECK(status IN ('pending','published')),
-      payload_json         TEXT NOT NULL,
-      attempt_count        INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at      INTEGER NOT NULL DEFAULT 0,
-      last_error_message   TEXT,
-      last_error_at        INTEGER,
-      published_at         INTEGER,
-      superseded_by        TEXT,
-      created_at           INTEGER NOT NULL,
-      updated_at           INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_channel_outbound_publish_jobs_status_next
-      ON channel_outbound_publish_jobs(status, next_attempt_at, created_at);
-    CREATE INDEX IF NOT EXISTS idx_channel_outbound_publish_jobs_published_retention
-      ON channel_outbound_publish_jobs(status, published_at);
-    CREATE INDEX IF NOT EXISTS idx_channel_outbound_publish_jobs_error
-      ON channel_outbound_publish_jobs(last_error_at);
-  `);
-  ensureChannelOutboundPublishSupersedeColumn();
-}
+const initializedPublishDatabases = new WeakSet<Database>();
+const COPY_SUPPRESSION_TOMBSTONES_SQL = `
+  INSERT OR IGNORE INTO channel_outbound_publish_suppressions
+    (idempotency_key, request_fingerprint, job_id, session_name, channel_id,
+     attempt_count, published_at, suppression_reason, created_at, updated_at)
+  SELECT idempotency_key, request_fingerprint, job_id, session_name, channel_id,
+         attempt_count, published_at, COALESCE(suppression_reason, 'outbound_policy'), created_at, updated_at
+  FROM channel_outbound_publish_jobs WHERE status = 'suppressed'`;
 
-function ensureChannelOutboundPublishSupersedeColumn(): void {
-  const columns = new Set(
-    (getDb().prepare("PRAGMA table_info(channel_outbound_publish_jobs)").all() as Array<{ name: string }>).map(
-      (column) => column.name,
-    ),
-  );
-  if (!columns.has("superseded_by")) {
-    getDb().exec("ALTER TABLE channel_outbound_publish_jobs ADD COLUMN superseded_by TEXT");
+function ensureChannelOutboundPublishOutboxSchema(): void {
+  const database = getDb();
+  if (initializedPublishDatabases.has(database)) return;
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const current = database
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'channel_outbound_publish_jobs'")
+      .get() as { sql: string } | undefined;
+    const createTable = (table: "channel_outbound_publish_jobs" | "channel_outbound_publish_jobs_next") => {
+      database.exec(`CREATE TABLE IF NOT EXISTS ${table} (
+        idempotency_key TEXT PRIMARY KEY,
+        request_fingerprint TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        session_name TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','published','suppressed')),
+        payload_json TEXT NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL DEFAULT 0,
+        last_error_message TEXT,
+        last_error_at INTEGER,
+        published_at INTEGER,
+        superseded_by TEXT,
+        suppression_reason TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`);
+    };
+    if (!current) {
+      createTable("channel_outbound_publish_jobs");
+    } else if (!current.sql.includes("'suppressed'")) {
+      const columns = new Set(
+        (database.prepare("PRAGMA table_info(channel_outbound_publish_jobs)").all() as Array<{ name: string }>).map(
+          (row) => row.name,
+        ),
+      );
+      const common =
+        "idempotency_key, request_fingerprint, job_id, session_name, channel_id, status, payload_json, attempt_count, next_attempt_at, last_error_message, last_error_at, published_at, created_at, updated_at";
+      createTable("channel_outbound_publish_jobs_next");
+      database.exec(`INSERT INTO channel_outbound_publish_jobs_next (${common}, superseded_by)
+        SELECT ${common}, ${columns.has("superseded_by") ? "superseded_by" : "NULL"} FROM channel_outbound_publish_jobs`);
+      database.exec("DROP TABLE channel_outbound_publish_jobs");
+      database.exec("ALTER TABLE channel_outbound_publish_jobs_next RENAME TO channel_outbound_publish_jobs");
+    }
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS channel_outbound_publish_suppressions (
+        idempotency_key TEXT PRIMARY KEY,
+        request_fingerprint TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        session_name TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        attempt_count INTEGER NOT NULL,
+        published_at INTEGER,
+        suppression_reason TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_publish_jobs_status_next
+        ON channel_outbound_publish_jobs(status, next_attempt_at, created_at);
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_publish_jobs_published_retention
+        ON channel_outbound_publish_jobs(status, published_at);
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_publish_jobs_error
+        ON channel_outbound_publish_jobs(last_error_at);
+    `);
+    // Upgrade any already-suppressed rows before their content becomes eligible
+    // for retention cleanup. Tombstones intentionally have no age-based prune.
+    database.exec(COPY_SUPPRESSION_TOMBSTONES_SQL);
+    database.exec("COMMIT");
+    initializedPublishDatabases.add(database);
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
   }
 }
 
@@ -582,12 +722,15 @@ function selectChannelOutboundPublishRow(idempotencyKey: string): ChannelOutboun
 }
 
 function requireChannelOutboundPublishJob(idempotencyKey: string): ChannelOutboundPublishRecord {
+  const suppressed = selectChannelOutboundSuppression(idempotencyKey);
+  if (suppressed) return rowToSuppressedPublishRecord(suppressed);
   const row = selectChannelOutboundPublishRow(idempotencyKey);
   if (!row) throw new Error(`Channel outbound publish job not found: ${idempotencyKey}`);
   return rowToPublishRecord(row);
 }
 
 function rowToPublishRecord(row: ChannelOutboundPublishRow): ChannelOutboundPublishRecord {
+  if (row.status === "suppressed") return rowToSuppressedPublishRecord(row);
   const parsed = JSON.parse(row.payload_json) as ChannelOutboundJob;
   return {
     idempotencyKey: row.idempotency_key,
@@ -603,6 +746,31 @@ function rowToPublishRecord(row: ChannelOutboundPublishRow): ChannelOutboundPubl
     ...(row.last_error_at !== null ? { lastErrorAt: row.last_error_at } : {}),
     ...(row.published_at !== null ? { publishedAt: row.published_at } : {}),
     ...(row.superseded_by ? { supersededBy: row.superseded_by } : {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function selectChannelOutboundSuppression(idempotencyKey: string): ChannelOutboundSuppressionRow | null {
+  return (
+    (getDb()
+      .prepare("SELECT * FROM channel_outbound_publish_suppressions WHERE idempotency_key = ?")
+      .get(idempotencyKey) as ChannelOutboundSuppressionRow | null) ?? null
+  );
+}
+
+function rowToSuppressedPublishRecord(row: ChannelOutboundSuppressionRow): ChannelOutboundSuppressedPublishRecord {
+  return {
+    idempotencyKey: row.idempotency_key,
+    requestFingerprint: row.request_fingerprint,
+    jobId: row.job_id,
+    sessionName: row.session_name,
+    channelId: row.channel_id,
+    status: "suppressed",
+    attemptCount: row.attempt_count,
+    nextAttemptAt: 0,
+    ...(row.published_at !== null ? { publishedAt: row.published_at } : {}),
+    suppressionReason: row.suppression_reason ?? "outbound_policy",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

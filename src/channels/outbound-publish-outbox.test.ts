@@ -4,11 +4,15 @@ import {
   CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS,
   getChannelOutboundPublishJob,
   markChannelOutboundPublishJobPublished,
+  markChannelOutboundPublishJobSuppressed,
+  publishChannelOutboundJobDurably,
+  recordChannelOutboundPublishJobFailure,
   prunePublishedChannelOutboundPublishJobs,
   reconcileDueChannelOutboundPublishes,
   saveChannelOutboundPublishJob,
 } from "./outbound-publish-outbox.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
+import { closeRouterDb, getDb } from "../router/router-db.js";
 
 let stateDir: string | null = null;
 
@@ -22,6 +26,158 @@ afterEach(async () => {
 });
 
 describe("channel outbound publish outbox retention", () => {
+  it("upgrades an existing publication table without losing pending or published rows", () => {
+    const database = getDb();
+    database.exec(`CREATE TABLE channel_outbound_publish_jobs (
+      idempotency_key TEXT PRIMARY KEY, request_fingerprint TEXT NOT NULL,
+      job_id TEXT NOT NULL, session_name TEXT NOT NULL, channel_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','published')), payload_json TEXT NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
+      last_error_message TEXT, last_error_at INTEGER, published_at INTEGER,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    )`);
+    for (const status of ["pending", "published"] as const) {
+      database
+        .prepare(`INSERT INTO channel_outbound_publish_jobs
+        (idempotency_key,request_fingerprint,job_id,session_name,channel_id,status,payload_json,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`)
+        .run(
+          status,
+          "legacy-fingerprint",
+          status,
+          "session",
+          "slack",
+          status,
+          JSON.stringify(makeJob(status, status)),
+          100,
+          100,
+        );
+    }
+    expect(getChannelOutboundPublishJob("published")).toMatchObject({
+      status: "published",
+      requestFingerprint: "legacy-fingerprint",
+    });
+    expect(markChannelOutboundPublishJobSuppressed("pending", "policy", 200)).toMatchObject({
+      status: "suppressed",
+      suppressionReason: "policy",
+      createdAt: 100,
+    });
+    expect(getChannelOutboundPublishJob("pending")?.publishedAt).toBeUndefined();
+  });
+
+  it("keeps policy suppression terminal across publication retries and elapsed cooldown", async () => {
+    const key = "runtime:ravi-channels:suppressed:slack:T1:C123:root";
+    const job = makeJob(key, "suppressed");
+    saveChannelOutboundPublishJob(job, 100);
+    const closed = markChannelOutboundPublishJobSuppressed(key, "slack_bot_reply_cooldown", 200);
+    expect(closed).toMatchObject({ status: "suppressed", suppressionReason: "slack_bot_reply_cooldown" });
+    expect(closed.publishedAt).toBeUndefined();
+    expect(markChannelOutboundPublishJobPublished(key, 300)).toEqual(closed);
+    expect(recordChannelOutboundPublishJobFailure(key, new Error("late failure"), 400)).toEqual(closed);
+    const calls: ChannelOutboundJob[] = [];
+    const publisher = async (candidate: ChannelOutboundJob) => {
+      calls.push(candidate);
+    };
+    const retried = await publishChannelOutboundJobDurably(job, { publisher, now: () => 900_000 });
+    expect(retried).toMatchObject({
+      ok: true,
+      disposition: "suppressed",
+      publishedNow: false,
+      record: { status: "suppressed" },
+    });
+    expect(await reconcileDueChannelOutboundPublishes({ publisher, now: () => 900_000 })).toMatchObject({
+      attempted: 0,
+      published: 0,
+      failed: 0,
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("prunes suppressed payloads but keeps permanent tombstones through restart and explicit retry", async () => {
+    const key = "suppressed-forever";
+    const job = makeJob(key, key, { text: "content eligible for removal" });
+    saveChannelOutboundPublishJob(job, 100);
+    const suppressed = markChannelOutboundPublishJobSuppressed(key, "slack_bot_reply_cooldown", 101);
+    if (suppressed.status !== "suppressed") throw new Error("expected terminal suppression");
+    const now = 30 * 24 * 60 * 60 * 1_000;
+    expect(prunePublishedChannelOutboundPublishJobs(now - CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS, now)).toBe(1);
+    expect(
+      getDb().prepare("SELECT payload_json FROM channel_outbound_publish_jobs WHERE idempotency_key = ?").get(key),
+    ).toBeNull();
+    const columns = getDb().prepare("PRAGMA table_info(channel_outbound_publish_suppressions)").all() as Array<{
+      name: string;
+    }>;
+    expect(columns.map(({ name }) => name)).not.toContain("payload_json");
+    closeRouterDb();
+    expect(getChannelOutboundPublishJob(key)).toEqual(suppressed);
+    expect(getChannelOutboundPublishJob(key)).not.toHaveProperty("job");
+    const calls: ChannelOutboundJob[] = [];
+    const publisher = async (candidate: ChannelOutboundJob) => {
+      calls.push(candidate);
+    };
+    expect(await publishChannelOutboundJobDurably(job, { publisher, now: () => now })).toEqual({
+      ok: true,
+      disposition: "suppressed",
+      record: suppressed,
+      publishedNow: false,
+    });
+    expect(saveChannelOutboundPublishJob(job, now)).toEqual(suppressed);
+    expect(() => saveChannelOutboundPublishJob(makeJob(key, key, { text: "changed content" }), now)).toThrow(
+      "conflict",
+    );
+    expect(markChannelOutboundPublishJobPublished(key, now)).toEqual(suppressed);
+    expect(recordChannelOutboundPublishJobFailure(key, new Error("late failure"), now)).toEqual(suppressed);
+    expect(await reconcileDueChannelOutboundPublishes({ publisher, now: () => now })).toMatchObject({ attempted: 0 });
+    expect(calls).toHaveLength(0);
+    expect(
+      getDb().prepare("SELECT COUNT(*) AS count FROM channel_outbound_publish_jobs WHERE idempotency_key = ?").get(key),
+    ).toEqual({ count: 0 });
+  });
+
+  it("backfills compact tombstones from already-suppressed rows before pruning their payload", () => {
+    const key = "suppressed-before-tombstone-schema";
+    saveChannelOutboundPublishJob(makeJob(key, key), 100);
+    markChannelOutboundPublishJobSuppressed(key, "policy", 101);
+    // Reproduce the preceding schema: terminal rows exist, tombstones do not.
+    getDb().exec("DROP TABLE channel_outbound_publish_suppressions");
+    closeRouterDb();
+    expect(getChannelOutboundPublishJob(key)).toMatchObject({ status: "suppressed", suppressionReason: "policy" });
+    expect(prunePublishedChannelOutboundPublishJobs(200, 201)).toBe(1);
+    closeRouterDb();
+    expect(getChannelOutboundPublishJob(key)).toMatchObject({ status: "suppressed", suppressionReason: "policy" });
+  });
+
+  it("rolls back suppression if its permanent tombstone cannot be written", () => {
+    const key = "atomic-suppression";
+    saveChannelOutboundPublishJob(makeJob(key, key), 100);
+    getDb().exec(`CREATE TRIGGER reject_tombstone BEFORE INSERT ON channel_outbound_publish_suppressions
+      BEGIN SELECT RAISE(ABORT, 'injected tombstone failure'); END`);
+    expect(() => markChannelOutboundPublishJobSuppressed(key, "policy", 101)).toThrow("injected tombstone failure");
+    expect(getChannelOutboundPublishJob(key)?.status).toBe("pending");
+    getDb().exec("DROP TRIGGER reject_tombstone");
+    expect(markChannelOutboundPublishJobSuppressed(key, "policy", 102).status).toBe("suppressed");
+  });
+
+  it("returns terminal suppression when it races an in-flight publisher success or failure", async () => {
+    for (const fail of [false, true]) {
+      const key = `publisher-race-${fail}`;
+      const job = makeJob(key, key);
+      const result = await publishChannelOutboundJobDurably(job, {
+        now: () => 100,
+        publisher: async () => {
+          markChannelOutboundPublishJobSuppressed(key, "policy", 101);
+          if (fail) throw new Error("late transport failure");
+        },
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        disposition: "suppressed",
+        publishedNow: false,
+        record: { status: "suppressed" },
+      });
+    }
+  });
+
   it("removes expired published jobs while preserving old pending jobs", () => {
     const now = Date.UTC(2026, 6, 22);
     const expired = now - CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS - 1;

@@ -17,6 +17,18 @@ import { recordDeliveryTrace } from "../session-trace/channel-trace.js";
 import { type GuardedSession, guardedSessionForChat, guardTextForGuardedSession } from "../knowledge/egress/guard.js";
 import { logger } from "../utils/logger.js";
 import { markSlackThreadRootDelivered } from "./slack/thread-lifecycle-store.js";
+import { getChannelOutboundPublishJob, markChannelOutboundPublishJobSuppressed } from "./outbound-publish-outbox.js";
+import {
+  resolveSlackAutomaticOutputContext,
+  SlackAutomaticOutputOriginError,
+} from "./slack/automatic-output-origin.js";
+import { reserveSlackAutomaticOutput } from "./slack/automatic-output-circuit.js";
+import {
+  assertSlackAutomaticTerminalPart,
+  getSlackAutomaticTerminalManifest,
+  slackAutomaticTerminalResponseId,
+  type SlackAutomaticTerminalManifest,
+} from "./slack/automatic-terminal-manifest.js";
 import type {
   NativeChatActionDelivery,
   NativeChatActionDeliveryResult,
@@ -43,7 +55,7 @@ export const CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_BASE_MS = 30_000;
 export const CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_MAX_MS = 5 * 60_000;
 
 export type ChannelOutboundJobDisposition = "ack" | "nak";
-export type ChannelOutboundProcessingPhase = ChannelOutboundReceiptErrorPhase | "adapter_lookup" | "send";
+export type ChannelOutboundProcessingPhase = ChannelOutboundReceiptErrorPhase | "adapter_lookup" | "send" | "policy";
 
 export interface ChannelOutboundProcessingResult {
   disposition: ChannelOutboundJobDisposition;
@@ -87,6 +99,7 @@ export interface ChannelOutboundConsumerOptions {
   persistDeliveredChatAction?: PersistDeliveredChatAction;
   recordDeliveryTrace?: typeof recordDeliveryTrace;
   claimLeaseMs?: number;
+  now?: () => number;
   /** Knowledge guard row for `(target.channel, target.chatId)`; defaults to the read-only knowledge.db lookup. */
   knowledgeGuard?: (channel: string, chatId: string) => GuardedSession | null;
   /** Rewrites a guarded text; defaults to the live allow list and mirror. */
@@ -285,7 +298,13 @@ export async function processChannelOutboundJob(
   inputJob: ChannelOutboundJob,
   options: ChannelOutboundConsumerOptions,
 ): Promise<ChannelOutboundProcessingResult> {
-  const t0 = Date.now();
+  const t0 = (options.now ?? Date.now)();
+  let automatic: PreparedSlackAutomaticText;
+  try {
+    automatic = prepareSlackAutomaticText(inputJob);
+  } catch (error) {
+    return { disposition: "nak", status: "failed", retryable: true, phase: "policy", error: errorMessage(error) };
+  }
   // Last hop of the Knowledge egress guard. The receipt fingerprint stays on
   // the job as published, so a redelivery after the mirror changed is not a
   // fingerprint conflict.
@@ -315,7 +334,7 @@ export async function processChannelOutboundJob(
   }
 
   const adapter = findNativeOutboundAdapter(job, options);
-  if (options.persistDelivery === false) {
+  if (options.persistDelivery === false && !job.request.origin.automatic) {
     if (!adapter) return emitMissingAdapter(emitEvent, recordTrace, job, t0, deliveryAttempt);
     return processWithoutReceiptLedger(job, adapter, emitEvent, recordTrace, t0, deliveryAttempt);
   }
@@ -323,11 +342,35 @@ export async function processChannelOutboundJob(
   const receiptStore = options.receiptStore ?? sqliteChannelOutboundReceiptStore;
   const persistMessage = options.persistDeliveredMessage ?? persistDeliveredMessage;
   const persistChatAction = options.persistDeliveredChatAction ?? persistDeliveredChatAction;
-  const requestFingerprint = channelOutboundRequestFingerprint(inputJob);
+  const publicationRequestFingerprint = channelOutboundRequestFingerprint(inputJob);
+  const receiptKey = automatic.kind === "terminal" ? automatic.partId : job.request.idempotencyKey;
+  const requestFingerprint = automatic.kind === "terminal" ? automatic.partFingerprint : publicationRequestFingerprint;
   let receipt: ChannelOutboundReceipt | null;
 
   try {
-    receipt = receiptStore.get(job.request.idempotencyKey);
+    // A missing/invalid-manifest wrapper can have been suppressed before its
+    // canonical part existed. Its immutable terminal disposition wins forever.
+    if (receiptKey !== job.request.idempotencyKey) {
+      const publicationReceipt = receiptStore.get(job.request.idempotencyKey);
+      if (publicationReceipt) {
+        if (publicationReceipt.requestFingerprint !== publicationRequestFingerprint) {
+          return emitFingerprintConflict(emitEvent, recordTrace, job, publicationReceipt, t0);
+        }
+        if (publicationReceipt.state === "suppressed") {
+          return acknowledgeSuppressedReceipt(
+            job,
+            publicationReceipt,
+            emitEvent,
+            flushTelemetry,
+            recordTrace,
+            t0,
+            publicationRequestFingerprint,
+          );
+        }
+        if (publicationReceipt.state === "complete") return acknowledgeCompletedReceipt(publicationReceipt);
+      }
+    }
+    receipt = receiptStore.get(receiptKey);
   } catch (error) {
     const message = errorMessage(error);
     log.warn("Failed to read native outbound receipt; provider send deferred", {
@@ -351,6 +394,17 @@ export async function processChannelOutboundJob(
   if (receipt?.state === "complete") {
     return acknowledgeCompletedReceipt(receipt);
   }
+  if (receipt?.state === "suppressed") {
+    return acknowledgeSuppressedReceipt(
+      job,
+      receipt,
+      emitEvent,
+      flushTelemetry,
+      recordTrace,
+      t0,
+      publicationRequestFingerprint,
+    );
+  }
 
   let claimOwner: string | undefined;
   if (!receipt || receipt.state === "claimed") {
@@ -360,7 +414,7 @@ export async function processChannelOutboundJob(
       warnMissingAdapter(job.request.channelId, { jobId: job.jobId, deliveryAttempt, retryDelayMs: delayMs });
       try {
         receiptStore.recordError(
-          job.request.idempotencyKey,
+          receiptKey,
           "adapter_lookup",
           `No native delivery adapter registered for claimed channel: ${job.request.channelId}`,
         );
@@ -384,13 +438,15 @@ export async function processChannelOutboundJob(
     let claim;
     try {
       claim = receiptStore.claim({
-        idempotencyKey: job.request.idempotencyKey,
+        idempotencyKey: receiptKey,
         requestFingerprint,
         owner: claimOwner,
         jobId: job.jobId,
         requestId: job.request.requestId,
         sessionName,
         provider: adapter.channelId,
+        now: (options.now ?? Date.now)(),
+        ...(automatic.kind === "terminal" ? { retainIdentity: true } : {}),
         ...(options.claimLeaseMs !== undefined ? { leaseMs: options.claimLeaseMs } : {}),
       });
     } catch (error) {
@@ -427,6 +483,17 @@ export async function processChannelOutboundJob(
       if (receipt.state === "complete") {
         return acknowledgeCompletedReceipt(receipt);
       }
+      if (receipt.state === "suppressed") {
+        return acknowledgeSuppressedReceipt(
+          job,
+          receipt,
+          emitEvent,
+          flushTelemetry,
+          recordTrace,
+          t0,
+          publicationRequestFingerprint,
+        );
+      }
     }
   }
 
@@ -441,16 +508,40 @@ export async function processChannelOutboundJob(
       };
     }
 
+    try {
+      const reason = automaticSlackSuppressionReason(automatic, (options.now ?? Date.now)());
+      if (reason) {
+        receipt = receiptStore.markSuppressed({
+          idempotencyKey: receiptKey,
+          requestFingerprint,
+          owner: claimOwner,
+          reason,
+          suppressedAt: (options.now ?? Date.now)(),
+        });
+        return acknowledgeSuppressedReceipt(
+          job,
+          receipt,
+          emitEvent,
+          flushTelemetry,
+          recordTrace,
+          t0,
+          publicationRequestFingerprint,
+        );
+      }
+    } catch (error) {
+      return { disposition: "nak", status: "failed", retryable: true, phase: "policy", error: errorMessage(error) };
+    }
+
     let delivered: NativeOutboundDeliveryResult;
     try {
-      delivered = await executeNativeOutbound(job, adapter);
+      delivered = await executeNativeOutbound(job, adapter, automatic.kind === "terminal" ? automatic : undefined);
     } catch (error) {
       const message = errorMessage(error);
       const failure = classifyNativeOutboundFailure(job, message);
       logNativeOutboundSendFailure(job, failure, message);
       try {
         receiptStore.releaseClaim({
-          idempotencyKey: job.request.idempotencyKey,
+          idempotencyKey: receiptKey,
           requestFingerprint,
           owner: claimOwner,
           error: message,
@@ -470,7 +561,10 @@ export async function processChannelOutboundJob(
           ...(failure.reasonCode ? { unavailableReasonCode: failure.reasonCode } : {}),
           target,
           emitId,
-          idempotencyKey: job.request.idempotencyKey,
+          idempotencyKey: receiptKey,
+          ...(receiptKey !== job.request.idempotencyKey
+            ? { publicationIdempotencyKey: job.request.idempotencyKey }
+            : {}),
           ...outboundContentTelemetry(job),
           durationMs: Date.now() - t0,
         });
@@ -492,7 +586,7 @@ export async function processChannelOutboundJob(
     try {
       const sentAt = Date.now();
       receipt = receiptStore.recordSent({
-        idempotencyKey: job.request.idempotencyKey,
+        idempotencyKey: receiptKey,
         requestFingerprint,
         owner: claimOwner,
         provider: delivered.provider,
@@ -513,7 +607,7 @@ export async function processChannelOutboundJob(
         job.request.content.type === "text"
           ? persistMessage(job, delivered, job.request.content.text)
           : persistChatAction(job, delivered);
-      receipt = receiptStore.markPersisted(job.request.idempotencyKey, persisted);
+      receipt = receiptStore.markPersisted(receiptKey, persisted);
     } catch (error) {
       if (error instanceof CanonicalOutboundMessageContractError) {
         return finalizePermanentCanonicalPersistenceError({
@@ -535,7 +629,7 @@ export async function processChannelOutboundJob(
   if (receipt.traceRecordedAt === undefined) {
     try {
       recordTrace({ sessionName, delivery: payload, timestamp: payload.timestamp as number });
-      receipt = receiptStore.markTraceRecorded(job.request.idempotencyKey);
+      receipt = receiptStore.markTraceRecorded(receiptKey);
     } catch (error) {
       return postSendPhaseFailure(job, receipt, receiptStore, "trace_record", error);
     }
@@ -549,12 +643,132 @@ export async function processChannelOutboundJob(
   }
 
   try {
-    receiptStore.markComplete(job.request.idempotencyKey);
+    receiptStore.markComplete(receiptKey);
   } catch (error) {
     return postSendPhaseFailure(job, receipt, receiptStore, "receipt_complete", error);
   }
 
   return { disposition: "ack", status: "delivered", retryable: false };
+}
+
+type PreparedSlackAutomaticText =
+  | { kind: "unrelated" }
+  | { kind: "suppressed"; reason: string }
+  | { kind: "terminal"; manifest: SlackAutomaticTerminalManifest; partId: string; partFingerprint: string };
+
+function prepareSlackAutomaticText(job: ChannelOutboundJob): PreparedSlackAutomaticText {
+  const suppressed = (reason: string): PreparedSlackAutomaticText => ({ kind: "suppressed", reason });
+  let context;
+  try {
+    context = resolveSlackAutomaticOutputContext(job);
+  } catch (error) {
+    if (error instanceof SlackAutomaticOutputOriginError) return suppressed("slack_bot_reply_origin_invalid");
+    throw error;
+  }
+  if (!context || job.request.content.type !== "text") return { kind: "unrelated" };
+  if (
+    job.request.origin.sessionName !== job.request.origin.automatic?.binding.sessionId ||
+    (job.request.target.canonicalChatId !== undefined &&
+      job.request.target.canonicalChatId !== context.target.canonicalChatId)
+  )
+    return suppressed("slack_bot_reply_origin_invalid");
+  if (job.request.origin.responsePhase === "commentary") return suppressed("slack_bot_reply_commentary");
+  const responseId = slackAutomaticTerminalResponseId(context.turnId, context.target);
+  if (job.request.origin.automaticTerminalResponseId && job.request.origin.automaticTerminalResponseId !== responseId) {
+    return suppressed("slack_bot_reply_identity_conflict");
+  }
+  const manifest = getSlackAutomaticTerminalManifest(responseId);
+  if (!manifest) return suppressed("slack_bot_reply_manifest_missing");
+  if (manifest.kind === "cancelled") return suppressed("slack_bot_reply_cancelled");
+  if (
+    manifest.scope !== context.scope ||
+    manifest.sourceId !== context.sourceId ||
+    manifest.sourceReceivedAt !== context.sourceReceivedAt ||
+    manifest.turnId !== context.turnId ||
+    manifest.kind !== job.request.origin.responsePhase ||
+    manifest.target.canonicalChatId !== context.target.canonicalChatId
+  )
+    return suppressed("slack_bot_reply_identity_conflict");
+  let partId: string;
+  try {
+    partId = assertSlackAutomaticTerminalPart(manifest, { type: "text", text: job.request.content.text });
+  } catch {
+    return suppressed("slack_bot_reply_identity_conflict");
+  }
+  // Wrapper emit IDs are correlation only. Every representation of this exact
+  // text part shares the provider token, send lease and durable receipt.
+  const partFingerprint = createHash("sha256")
+    .update(JSON.stringify([manifest.requestFingerprint, partId]))
+    .digest("hex");
+  return { kind: "terminal", manifest, partId, partFingerprint };
+}
+
+function automaticSlackSuppressionReason(automatic: PreparedSlackAutomaticText, now: number): string | null {
+  if (automatic.kind === "unrelated") return null;
+  if (automatic.kind === "suppressed") return automatic.reason;
+  const manifest = automatic.manifest;
+  const decision = reserveSlackAutomaticOutput({
+    idempotencyKey: manifest.responseId,
+    requestFingerprint: manifest.requestFingerprint,
+    scope: manifest.scope,
+    sourceId: manifest.sourceId,
+    sourceReceivedAt: manifest.sourceReceivedAt,
+    now,
+  });
+  return decision.status === "suppressed" ? (decision.reason ?? "slack_bot_reply_cooldown") : null;
+}
+
+async function acknowledgeSuppressedReceipt(
+  job: ChannelOutboundJob,
+  receipt: ChannelOutboundReceipt,
+  emitEvent: typeof nats.emit,
+  flushTelemetry: typeof flushNatsConnection,
+  recordTrace: typeof recordDeliveryTrace,
+  startedAt: number,
+  publicationRequestFingerprint: string,
+): Promise<ChannelOutboundProcessingResult> {
+  try {
+    // Publication and platform delivery are separate. A published workqueue
+    // item can later end in policy suppression; it must never be retried as
+    // pending output after the circuit recovers.
+    const publication = getChannelOutboundPublishJob(job.request.idempotencyKey);
+    if (publication && publication.status !== "suppressed") {
+      if (channelOutboundRequestFingerprint(publication.job) !== publicationRequestFingerprint) {
+        throw new Error("Suppressed output conflicts with its publication fingerprint");
+      }
+      markChannelOutboundPublishJobSuppressed(
+        job.request.idempotencyKey,
+        receipt.suppressionReason ?? "outbound_policy",
+        receipt.completedAt,
+      );
+    }
+    await emitDelivery(emitEvent, recordTrace, job, {
+      status: "dropped",
+      reason: receipt.suppressionReason ?? "outbound_policy",
+      policyDisposition: "suppressed",
+      retryable: false,
+      target: job.request.target,
+      emitId: job.request.origin.emitId,
+      idempotencyKey: receipt.idempotencyKey,
+      ...(receipt.idempotencyKey !== job.request.idempotencyKey
+        ? { publicationIdempotencyKey: job.request.idempotencyKey }
+        : {}),
+      ...outboundContentTelemetry(job),
+      durationMs: Math.max(0, Date.now() - startedAt),
+    });
+    await flushTelemetry();
+    return { disposition: "ack", status: "dropped", retryable: false };
+  } catch (error) {
+    // The durable terminal receipt prevents a send even when telemetry needs
+    // another attempt after a crash or connection failure.
+    return {
+      disposition: "nak",
+      status: "failed",
+      retryable: true,
+      phase: "telemetry_emit",
+      error: errorMessage(error),
+    };
+  }
 }
 
 async function processWithoutReceiptLedger(
@@ -637,12 +851,13 @@ function findNativeOutboundAdapter(
 async function executeNativeOutbound(
   job: ChannelOutboundJob,
   adapter: NativeOutboundDelivery,
+  automatic?: Extract<PreparedSlackAutomaticText, { kind: "terminal" }>,
 ): Promise<NativeOutboundDeliveryResult> {
   const baseRequest = {
     sessionName: job.request.origin.sessionName,
     emitId: job.request.origin.emitId,
-    idempotencyKey: job.request.idempotencyKey,
-    target: job.request.target,
+    idempotencyKey: automatic?.partId ?? job.request.idempotencyKey,
+    target: automatic?.manifest.target ?? job.request.target,
   };
   if (job.request.content.type === "text") {
     if (!("deliverText" in adapter)) {
@@ -650,6 +865,7 @@ async function executeNativeOutbound(
     }
     return adapter.deliverText({
       ...baseRequest,
+      ...(automatic ? { _trustedFrozenTarget: true as const } : {}),
       text: job.request.content.text,
       ...(job.request.content.format ? { format: job.request.content.format } : {}),
     });
@@ -1106,6 +1322,9 @@ function deliveredPayload(
     providerTimestamp: receipt.providerTimestamp,
     responsePhase: job.request.origin.responsePhase,
     idempotencyKey: receipt.idempotencyKey,
+    ...(receipt.idempotencyKey !== job.request.idempotencyKey
+      ? { publicationIdempotencyKey: job.request.idempotencyKey }
+      : {}),
     target: job.request.target,
     deliveredAt: receipt.sentAt,
     durationMs: Date.now() - startedAt,
@@ -1140,7 +1359,7 @@ function postSendPhaseFailure(
   const retryable = !(phase === "canonical_persist" && error instanceof CanonicalOutboundMessageContractError);
   if (receipt) {
     try {
-      receiptStore.recordError(job.request.idempotencyKey, phase, message);
+      receiptStore.recordError(receipt.idempotencyKey, phase, message);
     } catch (recordError) {
       log.warn("Failed to record outbound receipt phase error", {
         jobId: job.jobId,
@@ -1181,7 +1400,7 @@ async function finalizePermanentCanonicalPersistenceError(input: {
   const { job, receipt, receiptStore, error, emitEvent, flushTelemetry, recordTrace, startedAt } = input;
   const message = errorMessage(error);
   try {
-    receiptStore.recordError(job.request.idempotencyKey, "canonical_persist", message);
+    receiptStore.recordError(receipt.idempotencyKey, "canonical_persist", message);
   } catch (recordError) {
     log.warn("Failed to record permanent canonical persistence error", {
       jobId: job.jobId,
@@ -1204,7 +1423,7 @@ async function finalizePermanentCanonicalPersistenceError(input: {
   }
 
   try {
-    receiptStore.markTerminalError(job.request.idempotencyKey, "canonical_persist", message);
+    receiptStore.markTerminalError(receipt.idempotencyKey, "canonical_persist", message);
   } catch (terminalError) {
     return retryPermanentCanonicalBookkeeping(job, "receipt_complete", terminalError);
   }
