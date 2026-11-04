@@ -1,6 +1,6 @@
 # Checks
 
-- Run `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/credential-destinations.test.ts`: dry-run writes nothing, explicit service identity wins over discovered root/personal settings, invalid inputs and duplicate IDs fail before the brake, safe projections omit the identity path, all administration routes remain CLI-only, helper export refuses overwrite.
+- Run `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/credential-destinations.test.ts`: dry-run writes nothing, explicit service identity wins over discovered root/personal settings, invalid inputs and duplicate IDs fail before the brake, safe projections omit the identity path, all administration routes remain CLI-only, helper export refuses overwrite. Verify bounded defaults, opaque cursor continuation without duplicate IDs, terminal/empty pages, invalid cursor/limit rejection and private identity-path redaction on every page.
 - Run `bun test --preload ./src/test/isolated-runtime-preload.ts src/credentials/remote/`: static config never executes directives; immutable registry rejects unsafe state; SSH pins the server and carries values only on the private stream; receiver tests use synthetic values and a temporary filesystem.
 - Run `bun test --preload ./src/test/isolated-runtime-preload.ts src/credentials/intake.test.ts src/channels/slack/credential-intake.test.ts src/cli/commands/credential-intake.test.ts`: modal destination binding and current actor authority fail closed, and stored/pending replays do not write again.
 - Verify a canary never reaches argv, environment, stdout, stderr, errors, audit, request metadata or model-visible receipts. It may appear only in the private input stream, receiver memory and intended env file.
@@ -12,3 +12,5 @@
 - Verify disconnect after commit, failed receipt delivery and request replay return the durable stored receipt or uncertain state, never blindly repeat the mutation.
 - Verify recovery after rename synchronizes the env directory before returning stored, and failed recovery synchronization retains uncertainty. Verify FIFO identity/registry paths fail promptly before spawning or blocking the event loop.
 - Before any live enablement, independently verify restricted SSH account/forced command, root-owned policy/helper/key authorization, private env/state and absence of agent read/admin/application-execution authority. Automated local tests do not establish this deployment condition.
+
+- Run the existing `src/cli/commands/pagination-coverage.test.ts` unchanged; destinations list MUST satisfy the shared contract without an exemption.

@@ -120,7 +120,7 @@ Known precommit conflicts MUST remain failures with no mutation; presence of a
 competitor's value MUST NOT be mistaken for this request's uncertain success.
 An actual postcommit failure or unprovable outcome MUST remain pending for
 trusted reconciliation. Registered remote writes use `credentials/remote-env`.
-`credentials request-status <target> <request-id>` MUST enforce the same issuing
+`credentials request-status <target> <requestId>` MUST enforce the same issuing
 agent, session and Slack source, plus current issuer/human target authorization.
 Its remote `not_found` result MUST be durably fenced against a late write before
 the local pending request is failed. This is a reconciliation operation, not a

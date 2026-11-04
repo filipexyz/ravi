@@ -15,11 +15,25 @@ import {
 } from "../../credentials/remote/destinations.js";
 import { REMOTE_CREDENTIAL_WRITER_PYTHON } from "../../credentials/remote/writer-source.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { buildCommand } from "../../utils/pagination.js";
 import { ContractError, contractDryRun, contractFail } from "../agent-contract.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { decodeListCursor, encodeListCursor, parseListLimit } from "../listing.js";
 
 const CONFIG_LIMIT_BYTES = 64 * 1024;
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+const DEFAULT_LIST_LIMIT = 30;
+const MAX_LIST_LIMIT = 500;
+const LIST_CURSOR_CONTEXT = "credentials.destinations:list:v1";
+const destinationListCursorSchema = z
+  .object({
+    sort: z.literal("id"),
+    order: z.literal("asc"),
+    value: z.literal(0),
+    id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/),
+    filters: z.literal(LIST_CURSOR_CONTEXT),
+  })
+  .strict();
 
 const publicDestinationSchema = z
   .object({
@@ -63,6 +77,39 @@ class DestinationCliInputError extends Error {
   ) {
     super(code);
   }
+}
+
+function destinationListLimit(value?: string): number {
+  const normalized = value?.trim();
+  // Validate before the shared helper's legacy fail() path, which may exit or echo raw input.
+  if (normalized && (!/^[1-9]\d{0,2}$/.test(normalized) || Number(normalized) > MAX_LIST_LIMIT)) {
+    throw new DestinationCliInputError("DESTINATION_LIST_LIMIT_INVALID");
+  }
+  return parseListLimit(normalized, { defaultValue: DEFAULT_LIST_LIMIT, maxValue: MAX_LIST_LIMIT });
+}
+
+function destinationListCursor(value?: string) {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  if (normalized.length > 512 || !/^[A-Za-z0-9_-]+$/.test(normalized)) {
+    throw new DestinationCliInputError("DESTINATION_LIST_CURSOR_INVALID");
+  }
+  let parsed: unknown;
+  try {
+    const bytes = Buffer.from(normalized, "base64url");
+    if (bytes.toString("base64url") !== normalized) {
+      throw new DestinationCliInputError("DESTINATION_LIST_CURSOR_INVALID");
+    }
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    // no-cause: Cursor parser failures can echo caller input; return only the fixed usage code.
+    throw new DestinationCliInputError("DESTINATION_LIST_CURSOR_INVALID");
+  }
+  if (!destinationListCursorSchema.safeParse(parsed).success) {
+    throw new DestinationCliInputError("DESTINATION_LIST_CURSOR_INVALID");
+  }
+  // The strict domain shape is checked before the shared decoder's legacy fail() path.
+  return decodeListCursor(normalized);
 }
 
 function checkLocalPath(path: string, includeLeaf: boolean): void {
@@ -299,23 +346,94 @@ export class CredentialDestinationsCommands {
     }
   }
 
-  @Command({ name: "list", description: "List registered destinations without SSH private-key coordinates" })
+  @Command({
+    name: "list",
+    description: "Page through registered destinations by ID without SSH private-key coordinates",
+  })
   @CommandAccess({ kind: "read", resource: "credentials.destinations", action: "list", risk: "low" })
   @CliOnly()
-  @Returns(z.object({ destinations: z.array(publicDestinationSchema) }).strict())
-  list(@Option({ flags: "--json", description: "Print safe destination metadata" }) asJson?: boolean) {
+  @Returns(
+    z
+      .object({
+        total: z.number().int().nonnegative(),
+        items: z.array(publicDestinationSchema),
+        page: z
+          .object({
+            limit: z.number().int().min(1).max(MAX_LIST_LIMIT),
+            count: z.number().int().nonnegative(),
+            hasMore: z.boolean(),
+            nextCursor: z.string().nullable(),
+            nextCommand: z.string().nullable(),
+            sort: z.literal("id"),
+            order: z.literal("asc"),
+          })
+          .strict(),
+        filters: z.object({}).strict(),
+      })
+      .strict(),
+  )
+  list(
+    @Option({ flags: "--json", description: "Print a safe destination page and continuation metadata" })
+    asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 30, max: 500)" }) limit?: string,
+    @Option({ flags: "--cursor <token>", description: "Opaque nextCursor from the previous ID-ordered page" })
+    cursor?: string,
+  ) {
     const op = "credentials destinations list";
     try {
-      const destinations = this.deps.list().map(publicDestination);
+      const pageLimit = destinationListLimit(limit);
+      const after = destinationListCursor(cursor)?.id;
+      const candidates = this.deps
+        .list()
+        .filter((destination) => after === undefined || destination.id > after)
+        .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+        .slice(0, pageLimit + 1);
+      const hasMore = candidates.length > pageLimit;
+      const items = candidates.slice(0, pageLimit).map(publicDestination);
+      const last = items.at(-1);
+      const nextCursor =
+        hasMore && last
+          ? encodeListCursor({ sort: "id", order: "asc", value: 0, id: last.id, filters: LIST_CURSOR_CONTEXT })
+          : null;
+      const nextCommand = nextCursor
+        ? buildCommand([
+            "ravi",
+            "credentials",
+            "destinations",
+            "list",
+            "--json",
+            "--limit",
+            pageLimit,
+            "--cursor",
+            nextCursor,
+          ])
+        : null;
+      const payload = {
+        total: items.length,
+        items,
+        page: {
+          limit: pageLimit,
+          count: items.length,
+          hasMore,
+          nextCursor,
+          nextCommand,
+          sort: "id" as const,
+          order: "asc" as const,
+        },
+        filters: {},
+      };
       return render(
-        { destinations },
+        payload,
         asJson,
-        destinations
-          .map(
+        [
+          `Credential destinations (${items.length} returned, limit ${pageLimit}, sort id asc)`,
+          ...items.map(
             (destination) =>
               `${destination.id}: ${destination.label} — ${destination.host}:${destination.port} ${destination.envPath}`,
-          )
-          .join("\n") || "No credential destinations registered.",
+          ),
+          ...(items.length ? [] : ["No destinations on this page."]),
+          ...(nextCommand ? [`Next page: ${nextCommand}`] : []),
+        ].join("\n"),
       );
     } catch (error) {
       return failDestination(op, error, asJson);

@@ -18,6 +18,8 @@ import {
 } from "../../credentials/remote/destinations.js";
 import { REMOTE_CREDENTIAL_WRITER_PYTHON } from "../../credentials/remote/writer-source.js";
 import { buildRouteTable } from "../../sdk/gateway/route-table.js";
+import { ContractError } from "../agent-contract.js";
+import { decodeListCursor, encodeListCursor } from "../listing.js";
 import { buildRegistry } from "../registry-snapshot.js";
 import {
   CredentialDestinationsCommands,
@@ -255,6 +257,156 @@ describe("credential destination administration", () => {
       requireConcreteResource: true,
       resourceId: "id",
     });
+  });
+});
+
+describe("credential destination list pagination", () => {
+  function destinations(count: number): Destination[] {
+    return Array.from({ length: count }, (_, index) => ({
+      ...record,
+      id: `destination-${String(index).padStart(3, "0")}`,
+      label: `Destination ${index}`,
+    }));
+  }
+
+  function usageError(run: () => unknown): ContractError {
+    let failure: unknown;
+    try {
+      run();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ exitCode: 2, op: "credentials destinations list" });
+    return failure as ContractError;
+  }
+
+  it("defaults to thirty ID-ordered items and exposes safe continuation metadata", () => {
+    const f = fixture();
+    const all = destinations(35);
+    f.deps.list = () => [...all].reverse();
+    const page = f.command.list(true);
+    expect(page.total).toBe(30);
+    expect(page.items.map((item) => item.id)).toEqual(all.slice(0, 30).map((item) => item.id));
+    expect(page.page).toMatchObject({ limit: 30, count: 30, hasMore: true, sort: "id", order: "asc" });
+    expect(page.filters).toEqual({});
+    expect(page.page.nextCommand).toContain("ravi credentials destinations list --json --limit 30 --cursor ");
+    expect(decodeListCursor(page.page.nextCursor ?? undefined)).toEqual({
+      sort: "id",
+      order: "asc",
+      value: 0,
+      id: all[29]!.id,
+      filters: "credentials.destinations:list:v1",
+    });
+    const serialized = JSON.stringify(page);
+    expect(serialized).not.toContain("identityFile");
+    expect(serialized).not.toContain(record.identityFile);
+    expect(serialized).not.toContain(hostBlob);
+    const command = buildRegistry([CredentialDestinationsCommands]).commands.find((item) => item.command === "list")!;
+    expect(command.returns!.parse(page)).toEqual(page);
+    expect(command.options.map((option) => option.name)).toContain("limit");
+    expect(command.options.map((option) => option.name)).toContain("cursor");
+    expect(command.cliOnly).toBe(true);
+  });
+
+  it("walks multiple pages without duplicates and ends without a continuation", () => {
+    const f = fixture();
+    const all = destinations(5);
+    f.deps.list = () => [all[3]!, all[0]!, all[4]!, all[2]!, all[1]!];
+    const first = f.command.list(true, "2");
+    const second = f.command.list(true, "2", first.page.nextCursor ?? undefined);
+    const third = f.command.list(true, "2", second.page.nextCursor ?? undefined);
+    expect([first.total, second.total, third.total]).toEqual([2, 2, 1]);
+    const ids = [...first.items, ...second.items, ...third.items].map((item) => item.id);
+    expect(ids).toEqual(all.map((item) => item.id));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(third.page).toMatchObject({ count: 1, hasMore: false, nextCursor: null, nextCommand: null });
+  });
+
+  it("continues by last ID when earlier rows are added or the cursor row disappears", () => {
+    const f = fixture();
+    const all = destinations(5);
+    f.deps.list = () => [...all];
+    const first = f.command.list(true, "2");
+    f.deps.list = () => [{ ...record, id: "aaa-added-before-cursor" }, all[4]!, all[0]!, all[3]!, all[2]!];
+    const second = f.command.list(true, "3", first.page.nextCursor ?? undefined);
+    expect(second.items.map((item) => item.id)).toEqual(all.slice(2).map((item) => item.id));
+    expect(second.page.hasMore).toBe(false);
+  });
+
+  it("supports the bounded maximum and reports an empty final page consistently", () => {
+    const f = fixture();
+    f.deps.list = () => destinations(501);
+    const page = f.command.list(true, "500");
+    expect(page.items).toHaveLength(500);
+    expect(page.page).toMatchObject({ limit: 500, count: 500, hasMore: true });
+    f.deps.list = () => [];
+    expect(f.command.list(true, "500", page.page.nextCursor ?? undefined)).toEqual({
+      total: 0,
+      items: [],
+      page: { limit: 500, count: 0, hasMore: false, nextCursor: null, nextCommand: null, sort: "id", order: "asc" },
+      filters: {},
+    });
+  });
+
+  it("rejects invalid limits before reading the registry without echoing input", () => {
+    const f = fixture();
+    let reads = 0;
+    f.deps.list = () => {
+      reads++;
+      return [record];
+    };
+    for (const limit of ["0", "-1", "1.5", "1x", "1e2", "501", "Infinity", "DO_NOT_ECHO_LIMIT_INPUT"]) {
+      const failure = usageError(() => f.command.list(true, limit));
+      expect(failure.code).toBe("DESTINATION_LIST_LIMIT_INVALID");
+      expect(JSON.stringify(failure.envelope())).not.toContain("DO_NOT_ECHO_LIMIT_INPUT");
+    }
+    expect(reads).toBe(0);
+  });
+
+  it("rejects malformed or foreign cursors before reading the registry without echoing private data", () => {
+    const f = fixture();
+    let reads = 0;
+    f.deps.list = () => {
+      reads++;
+      return [record];
+    };
+    const valid = {
+      sort: "id",
+      order: "asc" as const,
+      value: 0,
+      id: "api-prod",
+      filters: "credentials.destinations:list:v1",
+    };
+    const invalid = [
+      "not-a-json-cursor",
+      "!DO_NOT_ECHO_CURSOR_INPUT!",
+      "a".repeat(513),
+      encodeListCursor({ ...valid, sort: "updated" }),
+      encodeListCursor({ ...valid, order: "desc" }),
+      encodeListCursor({ ...valid, value: 1 }),
+      encodeListCursor({ ...valid, id: "API-PROD" }),
+      encodeListCursor({ ...valid, filters: "other-command" }),
+      encodeListCursor({ sort: "id", order: "asc", value: 0, id: "api-prod" }),
+      Buffer.from(JSON.stringify({ ...valid, identityFile: "DO_NOT_ECHO_CURSOR_INPUT" })).toString("base64url"),
+    ];
+    for (const cursor of invalid) {
+      const failure = usageError(() => f.command.list(true, "2", cursor));
+      expect(failure.code).toBe("DESTINATION_LIST_CURSOR_INVALID");
+      expect(JSON.stringify(failure.envelope())).not.toContain("DO_NOT_ECHO_CURSOR_INPUT");
+    }
+    expect(reads).toBe(0);
+  });
+
+  it("human output identifies the order, returned count and next command without private key metadata", () => {
+    const f = fixture();
+    f.deps.list = () => destinations(2);
+    const result = f.command.list(false, "1");
+    const rendered = output.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(rendered).toContain("1 returned, limit 1, sort id asc");
+    expect(rendered).toContain(`Next page: ${result.page.nextCommand}`);
+    expect(rendered).not.toContain(record.identityFile);
+    expect(rendered).not.toContain(hostBlob);
   });
 });
 

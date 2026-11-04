@@ -58,6 +58,10 @@ token key, preserving every unrelated byte. Rotation is a separate operation.
 - Listing and inspection MUST expose safe metadata, omitting the private key
   path. No command in this group accepts a secret value, stdin secret or generic
   remote command. Registration MUST NOT install permission grants.
+- `credentials destinations list` MUST follow the CLI listing contract: bounded
+  `--limit` (default 30, maximum 500), opaque `--cursor`, stable destination-ID
+  ordering and page metadata with a next cursor. Invalid cursors MUST fail as
+  usage errors; pagination MUST NOT expose private identity paths.
 
 ## SSH and receiver boundary
 
@@ -99,7 +103,7 @@ token key, preserving every unrelated byte. Rotation is a separate operation.
 - Request IDs MUST support bounded status and idempotent replay. Timeout after
   commit or crash ambiguity MUST produce stored/uncertain status, never an
   unconditional fresh write or an assertion that a known write failed.
-- `credentials request-status <target> <request-id>` MUST be classified as a
+- `credentials request-status <target> <requestId>` MUST be classified as a
   mutation: it reconciles intake state and may durably fence a missing/reserved
   receiver request. It MUST require the same agent, session, channel/thread and
   currently authorized human as the original request. `not_found` may become

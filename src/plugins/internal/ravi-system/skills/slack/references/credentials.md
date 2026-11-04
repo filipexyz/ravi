@@ -59,7 +59,7 @@ local para copiar por SCP, nem leia o arquivo remoto para preparar um merge.
 ```bash
 ravi credentials request remote:api-prod:PAYMENTS_API_TOKEN --user UEXAMPLE --reason "Configurar a integração de pagamento solicitada" --json
 ravi credentials request remote:api-prod:PAYMENTS_API_TOKEN --user UEXAMPLE --reason "Configurar a integração de pagamento solicitada" --json --execute
-ravi credentials request-status remote:api-prod:PAYMENTS_API_TOKEN <request-id> --json
+ravi credentials request-status remote:api-prod:PAYMENTS_API_TOKEN <requestId> --json
 ```
 
 O humano confere ambiente, host, arquivo e variável antes do campo secreto. O
@@ -72,7 +72,7 @@ de uma linha, até 8 KiB, sem espaços, aspas, interpolação ou quebras de linh
 `request-status` reconcilia estado e exige o agente, sessão, conversa e humano
 autorizado do pedido original. É uma mutação: pode bloquear duravelmente um
 pedido remoto ainda ausente/reservado para impedir uma gravação atrasada. Em
-timeout, use o mesmo request-id; `stored` é sucesso, `uncertain` exige
+timeout, use o mesmo requestId; `stored` é sucesso, `uncertain` exige
 reconciliação confiável. Não peça o segredo novamente nem tente outra gravação
 às cegas. Salvar não significa ativar: o aplicativo é recarregado pelo fluxo
 operacional normal.
@@ -81,7 +81,8 @@ A administração fica exclusivamente no CLI local:
 
 ```bash
 ravi credentials destinations discover --config /absolute/operator/ssh-config --json
-ravi credentials destinations list --json
+ravi credentials destinations list --json --limit 30
+ravi credentials destinations list --json --limit 30 --cursor <nextCursor>
 ravi credentials destinations show api-prod --json
 ravi credentials destinations export-helper --out /absolute/operator/ravi-credential-writer --json
 ravi credentials destinations register api-prod --ssh-alias api-host --config /absolute/operator/ssh-config --host-key "ssh-ed25519 <VERIFIED_SERVER_PUBLIC_KEY>" --identity-file /absolute/private/api-writer-key --user apiwriter --path /srv/api/.env --remote-target api --keys PAYMENTS_API_TOKEN --label "API produção" --json

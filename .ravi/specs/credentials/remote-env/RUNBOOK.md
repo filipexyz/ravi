@@ -24,10 +24,16 @@ When the operator approves this exact boundary, repeat with `--execute`.
 Registration is add-only and installs no credentials, grants or remote files.
 
 ```bash
-ravi credentials destinations list --json
+ravi credentials destinations list --json --limit 30
+ravi credentials destinations list --json --limit 30 --cursor <nextCursor>
 ravi credentials destinations show api-prod --json
 ravi credentials destinations export-helper --out /absolute/operator/ravi-credential-writer --json
 ```
+
+Listing returns `items`, the returned `total`, and `page` metadata. Use
+`page.nextCursor` for continuation; the default is 30, the maximum is 500, and
+ordering is by destination ID ascending. An empty or final page has no next
+cursor. Registration between pages does not duplicate already visited IDs.
 
 Helper export creates a new local executable file and refuses overwrite. It
 does not transfer or install the helper. The following provisioning is an
@@ -130,7 +136,7 @@ instead of silently dropping replay/recovery records.
 On timeout or lost acknowledgement, reconcile by the original request ID:
 
 ```bash
-ravi credentials request-status remote:api-prod:PAYMENTS_API_TOKEN <request-id> --json
+ravi credentials request-status remote:api-prod:PAYMENTS_API_TOKEN <requestId> --json
 ```
 
 This is an authorized mutation, not an unrestricted status lookup: it checks the
