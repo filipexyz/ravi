@@ -1,6 +1,13 @@
 import { describe, expect, it, mock } from "bun:test";
+import { ChannelOutputSinkRegistry as RuntimeSinkRegistry } from "../../../../src/channels/backend.js";
 import {
+  ChannelOutputHandoffError as RuntimeHandoffError,
+  createChannelOutputHandoffIdentity,
+} from "../../../../src/channels/output-handoff.js";
+import {
+  ChannelOutputHandoffError as SdkHandoffError,
   CHANNEL_BACKEND_SCHEMA_VERSION,
+  CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
   ChannelIngressRequestSchema,
   ChannelIngressResultSchema,
   ChannelOutputEnvelopeSchema,
@@ -9,6 +16,8 @@ import {
   type ChannelIngressRequest,
   type ChannelIngressResult,
   type ChannelOutputEnvelope,
+  type ChannelOutputEmissionContext,
+  type ChannelOutputHandoffConfirmation,
 } from "../channel-backend.js";
 
 const fixtureDirectory = new URL("./fixtures/channel-backend-core/", import.meta.url);
@@ -93,6 +102,109 @@ describe("channel backend core contract", () => {
     expect(emit).toHaveBeenCalledWith(output);
 
     unregister();
-    await expect(registry.emit(output)).rejects.toThrow("unavailable");
+    await expect(registry.emit(output)).rejects.toMatchObject({ evidence: {
+      disposition: "not_started", code: "SINK_UNAVAILABLE", operationFinished: true,
+    } });
+  });
+
+  it("refuses unknown restricted sinks and preserves context and unclassified completion in both entry points", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const generic = mock(async () => {});
+    const context = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      expectedRequestFingerprint: "a".repeat(64),
+    };
+    const unregister = registry.register(output.target, { emit: generic });
+    await expect(registry.emit(output, context)).rejects.toMatchObject({ evidence: {
+      disposition: "not_started", code: "UNSUPPORTED_CAPABILITY",
+    } });
+    await expect(registry.tryEmit(output, context)).rejects.toMatchObject({ evidence: {
+      disposition: "not_started", code: "UNSUPPORTED_CAPABILITY",
+    } });
+    expect(generic).not.toHaveBeenCalled();
+    unregister();
+    const contexts: Array<ChannelOutputEmissionContext | undefined> = [];
+    registry.register(output.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit(_output, restriction) { contexts.push(restriction); },
+    });
+    await expect(registry.emit(output, context)).resolves.toBeUndefined();
+    await expect(registry.tryEmit(output, context)).resolves.toBe(true);
+    expect(contexts).toEqual([context, context]);
+  });
+
+  it("validates runtime-produced identity and the pinned fingerprint with the independent SDK mirror", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const confirmation: ChannelOutputHandoffConfirmation = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1,
+      identity: createChannelOutputHandoffIdentity(output),
+      idempotencyKey: output.outputId,
+      requestFingerprint: "a".repeat(64),
+      durableSaveConfirmed: true,
+      disposition: "deferred",
+    };
+    registry.register(output.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit() { return confirmation; },
+    });
+    const context = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      expectedRequestFingerprint: confirmation.requestFingerprint,
+    };
+    await expect(registry.emit(output, context)).resolves.toEqual(confirmation);
+    await expect(registry.emit({ ...output, content: [{ type: "text", text: "changed" }] }, context))
+      .rejects.toMatchObject({ evidence: { disposition: "unknown", code: "INVALID_CONFIRMATION" } });
+    await expect(registry.emit(output, { ...context, expectedRequestFingerprint: "b".repeat(64) }))
+      .rejects.toMatchObject({ evidence: { disposition: "unknown", code: "INVALID_CONFIRMATION" } });
+  });
+
+  it("accepts cross-package typed evidence only from a known capable sink", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const evidence = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1 as const,
+      identity: createChannelOutputHandoffIdentity(output),
+      idempotencyKey: output.outputId,
+      requestFingerprint: "a".repeat(64),
+      disposition: "finished_pre_save_missing" as const,
+      operationFinished: true as const,
+      code: "SQLITE_BUSY" as const,
+    };
+    const emit = mock(async () => { throw new RuntimeHandoffError(evidence); });
+    const unregister = registry.register(output.target, { emit });
+    await expect(registry.emit(output)).rejects.toMatchObject({ evidence: {
+      disposition: "unknown", code: "UNCLASSIFIED",
+    } });
+    expect(emit).toHaveBeenCalledTimes(1);
+    unregister();
+    registry.register(output.target, { handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY, emit });
+    await expect(registry.emit(output)).rejects.toMatchObject({ evidence });
+  });
+  it("accepts SDK typed evidence only from a sink that declares the known capability", async () => {
+    const envelope = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new RuntimeSinkRegistry();
+    const evidence = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1 as const,
+      identity: createChannelOutputHandoffIdentity(envelope),
+      idempotencyKey: envelope.outputId,
+      requestFingerprint: "a".repeat(64),
+      disposition: "finished_pre_save_missing" as const,
+      operationFinished: true as const,
+      code: "SQLITE_BUSY" as const,
+    };
+    const emit = mock(async () => { throw new SdkHandoffError(evidence); });
+    const unregister = registry.register(envelope.target, { emit });
+    await expect(registry.emit(envelope)).rejects.toMatchObject({ evidence: {
+      disposition: "unknown", code: "UNCLASSIFIED",
+    } });
+    expect(emit).toHaveBeenCalledTimes(1);
+    unregister();
+    registry.register(envelope.target, { handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY, emit });
+    await expect(registry.emit(envelope)).rejects.toMatchObject({ evidence });
   });
 });

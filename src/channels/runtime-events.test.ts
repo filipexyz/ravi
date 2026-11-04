@@ -45,6 +45,12 @@ import {
   type ChannelInterruptRequest,
   type KnownChannelRuntimeEvent,
 } from "./runtime-events.js";
+import {
+  CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+  ChannelOutputHandoffError,
+  createChannelOutputHandoffIdentity,
+  type ChannelOutputEmissionContext,
+} from "./output-handoff.js";
 import { persistDeliveredMessage } from "./outbound-consumer.js";
 import { buildChannelTextOutboundJob } from "./outbound-stream.js";
 import {
@@ -84,6 +90,79 @@ afterEach(async () => {
 });
 
 describe("channel runtime event projection", () => {
+  it("recovers only a missing text handoff despite an independent notification failure", async () => {
+    const metadata = await acceptedMetadata("slack");
+    const outputCalls: Array<{ output: ChannelOutputEnvelope; context?: ChannelOutputEmissionContext }> = [];
+    const fingerprint = "a".repeat(64);
+    const notificationFailure = new Error("synthetic notification refusal");
+    let afterCommitCalls = 0;
+    let terminalNotifications = 0;
+    const sinks = new ChannelRuntimeEventSinkRegistry();
+    sinks.register(metadata.target, {
+      async emit(event) {
+        if (event.kind === "turn.terminal_output") {
+          terminalNotifications += 1;
+          throw notificationFailure;
+        }
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit(output, context) {
+        outputCalls.push({ output, context });
+        const identity = createChannelOutputHandoffIdentity(output);
+        if (outputCalls.length === 1) {
+          throw new ChannelOutputHandoffError({
+            capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+            schemaVersion: 1,
+            identity,
+            disposition: "finished_pre_save_missing",
+            operationFinished: true,
+            code: "SQLITE_BUSY",
+            idempotencyKey: output.outputId,
+            requestFingerprint: fingerprint,
+          });
+        }
+        return {
+          capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+          schemaVersion: 1,
+          identity,
+          idempotencyKey: output.outputId,
+          requestFingerprint: fingerprint,
+          durableSaveConfirmed: true,
+          disposition: "deferred",
+        };
+      },
+    });
+    await expect(
+      projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } },
+        responseText: "Complete terminal\nall lines retained",
+        occurredAt: Date.parse("2026-11-04T06:00:00.000Z"),
+        sinks,
+        terminalRecovery: { mayRecover: () => true },
+        afterRecordEvent: (state) => {
+          if (state === "completed") afterCommitCalls += 1;
+        },
+      }),
+    ).rejects.toBe(notificationFailure);
+    expect(afterCommitCalls).toBe(1);
+    expect(terminalNotifications).toBe(1);
+    expect(outputCalls).toHaveLength(2);
+    expect(outputCalls[1]!.output).toEqual(outputCalls[0]!.output);
+    expect(outputCalls[1]!.context).toEqual({
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      expectedRequestFingerprint: fingerprint,
+    });
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "completed",
+      lastSequence: 2,
+      lastDeltaSequence: 0,
+    });
+    expect(terminalDatabaseCounts(metadata).assistants).toBe(1);
+  });
+
   it("does not restart persistence when the committed callback throws", async () => {
     const metadata = await acceptedMetadata();
     const callbackError = new Error("synthetic post-commit callback failure");
@@ -1698,8 +1777,9 @@ function lastTerminalEvent(
   return event;
 }
 
-async function acceptedMetadata(): Promise<ChannelBackendPromptMetadata> {
-  const result = await acceptChannelIngress(ingressRequest());
+async function acceptedMetadata(channelKind = "custom"): Promise<ChannelBackendPromptMetadata> {
+  const request = ingressRequest();
+  const result = await acceptChannelIngress({ ...request, external: { ...request.external, channelKind } });
   if (!result.binding) throw new Error("fixture ingress was rejected");
   return {
     protocol: CHANNEL_BACKEND_PROTOCOL,
@@ -1708,7 +1788,7 @@ async function acceptedMetadata(): Promise<ChannelBackendPromptMetadata> {
     correlationId: "request-a",
     binding: result.binding,
     target: {
-      channelKind: "custom",
+      channelKind,
       connectionId: "connection-a",
       conversationId: "external-conversation-a",
     },

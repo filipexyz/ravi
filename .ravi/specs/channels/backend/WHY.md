@@ -21,10 +21,13 @@ transport retry and deduplication. Keeping provider API calls out of the
 runtime event loop prevents a transient provider failure from losing the only
 retryable copy of commentary.
 
-### Retain the accepted terminal during bounded persistence recovery
+
+### Separate terminal persistence from durable text acceptance
 
 A provider can finish once while a transient SQLite failure prevents logical
-projection. Replaying the provider duplicates effects. The host instead retains
-one accepted operation, checks the same owner and consistent preterminal state,
-and settles an exact ambiguous commit without repeating callbacks. This bounded
-process-local operation is not a durable queue and cannot survive process loss.
+projection, or while a text sink fails before placing work in the durable outbox.
+Retrying the provider duplicates effects; blindly retrying a sink can resend work
+already accepted. Inline bounded recovery therefore retains the accepted terminal
+and advances only a proven missing phase. Strict request pinning and a versioned
+known-adapter acknowledgement preserve that distinction across the runner boundary.
+The in-memory operation is not a durable queue and cannot survive process loss.

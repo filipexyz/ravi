@@ -200,3 +200,21 @@ The default provider-send lease is five minutes. An adapter MUST normally finish
 11. Provider send, durable receipt and canonical persistence MUST remain separately resumable phases; trace and telemetry remain explicitly at-least-once.
 12. The durable receipt MUST preserve the first successful provider response for an idempotency key.
 13. The publish outbox MAY coalesce pending duplicates of the same mapped provider-unavailable notice for the same delivery destination (channel, account, instance, chat and thread) and the same mapped text, keeping one copy and closing the rest as superseded. Duplicates waiting beyond the current reconciliation batch MUST also be closed, so a backlog larger than one batch cannot publish one extra copy per tick; reconciliation work per tick stays bounded to the due batch. Coalescing MUST be driven by that mapped failure class only and MUST NOT discard arbitrary chat text, even when it repeats verbatim.
+
+
+### Terminal handoff acceptance
+
+A publish-outbox save exception MUST be distinguished from publisher acceptance.
+An exact matching durable row or tombstone observed after a synchronous save
+failure settles handoff without a second publish. Missing state is retry evidence
+only after that concrete save has finished and returned a closed transient
+SQLite code; a timeout or unreadable row does not prove absence. Once save is
+positively known, publisher or subsequent bookkeeping failure MUST NOT turn the
+operation back into pre-save absence. Reconciliation remains responsible for
+pending publication, and suppression/coalescing MUST never reopen old keys.
+
+Job-level creation timestamps may differ across prepared attempts; the actual
+rendered request and its fingerprint MUST remain identical. Confirmation of
+save/publication does not prove platform delivery or exactly-once behavior.
+Text recovery MUST NOT gate independently committed media disposal or release,
+nor obtain media belonging to a successor.

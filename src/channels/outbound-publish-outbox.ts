@@ -6,6 +6,7 @@ import { logger } from "../utils/logger.js";
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import { type ChannelOutboundJob, publishChannelOutboundJob } from "./outbound-stream.js";
 import { isProviderUnavailableChatText } from "../runtime/public-failure.js";
+import { channelOutputHandoffTransientCode, type ChannelOutputHandoffTransientCode } from "./output-handoff.js";
 
 const log = logger.child("channels:outbound-publish-outbox");
 
@@ -105,6 +106,38 @@ export interface ChannelOutboundNoticeScope {
 
 export type ChannelOutboundPublisher = (job: ChannelOutboundJob) => Promise<void>;
 
+/**
+ * Internal prepared-job evidence. The driver adds its frozen output/binding
+ * identity before crossing a process boundary. No disposition grants authority
+ * to retry: only finished absence with a closed SQLite code is a candidate.
+ */
+export type ChannelOutboundPublishHandoffFailure = {
+  readonly idempotencyKey: string;
+  readonly requestFingerprint: string;
+  readonly operationFinished: true;
+} & (
+  | { readonly disposition: "finished_pre_save_missing"; readonly code: ChannelOutputHandoffTransientCode }
+  | { readonly disposition: "conflict"; readonly code: "REQUEST_FINGERPRINT_CONFLICT" }
+  | { readonly disposition: "unknown"; readonly code: "OUTBOX_SAVE_FAILED" | "OUTBOX_READBACK_FAILED" }
+);
+
+/** Immutable, sanitized failure of a completed synchronous publication save. */
+export class ChannelOutboundPublishHandoffError extends Error {
+  readonly evidence: ChannelOutboundPublishHandoffFailure;
+
+  constructor(evidence: ChannelOutboundPublishHandoffFailure) {
+    super(`Channel outbound publish ${evidence.disposition}: ${evidence.code}`);
+    this.name = "ChannelOutboundPublishHandoffError";
+    this.evidence = Object.freeze({ ...evidence });
+  }
+}
+
+/**
+ * Every returned result already confirms durable ownership, even when queue
+ * publication/bookkeeping failed. No result proves platform delivery. A saved
+ * record remains positive proof if a later readback is unavailable; that fallback
+ * sets bookkeepingUncertain instead of claiming the latest state was observed.
+ */
 export type ChannelOutboundPublishResult =
   | {
       ok: true;
@@ -124,9 +157,11 @@ export type ChannelOutboundPublishResult =
       record: ChannelOutboundActivePublishRecord;
       error: unknown;
       nextAttemptAt: number;
+      bookkeepingUncertain?: true;
     };
 
 export interface ChannelOutboundPublishOutboxStore {
+  /** Synchronous and finished on return/throw; implementations must not schedule a later save. */
   save(job: ChannelOutboundJob, now?: number): ChannelOutboundPublishRecord;
   get(idempotencyKey: string): ChannelOutboundPublishRecord | null;
   listDue(options?: { now?: number; limit?: number }): ChannelOutboundPublishRecord[];
@@ -170,7 +205,7 @@ export function saveChannelOutboundPublishJob(job: ChannelOutboundJob, now = Dat
       const suppressed = selectChannelOutboundSuppression(key);
       if (suppressed) {
         if (suppressed.request_fingerprint !== requestFingerprint) {
-          throw new Error(`Channel outbound publish job conflict for idempotency key: ${key}`);
+          throw outboundPublishConflict(key, requestFingerprint);
         }
         return rowToSuppressedPublishRecord(suppressed);
       }
@@ -195,7 +230,7 @@ export function saveChannelOutboundPublishJob(job: ChannelOutboundJob, now = Dat
 
       const record = requireChannelOutboundPublishJob(key);
       if (record.requestFingerprint !== requestFingerprint) {
-        throw new Error(`Channel outbound publish job conflict for idempotency key: ${key}`);
+        throw outboundPublishConflict(key, requestFingerprint);
       }
       return record;
     })
@@ -467,13 +502,17 @@ export function prunePublishedChannelOutboundPublishJobs(cutoff: number, now = D
 }
 
 /**
- * Saves before calling the publisher, then reports published, suppressed, or
- * deferred with the stored retry time. Existing terminal state skips publishing;
- * state is read back after the await and on failure so suppression cannot reopen.
- * A concurrent suppression may yield `publishedNow: false` even though this
- * call reached the publisher. A deferred record can already be published if
- * another writer won; queue publication never proves provider delivery.
- * Save/store errors can still propagate instead of producing a deferred result.
+ * Saves before publishing. A throwing synchronous save is read back by immutable
+ * key/request fingerprint: a matching row/tombstone confirms handoff WITHOUT
+ * another publish, conflict is permanent, and missing permits typed pre-save
+ * evidence only for a closed SQLite lock code. Unknown readback never authorizes
+ * another save. Request hashes exclude volatile job timestamps.
+ *
+ * Once save is confirmed, host handoff is irrevocable. Publisher, markPublished,
+ * failure-bookkeeping and later readback errors resolve deferred (or a confirmed
+ * terminal disposition); the existing reconciler owns all further work. Saved
+ * proof survives unavailable bookkeeping, without inventing publication/sent or
+ * reopening suppression/coalescing. There is no new retry loop or Slack ACK.
  */
 export async function publishChannelOutboundJobDurably(
   job: ChannelOutboundJob,
@@ -485,7 +524,56 @@ export async function publishChannelOutboundJobDurably(
 ): Promise<ChannelOutboundPublishResult> {
   const store = options.store ?? sqliteChannelOutboundPublishOutboxStore;
   const now = options.now ?? Date.now;
-  const saved = store.save(job, now());
+  const key = requireText(job.request.idempotencyKey, "idempotencyKey");
+  const requestFingerprint = channelOutboundPublishRequestFingerprint(job);
+  const saveAt = now();
+  let saved: ChannelOutboundPublishRecord;
+  try {
+    saved = store.save(job, saveAt);
+  } catch (error) {
+    let existing: ChannelOutboundPublishRecord | null;
+    try {
+      existing = store.get(key);
+    } catch {
+      // A typed immutable conflict remains permanent even if readback fails.
+      if (error instanceof ChannelOutboundPublishHandoffError && error.evidence.disposition === "conflict") {
+        throw outboundPublishConflict(key, requestFingerprint);
+      }
+      throw new ChannelOutboundPublishHandoffError({
+        disposition: "unknown",
+        code: "OUTBOX_READBACK_FAILED",
+        idempotencyKey: key,
+        requestFingerprint,
+        operationFinished: true,
+      });
+    }
+    if (existing !== null) {
+      requireMatchingPublishRecord(existing, job, requestFingerprint);
+      return confirmedPublishResult(existing, error);
+    }
+    if (error instanceof ChannelOutboundPublishHandoffError && error.evidence.disposition === "conflict") {
+      throw outboundPublishConflict(key, requestFingerprint);
+    }
+    const code = channelOutputHandoffTransientCode(error);
+    throw new ChannelOutboundPublishHandoffError(
+      code
+        ? {
+            disposition: "finished_pre_save_missing",
+            code,
+            idempotencyKey: key,
+            requestFingerprint,
+            operationFinished: true,
+          }
+        : {
+            disposition: "unknown",
+            code: "OUTBOX_SAVE_FAILED",
+            idempotencyKey: key,
+            requestFingerprint,
+            operationFinished: true,
+          },
+    );
+  }
+  requireMatchingPublishRecord(saved, job, requestFingerprint);
   if (saved.status === "suppressed") {
     return { ok: true, disposition: "suppressed", record: saved, publishedNow: false };
   }
@@ -496,23 +584,89 @@ export async function publishChannelOutboundJobDurably(
   try {
     await (options.publisher ?? publishChannelOutboundJob)(saved.job);
     const published = store.markPublished(saved.idempotencyKey, now());
+    requireMatchingPublishRecord(published, job, requestFingerprint);
     if (published.status === "suppressed") {
       return { ok: true, disposition: "suppressed", record: published, publishedNow: false };
     }
-    return { ok: true, disposition: "published", record: published, publishedNow: true };
-  } catch (error) {
-    const failed = store.recordFailure(saved.idempotencyKey, error, now());
-    if (failed.status === "suppressed") {
-      return { ok: true, disposition: "suppressed", record: failed, publishedNow: false };
+    if (published.status === "published") {
+      return { ok: true, disposition: "published", record: published, publishedNow: !published.supersededBy };
     }
-    return {
-      ok: false,
-      disposition: "deferred",
-      record: failed,
-      error,
-      nextAttemptAt: failed.nextAttemptAt,
-    };
+    return confirmedPublishResult(published, new Error("Channel outbound publication bookkeeping is pending"));
+  } catch (error) {
+    try {
+      const failed = store.recordFailure(saved.idempotencyKey, error, now());
+      requireMatchingPublishRecord(failed, job, requestFingerprint);
+      return confirmedPublishResult(failed, error);
+    } catch {
+      try {
+        const current = store.get(saved.idempotencyKey);
+        if (current !== null) {
+          requireMatchingPublishRecord(current, job, requestFingerprint);
+          return confirmedPublishResult(current, error);
+        }
+      } catch {
+        // Retain the original positive save proof, never retry from the host.
+      }
+      return confirmedPublishResult(saved, error, true);
+    }
   }
+}
+
+/** Creates permanent conflict evidence without including stored/request content. */
+function outboundPublishConflict(
+  idempotencyKey: string,
+  requestFingerprint: string,
+): ChannelOutboundPublishHandoffError {
+  return new ChannelOutboundPublishHandoffError({
+    disposition: "conflict",
+    code: "REQUEST_FINGERPRINT_CONFLICT",
+    idempotencyKey,
+    requestFingerprint,
+    operationFinished: true,
+  });
+}
+
+/**
+ * Matches compact terminal identity as well as active payload when available.
+ * The immutable request includes native destination and canonical provenance;
+ * wrapper creation/update timestamps intentionally do not participate.
+ */
+function requireMatchingPublishRecord(
+  record: ChannelOutboundPublishRecord,
+  job: ChannelOutboundJob,
+  requestFingerprint: string,
+): void {
+  if (
+    record.idempotencyKey !== job.request.idempotencyKey ||
+    record.requestFingerprint !== requestFingerprint ||
+    record.sessionName !== job.request.origin.sessionName ||
+    record.channelId !== job.request.channelId ||
+    (record.status !== "suppressed" && channelOutboundPublishRequestFingerprint(record.job) !== requestFingerprint)
+  ) {
+    throw outboundPublishConflict(job.request.idempotencyKey, requestFingerprint);
+  }
+}
+
+/** Reports durable ownership while preserving terminal suppression/coalescing. */
+function confirmedPublishResult(
+  record: ChannelOutboundPublishRecord,
+  error: unknown,
+  bookkeepingUncertain = false,
+): ChannelOutboundPublishResult {
+  if (record.status === "suppressed") {
+    return { ok: true, disposition: "suppressed", record, publishedNow: false };
+  }
+  if (record.status === "published") {
+    return { ok: true, disposition: "published", record, publishedNow: false };
+  }
+  return {
+    ok: false,
+    disposition: "deferred",
+    record,
+    error,
+    nextAttemptAt: record.nextAttemptAt,
+    ...(bookkeepingUncertain ? { bookkeepingUncertain: true as const } : {}),
+  };
 }
 
 /**
@@ -850,7 +1004,11 @@ function rowToSuppressedPublishRecord(row: ChannelOutboundSuppressionRow): Chann
   };
 }
 
-function channelOutboundPublishRequestFingerprint(job: ChannelOutboundJob): string {
+/**
+ * Existing immutable request fingerprint, including bytes, canonical origin and
+ * native destination. Job-level timestamps/retry bookkeeping are excluded.
+ */
+export function channelOutboundPublishRequestFingerprint(job: ChannelOutboundJob): string {
   return createHash("sha256").update(JSON.stringify(job.request)).digest("hex");
 }
 

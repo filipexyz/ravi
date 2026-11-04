@@ -198,7 +198,7 @@ commercial policy, private endpoint schemas, or private authorization rules.
 - Putting hosted product policy or entities in the public ABI.
 
 
-### Bounded terminal projection
+### Bounded terminal projection and text handoff
 
 The host MUST capture terminal event, response, time, full accepted binding and
 destination before asynchronous projection work. Additional recovery MUST use
@@ -208,3 +208,20 @@ retains its existing semantics. Receipt/runtime/assistant/manifest readback MUST
 be consistent, and positive settlement MUST match the post-bootstrap sequence
 plus one, delta/generation, terminal time/error and complete authored content.
 Post-commit callbacks or notification failures MUST NOT repeat persistence.
+
+Terminal text handoff MUST be tracked separately from notification and physical
+accounting. The initial sink call MAY remain unclassified. Only the known durable
+adapter's completed, typed pre-save absence with immutable output identity, key,
+request fingerprint and a closed transient code permits at most two extra inline
+attempts, delayed 100 then 400 ms. The first request fingerprint MUST never be
+replaced; each retry MUST validate it before saving. A job-less `not_started`,
+conflict, untyped exception, timeout or unknown outcome MUST NOT cause resending.
+After a confirmed save, the existing outbox reconciler owns pending work.
+
+Internal egress version 2 MUST reject unsupported or unknown restrictive
+capabilities before sink invocation, without fallback or downgrade. A generic
+`ok: true` or resolved `Promise<void>` MUST NOT mean durable save or delivery.
+Only a validated known-adapter confirmation matching output/binding/target,
+key and pinned request fingerprint establishes durable handoff. Published,
+deferred and policy-suppressed dispositions MUST remain distinct from Slack ACK.
+No executable owner predicate may cross this transport boundary.

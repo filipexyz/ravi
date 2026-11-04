@@ -8,6 +8,8 @@ import {
   recordTerminalProjectionWithRecovery,
   type TerminalProjectionRecoveryOptions,
 } from "./terminal-projection-recovery.js";
+import { handoffTerminalOutputWithRecovery, type TerminalOutputHandoffState } from "./terminal-output-handoff.js";
+import type { ChannelOutputEmissionContext } from "./output-handoff.js";
 
 import {
   ChannelBackendRuntimeOwnershipLostError,
@@ -52,7 +54,9 @@ import {
 } from "./backend.js";
 
 /** Host-only recovery hooks; never serialized or accepted from a channel request. */
-export type ChannelTerminalRecoveryOptions = Omit<TerminalProjectionRecoveryOptions, "onCommitted">;
+export interface ChannelTerminalRecoveryOptions extends Omit<TerminalProjectionRecoveryOptions, "onCommitted"> {
+  onOutputState?: (state: TerminalOutputHandoffState) => void;
+}
 
 export const CHANNEL_RUNTIME_EVENTS_PROTOCOL = "ravi.channel.runtime-events" as const;
 export const CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION = 1 as const;
@@ -784,7 +788,8 @@ function prepareTerminalOutput(input: RecordAndEmitInput): ChannelOutputEnvelope
  * confirmation synchronously detaches private handles before readiness callbacks;
  * disposal is awaited outside the transaction even if recovery/callback/schema
  * or sinks throw. Independent sinks preserve the first dispatchError, which does
- * not undo commit or establish remote delivery. This phase adds no output retry.
+ * not undo commit or establish remote delivery. Text retries require a typed,
+ * completed pre-save absence; durable outbox work and media are not resent here.
  */
 async function recordAndEmit(
   input: RecordAndEmitInput,
@@ -906,17 +911,32 @@ async function recordAndEmit(
     }
 
     if (output) {
+      // Pin this routing handle along with the immutable output. A replacement
+      // requester cannot silently reinterpret a prepared retry in the same call.
+      const requester = channelBackendEgressRequester;
+      const emitOutput = async (envelope: ChannelOutputEnvelope, context?: ChannelOutputEmissionContext) => {
+        const local = await channelOutputSinks.tryEmitWithHandoff(envelope, context);
+        if (local.emitted) return local.confirmation;
+        if (!requester) {
+          throw new Error(
+            `Channel output sink is unavailable for ${envelope.target.channelKind}/${envelope.target.connectionId}`,
+          );
+        }
+        const confirmation = await requester.emitOutput(envelope, context);
+        return confirmation === undefined ? undefined : confirmation;
+      };
       try {
-        const deliveredLocally = await channelOutputSinks.tryEmit(output);
-        if (!deliveredLocally) {
-          if (!channelBackendEgressRequester) {
-            throw new Error(
-              `Channel output sink is unavailable for ${output.target.channelKind}/${output.target.connectionId}`,
-            );
-          }
-          await channelBackendEgressRequester.emitOutput(output);
+        if (input.terminalRecovery && output.target.channelKind === "slack") {
+          await handoffTerminalOutputWithRecovery(output, emitOutput, {
+            mayEmit: () => input.terminalRecovery!.mayRecover() && (!input.mayWrite || input.mayWrite() === true),
+            onState: input.terminalRecovery.onOutputState,
+          });
+        } else {
+          await emitOutput(output);
         }
       } catch (error) {
+        // Notification failure retains precedence but never selects text retry
+        // policy: the missing handoff was settled by its own typed stage above.
         dispatchError ??= error;
       }
     }

@@ -2,14 +2,19 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS,
+  ChannelOutboundPublishHandoffError,
+  type ChannelOutboundPublishResult,
+  channelOutboundPublishRequestFingerprint,
   getChannelOutboundPublishJob,
   markChannelOutboundPublishJobPublished,
   markChannelOutboundPublishJobSuppressed,
+  markChannelOutboundPublishJobSuperseded,
   publishChannelOutboundJobDurably,
   recordChannelOutboundPublishJobFailure,
   prunePublishedChannelOutboundPublishJobs,
   reconcileDueChannelOutboundPublishes,
   saveChannelOutboundPublishJob,
+  sqliteChannelOutboundPublishOutboxStore,
 } from "./outbound-publish-outbox.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
 import { closeRouterDb, getDb } from "../router/router-db.js";
@@ -214,6 +219,390 @@ describe("channel outbound publish outbox retention", () => {
     });
   });
 });
+
+describe("channel outbound durable handoff recovery", () => {
+  it("distinguishes completed missing saves with a typed SQLite code from arbitrary errors", async () => {
+    const cases = [
+      {
+        name: "busy",
+        error: Object.assign(new Error("controlled pre-save refusal"), { code: "SQLITE_BUSY" }),
+        disposition: "finished_pre_save_missing",
+        code: "SQLITE_BUSY",
+      },
+      {
+        name: "locked",
+        error: Object.assign(new Error("controlled pre-save refusal"), { code: "SQLITE_LOCKED" }),
+        disposition: "finished_pre_save_missing",
+        code: "SQLITE_LOCKED",
+      },
+      {
+        name: "message-only",
+        error: new Error("SQLITE_BUSY: database is locked and unavailable"),
+        disposition: "unknown",
+        code: "OUTBOX_SAVE_FAILED",
+      },
+      {
+        name: "unrecognized-code",
+        error: Object.assign(new Error("controlled pre-save refusal"), { code: "SQLITE_BUSY_CUSTOM" }),
+        disposition: "unknown",
+        code: "OUTBOX_SAVE_FAILED",
+      },
+    ] as const;
+    for (const scenario of cases) {
+      const job = makeJob(`pre-save-${scenario.name}`, `pre-save-${scenario.name}`);
+      let saves = 0;
+      let readbacks = 0;
+      let publications = 0;
+      const error = await capturePublishHandoffFailure(
+        publishChannelOutboundJobDurably(job, {
+          store: {
+            ...sqliteChannelOutboundPublishOutboxStore,
+            save() {
+              saves++;
+              throw scenario.error;
+            },
+            get(key) {
+              readbacks++;
+              return getChannelOutboundPublishJob(key);
+            },
+          },
+          publisher: async () => {
+            publications++;
+          },
+          now: () => 100,
+        }),
+      );
+      expect<unknown>(error.evidence).toEqual({
+        disposition: scenario.disposition,
+        code: scenario.code,
+        idempotencyKey: job.request.idempotencyKey,
+        requestFingerprint: channelOutboundPublishRequestFingerprint(job),
+        operationFinished: true,
+      });
+      expect(saves).toBe(1);
+      expect(readbacks).toBe(1);
+      expect(publications).toBe(0);
+      expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toBeNull();
+    }
+  });
+
+  it("does not infer absence when readback fails after a typed pre-save refusal", async () => {
+    const job = makeJob("readback-unknown", "readback-unknown");
+    let saves = 0;
+    let readbacks = 0;
+    let publications = 0;
+    const error = await capturePublishHandoffFailure(
+      publishChannelOutboundJobDurably(job, {
+        store: {
+          ...sqliteChannelOutboundPublishOutboxStore,
+          save() {
+            saves++;
+            throw Object.assign(new Error("controlled save refusal"), { code: "SQLITE_BUSY" });
+          },
+          get() {
+            readbacks++;
+            throw new Error("controlled unavailable readback");
+          },
+        },
+        publisher: async () => {
+          publications++;
+        },
+        now: () => 100,
+      }),
+    );
+    expect(error.evidence).toMatchObject({
+      disposition: "unknown",
+      code: "OUTBOX_READBACK_FAILED",
+      operationFinished: true,
+      requestFingerprint: channelOutboundPublishRequestFingerprint(job),
+    });
+    expect(saves).toBe(1);
+    expect(readbacks).toBe(1);
+    expect(publications).toBe(0);
+  });
+
+  it("confirms a save that committed then threw without publishing the matching pending job again", async () => {
+    const job = makeJob("saved-before-throw", "saved-before-throw");
+    let saves = 0;
+    let readbacks = 0;
+    let publications = 0;
+    const saveError = Object.assign(new Error("controlled exception after durable save"), { code: "SQLITE_BUSY" });
+    const result = await publishChannelOutboundJobDurably(job, {
+      store: {
+        ...sqliteChannelOutboundPublishOutboxStore,
+        save(candidate, at) {
+          saves++;
+          saveChannelOutboundPublishJob(candidate, at);
+          throw saveError;
+        },
+        get(key) {
+          readbacks++;
+          return getChannelOutboundPublishJob(key);
+        },
+      },
+      publisher: async () => {
+        publications++;
+      },
+      now: () => 100,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      disposition: "deferred",
+      error: saveError,
+      record: {
+        status: "pending",
+        requestFingerprint: channelOutboundPublishRequestFingerprint(job),
+        attemptCount: 0,
+      },
+      nextAttemptAt: 0,
+    });
+    expect(saves).toBe(1);
+    expect(readbacks).toBe(1);
+    expect(publications).toBe(0);
+    expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toEqual(result.record);
+    expect(getDb().prepare("SELECT COUNT(*) AS count FROM channel_outbound_publish_jobs").get()).toEqual({ count: 1 });
+  });
+
+  it("returns immutable conflict evidence with the actual attempted fingerprint and keeps the original request", async () => {
+    const original = makeJob("immutable-request", "immutable-request", { text: "first bytes" });
+    const changed = makeJob("immutable-request", "immutable-request", { text: "changed bytes", chatId: "C999" });
+    const saved = saveChannelOutboundPublishJob(original, 100);
+    let publications = 0;
+    const error = await capturePublishHandoffFailure(
+      publishChannelOutboundJobDurably(changed, {
+        publisher: async () => {
+          publications++;
+        },
+        now: () => 200,
+      }),
+    );
+    expect(error.evidence).toEqual({
+      disposition: "conflict",
+      code: "REQUEST_FINGERPRINT_CONFLICT",
+      idempotencyKey: changed.request.idempotencyKey,
+      requestFingerprint: channelOutboundPublishRequestFingerprint(changed),
+      operationFinished: true,
+    });
+    expect(error.evidence.requestFingerprint).not.toBe(saved.requestFingerprint);
+    expect(Object.isFrozen(error.evidence)).toBe(true);
+    expect(publications).toBe(0);
+    expect(getChannelOutboundPublishJob(original.request.idempotencyKey)).toEqual(saved);
+  });
+
+  it("leaves a committed-then-thrown save unknown when the matching row cannot be read back", async () => {
+    const job = makeJob("saved-but-unreadable", "saved-but-unreadable");
+    let saves = 0;
+    let publications = 0;
+    const error = await capturePublishHandoffFailure(
+      publishChannelOutboundJobDurably(job, {
+        store: {
+          ...sqliteChannelOutboundPublishOutboxStore,
+          save(candidate, at) {
+            saves++;
+            saveChannelOutboundPublishJob(candidate, at);
+            throw Object.assign(new Error("controlled exception after commit"), { code: "SQLITE_BUSY" });
+          },
+          get() {
+            throw new Error("controlled unavailable readback");
+          },
+        },
+        publisher: async () => {
+          publications++;
+        },
+        now: () => 100,
+      }),
+    );
+    expect(error.evidence).toMatchObject({ disposition: "unknown", code: "OUTBOX_READBACK_FAILED" });
+    expect(saves).toBe(1);
+    expect(publications).toBe(0);
+    expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toMatchObject({
+      status: "pending",
+      requestFingerprint: channelOutboundPublishRequestFingerprint(job),
+    });
+  });
+
+  it("uses request equality when equivalent job wrappers have different timestamps", () => {
+    const first = makeJob("same-request-new-time", "same-request-new-time");
+    const later = { ...structuredClone(first), createdAt: first.createdAt + 100, updatedAt: first.updatedAt + 500 };
+    expect(later).not.toEqual(first);
+    expect(later.request).toEqual(first.request);
+    expect(channelOutboundPublishRequestFingerprint(later)).toBe(channelOutboundPublishRequestFingerprint(first));
+    const saved = saveChannelOutboundPublishJob(first, 100);
+    expect(saveChannelOutboundPublishJob(later, 500)).toEqual(saved);
+    expect(getDb().prepare("SELECT COUNT(*) AS count FROM channel_outbound_publish_jobs").get()).toEqual({ count: 1 });
+  });
+
+  it("retains saved proof if publisher or marking fails and both failure bookkeeping and readback throw", async () => {
+    for (const failurePhase of ["publisher", "markPublished"] as const) {
+      const job = makeJob(`post-save-${failurePhase}`, `post-save-${failurePhase}`);
+      let publications = 0;
+      let marks = 0;
+      let failures = 0;
+      let readbacks = 0;
+      const result = await publishChannelOutboundJobDurably(job, {
+        store: {
+          ...sqliteChannelOutboundPublishOutboxStore,
+          markPublished() {
+            marks++;
+            throw new Error("controlled marking refusal");
+          },
+          recordFailure() {
+            failures++;
+            throw new Error("controlled failure-bookkeeping refusal");
+          },
+          get() {
+            readbacks++;
+            throw new Error("controlled unavailable readback");
+          },
+        },
+        publisher: async () => {
+          publications++;
+          if (failurePhase === "publisher") throw new Error("controlled publisher refusal");
+        },
+        now: () => 100,
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        disposition: "deferred",
+        bookkeepingUncertain: true,
+        nextAttemptAt: 0,
+        record: {
+          status: "pending",
+          requestFingerprint: channelOutboundPublishRequestFingerprint(job),
+          attemptCount: 0,
+        },
+      });
+      expect(result).not.toHaveProperty("publishedNow");
+      expect(result.record).not.toHaveProperty("publishedAt");
+      expect(publications).toBe(1);
+      expect(marks).toBe(failurePhase === "publisher" ? 0 : 1);
+      expect(failures).toBe(1);
+      expect(readbacks).toBe(1);
+      expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toEqual(result.record);
+    }
+  });
+
+  it("reports a confirmed published readback after markPublished committed then threw", async () => {
+    const job = makeJob("published-before-throw", "published-before-throw");
+    let publications = 0;
+    const result = await publishChannelOutboundJobDurably(job, {
+      store: {
+        ...sqliteChannelOutboundPublishOutboxStore,
+        markPublished(key, at) {
+          markChannelOutboundPublishJobPublished(key, at);
+          throw new Error("controlled exception after publication marking");
+        },
+        recordFailure() {
+          throw new Error("controlled failure-bookkeeping refusal");
+        },
+      },
+      publisher: async () => {
+        publications++;
+      },
+      now: () => 100,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      disposition: "published",
+      publishedNow: false,
+      record: { status: "published", publishedAt: 100 },
+    });
+    expect(publications).toBe(1);
+    expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toEqual(result.record);
+  });
+
+  it("reads terminal suppression even when post-publication bookkeeping fails", async () => {
+    const job = makeJob("suppressed-during-publish", "suppressed-during-publish");
+    let publications = 0;
+    const result = await publishChannelOutboundJobDurably(job, {
+      store: {
+        ...sqliteChannelOutboundPublishOutboxStore,
+        markPublished() {
+          throw new Error("controlled marking refusal");
+        },
+        recordFailure() {
+          throw new Error("controlled failure-bookkeeping refusal");
+        },
+      },
+      publisher: async () => {
+        publications++;
+        markChannelOutboundPublishJobSuppressed(job.request.idempotencyKey, "outbound_policy", 101);
+      },
+      now: () => 100,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      disposition: "suppressed",
+      publishedNow: false,
+      record: { status: "suppressed", suppressionReason: "outbound_policy" },
+    });
+    expect(publications).toBe(1);
+    expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toEqual(result.record);
+  });
+
+  it("confirms a compact suppression tombstone after save throws without restoring payload or publishing", async () => {
+    const job = makeJob("readback-tombstone", "readback-tombstone");
+    saveChannelOutboundPublishJob(job, 100);
+    const tombstone = markChannelOutboundPublishJobSuppressed(job.request.idempotencyKey, "outbound_policy", 101);
+    expect(prunePublishedChannelOutboundPublishJobs(200, 201)).toBe(1);
+    closeRouterDb();
+    let saves = 0;
+    let publications = 0;
+    const result = await publishChannelOutboundJobDurably(job, {
+      store: {
+        ...sqliteChannelOutboundPublishOutboxStore,
+        save() {
+          saves++;
+          throw Object.assign(new Error("controlled save refusal"), { code: "SQLITE_LOCKED" });
+        },
+      },
+      publisher: async () => {
+        publications++;
+      },
+      now: () => 300,
+    });
+    if (tombstone.status !== "suppressed") throw new Error("Expected suppression tombstone");
+    expect(result).toEqual({ ok: true, disposition: "suppressed", record: tombstone, publishedNow: false });
+    expect(result.record).not.toHaveProperty("job");
+    expect(saves).toBe(1);
+    expect(publications).toBe(0);
+    expect(getDb().prepare("SELECT COUNT(*) AS count FROM channel_outbound_publish_jobs").get()).toEqual({ count: 0 });
+    expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toEqual(tombstone);
+  });
+
+  it("does not reopen a coalesced publication when its exact request is presented again", async () => {
+    const job = makeJob("coalesced-terminal", "coalesced-terminal");
+    saveChannelOutboundPublishJob(makeJob("kept-publication", "kept-publication"), 99);
+    saveChannelOutboundPublishJob(job, 100);
+    const terminal = markChannelOutboundPublishJobSuperseded(job.request.idempotencyKey, "kept-publication", 101);
+    let publications = 0;
+    const result = await publishChannelOutboundJobDurably(job, {
+      publisher: async () => {
+        publications++;
+      },
+      now: () => 200,
+    });
+    if (terminal.status !== "published") throw new Error("Expected completed publication");
+    expect(result).toEqual({ ok: true, disposition: "published", record: terminal, publishedNow: false });
+    expect(result.record.supersededBy).toBe("kept-publication");
+    expect(publications).toBe(0);
+    expect(getChannelOutboundPublishJob(job.request.idempotencyKey)).toEqual(terminal);
+  });
+});
+
+/** Captures the typed refusal while rejecting accidental fulfilled handoffs. */
+async function capturePublishHandoffFailure(
+  publication: Promise<ChannelOutboundPublishResult>,
+): Promise<ChannelOutboundPublishHandoffError> {
+  try {
+    await publication;
+  } catch (error) {
+    expect(error).toBeInstanceOf(ChannelOutboundPublishHandoffError);
+    if (error instanceof ChannelOutboundPublishHandoffError) return error;
+    throw error;
+  }
+  throw new Error("Expected a typed channel outbound handoff refusal");
+}
 
 function makeJob(
   idempotencyKey: string,

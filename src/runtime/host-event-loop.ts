@@ -2221,6 +2221,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                     ...state,
                   });
                 },
+                onOutputState: (state) => {
+                  log.debug("Channel terminal text handoff", {
+                    sessionName,
+                    turnId: metadata.binding.turnId,
+                    ...state,
+                  });
+                },
               },
             }
           : {}),

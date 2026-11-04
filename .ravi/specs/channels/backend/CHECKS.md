@@ -38,5 +38,8 @@
 - `terminal-projection-recovery.test.ts` MUST distinguish unchanged preterminal,
   exact ambiguous commit, conflicting/unknown readback, owner loss, exhaustion
   and post-commit callback error without repeating callbacks or physical work.
-- Existing host/Slack terminal fixtures MUST preserve explicit cancellation
-  while refusing stale request identities and limiting recovery to logical persistence.
+- `terminal-output-handoff.test.ts`, `backend-egress.test.ts` and the SDK registry
+  tests MUST cover immutable pinning, unsupported-version/capability refusal
+  before sinks, malformed/generic ACKs, bounded pre-save retry and no unknown retry.
+- Existing host/Slack terminal fixtures MUST prove automatic recovery of only
+  the missing logical/text stage, with one physical terminal and independent media.

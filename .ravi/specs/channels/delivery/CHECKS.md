@@ -26,3 +26,9 @@
 - [ ] Publish-outbox reconciliation MUST coalesce identical provider-unavailable notices per delivery destination (channel, account, instance, chat and thread) into one delivery, MUST also close matching duplicates pending beyond the current reconciliation batch, and MUST NOT coalesce arbitrary repeated chat text.
 - [ ] Compact automatic terminal-part receipts and no-resend claims MUST survive pruning/restart. Retention alone MUST NOT disable stable-token text retry after an expired claim.
 - [ ] Canonical send-part identity MUST remain separate from wrapper publication identity; wrapper changes MUST NOT add provider sends or terminal debits, and changed immutable fingerprints MUST fail closed.
+
+- [ ] `outbound-publish-outbox.test.ts` MUST cover save-then-throw exact readback,
+  finished pre-save missing, unknown readback and post-save bookkeeping failure;
+  only the missing pre-save phase may authorize bounded host retry.
+- [ ] `output-handoff.test.ts` MUST validate full output/key/request identity,
+  permanent fingerprint conflict and strict non-authorizing generic confirmation.
