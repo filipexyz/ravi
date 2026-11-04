@@ -93,11 +93,13 @@ import {
 import { tightenStateDirPermissions } from "./security/state-dir-permissions.js";
 import { getRaviStateDir } from "./utils/paths.js";
 
+import { recordManagedRuntimeBoot } from "./runtime-process-identity.js";
+
 const log = logger.child("daemon");
 
 // Load environment from ~/.ravi/.env
 function loadEnvFile() {
-  const envFile = join(homedir(), ".ravi", ".env");
+  const envFile = join(getRaviStateDir(), ".env");
   if (!existsSync(envFile)) {
     return;
   }
@@ -407,6 +409,8 @@ async function checkNatsExposureAtBoot(natsUrl: string): Promise<void> {
 
 export async function startDaemon() {
   maybeNeuterDaemonStdin();
+  if (!recordManagedRuntimeBoot("ravi"))
+    log.warn("Could not record process boot identity; runtime alignment will remain unverified");
   tightenStateDirAtBoot();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)

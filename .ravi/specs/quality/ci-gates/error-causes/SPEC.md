@@ -25,6 +25,8 @@ applies_to:
 - Missing bindings, ignored bindings and referenced/dynamic rejection callbacks MUST NOT silently disappear from the inventory.
 - Baseline allowances MUST only decrease in identity and occurrence count. New violations, increased duplicate counts, metadata changes and reintroduced allowances MUST fail CI.
 - The initial ceiling MUST be recomputed from the immutable baseline commit, so editing both checked-in JSON files cannot expand it. Subsequent PRs MUST also compare against the target branch allowance; pushes compare against the previous commit.
+- CI MUST fetch the `error-cause-baseline` tag explicitly: the immutable anchor is not guaranteed to be an ancestor of any branch. Missing refs MUST fail with the unresolved ref and instructions to fetch the required history/tag.
+- PR runs MUST use `pull_request.base.sha` as the comparison base. Only push runs may use `event.before`; a PR synchronize event's previous head can disappear after a rebase or force-push.
 - Removing an allowance while the violation remains MUST fail; fixing a violation MUST remove its stale allowance.
 - `--update` MUST only prune existing debt and regenerate documentation. It MUST NOT accept new debt.
 - The generated inventory MUST expose total handlers, current debt, baseline debt, closed debt and counts by directory, with one row per handler.

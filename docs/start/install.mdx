@@ -173,7 +173,9 @@ Run `pm2 save` again whenever PM2 gets a new process, for example after `ravi ch
 ravi update --next
 ```
 
-This installs the newest `next` build, remembers the channel, and restarts the Ravi processes in PM2 (add `--no-restart` to skip that). Once you have run it with `--next`, a plain `ravi update` stays on `next`. Before that, a plain `ravi update` installs `latest`. `ravi update --stable` switches to `latest`, and `--version <version>` installs one exact release.
+This installs the newest `next` build, remembers the channel, and reconciles the managed daemon and channel runner with the updated bundle. Every managed process that was online is restarted; stopped processes are not started. Restart is a required part of `ravi update`: there is no `--no-restart` bypass. Native channel intake is interrupted while the runner restarts.
+
+Once you have run it with `--next`, a plain `ravi update` stays on `next`. Before that, a plain `ravi update` installs `latest`. `ravi update --stable` switches to `latest`, and `--version <version>` installs one exact release. After a manual package install, inspect `ravi daemon status --json` and `ravi channels status --json`; the installed version alone does not prove what either process is running.
 
 ## Run without Omni (Slack only)
 

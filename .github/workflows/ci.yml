@@ -36,6 +36,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The immutable ratchet anchor is outside dev's history. Keep it reachable
+      # via this tag and require that tag explicitly, even with full history.
+      - name: Fetch error cause baseline anchor
+        run: git fetch --no-tags origin refs/tags/error-cause-baseline:refs/tags/error-cause-baseline
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.11"
@@ -50,7 +55,8 @@ jobs:
           bun scripts/error-cause-scan.ts
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
-          ERROR_CAUSE_BASE_REF: ${{ github.event.before }}
+          # PR synchronize.before is the old head and may disappear after rebase.
+          ERROR_CAUSE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || '' }}
           ERROR_CAUSE_HEAD_REF: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Build
