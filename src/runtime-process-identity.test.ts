@@ -1,5 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -61,6 +71,55 @@ describe("runtime boot bundle path", () => {
 });
 
 describe("runtime boot receipts", () => {
+  it("returns false and logs the filesystem cause when the boot receipt cannot be persisted", () => {
+    const f = fixture();
+    const blockedState = join(f.stateDir, "not-a-directory");
+    writeFileSync(blockedState, "receipt-path-sentinel");
+    try {
+      // Keep the boot singleton and spies in a subprocess, so no module override
+      // or capture state can escape to another test file in the shared Bun suite.
+      const script = `
+import { spyOn } from "bun:test";
+const pm2 = await import(${JSON.stringify(pathToFileURL(join(import.meta.dir, "pm2.ts")).href)});
+const managed = spyOn(pm2, "getPm2Process").mockImplementation(() => ({
+  name: "ravi", pid: process.pid, startedAt: Date.now() - 1000,
+}));
+const { logger } = await import(${JSON.stringify(pathToFileURL(join(import.meta.dir, "utils/logger.ts")).href)});
+const warning = spyOn(logger, "warn").mockImplementation(() => {});
+const identity = await import(${JSON.stringify(pathToFileURL(join(import.meta.dir, "runtime-process-identity.ts")).href)});
+identity.captureRuntimeBootObservation();
+process.env.RAVI_STATE_DIR = ${JSON.stringify(blockedState)};
+const recorded = identity.recordManagedRuntimeBoot("ravi");
+console.log(JSON.stringify({ recorded, pm2Calls: managed.mock.calls, warnings: warning.mock.calls }));
+`;
+      const result = spawnSync(process.execPath, ["-e", script], {
+        env: { ...process.env, RAVI_STATE_DIR: f.stateDir },
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      const outcome = JSON.parse(result.stdout);
+      expect(outcome.recorded).toBe(false);
+      expect(outcome.pm2Calls).toEqual([["ravi"]]);
+      expect(outcome.warnings).toHaveLength(1);
+      expect(outcome.warnings[0][0]).toBe("Could not persist managed runtime boot identity");
+      expect(outcome.warnings[0][1].context).toMatchObject({
+        operation: "runtime boot receipt",
+        code: "ENOTDIR",
+        syscall: "mkdir",
+      });
+      expect(outcome.warnings[0][1].cause).toContain("ENOTDIR");
+      expect(result.stdout).not.toContain("PRIVATE_FIXTURE_KEY");
+      expect(result.stdout).not.toContain("secret-that-must-not-enter-a-receipt");
+      expect(result.stdout).not.toContain("schemaVersion");
+      expect(existsSync(f.receiptPath)).toBe(false);
+      expect(readFileSync(blockedState, "utf8")).toBe("receipt-path-sentinel");
+    } finally {
+      rmSync(f.stateDir, { recursive: true, force: true });
+    }
+  });
+
   it("preserves the captured version and fingerprint after disk changes without storing env contents", () => {
     const f = fixture();
     try {

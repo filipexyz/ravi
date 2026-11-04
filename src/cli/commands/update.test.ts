@@ -2,8 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -586,6 +588,8 @@ describe("update command helpers", () => {
       const payload = JSON.parse(result.stdout);
       expect(payload).toMatchObject({ success: false, error: { code: "UPDATE_FAILED" } });
       expect(payload.error.message).toContain("Could not read PM2 runtime status");
+      expect(payload.error.cause).toContain("Unable to read the managed PM2 processes");
+      expect(payload.error.cause).toContain("pm2 jlist");
       expect(JSON.parse(readFileSync(join(scenario.checkout, "package.json"), "utf8")).version).toBe(OLD_VERSION);
       expect(readFileSync(scenario.pm2Calls, "utf8").trim().split("\n")).toEqual(["jlist"]);
     } finally {
@@ -690,72 +694,110 @@ describe("update command helpers", () => {
     }
   });
 
-  it("deletes, recreates, verifies, and persists the managed runtime", async () => {
-    const runtime = createRuntimePackage();
+  it("keeps the managed rebind fixture out of its caller's runtime receipts", () => {
+    const callerState = mkdtempSync(join(tmpdir(), "ravi-update-caller-state-"));
+    const receiptsDir = join(callerState, "runtime-processes");
+    mkdirSync(receiptsDir);
+    const receipts = ["ravi.json", "ravi-channels.json"];
+    const original = receipts.map((name, index) => JSON.stringify({ name, pid: 1000 + index }));
     try {
-      const old = createRuntimePackage("3.260730.3");
-      try {
-        let processes: Pm2Process[] = [
-          pm2Process("ravi", old.bundlePath, old.root, { pid: 10, createdAt: 1 }),
-          pm2Process("ravi-channels", old.bundlePath, old.root, { pid: 20, createdAt: 1 }),
-        ];
-        const calls: string[] = [];
-        const ok = await rebindManagedRuntimeProcesses(
-          processes.map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
-          runtime.target,
-          {
-            bunPath: "/usr/bin/bun",
-            runnerEnv: () => ({ RAVI_CHANNELS_CONSUME_OUTBOUND: "1" }),
-            getProcesses: () => processes,
-            run: async (_command, args, options) => {
-              calls.push(args.join(" "));
-              if (args[0] === "delete") {
-                processes = processes.filter((process) => process.name !== args[1]);
-              } else if (args[0] === "start") {
-                const name = args[args.indexOf("--name") + 1] as "ravi" | "ravi-channels";
-                const startedAt = Date.now();
-                const pid = name === "ravi" ? 11 : 21;
-                processes.push(
-                  pm2Process(name, runtime.bundlePath, runtime.root, {
-                    pid,
-                    createdAt: 2,
-                    startedAt,
-                  }),
-                );
-                writeRuntimeBootReceipt({
-                  ...observeRuntimeBoot({
-                    bundlePath: runtime.bundlePath,
-                    runningVersion: runtime.target.version,
-                    envFile: join(getRaviStateDir(), ".env"),
-                  }),
-                  schemaVersion: 1,
-                  name,
-                  pid,
-                  startedAt,
-                });
-                if (name === "ravi-channels") {
-                  expect(options?.env?.RAVI_CHANNELS_CONSUME_OUTBOUND).toBe("1");
-                }
-              }
-              return { success: true, output: "" };
-            },
-          },
-        );
+      receipts.forEach((name, index) => {
+        writeFileSync(join(receiptsDir, name), original[index]!);
+      });
+      const result = spawnSync(
+        process.execPath,
+        ["test", import.meta.path, "-t", "^.*deletes, recreates, verifies, and persists the managed runtime$"],
+        { env: { ...process.env, RAVI_STATE_DIR: callerState }, encoding: "utf8", timeout: 10_000 },
+      );
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain("1 pass");
+      receipts.forEach((name, index) => {
+        expect(readFileSync(join(receiptsDir, name), "utf8")).toBe(original[index]);
+      });
+      expect(readdirSync(receiptsDir).sort()).toEqual([...receipts].sort());
+      expect(readdirSync(callerState)).toEqual(["runtime-processes"]);
+    } finally {
+      rmSync(callerState, { recursive: true, force: true });
+    }
+  });
 
-        expect(ok).toBe(true);
-        expect(calls.map((call) => call.split(" ").slice(0, 2).join(" "))).toEqual([
-          "delete ravi-channels",
-          "delete ravi",
-          `start ${runtime.bundlePath}`,
-          "start /usr/bin/bun",
-          "save --force",
-        ]);
+  it("deletes, recreates, verifies, and persists the managed runtime", async () => {
+    const previousStateDir = process.env.RAVI_STATE_DIR;
+    const stateDir = mkdtempSync(join(tmpdir(), "ravi-update-rebind-state-"));
+    process.env.RAVI_STATE_DIR = stateDir;
+    try {
+      const runtime = createRuntimePackage();
+      try {
+        const old = createRuntimePackage("3.260730.3");
+        try {
+          let processes: Pm2Process[] = [
+            pm2Process("ravi", old.bundlePath, old.root, { pid: 10, createdAt: 1 }),
+            pm2Process("ravi-channels", old.bundlePath, old.root, { pid: 20, createdAt: 1 }),
+          ];
+          const calls: string[] = [];
+          const ok = await rebindManagedRuntimeProcesses(
+            processes.map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
+            runtime.target,
+            {
+              bunPath: "/usr/bin/bun",
+              runnerEnv: () => ({ RAVI_CHANNELS_CONSUME_OUTBOUND: "1" }),
+              getProcesses: () => processes,
+              run: async (_command, args, options) => {
+                calls.push(args.join(" "));
+                if (args[0] === "delete") {
+                  processes = processes.filter((process) => process.name !== args[1]);
+                } else if (args[0] === "start") {
+                  const name = args[args.indexOf("--name") + 1] as "ravi" | "ravi-channels";
+                  const startedAt = Date.now();
+                  const pid = name === "ravi" ? 11 : 21;
+                  processes.push(
+                    pm2Process(name, runtime.bundlePath, runtime.root, {
+                      pid,
+                      createdAt: 2,
+                      startedAt,
+                    }),
+                  );
+                  writeRuntimeBootReceipt({
+                    ...observeRuntimeBoot({
+                      bundlePath: runtime.bundlePath,
+                      runningVersion: runtime.target.version,
+                      envFile: join(getRaviStateDir(), ".env"),
+                    }),
+                    schemaVersion: 1,
+                    name,
+                    pid,
+                    startedAt,
+                  });
+                  if (name === "ravi-channels") {
+                    expect(options?.env?.RAVI_CHANNELS_CONSUME_OUTBOUND).toBe("1");
+                  }
+                }
+                return { success: true, output: "" };
+              },
+            },
+          );
+
+          expect(ok).toBe(true);
+          expect(calls.map((call) => call.split(" ").slice(0, 2).join(" "))).toEqual([
+            "delete ravi-channels",
+            "delete ravi",
+            `start ${runtime.bundlePath}`,
+            "start /usr/bin/bun",
+            "save --force",
+          ]);
+        } finally {
+          old.cleanup();
+        }
       } finally {
-        old.cleanup();
+        runtime.cleanup();
       }
     } finally {
-      runtime.cleanup();
+      if (previousStateDir === undefined) delete process.env.RAVI_STATE_DIR;
+      else process.env.RAVI_STATE_DIR = previousStateDir;
+      rmSync(stateDir, { recursive: true, force: true });
     }
+    expect(process.env.RAVI_STATE_DIR).toBe(previousStateDir);
+    expect(existsSync(stateDir)).toBe(false);
   });
 });
 

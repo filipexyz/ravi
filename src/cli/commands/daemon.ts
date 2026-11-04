@@ -617,20 +617,22 @@ export class DaemonCommands {
           cwd: target.cwd,
         });
         if (!asJson) console.log("Build completed");
-      } catch {
+      } catch (error) {
         buildResult = { requested: true, ok: false };
-        if (asJson) {
-          const payload = {
-            action: "restart",
-            changed: false,
-            build: buildResult,
-            message,
-            target,
-            status: buildDaemonStatusJson(!asJson),
-          };
-          printJson(payload);
-        }
-        fail("Build failed, aborting restart");
+        contractFail("daemon restart", "COMMAND_FAILED", "Build failed, aborting restart", {
+          asJson,
+          diagnostic: errorDiagnostic(error, { operation: "daemon restart" }),
+          details: asJson
+            ? {
+                action: "restart",
+                changed: false,
+                build: buildResult,
+                message,
+                target,
+                status: buildDaemonStatusJson(false),
+              }
+            : undefined,
+        });
       }
     }
 

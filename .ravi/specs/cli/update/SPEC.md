@@ -36,5 +36,11 @@ normative: true
 - An unreadable PM2 snapshot MUST fail closed; it MUST NOT be treated as an
   empty installation. Supervisor exit zero MUST be checked against live
   successor identities before the calling update reports success.
+- Failed PM2 reads and build/reconciliation failures MUST retain their caught
+  cause through the public diagnostic. A boot receipt persistence failure MUST
+  emit a diagnostic warning while leaving the process identity unverifiable.
+- Runtime-rebind tests MUST own and clean up their state directory independently
+  of the package fixture and any caller-provided `RAVI_STATE_DIR`; tests MUST
+  restore the inherited environment and leave the caller's receipts untouched.
 - This restart mandate belongs to the explicit `update` operation. Status
   reads and env-file mutations MUST NOT automatically restart processes.

@@ -133,8 +133,9 @@ class UpdateFailure extends Error {
     message: string,
     readonly code = "UPDATE_FAILED",
     readonly exitCode = 1,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "UpdateFailure";
   }
 }
@@ -438,9 +439,12 @@ function describeManagedRuntime(processes: Pm2Process[]): Omit<ManagedRuntimeSta
 function readManagedProcesses(): Pm2Process[] {
   try {
     return getPm2Processes({ strict: true });
-  } catch {
-    fail(
+  } catch (cause) {
+    throw new UpdateFailure(
       "Could not read PM2 runtime status, so Ravi cannot verify runtime reconciliation. Check `pm2 jlist` and retry.",
+      "UPDATE_FAILED",
+      1,
+      { cause },
     );
   }
 }

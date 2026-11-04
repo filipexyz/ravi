@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import packageMetadata from "../package.json" with { type: "json" };
 import { getPm2Process, type Pm2Process } from "./pm2.js";
 import { getRaviStateDir } from "./utils/paths.js";
+import { errorDiagnostic } from "./utils/error-diagnostic.js";
+import { logger } from "./utils/logger.js";
 
 export type RuntimeProcessName = "ravi" | "ravi-channels";
 export type RuntimeFileMetadata = { mtimeMs: number; size: number; ino: number };
@@ -29,6 +31,7 @@ export function runtimeFileMetadata(path: string): RuntimeFileMetadata | null {
     const stat = statSync(path);
     return stat.isFile() ? { mtimeMs: stat.mtimeMs, size: stat.size, ino: stat.ino } : null;
   } catch {
+    // no-cause: Missing or unreadable metadata makes this status probe unverifiable, not a command failure.
     return null;
   }
 }
@@ -44,6 +47,7 @@ export function runtimeBundleFingerprint(path: string): RuntimeBundleFingerprint
       return null;
     return { ...after, sha256 };
   } catch {
+    // no-cause: An unreadable or concurrently removed bundle cannot be certified; callers report an unknown identity.
     return null;
   }
 }
@@ -58,7 +62,7 @@ export function observeRuntimeBoot(input: {
   try {
     bundlePath = realpathSync(bundlePath);
   } catch {
-    // A removed entry point cannot be certified, but keep its original path.
+    // no-cause: A removed/inaccessible entry point stays at its original path and is independently marked unverifiable.
   }
   return {
     bundlePath,
@@ -111,7 +115,11 @@ export function recordManagedRuntimeBoot(name: RuntimeProcessName): boolean {
   try {
     writeRuntimeBootReceipt({ ...observation, schemaVersion: 1, name, pid: process.pid, startedAt: managed.startedAt });
     return true;
-  } catch {
+  } catch (cause) {
+    logger.warn(
+      "Could not persist managed runtime boot identity",
+      errorDiagnostic(cause, { operation: "runtime boot receipt" }),
+    );
     return false;
   }
 }
@@ -145,6 +153,7 @@ export function readRuntimeBootReceipt(process: Pm2Process, stateDir = getRaviSt
       return null;
     return value;
   } catch {
+    // no-cause: Missing, unreadable or corrupt receipts are untrusted evidence; status must report unverifiable identity.
     return null;
   }
 }

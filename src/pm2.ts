@@ -119,8 +119,11 @@ function parsePm2List(strict = false): Pm2Process[] {
     }).trim();
     if (strict && !raw) throw new Error("Empty PM2 snapshot");
     return parsePm2Processes(raw);
-  } catch {
-    if (strict) throw new Error("Unable to read the managed PM2 processes; runtime reconciliation cannot be verified.");
+  } catch (cause) {
+    if (strict)
+      throw new Error("Unable to read the managed PM2 processes; runtime reconciliation cannot be verified.", {
+        cause,
+      });
     return [];
   }
 }

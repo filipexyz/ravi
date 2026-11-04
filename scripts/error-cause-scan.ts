@@ -475,7 +475,26 @@ export function scanWorkingTree(root: string): CatchSite[] {
   walk(join(root, "src"));
   return scanSources(sources);
 }
+function requireCommit(root: string, ref: string): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (cause) {
+    throw new Error(
+      `Error cause ratchet cannot resolve Git commit "${ref}" in this clone. ` +
+        "The ref may be missing because history is shallow or its tag was not fetched. " +
+        "Fetch full history (actions/checkout fetch-depth: 0) and the error-cause-baseline tag " +
+        "(git fetch origin refs/tags/error-cause-baseline:refs/tags/error-cause-baseline). " +
+        "For pull requests, use pull_request.base.sha, not a previous head from event.before.",
+      { cause },
+    );
+  }
+}
 export function scanCommit(root: string, commit: string): CatchSite[] {
+  commit = requireCommit(root, commit);
   const files = execFileSync("git", ["ls-tree", "-r", "--name-only", commit, "--", "src"], {
     cwd: root,
     encoding: "utf8",
@@ -584,8 +603,9 @@ export function renderInventory(sites: CatchSite[], frozen: Baseline): string {
 function readBaseline(path: string): Baseline {
   return JSON.parse(readFileSync(path, "utf8")) as Baseline;
 }
-function baselineAtRef(root: string, ref: string): Baseline | undefined {
+export function baselineAtRef(root: string, ref: string): Baseline | undefined {
   // Only absence in a valid tree is exempt; malformed JSON/missing refs fail.
+  ref = requireCommit(root, ref);
   const entry = execFileSync("git", ["ls-tree", ref, "--", BASELINE_PATH], { cwd: root, encoding: "utf8" }).trim();
   if (!entry) return undefined;
   return JSON.parse(
@@ -602,7 +622,7 @@ function previousBaselines(root: string): Baseline[] {
   // Also ratchet against the preceding head's history. Otherwise the first PR
   // introducing this gate could re-add debt after removing it in an earlier commit.
   const head = process.env.ERROR_CAUSE_HEAD_REF;
-  const ancestry = head ? `${head}^` : "HEAD";
+  const ancestry = requireCommit(root, head ? `${head}^` : "HEAD");
   const previous = execFileSync("git", ["log", "-1", "--format=%H", ancestry, "--", BASELINE_PATH], {
     cwd: root,
     encoding: "utf8",
