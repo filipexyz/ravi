@@ -177,8 +177,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | bases | src/bases/input.ts | 39 | triaged-follow-up | catch-without-binding | src/bases/input.ts:033da42fca0ad3d22e6b3d2b |
 | bases | src/bases/input.ts | 64 | triaged-follow-up | catch-without-binding | src/bases/input.ts:ac97b60d3f31aed28e6da10b |
 | bash | src/bash/parser.ts | 95 | triaged-follow-up | catch-without-binding | src/bash/parser.ts:bc535f42d16639e50c0686c7 |
-| bash | src/bash/parser.ts | 376 | triaged-follow-up | surface-bypasses-constructor | src/bash/parser.ts:5adb02df86feece6349d5635 |
-| bash | src/bash/parser.ts | 473 | triaged-follow-up | catch-without-binding | src/bash/parser.ts:e80dc90deffeaf87466e3b91 |
+| bash | src/bash/parser.ts | 565 | triaged-follow-up | surface-bypasses-constructor | src/bash/parser.ts:5adb02df86feece6349d5635 |
+| bash | src/bash/parser.ts | 662 | triaged-follow-up | catch-without-binding | src/bash/parser.ts:e80dc90deffeaf87466e3b91 |
 | runtime-chat | src/bot.runtime-guards.fixture.ts | 2295 | fixed | binding retained / no recognized error surface | src/bot.runtime-guards.fixture.ts:90a4062e42ef5df83ba7c4fa |
 | runtime-chat | src/bot.runtime-guards.fixture.ts | 2396 | fixed | binding retained / no recognized error surface | src/bot.runtime-guards.fixture.ts:90a4062e42ef5df83ba7c4fa |
 | runtime-chat | src/bot.runtime-guards.fixture.ts | 2448 | fixed | binding retained / no recognized error surface | src/bot.runtime-guards.fixture.ts:90a4062e42ef5df83ba7c4fa |
