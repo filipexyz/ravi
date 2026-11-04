@@ -142,3 +142,11 @@ logical failure projection, keeping physical failure accounting and replay
 decisions intact. Positive bot, human and non-Slack controls are required alongside
 cooldown suppression; deleting terminal state or suppressing every recovered
 answer would not satisfy the contract.
+
+## Interrupted physical attempts and logical replies
+
+`INTERRUPTED-REPLAY-01` predates automatic Slack containment: a replay-safe Claude transport failure could record a physical interruption, replay the same accepted input and save a full final to history, while premature logical `interrupted` state rejected native output for both bots and humans. Avoiding only a cancelled manifest did not fix that state transition.
+
+Logical projection now follows the actual authorized stash/continuation result, with full backend-envelope equality and current ownership/cancellation checks. Physical trace and accounting remain terminal for the failed attempt. Existing fences still decide whether any input can replay. Internal physical handle closure does not establish an operator cancellation; explicit cancellation has its own positive witness. No terminal DB row is reopened and no automatic allowance is reset.
+
+This correction is validated with synthetic provider events and actual queue/generator, SQLite and native output/consumer paths. Controlled launcher/driver bridges do not establish full live dispatcher or provider-outage recovery, and do not attribute the historical Pi incident.

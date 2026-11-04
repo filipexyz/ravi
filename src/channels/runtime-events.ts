@@ -414,6 +414,10 @@ export async function projectChannelRuntimeEvent(input: {
   toolDurationMs?: number;
   occurredAt?: number;
   sinks?: ChannelRuntimeEventSinkRegistry;
+  /** Internal pure owner guard, rechecked after prior awaits and before each DB write. */
+  beforeRecordEvent?: (state: ChannelBackendRuntimeState | undefined) => boolean;
+  /** Internal synchronous hook: DB transition accepted, no delivery await has occurred. */
+  afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined) => void;
   /** Freeze a terminal delivery manifest before any output sink can release it. */
   beforeTerminalOutput?: (output: ChannelOutputEnvelope) => void | Promise<void>;
 }): Promise<KnownChannelRuntimeEvent[]> {
@@ -423,7 +427,12 @@ export async function projectChannelRuntimeEvent(input: {
   const projected: KnownChannelRuntimeEvent[] = [];
   let dispatchError: unknown;
   const append = async (eventInput: RecordAndEmitInput) => {
-    const recorded = await recordAndEmit({ ...eventInput, beforeTerminalOutput: input.beforeTerminalOutput });
+    if (input.beforeRecordEvent?.(eventInput.state) === false) return;
+    const recorded = await recordAndEmit({
+      ...eventInput,
+      afterRecordEvent: input.afterRecordEvent,
+      beforeTerminalOutput: input.beforeTerminalOutput,
+    });
     projected.push(recorded.event);
     dispatchError ??= recorded.dispatchError;
   };
@@ -697,6 +706,7 @@ interface RecordAndEmitInput {
   payload: unknown | EventPayloadFactory;
   occurredAt: number;
   sinks: ChannelRuntimeEventSinkRegistry;
+  afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined) => void;
   beforeTerminalOutput?: (output: ChannelOutputEnvelope) => void | Promise<void>;
 }
 
@@ -717,6 +727,7 @@ async function recordAndEmit(
     // A host currently freezing/releasing this terminal still owns its copy.
     discardSlackAutomaticPendingReply(input.metadata.binding);
   }
+  input.afterRecordEvent?.(input.state);
   const payload =
     typeof input.payload === "function"
       ? input.payload(

@@ -347,8 +347,7 @@ Closed or cancelled requests MUST NOT recreate a pending collection or revive
 previous members.
 Only logical terminal cancellation may freeze a cancelled manifest; a physical
 interruption accepted by the existing recovery path MUST NOT add a premature
-cancelled-manifest tombstone. This does not change the runtime's recovery state
-machine. Failure in a notification/text sink MUST NOT silently discard media
+cancelled-manifest tombstone. This does not expand runtime replay eligibility. Failure in a notification/text sink MUST NOT silently discard media
 whose final manifest already froze successfully; their delivery outcomes remain
 independent. The separate text outbox and core media path do not guarantee
 physical text-before-media delivery order.
@@ -365,6 +364,25 @@ Human bindings in that same branch MUST also remain able to deliver their
 legitimate final. Refused recovery and genuinely terminal failure retain their
 normal terminal projection; no backend terminal or suppression decision may be
 deleted or reopened to make recovery pass.
+
+A recoverable physical interruption MUST defer the logical terminal only when
+its effective, currently owned recovery path actually stashes the same accepted
+`_channelBackend` envelope and arms continuation. Equality MUST include the full
+binding, ingress/correlation identity and frozen destination; a matching turn ID
+or an unrelated queued successor is insufficient. Projection and continuation
+MUST use that same decision after asynchronous diagnostics, preserving existing
+fence/side-effect rules. Explicit cancellation intent MUST win; a physically
+closed or internally aborted handle alone is not an explicit cancellation witness.
+A physical diagnostic failure before continuation commits MUST retain normal
+logical terminal cleanup. A replacement owner MUST NOT be mutated by the old
+handler. Ownership validation before a write MUST be pure and repeated after
+awaited sinks. A cancelled manifest and terminal collector cleanup MUST occur
+only after the DB accepts the logical transition, before another await; a
+rejected transition MUST NOT freeze or clear pending output. These callbacks
+are internal runtime capabilities, never accepted from serialized channel/API
+envelopes. After permitted replay, the complete final MUST reach the native output
+path with coherent logical completion; history alone or absence of `cancelled`
+is not proof. Bot cooldown/suppression and human output policy remain unchanged.
 
 The adapter MAY skip reapplying reply-mode policy only for an internal delivery
 request derived from a validated manifest and durable origin. An external flag,

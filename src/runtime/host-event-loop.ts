@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import {
@@ -79,6 +80,7 @@ import {
   getCrashRecoveryReplayablePendingRuntimeMessages,
   getPendingRuntimeTurnSuccessors,
   getRuntimeTurnReplaySafety,
+  isExplicitLocalRuntimeAbort,
   isProviderEndedAfterCompletedTools,
   runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
@@ -2082,10 +2084,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const projectRuntimeEventToChannel = async (
     event: RuntimeEvent,
     projectedResponseText?: string,
-    automaticReplyContinues = false,
+    metadata = streaming.currentChannelBackend,
+    mayProject: () => boolean = () => true,
   ) => {
-    const metadata = streaming.currentChannelBackend;
-    if (!metadata) return;
+    if (!metadata || !mayProject()) return;
     // The physical turn ends, but its queued continuation still owns this channel request.
     if (
       streaming.currentTurnYieldContinuationId &&
@@ -2116,9 +2118,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     let terminalManifestReady = false;
     try {
       automaticReply = automaticSlackReply(metadata);
-      if (automaticReply && event.type === "turn.interrupted" && !automaticReplyContinues) {
-        freezeAutomaticSlackReply(automaticReply, "cancelled", "");
-      }
       if (automaticReply && event.type === "turn.complete" && !projectedResponseText?.trim()) {
         // A media-only answer has no text output envelope to run the hook below.
         freezeAutomaticSlackReply(automaticReply, "final_answer", "");
@@ -2127,6 +2126,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       await projectChannelRuntimeEvent({
         metadata,
         event: stripRuntimeRawEvent(event),
+        // Initial running-state sinks can yield to another owner. The pure
+        // guard runs again at each write; cancellation freezes only after DB acceptance.
+        beforeRecordEvent: mayProject,
+        afterRecordEvent: (state) => {
+          if (automaticReply && state === "interrupted") {
+            freezeAutomaticSlackReply(automaticReply, "cancelled", "");
+          }
+        },
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
         ...(automaticReply
           ? {
@@ -4060,6 +4067,35 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const internalAbortReason = receivedFailureClassification?.internalAbortReason;
         const recoveryReason = receivedFailureClassification?.recoveryReason;
         const suppressedRecoverable = receivedFailureClassification?.suppressedRecoverable ?? false;
+        // Snapshot the accepted request before diagnostics can yield to a new
+        // owner or mutate queued envelopes. Only this exact request may defer
+        // its logical terminal when the existing recovery path actually stashes it.
+        const interruptedChannelBackend = streaming.currentChannelBackend
+          ? structuredClone(streaming.currentChannelBackend)
+          : undefined;
+        let interruptedRecoveryCancelled =
+          streaming.pendingAbort ||
+          isExplicitLocalRuntimeAbort(internalAbortReason) ||
+          isExplicitLocalRuntimeAbort(streaming.internalAbortReason);
+        const mayProjectInterruptedRequest = () => {
+          const owner = streamingSessions.get(sessionName);
+          return (
+            owner === streaming ||
+            (!owner &&
+              (interruptedRecoveryCancelled ||
+                streaming.pendingAbort ||
+                isExplicitLocalRuntimeAbort(streaming.internalAbortReason)))
+          );
+        };
+        const projectInterruptedRequest = async () => {
+          if (!interruptedChannelBackend) return;
+          await projectRuntimeEventToChannel(
+            { type: "turn.interrupted", metadata: event.metadata },
+            undefined,
+            interruptedChannelBackend,
+            mayProjectInterruptedRequest,
+          );
+        };
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
         const currentTurnReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
         const currentTurnHadToolStarted = currentTurnReplaySafety.startedTool;
@@ -4090,46 +4126,44 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         );
 
         if (suppressedRecoverable) {
-          await projectRuntimeEventToChannel(
-            { type: "turn.interrupted", metadata: event.metadata },
-            undefined,
-            // Recovery already decides which inputs survive. Do not close the
-            // logical reply while that exact backend request is being replayed.
-            getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery).some(
-              (message) =>
-                message.launchPrompt?._channelBackend?.binding.turnId ===
-                streaming.currentChannelBackend?.binding.turnId,
-            ),
-          );
-          await emitRuntimeEvent({
-            type: "turn.interrupted",
-            provider: runtimeSession.provider,
-            reason: recoveryReason,
-            metadata: event.metadata,
-          });
-          await releasePendingProviderRawEvent(correlatedProviderRawEvent);
-          suppressProviderRawForCurrentTurn = false;
-          recordTerminalTraceOnce({
-            status: "interrupted",
-            eventType: "turn.interrupted",
-            abortReason: recoveryReason,
-            error: null,
-            payloadJson: {
+          try {
+            await emitRuntimeEvent({
+              type: "turn.interrupted",
+              provider: runtimeSession.provider,
+              reason: recoveryReason,
+              metadata: event.metadata,
+            });
+            await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+            suppressProviderRawForCurrentTurn = false;
+            recordTerminalTraceOnce({
+              status: "interrupted",
+              eventType: "turn.interrupted",
+              abortReason: recoveryReason,
+              error: null,
+              payloadJson: {
+                recoverable: event.recoverable ?? true,
+                suppressedRecoverable,
+                failureDetails: formatRuntimeFailureDetails(event) ?? null,
+                rawEvent: rawEventSummary ?? null,
+                metadata: event.metadata ?? null,
+              },
+            });
+            flushObservationEvents("turn.interrupt", {
+              provider: runtimeSession.provider,
               recoverable: event.recoverable ?? true,
               suppressedRecoverable,
-              failureDetails: formatRuntimeFailureDetails(event) ?? null,
-              rawEvent: rawEventSummary ?? null,
-              metadata: event.metadata ?? null,
-            },
-          });
-          flushObservationEvents("turn.interrupt", {
-            provider: runtimeSession.provider,
-            recoverable: event.recoverable ?? true,
-            suppressedRecoverable,
-            error: null,
-            abortReason: recoveryReason,
-          });
+              error: null,
+              abortReason: recoveryReason,
+            });
+          } catch (error) {
+            // A failed physical diagnostic must not leave an open logical
+            // request when no continuation was committed to the restart stash.
+            await projectInterruptedRequest();
+            throw error;
+          }
         }
+        interruptedRecoveryCancelled ||=
+          streaming.pendingAbort || isExplicitLocalRuntimeAbort(streaming.internalAbortReason);
 
         responseText = "";
 
@@ -4158,10 +4192,41 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
           // immediately; preserve queued/current messages so the next session
           // can drain them instead of losing the interrupted turn.
-          const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
-          if (stashedCount > 0) {
-            restartStashedReason = restartReason;
-          } else {
+          // A physically closed/aborted handle is not evidence of an explicit
+          // cancel request. Retain the existing replay fences and require the
+          // current owner plus a positive cancellation check at the stash boundary.
+          const mayContinueInterruptedRequest = () =>
+            streamingSessions.get(sessionName) === streaming &&
+            !interruptedRecoveryCancelled &&
+            !streaming.pendingAbort &&
+            !isExplicitLocalRuntimeAbort(streaming.internalAbortReason);
+          let stashedCount = 0;
+          let logicalRequestContinues = false;
+          try {
+            if (mayContinueInterruptedRequest()) {
+              stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+              if (stashedCount > 0) {
+                // Selection, stash inspection and restart arming are synchronous.
+                // Successors alone do not continue the failed logical request.
+                restartStashedReason = restartReason;
+                logicalRequestContinues = Boolean(
+                  interruptedChannelBackend &&
+                    stashedMessages
+                      .get(sessionName)
+                      ?.some((message) =>
+                        isDeepStrictEqual(message.launchPrompt?._channelBackend, interruptedChannelBackend),
+                      ),
+                );
+              }
+            }
+          } finally {
+            if (!logicalRequestContinues) {
+              await projectInterruptedRequest();
+              // Terminal sinks may yield to cancellation or a replacement owner.
+              if (!mayContinueInterruptedRequest()) restartStashedReason = undefined;
+            }
+          }
+          if (stashedCount === 0) {
             log.info("Skipping recoverable interrupt replay because the current turn is not replay-safe", {
               runId,
               sessionName,
