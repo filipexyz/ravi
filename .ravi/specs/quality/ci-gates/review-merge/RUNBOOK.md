@@ -5,8 +5,21 @@ kind: feature
 domain: quality
 capability: ci-gates
 feature: review-merge
-status: active
+status: archived
 ---
+
+## RETIRED — 2026-11-04 (decisão do operador)
+
+Este gate **não está em vigor**. O workflow `.github/workflows/review-gate.yml` foi removido de `dev` e o ruleset que o tornava obrigatório já havia sido deletado em 2026-10-31. Nada neste spec deve ser tratado como requisito de merge.
+
+Regras válidas hoje:
+- Nenhum check de review é obrigatório. Em `dev` o único status obrigatório é `Quality Gate`.
+- Revisão independente continua sendo **disciplina escrita no corpo do PR**, não um check que bloqueia.
+- NÃO reintroduzir este gate, o workflow, o ruleset ou um "machine user" aprovador sem pedido explícito do operador. Reativar por conta própria já falhou e é considerado defeito.
+- O código (`src/ci/review-gate.cjs`, testes, `.github/review-gate-ruleset.json`) fica no repositório apenas como material inerte, para o dia em que o operador quiser retomar.
+
+O restante deste documento descreve o desenho original, mantido para memória. Nenhuma linha abaixo é normativa enquanto este status for `archived`.
+
 
 # Policy and owners
 
@@ -56,33 +69,6 @@ An unjustified original dismissal cannot be laundered by renewal. Automatic inva
 For multiple dismissals, repeat the two-line renewal block in the same approval body (one single-line reason per event).
 
 # Limits and rollback
-
-## Timeline count discrepancies
-
-GitHub can return a terminal unfiltered timeline page with fewer nodes than
-`totalCount`. PR #799 at `cc2998247822a799f459d06b48b4b9f9050b30e2`
-returned 6 non-null nodes, count 10 and `hasNextPage=false` on 2026-11-04.
-The evaluator audits this difference instead of declaring the response truncated.
-Completion depends on terminal pageInfo, unique ids and stable counts, followed
-by a full evidence re-read before success. Do not apply this exception to reviews
-or review threads, or assume an API exception means there were zero findings.
-
-## Review event bursts
-
-The workflow currently groups runs as `review-gate-${{ github.event.pull_request.number }}`
-with `cancel-in-progress: true`. In the #799 review/comment burst on 2026-11-04,
-ten runs were cancelled; job 126636154650 in run 41847870704 explicitly reported
-`Canceling since a higher priority waiting request for review-gate-799 exists`.
-Run 41847934500 eventually finished, blocked by the timeline count discrepancy.
-It belongs to #799, while run 41848642648 belongs to #798.
-
-Proposed follow-up: retain the per-PR group and set `cancel-in-progress: false`
-so an active evaluator can finish while pending events coalesce. Keep the SHA
-and final evidence checks: a run evaluating a superseded head must still block.
-This does not guarantee that every pending event executes. Native resolution
-does not trigger this workflow; the observed events were review/comment events.
-
-## Policy boundary
 
 Required checks accept the GitHub Actions app as publisher; they cannot distinguish two workflows publishing the same name. A separately governed GitHub App or organization required workflow is needed to resist publisher spoofing. Native review and conversation rules must stay enabled regardless.
 

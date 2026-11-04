@@ -5,8 +5,21 @@ kind: feature
 domain: quality
 capability: ci-gates
 feature: review-merge
-status: active
+status: archived
 ---
+
+## RETIRED — 2026-11-04 (decisão do operador)
+
+Este gate **não está em vigor**. O workflow `.github/workflows/review-gate.yml` foi removido de `dev` e o ruleset que o tornava obrigatório já havia sido deletado em 2026-10-31. Nada neste spec deve ser tratado como requisito de merge.
+
+Regras válidas hoje:
+- Nenhum check de review é obrigatório. Em `dev` o único status obrigatório é `Quality Gate`.
+- Revisão independente continua sendo **disciplina escrita no corpo do PR**, não um check que bloqueia.
+- NÃO reintroduzir este gate, o workflow, o ruleset ou um "machine user" aprovador sem pedido explícito do operador. Reativar por conta própria já falhou e é considerado defeito.
+- O código (`src/ci/review-gate.cjs`, testes, `.github/review-gate-ruleset.json`) fica no repositório apenas como material inerte, para o dia em que o operador quiser retomar.
+
+O restante deste documento descreve o desenho original, mantido para memória. Nenhuma linha abaixo é normativa enquanto este status for `archived`.
+
 
 # Verification
 
@@ -21,10 +34,6 @@ Run `bun test src/ci/review-gate.test.ts` (no install, full build or full suite 
 - Justified independent dismissal: audit includes actor, reason, SHA and source URL; unresolved thread still blocks.
 - New independent head approval explicitly renewing a justified dismissal: passes once resolved.
 - Pagination to page two finds a blocker; malformed cursor or truncated count blocks.
-- Timeline count 12 with 10 visible nodes and `hasNextPage=false`: passes with an audit of both counts and difference 2. The same counts with `hasNextPage=true` and a repeated cursor: blocks.
-- Timeline overcount across multiple complete pages: passes. Empty nonterminal pages, empty cursors, null/duplicate ids (including across pages), excess nodes, changing counts or more than 1000 pages: block.
-- Timeline overcount with an unresolved thread or missing current-head approval: still blocks for the policy reason and reports the count difference.
-- Review/review-thread overcounts: still block. Timeline count changes between final evidence reads: block even when the visible nodes are identical.
 - Head or evidence changes between reads: blocks.
 
 On the PR, inspect `Review Gate Tests` and the live `Review Gate` logs. A live gate failure for missing independent approval is expected with one collaborator; never manufacture an approval to make the check green. Fixture success is not a live second-identity approval.
