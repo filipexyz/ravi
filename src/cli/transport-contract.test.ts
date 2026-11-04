@@ -512,8 +512,9 @@ describe("global cloud failure contract", () => {
     )!;
     const gateway = await dispatch(command, {}, {}, { contextRecord: runtimeContext, emitAudit: () => {} });
     const body = await gateway.response.json();
-    expect(body.error.cause).toBe(envelope.error.cause);
-    expect(body.error.context).toEqual(envelope.error.context);
+    expect(body).toMatchObject({
+      error: { cause: envelope.error.cause, context: envelope.error.context },
+    });
   });
 
   it("preserves a safe CliExpectedError cause across CLI, tool and gateway", async () => {
