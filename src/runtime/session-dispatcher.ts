@@ -2683,7 +2683,7 @@ export class RuntimeSessionDispatcher {
     const source = prompt?.source ?? fallbackPrompt?.source ?? existing.currentSource;
     const barrier = successor.message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
     existing.currentTurnSuperseded = true;
-    existing.currentTurnYieldContinuationId = successor.continuation?.pendingId;
+    existing.currentTurnYieldContinuationId = undefined;
     existing.interrupted = true;
     nats
       .emit(`ravi.session.${sessionName}.runtime`, {
@@ -2727,7 +2727,6 @@ export class RuntimeSessionDispatcher {
         reason,
         taskBarrierTaskId: successor.message.taskBarrierTaskId ?? prompt?.taskBarrierTaskId ?? null,
         currentTurnReplay: false,
-        continuationPendingId: successor.continuation?.pendingId ?? null,
       },
     });
     if (successor.coalescedMessages.length > 0) {

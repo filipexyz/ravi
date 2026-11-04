@@ -100,6 +100,13 @@ An explicit session abort (reset, delete, kill, `ravi.session.abort`) is not a d
 
 ## Reply Surface Identity
 
+A prompt from a different reply surface MUST NOT interrupt the active turn,
+even with `after_tool` or `immediate_interrupt`. This includes internal thread
+returns and prompts without a source. It MUST wait for terminal completion in
+FIFO order; a later same-surface prompt MUST NOT jump over it. Releasing a tool
+barrier MUST preserve this boundary. Explicit session abort is separate from
+prompt delivery and remains available.
+
 A source-less CLI resume uses its bound reply target as the active interrupt
 surface unless chat output is suppressed.
 

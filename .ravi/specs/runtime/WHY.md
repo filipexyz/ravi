@@ -13,7 +13,7 @@ The correct design is a stable host runtime with provider adapters behind a narr
 - Capabilities are the extension point. Provider IDs are not the extension point.
 - Runtime traces are the debugging source of truth after provider handoff.
 - Terminal turn events are not optional. They are the boundary that lets Ravi release queued prompts safely.
-- A fixed reply destination protects routing, but must not let one chat monopolize a shared session. Yielding ends the physical turn, lets queued chats run, and resumes unfinished work under its original authority. A fresh continuation is distinct from replaying the interrupted provider delivery; the original logical channel request remains open until that continuation answers.
+- A fixed physical reply destination is insufficient when the scheduler interrupts chat X to run chat Y: the provider can answer X's unfinished request under Y's envelope, then answer it again when X resumes. Different surfaces now wait for completion. This trades cross-chat preemption for correct reply ownership; same-surface steering remains available.
 
 ## Tradeoffs
 

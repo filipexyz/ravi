@@ -22,6 +22,12 @@
 
 ## Interrupt Safety
 
+- Slack DM X with default output Y MUST finish before Y's thread notification
+  can run, including after tool completion and with an immediate barrier.
+- A different chat, thread, account, or source-less prompt MUST leave the active
+  source/reply target and pending queue intact; no continuation is synthesized.
+- A later same-surface prompt MUST NOT bypass an earlier different surface.
+
 - `after_response` / `followup` never calls provider interrupt during text generation.
 - `after_task` never calls provider interrupt during text generation or active task work.
 - `after_tool` / `steer` waits for startup, compaction, and tool barriers before interrupting.
