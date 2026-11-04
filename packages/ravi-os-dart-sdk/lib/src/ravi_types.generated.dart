@@ -11369,6 +11369,62 @@ class CredentialsPoliciesExplainReturn {
 
 CredentialsPoliciesExplainReturn credentialsPoliciesExplainReturnFromJson(Object? json) => CredentialsPoliciesExplainReturn.fromJsonValue(json);
 
+class CredentialsRequestOptions {
+  const CredentialsRequestOptions({this.backend, this.execute, this.label, this.reason, this.scopes, this.user});
+
+  final String? backend;
+  final bool? execute;
+  final String? label;
+  final String? reason;
+  final String? scopes;
+  final String? user;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (backend != null) {
+      into["backend"] = RaviJson.from(backend);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+    if (scopes != null) {
+      into["scopes"] = RaviJson.from(scopes);
+    }
+    if (user != null) {
+      into["user"] = RaviJson.from(user);
+    }
+  }
+}
+
+class CredentialsRequestReturn {
+  const CredentialsRequestReturn({required this.delivery, required this.expiresAt, required this.requestId, required this.target});
+
+  final String delivery;
+  final double expiresAt;
+  final String requestId;
+  final String target;
+
+  factory CredentialsRequestReturn.fromJson(Map<String, Object?> json) {
+    return CredentialsRequestReturn(
+      delivery: raviJsonAsString(json["delivery"]),
+      expiresAt: raviJsonAsDouble(json["expiresAt"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      target: raviJsonAsString(json["target"]),
+    );
+  }
+
+  static CredentialsRequestReturn fromJsonValue(Object? json) {
+    return CredentialsRequestReturn.fromJson(raviJsonObject(json, "CredentialsRequestReturn"));
+  }
+}
+
+CredentialsRequestReturn credentialsRequestReturnFromJson(Object? json) => CredentialsRequestReturn.fromJsonValue(json);
+
 class CrmAccountReturn {
   const CrmAccountReturn({required this.crm, required this.target});
 

@@ -10,8 +10,10 @@
 - Local validation MUST reject message payloads with more than 50 blocks.
 - Local validation MUST reject `actions` blocks with more than 25 elements.
 - Local validation MUST reject `block_id` and `action_id` above 255 characters.
-- Socket Mode MUST publish Block Kit interactions to
-  `ravi.inbound.interaction`.
+- Socket Mode MUST publish ordinary Block Kit interactions to
+  `ravi.inbound.interaction`; reserved credential intake callbacks MUST be
+  consumed and scrubbed before generic publication or URL persistence.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/channels/slack/credential-intake.test.ts src/channels/slack/socket-mode.test.ts`
 - Native Slack permission approval MUST use versioned action ids
   `ravi.approval.v1.approve` and `ravi.approval.v1.reject` and MUST NOT
   create a runtime turn from those clicks.
