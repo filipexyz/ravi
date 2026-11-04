@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import {
@@ -134,12 +135,15 @@ function failCredentialConnectionNotFound(op: string, provider: string, connecti
     record.id,
   ]);
   contractFail(op, "CREDENTIAL_CONNECTION_NOT_FOUND", `Connection not found: ${provider}:${connection}`, {
-    asJson,
-    details: {
-      suggestedAction:
-        "Check provider/connection ids (see suggestions; list with: ravi credentials connections list --json)",
-      suggestions: suggestSimilar(`${provider}:${connection}`, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "Check provider/connection ids (see suggestions; list with: ravi credentials connections list --json)",
+        suggestions: suggestSimilar(`${provider}:${connection}`, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Connection not found: ${provider}:${connection}`, { operation: op }),
   });
 }
 

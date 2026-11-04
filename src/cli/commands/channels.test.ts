@@ -298,6 +298,12 @@ describe("channels config contract", () => {
 
     expect(error.details.suggestions).toContain("ravi-rbbt-slack");
     expect(error.details.suggestedAction).toContain("ravi channels list");
+    expect(error.details.cause).toContain("local Ravi config store");
+    expect(error.details.context).toMatchObject({
+      operation: "channels show",
+      provider: "ravi",
+      code: "LOCAL_CHANNEL_CONFIG_NOT_FOUND",
+    });
   });
 
   it("set on an unknown channel exits 1 with CHANNEL_NOT_FOUND and does not write", async () => {

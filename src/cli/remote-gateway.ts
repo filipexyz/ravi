@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Remote gateway dispatch for the Ravi CLI.
  *
@@ -22,6 +23,7 @@
  * structured issues) are preserved so file/project failures stay actionable.
  */
 
+import { projectDiagnosticContext, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { request as httpRequest } from "node:http";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -245,8 +247,14 @@ export function gatewayRequiredError(op: string): ContractError {
     "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.",
     1,
     {
-      retryable: true,
-      suggestedAction: `Start the Ravi daemon so its host CLI gateway socket is available, or set ${REMOTE_GATEWAY_URL_ENV}`,
+      ...errorDiagnostic(
+        "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.",
+        { operation: op },
+      ),
+      ...{
+        retryable: true,
+        suggestedAction: `Start the Ravi daemon so its host CLI gateway socket is available, or set ${REMOTE_GATEWAY_URL_ENV}`,
+      },
     },
   );
 }
@@ -263,8 +271,14 @@ export function cliOnlyCommandError(op: string): ContractError {
     "This command is exclusive to the local CLI and has no remote-call semantics: it cannot run from a turn inside a runtime session.",
     2,
     {
-      retryable: false,
-      suggestedAction: "Run it from a terminal on the host, outside a session turn.",
+      ...errorDiagnostic(
+        "This command is exclusive to the local CLI and has no remote-call semantics: it cannot run from a turn inside a runtime session.",
+        { operation: op },
+      ),
+      ...{
+        retryable: false,
+        suggestedAction: "Run it from a terminal on the host, outside a session turn.",
+      },
     },
   );
 }
@@ -284,7 +298,10 @@ function invalidRemoteGatewayError(op: string): ContractError {
     "REMOTE_GATEWAY_INVALID",
     `${REMOTE_GATEWAY_URL_ENV} must be a valid HTTP(S) or unix socket URL.`,
     CONTRACT_EXIT_USAGE,
-    { suggestedAction: `Correct or unset ${REMOTE_GATEWAY_URL_ENV} before retrying` },
+    {
+      ...errorDiagnostic(`${REMOTE_GATEWAY_URL_ENV} must be a valid HTTP(S) or unix socket URL.`, { operation: op }),
+      ...{ suggestedAction: `Correct or unset ${REMOTE_GATEWAY_URL_ENV} before retrying` },
+    },
   );
 }
 
@@ -402,24 +419,41 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
             (dnsHint ? `${projected}\n${dnsHint}` : projected),
           body.exitCode,
           {
-            ...projectRemoteContractDetails(op, body, result.status),
-            ...(requestId ? { requestId } : {}),
-            ...(connectorTurn?.details ?? {}),
-            ...(library?.details ?? {}),
+            ...errorDiagnostic(
+              connectorTurn?.message ??
+                (generic ? library?.message : undefined) ??
+                (dnsHint ? `${projected}\n${dnsHint}` : projected),
+              { operation: op },
+            ),
+            ...{
+              ...projectRemoteContractDetails(op, body, result.status),
+              ...(requestId ? { requestId } : {}),
+              ...(connectorTurn?.details ?? {}),
+              ...(library?.details ?? {}),
+            },
           },
         );
       }
       if (body.error === "PermissionDenied") {
-        const denied = permissionDeniedToContractError(op, "Remote gateway denied the command.");
+        const denied = permissionDeniedToContractError(
+          op,
+          typeof body.reason === "string" ? redactDiagnosticText(body.reason) : "Remote gateway denied the command.",
+        );
         return new ContractError(denied.op, denied.code, denied.message, denied.exitCode, {
-          ...denied.details,
-          status: result.status,
+          ...errorDiagnostic(denied.message, { operation: denied.op }),
+          ...{
+            ...denied.details,
+            status: result.status,
+          },
         });
       }
       if (body.error === "Unauthorized") {
         return new ContractError(op, "AUTH_REQUIRED", "Remote gateway authentication failed.", 1, {
-          suggestedAction: "Refresh the runtime context credential and retry",
-          status: result.status,
+          ...errorDiagnostic("Remote gateway authentication failed.", { operation: op }),
+          ...{
+            suggestedAction: "Refresh the runtime context credential and retry",
+            status: result.status,
+          },
         });
       }
       const nestedError =
@@ -433,9 +467,12 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         (issues && result.status >= 400 && result.status < 500)
       ) {
         return new ContractError(op, "USAGE_ERROR", remoteValidationFailureMessage(issues), CONTRACT_EXIT_USAGE, {
-          suggestedAction: `Inspect '${op} --help' and retry with valid input`,
-          status: result.status,
-          ...(issues ? { issues } : {}),
+          ...errorDiagnostic(remoteValidationFailureMessage(issues), { operation: op }),
+          ...{
+            suggestedAction: `Inspect '${op} --help' and retry with valid input`,
+            status: result.status,
+            ...(issues ? { issues } : {}),
+          },
         });
       }
     } catch {
@@ -448,10 +485,16 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
     `${op}: gateway returned HTTP ${result.status} without a valid error envelope. Report the requestId to the operator.`,
     1,
     {
-      retryable: false,
-      ...(safeRequestId(result.requestId) ? { requestId: safeRequestId(result.requestId) } : {}),
-      suggestedAction: "Check gateway availability and report this response; do not automatically retry a write",
-      status: result.status,
+      ...errorDiagnostic(
+        `${op}: gateway returned HTTP ${result.status} without a valid error envelope. Report the requestId to the operator.`,
+        { operation: op },
+      ),
+      ...{
+        retryable: false,
+        ...(safeRequestId(result.requestId) ? { requestId: safeRequestId(result.requestId) } : {}),
+        suggestedAction: "Check gateway availability and report this response; do not automatically retry a write",
+        status: result.status,
+      },
     },
   );
 }
@@ -964,7 +1007,7 @@ function remoteContractFailureMessage(
   sourceMessage?: string,
   code?: string,
 ): string {
-  if (outcome === "denied") return "Remote gateway denied the command.";
+  if (outcome === "denied") return sanitizePublicContractMessage(sourceMessage) ?? "Remote gateway denied the command.";
   if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
   if (op === PAGES_DOMAINS_OP && code === "DOMAIN_SETUP_REQUIRED" && sourceMessage) {
     return safeDomainSetupMessage(sourceMessage);
@@ -1101,13 +1144,30 @@ function projectRemoteContractDetails(
   status: number,
 ): ContractErrorDetails {
   const remote = body.error;
-  const details: ContractErrorDetails = { retryable: remote.retryable, status };
+  const details: ContractErrorDetails = {
+    retryable: remote.retryable,
+    status,
+    ...(typeof remote.cause === "string" ? { cause: redactDiagnosticText(remote.cause) } : {}),
+    ...(remote.context ? { context: projectDiagnosticContext(remote.context) } : {}),
+    ...(body.outcome === "denied" && typeof remote.cause !== "string"
+      ? {
+          cause: redactDiagnosticText(remote.message),
+          context: { ...projectDiagnosticContext(remote.context), operation: op, status },
+        }
+      : {}),
+  };
   if (safeRequestId(remote.diagnosticRequestId))
     details.diagnosticRequestId = safeRequestId(remote.diagnosticRequestId);
   const denial = projectRemoteDenial(body);
   if (denial) Object.assign(details, denial);
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
   const runtimeCatalog = sessionsRuntimeCatalogCopy(op, remote.code);
+  // A missing/hidden resource is intentionally indistinguishable. A remote
+  // diagnostic must not reintroduce the resource name removed by access policy.
+  if (runtimeCatalog && remote.code === "SESSION_NOT_FOUND") {
+    details.cause = runtimeCatalog.message;
+    details.context = { operation: op, status };
+  }
   const threadCatalog = threadCommandCatalogCopy(op, remote.code);
   const profileCatalog = body.outcome === "failed" ? taskProfileCatalogCopy(op, remote.code) : undefined;
   const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;

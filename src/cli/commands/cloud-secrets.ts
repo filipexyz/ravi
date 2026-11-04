@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * `ravi cloud secrets list|set|remove`: secrets a cloud run uses outside its
  * container. The Console stores each value encrypted and adds it to a run's
@@ -234,10 +235,13 @@ export class CloudSecretsCommands {
         const secret = secrets.find((entry) => entry.id === ref) ?? scoped.find((entry) => entry.name === ref);
         if (!secret) {
           contractFail(op, "CLOUD_SECRET_NOT_FOUND", `No cloud secret '${ref.slice(0, 80)}'.`, {
-            asJson,
-            details: {
-              suggestedAction: `List them with: ravi cloud secrets list${projectRef ? ` --project ${projectRef}` : ""}`,
+            ...{
+              asJson,
+              details: {
+                suggestedAction: `List them with: ravi cloud secrets list${projectRef ? ` --project ${projectRef}` : ""}`,
+              },
             },
+            diagnostic: errorDiagnostic(`No cloud secret '${ref.slice(0, 80)}'.`, { operation: op }),
           });
         }
         await removeCloudSecret(session.client, secret.id);

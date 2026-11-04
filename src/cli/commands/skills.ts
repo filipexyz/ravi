@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Skills Commands - install, inspect and sync Ravi skills.
  */
@@ -151,12 +152,15 @@ function failSkillNotFound(op: string, skillName: string, options: SkillNotFound
   const suggestedAction =
     options.suggestedAction ?? "Check the skill name (see suggestions; list with: ravi skills list --json)";
   contractFail(op, "SKILL_NOT_FOUND", message, {
-    asJson: options.asJson,
-    details: {
-      suggestedAction,
-      suggestions: suggestSimilar(skillName, options.candidates ?? knownSkillNames({ includeCodex: true })),
-      issues: skillContractIssues(["skill"], "SKILL_NOT_FOUND", message, suggestedAction),
+    ...{
+      asJson: options.asJson,
+      details: {
+        suggestedAction,
+        suggestions: suggestSimilar(skillName, options.candidates ?? knownSkillNames({ includeCodex: true })),
+        issues: skillContractIssues(["skill"], "SKILL_NOT_FOUND", message, suggestedAction),
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -167,11 +171,14 @@ function failSkillNotFound(op: string, skillName: string, options: SkillNotFound
 function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
   const candidates = getAllAgents().flatMap((agent) => [agent.id, agent.name]);
   contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-      suggestions: suggestSimilar(agentId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+        suggestions: suggestSimilar(agentId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Agent not found: ${agentId}`, { operation: op }),
   });
 }
 
@@ -227,15 +234,25 @@ function failSkillSource(op: string, error: SkillSourceError, options: { asJson?
     error.code === "SKILL_ALREADY_INSTALLED" && error.skillName
       ? failure.suggestedAction.replace("<skill>", error.skillName)
       : failure.suggestedAction;
+  // Read the private input from the original wrapper message, before the
+  // diagnostic projection appends nested causes that must remain visible.
+  const privateSource =
+    error.code === "SKILL_SOURCE_NOT_FOUND"
+      ? /^(?:Local skill source|Skill source path) not found: ([\s\S]+)/.exec(error.message)?.[1]
+      : undefined;
+  const diagnostic = errorDiagnostic(error, { operation: op }, { secrets: privateSource ? [privateSource] : [] });
   contractFail(op, error.code, error.publicMessage, {
-    asJson: options.asJson,
-    exitCode: failure.exitCode,
-    details: {
-      ...(failure.retryable ? { retryable: true } : {}),
-      suggestedAction,
-      ...(error.candidates.length > 0 ? { suggestions: error.candidates.slice(0, 32) } : {}),
-      issues: skillContractIssues([failure.path], error.code, error.publicMessage, suggestedAction),
+    ...{
+      asJson: options.asJson,
+      exitCode: failure.exitCode,
+      details: {
+        ...(failure.retryable ? { retryable: true } : {}),
+        suggestedAction,
+        ...(error.candidates.length > 0 ? { suggestions: error.candidates.slice(0, 32) } : {}),
+        issues: skillContractIssues([failure.path], error.code, error.publicMessage, suggestedAction),
+      },
     },
+    diagnostic,
   });
 }
 
@@ -283,16 +300,19 @@ function failSkillFile(skill: RaviSkill, file: string, files: readonly string[],
     : `File not found in skill ${skill.name}: ${file}`;
   const suggestedAction = `Use a path from this skill's file list: ravi skills show ${skill.name} --file <path>`;
   contractFail("skills show", code, message, {
-    asJson,
-    exitCode: invalid ? CONTRACT_EXIT_USAGE : CONTRACT_EXIT_ERROR,
-    details: {
-      suggestedAction,
-      files: [...files],
-      issues: [
-        ...skillContractIssues(["file"], code, message, suggestedAction),
-        ...skillFileListLines(files).map((line) => ({ path: ["files"], code: "SKILL_FILES", message: line })),
-      ],
+    ...{
+      asJson,
+      exitCode: invalid ? CONTRACT_EXIT_USAGE : CONTRACT_EXIT_ERROR,
+      details: {
+        suggestedAction,
+        files: [...files],
+        issues: [
+          ...skillContractIssues(["file"], code, message, suggestedAction),
+          ...skillFileListLines(files).map((line) => ({ path: ["files"], code: "SKILL_FILES", message: line })),
+        ],
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: "skills show" }),
   });
 }
 
@@ -481,12 +501,15 @@ function failAgentCannotPin(op: string, asJson?: boolean): never {
     "Agents do not pin or unpin Library skills: a person pins a skill to an agent in the Console or from the operator's terminal.";
   const suggestedAction = "Ask the operator to run: ravi skills pin <ref> --agent <agent> --execute";
   contractFail(op, LIBRARY_AGENT_CANNOT_PIN, message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_POLICY,
-    details: {
-      suggestedAction,
-      issues: skillContractIssues([], LIBRARY_AGENT_CANNOT_PIN, message, suggestedAction),
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: {
+        suggestedAction,
+        issues: skillContractIssues([], LIBRARY_AGENT_CANNOT_PIN, message, suggestedAction),
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -501,12 +524,15 @@ function requirePinAgent(
   if (!agentId) {
     const message = "Pass --agent <id>: the local agent the pin is for.";
     contractFail(op, "USAGE_ERROR", message, {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction: "List agents with: ravi agents list --json",
-        issues: skillContractIssues(["agent"], "required", message),
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "List agents with: ravi agents list --json",
+          issues: skillContractIssues(["agent"], "required", message),
+        },
       },
+      diagnostic: errorDiagnostic(message, { operation: op }),
     });
   }
   if (options.mustExist !== false && !getAgent(agentId)) failAgentNotFound(op, agentId, asJson);
@@ -517,12 +543,15 @@ function failLibraryRefInvalid(op: string, value: string, asJson?: boolean): nev
   const message = `Not a valid Library ref: ${value.slice(0, 120)}. Use org/<slug> or <project>/<slug> (a-z, 0-9 and -).`;
   const suggestedAction = "Copy the ref from: ravi skills search <words> --json";
   contractFail(op, "LIBRARY_REF_INVALID", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction,
-      issues: skillContractIssues(["skill"], "LIBRARY_REF_INVALID", message, suggestedAction),
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction,
+        issues: skillContractIssues(["skill"], "LIBRARY_REF_INVALID", message, suggestedAction),
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -537,9 +566,12 @@ function libraryGrantId(op: string, value: string, asJson?: boolean): string | n
   if (isReservedLibrarySlug(ref.slug)) {
     const message = `'${ref.slug}' is reserved (a skill that ships with Ravi or a Library route word), so no Library skill can use it. Grant a Ravi skill by its name.`;
     contractFail(op, "LIBRARY_SLUG_RESERVED", message, {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: { suggestedAction: `ravi skills grant <agent> ${ref.slug}` },
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: `ravi skills grant <agent> ${ref.slug}` },
+      },
+      diagnostic: errorDiagnostic(message, { operation: op }),
     });
   }
   return ref.id;
@@ -1414,11 +1446,14 @@ export class SkillsCommands {
       if (!authorized) {
         const copy = skillNotAuthorizedCopy(skill.name, runtimeAgentId, source ? { skillPath: skill.path } : {});
         contractFail("skills show", SKILL_NOT_AUTHORIZED, copy.message, {
-          asJson,
-          details: {
-            suggestedAction: copy.suggestedAction,
-            issues: skillContractIssues([], SKILL_NOT_AUTHORIZED, copy.message, copy.suggestedAction),
+          ...{
+            asJson,
+            details: {
+              suggestedAction: copy.suggestedAction,
+              issues: skillContractIssues([], SKILL_NOT_AUTHORIZED, copy.message, copy.suggestedAction),
+            },
           },
+          diagnostic: errorDiagnostic(copy.message, { operation: "skills show" }),
         });
       }
     }
@@ -1478,9 +1513,12 @@ export class SkillsCommands {
     const parsedLimit = limit === undefined ? undefined : Number(limit);
     if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1)) {
       contractFail("skills search", "USAGE_ERROR", "--limit must be a whole number from 1 to 50.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Pass --limit between 1 and 50" },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: "Pass --limit between 1 and 50" },
+        },
+        diagnostic: errorDiagnostic("--limit must be a whole number from 1 to 50.", { operation: "skills search" }),
       });
     }
     const payload = await withLibraryContract("skills search", asJson, () =>
@@ -1545,23 +1583,29 @@ export class SkillsCommands {
         "Agents do not publish Library skills: propose the change and a person reviews and publishes it in the Console.";
       const suggestedAction = `ravi skills propose <dir> --scope ${scopeHint} --execute`;
       contractFail("skills publish", LIBRARY_AGENT_CANNOT_PUBLISH, message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_POLICY,
-        details: {
-          suggestedAction,
-          issues: skillContractIssues([], LIBRARY_AGENT_CANNOT_PUBLISH, message, suggestedAction),
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_POLICY,
+          details: {
+            suggestedAction,
+            issues: skillContractIssues([], LIBRARY_AGENT_CANNOT_PUBLISH, message, suggestedAction),
+          },
         },
+        diagnostic: errorDiagnostic(message, { operation: "skills publish" }),
       });
     }
     if (!scope?.trim()) {
       const message = "Pass --scope org or --scope <project-slug>.";
       contractFail("skills publish", "USAGE_ERROR", message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Choose who gets the skill: --scope org (every project) or --scope <project-slug>",
-          issues: skillContractIssues(["scope"], "required", message),
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Choose who gets the skill: --scope org (every project) or --scope <project-slug>",
+            issues: skillContractIssues(["scope"], "required", message),
+          },
         },
+        diagnostic: errorDiagnostic(message, { operation: "skills publish" }),
       });
     }
     return withLibraryContract("skills publish", asJson, async () => {
@@ -1633,24 +1677,30 @@ export class SkillsCommands {
     if (!scope?.trim()) {
       const message = "Pass --scope org or --scope <project-slug>.";
       contractFail("skills propose", "USAGE_ERROR", message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Name the skill's scope: --scope org or --scope <project-slug>",
-          issues: skillContractIssues(["scope"], "required", message),
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Name the skill's scope: --scope org or --scope <project-slug>",
+            issues: skillContractIssues(["scope"], "required", message),
+          },
         },
+        diagnostic: errorDiagnostic(message, { operation: "skills propose" }),
       });
     }
     const updateNumber = update === undefined ? undefined : Number(update);
     if (updateNumber !== undefined && (!Number.isInteger(updateNumber) || updateNumber < 1)) {
       const message = "--update takes a proposal number (1, 2, 3...).";
       contractFail("skills propose", "USAGE_ERROR", message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "List your proposals with: ravi skills proposals --mine",
-          issues: skillContractIssues(["update"], "USAGE_ERROR", message),
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "List your proposals with: ravi skills proposals --mine",
+            issues: skillContractIssues(["update"], "USAGE_ERROR", message),
+          },
         },
+        diagnostic: errorDiagnostic(message, { operation: "skills propose" }),
       });
     }
     return withLibraryContract("skills propose", asJson, async () => {
@@ -1725,9 +1775,12 @@ export class SkillsCommands {
     const parsedState = (state?.trim().toLowerCase() || "open") as LibraryProposalState;
     if (!["open", "closed", "all"].includes(parsedState)) {
       contractFail("skills proposals", "USAGE_ERROR", "--state is open, closed or all.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Pass --state open, --state closed or --state all" },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: "Pass --state open, --state closed or --state all" },
+        },
+        diagnostic: errorDiagnostic("--state is open, closed or all.", { operation: "skills proposals" }),
       });
     }
     const parsedRef = ref?.trim() ? parseLibraryRef(ref) : null;
@@ -1787,12 +1840,15 @@ export class SkillsCommands {
     if (!Number.isInteger(parsedNumber) || parsedNumber < 1) {
       const message = "The proposal number is a whole number (1, 2, 3...).";
       contractFail("skills proposal", "USAGE_ERROR", message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: `List them with: ravi skills proposals ${parsedRef.ref}`,
-          issues: skillContractIssues(["number"], "USAGE_ERROR", message),
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: `List them with: ravi skills proposals ${parsedRef.ref}`,
+            issues: skillContractIssues(["number"], "USAGE_ERROR", message),
+          },
         },
+        diagnostic: errorDiagnostic(message, { operation: "skills proposal" }),
       });
     }
     const outcome = await withLibraryContract("skills proposal", asJson, () =>
@@ -1992,17 +2048,20 @@ export class SkillsCommands {
     if (!requestedSkill && all !== true && !source) {
       const message = "Pass a catalog skill name, --source <skill-dir>, or --all.";
       contractFail("skills install", "USAGE_ERROR", message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "List installable skills with: ravi skills list --json",
-          issues: skillContractIssues(
-            ["name"],
-            "required",
-            message,
-            "List installable skills with: ravi skills list --json",
-          ),
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "List installable skills with: ravi skills list --json",
+            issues: skillContractIssues(
+              ["name"],
+              "required",
+              message,
+              "List installable skills with: ravi skills list --json",
+            ),
+          },
         },
+        diagnostic: errorDiagnostic(message, { operation: "skills install" }),
       });
     }
     return withSkillSourceContract("skills install", asJson, () =>
@@ -2517,12 +2576,15 @@ function normalizeRequestedSkillName(name?: string, skillName?: string, asJson?:
   if (positional && flag && positional !== flag) {
     const message = `Conflicting skill names: ${positional} and ${flag}`;
     contractFail("skills install", "USAGE_ERROR", message, {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction: "Pass the skill name once (positional or --skill)",
-        issues: [{ path: ["skill"], code: "conflict", message }],
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Pass the skill name once (positional or --skill)",
+          issues: [{ path: ["skill"], code: "conflict", message }],
+        },
       },
+      diagnostic: errorDiagnostic(message, { operation: "skills install" }),
     });
   }
   return positional || flag || undefined;

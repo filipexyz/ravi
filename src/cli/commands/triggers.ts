@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Triggers Commands - Manage event-driven triggers
  */
@@ -84,11 +85,14 @@ function failTriggerNotFound(op: string, id: string, asJson?: boolean): never {
     .filter((trigger) => canReadTrigger(scopeCtx, trigger))
     .flatMap((trigger) => [trigger.id, trigger.name]);
   contractFail(op, "TRIGGER_NOT_FOUND", `Trigger not found: ${id}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the trigger id (see suggestions; list with: ravi triggers list --json)",
-      suggestions: suggestSimilar(id, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the trigger id (see suggestions; list with: ravi triggers list --json)",
+        suggestions: suggestSimilar(id, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Trigger not found: ${id}`, { operation: op }),
   });
 }
 
@@ -110,14 +114,17 @@ function assertTriggerMutable(op: string, id: string, trigger: Trigger, asJson?:
     command: op,
   });
   contractFail(op, "PERMISSION_DENIED", denial.message, {
-    asJson,
-    details: {
-      suggestedAction: denial.requiredCapability
-        ? `Request ${denial.requiredCapability} from an operator and retry '${op}'`
-        : `Request modify authority on the owning agent from an operator and retry '${op}'`,
-      ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}),
-      ...(denial.denialId ? { denialId: denial.denialId } : {}),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: denial.requiredCapability
+          ? `Request ${denial.requiredCapability} from an operator and retry '${op}'`
+          : `Request modify authority on the owning agent from an operator and retry '${op}'`,
+        ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}),
+        ...(denial.denialId ? { denialId: denial.denialId } : {}),
+      },
     },
+    diagnostic: errorDiagnostic(denial.message, { operation: op }),
   });
 }
 
@@ -144,8 +151,11 @@ function assertTriggerTargetAuthorized(
       command: op,
     });
     contractFail(op, "PERMISSION_DENIED", denial.message, {
-      asJson,
-      details: { ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}) },
+      ...{
+        asJson,
+        details: { ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}) },
+      },
+      diagnostic: errorDiagnostic(denial.message, { operation: op }),
     });
   }
   if (!isScopeEnforced(scopeCtx)) return;
@@ -157,12 +167,18 @@ function assertTriggerTargetAuthorized(
   if (literalSession && !isLegacySessionTarget(literalSession) && !literalSession.includes("{{")) {
     const existing = resolveSession(literalSession);
     if (existing && existing.agentId !== scopeCtx?.agentId && !canModify(literalSession)) {
-      contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${literalSession}`, { asJson });
+      contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${literalSession}`, {
+        ...{ asJson },
+        diagnostic: errorDiagnostic(`Permission denied for session target: ${literalSession}`, { operation: op }),
+      });
     }
   }
   const replySession = target.replySession?.trim();
   if (replySession && !canModify(replySession)) {
-    contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${replySession}`, { asJson });
+    contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${replySession}`, {
+      ...{ asJson },
+      diagnostic: errorDiagnostic(`Permission denied for session target: ${replySession}`, { operation: op }),
+    });
   }
 }
 

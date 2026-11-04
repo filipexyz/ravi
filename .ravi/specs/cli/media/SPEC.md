@@ -58,7 +58,10 @@ live channel (WhatsApp/Slack) and cannot be unsent.
    Isolated remote projection MUST keep those catalog codes and replace the
    remote message / `suggestedAction` with the local catalog copy. Generic
    codes such as `COMMAND_FAILED` stay `Remote command failed.` The projection
-   MUST NOT echo remote text, keys, URLs, or provider payloads. `FILE_NOT_FOUND`
+   MUST retain the normalized provider cause and typed diagnostic context
+   (`operation`, `provider`, `status`, `code`) alongside the catalog headline.
+   Secret values and raw provider payloads MUST NOT traverse the envelope;
+   redaction uses the shared diagnostic contract. `FILE_NOT_FOUND`
    on `media send` uses the same local catalog copy; the same code on another
    `op` MUST NOT receive media copy.
 6. `media send --execute` MUST authenticate the spawned Omni CLI with the same

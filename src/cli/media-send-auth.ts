@@ -5,6 +5,7 @@
  * diverge from the top-level / `OMNI_API_KEY` the Ravi runtime uses. Keep the
  * public contract stable and free of provider payloads / key material.
  */
+import { errorDiagnostic, type ErrorDiagnosticContext } from "../utils/error-diagnostic.js";
 
 export const OMNI_AUTH_FAILED_CODE = "OMNI_AUTH_FAILED";
 export const MEDIA_SEND_FAILED_CODE = "MEDIA_SEND_FAILED";
@@ -48,8 +49,8 @@ export function localMediaSendCatalogCopy(code: string): { message: string; sugg
 export class MediaSendAuthError extends Error {
   readonly code = OMNI_AUTH_FAILED_CODE;
 
-  constructor() {
-    super(OMNI_AUTH_FAILED_MESSAGE);
+  constructor(cause?: unknown) {
+    super(OMNI_AUTH_FAILED_MESSAGE, cause === undefined ? undefined : { cause });
     this.name = "MediaSendAuthError";
   }
 }
@@ -59,6 +60,8 @@ export interface MediaSendFailureMapping {
   message: string;
   retryable: boolean;
   suggestedAction: string;
+  cause: string;
+  context: ErrorDiagnosticContext;
 }
 
 function isAuthStatus(value: unknown): boolean {
@@ -113,9 +116,13 @@ export function isMediaSendAuthError(error: unknown): boolean {
   return error instanceof MediaSendAuthError || (error instanceof Error && error.name === "MediaSendAuthError");
 }
 
-export function mapMediaSendFailure(error: unknown): MediaSendFailureMapping {
-  if (isMediaSendAuthError(error)) {
+export function mapMediaSendFailure(error: unknown, provider = "omni"): MediaSendFailureMapping {
+  const authFailure = isMediaSendAuthError(error);
+  const providerFailure = authFailure && error instanceof Error && error.cause !== undefined ? error.cause : error;
+  const diagnostic = errorDiagnostic(providerFailure, { operation: "media send", provider });
+  if (authFailure) {
     return {
+      ...diagnostic,
       code: OMNI_AUTH_FAILED_CODE,
       message: OMNI_AUTH_FAILED_MESSAGE,
       retryable: false,
@@ -123,6 +130,7 @@ export function mapMediaSendFailure(error: unknown): MediaSendFailureMapping {
     };
   }
   return {
+    ...diagnostic,
     code: MEDIA_SEND_FAILED_CODE,
     message: MEDIA_SEND_FAILED_MESSAGE,
     retryable: true,

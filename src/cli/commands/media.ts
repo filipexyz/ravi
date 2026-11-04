@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { z } from "zod";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext } from "../context.js";
 import { contractDryRun, contractFail } from "../agent-contract.js";
@@ -73,6 +74,11 @@ export class MediaCommands {
     if (!existsSync(absPath)) {
       contractFail("media send", FILE_NOT_FOUND_CODE, FILE_NOT_FOUND_MESSAGE, {
         asJson,
+        diagnostic: errorDiagnostic("The source file does not exist on the local filesystem.", {
+          operation: "media send",
+          provider: "filesystem",
+          code: "ENOENT",
+        }),
         details: {
           suggestedAction: FILE_NOT_FOUND_SUGGESTED_ACTION,
         },
@@ -148,9 +154,13 @@ export class MediaCommands {
 
       return payload;
     } catch (error) {
-      const mapped = mapMediaSendFailure(error);
+      const mapped = mapMediaSendFailure(
+        error,
+        (channel ?? source?.channel)?.toLowerCase() === "slack" ? "slack" : "omni",
+      );
       contractFail("media send", mapped.code, mapped.message, {
         asJson,
+        diagnostic: { cause: mapped.cause, context: mapped.context },
         details: {
           retryable: mapped.retryable,
           suggestedAction: mapped.suggestedAction,

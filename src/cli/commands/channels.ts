@@ -3,6 +3,7 @@
  */
 
 import "reflect-metadata";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { z } from "zod";
@@ -210,6 +211,11 @@ function failChannelNotFound(op: string, name: string, asJson?: boolean): never 
   const candidates = dbListChannels().map((channel) => channel.name);
   contractFail(op, "CHANNEL_NOT_FOUND", `Channel not found: ${name}`, {
     asJson,
+    diagnostic: errorDiagnostic("No native channel config with this name exists in the local Ravi config store.", {
+      operation: op,
+      provider: "ravi",
+      code: "LOCAL_CHANNEL_CONFIG_NOT_FOUND",
+    }),
     details: {
       suggestedAction: "Check the channel config name (see suggestions; list with: ravi channels list --json)",
       suggestions: suggestSimilar(name, candidates),
@@ -233,6 +239,14 @@ function requireCredentialConnectionForChannel(
     );
     contractFail(op, "CREDENTIAL_CONNECTION_NOT_FOUND", `Credential connection not found: ${provider}:${connection}`, {
       asJson,
+      diagnostic: errorDiagnostic(
+        "The referenced credential connection does not exist in the local credential store.",
+        {
+          operation: op,
+          provider,
+          code: "LOCAL_CREDENTIAL_CONNECTION_NOT_FOUND",
+        },
+      ),
       details: {
         suggestedAction: `Add it with: ravi credentials connections add --provider ${provider} --connection ${connection}`,
         suggestions: suggestSimilar(`${provider}:${connection}`, candidates),

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { readFileSync, statSync } from "node:fs";
 import { z } from "zod";
@@ -206,12 +207,17 @@ export class AgendaCommands {
             "POLICY_DISABLED",
             "The organization does not allow automatic recording of calendar calls.",
             {
-              asJson,
-              exitCode: CONTRACT_EXIT_POLICY,
-              details: {
-                suggestedAction:
-                  "An owner or admin of the organization turns on automatic recording in the Console settings. Until then use --record ask.",
+              ...{
+                asJson,
+                exitCode: CONTRACT_EXIT_POLICY,
+                details: {
+                  suggestedAction:
+                    "An owner or admin of the organization turns on automatic recording in the Console settings. Until then use --record ask.",
+                },
               },
+              diagnostic: errorDiagnostic("The organization does not allow automatic recording of calendar calls.", {
+                operation: op,
+              }),
             },
           );
         }
@@ -437,18 +443,24 @@ export class AgendaCommands {
         "CALENDAR_ACCESS_DENIED",
         `The calendar is used only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: ${block.why}.`,
         {
-          asJson,
-          exitCode: CONTRACT_EXIT_POLICY,
-          details: {
-            refusal: "operator_only",
-            turn: block.turn,
-            ...meetingReadRefusalDetails(block, {
-              otherPerson:
-                "Tell the person you cannot look at or change the operator's calendar here; the operator can ask in their own chat.",
-              chatLine: "Ask me in our private chat and I'll check the calendar there.",
-              chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
-            }),
+          ...{
+            asJson,
+            exitCode: CONTRACT_EXIT_POLICY,
+            details: {
+              refusal: "operator_only",
+              turn: block.turn,
+              ...meetingReadRefusalDetails(block, {
+                otherPerson:
+                  "Tell the person you cannot look at or change the operator's calendar here; the operator can ask in their own chat.",
+                chatLine: "Ask me in our private chat and I'll check the calendar there.",
+                chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
+              }),
+            },
           },
+          diagnostic: errorDiagnostic(
+            `The calendar is used only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: ${block.why}.`,
+            { operation: op },
+          ),
         },
       );
     }
@@ -471,8 +483,11 @@ function calendarErrorToContract(op: string, error: CloudAuthError): ContractErr
       "The organization's policy does not allow this.",
       CONTRACT_EXIT_POLICY,
       {
-        suggestedAction:
-          "An owner or admin of the organization turns on automatic recording in the Console settings. Until then use --record ask.",
+        ...errorDiagnostic(error, { operation: op }),
+        ...{
+          suggestedAction:
+            "An owner or admin of the organization turns on automatic recording in the Console settings. Until then use --record ask.",
+        },
       },
     );
   }
@@ -482,14 +497,22 @@ function calendarErrorToContract(op: string, error: CloudAuthError): ContractErr
       "CALENDAR_SCOPE_MISSING",
       "This Google connection cannot read the calendar.",
       CONTRACT_EXIT_ERROR,
-      { suggestedAction: "Ask the operator to reconnect Google with calendar access in the Console (Connectors)." },
+      {
+        ...errorDiagnostic(error, { operation: op }),
+        ...{
+          suggestedAction: "Ask the operator to reconnect Google with calendar access in the Console (Connectors).",
+        },
+      },
     );
   }
   return cloudErrorToContractError(op, error);
 }
 
 function usage(op: string, message: string, asJson: boolean | undefined): never {
-  contractFail(op, "INVALID_ARGUMENT", message, { asJson, exitCode: CONTRACT_EXIT_USAGE });
+  contractFail(op, "INVALID_ARGUMENT", message, {
+    ...{ asJson, exitCode: CONTRACT_EXIT_USAGE },
+    diagnostic: errorDiagnostic(message, { operation: op }),
+  });
 }
 
 function parseSwitch(op: string, flag: string, value: string, asJson: boolean | undefined): boolean {
@@ -526,17 +549,24 @@ function pickConnection(
     );
     if (found) return found;
     contractFail(op, "CALENDAR_CONNECTION_NOT_FOUND", `No Google connection ${wanted} on this login.`, {
-      asJson,
-      details: { suggestions: overview.connections.slice(0, 3).map((entry) => entry.connectionId) },
+      ...{
+        asJson,
+        details: { suggestions: overview.connections.slice(0, 3).map((entry) => entry.connectionId) },
+      },
+      diagnostic: errorDiagnostic(`No Google connection ${wanted} on this login.`, { operation: op }),
     });
   }
   if (overview.connections.length === 1) return overview.connections[0];
   if (overview.connections.length === 0) {
     contractFail(op, "CALENDAR_CONNECTION_NOT_FOUND", "This login has no personal Google connection.", {
-      asJson,
-      details: {
-        suggestedAction: "Ask the operator to connect Google (with calendar access) in the Console, under Connectors.",
+      ...{
+        asJson,
+        details: {
+          suggestedAction:
+            "Ask the operator to connect Google (with calendar access) in the Console, under Connectors.",
+        },
       },
+      diagnostic: errorDiagnostic("This login has no personal Google connection.", { operation: op }),
     });
   }
   usage(

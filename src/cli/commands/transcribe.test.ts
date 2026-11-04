@@ -10,7 +10,7 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 afterAll(() => mock.restore());
 
@@ -66,15 +66,18 @@ type ContractErrorInstance = InstanceType<typeof ContractError>;
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;
+  const originalError = console.error;
   const lines: string[] = [];
   console.log = (...args: unknown[]) => {
     lines.push(args.map((arg) => String(arg)).join(" "));
   };
+  console.error = console.log;
   try {
     const result = await run();
     return { output: lines.join("\n"), result };
   } finally {
     console.log = originalLog;
+    console.error = originalError;
   }
 }
 
@@ -138,22 +141,73 @@ describe("transcribe file contract", () => {
   });
 
   it("exits 1 with FILE_NOT_FOUND when the audio file does not exist", async () => {
-    const missingPath = "C:/sentinel/private/file-9P3X.mp3";
-    const error = await expectContractError(
-      () => new TranscribeCommands().file(missingPath, "pt", true),
-      "FILE_NOT_FOUND",
-      1,
-    );
+    const missingDir = mkdtempSync(join(tmpdir(), "ravi-missing-audio-test-"));
+    const missingPath = join(missingDir, "missing.mp3");
+    try {
+      const error = await expectContractError(
+        () => new TranscribeCommands().file(missingPath, "pt", true),
+        "FILE_NOT_FOUND",
+        1,
+      );
 
-    expect(error.message).toBe("Audio file was not found.");
-    expect(error.details.suggestedAction).toContain("audio file path");
-    expect(JSON.stringify(error.envelope())).not.toContain("file-9P3X");
-    expect(JSON.stringify(error.envelope())).not.toContain(missingPath);
-    expect(transcribeCalls).toHaveLength(0);
+      expect(error.message).toBe("Audio file was not found.");
+      expect(error.details.suggestedAction).toContain("audio file path");
+      expect(error.envelope().error).toMatchObject({
+        cause: "The requested audio file does not exist.",
+        context: { operation: "transcribe file", file: resolve(missingPath), code: "ENOENT" },
+      });
+      expect(transcribeCalls).toHaveLength(0);
+    } finally {
+      rmSync(missingDir, { recursive: true, force: true });
+    }
   });
 
-  it.each([new Error("PRIVATE_MESSAGE_8K2R"), "SENTINEL_SECRET_7M4Q"])(
-    "does not expose a provider rejection in the TRANSCRIBE_FAILED envelope",
+  it.each([true, false])("preserves the provider cause and context in final output (json=%s)", async (asJson) => {
+    const filePath = seedAudioFile();
+    transcribeFailure = Object.assign(new Error("HTTP 429: audio quota exceeded; api_key=synthetic-credential"), {
+      status: 429,
+      code: "insufficient_quota",
+      context: { provider: "openai", model: "whisper-1" },
+    });
+    try {
+      let caught: unknown;
+      const { output } = await captureConsole(async () => {
+        try {
+          await new TranscribeCommands().file(filePath, "pt", asJson);
+        } catch (error) {
+          caught = error;
+        }
+      });
+      expect(caught).toBeInstanceOf(ContractError);
+      const error = caught as ContractErrorInstance;
+      expect(error.code).toBe("TRANSCRIBE_FAILED");
+      expect(error.message).toBe("Audio transcription failed.");
+      expect(error.exitCode).toBe(1);
+      expect(error.envelope().error).toMatchObject({
+        retryable: true,
+        cause: "HTTP 429: audio quota exceeded; api_key=[redacted:api_key]",
+        context: {
+          operation: "transcribe file",
+          file: filePath,
+          provider: "openai",
+          model: "whisper-1",
+          status: 429,
+          code: "insufficient_quota",
+        },
+      });
+      expect(output).toContain("HTTP 429: audio quota exceeded");
+      expect(output).toContain("api_key=[redacted:api_key]");
+      expect(output).toContain("openai");
+      expect(output).toContain(filePath);
+      expect(output).not.toContain("synthetic-credential");
+      expect(transcribeCalls).toHaveLength(1);
+    } finally {
+      rmSync(audioDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([new Error("ffmpeg exited 127: executable not found"), "No transcription API key configured"])(
+    "keeps actionable errors even when no provider metadata is available",
     async (providerFailure) => {
       const filePath = seedAudioFile();
       transcribeFailure = providerFailure;
@@ -163,13 +217,10 @@ describe("transcribe file contract", () => {
           "TRANSCRIBE_FAILED",
           1,
         );
-
-        expect(error.message).toBe("Audio transcription failed.");
-        expect(error.details.retryable).toBe(true);
-        const serialized = JSON.stringify(error.envelope());
-        expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
-        expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
-        expect(transcribeCalls).toHaveLength(1);
+        expect(error.envelope().error.cause).toBe(
+          providerFailure instanceof Error ? providerFailure.message : providerFailure,
+        );
+        expect(error.envelope().error.context).toMatchObject({ operation: "transcribe file", file: filePath });
       } finally {
         rmSync(audioDir, { recursive: true, force: true });
       }

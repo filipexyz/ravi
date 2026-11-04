@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Runtime model preset commands
  *
@@ -55,11 +56,14 @@ function emitConfigChanged(): void {
 function failPresetNotFound(op: string, presetId: string, asJson?: boolean): never {
   const candidates = listRuntimeModelPresets({ limit: 40 }).items.map((preset) => preset.id);
   contractFail(op, "PRESET_NOT_FOUND", `Model preset not found: ${presetId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the preset id (see suggestions; list with: ravi runtime presets list --json)",
-      suggestions: suggestSimilar(presetId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the preset id (see suggestions; list with: ravi runtime presets list --json)",
+        suggestions: suggestSimilar(presetId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Model preset not found: ${presetId}`, { operation: op }),
   });
 }
 

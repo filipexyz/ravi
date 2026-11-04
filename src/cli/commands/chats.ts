@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
@@ -365,11 +366,14 @@ function failChatNotFound(op: string, chatRef: string, asJson?: boolean): never 
     item.chat.normalizedChatId,
   ]);
   contractFail(op, "CHAT_NOT_FOUND", `Chat not found: ${chatRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the chat ref (see suggestions; list with: ravi chats list --json)",
-      suggestions: suggestSimilar(chatRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the chat ref (see suggestions; list with: ravi chats list --json)",
+        suggestions: suggestSimilar(chatRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Chat not found: ${chatRef}`, { operation: op }),
   });
 }
 
@@ -388,11 +392,14 @@ function failReadingListNotFound(
   }).items.flatMap((list) => [list.id, list.name]);
   const ownerSuffix = owner ? ` (${owner.type}:${owner.id})` : "";
   contractFail(op, "READING_LIST_NOT_FOUND", `Reading list not found: ${listRef}${ownerSuffix}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the list ref (see suggestions; list with: ravi chats lists list --json)",
-      suggestions: suggestSimilar(listRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the list ref (see suggestions; list with: ravi chats lists list --json)",
+        suggestions: suggestSimilar(listRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Reading list not found: ${listRef}${ownerSuffix}`, { operation: op }),
   });
 }
 
@@ -458,8 +465,11 @@ function resolveContactId(contactRef: string | undefined, site: ContractCallSite
   const contact = getContact(raw);
   if (!contact) {
     contractFail(site.op, "CONTACT_NOT_FOUND", `Contact not found: ${raw}`, {
-      asJson: site.asJson,
-      details: { suggestedAction: "List visible contacts with: ravi contacts list --json" },
+      ...{
+        asJson: site.asJson,
+        details: { suggestedAction: "List visible contacts with: ravi contacts list --json" },
+      },
+      diagnostic: errorDiagnostic(`Contact not found: ${raw}`, { operation: site.op }),
     });
   }
   return contact.id;

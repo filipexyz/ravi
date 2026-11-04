@@ -1188,6 +1188,8 @@ describe("pages agent-first contract", () => {
     expect(serialized).not.toContain("SENTINEL_PROVIDER_4Q7M");
     expect(serialized).not.toContain("user:");
     expect(serialized).not.toContain("/private");
+    expect(error.details.cause).toBe("Pages site not found: [redacted:credential]");
+    expect(error.details.context).toMatchObject({ operation: "pages password status", status: 404 });
   });
 
   it("maps a Console 'route not found' failure to the ROUTE_NOT_FOUND envelope (exit 1)", async () => {
@@ -2228,7 +2230,11 @@ describe("pages agent-first contract", () => {
     const text = await captureConsoleError(async () => {
       await expect(runWithContext({}, () => shipPublicBases(false))).rejects.toBeInstanceOf(ContractError);
     });
-    expect(text.split("\n")).toEqual([...SHIP_LIVE_DATA_REFUSAL_LINES]);
+    expect(text.split("\n")).toEqual([
+      SHIP_LIVE_DATA_REFUSAL_LINES[0],
+      "operation: pages ship",
+      ...SHIP_LIVE_DATA_REFUSAL_LINES.slice(1),
+    ]);
     expect(client.me).not.toHaveBeenCalled();
     expect(client.requestJson).not.toHaveBeenCalled();
   });
@@ -2550,6 +2556,7 @@ describe("pages ship page kit", () => {
     });
     expect(text.split("\n")).toEqual([
       "Refusing to ship: the page kit found 1 error(s) in the HTML. Nothing was uploaded or published.",
+      "operation: pages ship",
       ...lines,
     ]);
     expect(client.createPageUploadSession).not.toHaveBeenCalled();
@@ -2635,6 +2642,7 @@ describe("pages ship page kit", () => {
     });
     expect(text.split("\n")).toEqual([
       "Refusing to ship: the page kit found 1 error(s) in the HTML. Nothing was uploaded or published.",
+      "operation: pages ship",
       line,
     ]);
     expect(client.createPageUploadSession).not.toHaveBeenCalled();

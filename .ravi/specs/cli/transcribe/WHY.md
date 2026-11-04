@@ -14,3 +14,11 @@ layer directly and remains behaviorally aligned with the immediate CLI path.
 
 No skill teaches this domain today; the gap is registered in the SPEC so the
 skill wave can close it.
+
+Provider errors must survive internally because replacing them with a generic
+transcription headline prevents recovery. Passing the whole object outward is
+also unsafe: SDK errors may contain request headers and a body/PII serialized
+inside their message. The global diagnostic allowlist and shared egress
+redactor preserve the declared failure reason without exposing those fields.
+The constructor requires the diagnostic explicitly; logger and trace output
+use the same rule rather than retaining a raw private stack dump.

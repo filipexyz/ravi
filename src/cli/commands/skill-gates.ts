@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Skill gate rule management.
  */
@@ -207,11 +208,14 @@ function serializeEffectiveRule(rule: EffectiveSkillGateRule): Record<string, un
  */
 function failGateNotFound(op: string, id: string, asJson?: boolean, candidates?: string[]): never {
   contractFail(op, "GATE_NOT_FOUND", `Skill gate rule not found: ${id}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the rule id (see suggestions; list with: ravi skill-gates list --json)",
-      suggestions: suggestSimilar(id, candidates ?? buildEffectiveRules().map((rule) => rule.id)),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the rule id (see suggestions; list with: ravi skill-gates list --json)",
+        suggestions: suggestSimilar(id, candidates ?? buildEffectiveRules().map((rule) => rule.id)),
+      },
     },
+    diagnostic: errorDiagnostic(`Skill gate rule not found: ${id}`, { operation: op }),
   });
 }
 
@@ -399,14 +403,17 @@ export class SkillGatesCommands {
     const existing = dbGetSkillGateRule(id);
     if (!existing) {
       contractFail("skill-gates enable", "GATE_NOT_FOUND", `Skill gate override not found: ${id}`, {
-        asJson,
-        details: {
-          suggestedAction: "Only configured rules/overrides can be enabled (list with: ravi skill-gates list --json)",
-          suggestions: suggestSimilar(
-            id,
-            dbListSkillGateRules().map((rule) => rule.id),
-          ),
+        ...{
+          asJson,
+          details: {
+            suggestedAction: "Only configured rules/overrides can be enabled (list with: ravi skill-gates list --json)",
+            suggestions: suggestSimilar(
+              id,
+              dbListSkillGateRules().map((rule) => rule.id),
+            ),
+          },
         },
+        diagnostic: errorDiagnostic(`Skill gate override not found: ${id}`, { operation: "skill-gates enable" }),
       });
     }
 

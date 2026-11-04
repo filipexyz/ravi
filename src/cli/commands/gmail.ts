@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { createInterface } from "node:readline/promises";
 import { z } from "zod";
@@ -273,9 +274,15 @@ function stepUpPrompt(op: string, asJson: boolean | undefined): StepUpHandler {
         "INTERACTIVE_ONLY",
         "This action needs a step-up check in the browser, which only the account owner can do in their own terminal, so it was not done.",
         {
-          asJson,
-          exitCode: CONTRACT_EXIT_POLICY,
-          details: { suggestedAction: "ask the account owner to run the same command in their own terminal" },
+          ...{
+            asJson,
+            exitCode: CONTRACT_EXIT_POLICY,
+            details: { suggestedAction: "ask the account owner to run the same command in their own terminal" },
+          },
+          diagnostic: errorDiagnostic(
+            "This action needs a step-up check in the browser, which only the account owner can do in their own terminal, so it was not done.",
+            { operation: op },
+          ),
         },
       );
     }

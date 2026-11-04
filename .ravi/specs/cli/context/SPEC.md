@@ -74,6 +74,10 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 12. Missing/malformed hook input, denied or invalid credentials, unavailable
     gateways, and invalid gateway replies MUST produce a PreToolUse `deny`.
     Valid inputs still pass through Bash permission checks and skill gates.
+13. Hook denials MUST retain the source reason, operation, HTTP status and
+    capability when available. Transport exceptions MUST preserve their cause.
+    Redact only secret values with `[redacted]`; do not replace a known denial
+    with a list of hypothetical causes. The hook remains fail closed.
 
 ## Write classification (brake decision per op)
 

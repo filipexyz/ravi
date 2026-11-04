@@ -23,8 +23,15 @@ import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write
 import { isRuntimeContextError } from "../runtime/context-errors.js";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
-import { looksLikeProviderDump, redactAbsolutePathsInText } from "./payload-error-message.js";
+import {
+  errorDiagnostic,
+  projectDiagnosticContext,
+  redactDiagnosticText,
+  type ErrorDiagnostic,
+} from "../utils/error-diagnostic.js";
+export { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { sanitizePublicValue } from "./redaction.js";
+import { safeDiagnosticField } from "../../packages/ravi-os-sdk/src/diagnostic-redactor.js";
 
 export const GENERIC_COMMAND_FAILED_MESSAGE = "Command could not be completed.";
 const MAX_PUBLIC_CONTRACT_MESSAGE_LENGTH = 4096;
@@ -50,20 +57,328 @@ export interface ContractErrorEnvelope {
   error: { code: string; message: string; retryable: boolean } & ContractErrorDetails;
 }
 
+/** Existing control contracts are explicit; arbitrary exception properties are not controls. */
+const CONTROL_FIELDS = [
+  "retryable",
+  "suggestedAction",
+  "suggestions",
+  "acceptedFlags",
+  "acceptedPositionals",
+  "acceptedValues",
+  "usage",
+  "dryRun",
+  "plan",
+  "status",
+  "requestId",
+  "diagnosticRequestId",
+  "field",
+  "argument",
+  "issues",
+  "capability",
+  "requiredCapability",
+  "missingCapability",
+  "denialStage",
+  "denialId",
+  "domainSetup",
+  "triggerIds",
+  "conflict",
+  "currentVersion",
+  "refusal",
+  "effectState",
+  "written",
+  "existing",
+  "operation",
+  "ownerPrincipal",
+  "jobId",
+  "refusalReason",
+  "pipelineId",
+  "timeoutSeconds",
+  "mediaPathPresent",
+  "visibility",
+  "basesUses",
+  "ruleCount",
+  "totalGaps",
+  "highSeverityGaps",
+  "gaps",
+  "offenders",
+  "errors",
+  "warnings",
+  "files",
+  "widgets",
+  "options",
+  "override",
+  "turn",
+  "linkFlow",
+  "stage",
+  "authorizationDecision",
+  "limitBytes",
+  "partial",
+  "chatLine",
+  "chatLinePt",
+  "replyTo",
+  "reconnectLink",
+  "approvalId",
+  "approvalLink",
+  "expiresAt",
+  "retryWith",
+  "consentLink",
+  "ref",
+  "scope",
+  "project",
+  "viewProject",
+  "archived",
+  "view",
+  "baseVersion",
+  "latestVersion",
+  "activeTurn",
+  "turnId",
+  "disabledReason",
+] as const;
+
+/** The contrast failure contract is bounded independently of diagnostic text. */
+function projectContrastControl(
+  value: unknown,
+): { ok: boolean; failed: Array<{ pair: [string, string]; ratio: number; min: number }> } | undefined {
+  const ok = safeDiagnosticField(value, "ok");
+  const failed = safeDiagnosticField(value, "failed");
+  if (typeof ok !== "boolean" || !Array.isArray(failed)) return undefined;
+  const projected: Array<{ pair: [string, string]; ratio: number; min: number }> = [];
+  for (const check of boundedControlItems(failed)) {
+    const pair = safeDiagnosticField(check, "pair");
+    const foreground = safeDiagnosticField(pair, "0");
+    const background = safeDiagnosticField(pair, "1");
+    const ratio = safeDiagnosticField(check, "ratio");
+    const min = safeDiagnosticField(check, "min");
+    if (
+      !Array.isArray(pair) ||
+      safeDiagnosticField(pair, "length") !== 2 ||
+      typeof foreground !== "string" ||
+      typeof background !== "string" ||
+      typeof ratio !== "number" ||
+      !Number.isFinite(ratio) ||
+      ratio < 0 ||
+      typeof min !== "number" ||
+      !Number.isFinite(min) ||
+      min < 0
+    )
+      continue;
+    projected.push({
+      pair: [redactDiagnosticText(foreground).slice(0, 160), redactDiagnosticText(background).slice(0, 160)],
+      ratio,
+      min,
+    });
+  }
+  return { ok, failed: projected };
+}
+
+function operationalControlIdentifier(value: unknown, maxLength = 128): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= maxLength &&
+    /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(value) &&
+    redactDiagnosticText(value) === value
+  );
+}
+
+/** Read at most 32 values and never enumerate unrelated fields on provider objects. */
+function boundedControlItems(value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  const length = safeDiagnosticField(value, "length");
+  if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0) return [];
+  return Array.from({ length: Math.min(length, 32) }, (_, index) => safeDiagnosticField(value, String(index)));
+}
+
+function projectCandidateControls(
+  value: unknown,
+): Array<{ installationId: string; name: string | null; online: boolean; reportedAt: string | null }> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result: Array<{ installationId: string; name: string | null; online: boolean; reportedAt: string | null }> = [];
+  for (const candidate of boundedControlItems(value)) {
+    const installationId = safeDiagnosticField(candidate, "installationId");
+    const name = safeDiagnosticField(candidate, "name");
+    const online = safeDiagnosticField(candidate, "online");
+    const reportedAt = safeDiagnosticField(candidate, "reportedAt");
+    const validTimestamp =
+      typeof reportedAt === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(reportedAt) &&
+      Number.isFinite(Date.parse(reportedAt));
+    if (
+      !operationalControlIdentifier(installationId) ||
+      typeof online !== "boolean" ||
+      (name !== null && typeof name !== "string") ||
+      (reportedAt !== null && !validTimestamp)
+    )
+      continue;
+    result.push({
+      installationId,
+      name: name === null ? null : redactDiagnosticText(name).slice(0, 160),
+      online,
+      reportedAt: reportedAt as string | null,
+    });
+  }
+  return result;
+}
+
+function projectDriftControls(
+  value: unknown,
+): boolean | Array<{ file: string; reason: string; path?: string }> | undefined {
+  if (typeof value === "boolean") return value;
+  if (!Array.isArray(value)) return undefined;
+  const result: Array<{ file: string; reason: string; path?: string }> = [];
+  for (const item of boundedControlItems(value)) {
+    const file = safeDiagnosticField(item, "file");
+    const reason = safeDiagnosticField(item, "reason");
+    const path = safeDiagnosticField(item, "path");
+    if (typeof file !== "string" || typeof reason !== "string") continue;
+    const options = { secrets: typeof path === "string" && path ? [path] : [] };
+    result.push({
+      file: redactDiagnosticText(file, options).slice(0, 160),
+      reason: redactDiagnosticText(reason, options).slice(0, 400),
+      ...(typeof path === "string" ? { path: "[REDACTED:path]" } : {}),
+    });
+  }
+  return result;
+}
+
+function projectHttpControlUrl(value: unknown, key: string): string | undefined {
+  if (typeof value !== "string" || value.length > 2048 || !/^https?:\/\//i.test(value) || !URL.canParse(value))
+    return undefined;
+  const sanitized = sanitizePublicValue(value, key);
+  return typeof sanitized === "string" ? redactDiagnosticText(sanitized).slice(0, 2048) : undefined;
+}
+
+/** Domain controls describe the next action, never the underlying provider payload. */
+function projectOperationalControls(details: unknown): Record<string, unknown> {
+  const controls: Record<string, unknown> = {};
+  const read = (key: string) => safeDiagnosticField(details, key);
+  const contrast = projectContrastControl(read("contrast"));
+  if (contrast) controls.contrast = contrast;
+  const identifier = operationalControlIdentifier;
+  const counter = (value: unknown): value is number =>
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  const consoleError = read("consoleError");
+  if (typeof consoleError === "string" && /^[a-z][a-z0-9_]{0,95}$/.test(consoleError))
+    controls.consoleError = consoleError;
+  const inputsHash = read("inputsHash");
+  if (typeof inputsHash === "string" && /^[0-9a-f]{16}$/i.test(inputsHash)) controls.inputsHash = inputsHash;
+  const currentChat = read("currentChat");
+  if (identifier(currentChat)) controls.currentChat = currentChat;
+  const runId = read("runId");
+  if (identifier(runId, 80)) controls.runId = runId;
+  const proposalStatus = read("proposalStatus");
+  if (
+    typeof proposalStatus === "string" &&
+    ["draft", "proposed", "published", "superseded", "rejected", "withdrawn"].includes(proposalStatus)
+  )
+    controls.proposalStatus = proposalStatus;
+  if (read("routine") === "cron") controls.routine = "cron";
+  if (read("reason") === "admin_context_exists") controls.reason = "admin_context_exists";
+  for (const key of ["expectedSha", "actualSha"] as const) {
+    const value = read(key);
+    if (typeof value === "string" && /^[a-f0-9]{40}$/.test(value)) controls[key] = value;
+  }
+  const objectType = read("objectType");
+  if (objectType === "blob" || objectType === "tree" || objectType === "commit") controls.objectType = objectType;
+  const candidates = projectCandidateControls(read("candidates"));
+  if (candidates) controls.candidates = candidates;
+  const drift = projectDriftControls(read("drift"));
+  if (drift !== undefined) controls.drift = drift;
+  for (const key of ["dir", "path"] as const) if (typeof read(key) === "string") controls[key] = "[REDACTED:path]";
+  const allowedKeys = read("allowedKeys");
+  if (Array.isArray(allowedKeys))
+    controls.allowedKeys = boundedControlItems(allowedKeys).filter(
+      (value): value is string => typeof value === "string" && /^[A-Z][A-Z0-9_]{0,95}$/.test(value),
+    );
+  for (const key of ["installUrl", "connectUrl"] as const) {
+    const value = projectHttpControlUrl(read(key), key);
+    if (value) controls[key] = value;
+  }
+  for (const key of ["missingPermissions", "missingCapabilities", "unsupportedEventTypes"] as const) {
+    const value = read(key);
+    if (Array.isArray(value))
+      controls[key] = boundedControlItems(value).filter(
+        (item): item is string =>
+          typeof item === "string" &&
+          /^[A-Za-z0-9_*][A-Za-z0-9_.:*/-]{0,159}$/.test(item) &&
+          !item.includes("://") &&
+          redactDiagnosticText(item) === item,
+      );
+  }
+  for (const key of ["retryAfterMs", "schemaVersion", "liveBytes", "storedBytes"] as const) {
+    const value = read(key);
+    if (counter(value)) controls[key] = value;
+  }
+  const missingScopes = read("missingScopes");
+  if (Array.isArray(missingScopes)) {
+    const scopes = missingScopes
+      .slice(0, 32)
+      .filter(
+        (value): value is string => identifier(value) && /^[a-z][a-z0-9_-]*(?:[.:][a-z][a-z0-9_-]*)+$/.test(value),
+      );
+    if (scopes.length) controls.missingScopes = scopes;
+  }
+  const current = read("current");
+  const rowId = safeDiagnosticField(current, "rowId");
+  const version = safeDiagnosticField(current, "version");
+  if (identifier(rowId) && counter(version)) controls.current = { rowId, version };
+  const name = safeDiagnosticField(read("organization"), "name");
+  if (typeof name === "string" && name.trim())
+    controls.organization = { name: redactDiagnosticText(name).slice(0, 200) };
+  const progress = read("importProgress");
+  if (progress && typeof progress === "object") {
+    const projected: Record<string, number | null> = {};
+    for (const key of ["failedBatch", "batches", "rowsCreated", "firstFailedLine"] as const) {
+      const value = safeDiagnosticField(progress, key);
+      if (counter(value) || (key === "firstFailedLine" && value === null)) projected[key] = value;
+    }
+    if (Object.keys(projected).length) controls.importProgress = projected;
+  }
+  return controls;
+}
+
+function projectFailureDetails(details: ContractErrorDetails & ErrorDiagnostic): ContractErrorDetails {
+  const controls = projectOperationalControls(details);
+  for (const field of CONTROL_FIELDS) {
+    if (Object.hasOwn(details, field)) controls[field] = sanitizePublicValue(details[field], field);
+  }
+  // Control text is also egress: retaining a known field does not make its value public.
+  for (const field of ["suggestedAction", "usage", "diff"] as const) {
+    if (typeof details[field] === "string") controls[field] = redactDiagnosticText(details[field]);
+  }
+  return {
+    ...controls,
+    cause: redactDiagnosticText(details.cause),
+    context: projectDiagnosticContext(details.context),
+  };
+}
+
 export class ContractError extends Error {
   readonly op: string;
   readonly code: string;
   readonly exitCode: number;
   readonly details: ContractErrorDetails;
 
-  constructor(op: string, code: string, message: string, exitCode: number, details: ContractErrorDetails = {}) {
-    super(message);
+  constructor(
+    op: string,
+    code: string,
+    message: string,
+    exitCode: number,
+    details: ContractErrorDetails & ErrorDiagnostic,
+  ) {
+    if (!details || typeof details.cause !== "string" || !details.context || typeof details.context !== "object") {
+      throw new TypeError("A user failure requires an explicit cause and diagnostic context.");
+    }
+    super(redactDiagnosticText(message));
     const canonicalExitCode = validateContractTaxonomy(code, exitCode);
     this.name = "ContractError";
-    this.op = op;
-    this.code = code;
+    this.op =
+      op.length <= 160 && /^[a-z][a-z0-9._-]*(?: [a-z][a-z0-9._-]*)*$/i.test(op) && redactDiagnosticText(op) === op
+        ? op
+        : "command";
+    this.code =
+      /^[A-Za-z][A-Za-z0-9_]{0,95}$/.test(code) && redactDiagnosticText(code) === code ? code : "COMMAND_FAILED";
     this.exitCode = canonicalExitCode;
-    this.details = sanitizePublicValue(details) as ContractErrorDetails;
+    this.details = projectFailureDetails(details);
   }
 
   envelope(): ContractErrorEnvelope {
@@ -113,27 +428,35 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
     const argument = required[1]!;
     const field = argument.slice(2).replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
     return new ContractError(op, "VALIDATION_ERROR", `${argument} is required.`, CONTRACT_EXIT_USAGE, {
-      argument,
-      field,
-      issues: [{ path: [field], code: "required", message: `${argument} is required.` }],
-      suggestedAction: sanitizePublicContractMessage(error.suggestedAction) ?? `Provide ${argument} and retry '${op}'`,
+      ...errorDiagnostic(error, { operation: op }),
+      ...{
+        argument,
+        field,
+        issues: [{ path: [field], code: "required", message: `${argument} is required.` }],
+        suggestedAction:
+          sanitizePublicContractMessage(error.suggestedAction) ?? `Provide ${argument} and retry '${op}'`,
+      },
     });
   }
   const message = sanitizePublicContractMessage(error.message) ?? GENERIC_COMMAND_FAILED_MESSAGE;
   const suggestedAction =
     sanitizePublicContractMessage(error.suggestedAction) ?? `Inspect the command input and retry '${op}'`;
   return new ContractError(op, error.code, message, error.exitCode, {
-    suggestedAction,
+    ...errorDiagnostic(error, { operation: op }),
+    ...{
+      suggestedAction,
+    },
   });
 }
 
-export function unexpectedErrorToContractError(op: string): ContractError {
+export function unexpectedErrorToContractError(op: string, error?: unknown): ContractError {
   return new ContractError(
     op,
     "UNHANDLED_ERROR",
     `${op} failed internally. Report the operation to the operator before retrying.`,
     CONTRACT_EXIT_ERROR,
     {
+      ...errorDiagnostic(error, { operation: op }),
       suggestedAction: "Report the operation to the operator; do not automatically retry the command",
     },
   );
@@ -142,17 +465,23 @@ export function unexpectedErrorToContractError(op: string): ContractError {
 export function runtimeContextErrorToContractError(op: string, error: unknown): ContractError | null {
   if (!isRuntimeContextError(error)) return null;
   return new ContractError(op, error.code, error.message, error.exitCode, {
-    suggestedAction: error.suggestedAction,
-    ...error.details,
+    ...errorDiagnostic(error, { operation: op }),
+    ...{
+      suggestedAction: error.suggestedAction,
+      ...error.details,
+    },
   });
 }
 
 export function sqliteCapacityToContractError(op: string, error: unknown): ContractError | null {
   if (!isSqliteCapacityError(error)) return null;
   return new ContractError(op, "SQLITE_CAPACITY", SQLITE_CAPACITY_USER_MESSAGE, CONTRACT_EXIT_ERROR, {
-    retryable: false,
-    suggestedAction:
-      "Reduce concurrent sessions and retry. A large SQLite file can OOM the process even when disk is free. Vacuum is an operator maintenance step, not a product default.",
+    ...errorDiagnostic(error, { operation: op }),
+    ...{
+      retryable: false,
+      suggestedAction:
+        "Reduce concurrent sessions and retry. A large SQLite file can OOM the process even when disk is free. Vacuum is an operator maintenance step, not a product default.",
+    },
   });
 }
 
@@ -161,7 +490,7 @@ export function mapExecutionErrorToContractError(op: string, error: unknown): Co
     expectedErrorToContractError(op, error) ??
     runtimeContextErrorToContractError(op, error) ??
     sqliteCapacityToContractError(op, error) ??
-    unexpectedErrorToContractError(op)
+    unexpectedErrorToContractError(op, error)
   );
 }
 
@@ -171,6 +500,7 @@ export function permissionDeniedToContractError(
   details: ContractErrorDetails = {},
 ): ContractError {
   return new ContractError(op, "PERMISSION_DENIED", reason, CONTRACT_EXIT_ERROR, {
+    ...errorDiagnostic(reason, { operation: op }),
     suggestedAction: "Request the required provider-owned permission and retry",
     ...details,
   });
@@ -179,33 +509,36 @@ export function permissionDeniedToContractError(
 export function binaryResponseToContractError(op: string, status: number): ContractError {
   const details = { status, suggestedAction: "Inspect the binary resource identifier and retry" };
   if (status === 400) {
-    return new ContractError(op, "USAGE_ERROR", "Binary resource request was invalid.", CONTRACT_EXIT_USAGE, details);
+    return new ContractError(op, "USAGE_ERROR", "Binary resource request was invalid.", CONTRACT_EXIT_USAGE, {
+      ...errorDiagnostic("Binary resource request was invalid.", { operation: op }),
+      ...details,
+    });
   }
   if (status === 401) {
-    return new ContractError(
-      op,
-      "AUTH_REQUIRED",
-      "Binary resource authentication failed.",
-      CONTRACT_EXIT_ERROR,
-      details,
-    );
+    return new ContractError(op, "AUTH_REQUIRED", "Binary resource authentication failed.", CONTRACT_EXIT_ERROR, {
+      ...errorDiagnostic("Binary resource authentication failed.", { operation: op }),
+      ...details,
+    });
   }
   if (status === 403) {
-    return new ContractError(
-      op,
-      "PERMISSION_DENIED",
-      "Binary resource access was denied.",
-      CONTRACT_EXIT_ERROR,
-      details,
-    );
+    return new ContractError(op, "PERMISSION_DENIED", "Binary resource access was denied.", CONTRACT_EXIT_ERROR, {
+      ...errorDiagnostic("Binary resource access was denied.", { operation: op }),
+      ...details,
+    });
   }
   if (status === 404) {
-    return new ContractError(op, "RESOURCE_NOT_FOUND", "Binary resource was not found.", CONTRACT_EXIT_ERROR, details);
+    return new ContractError(op, "RESOURCE_NOT_FOUND", "Binary resource was not found.", CONTRACT_EXIT_ERROR, {
+      ...errorDiagnostic("Binary resource was not found.", { operation: op }),
+      ...details,
+    });
   }
   if (status === 429) {
     return new ContractError(op, "RATE_LIMITED", "Binary resource request was rate limited.", CONTRACT_EXIT_ERROR, {
-      ...details,
-      retryable: true,
+      ...errorDiagnostic("Binary resource request was rate limited.", { operation: op }),
+      ...{
+        ...details,
+        retryable: true,
+      },
     });
   }
   if (status >= 500) {
@@ -215,12 +548,18 @@ export function binaryResponseToContractError(op: string, status: number): Contr
       "Binary resource provider is unavailable.",
       CONTRACT_EXIT_ERROR,
       {
-        ...details,
-        retryable: true,
+        ...errorDiagnostic("Binary resource provider is unavailable.", { operation: op }),
+        ...{
+          ...details,
+          retryable: true,
+        },
       },
     );
   }
-  return new ContractError(op, "COMMAND_FAILED", "Binary resource request failed.", CONTRACT_EXIT_ERROR, details);
+  return new ContractError(op, "COMMAND_FAILED", "Binary resource request failed.", CONTRACT_EXIT_ERROR, {
+    ...errorDiagnostic("Binary resource request failed.", { operation: op }),
+    ...details,
+  });
 }
 
 export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
@@ -231,6 +570,14 @@ export function renderContractError(error: ContractError, asJson: boolean | unde
     return;
   }
   console.error(envelope.error.message);
+  if (typeof envelope.error.cause === "string" && envelope.error.cause !== envelope.error.message) {
+    console.error(`Cause: ${envelope.error.cause}`);
+  }
+  if (envelope.error.context) {
+    for (const [field, value] of Object.entries(projectDiagnosticContext(envelope.error.context))) {
+      console.error(`${field}: ${value}`);
+    }
+  }
   const issues = envelope.error.issues;
   if (!Array.isArray(issues) || issues.length === 0) return;
   if (typeof envelope.error.status === "number") {
@@ -261,28 +608,14 @@ export function sanitizePublicContractMessage(message: string | undefined): stri
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .trim();
   if (!cleaned) return undefined;
-  if (looksLikeProviderDump(cleaned)) return undefined;
-  if (/\bctx_[A-Za-z0-9_-]+/.test(cleaned)) return undefined;
-  if (
-    /["']?(?:[A-Za-z0-9_-]*(?:password|secret|token|credential|api[-_]?key|access[-_]?key)[A-Za-z0-9_-]*|authorization|cookie)["']?\s*[:=]/i.test(
-      cleaned,
-    )
-  )
-    return undefined;
-  const sanitized = sanitizePublicValue(cleaned);
-  if (typeof sanitized !== "string") return undefined;
-  const trimmed = sanitized.trim();
-  if (!trimmed || trimmed === "[REDACTED:path]" || trimmed.startsWith("[REDACTED:content")) {
-    return undefined;
-  }
-  const redacted = redactAbsolutePathsInText(trimmed);
-  if (!redacted.trim() || redacted === "[REDACTED:path]") return undefined;
+  const redacted = redactDiagnosticText(cleaned);
   return redacted.length > MAX_PUBLIC_CONTRACT_MESSAGE_LENGTH
-    ? `${redacted.slice(0, MAX_PUBLIC_CONTRACT_MESSAGE_LENGTH - 3)}...`
+    ? `${redacted.slice(0, MAX_PUBLIC_CONTRACT_MESSAGE_LENGTH)} [truncated]`
     : redacted;
 }
 
 export interface ContractFailOptions {
+  diagnostic: ErrorDiagnostic;
   asJson?: boolean;
   exitCode?: number;
   details?: ContractErrorDetails;
@@ -293,9 +626,9 @@ export interface ContractFailOptions {
  * Rendering happens here exactly once; the active transport catches the
  * structured error and owns process exit / protocol status / audit flushing.
  */
-export function contractFail(op: string, code: string, message: string, options: ContractFailOptions = {}): never {
+export function contractFail(op: string, code: string, message: string, options: ContractFailOptions): never {
   const exitCode = options.exitCode ?? CONTRACT_EXIT_ERROR;
-  const error = new ContractError(op, code, message, exitCode, options.details ?? {});
+  const error = new ContractError(op, code, message, exitCode, { ...options.diagnostic, ...options.details });
   renderContractError(error, options.asJson);
   throw error;
 }
@@ -312,9 +645,14 @@ export function contractDryRun(op: string, plan: Record<string, unknown>, option
     `Dry-run: nothing was written. Re-run with --execute to perform the write.`,
     CONTRACT_EXIT_POLICY,
     {
-      suggestedAction: `Re-run '${op}' adding --execute to perform the write`,
-      dryRun: true,
-      plan,
+      ...errorDiagnostic(`Dry-run: nothing was written. Re-run with --execute to perform the write.`, {
+        operation: op,
+      }),
+      ...{
+        suggestedAction: `Re-run '${op}' adding --execute to perform the write`,
+        dryRun: true,
+        plan,
+      },
     },
   );
   if (getContext({ localOnly: true })?.suppressCliOutput !== true) {
@@ -394,14 +732,17 @@ function failUsage(command: CommanderCommand, error: CommanderError): never {
     .filter((line): line is string => line !== null)
     .join("\n");
   contractFail(op, "USAGE_ERROR", asJson ? safeMessage : textMessage, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction: `Fix the invocation and re-run: ${usage}`,
-      usage,
-      acceptedFlags,
-      acceptedPositionals,
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: `Fix the invocation and re-run: ${usage}`,
+        usage,
+        acceptedFlags,
+        acceptedPositionals,
+      },
     },
+    diagnostic: errorDiagnostic(error, { operation: op }),
   });
 }
 

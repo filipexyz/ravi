@@ -1,0 +1,6208 @@
+{
+  "version": 1,
+  "baselineCommit": "94682e274af4867dc240b81fc84b7ce76c97efa5",
+  "entries": [
+    {
+      "id": "src/access/actor.ts:6ccdbf59886db9b3ed7358fc",
+      "file": "src/access/actor.ts",
+      "boundary": "access",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/access/client.ts:b54838dd044d734be125749d",
+      "file": "src/access/client.ts",
+      "boundary": "access",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/access/command-support.ts:8cc20bb2efe7c6f0eab60520",
+      "file": "src/access/command-support.ts",
+      "boundary": "access",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/adapters/session-adapter-bus.ts:bfa606733bfbb2551dcfe305",
+      "file": "src/adapters/session-adapter-bus.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/adapters/stdio-supervisor.ts:fbe96ff56a9d990ac368d3bc",
+      "file": "src/adapters/stdio-supervisor.ts",
+      "boundary": "adapters",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/approval/grantor.ts:4531760e0c3838364a258e83",
+      "file": "src/approval/grantor.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/approval/grantor.ts:5de0b9d35a8669588a27c9bc",
+      "file": "src/approval/grantor.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/approval/grantor.ts:b6c47d5279cb74466f584953",
+      "file": "src/approval/grantor.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/approval/service.ts:1e5b2ada9e3eb6121bb823ad",
+      "file": "src/approval/service.ts",
+      "boundary": "permissions",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/approval/store.ts:ac1d131e8f2f6d84c0becd00",
+      "file": "src/approval/store.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/import-cli.ts:a6b7f0a99cae3270e4ae02a8",
+      "file": "src/apps/import-cli.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/import-cli.ts:e9873d35b097f2130bab5398",
+      "file": "src/apps/import-cli.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/router.ts:ccbdb880a3313f6d6887530a",
+      "file": "src/apps/router.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/router.ts:e39c75939f3bada55ce4bba9",
+      "file": "src/apps/router.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/scaffold.ts:7539c3f22a40bad7711dec0c",
+      "file": "src/apps/scaffold.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/service.ts:12bc6af12da4a5e8317d9403",
+      "file": "src/apps/service.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/service.ts:4f18315e398f50e563b2ed7e",
+      "file": "src/apps/service.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/youtube/client.ts:0645ef7c59a301ec13cf6b9f",
+      "file": "src/apps/youtube/client.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/youtube/client.ts:701786c6a30de68a19642f53",
+      "file": "src/apps/youtube/client.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/apps/youtube/client.ts:b551da5714883e23a044993d",
+      "file": "src/apps/youtube/client.ts",
+      "boundary": "apps",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/artifacts/publish-client.ts:002e6a956122e4ec561be2b2",
+      "file": "src/artifacts/publish-client.ts",
+      "boundary": "artifacts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/artifacts/publish-client.ts:0fa804ce1f05c6d68b26c355",
+      "file": "src/artifacts/publish-client.ts",
+      "boundary": "artifacts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/artifacts/publish-client.ts:4863171248a83eed2890afb9",
+      "file": "src/artifacts/publish-client.ts",
+      "boundary": "artifacts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/artifacts/publish-client.ts:fa7537b1766fe14d364b0c46",
+      "file": "src/artifacts/publish-client.ts",
+      "boundary": "artifacts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/audio/tts.ts:b400c7ca0028e139eae0a839",
+      "file": "src/audio/tts.ts",
+      "boundary": "audio",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/audio/tts.ts:faf8f42aa213c2fee5e89253",
+      "file": "src/audio/tts.ts",
+      "boundary": "audio",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bases/input.ts:033da42fca0ad3d22e6b3d2b",
+      "file": "src/bases/input.ts",
+      "boundary": "bases",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bases/input.ts:ac97b60d3f31aed28e6da10b",
+      "file": "src/bases/input.ts",
+      "boundary": "bases",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bases/input.ts:ebe3ebed142463865ba4146c",
+      "file": "src/bases/input.ts",
+      "boundary": "bases",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bash/parser.ts:5adb02df86feece6349d5635",
+      "file": "src/bash/parser.ts",
+      "boundary": "bash",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/bash/parser.ts:bc535f42d16639e50c0686c7",
+      "file": "src/bash/parser.ts",
+      "boundary": "bash",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bash/parser.ts:e80dc90deffeaf87466e3b91",
+      "file": "src/bash/parser.ts",
+      "boundary": "bash",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bridge/codex-hook.ts:2f58cf356275b9910a30a96e",
+      "file": "src/bridge/codex-hook.ts",
+      "boundary": "bridge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bridge/service.ts:144c80061032f84f3cbee712",
+      "file": "src/bridge/service.ts",
+      "boundary": "bridge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bridge/service.ts:4ad2e471c1c539ef83eeb899",
+      "file": "src/bridge/service.ts",
+      "boundary": "bridge",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bridge/stdio.ts:17cf0d1a5ee16dcb982c64b1",
+      "file": "src/bridge/stdio.ts",
+      "boundary": "bridge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/bug-report/follow.ts:6b7dc2cde94fde393d32ef80",
+      "file": "src/bug-report/follow.ts",
+      "boundary": "bug-report",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/calendar/assistant-runner.ts:af7172147ded6df0791490fe",
+      "file": "src/calendar/assistant-runner.ts",
+      "boundary": "calendar",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/calendar/db.ts:514b214065c75ba7af227754",
+      "file": "src/calendar/db.ts",
+      "boundary": "calendar",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/backend-egress.ts:6243cf0ad21583fb9b7a9f94",
+      "file": "src/channels/backend-egress.ts",
+      "boundary": "channels",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/health.ts:05f821802cff049921afba21",
+      "file": "src/channels/health.ts",
+      "boundary": "channels",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/health.ts:3b04320fe007d6b1da4d0af9",
+      "file": "src/channels/health.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/health.ts:3cbc3b755273a896ddcbdf39",
+      "file": "src/channels/health.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/health.ts:5cc50956c053737a11bb464e",
+      "file": "src/channels/health.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/channels/inbound-actions.ts:5f8db46df91619285b2301c8",
+      "file": "src/channels/inbound-actions.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/inbound-actions.ts:86e829543d4315cde3214a88",
+      "file": "src/channels/inbound-actions.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/inbound-actions.ts:e8e635eecfb358b806cc55fe",
+      "file": "src/channels/inbound-actions.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/inbound-actions.ts:e9d3266df1079f294940b468",
+      "file": "src/channels/inbound-actions.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native-readiness.ts:062460fd18436e8b06088d2a",
+      "file": "src/channels/native-readiness.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native-readiness.ts:65bbfe88d99f84761446c950",
+      "file": "src/channels/native-readiness.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native-readiness.ts:c0449ca695a5a9ae99758f02",
+      "file": "src/channels/native-readiness.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native/driver.ts:05e158089fe8fb2b520d9bc1",
+      "file": "src/channels/native/driver.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native/driver.ts:43f34c69a5ddf124deecf607",
+      "file": "src/channels/native/driver.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native/driver.ts:4d50f733fad5b2e1073beac3",
+      "file": "src/channels/native/driver.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native/driver.ts:5cef50069c09c3ce767cb5d8",
+      "file": "src/channels/native/driver.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native/driver.ts:7a73ccf8f705539b1d978b1f",
+      "file": "src/channels/native/driver.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native/driver.ts:8730a7131b2c83afc021348b",
+      "file": "src/channels/native/driver.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/native/driver.ts:b22399f146207e2bf5ad93e1",
+      "file": "src/channels/native/driver.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-consumer.ts:014172475f936eaa64767438",
+      "file": "src/channels/outbound-consumer.ts",
+      "boundary": "channels",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-consumer.ts:082ec6eb9f3f57349613fdd3",
+      "file": "src/channels/outbound-consumer.ts",
+      "boundary": "channels",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-consumer.ts:1e5d66673b54fd42a0882209",
+      "file": "src/channels/outbound-consumer.ts",
+      "boundary": "channels",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-consumer.ts:65f8637fdd10846a0e3c79da",
+      "file": "src/channels/outbound-consumer.ts",
+      "boundary": "channels",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-consumer.ts:b1cbab062eb2b126a01d5034",
+      "file": "src/channels/outbound-consumer.ts",
+      "boundary": "channels",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-consumer.ts:d058fca965fd50db8493d159",
+      "file": "src/channels/outbound-consumer.ts",
+      "boundary": "channels",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-publish-outbox.ts:d83c64649e39a54ee907d38f",
+      "file": "src/channels/outbound-publish-outbox.ts",
+      "boundary": "channels",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-stream.ts:3ea26c872925cc655444c796",
+      "file": "src/channels/outbound-stream.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-stream.ts:e17c0841412d9faa2046d4c5",
+      "file": "src/channels/outbound-stream.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/outbound-stream.ts:e6a84ba7eee880d3b37f6c67",
+      "file": "src/channels/outbound-stream.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/pm2-env.ts:1f603b8cf17e2d4057891128",
+      "file": "src/channels/pm2-env.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/runner-liveness.ts:ca3df7cbd902e6aa4543a58e",
+      "file": "src/channels/runner-liveness.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/runtime-events.ts:48b6dfd56bce2ededcdcc137",
+      "file": "src/channels/runtime-events.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/runtime-events.ts:d9de24636574af91dd475ee6",
+      "file": "src/channels/runtime-events.ts",
+      "boundary": "channels",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/chat-action-target.ts:877931c99ac50453c882cf9c",
+      "file": "src/channels/slack/chat-action-target.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/chat-action-target.ts:a69e823d072fc896502d9164",
+      "file": "src/channels/slack/chat-action-target.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/credentials.ts:73a802c242ce1203be05eb48",
+      "file": "src/channels/slack/credentials.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/gateway-mode.ts:1d126dff1a822d092a379ab6",
+      "file": "src/channels/slack/gateway-mode.ts",
+      "boundary": "channels-slack",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/gateway-mode.ts:94ab31de7f88390dc30e18c0",
+      "file": "src/channels/slack/gateway-mode.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/gateway-mode.ts:a19caa7904cf9f3d0b63fb78",
+      "file": "src/channels/slack/gateway-mode.ts",
+      "boundary": "channels-slack",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/gateway-mode.ts:af5ff13f2404ec68722a901f",
+      "file": "src/channels/slack/gateway-mode.ts",
+      "boundary": "channels-slack",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/gateway-mode.ts:fa170b140df66597c90bfeda",
+      "file": "src/channels/slack/gateway-mode.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/interactions.ts:59c242f5fb155229f527cccf",
+      "file": "src/channels/slack/interactions.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/markdown-delivery.ts:ddbbf99b5618436506c18e7a",
+      "file": "src/channels/slack/markdown-delivery.ts",
+      "boundary": "channels-slack",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/media.ts:c080cae772801e60d5e1b98b",
+      "file": "src/channels/slack/media.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/socket-mode.ts:c2fdb542c65974c643e5b417",
+      "file": "src/channels/slack/socket-mode.ts",
+      "boundary": "channels-slack",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0",
+      "file": "src/channels/slack/socket-mode.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/thread-requester.ts:4e96a74ec3eda3554d5b7d4b",
+      "file": "src/channels/slack/thread-requester.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/channels/slack/thread-requester.ts:518fbe45995656bbf2c7b34e",
+      "file": "src/channels/slack/thread-requester.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/ci/run-quality-gate.ts:5271b06f964c5c57249517e5",
+      "file": "src/ci/run-quality-gate.ts",
+      "boundary": "ci",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/audit.ts:08a16a3a23210326b4039ada",
+      "file": "src/cli/audit.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/audit.ts:66ccfbc7e8e1dda3b8608604",
+      "file": "src/cli/audit.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/cli/cloud-agents-contract.ts:ca55c4c9df318fc982ae1ad4",
+      "file": "src/cli/cloud-agents-contract.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/command-access.ts:5b7e49b64c2fd8e3ff6c70a5",
+      "file": "src/cli/command-access.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/agents-library.ts:165d62a4d87b9cfbbd546147",
+      "file": "src/cli/commands/agents-library.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/agents.ts:0369e92915b4e3c28ca7d06e",
+      "file": "src/cli/commands/agents.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/agents.ts:60c96ccb0a7444bfa6d0c4f3",
+      "file": "src/cli/commands/agents.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/agents.ts:66ef11ced4b3a90802c19a8c",
+      "file": "src/cli/commands/agents.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/agents.ts:9edb6d73818d2f25eb2d4d8e",
+      "file": "src/cli/commands/agents.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/agents.ts:a4f7328e2cfe98918343fddb",
+      "file": "src/cli/commands/agents.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/artifacts.ts:56c2905df933ebcae8a1b029",
+      "file": "src/cli/commands/artifacts.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/artifacts.ts:69d9cf40c439396259c34a1e",
+      "file": "src/cli/commands/artifacts.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/artifacts.ts:89d459049220615b937e982d",
+      "file": "src/cli/commands/artifacts.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/artifacts.ts:b79347aaab32b57ad33fc83b",
+      "file": "src/cli/commands/artifacts.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/audio.ts:4d7a47e75f1d72fe77659d4d",
+      "file": "src/cli/commands/audio.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/bases.ts:1fab362b91462a898b8031fb",
+      "file": "src/cli/commands/bases.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/bases.ts:3e6af9f15697138451a0012a",
+      "file": "src/cli/commands/bases.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/bases.ts:afc48ee7e96acc06f9bcaa08",
+      "file": "src/cli/commands/bases.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/channel-backend.ts:9232bf6c4a57569206af0327",
+      "file": "src/cli/commands/channel-backend.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/channel-backend.ts:cd87e419c1503b12f00f076d",
+      "file": "src/cli/commands/channel-backend.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/channels.ts:179e40b20adef544b5509d39",
+      "file": "src/cli/commands/channels.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/channels.ts:3d5b255870d56ba026f80d31",
+      "file": "src/cli/commands/channels.ts",
+      "boundary": "channels-slack",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/channels.ts:b4681858e5bdb92bed276127",
+      "file": "src/cli/commands/channels.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cloud-agents.ts:3da9324198b36cf2ee3562cf",
+      "file": "src/cli/commands/cloud-agents.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cloud-agents.ts:7d0d0e06ad0cd8d7730b09ea",
+      "file": "src/cli/commands/cloud-agents.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cloud-agents.ts:8ccf677a5862268b56df3561",
+      "file": "src/cli/commands/cloud-agents.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cloud-agents.ts:a2499cc6538ecb92b81496b4",
+      "file": "src/cli/commands/cloud-agents.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cloud-agents.ts:c4316356760ad8fa08d41e94",
+      "file": "src/cli/commands/cloud-agents.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cloud-auth.ts:0ba48b57c0c650d9c79f9bba",
+      "file": "src/cli/commands/cloud-auth.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cloud-auth.ts:f0192997b89ff223563c9bc8",
+      "file": "src/cli/commands/cloud-auth.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cloud-worker.ts:a2f649f521eeb31a33441551",
+      "file": "src/cli/commands/cloud-worker.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/connectors.ts:6bfb1a8b187361f1313b7384",
+      "file": "src/cli/commands/connectors.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/contacts.ts:4006b70fdf499a3b84d2f335",
+      "file": "src/cli/commands/contacts.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/contacts.ts:7f4a51c2ae6cb3a6ad3ca91b",
+      "file": "src/cli/commands/contacts.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/contacts.ts:e6150fcf5b0597bb98fd305f",
+      "file": "src/cli/commands/contacts.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/contacts.ts:f182a24f0270b8eba7ddd078",
+      "file": "src/cli/commands/contacts.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/context.ts:13675f7c2a525496298cc5a1",
+      "file": "src/cli/commands/context.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/crm.ts:2868be3d6524c2dfa8158cbe",
+      "file": "src/cli/commands/crm.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/crm.ts:aa05108184584fe545c8301e",
+      "file": "src/cli/commands/crm.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c",
+      "file": "src/cli/commands/cron.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:3252e4a28013452b12c3c4af",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:3661f8aaa31983deeb62b36d",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:41c1753c0e9e0105aea8a86f",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:52ce28b9b543b169cdcaf263",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 3
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:5c67dde5c37f215d912cdf0d",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:618944c2ca2f9fbc08441979",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:83e88e29b98541a715ba95c9",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:856ea3002874c849353bda69",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:8c46f6c2c9d709aec06f9076",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:a527c5a32df9264c19ab5413",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:cbe7daa72f79d5478b19d0de",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:cd10c9495b22b133bc3c50d0",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/daemon.ts:dd10ae5178a34c12024603b0",
+      "file": "src/cli/commands/daemon.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/db.ts:0fa4c8eccad90392c776790f",
+      "file": "src/cli/commands/db.ts",
+      "boundary": "cli",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/db.ts:79cdb8bf8b319d593d64cdde",
+      "file": "src/cli/commands/db.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/db.ts:ecaa7a4be44ef9cca7f3dd7d",
+      "file": "src/cli/commands/db.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/devin.ts:089371c20205645d5a23704b",
+      "file": "src/cli/commands/devin.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:2a9506587eaecbb8cc7296da",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:3d1065e06934075b7f60368c",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:3ff0d45cb8a488b9efe0b603",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:683fc493ab98758db2104158",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:6c2810d1127b29fe9a0103a4",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:9370a7cdff0e267d37a29f35",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:9709dbae3e04f17081273f3b",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:b5cbdac32ef88a997d6037b1",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:c31755850b556ad462559083",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:caf2848d8a3d8ba8afc6b9fa",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:dc1237cf36aa98495b704fa2",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:dc59537e08e6eba4ce2691ff",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:e2e87f42fd873bdae1fa27f1",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:e33b695f27e20beff1210970",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/doctor.ts:ffba326ce58b4d3a2ae29430",
+      "file": "src/cli/commands/doctor.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/events.ts:324b1a95da3c0855f66288a0",
+      "file": "src/cli/commands/events.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/events.ts:3afbd2d0d99757397ed9cc6c",
+      "file": "src/cli/commands/events.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/gmail.ts:265d7080900861492dfc45b5",
+      "file": "src/cli/commands/gmail.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/group.ts:32a249c09f5ef6714225e9d5",
+      "file": "src/cli/commands/group.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/group.ts:bd7e4a33b95006633e8bef5f",
+      "file": "src/cli/commands/group.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/insights.ts:3effa54a1fa3c5b3cf2950fc",
+      "file": "src/cli/commands/insights.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/instances.ts:11a36f37c5f28d060bb1acd7",
+      "file": "src/cli/commands/instances.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/instances.ts:42b7b5f2bdfcf682d8dedbd8",
+      "file": "src/cli/commands/instances.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/instances.ts:753e4157220f5658018f89d9",
+      "file": "src/cli/commands/instances.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/instances.ts:c40e45fff16acadf351fd462",
+      "file": "src/cli/commands/instances.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/cli/commands/instances.ts:dd712258a357b910f97d70f8",
+      "file": "src/cli/commands/instances.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/instances.ts:e2b7e02f4388c982ecddbd2b",
+      "file": "src/cli/commands/instances.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/jobs.ts:26a5d1396be7b5010ce57560",
+      "file": "src/cli/commands/jobs.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/jobs.ts:8bfbfaed06c1af6b17bbad6d",
+      "file": "src/cli/commands/jobs.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/jobs.ts:fb034d271632712a039f206c",
+      "file": "src/cli/commands/jobs.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/media.ts:b6c59c77209c1a354d454758",
+      "file": "src/cli/commands/media.ts",
+      "boundary": "media-send",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/meetings.ts:3886f15a9a291adc16ff9b18",
+      "file": "src/cli/commands/meetings.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/meetings.ts:3e71f8217f7147abff10ee13",
+      "file": "src/cli/commands/meetings.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/meetings.ts:532ddf2a77d496d855e2d397",
+      "file": "src/cli/commands/meetings.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/meetings.ts:7d1716255855db8bda527948",
+      "file": "src/cli/commands/meetings.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/pages.ts:bd7896f8cad5651607723192",
+      "file": "src/cli/commands/pages.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/pages.ts:d1f8ee4e6c5ceb01827f9e37",
+      "file": "src/cli/commands/pages.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa",
+      "file": "src/cli/commands/pages.ts",
+      "boundary": "cli",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/pr.ts:d5e03ff8271ee2697dc04e7f",
+      "file": "src/cli/commands/pr.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/prox-calls.ts:26a08d3f24a25e5756357b2a",
+      "file": "src/cli/commands/prox-calls.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/prox-calls.ts:6116dcd6b5064006e2ecf577",
+      "file": "src/cli/commands/prox-calls.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/prox-calls.ts:fb030687fa118a84b786ec8c",
+      "file": "src/cli/commands/prox-calls.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/runtime-presets.ts:58edd4b35ed591bd5c89031f",
+      "file": "src/cli/commands/runtime-presets.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sdk.ts:90cda3c0a06f50d029982616",
+      "file": "src/cli/commands/sdk.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/self.ts:3162e2079aa2243bf0fe3789",
+      "file": "src/cli/commands/self.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/self.ts:39abc0df7f0aeb5441be98bf",
+      "file": "src/cli/commands/self.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/self.ts:46a1044e62f88c99f7d6099a",
+      "file": "src/cli/commands/self.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/self.ts:baedabaf40aa5665fd263637",
+      "file": "src/cli/commands/self.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/session-conversations.ts:a0391901ac3093310f8334e7",
+      "file": "src/cli/commands/session-conversations.ts",
+      "boundary": "sessions",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions-runtime.ts:5ea540c5eb716d67bff3fc4f",
+      "file": "src/cli/commands/sessions-runtime.ts",
+      "boundary": "sessions",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:0df79efb6780ab0724c4125a",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:4e8213d901784dd4628928f7",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 3
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:52a0c574f7b7344469c6a183",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:538560357ab207bdd65b1b5f",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:944b8d05da2c45f2902502be",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:95b05645e384bb96dc3bd4e2",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:9dc7e9fc81738f9628adf86d",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:a7884c195162ae8d081804b5",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:bb33fd9f96a52411ee3d735f",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:c7638ec53a5c9a8ad225e727",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:d63c46469103c28624519dca",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:d8e2f06f3f8858398d8ab837",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:eeaab4efe83b93bf9e263261",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/sessions.ts:f343a742bb44614542f84ca1",
+      "file": "src/cli/commands/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/settings.ts:40d8a2afa100fcde48567ace",
+      "file": "src/cli/commands/settings.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/settings.ts:97fc7d03957d443943127257",
+      "file": "src/cli/commands/settings.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:098c1205b3f2ee5b79da6171",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:47cdf5d05ccdf929dff4851f",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:6c6f5f98672d92ad2d66e981",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:704f8220380c8932d5adca95",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:80bd3eae09221f9f67d8f9d6",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:9514c434dbed16a130cab065",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:a2a80eaa701a39a03fc4ba90",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:b681f3f946e2f58f0909c8a2",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:de76a145c308a6c9a19286a7",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/setup.ts:ede01fac515c7b37cfa45b36",
+      "file": "src/cli/commands/setup.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/signals.ts:92042d617676e84df9f4b55a",
+      "file": "src/cli/commands/signals.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/skills.ts:91561788503f4ec039ff70e4",
+      "file": "src/cli/commands/skills.ts",
+      "boundary": "cli",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/slack.ts:2e7093676db6fe63f1ec32b3",
+      "file": "src/cli/commands/slack.ts",
+      "boundary": "channels-slack",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/slack.ts:8f52890620905e69730b310f",
+      "file": "src/cli/commands/slack.ts",
+      "boundary": "channels-slack",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/specs.ts:577e5c29ebd7e3c53bb66da9",
+      "file": "src/cli/commands/specs.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/specs.ts:8806013e21fb2b560ad57403",
+      "file": "src/cli/commands/specs.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/specs.ts:c46b29d7d94d1e90164d5981",
+      "file": "src/cli/commands/specs.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/specs.ts:cf2307da182cbcc770bbb8ec",
+      "file": "src/cli/commands/specs.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/stickers.ts:82dfbc53f406ef78c36e1fc6",
+      "file": "src/cli/commands/stickers.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/tasks.ts:0713333958cd3d0b56e1d5f6",
+      "file": "src/cli/commands/tasks.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/tasks.ts:0a5cd7379501d706e1b27635",
+      "file": "src/cli/commands/tasks.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/tasks.ts:577c2b7f012a4dd6fc9fa941",
+      "file": "src/cli/commands/tasks.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/tools.ts:3a90a53358669b24202da9d4",
+      "file": "src/cli/commands/tools.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/tools.ts:5c5b39b59d2edaedf71adbfb",
+      "file": "src/cli/commands/tools.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/transcribe.ts:626f49aa58200a6a97a26454",
+      "file": "src/cli/commands/transcribe.ts",
+      "boundary": "transcription",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/update.ts:35bb94b5f65dda0c3dc10610",
+      "file": "src/cli/commands/update.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/update.ts:4182d0cbe2f493f2d9b69f88",
+      "file": "src/cli/commands/update.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/update.ts:5595b1c0101d56d7095f155e",
+      "file": "src/cli/commands/update.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/update.ts:93e288a912d18b45a71a8cd0",
+      "file": "src/cli/commands/update.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/update.ts:9e93198754850aea4173871b",
+      "file": "src/cli/commands/update.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/update.ts:c3087cc8cd175cfa03f6a954",
+      "file": "src/cli/commands/update.ts",
+      "boundary": "cli",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/update.ts:e4eec8c550cb605e8b193ade",
+      "file": "src/cli/commands/update.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/watch.ts:d845788d6e62b371712a77a7",
+      "file": "src/cli/commands/watch.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3",
+      "file": "src/cli/commands/widgets.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/commands/widgets.ts:8c447b55c38f008aa381b929",
+      "file": "src/cli/commands/widgets.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/context.ts:9e7eca8e26d51a8350e4f5f9",
+      "file": "src/cli/context.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/host-cli-gateway.ts:badc819b44c99d76bde75691",
+      "file": "src/cli/host-cli-gateway.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/library-contract.ts:bbf7e242a25cce5628cc680b",
+      "file": "src/cli/library-contract.ts",
+      "boundary": "cli",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/cli/library-contract.ts:f2ec480a53ac6fd028da51f5",
+      "file": "src/cli/library-contract.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/listing.ts:67d41d9c8a5bd2e8aa4472a8",
+      "file": "src/cli/listing.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/media-send-auth.ts:5ccbe8db5ce1f7765b86058d",
+      "file": "src/cli/media-send-auth.ts",
+      "boundary": "media-send",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/media-send.ts:a5348931d220bade85554022",
+      "file": "src/cli/media-send.ts",
+      "boundary": "media-send",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/provenance.ts:347390b59c4d89a482af1ca8",
+      "file": "src/cli/provenance.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/provenance.ts:697a0104724333c88985d096",
+      "file": "src/cli/provenance.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/provenance.ts:c0ae4fd7afdb260c7808081a",
+      "file": "src/cli/provenance.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/provenance.ts:ea763c4f44dd59067eead42a",
+      "file": "src/cli/provenance.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/redaction.ts:628d9f11075d7c7c57b9b0eb",
+      "file": "src/cli/redaction.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/redaction.ts:efcd62ceb965fe74d5cf1697",
+      "file": "src/cli/redaction.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/redaction.ts:f983db582e58186d2af52cef",
+      "file": "src/cli/redaction.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/registry.ts:07e29a272372d5e1aa33486b",
+      "file": "src/cli/registry.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:1607538d1a25b7ef5066f1ea",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:184b15658d372cdd90140658",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:266a824d891cb5d497d3ac3e",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:7b442ec9c6f86f3ce4264b74",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:950513833066c4a74bd40ca2",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:ac623af48505defd94499ca8",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:b25c88a5d690b9855455a3a6",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:c189970f4ec710d509af0466",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:c41d6e44f3fc6e90b2094dde",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/remote-gateway.ts:c5ef9f575c42ea0e677fbf2c",
+      "file": "src/cli/remote-gateway.ts",
+      "boundary": "relay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/runtime-target.ts:863230d57a244c76b7fe3ddb",
+      "file": "src/cli/runtime-target.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/runtime-target.ts:a330f4808d976b8052774005",
+      "file": "src/cli/runtime-target.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/skill-gates.ts:2393bd5726c3cde0dace38b5",
+      "file": "src/cli/skill-gates.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cli/tools-export.ts:4838115c49b02fe526434d88",
+      "file": "src/cli/tools-export.ts",
+      "boundary": "cli",
+      "rule": "rejection-without-binding",
+      "count": 3
+    },
+    {
+      "id": "src/cli/tools-export.ts:98dd32ead15a0c180eec2bb2",
+      "file": "src/cli/tools-export.ts",
+      "boundary": "cli",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/chat-db.ts:e1167b0dc38067731cb90ea1",
+      "file": "src/cloud-agents/chat-db.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/chat-people.ts:661e2471e9efc99522cc35d7",
+      "file": "src/cloud-agents/chat-people.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/chat-people.ts:822b8ff9327c84a4840075b2",
+      "file": "src/cloud-agents/chat-people.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/chat-people.ts:95cf9cf72073ead999568557",
+      "file": "src/cloud-agents/chat-people.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/chat-routing.ts:07072f7939233aa9d787dcea",
+      "file": "src/cloud-agents/chat-routing.ts",
+      "boundary": "cloud-agents",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/chat-routing.ts:17ad649be0e1db5b9819c5f5",
+      "file": "src/cloud-agents/chat-routing.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/client-product.ts:8ce09c8548d3dd379735e366",
+      "file": "src/cloud-agents/client-product.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/client.ts:51d937a4a8db9587b7794b56",
+      "file": "src/cloud-agents/client.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/client.ts:754231f8b070f9e254fb2d63",
+      "file": "src/cloud-agents/client.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/client.ts:e43078d3994fcfa205131730",
+      "file": "src/cloud-agents/client.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/definition.ts:2c369749788c56b8a3e1778c",
+      "file": "src/cloud-agents/definition.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/definition.ts:3dfb0619f2118c11b55a14db",
+      "file": "src/cloud-agents/definition.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/definition.ts:409fdf7dd5e7506c9b9bca5d",
+      "file": "src/cloud-agents/definition.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/definition.ts:a3096350f5ae610dab9c839f",
+      "file": "src/cloud-agents/definition.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/delivery-runner.ts:f3586b325ab224cce70acd2b",
+      "file": "src/cloud-agents/delivery-runner.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/run-inputs.ts:787f73ee7d36e3f3e6406f10",
+      "file": "src/cloud-agents/run-inputs.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/run-inputs.ts:bf40c64babef33c4e9b323d0",
+      "file": "src/cloud-agents/run-inputs.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/task-runs-db.ts:227ece15ae3ef62f08733bb7",
+      "file": "src/cloud-agents/task-runs-db.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/task-watcher.ts:8ba68d99319236b1e56b6f15",
+      "file": "src/cloud-agents/task-watcher.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-runner.ts:018286e21ce9f75c2a200bdd",
+      "file": "src/cloud-agents/worker-runner.ts",
+      "boundary": "cloud-agents",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-runner.ts:029d278c6d44beabe9ac3369",
+      "file": "src/cloud-agents/worker-runner.ts",
+      "boundary": "cloud-agents",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-runner.ts:3d7a693e47b2b187f6eaa814",
+      "file": "src/cloud-agents/worker-runner.ts",
+      "boundary": "cloud-agents",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-runner.ts:8bc783ea5fa214a7b18b9f59",
+      "file": "src/cloud-agents/worker-runner.ts",
+      "boundary": "cloud-agents",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-session.ts:1e43bb6a7ac107d2e7493e71",
+      "file": "src/cloud-agents/worker-session.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-session.ts:20514077d49050e7619862f0",
+      "file": "src/cloud-agents/worker-session.ts",
+      "boundary": "sessions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-session.ts:42feaf1150433a8cd70c56bc",
+      "file": "src/cloud-agents/worker-session.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-session.ts:8d3053c35a8ad9c6ae44e57a",
+      "file": "src/cloud-agents/worker-session.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-session.ts:960a5482f3a99bba8f9531d1",
+      "file": "src/cloud-agents/worker-session.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-store.ts:003e1469a4b824a823f170f0",
+      "file": "src/cloud-agents/worker-store.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-agents/worker-store.ts:cba284cf9cb415cc1dc9db4b",
+      "file": "src/cloud-agents/worker-store.ts",
+      "boundary": "cloud-agents",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/actor-bindings.ts:d51d2886d5757f33c7711bae",
+      "file": "src/cloud-auth/actor-bindings.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/actor-bindings.ts:e118f7e8da6c226f65a0f2ff",
+      "file": "src/cloud-auth/actor-bindings.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/client.ts:44e41237215836e765a59b4a",
+      "file": "src/cloud-auth/client.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/client.ts:4e745b0916c31cab654c5a3f",
+      "file": "src/cloud-auth/client.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/client.ts:b136e7e09d10a9cc2a89680f",
+      "file": "src/cloud-auth/client.ts",
+      "boundary": "cloud-auth",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/client.ts:ef9c2dc611c2817f37ee6e35",
+      "file": "src/cloud-auth/client.ts",
+      "boundary": "cloud-auth",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/connector-auth.ts:a84cfa646a5fa8fce60a4e88",
+      "file": "src/cloud-auth/connector-auth.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/storage.ts:b99d4d2cd0d34c4f439a2554",
+      "file": "src/cloud-auth/storage.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/turn-actor.ts:95ff4d29a2f8808965fe7302",
+      "file": "src/cloud-auth/turn-actor.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/turn-actor.ts:c09a3c19702c22a994915d83",
+      "file": "src/cloud-auth/turn-actor.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cloud-auth/verification-uri.ts:8f9b7ddb8da2f1a52101388b",
+      "file": "src/cloud-auth/verification-uri.ts",
+      "boundary": "cloud-auth",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/console-scope/resolver.ts:2522fdd6ed65d87e5291e6de",
+      "file": "src/console-scope/resolver.ts",
+      "boundary": "console-scope",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/console-scope/resolver.ts:7d505a740f494987192eac71",
+      "file": "src/console-scope/resolver.ts",
+      "boundary": "console-scope",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/console-scope/resolver.ts:9ba9fe26cc184461a244ed67",
+      "file": "src/console-scope/resolver.ts",
+      "boundary": "console-scope",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/console-scope/resolver.ts:d44752ad10815206ef36e270",
+      "file": "src/console-scope/resolver.ts",
+      "boundary": "console-scope",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/console-scope/store.ts:dd82a6eab9a7e31ea3ac4859",
+      "file": "src/console-scope/store.ts",
+      "boundary": "console-scope",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/contacts.ts:402303927ca64a8e633e3c46",
+      "file": "src/contacts.ts",
+      "boundary": "contacts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/contacts.ts:5b9c872cdee5fe8960c2260f",
+      "file": "src/contacts.ts",
+      "boundary": "contacts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/contacts.ts:b6278988ca184d6ae82bbb14",
+      "file": "src/contacts.ts",
+      "boundary": "contacts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/contacts.ts:bc40ffa467953d2c90f39f07",
+      "file": "src/contacts.ts",
+      "boundary": "contacts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/contacts.ts:c567a6d3c533a136996009c0",
+      "file": "src/contacts.ts",
+      "boundary": "contacts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/contacts.ts:d4f8d1b6c70156e1ac59e37f",
+      "file": "src/contacts.ts",
+      "boundary": "contacts.ts",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323",
+      "file": "src/costs/pricing-catalog.ts",
+      "boundary": "costs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc",
+      "file": "src/costs/pricing-catalog.ts",
+      "boundary": "costs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/crm/pipeline-engines.ts:8294632de396ae2e22ebf2dd",
+      "file": "src/crm/pipeline-engines.ts",
+      "boundary": "crm",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cron/authority.ts:e116ec0448fbb570f6475354",
+      "file": "src/cron/authority.ts",
+      "boundary": "cron",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cron/runner.ts:9ec1905034d5600d03660fa2",
+      "file": "src/cron/runner.ts",
+      "boundary": "cron",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cron/schedule.ts:2b46c8ca013c56a26edd2e09",
+      "file": "src/cron/schedule.ts",
+      "boundary": "cron",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cron/schedule.ts:613ff03ae8445d303ad9e180",
+      "file": "src/cron/schedule.ts",
+      "boundary": "cron",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/cron/shell-executor.ts:ff2a0e370bcdc34b2a46f47b",
+      "file": "src/cron/shell-executor.ts",
+      "boundary": "cron",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/daemon.ts:6a6d5215ab5b491af6675ecb",
+      "file": "src/daemon.ts",
+      "boundary": "daemon.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/db.ts:c6978c968e80ffb42dda9b1d",
+      "file": "src/db.ts",
+      "boundary": "db.ts",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/db/read-watchdog.ts:43c5de7e031c12444519e89b",
+      "file": "src/db/read-watchdog.ts",
+      "boundary": "db",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/db/write-retry.ts:2678de187797463c8ed583e4",
+      "file": "src/db/write-retry.ts",
+      "boundary": "db",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/decisions/delivery.ts:0c0e6a25b357dad417a2494f",
+      "file": "src/decisions/delivery.ts",
+      "boundary": "decisions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/decisions/delivery.ts:7b0a35781f7aa52edcfabc1d",
+      "file": "src/decisions/delivery.ts",
+      "boundary": "decisions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/decisions/service.ts:9976a2926e156eebf70c85c0",
+      "file": "src/decisions/service.ts",
+      "boundary": "decisions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/devin/client.ts:f9738c424b2304727de29663",
+      "file": "src/devin/client.ts",
+      "boundary": "devin",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/devin/store.ts:8cb4bc5d5353211b4892e73c",
+      "file": "src/devin/store.ts",
+      "boundary": "devin",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/ephemeral/runner.ts:1b8f59e65dd63ab2d0b29ed7",
+      "file": "src/ephemeral/runner.ts",
+      "boundary": "ephemeral",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/ephemeral/runner.ts:fabe650a610c57f31980d421",
+      "file": "src/ephemeral/runner.ts",
+      "boundary": "ephemeral",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/eval/runner.ts:6545f84382a87e9b55bb7488",
+      "file": "src/eval/runner.ts",
+      "boundary": "eval",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/eval/snapshot.ts:782546799d07dc7f2a74b88f",
+      "file": "src/eval/snapshot.ts",
+      "boundary": "eval",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/eval/snapshot.ts:e43006d1f1a3d3ee25d2a21b",
+      "file": "src/eval/snapshot.ts",
+      "boundary": "eval",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/events/audit-stream.ts:135d925fd743a4d5afccaf2c",
+      "file": "src/events/audit-stream.ts",
+      "boundary": "events",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/gateway-response-order.ts:8b67193d7434d997997bb9c5",
+      "file": "src/gateway-response-order.ts",
+      "boundary": "gateway-response-order.ts",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/gateway.ts:0e950481ed220e99099ac63f",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:38b3a905b1bff1eaf59af932",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:49a19f1559aad6da19e61c67",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:5955b4947cd95ed0c53bfebb",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:5d625c3044e1cf4a22a8cb20",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:792fc2bef4e1b7081ace9e9a",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:847d3a3fcc564674e0dc04ad",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:b31b92d6eb316bc184edb339",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:e5adb0dd5b47cd35b49c07d3",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/gateway.ts:fef810b49e7e230ff287054f",
+      "file": "src/gateway.ts",
+      "boundary": "gateway.ts",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/hooks-runtime/db.ts:3c08a152288c09ea27823b56",
+      "file": "src/hooks-runtime/db.ts",
+      "boundary": "hooks-runtime",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/gh-follow-pending.ts:07c422a62374ce2f7d8b3b03",
+      "file": "src/hooks/gh-follow-pending.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/gh-follow-sweep.ts:6136337e8208a653f431fa70",
+      "file": "src/hooks/gh-follow-sweep.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/gh-follow-sweep.ts:8c3f1ef822281326b679b66b",
+      "file": "src/hooks/gh-follow-sweep.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/gh-follow-sweep.ts:f3bf41d6556d70accdf2d57c",
+      "file": "src/hooks/gh-follow-sweep.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/gh-watch.ts:23d0acda26def2baf561fcf1",
+      "file": "src/hooks/gh-watch.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/gh-watch.ts:af8457fcadfb65da4dd90240",
+      "file": "src/hooks/gh-watch.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/gh-watch.ts:d400d88bf210764803f508f4",
+      "file": "src/hooks/gh-watch.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/pre-compact.ts:b200a5a7c730aeae6a9170c4",
+      "file": "src/hooks/pre-compact.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/rtk-rewrite.ts:3202775fea4a3b3261882316",
+      "file": "src/hooks/rtk-rewrite.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/rtk-rewrite.ts:b8642a1b1dffc02fbc71e2bb",
+      "file": "src/hooks/rtk-rewrite.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/rtk-rewrite.ts:ce2d68656eeb78f8352c68d6",
+      "file": "src/hooks/rtk-rewrite.ts",
+      "boundary": "hooks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/hooks/rtk-rewrite.ts:f6f85cf6ee56c1b8feec495f",
+      "file": "src/hooks/rtk-rewrite.ts",
+      "boundary": "hooks",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/identity-link/link-dm-route.ts:73e1d088175cbdd54649118f",
+      "file": "src/identity-link/link-dm-route.ts",
+      "boundary": "identity-link",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/identity-link/link-dm.ts:5aeea13971ce6c0df5292cf0",
+      "file": "src/identity-link/link-dm.ts",
+      "boundary": "identity-link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/identity-link/link-service.ts:360b81d7ad2465229ea76503",
+      "file": "src/identity-link/link-service.ts",
+      "boundary": "identity-link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/identity-link/link-service.ts:3915517aedb2f79d39dc2bec",
+      "file": "src/identity-link/link-service.ts",
+      "boundary": "identity-link",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/identity-link/link-service.ts:3cb9bd54f180e8f13daecbd6",
+      "file": "src/identity-link/link-service.ts",
+      "boundary": "identity-link",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/identity-link/link-service.ts:c77befee309f8b1e4af72cc7",
+      "file": "src/identity-link/link-service.ts",
+      "boundary": "identity-link",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/identity-link/link-service.ts:f3261ede542493ea84ffa76a",
+      "file": "src/identity-link/link-service.ts",
+      "boundary": "identity-link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/identity-link/turn-link.ts:42cbe9ff1f0680ec8c6f0ab2",
+      "file": "src/identity-link/turn-link.ts",
+      "boundary": "identity-link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/identity/subject.ts:44fadfad484aeadf4ff7407a",
+      "file": "src/identity/subject.ts",
+      "boundary": "identity",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/identity/subject.ts:e756159d2bbfba631b54a95d",
+      "file": "src/identity/subject.ts",
+      "boundary": "identity",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/image/atlas.ts:d2829b1e864a37640f5f3f3e",
+      "file": "src/image/atlas.ts",
+      "boundary": "image",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/inbox/inbox-client.ts:2ab708474058611f9465dfd7",
+      "file": "src/inbox/inbox-client.ts",
+      "boundary": "inbox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/inbox/local-db.ts:f07c6dd0d753813085053dee",
+      "file": "src/inbox/local-db.ts",
+      "boundary": "inbox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/inbox/mail-enrichment.ts:b6d0d49647fba552e5ab48a6",
+      "file": "src/inbox/mail-enrichment.ts",
+      "boundary": "inbox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/insights/insight-db.ts:db0ec4df3b6791f5ba06465b",
+      "file": "src/insights/insight-db.ts",
+      "boundary": "insights",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/isolation/execution-plane.ts:1e00435bc427d26e062804f2",
+      "file": "src/isolation/execution-plane.ts",
+      "boundary": "isolation",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/jobs/detach-script.ts:55fc73ecc04df177cb3133ff",
+      "file": "src/jobs/detach-script.ts",
+      "boundary": "jobs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/jobs/detach-script.ts:574c6e8d0596721b5c6ac6f9",
+      "file": "src/jobs/detach-script.ts",
+      "boundary": "jobs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/jobs/detach.ts:6964bd49b50ec68e6fd88f8b",
+      "file": "src/jobs/detach.ts",
+      "boundary": "jobs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/jobs/runner.ts:cba5f0c5ec544b4c0307aca4",
+      "file": "src/jobs/runner.ts",
+      "boundary": "jobs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/jobs/runner.ts:f6697741e4a972122eaa1214",
+      "file": "src/jobs/runner.ts",
+      "boundary": "jobs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/jobs/runner.ts:fa392636c1cf04e02dc07bcb",
+      "file": "src/jobs/runner.ts",
+      "boundary": "jobs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/jobs/runner.ts:fb2e66cc8566b8c3166bd36a",
+      "file": "src/jobs/runner.ts",
+      "boundary": "jobs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/client.ts:27ba8cab2a458072e8497bb0",
+      "file": "src/knowledge/client.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/client.ts:8ce657243d52e3d113abe333",
+      "file": "src/knowledge/client.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/contacts.ts:f4a1bc12d71787b628a31c1a",
+      "file": "src/knowledge/contacts.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/contacts.ts:f7be2760fb393d02c0cb85e3",
+      "file": "src/knowledge/contacts.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/prompt.ts:c73c2ea547156132b8983e3e",
+      "file": "src/knowledge/curator/prompt.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/runner.ts:08f3defb34b2906f18b72f21",
+      "file": "src/knowledge/curator/runner.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/runner.ts:438e06240959fa6c3e0c874f",
+      "file": "src/knowledge/curator/runner.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/runner.ts:829ddd4d45a6a7476f81ebc7",
+      "file": "src/knowledge/curator/runner.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/runner.ts:bd1ee710172affed05f3bc5b",
+      "file": "src/knowledge/curator/runner.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/runner.ts:d8b0d02310aa63233b93d934",
+      "file": "src/knowledge/curator/runner.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/runner.ts:dd32c97df24f7e59bcb7c19c",
+      "file": "src/knowledge/curator/runner.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/turn.ts:1827c58934f750751b3d7c4f",
+      "file": "src/knowledge/curator/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/turn.ts:2eba8dcf7a2ad93a2c83dfeb",
+      "file": "src/knowledge/curator/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/turn.ts:7fac858ed7c6a01510cc79d5",
+      "file": "src/knowledge/curator/turn.ts",
+      "boundary": "knowledge",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/curator/turn.ts:ac8d66fc3dd88405648bdf45",
+      "file": "src/knowledge/curator/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/knowledge/curator/turn.ts:fe61aaf610bc128b91da7947",
+      "file": "src/knowledge/curator/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/egress/guard.ts:784df1207e8e7de50ef501c9",
+      "file": "src/knowledge/egress/guard.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/egress/guard.ts:fbbc3e556afe688f0ce0d0bf",
+      "file": "src/knowledge/egress/guard.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/items/propose.ts:70717f13ea241e1b9e667cc1",
+      "file": "src/knowledge/items/propose.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/items/remember.ts:ea642633b4fb44b86ff56eda",
+      "file": "src/knowledge/items/remember.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/items/remember.ts:f7e37bba5c275290fe31cbf2",
+      "file": "src/knowledge/items/remember.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/mirror/store.ts:a3578c7b6affe3a28db9df0f",
+      "file": "src/knowledge/mirror/store.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/mirror/store.ts:d91bf20b387a5c2de425f2f3",
+      "file": "src/knowledge/mirror/store.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/mirror/sync.ts:5ce4eb8abdc7991c9364a2be",
+      "file": "src/knowledge/mirror/sync.ts",
+      "boundary": "knowledge",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/owner.ts:4582831f467a8f11f1826646",
+      "file": "src/knowledge/owner.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/packet/packet.ts:3a43e9f673a3db69a181271d",
+      "file": "src/knowledge/packet/packet.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/packet/packet.ts:97d94c069c27f84d345c3a22",
+      "file": "src/knowledge/packet/packet.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/packet/packet.ts:fd0ccce1241732ad6dc60667",
+      "file": "src/knowledge/packet/packet.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/exposure.ts:93a83f83f7e2df3b24922b13",
+      "file": "src/knowledge/safety/exposure.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/exposure.ts:c897a703bf590b070c4805e9",
+      "file": "src/knowledge/safety/exposure.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/exposure.ts:cb90be945646c2b471d06c6d",
+      "file": "src/knowledge/safety/exposure.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/exposure.ts:ee46243922b909a48da10b32",
+      "file": "src/knowledge/safety/exposure.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/guard.ts:06cfc3465e36525af5cd05ba",
+      "file": "src/knowledge/safety/guard.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/turn.ts:66853f0e17482fbd20ce3a50",
+      "file": "src/knowledge/safety/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/turn.ts:871804199c1ab07e75f7c4f5",
+      "file": "src/knowledge/safety/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/turn.ts:8c20dc0e1a1f125ff0ef88a8",
+      "file": "src/knowledge/safety/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/turn.ts:a3d2266dd52545005d49182c",
+      "file": "src/knowledge/safety/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/turn.ts:e0b3f8914f7ab8e0afcd6be8",
+      "file": "src/knowledge/safety/turn.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/write-after-read.ts:acf6a33edca0a848a5a4b00f",
+      "file": "src/knowledge/safety/write-after-read.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/safety/write-after-read.ts:dbaae23e9149e6d51086d44d",
+      "file": "src/knowledge/safety/write-after-read.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/search.ts:0bee9ae2ca40776c4ae78622",
+      "file": "src/knowledge/search.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/search.ts:69ed3e4be377acaa413ac256",
+      "file": "src/knowledge/search.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/search.ts:ff227a54ff41a3185e82278c",
+      "file": "src/knowledge/search.ts",
+      "boundary": "knowledge",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/settings.ts:04a31e1060dd557134a0663d",
+      "file": "src/knowledge/settings.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/settings.ts:195a161c2068700c9144e371",
+      "file": "src/knowledge/settings.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/settings.ts:6098fdc3c8169a43757e8371",
+      "file": "src/knowledge/settings.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/settings.ts:66c55cbc33e4a6740a03e633",
+      "file": "src/knowledge/settings.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/settings.ts:ef5ab6425a208edc9cb3e838",
+      "file": "src/knowledge/settings.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/store/chat-db.ts:34e16f06374d98494104f639",
+      "file": "src/knowledge/store/chat-db.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/store/local-index.ts:37d3f6f57c2ec48ac490fce2",
+      "file": "src/knowledge/store/local-index.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/store/local-index.ts:b2da6e4eab9ff8f768be9f31",
+      "file": "src/knowledge/store/local-index.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/store/local-index.ts:c1b7f59201cac5a76ec1ae1b",
+      "file": "src/knowledge/store/local-index.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/store/local-runs.ts:39b8d39435f5da09700654ce",
+      "file": "src/knowledge/store/local-runs.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/store/local-runs.ts:917e5a6e63c99a7f5f45f021",
+      "file": "src/knowledge/store/local-runs.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/turn/audience.ts:15c89345abf43db35b8b854a",
+      "file": "src/knowledge/turn/audience.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/turn/audience.ts:94d91e63ffcc7246fade9d46",
+      "file": "src/knowledge/turn/audience.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/turn/audience.ts:bf474fd2af202adc864fea56",
+      "file": "src/knowledge/turn/audience.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/turn/audience.ts:ea85140b674efc5bc81dd4d4",
+      "file": "src/knowledge/turn/audience.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/turn/preamble.ts:a714b2f5508113e5d021ad0b",
+      "file": "src/knowledge/turn/preamble.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/knowledge/turn/preamble.ts:c576fdc1fffaeeaedbff757e",
+      "file": "src/knowledge/turn/preamble.ts",
+      "boundary": "knowledge",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/leader/index.ts:14dbde9fb621edcf581522d5",
+      "file": "src/leader/index.ts",
+      "boundary": "leader",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/leader/index.ts:45ddd70bf5b3010c1063f3f0",
+      "file": "src/leader/index.ts",
+      "boundary": "leader",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/leader/index.ts:8e6f1274fd8623d829ddf76d",
+      "file": "src/leader/index.ts",
+      "boundary": "leader",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/leader/index.ts:a7a763348b4e9a4d4fda2829",
+      "file": "src/leader/index.ts",
+      "boundary": "leader",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/agent-definitions.ts:61158d95b3395a4880fed200",
+      "file": "src/library/agent-definitions.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/agent-definitions.ts:72696a636a3f403f5422aca0",
+      "file": "src/library/agent-definitions.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/agent-definitions.ts:7891cfc32d8f856bda3038a2",
+      "file": "src/library/agent-definitions.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/agents-db.ts:49644cf46ddf3fffdbaeb28b",
+      "file": "src/library/agents-db.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/agents-db.ts:b3ce913acf4d8fd34b4a9ccb",
+      "file": "src/library/agents-db.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/cache.ts:0f1a119c31ff8621a19c4893",
+      "file": "src/library/cache.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/cache.ts:35c4c3d9180bd8c49e22783a",
+      "file": "src/library/cache.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/cache.ts:ad1bf27c3fb8df4611044deb",
+      "file": "src/library/cache.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/cache.ts:ead7e1fdba2db0263fe7fe1b",
+      "file": "src/library/cache.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/cache.ts:f896ffb7f511d96db5302b5c",
+      "file": "src/library/cache.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/client.ts:3754bd906fd786d696e38211",
+      "file": "src/library/client.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/client.ts:5b5c138955933dbcc2194773",
+      "file": "src/library/client.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/client.ts:a3b776daabbf9e7819024d94",
+      "file": "src/library/client.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/package.ts:1ad24b33df690f39f6be6820",
+      "file": "src/library/package.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/package.ts:2e76495cd676f8460a00274b",
+      "file": "src/library/package.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/package.ts:a4986b269c622c2d288be8bb",
+      "file": "src/library/package.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/package.ts:cd19a45fb16d1dfc468dca66",
+      "file": "src/library/package.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/package.ts:ea1ca16f21ad309e7b3d8411",
+      "file": "src/library/package.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/package.ts:edb15f9102bb058f131f67e1",
+      "file": "src/library/package.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins-db.ts:0511830e8963a9f66659d7e7",
+      "file": "src/library/pins-db.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins-db.ts:4c6f52b9c49540784850bcc9",
+      "file": "src/library/pins-db.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:291975f5789c07ac87eb405e",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:332ef66734e478dae9314ea9",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:387a4ccde3e6dd5e0133ab05",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:43ed51f197f474306ff95c00",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:4c3c1be89ffdfb5dc0e743ce",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:728662263687c60d0d8fdbf7",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:8195666839c29f95d6e0b163",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:9d1887ed9374f5ca7fd55231",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/pins.ts:c8fa67efeb4982517283114b",
+      "file": "src/library/pins.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/plugin.ts:4318a6b2f773947faa1f2d11",
+      "file": "src/library/plugin.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/plugin.ts:44cb86073e7f9b14f36b81a7",
+      "file": "src/library/plugin.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/plugin.ts:5e28e879ca8665b08ffcade8",
+      "file": "src/library/plugin.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/presentation.ts:5a2697ee86304aadafa7e4fe",
+      "file": "src/library/presentation.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/presentation.ts:7b2d0f6ba6df880a521303cc",
+      "file": "src/library/presentation.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/presentation.ts:adeb83b0d36edaccf49db69a",
+      "file": "src/library/presentation.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/request-runner.ts:5a67f2ecb0cdb07bc254880c",
+      "file": "src/library/request-runner.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/request-turn.ts:0626219b012b41000362b3c1",
+      "file": "src/library/request-turn.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/request-turn.ts:126d9f71a6a2f0639c7005b4",
+      "file": "src/library/request-turn.ts",
+      "boundary": "library",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/request-turn.ts:55f9e81fb97f6ce694ca81a4",
+      "file": "src/library/request-turn.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/request-turn.ts:809d3d6067eeb98b25a5aec1",
+      "file": "src/library/request-turn.ts",
+      "boundary": "library",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/library/request-turn.ts:fa9f48ef262d25be640dccb1",
+      "file": "src/library/request-turn.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/requests.ts:3e1b298206678ca34a1e7377",
+      "file": "src/library/requests.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/service.ts:71c089de88eec4d5e62bdd20",
+      "file": "src/library/service.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/service.ts:cea88c2d55bb77737fd15ce7",
+      "file": "src/library/service.ts",
+      "boundary": "library",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/library/session-plugins.ts:4690feadadb3d379b7a05a7d",
+      "file": "src/library/session-plugins.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/session-plugins.ts:5cc7bd69ae2486bd0b8a0b7c",
+      "file": "src/library/session-plugins.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/session-plugins.ts:5fa754907e2f1cc5c0ddae5d",
+      "file": "src/library/session-plugins.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/turn.ts:48c6d8a79a3a92b4477d82db",
+      "file": "src/library/turn.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/turn.ts:551b02bbe90b77bd11f8894b",
+      "file": "src/library/turn.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/library/turn.ts:f3c4010f26f7b30c1eeb6454",
+      "file": "src/library/turn.ts",
+      "boundary": "library",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/client.ts:142fcfbb7c9568d5686e81a3",
+      "file": "src/link/client.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/client.ts:f47c9ac5ebbb9d36b270f6c9",
+      "file": "src/link/client.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-mode.ts:1dba2a9a3f2aa4bda248910c",
+      "file": "src/link/connector-mode.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:140204216fa0931bfaa4ea23",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:1f43168c3fcdb77a16f9bc8b",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:32240cf9072fe876c000542b",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:353cbde6393f0276f55d759d",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:3676f94b18f57df591d022b2",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:40b56210d2697d533a1ab492",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:466003e4e23f1c1a20502846",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:48e1be97cb9e1d4b51ba2c62",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:64ab8a22ae98c9bc153bb6af",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:79ddfd14ef08e80cf0dd6d2c",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:c09b05b12bb5b71a49b5dd0a",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:f477353490ca689fd56056ff",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connector-turn.ts:f9a567d6b94c71b5a727504a",
+      "file": "src/link/connector-turn.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connectors.ts:30aeabe113c4a3b7052907a5",
+      "file": "src/link/connectors.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connectors.ts:869c5bee59fa3b7549e450a7",
+      "file": "src/link/connectors.ts",
+      "boundary": "link",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/link/connectors.ts:9a433bc72d70e7d58695eec4",
+      "file": "src/link/connectors.ts",
+      "boundary": "link",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/link/connectors.ts:ef44530b054ad17c3d72d8d0",
+      "file": "src/link/connectors.ts",
+      "boundary": "link",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/mailbox/db.ts:cc4dfd2e54bc8341e5292796",
+      "file": "src/mailbox/db.ts",
+      "boundary": "mailbox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/mailbox/db.ts:f43dcb2b37c443b0aa9129a8",
+      "file": "src/mailbox/db.ts",
+      "boundary": "mailbox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/managed-runtime-rebind.ts:217ce7c8a5d1bc18f580972e",
+      "file": "src/managed-runtime-rebind.ts",
+      "boundary": "managed-runtime-rebind.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/managed-runtime-rebind.ts:dd856169db1b4b768e670ba3",
+      "file": "src/managed-runtime-rebind.ts",
+      "boundary": "managed-runtime-rebind.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/managed-runtime.ts:23aa5ff5991b0e94a5873d35",
+      "file": "src/managed-runtime.ts",
+      "boundary": "managed-runtime.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/managed-runtime.ts:336d83187ee99088f6ffa2ee",
+      "file": "src/managed-runtime.ts",
+      "boundary": "managed-runtime.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/managed-runtime.ts:7bf5fd689de7917fbe8533a8",
+      "file": "src/managed-runtime.ts",
+      "boundary": "managed-runtime.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/managed-runtime.ts:91f9c7ce96f25678f32c79a6",
+      "file": "src/managed-runtime.ts",
+      "boundary": "managed-runtime.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/managed-runtime.ts:c7e943a5a8535897215a0df9",
+      "file": "src/managed-runtime.ts",
+      "boundary": "managed-runtime.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/meetings/cloud-finalize.ts:2f4d8c0f731b64c4abdc5a64",
+      "file": "src/meetings/cloud-finalize.ts",
+      "boundary": "meetings",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/meetings/cloud.ts:658d4fd95e148d9f2640b6e8",
+      "file": "src/meetings/cloud.ts",
+      "boundary": "meetings",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/meetings/google-meet/recorder-run.ts:8d070a22d97b19ac32e14145",
+      "file": "src/meetings/google-meet/recorder-run.ts",
+      "boundary": "meetings",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/meetings/google-meet/recorder-run.ts:cce88cf3c7ae1fa18e98d969",
+      "file": "src/meetings/google-meet/recorder-run.ts",
+      "boundary": "meetings",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/meetings/read.ts:37b1efc7f0095d3016c688d1",
+      "file": "src/meetings/read.ts",
+      "boundary": "meetings",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/meetings/read.ts:d792f49ccd45e27810c5985f",
+      "file": "src/meetings/read.ts",
+      "boundary": "meetings",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/nats.ts:7af70d3ecc8e75777df5162b",
+      "file": "src/nats.ts",
+      "boundary": "nats.ts",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/nats.ts:c66b6d8c9426c6254f8452c2",
+      "file": "src/nats.ts",
+      "boundary": "nats.ts",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/omni-config.ts:22831d9531db2ae5b55ed324",
+      "file": "src/omni-config.ts",
+      "boundary": "omni-config.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/client.ts:7b5deb08a00337f7595cee87",
+      "file": "src/omni/client.ts",
+      "boundary": "omni",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/omni/consumer.ts:0a59ad0dd07833b1a237797d",
+      "file": "src/omni/consumer.ts",
+      "boundary": "omni",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/consumer.ts:5c4f266950372136184e2b9e",
+      "file": "src/omni/consumer.ts",
+      "boundary": "omni",
+      "rule": "rejection-without-binding",
+      "count": 3
+    },
+    {
+      "id": "src/omni/consumer.ts:70dda4cd4a752f2c5660b799",
+      "file": "src/omni/consumer.ts",
+      "boundary": "omni",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/consumer.ts:a06d73f089a30555b058cc70",
+      "file": "src/omni/consumer.ts",
+      "boundary": "omni",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/group-metadata-cache.ts:745e69a422622e7d582d3d32",
+      "file": "src/omni/group-metadata-cache.ts",
+      "boundary": "omni",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/group-metadata-cache.ts:b4ff5747b9e1ff636daa7f34",
+      "file": "src/omni/group-metadata-cache.ts",
+      "boundary": "omni",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/group-metadata-cache.ts:d82c951b91df0e9959ffbb38",
+      "file": "src/omni/group-metadata-cache.ts",
+      "boundary": "omni",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/session-prompt-publication.ts:8c992a793d9801b6dead33b2",
+      "file": "src/omni/session-prompt-publication.ts",
+      "boundary": "omni",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/session-stream.ts:27399838c3efff52a4abb8bf",
+      "file": "src/omni/session-stream.ts",
+      "boundary": "omni",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/session-stream.ts:71e21935de41a8a9f124d6eb",
+      "file": "src/omni/session-stream.ts",
+      "boundary": "omni",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/omni/session-stream.ts:b295141b72e3cc317711806b",
+      "file": "src/omni/session-stream.ts",
+      "boundary": "omni",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/assertion-audiences.ts:1a6fd22326d31f4d7cc88cc0",
+      "file": "src/pages/assertion-audiences.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/assertion-audiences.ts:46c90b9f47508d96a483d240",
+      "file": "src/pages/assertion-audiences.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/assertion-audiences.ts:98a6c0975738d19e177a1d38",
+      "file": "src/pages/assertion-audiences.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/assertion-audiences.ts:f2a031c1e98155b20ce0ec01",
+      "file": "src/pages/assertion-audiences.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/chat.ts:07c2c3da38c76eb3ce9a3171",
+      "file": "src/pages/chat.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/comment-follow.ts:aa828366b9a34b3631013d59",
+      "file": "src/pages/comment-follow.ts",
+      "boundary": "pages",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/pages/comment-follow.ts:be20d26fcac2c9ceeb6622b3",
+      "file": "src/pages/comment-follow.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/pages/kit.ts:99f143281464822511745db6",
+      "file": "src/pages/kit.ts",
+      "boundary": "pages",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/pages/read.ts:648bd450a2b2e0e0fa12013c",
+      "file": "src/pages/read.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/read.ts:9ed9671ad7eb34b4127f77cf",
+      "file": "src/pages/read.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/read.ts:b0081735006e6aa3698c3f7f",
+      "file": "src/pages/read.ts",
+      "boundary": "pages",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pages/ship.ts:131cc6f0f892cc59859ca8b5",
+      "file": "src/pages/ship.ts",
+      "boundary": "pages",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/pages/ship.ts:96963fea4700dbc3eec4d37a",
+      "file": "src/pages/ship.ts",
+      "boundary": "pages",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/app-permission-provider-runtime.ts:4478b841cb301b890bbc21f3",
+      "file": "src/permissions/app-permission-provider-runtime.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/apply-grant.ts:0eee170084f07ce787c3ecd8",
+      "file": "src/permissions/apply-grant.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/apply-grant.ts:6ada072696100c42d659145f",
+      "file": "src/permissions/apply-grant.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/authorization-guidance.ts:36025c6e1d9b9b58bf5f2cb4",
+      "file": "src/permissions/authorization-guidance.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/codex-knowledge-parity.ts:a5bc337ebaffcbf0ed2f1f58",
+      "file": "src/permissions/codex-knowledge-parity.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/command-access-kind-migration.ts:97984697b7c7d7e3f96e8a79",
+      "file": "src/permissions/command-access-kind-migration.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/denials.ts:0c56fd254d3b98d9e1d2dfcd",
+      "file": "src/permissions/denials.ts",
+      "boundary": "permissions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/denials.ts:5bff9eea7baa3ffbbb43359f",
+      "file": "src/permissions/denials.ts",
+      "boundary": "permissions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/denials.ts:5ff8788425cd355eb6f75db0",
+      "file": "src/permissions/denials.ts",
+      "boundary": "permissions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/denials.ts:63ada12d0621e9706a5a97c3",
+      "file": "src/permissions/denials.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/denials.ts:642590bbafa3ff511a4e4096",
+      "file": "src/permissions/denials.ts",
+      "boundary": "permissions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/denials.ts:fe1ca78358e8511e1d610e65",
+      "file": "src/permissions/denials.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/external-authority-provider.ts:2b708e80c12967b8bd88b77b",
+      "file": "src/permissions/external-authority-provider.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/external-authority-provider.ts:755eb831250f1e2a38ba981f",
+      "file": "src/permissions/external-authority-provider.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/external-authority-provider.ts:c40a01128f5f1ce5b3939efd",
+      "file": "src/permissions/external-authority-provider.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/external-authority-provider.ts:c549cb606a910a0d07d7f515",
+      "file": "src/permissions/external-authority-provider.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/external-authority-provider.ts:dba69675855bd90034dba185",
+      "file": "src/permissions/external-authority-provider.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/external-authority-provider.ts:ea3cce06a9b84d07571d739f",
+      "file": "src/permissions/external-authority-provider.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/external-authority-provider.ts:f8facd627ed6e87c2a534c8d",
+      "file": "src/permissions/external-authority-provider.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/permissions/provider-registry.ts:889e0d30290d42d5f24cfbd0",
+      "file": "src/permissions/provider-registry.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/plugins/index.ts:e78c9d2c89aa565a815b2652",
+      "file": "src/plugins/index.ts",
+      "boundary": "plugins",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pm2.ts:06c7a281e54ebd8733f87c5a",
+      "file": "src/pm2.ts",
+      "boundary": "pm2.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pm2.ts:2a2f85c9a2eb78c2bcd0180d",
+      "file": "src/pm2.ts",
+      "boundary": "pm2.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/policy/reaction-actions.ts:53ffd706658bef6705b7af7c",
+      "file": "src/policy/reaction-actions.ts",
+      "boundary": "policy",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/context.ts:5818b3b034774e3a5eff6a0b",
+      "file": "src/pr/context.ts",
+      "boundary": "pr",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/pr/follow-health.ts:31bfbd62945bd07c70bda352",
+      "file": "src/pr/follow-health.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/follow-health.ts:606cfe08538ef71c95d4c760",
+      "file": "src/pr/follow-health.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/follow-health.ts:8c744db238738a1ee22c2bd5",
+      "file": "src/pr/follow-health.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/git.ts:b5aa95663b64344a557f27a1",
+      "file": "src/pr/git.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/github.ts:d7363d1b8a83f79953fe7535",
+      "file": "src/pr/github.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/journal.ts:2fa985aee15a4f3c22791d32",
+      "file": "src/pr/journal.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/journal.ts:3145d57414f258193d41f330",
+      "file": "src/pr/journal.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/journal.ts:7d1e828e7ad56d16d89970fd",
+      "file": "src/pr/journal.ts",
+      "boundary": "pr",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/pr/journal.ts:e14961799fa1b1b0097757a3",
+      "file": "src/pr/journal.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/service.ts:33a082f827152892352f8ea2",
+      "file": "src/pr/service.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/test-fixture.ts:60d092aaec01b4962f56ab04",
+      "file": "src/pr/test-fixture.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/test-fixture.ts:7bfdcaa0eb9fb376d4a9f61d",
+      "file": "src/pr/test-fixture.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/pr/test-fixture.ts:cafd5f68270c88168afab8e4",
+      "file": "src/pr/test-fixture.ts",
+      "boundary": "pr",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/prox/calls/agora.ts:61bd96a18856cf6b3966d422",
+      "file": "src/prox/calls/agora.ts",
+      "boundary": "prox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/prox/calls/agora.ts:aa067c4e8ad821a622543b28",
+      "file": "src/prox/calls/agora.ts",
+      "boundary": "prox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/prox/calls/calls-db.ts:d5ddee7aabfe1eaf6719186e",
+      "file": "src/prox/calls/calls-db.ts",
+      "boundary": "prox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/prox/calls/provider.ts:8eefdb31353417422533fbc6",
+      "file": "src/prox/calls/provider.ts",
+      "boundary": "prox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/prox/calls/tool-bridge.ts:f9fbd49ded847c2c4b0003cf",
+      "file": "src/prox/calls/tool-bridge.ts",
+      "boundary": "prox",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/reference/context-cli.ts:1d204ec417f462ded05d7fb6",
+      "file": "src/reference/context-cli.ts",
+      "boundary": "reference",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/remote-spawn-nats.ts:30b08c1ff238defa748312f9",
+      "file": "src/remote-spawn-nats.ts",
+      "boundary": "remote-spawn-nats.ts",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/remote-spawn-nats.ts:399c43a03f3b135330e93f68",
+      "file": "src/remote-spawn-nats.ts",
+      "boundary": "remote-spawn-nats.ts",
+      "rule": "catch-without-binding",
+      "count": 3
+    },
+    {
+      "id": "src/remote-spawn-nats.ts:494cff509af819c60c2a099d",
+      "file": "src/remote-spawn-nats.ts",
+      "boundary": "remote-spawn-nats.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/remote-spawn-nats.ts:978d637e7bc79c6ea4985f38",
+      "file": "src/remote-spawn-nats.ts",
+      "boundary": "remote-spawn-nats.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/omni-ignore.ts:191c630af8fd4faef6445a11",
+      "file": "src/router/omni-ignore.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/route-sticky-attach.ts:50fa963b296b2b1ea3739b55",
+      "file": "src/router/route-sticky-attach.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:015f3a21ffe76e22671668bf",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:1147e88bd94f408a57fef14d",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:1c7a1563d1e6d1c4fa2c04af",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:35ca113d904e1c3360cd46d6",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/router/router-db.ts:43c23c5e241d9586cfa149b5",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:454c1d7739a0c56467723de6",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:4a7d7eed604431861685eee8",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 3
+    },
+    {
+      "id": "src/router/router-db.ts:6a1e1eedfc68e60affed72f0",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:7d283c7fdec8206ee1c0ed64",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:9391d670114c9a3871e896d5",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:99b3e500a1e454bfa7a36c7f",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:9ede63713cc288420d24b976",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:a027472d886ff1c7e468a908",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 3
+    },
+    {
+      "id": "src/router/router-db.ts:bebd4e84cf21367ec67d4735",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:c2c58dbb1c84b84aac859580",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:d1fffee17f07a48de2c3b874",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/router-db.ts:e9217495330394f009456cea",
+      "file": "src/router/router-db.ts",
+      "boundary": "router",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/router/sessions.ts:4cea4fc40c424fe5e35e394b",
+      "file": "src/router/sessions.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/agent-instructions.ts:ad21db78abb05e401132da93",
+      "file": "src/runtime/agent-instructions.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/claude-provider.ts:5496eef9c9b7fa7f8d6b6156",
+      "file": "src/runtime/claude-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/claude-provider.ts:69932255b8c315b086374bbe",
+      "file": "src/runtime/claude-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/claude-provider.ts:6d18d7ebccabe9139b6a2ee5",
+      "file": "src/runtime/claude-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/claude-provider.ts:9d4e5964b65ef32089434597",
+      "file": "src/runtime/claude-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/claude-provider.ts:b5e9e796752073002dc5b599",
+      "file": "src/runtime/claude-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/claude-provider.ts:c052a49e78bea02b1938b8c1",
+      "file": "src/runtime/claude-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/claude-provider.ts:c87f1bef17e8b8a309a993be",
+      "file": "src/runtime/claude-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/claude-provider.ts:c8db2d688d57db26d5cf0203",
+      "file": "src/runtime/claude-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-hooks.ts:594f21aaeee7103da4806304",
+      "file": "src/runtime/codex-hooks.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-hooks.ts:89a5335abd4cd41f644216f8",
+      "file": "src/runtime/codex-hooks.ts",
+      "boundary": "runtime-chat",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-hooks.ts:fce4d98698ce879e6feebbc4",
+      "file": "src/runtime/codex-hooks.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-provider.ts:136bd82780aed5983deeb497",
+      "file": "src/runtime/codex-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-provider.ts:86e9a14dac9083d34117850a",
+      "file": "src/runtime/codex-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-provider.ts:9009e78d120961cfe7fac044",
+      "file": "src/runtime/codex-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-provider.ts:94088f21db40084b4cad3177",
+      "file": "src/runtime/codex-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-transport.ts:4930ce420f33d2ecd70704ea",
+      "file": "src/runtime/codex-transport.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-transport.ts:a61b62609ec297329c6971cd",
+      "file": "src/runtime/codex-transport.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/codex-transport.ts:df74c5e71f384c36b225541b",
+      "file": "src/runtime/codex-transport.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/control-host.ts:72593dbef9cce26746732cea",
+      "file": "src/runtime/control-host.ts",
+      "boundary": "runtime-chat",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/crash-recovery-store.ts:01f5a782062e3db4dc94b58a",
+      "file": "src/runtime/crash-recovery-store.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/crash-recovery-store.ts:be271d477bcce2ee76158453",
+      "file": "src/runtime/crash-recovery-store.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/crash-recovery-store.ts:c46fdf08d2c170528f65cdfd",
+      "file": "src/runtime/crash-recovery-store.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/crash-recovery.ts:0cdbea7d20f5ceb69f0c15d6",
+      "file": "src/runtime/crash-recovery.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/runtime/crash-recovery.ts:6cb526e3bb7ca9dfa6132dc2",
+      "file": "src/runtime/crash-recovery.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/crash-recovery.ts:7df107ecb288b81c3ed1b5aa",
+      "file": "src/runtime/crash-recovery.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/crash-recovery.ts:fcff7160699339686cceb548",
+      "file": "src/runtime/crash-recovery.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/credential-store.ts:2c5e0a4ca86efe204328bb6d",
+      "file": "src/runtime/credential-store.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/grok-provider.ts:03dab57c916427a86a13680f",
+      "file": "src/runtime/grok-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/grok-provider.ts:3b6220acecff5afe5c4c61f6",
+      "file": "src/runtime/grok-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/runtime/grok-provider.ts:54cb78750f907ccdf4700408",
+      "file": "src/runtime/grok-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/grok-provider.ts:77dd2aea9b4ffe3db20a8618",
+      "file": "src/runtime/grok-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/grok-provider.ts:dd7bff85e3abf0b11a6dfbdb",
+      "file": "src/runtime/grok-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/grok-provider.ts:de878bcf73a8a69e47891d69",
+      "file": "src/runtime/grok-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-event-loop.ts:26fe7b8d1a095637222a40a6",
+      "file": "src/runtime/host-event-loop.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-event-loop.ts:3f3091db8f8381e637db92aa",
+      "file": "src/runtime/host-event-loop.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-event-loop.ts:6a5a17e4c352d6aa0f874965",
+      "file": "src/runtime/host-event-loop.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-event-loop.ts:6f78b7d688f6fc7c547bb3c8",
+      "file": "src/runtime/host-event-loop.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-event-loop.ts:7ca46a9f6aaf46b1daf9b55c",
+      "file": "src/runtime/host-event-loop.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-event-loop.ts:a3483d35d6a04be93367e764",
+      "file": "src/runtime/host-event-loop.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 3
+    },
+    {
+      "id": "src/runtime/host-event-loop.ts:e7f46c4006dd4d71f06020f7",
+      "file": "src/runtime/host-event-loop.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-event-loop.ts:fd0995a316e46c3d3b195869",
+      "file": "src/runtime/host-event-loop.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-hooks.ts:7dace61e0fb823aac0ce35af",
+      "file": "src/runtime/host-hooks.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-hooks.ts:b03b3ddb89cfa3783292cbb7",
+      "file": "src/runtime/host-hooks.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/runtime/host-hooks.ts:b3cd318de28be884aba1db1a",
+      "file": "src/runtime/host-hooks.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/host-services.ts:5360deba0585f6db9ae0489e",
+      "file": "src/runtime/host-services.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/runtime/host-session.ts:dbc4363ca5a44e3e1bc6811e",
+      "file": "src/runtime/host-session.ts",
+      "boundary": "sessions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/hub-model-broker.ts:0dd75aaef238096f8825e7d3",
+      "file": "src/runtime/hub-model-broker.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/hub-model-broker.ts:96f2d554f53a84d0bb148ca0",
+      "file": "src/runtime/hub-model-broker.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/hub-model-broker.ts:abe826cc59c38a8c30fcd9c0",
+      "file": "src/runtime/hub-model-broker.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/hub-model-broker.ts:e8820231596e72def1de6c13",
+      "file": "src/runtime/hub-model-broker.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/inactivity-recovery-checkpoint.ts:c48f0a3f0e35635f2a0156eb",
+      "file": "src/runtime/inactivity-recovery-checkpoint.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/model-broker-materializer.ts:328854997034dfbe96ad4d97",
+      "file": "src/runtime/model-broker-materializer.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/model-broker.ts:c458c33af921185233b8c309",
+      "file": "src/runtime/model-broker.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/model-catalog.ts:0adcd64c0cd06692bb6a46e6",
+      "file": "src/runtime/model-catalog.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/observation-plane.ts:2430258265090179f2f0b4f8",
+      "file": "src/runtime/observation-plane.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/observation-plane.ts:36058302af01275a6693381c",
+      "file": "src/runtime/observation-plane.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e",
+      "file": "src/runtime/observation-plane.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/observation-plane.ts:540d0526f217895b3167d71a",
+      "file": "src/runtime/observation-plane.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7",
+      "file": "src/runtime/observation-plane.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38",
+      "file": "src/runtime/observation-plane.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/observation-profiles.ts:05b3823fa50b92445eb38e95",
+      "file": "src/runtime/observation-profiles.ts",
+      "boundary": "runtime-chat",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-provider.ts:0ce7c69b180dc5c2761d1733",
+      "file": "src/runtime/pi-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-provider.ts:1bb31a35397f33647b67dbfd",
+      "file": "src/runtime/pi-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/runtime/pi-provider.ts:34b9c38c69af594fd4930df4",
+      "file": "src/runtime/pi-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-provider.ts:4ad88940138da1f4005af257",
+      "file": "src/runtime/pi-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-provider.ts:4dcfb3bcc0c20a391501609c",
+      "file": "src/runtime/pi-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-provider.ts:70636eac313068c3ec6d8434",
+      "file": "src/runtime/pi-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-provider.ts:9127d3306352b38b743cb5da",
+      "file": "src/runtime/pi-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-provider.ts:c218213fae68336dcef93217",
+      "file": "src/runtime/pi-provider.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-tool-permissions.ts:b1ceca317d5dcf1572aaa3a0",
+      "file": "src/runtime/pi-tool-permissions.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/pi-tool-permissions.ts:f730a1ada9c845ad06bcdf50",
+      "file": "src/runtime/pi-tool-permissions.ts",
+      "boundary": "permissions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/prompt-subscription.ts:040a78dc8b9735fea837bde0",
+      "file": "src/runtime/prompt-subscription.ts",
+      "boundary": "runtime-chat",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/provider-device-login.ts:44b82e71718640cce7ee55d8",
+      "file": "src/runtime/provider-device-login.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/provider-device-login.ts:86515fcd0398504ebe33ea66",
+      "file": "src/runtime/provider-device-login.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/provider-device-login.ts:a87f1b109f0b9c96de7c8b8e",
+      "file": "src/runtime/provider-device-login.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/provider-device-login.ts:d7be9cc26123a98489ecd4f5",
+      "file": "src/runtime/provider-device-login.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699",
+      "file": "src/runtime/ravi-rules.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/runtime-defaults.ts:19599e9fe08de7d2a93a5188",
+      "file": "src/runtime/runtime-defaults.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/runtime-defaults.ts:8cdcd933953e255901103de8",
+      "file": "src/runtime/runtime-defaults.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/runtime-request-builder.ts:1811a7ab1cda44b52fb4b036",
+      "file": "src/runtime/runtime-request-builder.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe",
+      "file": "src/runtime/runtime-request-builder.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/runtime-request-builder.ts:fe50d1206bebdad537025ec0",
+      "file": "src/runtime/runtime-request-builder.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8",
+      "file": "src/runtime/runtime-request-context.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d",
+      "file": "src/runtime/runtime-request-context.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/session-dispatcher.ts:3492c97db9af80a465fd92bf",
+      "file": "src/runtime/session-dispatcher.ts",
+      "boundary": "sessions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/session-dispatcher.ts:855c60e17e371364329f36ef",
+      "file": "src/runtime/session-dispatcher.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/session-dispatcher.ts:aaa52d8cc280e8c4c5c5db58",
+      "file": "src/runtime/session-dispatcher.ts",
+      "boundary": "sessions",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/session-launcher.ts:b2b5af4abe30227be3718ff2",
+      "file": "src/runtime/session-launcher.ts",
+      "boundary": "sessions",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/skill-capability-implication.ts:d61f50225f71f32f4e07e451",
+      "file": "src/runtime/skill-capability-implication.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/skill-gate.ts:0a0eed54b31130e84ff83db4",
+      "file": "src/runtime/skill-gate.ts",
+      "boundary": "runtime-chat",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/skill-visibility.ts:8bc7c53e14fe520d6b3a6b7b",
+      "file": "src/runtime/skill-visibility.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/runtime/skill-visibility.ts:9b65c0408a74af1ebbea8044",
+      "file": "src/runtime/skill-visibility.ts",
+      "boundary": "runtime-chat",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sandbox/e2b.ts:cbb867e5302b2e87587b7b22",
+      "file": "src/sandbox/e2b.ts",
+      "boundary": "sandbox",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sandbox/e2b.ts:fa72fb1d02ab89f677fad36e",
+      "file": "src/sandbox/e2b.ts",
+      "boundary": "sandbox",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sandbox/e2b.ts:fe164bafb56789c77d9420c7",
+      "file": "src/sandbox/e2b.ts",
+      "boundary": "sandbox",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/console-auth.ts:6ddfcb4413b0d4da8a4f7c22",
+      "file": "src/sdk/gateway/console-auth.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/console-auth.ts:a76922b181f89d8c1ba03dc8",
+      "file": "src/sdk/gateway/console-auth.ts",
+      "boundary": "gateway",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/console-context.ts:dae8cf06e1daf5672326509d",
+      "file": "src/sdk/gateway/console-context.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/console-handler.ts:746efd4a3e79e4bd8bd93ea7",
+      "file": "src/sdk/gateway/console-handler.ts",
+      "boundary": "gateway",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/console-socket.ts:643ab17c30b1d9c5168bf456",
+      "file": "src/sdk/gateway/console-socket.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/cors.ts:0e58b8aa5e49ff699c166be3",
+      "file": "src/sdk/gateway/cors.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/server.ts:1df34faab520c118eaf10317",
+      "file": "src/sdk/gateway/server.ts",
+      "boundary": "gateway",
+      "rule": "cause-not-forwarded-at-surface",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/server.ts:40b12c8b888522db78241907",
+      "file": "src/sdk/gateway/server.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/server.ts:446b84ce0b533ce0a7758163",
+      "file": "src/sdk/gateway/server.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/streaming/channels.ts:bb2dd8d6b86b0f98f0cf08e4",
+      "file": "src/sdk/gateway/streaming/channels.ts",
+      "boundary": "gateway",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/streaming/handler.ts:314d1e69b11f79b2f9bf69d8",
+      "file": "src/sdk/gateway/streaming/handler.ts",
+      "boundary": "gateway",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/sdk/gateway/streaming/handler.ts:6cd17db5e69a5062a4113878",
+      "file": "src/sdk/gateway/streaming/handler.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/streaming/session-view.ts:eaca0422e74d2fe3153f83d9",
+      "file": "src/sdk/gateway/streaming/session-view.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/sdk/gateway/streaming/sse.ts:6f7f381832976cb2630cf9db",
+      "file": "src/sdk/gateway/streaming/sse.ts",
+      "boundary": "gateway",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:17005c7984944bc9e6148230",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:37fc8fbfe3f0efc9c7d2ac67",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:3e3ed69cdc010e9e5d1e4f29",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:44ccbac3edcee516748136c8",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:48c8ae7e2cf0cc7b2bc3b7a4",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:56801cfc5469694ddd6e8f80",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:59298e9526880c2dee911019",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:5af16645ee6215ead2880f7e",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:5ef78255212172f516fc7c54",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:cb248ce3643bc4c9eb739a05",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/nats-exposure.ts:d7867aa44c4bbd779c791be6",
+      "file": "src/security/nats-exposure.ts",
+      "boundary": "security",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/security/state-dir-permissions.ts:125e9bb4e62cd7d127008e1b",
+      "file": "src/security/state-dir-permissions.ts",
+      "boundary": "permissions",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/security/state-dir-permissions.ts:872665d1f8faab0dde1ade9f",
+      "file": "src/security/state-dir-permissions.ts",
+      "boundary": "permissions",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/security/state-dir-permissions.ts:cd2d9b65bc84e03900e30b98",
+      "file": "src/security/state-dir-permissions.ts",
+      "boundary": "permissions",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/session-followups/db.ts:17d64fc41b374281847855be",
+      "file": "src/session-followups/db.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/session-followups/db.ts:4ede2bfe32dd151d3fecfc99",
+      "file": "src/session-followups/db.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/session-followups/service.ts:38acd893e384577eea0a35c5",
+      "file": "src/session-followups/service.ts",
+      "boundary": "sessions",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/session-trace/cloud-trace-export.ts:52f0dc39144af918c411ac4a",
+      "file": "src/session-trace/cloud-trace-export.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/session-trace/query.ts:14202130aaa2cf2d2fd61990",
+      "file": "src/session-trace/query.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/session-trace/session-trace-db.ts:771a8d88db835c82ff03906c",
+      "file": "src/session-trace/session-trace-db.ts",
+      "boundary": "sessions",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/signals/oob.ts:fb903dd11c46c25950072bcd",
+      "file": "src/signals/oob.ts",
+      "boundary": "signals",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/signals/page.ts:89a6134831399dcd705e65bc",
+      "file": "src/signals/page.ts",
+      "boundary": "signals",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/signals/probes.ts:265d54947c78213c1abcc6cf",
+      "file": "src/signals/probes.ts",
+      "boundary": "signals",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/signals/probes.ts:35e31b2a3513d86238d13018",
+      "file": "src/signals/probes.ts",
+      "boundary": "signals",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/signals/probes.ts:d85018b54ab4c4f77a3d616e",
+      "file": "src/signals/probes.ts",
+      "boundary": "signals",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/signals/signal-db.ts:7fa5d5553713cf6ee96024d1",
+      "file": "src/signals/signal-db.ts",
+      "boundary": "signals",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/signals/signal-db.ts:a950a0e9fc4f35f84a6b602d",
+      "file": "src/signals/signal-db.ts",
+      "boundary": "signals",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/signals/tick.ts:69ea9841f6b210229ce2faa2",
+      "file": "src/signals/tick.ts",
+      "boundary": "signals",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/skills/manager.ts:05af206f7f54f1bdc54d127f",
+      "file": "src/skills/manager.ts",
+      "boundary": "skills",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/skills/manager.ts:16b83ea3555c04e1762e35a6",
+      "file": "src/skills/manager.ts",
+      "boundary": "skills",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/skills/manager.ts:6c9c4b05d8747cddee47c631",
+      "file": "src/skills/manager.ts",
+      "boundary": "skills",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/skills/manager.ts:8bec5ee83f5ba717c21da593",
+      "file": "src/skills/manager.ts",
+      "boundary": "skills",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/skills/manager.ts:93bc5f363bbd1f4c6122ed2d",
+      "file": "src/skills/manager.ts",
+      "boundary": "skills",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/skills/manager.ts:c0db87a547735dad0f855e62",
+      "file": "src/skills/manager.ts",
+      "boundary": "skills",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/slash/registry.ts:7556a7752f3eec0cbb727744",
+      "file": "src/slash/registry.ts",
+      "boundary": "slash",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/slash/registry.ts:afa3328ad456f0afd8766c18",
+      "file": "src/slash/registry.ts",
+      "boundary": "slash",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/slash/registry.ts:b620b98b8e79b043cf6eff8d",
+      "file": "src/slash/registry.ts",
+      "boundary": "slash",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/specs/service.ts:309bffb756d92bd1b7c7dddd",
+      "file": "src/specs/service.ts",
+      "boundary": "specs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/specs/spec-db.ts:b3ce1ad126c8b6d031c253f8",
+      "file": "src/specs/spec-db.ts",
+      "boundary": "specs",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/stream/server.ts:ffceb6743ffadcf6d95e0c92",
+      "file": "src/stream/server.ts",
+      "boundary": "stream",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/sync/db.ts:a966d0efa42155fb17b6feda",
+      "file": "src/sync/db.ts",
+      "boundary": "sync",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tag-rules/engine.ts:1c58bb168188ecc6bc66eab6",
+      "file": "src/tag-rules/engine.ts",
+      "boundary": "tag-rules",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/tag-rules/engine.ts:c0d3f7c3b7f3ca2948f89ec1",
+      "file": "src/tag-rules/engine.ts",
+      "boundary": "tag-rules",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/tags/tag-db.ts:bdfc36d00350a067dad4f455",
+      "file": "src/tags/tag-db.ts",
+      "boundary": "tags",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tags/tag-db.ts:c802464188a2b6c5393fc332",
+      "file": "src/tags/tag-db.ts",
+      "boundary": "tags",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tags/targets.ts:0ee41ba823cb46c11f8646bf",
+      "file": "src/tags/targets.ts",
+      "boundary": "tags",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tags/targets.ts:12d7135056e28970d9737f45",
+      "file": "src/tags/targets.ts",
+      "boundary": "tags",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tags/targets.ts:52135baf66518ab1d5c052ea",
+      "file": "src/tags/targets.ts",
+      "boundary": "tags",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/automations-db.ts:3427bc60a2f466bb2ccd47a1",
+      "file": "src/tasks/automations-db.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/automations-db.ts:c207d24b85f4be3879530c1b",
+      "file": "src/tasks/automations-db.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/automations-db.ts:d06a994d278f62a57e0de92c",
+      "file": "src/tasks/automations-db.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/idempotency.ts:254574ab6fb509ba7805f845",
+      "file": "src/tasks/idempotency.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/observer-contract.ts:18f08e5ab119d7e247c8a616",
+      "file": "src/tasks/observer-contract.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/observer-contract.ts:20fa9236299abc699e426485",
+      "file": "src/tasks/observer-contract.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/observer-rule.ts:8bf60bcf5c6d92dbd72cc274",
+      "file": "src/tasks/observer-rule.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/profiles.ts:f9c879fa2aa5eba5efe7170a",
+      "file": "src/tasks/profiles.ts",
+      "boundary": "tasks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/service.ts:57bde3e0a3d01a780464bd2d",
+      "file": "src/tasks/service.ts",
+      "boundary": "tasks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/service.ts:8b67b6472ffb721a4e225531",
+      "file": "src/tasks/service.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/task-db.ts:2927e8ebe20d9fad72d28ea3",
+      "file": "src/tasks/task-db.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/task-db.ts:c19e9d73d8975d29f5160b63",
+      "file": "src/tasks/task-db.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/task-db.ts:cebb5c9d4d93955b2547444b",
+      "file": "src/tasks/task-db.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/task-db.ts:ecc9a3f98a0e525f97ac7f1e",
+      "file": "src/tasks/task-db.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/task-db.ts:f7dec27774e6cd5709f4b374",
+      "file": "src/tasks/task-db.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tasks/task-doc.ts:83de56d8333a9356b7c1b3b2",
+      "file": "src/tasks/task-doc.ts",
+      "boundary": "tasks",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/threads/service.ts:018741bde8299ae6d1c4a463",
+      "file": "src/threads/service.ts",
+      "boundary": "threads",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/threads/service.ts:28d8ddfcf01e6d2e4d357454",
+      "file": "src/threads/service.ts",
+      "boundary": "threads",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/threads/service.ts:d302af3dcd5afa4a7771cfd1",
+      "file": "src/threads/service.ts",
+      "boundary": "threads",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/transcribe/chunker.ts:1b23258ff4a320f1f9167d0a",
+      "file": "src/transcribe/chunker.ts",
+      "boundary": "transcription",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/transcribe/chunker.ts:aca0077aeefd3dbe8605d4a2",
+      "file": "src/transcribe/chunker.ts",
+      "boundary": "transcription",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/transcripts.ts:357dcea2cb58a902af73a0a2",
+      "file": "src/transcripts.ts",
+      "boundary": "transcripts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/transcripts.ts:3b9888e880079f508a09d805",
+      "file": "src/transcripts.ts",
+      "boundary": "transcripts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/transcripts.ts:a7176806b76dc52304842707",
+      "file": "src/transcripts.ts",
+      "boundary": "transcripts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/transcripts.ts:c75b8796c37a25066c992d5f",
+      "file": "src/transcripts.ts",
+      "boundary": "transcripts.ts",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/triggers/runner.ts:2a64131ac5e4f6832e8265d6",
+      "file": "src/triggers/runner.ts",
+      "boundary": "triggers",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/triggers/runner.ts:351c8fb619d9c8cadc1fc580",
+      "file": "src/triggers/runner.ts",
+      "boundary": "triggers",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/triggers/runner.ts:5d67ee16fb45c1cab3adaabe",
+      "file": "src/triggers/runner.ts",
+      "boundary": "triggers",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/triggers/runner.ts:b55c54d8a41539ec483a767e",
+      "file": "src/triggers/runner.ts",
+      "boundary": "triggers",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/triggers/runner.ts:c81d4567b8e396622e226477",
+      "file": "src/triggers/runner.ts",
+      "boundary": "triggers",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/triggers/triggers-db.ts:18050dd160921a6db0880e71",
+      "file": "src/triggers/triggers-db.ts",
+      "boundary": "triggers",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tui/App.tsx:0aedf48025a85ece64c6b534",
+      "file": "src/tui/App.tsx",
+      "boundary": "tui",
+      "rule": "rejection-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/tui/hooks/useNats.ts:6873c57c6ef9594157536b7f",
+      "file": "src/tui/hooks/useNats.ts",
+      "boundary": "tui",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tui/hooks/useNats.ts:91657768c99a1993a5074039",
+      "file": "src/tui/hooks/useNats.ts",
+      "boundary": "tui",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tui/hooks/useNats.ts:ac2ef058c08d960786ff0ae1",
+      "file": "src/tui/hooks/useNats.ts",
+      "boundary": "tui",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tui/hooks/useRc505Bridge.ts:ab30efce4d6522bc9ec73fa2",
+      "file": "src/tui/hooks/useRc505Bridge.ts",
+      "boundary": "tui",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tui/hooks/useSessionMetadata.ts:974d207ba2bdbb979133d402",
+      "file": "src/tui/hooks/useSessionMetadata.ts",
+      "boundary": "tui",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tui/lib/input-history.ts:307d7d7adaa92d5a3705559b",
+      "file": "src/tui/lib/input-history.ts",
+      "boundary": "tui",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/tui/lib/input-history.ts:c2418d294c4b5fca100de629",
+      "file": "src/tui/lib/input-history.ts",
+      "boundary": "tui",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/utils/logger.ts:935ba522170a6a284b28cb9f",
+      "file": "src/utils/logger.ts",
+      "boundary": "utils",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/utils/logger.ts:97f59f76dcee4f8994d1c0ee",
+      "file": "src/utils/logger.ts",
+      "boundary": "utils",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/watch/console-client.ts:fd1ca66952046f81bfdf4317",
+      "file": "src/watch/console-client.ts",
+      "boundary": "watch",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/watch/local-runner.ts:9ae2579e57ff692ebc7fd686",
+      "file": "src/watch/local-runner.ts",
+      "boundary": "watch",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/watch/local-runner.ts:b427d06483f0405ff7fa3340",
+      "file": "src/watch/local-runner.ts",
+      "boundary": "watch",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/watch/local-runner.ts:f8defe4eb7a5d300bc1c944e",
+      "file": "src/watch/local-runner.ts",
+      "boundary": "watch",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/watch/local-state.ts:e486db63f0b7728d2d99eecc",
+      "file": "src/watch/local-state.ts",
+      "boundary": "watch",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/watch/watch-db.ts:299bfdf9084d0f889300e91f",
+      "file": "src/watch/watch-db.ts",
+      "boundary": "watch",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/watch/watch-db.ts:438c7fd91d2b3e8d785fa2ad",
+      "file": "src/watch/watch-db.ts",
+      "boundary": "watch",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:21efb34e4b38e382f90c13bc",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:36d949c14d58db5043680a37",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:656ab98ec9efd121cd0ea690",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:68f1131af34d34e54b9e291d",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:79afe39e6bb40e10e6179518",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:a561099ece997ce0dbfd4e90",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:b68899212c176cb38f880b5d",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:ce6e8104ec94f6f34a0ed624",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/webhooks/http-server.ts:d01f4465628e2069b6c05358",
+      "file": "src/webhooks/http-server.ts",
+      "boundary": "webhooks",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/whatsapp-overlay/artifacts.ts:5d0feca74f770ea05acea66b",
+      "file": "src/whatsapp-overlay/artifacts.ts",
+      "boundary": "whatsapp-overlay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/whatsapp-overlay/artifacts.ts:cb133a7f5ca7f627f3ed0835",
+      "file": "src/whatsapp-overlay/artifacts.ts",
+      "boundary": "whatsapp-overlay",
+      "rule": "catch-without-binding",
+      "count": 2
+    },
+    {
+      "id": "src/whatsapp-overlay/artifacts.ts:e39ea63848a3dc6ee1839313",
+      "file": "src/whatsapp-overlay/artifacts.ts",
+      "boundary": "whatsapp-overlay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/whatsapp-overlay/artifacts.ts:ed1c6136227008a4aa40865d",
+      "file": "src/whatsapp-overlay/artifacts.ts",
+      "boundary": "whatsapp-overlay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/whatsapp-overlay/insights.ts:74a9e35a929bc4913d61a2d8",
+      "file": "src/whatsapp-overlay/insights.ts",
+      "boundary": "whatsapp-overlay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/whatsapp-overlay/insights.ts:95817420b0c59dedd704feb8",
+      "file": "src/whatsapp-overlay/insights.ts",
+      "boundary": "whatsapp-overlay",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/work-objects/adapters/tasks.ts:785b9c26c87924986227f8e2",
+      "file": "src/work-objects/adapters/tasks.ts",
+      "boundary": "work-objects",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/work-objects/nats.ts:08beffcf5a1cdcccfc48be75",
+      "file": "src/work-objects/nats.ts",
+      "boundary": "work-objects",
+      "rule": "surface-bypasses-constructor",
+      "count": 1
+    },
+    {
+      "id": "src/work-objects/nats.ts:84da9ff3b3b7d971aafc2907",
+      "file": "src/work-objects/nats.ts",
+      "boundary": "work-objects",
+      "rule": "rejection-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/workflows/workflow-db.ts:29ea9b1863655e4119634bae",
+      "file": "src/workflows/workflow-db.ts",
+      "boundary": "workflows",
+      "rule": "catch-without-binding",
+      "count": 1
+    },
+    {
+      "id": "src/workflows/workflow-db.ts:955f93e6a1011c485eaf4470",
+      "file": "src/workflows/workflow-db.ts",
+      "boundary": "workflows",
+      "rule": "catch-without-binding",
+      "count": 1
+    }
+  ],
+  "totals": {
+    "violations": 913,
+    "byDirectory": {
+      "src/access": 3,
+      "src/adapters": 2,
+      "src/approval": 6,
+      "src/apps": 7,
+      "src/apps/youtube": 3,
+      "src/artifacts": 4,
+      "src/audio": 2,
+      "src/bases": 3,
+      "src/bash": 3,
+      "src/bridge": 4,
+      "src/bug-report": 2,
+      "src/calendar": 2,
+      "src/channels": 27,
+      "src/channels/native": 7,
+      "src/channels/slack": 15,
+      "src/ci": 1,
+      "src/cli": 37,
+      "src/cli/commands": 161,
+      "src/cloud-agents": 30,
+      "src/cloud-auth": 11,
+      "src/console-scope": 5,
+      "src": 46,
+      "src/costs": 2,
+      "src/crm": 1,
+      "src/cron": 5,
+      "src/db": 2,
+      "src/decisions": 3,
+      "src/devin": 2,
+      "src/ephemeral": 2,
+      "src/eval": 3,
+      "src/events": 1,
+      "src/hooks-runtime": 1,
+      "src/hooks": 12,
+      "src/identity-link": 9,
+      "src/identity": 2,
+      "src/image": 1,
+      "src/inbox": 3,
+      "src/insights": 1,
+      "src/isolation": 1,
+      "src/jobs": 7,
+      "src/knowledge": 13,
+      "src/knowledge/curator": 13,
+      "src/knowledge/egress": 2,
+      "src/knowledge/items": 3,
+      "src/knowledge/mirror": 3,
+      "src/knowledge/packet": 3,
+      "src/knowledge/safety": 12,
+      "src/knowledge/store": 6,
+      "src/knowledge/turn": 6,
+      "src/leader": 4,
+      "src/library": 51,
+      "src/link": 20,
+      "src/mailbox": 2,
+      "src/meetings": 4,
+      "src/meetings/google-meet": 2,
+      "src/omni": 14,
+      "src/pages": 14,
+      "src/permissions": 20,
+      "src/plugins": 1,
+      "src/policy": 1,
+      "src/pr": 14,
+      "src/prox/calls": 5,
+      "src/reference": 1,
+      "src/router": 25,
+      "src/runtime": 100,
+      "src/sandbox": 3,
+      "src/sdk/gateway": 9,
+      "src/sdk/gateway/streaming": 6,
+      "src/security": 14,
+      "src/session-followups": 3,
+      "src/session-trace": 3,
+      "src/signals": 8,
+      "src/skills": 6,
+      "src/slash": 3,
+      "src/specs": 2,
+      "src/stream": 1,
+      "src/sync": 1,
+      "src/tag-rules": 4,
+      "src/tags": 5,
+      "src/tasks": 16,
+      "src/threads": 3,
+      "src/transcribe": 3,
+      "src/triggers": 6,
+      "src/tui": 2,
+      "src/tui/hooks": 5,
+      "src/tui/lib": 2,
+      "src/utils": 2,
+      "src/watch": 7,
+      "src/webhooks": 9,
+      "src/whatsapp-overlay": 7,
+      "src/work-objects/adapters": 1,
+      "src/work-objects": 2,
+      "src/workflows": 2
+    }
+  }
+}

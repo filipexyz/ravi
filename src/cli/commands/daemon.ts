@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Daemon Commands - Manage ravi via PM2
  */
@@ -769,12 +770,15 @@ export class DaemonCommands {
   ) {
     if (follow && getContext()?.transport) {
       contractFail("daemon logs", "INTERACTIVE_ONLY", "--follow requires an interactive CLI terminal.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          acceptedFlags: ["--tail <lines>", "--path", "--json"],
-          suggestedAction: "Request a bounded log snapshot with --tail instead of --follow",
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            acceptedFlags: ["--tail <lines>", "--path", "--json"],
+            suggestedAction: "Request a bounded log snapshot with --tail instead of --follow",
+          },
         },
+        diagnostic: errorDiagnostic("--follow requires an interactive CLI terminal.", { operation: "daemon logs" }),
       });
     }
 
@@ -1220,14 +1224,19 @@ ANTHROPIC_API_KEY=
         "ADMIN_CONTEXT_EXISTS",
         "Refusing to bootstrap: a live admin context already exists.",
         {
-          asJson,
-          exitCode: CONTRACT_EXIT_POLICY,
-          details: {
-            reason: "admin_context_exists",
-            existing,
-            suggestedAction:
-              "Revoke the existing admin context with 'ravi context revoke <id>' before rotating the bootstrap key",
+          ...{
+            asJson,
+            exitCode: CONTRACT_EXIT_POLICY,
+            details: {
+              reason: "admin_context_exists",
+              existing,
+              suggestedAction:
+                "Revoke the existing admin context with 'ravi context revoke <id>' before rotating the bootstrap key",
+            },
           },
+          diagnostic: errorDiagnostic("Refusing to bootstrap: a live admin context already exists.", {
+            operation: "daemon init-admin-key",
+          }),
         },
       );
     }

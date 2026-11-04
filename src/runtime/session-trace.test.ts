@@ -5810,7 +5810,12 @@ describe("runtime session trace instrumentation", () => {
           type: "turn.failed",
           error: "model unavailable",
           recoverable: false,
-          rawEvent: { type: "error", message: "provider down" },
+          rawEvent: {
+            type: "error",
+            message: "provider down; cookie=PRIVATE_COOKIE; PRIVATE_TAIL",
+            body: { transcript: "PRIVATE_BODY" },
+            stack: "PRIVATE_STACK",
+          },
         },
       ]),
     );
@@ -5820,8 +5825,10 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.error).toBe("model unavailable");
     expect(terminal?.payloadJson).toMatchObject({
       recoverable: false,
-      rawEvent: { type: "error", message: "provider down" },
+      cause: "model unavailable\nCaused by: provider down; cookie=[redacted:cookie]",
     });
+    expect(terminal?.payloadJson).not.toHaveProperty("rawEvent");
+    expect(JSON.stringify(terminal?.payloadJson)).not.toContain("PRIVATE_");
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
   });
 

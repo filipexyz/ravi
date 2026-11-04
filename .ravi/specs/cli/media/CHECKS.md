@@ -20,9 +20,13 @@
 - Isolated remote `media send` failures with `MEDIA_SEND_FAILED`,
   `OMNI_AUTH_FAILED`, or `FILE_NOT_FOUND` MUST keep the code and replace the
   remote message / `suggestedAction` with the local catalog copy. Generic
-  `COMMAND_FAILED` MUST stay `Remote command failed.` Remote text, keys, and
-  URLs MUST be absent. The same catalog code on another `op` MUST NOT receive
-  media copy.
+  `COMMAND_FAILED` MUST stay `Remote command failed.` The normalized original
+  cause and typed provider/status/code context MUST remain readable. Embedded
+  credentials and raw provider payloads MUST be absent. The same catalog code
+  on another `op` MUST NOT receive media copy.
+- A nested Omni delivery error MUST preserve its provider code, status and
+  failure reason in the normalized diagnostic, without an embedded instance
+  token. A 422 gateway wrapper MUST NOT replace that diagnostic.
 - `media send --execute` MUST authenticate the spawned Omni CLI with the same
   `apiUrl`/`apiKey` `resolveOmniConnection()` would give the Ravi Omni client,
   including writing that key into `servers.list.default` via `OMNI_CONFIG_DIR`

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -31,13 +32,23 @@ export class BridgeCommands {
     @Option({ flags: "--execute", description: "Apply the reviewed local enrollment" }) execute?: boolean,
   ) {
     const parsed = enrollmentSchema.safeParse(JSON.parse(readFileSync(file, "utf8")));
-    if (!parsed.success) contractFail("bridge enroll", "INVALID_ENROLLMENT", "Enrollment document is invalid");
+    if (!parsed.success)
+      contractFail("bridge enroll", "INVALID_ENROLLMENT", "Enrollment document is invalid", {
+        ...{},
+        diagnostic: errorDiagnostic("Enrollment document is invalid", { operation: "bridge enroll" }),
+      });
     if (!existsSync(join(bridgeStateDir(), "identity.json")))
-      contractFail("bridge enroll", "IDENTITY_REQUIRED", "Run bridge init first");
+      contractFail("bridge enroll", "IDENTITY_REQUIRED", "Run bridge init first", {
+        ...{},
+        diagnostic: errorDiagnostic("Run bridge init first", { operation: "bridge enroll" }),
+      });
     const identity = runtimeIdentity(bridgeStateDir()),
       enrollment = parsed.data;
     if (enrollment.runtimeId !== identity.runtimeId)
-      contractFail("bridge enroll", "RUNTIME_MISMATCH", "Enrollment targets another runtime");
+      contractFail("bridge enroll", "RUNTIME_MISMATCH", "Enrollment targets another runtime", {
+        ...{},
+        diagnostic: errorDiagnostic("Enrollment targets another runtime", { operation: "bridge enroll" }),
+      });
     if (!execute)
       contractDryRun("bridge enroll", {
         enrollmentId: enrollment.id,
@@ -47,7 +58,10 @@ export class BridgeCommands {
     const store = getBridgeStore(),
       previous = store.enrollment(enrollment.id);
     if (previous && enrollment.epoch <= previous.epoch)
-      contractFail("bridge enroll", "EPOCH_REQUIRED", "Replacement enrollment must increase its epoch");
+      contractFail("bridge enroll", "EPOCH_REQUIRED", "Replacement enrollment must increase its epoch", {
+        ...{},
+        diagnostic: errorDiagnostic("Replacement enrollment must increase its epoch", { operation: "bridge enroll" }),
+      });
     const active = store.db
       .query<{ document: string }, []>("SELECT document FROM enrollments")
       .all()
@@ -59,6 +73,12 @@ export class BridgeCommands {
         "bridge enroll",
         "ORGANIZATION_MISMATCH",
         "Revoke the previous organization before enrolling another",
+        {
+          ...{},
+          diagnostic: errorDiagnostic("Revoke the previous organization before enrolling another", {
+            operation: "bridge enroll",
+          }),
+        },
       );
     store.putEnrollment(enrollment);
     console.log(
@@ -79,7 +99,11 @@ export class BridgeCommands {
   ) {
     const store = getBridgeStore(),
       value = store.enrollment(id);
-    if (!value) contractFail("bridge revoke", "NOT_FOUND", "Enrollment not found");
+    if (!value)
+      contractFail("bridge revoke", "NOT_FOUND", "Enrollment not found", {
+        ...{},
+        diagnostic: errorDiagnostic("Enrollment not found", { operation: "bridge revoke" }),
+      });
     store.putEnrollment({ ...value, active: false, epoch: value.epoch + 1 });
     console.log(JSON.stringify({ success: true, enrollmentId: id, active: false }));
   }

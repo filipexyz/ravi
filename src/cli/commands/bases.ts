@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -3061,17 +3062,20 @@ function basesContractError(op: string, error: CloudAuthError, deps: BasesComman
       ? missingBasesScopes(safeCredentials(deps))
       : [];
   return new ContractError(op, error.code, message, base.exitCode, {
-    ...base.details,
-    ...(consoleError ? { consoleError } : {}),
-    ...(error.requestId ? { requestId: error.requestId } : {}),
-    ...(details.current ? { current: details.current } : {}),
-    ...(typeof details.schemaVersion === "number" ? { schemaVersion: details.schemaVersion } : {}),
-    ...(typeof details.inputsHash === "string" ? { inputsHash: details.inputsHash } : {}),
-    ...(details.importProgress ? { importProgress: details.importProgress } : {}),
-    ...(missingScopes.length > 0 ? { missingScopes } : {}),
-    ...(issues ? { issues } : {}),
-    suggestedAction:
-      basesSuggestedAction(error.code, consoleError, details, missingScopes) ?? base.details.suggestedAction,
+    ...errorDiagnostic(error, { operation: op }),
+    ...{
+      ...base.details,
+      ...(consoleError ? { consoleError } : {}),
+      ...(error.requestId ? { requestId: error.requestId } : {}),
+      ...(details.current ? { current: details.current } : {}),
+      ...(typeof details.schemaVersion === "number" ? { schemaVersion: details.schemaVersion } : {}),
+      ...(typeof details.inputsHash === "string" ? { inputsHash: details.inputsHash } : {}),
+      ...(details.importProgress ? { importProgress: details.importProgress } : {}),
+      ...(missingScopes.length > 0 ? { missingScopes } : {}),
+      ...(issues ? { issues } : {}),
+      suggestedAction:
+        basesSuggestedAction(error.code, consoleError, details, missingScopes) ?? base.details.suggestedAction,
+    },
   });
 }
 
@@ -3097,7 +3101,7 @@ function basesSuggestedAction(
     case "version_conflict": {
       const version = details.current?.version;
       return version
-        ? `the current row is in error.current; merge your change and retry with --expected-version ${version}`
+        ? `re-read the row identified by error.current, merge your change and retry with --expected-version ${version}`
         : "re-read the row with 'ravi bases rows get' and retry with its current --expected-version";
     }
     case "schema_version_conflict":

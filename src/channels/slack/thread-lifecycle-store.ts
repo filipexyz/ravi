@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { ContractError } from "../../cli/agent-contract.js";
 import { resolveTriggerActivation } from "../../triggers/activation.js";
@@ -515,9 +516,14 @@ export function closeSlackThreadLifecycle(input: {
           `Thread still receives active triggers: ${triggerIds.join(", ")}.`,
           1,
           {
-            triggerIds,
-            suggestedAction:
-              "Repoint each trigger with ravi triggers set <id> replySession <parent-session>, verify the destination, then retry sessions close-thread.",
+            ...errorDiagnostic(`Thread still receives active triggers: ${triggerIds.join(", ")}.`, {
+              operation: "sessions close-thread",
+            }),
+            ...{
+              triggerIds,
+              suggestedAction:
+                "Repoint each trigger with ravi triggers set <id> replySession <parent-session>, verify the destination, then retry sessions close-thread.",
+            },
           },
         );
       }

@@ -43,6 +43,16 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Error cause ratchet
+        run: |
+          bun node_modules/typescript/bin/tsc --noEmit --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler --types bun-types scripts/error-cause-scan.ts scripts/error-cause-scan.test.ts
+          bun test scripts/error-cause-scan.test.ts
+          bun scripts/error-cause-scan.ts
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          ERROR_CAUSE_BASE_REF: ${{ github.event.before }}
+          ERROR_CAUSE_HEAD_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+
       - name: Build
         run: bun run build
 

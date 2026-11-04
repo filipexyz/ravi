@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -222,11 +223,15 @@ function failDevinSessionNotFound(op: string, identifier: string, asJson?: boole
     session.title ?? "",
   ]);
   contractFail(op, "DEVIN_SESSION_NOT_FOUND", `Unknown Devin session: ${identifier}`, {
-    asJson,
-    details: {
-      suggestedAction: "List known sessions with `ravi devin sessions list --json` (add --remote to refresh the cache)",
-      suggestions: suggestSimilar(identifier, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "List known sessions with `ravi devin sessions list --json` (add --remote to refresh the cache)",
+        suggestions: suggestSimilar(identifier, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Unknown Devin session: ${identifier}`, { operation: op }),
   });
 }
 

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * `ravi cloud triggers list|create|update|remove|test`: Console events (Bases
  * rows and approvals, inbound mail, meetings, page comments) that become cloud
@@ -344,8 +345,11 @@ export class CloudTriggersCommands {
         const current = (await listCloudTriggers(session.client, projectRef)).find((trigger) => trigger.id === id);
         if (!current) {
           contractFail(op, "CLOUD_TRIGGER_NOT_FOUND", `No cloud trigger ${id.slice(0, 80)} in ${projectRef}.`, {
-            asJson,
-            details: { suggestedAction: `List them with: ravi cloud triggers list --project ${projectRef}` },
+            ...{
+              asJson,
+              details: { suggestedAction: `List them with: ravi cloud triggers list --project ${projectRef}` },
+            },
+            diagnostic: errorDiagnostic(`No cloud trigger ${id.slice(0, 80)} in ${projectRef}.`, { operation: op }),
           });
         }
         if (body.filter) body.filter = { ...current.filter, ...body.filter };

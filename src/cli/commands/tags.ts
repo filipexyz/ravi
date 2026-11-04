@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -333,11 +334,14 @@ function printJson(payload: unknown): void {
 function failTagNotFound(op: string, slug: string, asJson?: boolean): never {
   const candidates = dbListTagDefinitions({ limit: 40 }).flatMap((tag) => [tag.slug, tag.label]);
   contractFail(op, "TAG_NOT_FOUND", `Tag not found: ${slug}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the tag slug (see suggestions for similar tags, or run 'ravi tags list')",
-      suggestions: suggestSimilar(slug, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the tag slug (see suggestions for similar tags, or run 'ravi tags list')",
+        suggestions: suggestSimilar(slug, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Tag not found: ${slug}`, { operation: op }),
   });
 }
 
