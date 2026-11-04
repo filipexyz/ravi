@@ -5,7 +5,7 @@ import {
   type ChannelOutboundReceipt,
   type ChannelOutboundReceiptStore,
 } from "../outbound-receipts.js";
-import { reserveSlackAutomaticOutput } from "./automatic-output-circuit.js";
+import { getSlackAutomaticOutputDecision, reserveSlackAutomaticOutput } from "./automatic-output-circuit.js";
 import {
   assertSlackAutomaticOutputTarget,
   resolveSlackAutomaticOutputContextFromBinding,
@@ -209,6 +209,53 @@ export async function deliverSlackAutomaticMedia(
     return { handled: true, status: ok ? "suppressed" : "failed", reason, retryable: !ok, idempotencyKey };
   };
 
+  /**
+   * A previously suppressed response cannot have started an upload. Reconcile
+   * its interrupted tombstone using the recorded owner, even after lease expiry.
+   * A key-only lookup is insufficient: reserve validates the full frozen identity
+   * without changing an existing decision. Missing/allowed decisions and explicit
+   * upload ambiguity never grant this recovery or authorize another send.
+   */
+  const resumeClaim = async (receipt: ChannelOutboundReceipt): Promise<SlackAutomaticMediaResult> => {
+    if (!receipt.claimOwner || receipt.lastErrorPhase === "send" || receipt.lastErrorPhase === "receipt_write") {
+      return pendingOrUnknown(receipt);
+    }
+    let decision;
+    try {
+      if (getSlackAutomaticOutputDecision(manifest.responseId)?.status !== "suppressed") {
+        return pendingOrUnknown(receipt);
+      }
+      decision = reserveSlackAutomaticOutput({
+        idempotencyKey: manifest.responseId,
+        requestFingerprint: manifest.requestFingerprint,
+        scope: manifest.scope,
+        sourceId: manifest.sourceId,
+        sourceReceivedAt: manifest.sourceReceivedAt,
+        now: now(),
+      });
+    } catch {
+      // Without validated no-send proof, retain the original ambiguity policy.
+      return pendingOrUnknown(receipt);
+    }
+    if (decision.reason === "slack_bot_reply_identity_conflict") {
+      return failed(decision.reason, false, idempotencyKey);
+    }
+    if (decision.status !== "suppressed") return pendingOrUnknown(receipt);
+    try {
+      return suppressed(
+        store.markSuppressed({
+          idempotencyKey,
+          requestFingerprint,
+          owner: receipt.claimOwner,
+          reason: decision.reason ?? "slack_bot_reply_cooldown",
+          suppressedAt: now(),
+        }),
+      );
+    } catch {
+      return failed("slack_media_suppression_persist", true, idempotencyKey);
+    }
+  };
+
   let receipt: ChannelOutboundReceipt | null;
   try {
     receipt = store.get(idempotencyKey);
@@ -220,7 +267,7 @@ export async function deliverSlackAutomaticMedia(
   if (receipt?.state === "complete")
     return { handled: true, status: "delivered", newlySent: false, retryable: false, idempotencyKey };
   if (receipt?.state === "suppressed") return suppressed(receipt);
-  if (receipt?.state === "claimed") return pendingOrUnknown(receipt);
+  if (receipt?.state === "claimed") return resumeClaim(receipt);
 
   let newlySent = false;
   if (!receipt) {
@@ -252,7 +299,7 @@ export async function deliverSlackAutomaticMedia(
     }
     receipt = claim.receipt;
     if (claim.status === "conflict") return failed("slack_bot_reply_identity_conflict", false, idempotencyKey);
-    if (claim.status === "busy") return pendingOrUnknown(receipt);
+    if (claim.status === "busy") return resumeClaim(receipt);
     if (claim.status === "existing") {
       if (receipt.state === "suppressed") return suppressed(receipt);
       if (receipt.state === "complete")

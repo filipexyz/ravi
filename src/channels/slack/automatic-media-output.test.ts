@@ -19,6 +19,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ra
 import { getChannelOutboundReceipt, sqliteChannelOutboundReceiptStore } from "../outbound-receipts.js";
 import { deliverSlackAutomaticMedia, type SlackAutomaticMediaInput } from "./automatic-media-output.js";
 import { getSlackAutomaticOutputDecision, reserveSlackAutomaticOutput } from "./automatic-output-circuit.js";
+import * as automaticOutputCircuit from "./automatic-output-circuit.js";
 import {
   createChannelBackendAutomaticOutputOrigin,
   resolveSlackAutomaticOutputContextFromBinding,
@@ -27,6 +28,7 @@ import {
 import {
   assertSlackAutomaticTerminalPart,
   freezeSlackAutomaticTerminalManifest,
+  getSlackAutomaticTerminalManifest,
 } from "./automatic-terminal-manifest.js";
 import { sendSlackMedia } from "./media.js";
 import * as slackMedia from "./media.js";
@@ -270,6 +272,227 @@ async function realGateway() {
 }
 
 describe("native bot automatic media terminal delivery", () => {
+  /** Exhausts response admission without sending any media. */
+  function exhaustAdmission(scope: string) {
+    for (let index = 0; index < 4; index++) {
+      reserveSlackAutomaticOutput({
+        idempotencyKey: `prior-${index}`,
+        requestFingerprint: `prior-${index}`,
+        scope,
+        sourceId: `source-${index}`,
+        sourceReceivedAt: time,
+        now: time,
+      });
+    }
+  }
+
+  /** A real SQLite fault leaves the durable no-send decision and claimed receipt intact. */
+  function rejectSuppressionWrites() {
+    sqliteChannelOutboundReceiptStore.get("initialize-schema");
+    getDb().exec(`CREATE TRIGGER reject_media_suppression
+      BEFORE UPDATE OF state ON channel_outbound_receipts
+      WHEN NEW.state = 'suppressed'
+      BEGIN SELECT RAISE(ABORT, 'temporary suppression write failure'); END;`);
+  }
+
+  for (const reopen of [false, true]) {
+    for (const staleRead of [false, true]) {
+      it(`recovers no-send suppression after ${reopen ? "expiry and SQLite reopen" : "immediate retry"} through ${staleRead ? "a stale read" : "receipt lookup"}`, async () => {
+        const f = fixture();
+        const deps = callbacks(f.originDependencies);
+        const bytes = f.media.map((media) => readFileSync(media.filePath));
+        exhaustAdmission(f.manifest!.scope);
+        expect(await deliverSlackAutomaticMedia(f.input(1), deps)).toMatchObject({ status: "suppressed" });
+        const siblingKey = assertSlackAutomaticTerminalPart(f.manifest!, {
+          type: "media",
+          index: 1,
+          media: f.media[1]!,
+        });
+        const sibling = getChannelOutboundReceipt(siblingKey);
+        rejectSuppressionWrites();
+        const first = await deliverSlackAutomaticMedia(f.input(), deps);
+        expect(first).toMatchObject({ status: "failed", reason: "slack_media_suppression_persist", retryable: true });
+        if (!first.handled || !first.idempotencyKey) throw new Error("Missing media identity");
+        const receipt = getChannelOutboundReceipt(first.idempotencyKey)!;
+        const decision = getSlackAutomaticOutputDecision(f.manifest!.responseId);
+        expect(receipt).toMatchObject({ state: "claimed", resendProhibited: true });
+        expect(decision?.status).toBe("suppressed");
+        getDb().exec("DROP TRIGGER reject_media_suppression");
+        if (reopen) {
+          time += WINDOW_MS * 2 + 1;
+          closeRouterDb();
+        }
+        const recovered = await deliverSlackAutomaticMedia(f.input(), {
+          ...deps,
+          ...(staleRead ? { receiptStore: { ...sqliteChannelOutboundReceiptStore, get: () => null } } : {}),
+        });
+        expect(recovered).toMatchObject({
+          status: "suppressed",
+          reason: "slack_bot_reply_cooldown",
+          retryable: false,
+          idempotencyKey: first.idempotencyKey,
+        });
+        const tombstone = getChannelOutboundReceipt(first.idempotencyKey)!;
+        expect(tombstone).toMatchObject({
+          state: "suppressed",
+          suppressionReason: "slack_bot_reply_cooldown",
+          resendProhibited: true,
+          idempotencyKey: receipt.idempotencyKey,
+          requestFingerprint: receipt.requestFingerprint,
+          jobId: receipt.jobId,
+          requestId: receipt.requestId,
+          createdAt: receipt.createdAt,
+        });
+        expect(tombstone.claimOwner).toBeUndefined();
+        expect(tombstone.claimExpiresAt).toBeUndefined();
+        expect(tombstone.sentAt).toBeUndefined();
+        expect(tombstone.deliveryMessageId).toBeUndefined();
+        expect(tombstone.persistedAt).toBeUndefined();
+        expect(getChannelOutboundReceipt(siblingKey)).toEqual(sibling);
+        expect(getSlackAutomaticOutputDecision(f.manifest!.responseId)).toEqual(decision);
+        expect(getSlackAutomaticTerminalManifest(f.manifest!.responseId)).toEqual(f.manifest!);
+        expect(f.media.map((media) => readFileSync(media.filePath))).toEqual(bytes);
+        expect(deps.send).toHaveBeenCalledTimes(0);
+        closeRouterDb();
+        expect(await deliverSlackAutomaticMedia(f.input(), deps)).toEqual(recovered);
+        expect(getChannelOutboundReceipt(first.idempotencyKey)).toEqual(tombstone);
+      });
+    }
+  }
+
+  it("keeps no-send suppression retryable through persistent SQLite faults without losing its owner", async () => {
+    const f = fixture();
+    const deps = callbacks(f.originDependencies);
+    exhaustAdmission(f.manifest!.scope);
+    rejectSuppressionWrites();
+    const first = await deliverSlackAutomaticMedia(f.input(), deps);
+    expect(first).toMatchObject({ status: "failed", reason: "slack_media_suppression_persist", retryable: true });
+    if (!first.handled || !first.idempotencyKey) throw new Error("Missing media identity");
+    const receipt = getChannelOutboundReceipt(first.idempotencyKey);
+    for (const reopen of [false, true]) {
+      if (reopen) {
+        time += WINDOW_MS * 2 + 1;
+        closeRouterDb();
+      }
+      expect(await deliverSlackAutomaticMedia(f.input(), deps)).toEqual(first);
+      expect(getChannelOutboundReceipt(first.idempotencyKey)).toEqual(receipt);
+    }
+    getDb().exec("DROP TRIGGER reject_media_suppression");
+    expect(await deliverSlackAutomaticMedia(f.input(), deps)).toMatchObject({ status: "suppressed" });
+    expect(deps.send).toHaveBeenCalledTimes(0);
+  });
+
+  for (const lookup of ["getSlackAutomaticOutputDecision", "reserveSlackAutomaticOutput"] as const) {
+    it(`retains pending or unknown when no-send proof fails at ${lookup}`, async () => {
+      const f = fixture();
+      const deps = callbacks(f.originDependencies);
+      exhaustAdmission(f.manifest!.scope);
+      rejectSuppressionWrites();
+      const first = await deliverSlackAutomaticMedia(f.input(), deps);
+      if (!first.handled || !first.idempotencyKey) throw new Error("Missing media identity");
+      getDb().exec("DROP TRIGGER reject_media_suppression");
+      const receipt = getChannelOutboundReceipt(first.idempotencyKey);
+      for (const reopen of [false, true]) {
+        if (reopen) {
+          time += WINDOW_MS * 2 + 1;
+          closeRouterDb();
+        }
+        const unavailable = spyOn(automaticOutputCircuit, lookup).mockImplementation(() => {
+          throw new Error("durable admission unavailable");
+        });
+        try {
+          expect(await deliverSlackAutomaticMedia(f.input(), deps)).toMatchObject({
+            status: reopen ? "unknown" : "pending",
+            retryable: !reopen,
+          });
+          expect(getChannelOutboundReceipt(first.idempotencyKey)).toEqual(receipt);
+        } finally {
+          unavailable.mockRestore();
+        }
+      }
+      expect(await deliverSlackAutomaticMedia(f.input(), deps)).toMatchObject({ status: "suppressed" });
+      expect(deps.send).toHaveBeenCalledTimes(0);
+    });
+  }
+
+  it("does not overwrite a changed owner while recovering no-send suppression", async () => {
+    const f = fixture();
+    const deps = callbacks(f.originDependencies);
+    exhaustAdmission(f.manifest!.scope);
+    rejectSuppressionWrites();
+    const first = await deliverSlackAutomaticMedia(f.input(), deps);
+    if (!first.handled || !first.idempotencyKey) throw new Error("Missing media identity");
+    getDb().exec("DROP TRIGGER reject_media_suppression");
+    const markSuppressed = mock((input: Parameters<typeof sqliteChannelOutboundReceiptStore.markSuppressed>[0]) => {
+      getDb()
+        .prepare("UPDATE channel_outbound_receipts SET claim_owner = ? WHERE idempotency_key = ?")
+        .run("replacement-owner", input.idempotencyKey);
+      return sqliteChannelOutboundReceiptStore.markSuppressed(input);
+    });
+    expect(
+      await deliverSlackAutomaticMedia(f.input(), {
+        ...deps,
+        receiptStore: { ...sqliteChannelOutboundReceiptStore, markSuppressed },
+      }),
+    ).toMatchObject({ status: "failed", reason: "slack_media_suppression_persist", retryable: true });
+    expect(markSuppressed).toHaveBeenCalledTimes(1);
+    expect(getChannelOutboundReceipt(first.idempotencyKey)).toMatchObject({
+      state: "claimed",
+      claimOwner: "replacement-owner",
+    });
+    expect(await deliverSlackAutomaticMedia(f.input(), deps)).toMatchObject({ status: "suppressed" });
+    expect(deps.send).toHaveBeenCalledTimes(0);
+  });
+
+  for (const phase of ["send", "receipt_write"] as const) {
+    it(`never reconciles an ambiguous ${phase} claim as no-send suppression`, async () => {
+      const f = fixture();
+      const deps = callbacks(f.originDependencies);
+      exhaustAdmission(f.manifest!.scope);
+      rejectSuppressionWrites();
+      const first = await deliverSlackAutomaticMedia(f.input(), deps);
+      if (!first.handled || !first.idempotencyKey) throw new Error("Missing media identity");
+      getDb().exec("DROP TRIGGER reject_media_suppression");
+      sqliteChannelOutboundReceiptStore.recordError(first.idempotencyKey, phase, "ambiguous send evidence", time);
+      const receipt = getChannelOutboundReceipt(first.idempotencyKey);
+      for (const reopen of [false, true]) {
+        if (reopen) {
+          time += WINDOW_MS * 2 + 1;
+          closeRouterDb();
+        }
+        expect(await deliverSlackAutomaticMedia(f.input(), deps)).toMatchObject({
+          status: "unknown",
+          reason: "slack_media_delivery_unknown",
+          retryable: false,
+        });
+        expect(getChannelOutboundReceipt(first.idempotencyKey)).toEqual(receipt);
+      }
+      expect(deps.send).toHaveBeenCalledTimes(0);
+    });
+  }
+
+  it("rejects a conflicting durable decision before reconciling no-send suppression", async () => {
+    const f = fixture();
+    const deps = callbacks(f.originDependencies);
+    exhaustAdmission(f.manifest!.scope);
+    rejectSuppressionWrites();
+    const first = await deliverSlackAutomaticMedia(f.input(), deps);
+    if (!first.handled || !first.idempotencyKey) throw new Error("Missing media identity");
+    getDb().exec("DROP TRIGGER reject_media_suppression");
+    // The key-only decision lookup is not proof that this manifest owns it.
+    getDb()
+      .prepare("UPDATE slack_automatic_output_decisions SET request_fingerprint = ? WHERE idempotency_key = ?")
+      .run("another-manifest", f.manifest!.responseId);
+    const receipt = getChannelOutboundReceipt(first.idempotencyKey);
+    expect(await deliverSlackAutomaticMedia(f.input(), deps)).toMatchObject({
+      status: "failed",
+      reason: "slack_bot_reply_identity_conflict",
+      retryable: false,
+    });
+    expect(getChannelOutboundReceipt(first.idempotencyKey)).toEqual(receipt);
+    expect(deps.send).toHaveBeenCalledTimes(0);
+  });
+
   it("reports a frozen unavailable member as terminal failed while sending valid siblings, without revival", async () => {
     const f = fixture(1, "bot", false, true);
     const deps = callbacks(f.originDependencies);

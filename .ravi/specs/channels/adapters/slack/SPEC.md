@@ -315,6 +315,14 @@ file bytes. Their retained terminal reason MUST NOT become policy suppression,
 successful delivery or success cleanup. Mixed bundles MUST retain failed files
 without reuploading siblings whose success was already persisted. Legitimate
 cooldown suppression retains its existing disposition and cleanup behavior.
+If persisting a policy-suppressed media tombstone fails after the response-wide
+suppression decision commits, retry MUST reconcile the existing claimed receipt
+using that durable decision, its full frozen identity and the recorded claim
+owner. Expiry or database reopen MUST NOT leave proven unsent suppression as
+permanent upload ambiguity. Failure to persist the reconciled tombstone MUST
+remain retryable without changing the claim. Missing, allowed, unreadable or
+conflicting decisions MUST NOT authorize recovery or another upload; explicit
+send/receipt-write ambiguity MUST retain its existing non-resend behavior.
 The manifest is an immutable admission and membership boundary, not a remote
 all-or-nothing transaction: a later part failing file verification or delivery
 cannot roll back earlier successful Slack posts. Hashing adds work proportional
