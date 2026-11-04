@@ -316,7 +316,12 @@ async function resolveSlackCredentialContext(
   const { channel, channels } = target;
   let config: SlackCredentialConfig | null;
   try {
-    config = await resolveSlackCredentialConfigFromEnv(process.env, { action, channel, channels });
+    config = await resolveSlackCredentialConfigFromEnv(process.env, {
+      action,
+      channel,
+      channels,
+      authority: { kind: "local-operator" },
+    });
   } catch (error) {
     throw Object.assign(new Error("Slack credential resolution failed.", { cause: error }), {
       context: { operation: contract.op, provider: "slack" },
