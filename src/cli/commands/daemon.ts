@@ -39,7 +39,7 @@ import {
   shouldHandoffDaemonRestart,
 } from "../daemon-restart-supervision.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
-import { buildManagedRuntimeIdentity } from "../../managed-runtime.js";
+import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
   ADMIN_BOOTSTRAP_KIND,
@@ -248,21 +248,30 @@ function serializePm2Process(process: Pm2ProcessSnapshot | undefined, fallbackNa
   };
 }
 
-function buildDaemonStatusJson(): Record<string, unknown> {
-  const pm2Available = isPm2Available();
-  const processes = pm2Available ? getPm2Processes() : [];
+export function buildDaemonStatusJson(
+  warn = false,
+  options: { pm2Available?: boolean; processes?: Pm2ProcessSnapshot[]; cliBundlePath?: string } = {},
+) {
+  const pm2Available = options.pm2Available ?? isPm2Available();
+  const processes = options.processes ?? (pm2Available ? getPm2Processes() : []);
   const findProcess = (name: string) => processes.find((process) => process.name === name);
-  const runtime = buildManagedRuntimeIdentity(processes, process.env.RAVI_BUNDLE ?? process.argv[1]);
+  const runtime = buildManagedRuntimeIdentity(
+    processes,
+    options.cliBundlePath ?? process.env.RAVI_BUNDLE ?? process.argv[1],
+  );
+  const warnings = managedRuntimeWarnings(runtime);
+  if (warn) for (const warning of warnings) console.warn(warning);
 
   return {
     pm2Available,
     processName: PM2_PROCESS_NAME,
-    ravi: serializePm2Process(findProcess(PM2_PROCESS_NAME), PM2_PROCESS_NAME),
+    ravi: { ...serializePm2Process(findProcess(PM2_PROCESS_NAME), PM2_PROCESS_NAME), ...runtime.daemon },
     infrastructure: {
       omniNats: serializePm2Process(findProcess("omni-nats"), "omni-nats"),
       omniApi: serializePm2Process(findProcess("omni-api"), "omni-api"),
     },
     runtime,
+    warnings,
     processes: processes.map((process) => serializePm2Process(process, process.name)),
   };
 }
@@ -436,7 +445,7 @@ export class DaemonCommands {
         action: "start" as const,
         changed: false,
         reason: "already_running" as const,
-        status: buildDaemonStatusJson(),
+        status: buildDaemonStatusJson(!asJson),
       };
       if (asJson) {
         printJson(payload);
@@ -460,7 +469,7 @@ export class DaemonCommands {
       changed: status === 0,
       pm2Status: status,
       target,
-      status: buildDaemonStatusJson(),
+      status: buildDaemonStatusJson(!asJson),
     };
 
     if (asJson) {
@@ -488,7 +497,7 @@ export class DaemonCommands {
         action: "stop" as const,
         changed: false,
         reason: "not_running" as const,
-        status: buildDaemonStatusJson(),
+        status: buildDaemonStatusJson(!asJson),
       };
       if (asJson) {
         printJson(payload);
@@ -503,7 +512,7 @@ export class DaemonCommands {
       action: "stop" as const,
       changed: status === 0,
       pm2Status: status,
-      status: buildDaemonStatusJson(),
+      status: buildDaemonStatusJson(!asJson),
     };
     if (asJson) {
       printJson(payload);
@@ -617,7 +626,7 @@ export class DaemonCommands {
             build: buildResult,
             message,
             target,
-            status: buildDaemonStatusJson(),
+            status: buildDaemonStatusJson(!asJson),
           };
           printJson(payload);
         }
@@ -671,7 +680,7 @@ export class DaemonCommands {
       build: buildResult,
       target,
       logPath,
-      status: buildDaemonStatusJson(),
+      status: buildDaemonStatusJson(!asJson),
     };
 
     if (asJson) printJson(payload);
@@ -702,30 +711,31 @@ export class DaemonCommands {
       return payload;
     }
 
-    const procs = getPm2Processes();
+    const procs = payload.processes;
     const ravi = procs.find((p) => p.name === PM2_PROCESS_NAME);
     const omniApi = procs.find((p) => p.name === "omni-api");
     const omniNats = procs.find((p) => p.name === "omni-nats");
-    const runtime = buildManagedRuntimeIdentity(procs, process.env.RAVI_BUNDLE ?? process.argv[1]);
+    const runtime = payload.runtime;
 
     console.log("\nRavi Daemon Status");
     console.log("──────────────────");
 
     if (ravi) {
-      const mem = (ravi.memory / 1024 / 1024).toFixed(1);
+      const mem = ravi.memoryMb;
       console.log(`  ravi:      ${ravi.status === "online" ? "online" : ravi.status}  (PID ${ravi.pid}, ${mem}MB)`);
     } else {
       console.log("  ravi:      stopped");
     }
 
-    const runtimeVersion = runtime.daemon.version ?? runtime.channels.version ?? runtime.cli.version;
-    console.log(`  runtime:   ${runtime.alignment}${runtimeVersion ? ` (${runtimeVersion})` : ""}`);
-    if (runtime.alignment === "drifted") {
-      console.log(`    cli:      ${runtime.cli.version ?? "unknown"}  ${runtime.cli.bundlePath ?? "-"}`);
-      console.log(`    daemon:   ${runtime.daemon.version ?? "unknown"}  ${runtime.daemon.bundlePath ?? "-"}`);
-      console.log(`    channels: ${runtime.channels.version ?? "unknown"}  ${runtime.channels.bundlePath ?? "-"}`);
-      console.log("    fix:      ravi update");
+    console.log(`  runtime:   ${runtime.alignment}`);
+    console.log(`    cli:      ${runtime.cli.version ?? "unknown"}  ${runtime.cli.bundlePath ?? "-"}`);
+    for (const member of [runtime.daemon, runtime.channels]) {
+      console.log(
+        `    ${member.name}: running=${member.runningVersion ?? "unknown"} disk=${member.diskVersion ?? "unknown"} stale=${member.stale}`,
+      );
+      if (member.startedAt !== null) console.log(`      started: ${new Date(member.startedAt).toISOString()}`);
     }
+    for (const warning of payload.warnings) console.warn(warning);
 
     if (omniNats) {
       console.log(`  omni-nats: ${omniNats.status === "online" ? "online" : omniNats.status}  (PID ${omniNats.pid})`);
@@ -734,7 +744,7 @@ export class DaemonCommands {
     }
 
     if (omniApi) {
-      const mem = (omniApi.memory / 1024 / 1024).toFixed(1);
+      const mem = omniApi.memoryMb;
       console.log(
         `  omni-api:  ${omniApi.status === "online" ? "online" : omniApi.status}  (PID ${omniApi.pid}, ${mem}MB)`,
       );
@@ -970,7 +980,7 @@ export class DaemonCommands {
       wasRunning,
       deleteStatus,
       saveStatus: saveResult.status,
-      status: buildDaemonStatusJson(),
+      status: buildDaemonStatusJson(!asJson),
     };
     if (asJson) {
       printJson(payload);

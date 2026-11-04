@@ -8393,14 +8393,18 @@ public struct ChannelsStatusReturn: Codable, Sendable {
   public var processName: String
   public var processes: [RaviJSON]
   public var runner: RaviJSON?
+  public var runtime: RaviJSON
+  public var warnings: [String]
 
-  public init(channels: RaviJSON, health: RaviJSON? = nil, pm2Available: Bool, processName: String, processes: [RaviJSON], runner: RaviJSON? = nil) {
+  public init(channels: RaviJSON, health: RaviJSON? = nil, pm2Available: Bool, processName: String, processes: [RaviJSON], runner: RaviJSON? = nil, runtime: RaviJSON, warnings: [String]) {
     self.channels = channels
     self.health = health
     self.pm2Available = pm2Available
     self.processName = processName
     self.processes = processes
     self.runner = runner
+    self.runtime = runtime
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -8410,6 +8414,8 @@ public struct ChannelsStatusReturn: Codable, Sendable {
     case processName = "processName"
     case processes = "processes"
     case runner = "runner"
+    case runtime = "runtime"
+    case warnings = "warnings"
   }
 }
 
@@ -15960,14 +15966,16 @@ public struct DaemonStatusReturn: Codable, Sendable {
   public var processes: [[String: RaviJSON]]
   public var ravi: [String: RaviJSON]
   public var runtime: RaviJSON
+  public var warnings: [String]
 
-  public init(infrastructure: [String: RaviJSON], pm2Available: Bool, processName: String, processes: [[String: RaviJSON]], ravi: [String: RaviJSON], runtime: RaviJSON) {
+  public init(infrastructure: [String: RaviJSON], pm2Available: Bool, processName: String, processes: [[String: RaviJSON]], ravi: [String: RaviJSON], runtime: RaviJSON, warnings: [String]) {
     self.infrastructure = infrastructure
     self.pm2Available = pm2Available
     self.processName = processName
     self.processes = processes
     self.ravi = ravi
     self.runtime = runtime
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15977,6 +15985,7 @@ public struct DaemonStatusReturn: Codable, Sendable {
     case processes = "processes"
     case ravi = "ravi"
     case runtime = "runtime"
+    case warnings = "warnings"
   }
 }
 
@@ -26411,8 +26420,9 @@ public struct RuntimeEnvSetReturn: Codable, Sendable {
   public var redacted: Bool
   public var secret: Bool
   public var value: RaviJSON
+  public var warnings: [String]?
 
-  public init(action: String, daemonReloadRequired: Bool, key: String, origin: String, path: String, present: Bool, processPresent: Bool, redacted: Bool, secret: Bool, value: RaviJSON) {
+  public init(action: String, daemonReloadRequired: Bool, key: String, origin: String, path: String, present: Bool, processPresent: Bool, redacted: Bool, secret: Bool, value: RaviJSON, warnings: [String]? = nil) {
     self.action = action
     self.daemonReloadRequired = daemonReloadRequired
     self.key = key
@@ -26423,6 +26433,7 @@ public struct RuntimeEnvSetReturn: Codable, Sendable {
     self.redacted = redacted
     self.secret = secret
     self.value = value
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -26436,6 +26447,7 @@ public struct RuntimeEnvSetReturn: Codable, Sendable {
     case redacted = "redacted"
     case secret = "secret"
     case value = "value"
+    case warnings = "warnings"
   }
 }
 
@@ -26450,8 +26462,9 @@ public struct RuntimeEnvUnsetReturn: Codable, Sendable {
   public var redacted: Bool
   public var secret: Bool
   public var value: RaviJSON
+  public var warnings: [String]?
 
-  public init(action: String, daemonReloadRequired: Bool, key: String, origin: String, path: String, present: Bool, processPresent: Bool, redacted: Bool, secret: Bool, value: RaviJSON) {
+  public init(action: String, daemonReloadRequired: Bool, key: String, origin: String, path: String, present: Bool, processPresent: Bool, redacted: Bool, secret: Bool, value: RaviJSON, warnings: [String]? = nil) {
     self.action = action
     self.daemonReloadRequired = daemonReloadRequired
     self.key = key
@@ -26462,6 +26475,7 @@ public struct RuntimeEnvUnsetReturn: Codable, Sendable {
     self.redacted = redacted
     self.secret = secret
     self.value = value
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -26475,6 +26489,7 @@ public struct RuntimeEnvUnsetReturn: Codable, Sendable {
     case redacted = "redacted"
     case secret = "secret"
     case value = "value"
+    case warnings = "warnings"
   }
 }
 
