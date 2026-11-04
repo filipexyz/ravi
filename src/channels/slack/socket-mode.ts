@@ -77,6 +77,11 @@ import {
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
+import {
+  handleCredentialIntakeEnvelope,
+  isCredentialIntakeEnvelope,
+  type CredentialIntakeDependencies,
+} from "./credential-intake.js";
 import { extractSlackMessageText } from "./message-content.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
@@ -215,6 +220,9 @@ export interface SlackSocketModeServiceOptions {
   readonly getRouterConfig?: () => RouterConfig;
   readonly publishPrompt?: PublishPrompt;
   readonly publishInteraction?: PublishInteraction;
+  /** Secret-bearing modals are supported only over direct Socket Mode. */
+  readonly credentialIntakeEnabled?: boolean;
+  readonly credentialIntakeDependencies?: Partial<CredentialIntakeDependencies>;
   readonly openWebSocket?: WebSocketFactory;
   readonly reconnectDelayMs?: number;
   /** Interval between successful heartbeat round-trips. */
@@ -824,8 +832,20 @@ export class SlackSocketModeService {
 
   async handleEnvelope(
     envelope: SlackSocketEnvelope,
-    ack: (envelopeId: string) => Promise<void> | void = async () => {},
+    ack: (envelopeId: string, payload?: Record<string, unknown>) => Promise<void> | void = async () => {},
   ): Promise<"duplicate" | "ignored" | "processed"> {
+    if (isCredentialIntakeEnvelope(envelope)) {
+      await handleCredentialIntakeEnvelope({
+        envelope,
+        accountId: this.options.accountId,
+        instanceId: this.options.instanceId ?? this.options.accountId,
+        directSocketMode: this.options.credentialIntakeEnabled !== false,
+        client: this.webClient,
+        ack,
+        dependencies: this.options.credentialIntakeDependencies,
+      });
+      return "processed";
+    }
     const envelopeId = cleanSlackId(envelope.envelope_id);
     const messageEvent = envelopeEvent(envelope);
     if (envelopeId && messageEvent && isSlackMessageEventStructurallyEligible(messageEvent)) {
@@ -1174,8 +1194,8 @@ export class SlackSocketModeService {
     const envelope = JSON.parse(text) as SlackSocketEnvelope;
     if (envelope.type === "hello") return "hello";
     if (envelope.type === "disconnect") return "disconnect";
-    await this.handleEnvelope(envelope, async (envelopeId) => {
-      socket.send(JSON.stringify({ envelope_id: envelopeId }));
+    await this.handleEnvelope(envelope, async (envelopeId, payload) => {
+      socket.send(JSON.stringify({ envelope_id: envelopeId, ...(payload ? { payload } : {}) }));
     });
     return null;
   }
@@ -2817,6 +2837,7 @@ export async function createSlackNativeRuntimeFromEnv(
     instanceId: credentials.instanceId,
     routingPolicy,
     webClient,
+    credentialIntakeEnabled: !credentials.gateway,
   });
   const socketMode = credentials.gateway
     ? new SlackGatewayModeService({

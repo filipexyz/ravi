@@ -171,6 +171,48 @@ export function upsertCredentialConnection(
   return saved;
 }
 
+/** Add-only counterpart for remote intake: never rotate a connection as a side effect. */
+export function createCredentialConnectionIfAbsent(
+  input: UpsertCredentialConnectionInput,
+  options: CredentialStoreOptions = {},
+): CredentialConnectionRecord | null {
+  ensureCredentialTables(options);
+  const provider = normalizeCredentialIdentifier(input.provider, "provider");
+  const connection = normalizeCredentialIdentifier(input.connection, "connection");
+  const backend = requireBackend(input.backend);
+  const status = requireConnectionStatus(input.status ?? "active");
+  const scopes = normalizeScopes(input.scopes ?? []);
+  const secretRef = input.secretRef.trim();
+  if (!secretRef) throw new Error("secretRef is required.");
+  const id = credentialConnectionId(provider, connection);
+  const now = input.now ?? Date.now();
+  let created = false;
+  executeWrite(
+    getCredentialDb(options),
+    (db) => {
+      const result = db
+        .prepare(`
+        INSERT INTO credential_connections (
+          id, provider, connection, label, backend, secret_ref, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(provider, connection) DO NOTHING
+      `)
+        .run(id, provider, connection, input.label?.trim() || null, backend, secretRef, status, now, now);
+      created = result.changes === 1;
+      if (!created) return;
+      for (const scope of scopes) {
+        db.prepare("INSERT INTO credential_connection_scopes (id, connection_id, scope) VALUES (?, ?, ?)").run(
+          `ccs_${randomUUID()}`,
+          id,
+          scope,
+        );
+      }
+    },
+    { label: "credentials.create-if-absent" },
+  );
+  return created ? getCredentialConnection(provider, connection, options) : null;
+}
+
 export function setCredentialConnectionStatus(
   provider: string,
   connection: string,
@@ -303,13 +345,14 @@ function getCredentialDb(options: CredentialStoreOptions = {}): Database {
 }
 
 function ensureSchema(db: Database): void {
+  migrateFileBackend(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS credential_connections (
       id TEXT PRIMARY KEY,
       provider TEXT NOT NULL,
       connection TEXT NOT NULL,
       label TEXT,
-      backend TEXT NOT NULL CHECK(backend IN ('keychain', 'vault')),
+      backend TEXT NOT NULL CHECK(backend IN ('file', 'keychain', 'vault')),
       secret_ref TEXT NOT NULL,
       status TEXT NOT NULL CHECK(status IN ('active', 'disabled')),
       created_at INTEGER NOT NULL,
@@ -347,6 +390,42 @@ function ensureSchema(db: Database): void {
   `);
 }
 
+/** SQLite cannot alter a CHECK constraint; preserve rows and child references. */
+function migrateFileBackend(db: Database): void {
+  const existing = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'credential_connections'")
+    .get() as { sql: string } | null;
+  if (!existing || existing.sql.includes("'file'")) return;
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE credential_connections_file_backend (
+          id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          connection TEXT NOT NULL,
+          label TEXT,
+          backend TEXT NOT NULL CHECK(backend IN ('file', 'keychain', 'vault')),
+          secret_ref TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('active', 'disabled')),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE(provider, connection)
+        );
+        INSERT INTO credential_connections_file_backend
+          (id, provider, connection, label, backend, secret_ref, status, created_at, updated_at)
+          SELECT id, provider, connection, label, backend, secret_ref, status, created_at, updated_at
+          FROM credential_connections;
+        DROP TABLE credential_connections;
+        ALTER TABLE credential_connections_file_backend RENAME TO credential_connections;
+      `);
+      if (db.prepare("PRAGMA foreign_key_check").all().length) throw new Error("Credential schema migration failed");
+    }).immediate();
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
 function hydrateConnection(row: CredentialConnectionRow, options: CredentialStoreOptions): CredentialConnectionRecord {
   const scopeRows = getCredentialDb(options)
     .prepare("SELECT scope FROM credential_connection_scopes WHERE connection_id = ? ORDER BY scope ASC")
@@ -370,7 +449,7 @@ function normalizeScopes(scopes: string[]): string[] {
 }
 
 function requireBackend(value: string): CredentialBackend {
-  if (value === "keychain" || value === "vault") return value;
+  if (value === "file" || value === "keychain" || value === "vault") return value;
   throw new Error(`Unsupported credential backend: ${value}`);
 }
 

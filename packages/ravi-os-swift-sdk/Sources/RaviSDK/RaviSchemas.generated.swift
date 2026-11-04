@@ -63461,6 +63461,7 @@ public enum RaviSchemas {
             "properties": {
               "backend": {
                 "enum": [
+                  "file",
                   "keychain",
                   "vault"
                 ],
@@ -63563,6 +63564,7 @@ public enum RaviSchemas {
             "properties": {
               "backend": {
                 "enum": [
+                  "file",
                   "keychain",
                   "vault"
                 ],
@@ -63682,6 +63684,7 @@ public enum RaviSchemas {
           "properties": {
             "backend": {
               "enum": [
+                "file",
                 "keychain",
                 "vault"
               ],
@@ -63831,6 +63834,7 @@ public enum RaviSchemas {
         "properties": {
           "backend": {
             "enum": [
+              "file",
               "keychain",
               "vault"
             ],
@@ -63963,6 +63967,75 @@ public enum RaviSchemas {
       "action",
       "requiredCapabilities",
       "approval"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsRequestInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "backend": {
+        "default": "file",
+        "description": "Connection secret backend: file (default), keychain or vault",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Send the private invitation; otherwise dry-run (exit 3)",
+        "type": "boolean"
+      },
+      "label": {
+        "description": "Human-readable credential label",
+        "type": "string"
+      },
+      "reason": {
+        "description": "Why the credential is needed (never include a secret)",
+        "type": "string"
+      },
+      "scopes": {
+        "description": "Provider scopes, informational; does not grant Ravi permissions",
+        "type": "string"
+      },
+      "target": {
+        "description": "env:<key> or connection:<provider>:<connection>",
+        "type": "string"
+      },
+      "user": {
+        "description": "Slack user who will provide the credential privately",
+        "type": "string"
+      }
+    },
+    "required": [
+      "target"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsRequestReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "delivery": {
+        "const": "ephemeral",
+        "type": "string"
+      },
+      "expiresAt": {
+        "type": "number"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "requestId",
+      "target",
+      "expiresAt",
+      "delivery"
     ],
     "type": "object"
   }

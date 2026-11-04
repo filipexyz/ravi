@@ -86,7 +86,7 @@ Backend adapters MUST implement this internal shape:
 
 ```ts
 interface CredentialSecretBackend {
-  kind: "keychain" | "vault";
+  kind: "file" | "keychain" | "vault";
   write(input: SecretWriteInput): Promise<SecretRef>;
   read(ref: SecretRef): Promise<string>;
   delete(ref: SecretRef): Promise<boolean>;
@@ -95,6 +95,12 @@ interface CredentialSecretBackend {
 
 The `read` method is internal only. It MUST NOT be exported as a public CLI
 command or SDK endpoint.
+
+The default `file` backend MUST keep secret bytes in broker-owned private files
+(0700 directory, 0600 files) with atomic writes and strict opaque references.
+It is plaintext protected by the host account and works on headless Linux;
+Keychain and Vault remain explicit alternatives. The backend MUST reject unsafe
+paths, links and permissions rather than expose the secret through an error.
 
 ## Provider Adapter Contract
 

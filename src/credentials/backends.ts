@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { CredentialBrokerError } from "./errors.js";
 import type { CredentialBackend } from "./types.js";
+import { deleteFileSecret, readFileSecret, writeFileSecret } from "./file-backend.js";
 
 export interface SecretWriteInput {
   backend: CredentialBackend;
@@ -13,6 +14,13 @@ export interface SecretWriteInput {
 }
 
 const DEFAULT_KEYCHAIN_SERVICE = "ravi.credentials";
+const SECURITY_INTERACTIVE_LINE_BYTES = 4096;
+const SECURITY_WRITE_TIMEOUT_MS = 5_000;
+
+export interface SecretBackendDependencies {
+  /** Tests inject a process runner; no test needs to write the user's Keychain. */
+  spawnSync?: typeof spawnSync;
+}
 
 export async function readSecretFromStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -24,20 +32,23 @@ export async function readSecretFromStdin(): Promise<string> {
   return secret;
 }
 
-export async function writeSecret(input: SecretWriteInput): Promise<string> {
+export async function writeSecret(input: SecretWriteInput, deps: SecretBackendDependencies = {}): Promise<string> {
+  if (input.backend === "file") return writeFileSecret(input);
   if (input.backend === "keychain") {
-    return writeKeychainSecret(input.provider, input.connection, input.secret);
+    return writeKeychainSecret(input.provider, input.connection, input.secret, deps.spawnSync ?? spawnSync);
   }
   return writeVaultSecret(input);
 }
 
 export async function readSecret(secretRef: string): Promise<string> {
+  if (secretRef.startsWith("file:")) return readFileSecret(secretRef);
   if (secretRef.startsWith("keychain:")) return readKeychainSecret(secretRef);
   if (secretRef.startsWith("vault:")) return readVaultSecret(secretRef);
   throw new Error(`Unsupported secret ref: ${redactSecretRef(secretRef)}`);
 }
 
 export async function deleteSecret(secretRef: string): Promise<boolean> {
+  if (secretRef.startsWith("file:")) return deleteFileSecret(secretRef);
   if (secretRef.startsWith("keychain:")) return deleteKeychainSecret(secretRef);
   if (secretRef.startsWith("vault:")) return deleteVaultSecret(secretRef);
   throw new Error(`Unsupported secret ref: ${redactSecretRef(secretRef)}`);
@@ -65,11 +76,48 @@ function parseKeychainRef(secretRef: string): { service: string; account: string
   return { service: value.slice(0, slash), account: value.slice(slash + 1) };
 }
 
-function writeKeychainSecret(provider: string, connection: string, secret: string): string {
+function writeKeychainSecret(provider: string, connection: string, secret: string, spawn: typeof spawnSync): string {
   const secretRef = keychainRef(provider, connection);
   const { service, account } = parseKeychainRef(secretRef);
-  runSecurity(["add-generic-password", "-a", account, "-s", service, "-w", secret, "-U"]);
+  if (!secret || secret.includes("\u0000") || Buffer.from(secret, "utf8").toString("utf8") !== secret) {
+    throw new CredentialBrokerError("secret_unavailable", "The Keychain secret is empty or cannot be encoded.");
+  }
+  // Apple SecurityTool's split_line/readline parses one command per line, with
+  // a 4096-byte buffer. -X accepts hex bytes: the secret never participates in
+  // that grammar, including JSON quotes, backslashes and line breaks. Do not
+  // append another command: its exit code could hide the write's failure.
+  // https://github.com/apple-oss-distributions/Security/blob/main/SecurityTool/macOS/security.c
+  const command = `add-generic-password -a ${quoteSecurityArgument(account)} -s ${quoteSecurityArgument(service)} -X ${Buffer.from(secret, "utf8").toString("hex")} -U\n`;
+  if (Buffer.byteLength(command, "utf8") >= SECURITY_INTERACTIVE_LINE_BYTES) {
+    throw new CredentialBrokerError("secret_unavailable", "The secret exceeds the Keychain intake limit; use Vault.");
+  }
+  try {
+    const result = spawn("/usr/bin/security", ["-i", "-q"], {
+      input: command,
+      encoding: "utf8",
+      // Never inherit a TTY or forward tool output: even a backend diagnostic
+      // could echo stdin. Only the exit status is used, never stdout/stderr.
+      stdio: ["pipe", "ignore", "ignore"],
+      env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
+      timeout: SECURITY_WRITE_TIMEOUT_MS,
+      killSignal: "SIGKILL",
+    });
+    if (result.error || result.signal || result.status !== 0) {
+      throw new Error("Keychain write failed");
+    }
+  } catch {
+    // Process errors may include spawn arguments or input. Neither the raw
+    // error nor its cause is allowed to cross the secret-store boundary.
+    throw new CredentialBrokerError("backend_unavailable", "The Keychain write failed or timed out.");
+  }
   return secretRef;
+}
+
+function quoteSecurityArgument(value: string): string {
+  if (!value || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new CredentialBrokerError("secret_unavailable", "Invalid Keychain destination.");
+  }
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 function readKeychainSecret(secretRef: string): string {

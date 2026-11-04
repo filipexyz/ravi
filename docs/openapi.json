@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c92722977b553c74"
+    "version": "cb95bc98b21fd374"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -68226,6 +68226,7 @@
                           "properties": {
                             "backend": {
                               "enum": [
+                                "file",
                                 "keychain",
                                 "vault"
                               ],
@@ -68364,6 +68365,7 @@
                           "properties": {
                             "backend": {
                               "enum": [
+                                "file",
                                 "keychain",
                                 "vault"
                               ],
@@ -68519,6 +68521,7 @@
                         "properties": {
                           "backend": {
                             "enum": [
+                              "file",
                               "keychain",
                               "vault"
                             ],
@@ -68704,6 +68707,7 @@
                       "properties": {
                         "backend": {
                           "enum": [
+                            "file",
                             "keychain",
                             "vault"
                           ],
@@ -68898,6 +68902,101 @@
           }
         ],
         "summary": "Explain capabilities required for a provider credential action",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/request": {
+      "post": {
+        "operationId": "credentials.request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "backend": {
+                    "default": "file",
+                    "description": "Connection secret backend: file (default), keychain or vault",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Send the private invitation; otherwise dry-run (exit 3)",
+                    "type": "boolean"
+                  },
+                  "label": {
+                    "description": "Human-readable credential label",
+                    "type": "string"
+                  },
+                  "reason": {
+                    "description": "Why the credential is needed (never include a secret)",
+                    "type": "string"
+                  },
+                  "scopes": {
+                    "description": "Provider scopes, informational; does not grant Ravi permissions",
+                    "type": "string"
+                  },
+                  "target": {
+                    "description": "env:<key> or connection:<provider>:<connection>",
+                    "type": "string"
+                  },
+                  "user": {
+                    "description": "Slack user who will provide the credential privately",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "target"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "delivery": {
+                      "const": "ephemeral",
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "number"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requestId",
+                    "target",
+                    "expiresAt",
+                    "delivery"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Send a private Slack button to add an API credential; accepts metadata only",
         "tags": [
           "credentials"
         ]
@@ -163661,6 +163760,7 @@
       "name": "costs"
     },
     {
+      "description": "Request protected credentials without exposing their values",
       "name": "credentials"
     },
     {

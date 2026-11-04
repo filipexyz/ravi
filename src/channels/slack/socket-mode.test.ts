@@ -5587,6 +5587,50 @@ describe("Slack inbound content fidelity roundtrip", () => {
   });
 });
 
+describe("Slack sensitive modal ingress ordering", () => {
+  it("consumes and erases a reserved credential envelope before the generic interaction pipeline", async () => {
+    const published: unknown[] = [];
+    const secret = "canary-only-modal-token-987654321";
+    const responseUrl = "https://hooks.slack.com/actions/TTEST/BTEST/response-canary";
+    const envelope: SlackSocketEnvelope = {
+      type: "interactive",
+      envelope_id: "credential-malformed-boundary",
+      payload: {
+        type: "view_submission",
+        view: { callback_id: "ravi_credential_intake:submit", state: { values: { secret } } },
+        response_url: responseUrl,
+      },
+    };
+    const service = new SlackSocketModeService({
+      accountId: "slack-intake-boundary",
+      appToken: "xapp-fixture",
+      botToken: "xoxb-fixture",
+      webClient: {} as SlackWebApiClient,
+      publishInteraction: async (...args) => {
+        published.push(args);
+      },
+      publishPrompt: async (...args) => {
+        published.push(args);
+      },
+      getRouterConfig: () => {
+        throw new Error("Sensitive modal must not enter routing");
+      },
+    });
+    const acks: unknown[] = [];
+    expect(
+      await service.handleEnvelope(envelope, (id, payload) => {
+        expect(JSON.stringify(envelope)).not.toContain(secret);
+        expect(JSON.stringify(envelope)).not.toContain(responseUrl);
+        acks.push({ id, payload });
+      }),
+    ).toBe("processed");
+    expect(published).toEqual([]);
+    expect(acks).toHaveLength(1);
+    expect(JSON.stringify(acks)).not.toContain(secret);
+    expect(JSON.stringify(acks)).not.toContain(responseUrl);
+  });
+});
+
 async function normalizeContentEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {
   const service = new SlackSocketModeService({
     accountId: "slack-content-test",
