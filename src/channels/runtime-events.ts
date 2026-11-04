@@ -455,12 +455,15 @@ export async function projectChannelRuntimeEvent(input: {
   const occurredAt = input.occurredAt ?? Date.now();
   const sinks = input.sinks ?? channelRuntimeEventSinks;
   const projected: KnownChannelRuntimeEvent[] = [];
+  const precedingNotifications: KnownChannelRuntimeEvent[] = [];
+  const event = input.event;
   let dispatchError: unknown;
   /** Records only while authorized and retains the first post-commit dispatch error. */
   const append = async (eventInput: RecordAndEmitInput) => {
     if (input.beforeRecordEvent?.(eventInput.state) === false) return;
     const recorded = await recordAndEmit({
       ...eventInput,
+      precedingNotifications,
       /** Re-evaluates the pure owner fence per DB attempt; an installed fence must return true. */
       mayWrite: () => (input.beforeRecordEvent ? input.beforeRecordEvent(eventInput.state) === true : true),
       afterRecordEvent: input.afterRecordEvent,
@@ -473,17 +476,31 @@ export async function projectChannelRuntimeEvent(input: {
   };
   const current = dbGetChannelBackendRuntimeState(metadata.binding.turnId);
   if (!current || current.state === "accepted") {
-    await append({
+    const bootstrap: RecordAndEmitInput = {
       metadata,
       kind: "turn.state_changed",
       state: "running",
       payload: { state: "running" },
       occurredAt,
       sinks,
-    });
+    };
+    if (event.type === "turn.failed") {
+      if (input.beforeRecordEvent?.("running") === false) return projected;
+      // Keep the terminal recorder's baseline after this commit, without yielding
+      // to a running notification that can retire the captured owner first.
+      const recorded = recordFailedTurnBootstrap({
+        ...bootstrap,
+        mayWrite: () => (input.beforeRecordEvent ? input.beforeRecordEvent("running") === true : true),
+        afterRecordEvent: input.afterRecordEvent,
+      });
+      if (!recorded) return projected;
+      projected.push(recorded);
+      precedingNotifications.push(recorded);
+    } else {
+      await append(bootstrap);
+    }
   }
 
-  const event = input.event;
   if (event.type === "text.delta" && event.text) {
     const phase = channelAssistantPhase(event.metadata);
     const chunks = splitChannelText(event.text);
@@ -741,6 +758,8 @@ interface RecordAndEmitInput {
   payload: unknown | EventPayloadFactory;
   occurredAt: number;
   sinks: ChannelRuntimeEventSinkRegistry;
+  /** Already committed bootstrap events, emitted inside the terminal's disposal scope. */
+  precedingNotifications?: readonly KnownChannelRuntimeEvent[];
   mayWrite?: () => boolean;
   prepareTerminalManifest?: (terminal: {
     state: ChannelBackendRuntimeState;
@@ -748,6 +767,60 @@ interface RecordAndEmitInput {
   }) => SlackAutomaticTerminalManifest;
   afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined, manifest?: SlackAutomaticTerminalManifest) => void;
   terminalRecovery?: ChannelTerminalRecoveryOptions;
+}
+
+/** Preserve the recorded sequence and payload instead of rereading the later terminal row. */
+function recordedRuntimeEvent(
+  input: RecordAndEmitInput,
+  persisted: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>,
+): KnownChannelRuntimeEvent {
+  const payload =
+    typeof input.payload === "function"
+      ? input.payload(
+          persisted.runtime.lastSequence,
+          persisted.runtime.assistantMessageId,
+          persisted.runtime.lastDeltaSequence,
+        )
+      : input.payload;
+  return KnownChannelRuntimeEventSchema.parse({
+    protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+    schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+    eventId: semanticEventId(input.kind, input.metadata.binding.turnId, String(persisted.runtime.lastSequence)),
+    kind: input.kind,
+    occurredAt: new Date(input.occurredAt).toISOString(),
+    sequence: persisted.runtime.lastSequence,
+    correlation: {
+      correlationId: input.metadata.correlationId,
+      causationId: input.metadata.ingressRequestId,
+      ingressRequestId: input.metadata.ingressRequestId,
+      binding: input.metadata.binding,
+    },
+    payload,
+  });
+}
+
+/**
+ * Persist the failure's bootstrap without a promise boundary or external sink.
+ * Its synchronous post-commit callback retains normal refusal semantics; this
+ * nonterminal step never prepares a manifest or acquires media disposal rights.
+ */
+function recordFailedTurnBootstrap(input: RecordAndEmitInput): KnownChannelRuntimeEvent | undefined {
+  if (input.mayWrite && input.mayWrite() !== true) return;
+  let persisted: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>;
+  try {
+    persisted = dbRecordChannelBackendRuntimeEvent({
+      turnId: input.metadata.binding.turnId,
+      state: "running",
+      runtimeGenerationId: channelRuntimeGenerationId,
+      occurredAt: input.occurredAt,
+      mayWrite: input.mayWrite,
+    });
+  } catch (error) {
+    if (error instanceof ChannelBackendRuntimeOwnershipLostError) return;
+    throw error;
+  }
+  input.afterRecordEvent?.("running", persisted.slackTerminalManifest);
+  return recordedRuntimeEvent(input, persisted);
 }
 
 /**
@@ -872,42 +945,22 @@ async function recordAndEmit(
       }
       afterCommit(persisted);
     }
-    const payload =
-      typeof input.payload === "function"
-        ? input.payload(
-            persisted.runtime.lastSequence,
-            persisted.runtime.assistantMessageId,
-            persisted.runtime.lastDeltaSequence,
-          )
-        : input.payload;
-    const event = KnownChannelRuntimeEventSchema.parse({
-      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
-      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
-      eventId: semanticEventId(input.kind, input.metadata.binding.turnId, String(persisted.runtime.lastSequence)),
-      kind: input.kind,
-      occurredAt: new Date(input.occurredAt).toISOString(),
-      sequence: persisted.runtime.lastSequence,
-      correlation: {
-        correlationId: input.metadata.correlationId,
-        causationId: input.metadata.ingressRequestId,
-        ingressRequestId: input.metadata.ingressRequestId,
-        binding: input.metadata.binding,
-      },
-      payload,
-    });
+    const event = recordedRuntimeEvent(input, persisted);
     let dispatchError: unknown;
-    try {
-      const deliveredLocally = await input.sinks.tryEmit(input.metadata.target, event);
-      if (!deliveredLocally) {
-        if (!channelBackendEgressRequester) {
-          throw new Error(
-            `Channel runtime event sink is unavailable for ${input.metadata.target.channelKind}/${input.metadata.target.connectionId}`,
-          );
+    for (const notification of [...(input.precedingNotifications ?? []), event]) {
+      try {
+        const deliveredLocally = await input.sinks.tryEmit(input.metadata.target, notification);
+        if (!deliveredLocally) {
+          if (!channelBackendEgressRequester) {
+            throw new Error(
+              `Channel runtime event sink is unavailable for ${input.metadata.target.channelKind}/${input.metadata.target.connectionId}`,
+            );
+          }
+          await channelBackendEgressRequester.emitRuntimeEvent(input.metadata.target, notification);
         }
-        await channelBackendEgressRequester.emitRuntimeEvent(input.metadata.target, event);
+      } catch (error) {
+        dispatchError ??= error;
       }
-    } catch (error) {
-      dispatchError = error;
     }
 
     if (output) {

@@ -3586,6 +3586,9 @@ function recordStreamingTurnInterruptedTrace(
 ): void {
   const requestedCompletedAt = Date.now();
   const existingTerminal = session.currentCrashRecoveryTerminal;
+  // A failed/interrupted provider terminal is already durable. Its host still
+  // owns the pending trace and usage; retirement must not seal an empty trace.
+  if (existingTerminal?.status === "failed" || existingTerminal?.status === "interrupted") return;
   if (!existingTerminal && !session.currentTraceTurnId && !session.currentCrashRecoveryAttemptId) {
     return;
   }

@@ -90,6 +90,175 @@ afterEach(async () => {
 });
 
 describe("channel runtime event projection", () => {
+  for (const invalidation of ["throw", "owner_lost"] as const) {
+    it(`keeps synchronous bootstrap callback refusal distinct from notification failure (${invalidation})`, async () => {
+      const metadata = await acceptedMetadata();
+      const events: KnownChannelRuntimeEvent[] = [];
+      const callbacks: Array<string | undefined> = [];
+      const refusal = new Error("bootstrap commit callback refused");
+      let owns = true;
+      const projection = projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.failed", error: "synthetic failure" },
+        sinks: runtimeSinks(metadata, events),
+        beforeRecordEvent: () => owns,
+        afterRecordEvent: (state) => {
+          callbacks.push(state);
+          if (state !== "running") return;
+          if (invalidation === "throw") throw refusal;
+          owns = false;
+        },
+      });
+      if (invalidation === "throw") await expect(projection).rejects.toBe(refusal);
+      else expect(await projection).toHaveLength(1);
+      expect(callbacks).toEqual(["running"]);
+      expect(events).toEqual([]);
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+        state: "running",
+        lastSequence: 1,
+      });
+    });
+  }
+
+  it("does not replay a committed failed terminal when its callback throws before notifications", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const callbacks: Array<string | undefined> = [];
+    const refusal = new Error("terminal commit callback refused");
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+    await expect(
+      projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.failed", error: "synthetic failure" },
+        sinks: runtimeSinks(metadata, events),
+        terminalRecovery: { mayRecover: () => true },
+        afterRecordEvent: (state) => {
+          callbacks.push(state);
+          if (state === "failed") throw refusal;
+        },
+      }),
+    ).rejects.toBe(refusal);
+    expect(callbacks).toEqual(["running", "failed"]);
+    expect(events).toEqual([]);
+    expect(outputs).toEqual([]);
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "failed",
+      lastSequence: 2,
+    });
+  });
+
+  it("commits failure before the first bootstrap notification can retire its owner", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const sinks = new ChannelRuntimeEventSinkRegistry();
+    let owns = true;
+    let bootstrapCalls = 0;
+    let stateAtBootstrap: ReturnType<typeof dbGetChannelBackendRuntimeState> | undefined;
+    sinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+        if (event.kind !== "turn.state_changed") return;
+        bootstrapCalls++;
+        stateAtBootstrap = dbGetChannelBackendRuntimeState(metadata.binding.turnId);
+        expect(event).toMatchObject({ sequence: 1, payload: { state: "running" } });
+        await Promise.resolve();
+        owns = false;
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    const projected = await projectChannelRuntimeEvent({
+      metadata,
+      event: { type: "turn.failed", error: "synthetic private failure", recoverable: false },
+      occurredAt: 1793810000000,
+      sinks,
+      beforeRecordEvent: () => owns,
+    });
+
+    expect(bootstrapCalls).toBe(1);
+    expect(owns).toBe(false);
+    expect(stateAtBootstrap).toMatchObject({ state: "failed", lastSequence: 2 });
+    expect(projected).toEqual(events);
+    expect(events.map((event) => [event.kind, event.sequence])).toEqual([
+      ["turn.state_changed", 1],
+      ["turn.terminal_output", 2],
+    ]);
+    expect(events[1]).toMatchObject({ payload: { state: "failed" }, correlation: { binding: metadata.binding } });
+    expect(events[0]?.occurredAt).toBe(events[1]?.occurredAt);
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({ kind: "safe_error", binding: metadata.binding, target: metadata.target });
+    expect(JSON.stringify([events, outputs])).not.toContain("synthetic private failure");
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "failed",
+      lastSequence: 2,
+    });
+  });
+
+  it("refuses a stale failure before the bootstrap write without notifying sinks", async () => {
+    const metadata = await acceptedMetadata();
+    const initial = dbGetChannelBackendRuntimeState(metadata.binding.turnId);
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+    const projected = await projectChannelRuntimeEvent({
+      metadata,
+      event: { type: "turn.failed", error: "synthetic failure" },
+      sinks: runtimeSinks(metadata, events),
+      beforeRecordEvent: () => false,
+    });
+    expect(projected).toEqual([]);
+    expect(events).toEqual([]);
+    expect(outputs).toEqual([]);
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toEqual(initial);
+  });
+
+  it("retains the bootstrap notification error while attempting the committed failure and output", async () => {
+    const metadata = await acceptedMetadata();
+    const firstError = new Error("bootstrap notification refused");
+    const order: string[] = [];
+    const sinks = new ChannelRuntimeEventSinkRegistry();
+    sinks.register(metadata.target, {
+      async emit(event) {
+        order.push(event.kind);
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("failed");
+        throw event.kind === "turn.state_changed" ? firstError : new Error("terminal notification refused");
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        order.push(output.kind);
+        expect(output.binding).toEqual(metadata.binding);
+        throw new Error("output refused");
+      },
+    });
+    await expect(
+      projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.failed", error: "synthetic failure" },
+        sinks,
+      }),
+    ).rejects.toBe(firstError);
+    expect(order).toEqual(["turn.state_changed", "turn.terminal_output", "safe_error"]);
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "failed",
+      lastSequence: 2,
+    });
+  });
+
   it("recovers only a missing text handoff despite an independent notification failure", async () => {
     const metadata = await acceptedMetadata("slack");
     const outputCalls: Array<{ output: ChannelOutputEnvelope; context?: ChannelOutputEmissionContext }> = [];

@@ -104,6 +104,14 @@ MUST both recover after expiry or restart.
 
 - Runtime events MUST use the accepted canonical binding and monotonically
   increasing sequence.
+- When a failed turn needs a running bootstrap, the bootstrap MUST be recorded
+  synchronously without an external sink await before terminal persistence.
+  After terminal commit, notifications MUST remain ordered running, failed,
+  then eligible safe-error output, using their captured envelopes. A bootstrap
+  notification failure MUST NOT prevent later authorized terminal/output
+  attempts. Post-commit callbacks retain their own failure semantics; callbacks
+  and refused writes MUST NOT be retried as notification failures. Readback
+  MAY already be failed when the historical running notification arrives.
 - Commentary, tool activity, deltas, terminal assistant content, failure, and
   interruption MUST remain distinct typed events.
 - A registered transport runtime-event sink MUST receive the validated

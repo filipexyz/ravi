@@ -2347,7 +2347,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   const recordUnterminatedTurnExit = () => {
     const currentTurnId = streaming.currentTraceTurnId;
-    if (crashRecovery?.ownershipFailure && !streaming.currentCrashRecoveryAttemptId) {
+    const acceptedTerminal = streaming.currentCrashRecoveryTerminal;
+    // Losing the live lease cannot revoke accounting for a physical failure
+    // already accepted by the durable ledger. Without that proof, stay closed.
+    const acceptedFailure = acceptedTerminal?.status === "failed" || acceptedTerminal?.status === "interrupted";
+    const leaseLostAfterTerminal = crashRecovery?.ownershipFailure && !streaming.currentCrashRecoveryAttemptId;
+    if (leaseLostAfterTerminal && !acceptedFailure) {
       return;
     }
     if ((!currentTurnId || streaming.currentTraceTurnTerminalRecorded) && !streaming.currentCrashRecoveryAttemptId) {
@@ -2363,6 +2368,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       reason === TOOL_INACTIVITY_REASON;
     const status = streaming.currentCrashRecoveryTerminal?.status ?? (timedOut ? "timeout" : "aborted");
     const eventType = runtimeTurnAttemptTerminalEventType(status);
+
+    if (leaseLostAfterTerminal) {
+      // This latch proves only the old attempt's durable outcome. Complete its
+      // historical usage without authorizing any diagnostic or terminal emit.
+      recordTerminalTraceOnce({
+        status,
+        eventType,
+        abortReason: reason,
+        completedAt: acceptedTerminal?.completedAt,
+        payloadJson: {
+          reason,
+          phase: "runtime.event_loop.finally",
+          providerTerminalRecorded: true,
+        },
+      });
+      return;
+    }
 
     log.warn("Runtime event loop ended with unterminated active turn", {
       runId,

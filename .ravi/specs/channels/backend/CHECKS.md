@@ -61,3 +61,8 @@
   a digest. Bun source tests or transpiler simulations MUST NOT be reported as
   that platform proof. Browser/edge validation MUST exercise the portable
   helper without a Node-module polyfill.
+
+- `src/channels/runtime-events.test.ts` checks failed bootstrap settlement before
+  first notification, captured sequence/order, pre-write refusal and first-error
+  precedence while still attempting eligible output. These assertions do not
+  grant replay authority or equate terminal persistence with transport delivery.
