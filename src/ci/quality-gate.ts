@@ -91,6 +91,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Real host/generator retention, owner and cancellation fences under memory-only isolation.
+    "src/runtime/direct-interrupted-retention.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
     // Signals piggyback: the transformTurnPrompt seam in the delivery queue.

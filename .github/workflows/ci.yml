@@ -65,6 +65,19 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Test direct interruption with retained memory state
+        run: bun --no-env-file run test:runtime-direct-interrupted
+
+      - name: Retain direct interruption evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-interrupted-retained-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ravi-test-artifacts/direct-interrupted/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Test Swift SDK
         run: bun run test:swift-sdk
 

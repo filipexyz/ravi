@@ -175,6 +175,13 @@ logical delivery id and MUST be isolated from later fresh atoms until the
 provider adapter reconciles the ambiguous outcome. An intentional provider or
 model restart is not an ambiguous replay and MAY retain normal batching.
 
+The host's logical interruption decision and the generator's post-turn drain
+MUST share the same queue selection. Interrupted superseded turns use the
+current-turn pending IDs; normal completion removes the handoff's captured
+yielded IDs. This selection MUST NOT recompute or relax durable replay safety
+after the host has cleared physical-turn fields. Retaining an unrelated
+successor MUST NOT imply continuation of the interrupted logical request.
+
 ## Producer Contract
 
 Every producer that calls `publishSessionPrompt` MUST choose one of these strategies:

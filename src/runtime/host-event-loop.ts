@@ -72,6 +72,11 @@ import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import {
+  canRetainDirectInterruptedRequest,
+  captureDirectInterruptedRequest,
+  mayProjectDirectInterruptedRequest,
+} from "./direct-interrupted-retention.js";
 import { classifyFatalToolFailure, FATAL_TOOL_FAILURE_REASON, type FatalToolFailure } from "./fatal-tool-failure.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
@@ -3119,6 +3124,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
       }
 
+      const directInterruptedRequest =
+        event.type === "turn.interrupted" ? captureDirectInterruptedRequest(streaming) : undefined;
+      /** Project only the accepted request, rechecking the current owner inside the DB boundary. */
+      const projectDirectInterruption = async (mayTerminalize: () => boolean = () => true) => {
+        if (event.type !== "turn.interrupted" || !directInterruptedRequest?.channelBackend) return;
+        await projectRuntimeEventToChannel(
+          event,
+          undefined,
+          directInterruptedRequest.channelBackend,
+          () =>
+            mayProjectDirectInterruptedRequest(
+              streaming,
+              directInterruptedRequest,
+              streamingSessions.get(sessionName),
+            ) && mayTerminalize(),
+        );
+      };
+
       if (event.type === "text.delta") {
         // The chunk can be queued for external emission below, so persist the
         // replay-safety fence before any projection or async work.
@@ -3150,20 +3173,26 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       await chunkEmitTail;
 
-      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+      if (event.type !== "turn.failed" && event.type !== "turn.interrupted" && event.type !== "assistant.message") {
         await projectRuntimeEventToChannel(
           event,
           event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
         );
       }
 
-      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
-        await emitRuntimeEvent({ ...stripRuntimeRawEvent(event), provider: runtimeSession.provider });
-      }
+      try {
+        if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+          await emitRuntimeEvent({ ...stripRuntimeRawEvent(event), provider: runtimeSession.provider });
+        }
 
-      if (event.type === "turn.complete" || event.type === "turn.interrupted") {
-        await releasePendingProviderRawEvent(correlatedProviderRawEvent);
-        suppressProviderRawForCurrentTurn = false;
+        if (event.type === "turn.complete" || event.type === "turn.interrupted") {
+          await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+          suppressProviderRawForCurrentTurn = false;
+        }
+      } catch (error) {
+        // No continuation was accepted when physical diagnostics aborted this path.
+        if (directInterruptedRequest) await projectDirectInterruption();
+        throw error;
       }
 
       // Track compaction status - block interrupts while compacting
@@ -4013,80 +4042,104 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "turn.interrupted") {
-        log.info("Turn interrupted", { runId, sessionName });
-        const interruptedReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
-        const interruptedCredential = streaming.currentRuntimeCredential;
-        if (
-          interruptedCredential?.authMethod === "model-broker" &&
-          interruptedCredential.attemptId &&
-          interruptedCredential.modelBrokerAttemptTerminal !== true
-        ) {
-          try {
-            await reportModelBrokerAbandoned(
-              interruptedCredential,
-              resolveModelBrokerEffectState(interruptedReplaySafety),
-            );
-            interruptedCredential.modelBrokerAttemptTerminal = true;
-          } catch (error) {
-            log.warn("Failed to terminalize model-broker attempt after provider interruption", {
-              runId,
-              sessionName,
-              attemptId: interruptedCredential.attemptId,
-              error,
-            });
+        try {
+          log.info("Turn interrupted", { runId, sessionName });
+          const interruptedReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+          const interruptedCredential = streaming.currentRuntimeCredential;
+          if (
+            interruptedCredential?.authMethod === "model-broker" &&
+            interruptedCredential.attemptId &&
+            interruptedCredential.modelBrokerAttemptTerminal !== true
+          ) {
+            try {
+              await reportModelBrokerAbandoned(
+                interruptedCredential,
+                resolveModelBrokerEffectState(interruptedReplaySafety),
+              );
+              interruptedCredential.modelBrokerAttemptTerminal = true;
+            } catch (error) {
+              log.warn("Failed to terminalize model-broker attempt after provider interruption", {
+                runId,
+                sessionName,
+                attemptId: interruptedCredential.attemptId,
+                error,
+              });
+            }
           }
-        }
-        recordTerminalTraceOnce({
-          status: "interrupted",
-          eventType: "turn.interrupted",
-          abortReason: streaming.internalAbortReason ?? "provider_interrupted",
-          payloadJson: {
-            metadata: event.metadata ?? null,
-            rawEvent: summarizeRuntimeFailureRawEvent(event.rawEvent) ?? null,
-          },
-        });
-        flushObservationEvents("turn.interrupt", {
-          provider: runtimeSession.provider,
-          reason: streaming.internalAbortReason ?? "provider_interrupted",
-          metadata: event.metadata ?? null,
-        });
-        const leftoverResponse = responseText.trim();
-        const providerEndedAfterCompletedTools = isProviderEndedAfterCompletedTools(streaming, interruptedReplaySafety);
-        if (providerEndedAfterCompletedTools) {
-          // Provider closed the prompt after tools already finished. Do not
-          // mark the generator interrupted (that logs a silent unexpected
-          // death). Keep successors and emit leftover text or a recovery hint.
-          streaming.interrupted = false;
-          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
-          log.info("Provider ended turn after completed tools; keeping session recoverable", {
-            runId,
-            sessionName,
-            remaining: streaming.pendingMessages.length,
-            startedTool: interruptedReplaySafety.startedTool,
-            materializedOutput: interruptedReplaySafety.materializedOutput,
-            durableBinding: interruptedReplaySafety.durableBinding,
-            toolRunning: streaming.toolRunning,
+          recordTerminalTraceOnce({
+            status: "interrupted",
+            eventType: "turn.interrupted",
+            abortReason: streaming.internalAbortReason ?? "provider_interrupted",
+            payloadJson: {
+              metadata: event.metadata ?? null,
+              rawEvent: summarizeRuntimeFailureRawEvent(event.rawEvent) ?? null,
+            },
           });
-          if (streaming.agentMode !== "sentinel") {
-            await emitResponse(
-              leftoverResponse || formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
-            );
-          }
-        } else {
-          streaming.interrupted = true;
-          if (!interruptedReplaySafety.replayable) {
-            const queuedBefore = streaming.pendingMessages.length;
+          flushObservationEvents("turn.interrupt", {
+            provider: runtimeSession.provider,
+            reason: streaming.internalAbortReason ?? "provider_interrupted",
+            metadata: event.metadata ?? null,
+          });
+          const leftoverResponse = responseText.trim();
+          const providerEndedAfterCompletedTools = isProviderEndedAfterCompletedTools(
+            streaming,
+            interruptedReplaySafety,
+          );
+          if (providerEndedAfterCompletedTools) {
+            // Provider closed the prompt after tools already finished. Do not
+            // mark the generator interrupted (that logs a silent unexpected
+            // death). Keep successors and emit leftover text or a recovery hint.
+            streaming.interrupted = false;
             streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
-            log.info("Discarding unsafe interrupted turn while preserving queued successors", {
+            log.info("Provider ended turn after completed tools; keeping session recoverable", {
               runId,
               sessionName,
-              discarded: queuedBefore - streaming.pendingMessages.length,
               remaining: streaming.pendingMessages.length,
               startedTool: interruptedReplaySafety.startedTool,
               materializedOutput: interruptedReplaySafety.materializedOutput,
               durableBinding: interruptedReplaySafety.durableBinding,
+              toolRunning: streaming.toolRunning,
             });
+            if (streaming.agentMode !== "sentinel") {
+              await emitResponse(
+                leftoverResponse || formatUserFacingTurnFailure(PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE),
+              );
+            }
+          } else {
+            streaming.interrupted = true;
+            if (!interruptedReplaySafety.replayable) {
+              const queuedBefore = streaming.pendingMessages.length;
+              streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+              log.info("Discarding unsafe interrupted turn while preserving queued successors", {
+                runId,
+                sessionName,
+                discarded: queuedBefore - streaming.pendingMessages.length,
+                remaining: streaming.pendingMessages.length,
+                startedTool: interruptedReplaySafety.startedTool,
+                materializedOutput: interruptedReplaySafety.materializedOutput,
+                durableBinding: interruptedReplaySafety.durableBinding,
+              });
+            }
           }
+          // Consult the same selection the generator will consume, after all
+          // replay-safety pruning and awaited diagnostics. A true decision has
+          // no await before cleanup and signalTurnComplete below.
+          const retainsAcceptedRequest = () =>
+            Boolean(
+              directInterruptedRequest &&
+                canRetainDirectInterruptedRequest(
+                  streaming,
+                  directInterruptedRequest,
+                  streamingSessions.get(sessionName),
+                ),
+            );
+          if (!retainsAcceptedRequest()) {
+            await projectDirectInterruption(() => !retainsAcceptedRequest());
+          }
+        } catch (error) {
+          // A failed diagnostic/response did not release this request for replay.
+          await projectDirectInterruption();
+          throw error;
         }
         responseText = "";
         channelResponseText = "";

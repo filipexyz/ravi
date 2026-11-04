@@ -36,6 +36,17 @@
 
 ## Safety
 
+- Run `bun --no-env-file run test:runtime-direct-interrupted` for the direct
+  interruption integration suite. Its dedicated runner supplies memory-only
+  SQLite, retained identity anchors/snapshots and filesystem/network guards.
+  Running the test file without that harness skips it and is not validation.
+- Direct `turn.interrupted` without a yield continuation: a bot and a human
+  accepted request retained by the real generator can produce a later final
+  under the same complete binding. Preserve physical interrupted accounting.
+- Keep normal final, provider-event-only, started-tool, explicit shutdown and
+  replacement-owner controls. Add full-envelope mismatch, successor-only,
+  supersession, materialized-output/input-mutation and awaited cancellation
+  races. No terminal/manifest/quota reset may make these cases pass.
 - Dirty workspace during rebase causes the agent to ask for keep/revert authorization before modifying files.
 - Rebase does not silently discard pending messages.
 - Rebase preserves actor metadata and source message ids.

@@ -28,6 +28,10 @@
   source/reply target and pending queue intact; no continuation is synthesized.
 - A later same-surface prompt MUST NOT bypass an earlier different surface.
 
+- The shared post-turn selection preserves normal yielded-ID removal,
+  unexpected-interruption retention and superseded-ID removal exactly. An
+  unrelated successor cannot authorize deferring the original request's
+  logical interruption, and no safety flag is reset to allow replay.
 - `after_response` / `followup` never calls provider interrupt during text generation.
 - `after_task` never calls provider interrupt during text generation or active task work.
 - `after_tool` / `steer` waits for startup, compaction, and tool barriers before interrupting.

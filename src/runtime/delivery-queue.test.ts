@@ -4,6 +4,7 @@ import {
   createQueuedRuntimeUserMessage,
   createRuntimeMessageGenerator,
   getDeliverableRuntimeMessages,
+  getRuntimeMessagesAfterTurn,
   pickRuntimeTurnAuthorityEnvelope,
   prepareRuntimeInterruptSuccessor,
   shouldInterruptRuntimeForIncoming,
@@ -109,6 +110,64 @@ describe("runtime delivery queue", () => {
       });
     }
   }
+  it("shares post-interrupt retention without changing pending identity or order", () => {
+    const accepted = createQueuedRuntimeUserMessage({ prompt: "accepted request" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "queued successor", deliveryBarrier: "after_task" });
+    const session = makeStreamingSession({
+      pendingMessages: [accepted, successor],
+      currentTurnPendingIds: [accepted.pendingId!],
+      interrupted: true,
+    });
+
+    const retained = getRuntimeMessagesAfterTurn(session, new Set([accepted.pendingId!]));
+
+    expect(retained).toBe(session.pendingMessages);
+    expect(retained).toEqual([accepted, successor]);
+    expect(retained[0]).toBe(accepted);
+    expect(retained[1]?.deliveryBarrier).toBe("after_task");
+    expect(session.interrupted).toBe(true);
+    expect(session.currentTurnPendingIds).toEqual([accepted.pendingId!]);
+  });
+
+  it("uses live superseded IDs rather than captured normal-completion IDs", () => {
+    const accepted = createQueuedRuntimeUserMessage({ prompt: "superseded request" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "replacement request" });
+    const session = makeStreamingSession({
+      pendingMessages: [accepted, successor],
+      currentTurnPendingIds: [accepted.pendingId!],
+      currentTurnSuperseded: true,
+      interrupted: true,
+    });
+
+    expect(getRuntimeMessagesAfterTurn(session, new Set([successor.pendingId!]))).toEqual([successor]);
+    expect(session.pendingMessages).toEqual([accepted, successor]);
+    expect(session.currentTurnSuperseded).toBe(true);
+  });
+
+  it("uses captured yielded IDs for normal completion and keeps unnamed queued atoms", () => {
+    const accepted = createQueuedRuntimeUserMessage({ prompt: "completed request" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "later request" });
+    const unnamed = { ...createQueuedRuntimeUserMessage({ prompt: "unnamed" }), pendingId: undefined };
+    const session = makeStreamingSession({
+      pendingMessages: [accepted, successor, unnamed],
+      currentTurnPendingIds: [successor.pendingId!],
+    });
+
+    expect(getRuntimeMessagesAfterTurn(session, new Set([accepted.pendingId!]))).toEqual([successor, unnamed]);
+    expect(session.pendingMessages).toEqual([accepted, successor, unnamed]);
+  });
+
+  it("preserves conservative interrupted selection when current-turn IDs are absent", () => {
+    const accepted = createQueuedRuntimeUserMessage({ prompt: "unclassified request" });
+    const session = makeStreamingSession({
+      pendingMessages: [accepted],
+      currentTurnSuperseded: true,
+      interrupted: true,
+    });
+
+    expect(getRuntimeMessagesAfterTurn(session, new Set([accepted.pendingId!]))).toBe(session.pendingMessages);
+    expect(session.currentTurnPendingIds).toBeUndefined();
+  });
 
   it("keeps admitted cron runs separate and preserves their identity in continuations", () => {
     const first = createQueuedRuntimeUserMessage({ prompt: "first", _cron: true, _jobId: "job", _cronRunId: "run-1" });

@@ -20,6 +20,7 @@ applies_to:
   - src/runtime/session-resolver.ts
   - src/runtime/session-dispatcher.ts
   - src/runtime/host-event-loop.ts
+  - src/runtime/direct-interrupted-retention.ts
   - src/runtime/types.ts
   - src/db.ts
   - src/session-trace
@@ -68,6 +69,16 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - Ravi MUST treat prompt atoms as the canonical replay boundary. Provider turns and provider threads are not precise enough when prompts are debounced, steered, or concatenated.
 - Ravi MUST persist enough prompt atom metadata to replay or rebase a session without depending on provider transcripts.
 - Ravi MUST record which prompt atoms were yielded to each provider turn.
+- A direct physical interruption MUST NOT terminalize a logical channel request
+  that the current live generator actually retains for a permitted replay. The
+  retained atom MUST match the accepted pending identity, complete launch
+  envelope and channel binding after the existing replay-safety filters.
+  Deferral requires the same runtime owner and no explicit cancellation; a
+  successor alone or a replay-safe flag is insufficient. Revalidate ownership
+  at logical projection and keep retention-to-generator notification synchronous.
+  A genuine terminal interruption still cancels the captured request, without
+  reopening terminal rows, manifests or quota. Physical trace/accounting and
+  provider/tool/output/input-mutation fences remain unchanged.
 - Ravi MUST record assistant outputs with enough turn/atom correlation to build a replay transcript when native fork is unavailable.
 - Provider-native fork MUST NOT be exposed as canonical Ravi fork until it can be mapped to Ravi fork points, persistence, traces, and parent/child session state.
 - `supportsSessionFork` MUST mean "this provider can materialize a Ravi fork plan for at least one declared fork point type", not merely "the provider has a native command named fork".
