@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "8b8105209951c237"
+    "version": "d7dfe7358b5fe4d7"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -161888,6 +161888,10 @@
     {
       "description": "Connect and manage your own accounts (Gmail, Calendar, ...) through Ravi Console",
       "name": "connectors"
+    },
+    {
+      "description": "Associate this Ravi installation with its Console",
+      "name": "console"
     },
     {
       "description": "Contact management",
