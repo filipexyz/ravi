@@ -135,14 +135,125 @@ const CONTROL_FIELDS = [
   "disabledReason",
 ] as const;
 
+/** The contrast failure contract is bounded independently of diagnostic text. */
+function projectContrastControl(
+  value: unknown,
+): { ok: boolean; failed: Array<{ pair: [string, string]; ratio: number; min: number }> } | undefined {
+  const ok = safeDiagnosticField(value, "ok");
+  const failed = safeDiagnosticField(value, "failed");
+  if (typeof ok !== "boolean" || !Array.isArray(failed)) return undefined;
+  const projected: Array<{ pair: [string, string]; ratio: number; min: number }> = [];
+  for (const check of boundedControlItems(failed)) {
+    const pair = safeDiagnosticField(check, "pair");
+    const foreground = safeDiagnosticField(pair, "0");
+    const background = safeDiagnosticField(pair, "1");
+    const ratio = safeDiagnosticField(check, "ratio");
+    const min = safeDiagnosticField(check, "min");
+    if (
+      !Array.isArray(pair) ||
+      safeDiagnosticField(pair, "length") !== 2 ||
+      typeof foreground !== "string" ||
+      typeof background !== "string" ||
+      typeof ratio !== "number" ||
+      !Number.isFinite(ratio) ||
+      ratio < 0 ||
+      typeof min !== "number" ||
+      !Number.isFinite(min) ||
+      min < 0
+    )
+      continue;
+    projected.push({
+      pair: [redactDiagnosticText(foreground).slice(0, 160), redactDiagnosticText(background).slice(0, 160)],
+      ratio,
+      min,
+    });
+  }
+  return { ok, failed: projected };
+}
+
+function operationalControlIdentifier(value: unknown, maxLength = 128): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= maxLength &&
+    /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(value) &&
+    redactDiagnosticText(value) === value
+  );
+}
+
+/** Read at most 32 values and never enumerate unrelated fields on provider objects. */
+function boundedControlItems(value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  const length = safeDiagnosticField(value, "length");
+  if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0) return [];
+  return Array.from({ length: Math.min(length, 32) }, (_, index) => safeDiagnosticField(value, String(index)));
+}
+
+function projectCandidateControls(
+  value: unknown,
+): Array<{ installationId: string; name: string | null; online: boolean; reportedAt: string | null }> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result: Array<{ installationId: string; name: string | null; online: boolean; reportedAt: string | null }> = [];
+  for (const candidate of boundedControlItems(value)) {
+    const installationId = safeDiagnosticField(candidate, "installationId");
+    const name = safeDiagnosticField(candidate, "name");
+    const online = safeDiagnosticField(candidate, "online");
+    const reportedAt = safeDiagnosticField(candidate, "reportedAt");
+    const validTimestamp =
+      typeof reportedAt === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(reportedAt) &&
+      Number.isFinite(Date.parse(reportedAt));
+    if (
+      !operationalControlIdentifier(installationId) ||
+      typeof online !== "boolean" ||
+      (name !== null && typeof name !== "string") ||
+      (reportedAt !== null && !validTimestamp)
+    )
+      continue;
+    result.push({
+      installationId,
+      name: name === null ? null : redactDiagnosticText(name).slice(0, 160),
+      online,
+      reportedAt: reportedAt as string | null,
+    });
+  }
+  return result;
+}
+
+function projectDriftControls(
+  value: unknown,
+): boolean | Array<{ file: string; reason: string; path?: string }> | undefined {
+  if (typeof value === "boolean") return value;
+  if (!Array.isArray(value)) return undefined;
+  const result: Array<{ file: string; reason: string; path?: string }> = [];
+  for (const item of boundedControlItems(value)) {
+    const file = safeDiagnosticField(item, "file");
+    const reason = safeDiagnosticField(item, "reason");
+    const path = safeDiagnosticField(item, "path");
+    if (typeof file !== "string" || typeof reason !== "string") continue;
+    const options = { secrets: typeof path === "string" && path ? [path] : [] };
+    result.push({
+      file: redactDiagnosticText(file, options).slice(0, 160),
+      reason: redactDiagnosticText(reason, options).slice(0, 400),
+      ...(typeof path === "string" ? { path: "[REDACTED:path]" } : {}),
+    });
+  }
+  return result;
+}
+
+function projectHttpControlUrl(value: unknown, key: string): string | undefined {
+  if (typeof value !== "string" || value.length > 2048 || !/^https?:\/\//i.test(value) || !URL.canParse(value))
+    return undefined;
+  const sanitized = sanitizePublicValue(value, key);
+  return typeof sanitized === "string" ? redactDiagnosticText(sanitized).slice(0, 2048) : undefined;
+}
+
 /** Domain controls describe the next action, never the underlying provider payload. */
 function projectOperationalControls(details: unknown): Record<string, unknown> {
   const controls: Record<string, unknown> = {};
   const read = (key: string) => safeDiagnosticField(details, key);
-  const identifier = (value: unknown): value is string =>
-    typeof value === "string" &&
-    /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value) &&
-    redactDiagnosticText(value) === value;
+  const contrast = projectContrastControl(read("contrast"));
+  if (contrast) controls.contrast = contrast;
+  const identifier = operationalControlIdentifier;
   const counter = (value: unknown): value is number =>
     typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
   const consoleError = read("consoleError");
@@ -152,7 +263,48 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
   if (typeof inputsHash === "string" && /^[0-9a-f]{16}$/i.test(inputsHash)) controls.inputsHash = inputsHash;
   const currentChat = read("currentChat");
   if (identifier(currentChat)) controls.currentChat = currentChat;
-  for (const key of ["retryAfterMs", "schemaVersion"] as const) {
+  const runId = read("runId");
+  if (identifier(runId, 80)) controls.runId = runId;
+  const proposalStatus = read("proposalStatus");
+  if (
+    typeof proposalStatus === "string" &&
+    ["draft", "proposed", "published", "superseded", "rejected", "withdrawn"].includes(proposalStatus)
+  )
+    controls.proposalStatus = proposalStatus;
+  if (read("routine") === "cron") controls.routine = "cron";
+  if (read("reason") === "admin_context_exists") controls.reason = "admin_context_exists";
+  for (const key of ["expectedSha", "actualSha"] as const) {
+    const value = read(key);
+    if (typeof value === "string" && /^[a-f0-9]{40}$/.test(value)) controls[key] = value;
+  }
+  const objectType = read("objectType");
+  if (objectType === "blob" || objectType === "tree" || objectType === "commit") controls.objectType = objectType;
+  const candidates = projectCandidateControls(read("candidates"));
+  if (candidates) controls.candidates = candidates;
+  const drift = projectDriftControls(read("drift"));
+  if (drift !== undefined) controls.drift = drift;
+  for (const key of ["dir", "path"] as const) if (typeof read(key) === "string") controls[key] = "[REDACTED:path]";
+  const allowedKeys = read("allowedKeys");
+  if (Array.isArray(allowedKeys))
+    controls.allowedKeys = boundedControlItems(allowedKeys).filter(
+      (value): value is string => typeof value === "string" && /^[A-Z][A-Z0-9_]{0,95}$/.test(value),
+    );
+  for (const key of ["installUrl", "connectUrl"] as const) {
+    const value = projectHttpControlUrl(read(key), key);
+    if (value) controls[key] = value;
+  }
+  for (const key of ["missingPermissions", "missingCapabilities", "unsupportedEventTypes"] as const) {
+    const value = read(key);
+    if (Array.isArray(value))
+      controls[key] = boundedControlItems(value).filter(
+        (item): item is string =>
+          typeof item === "string" &&
+          /^[A-Za-z0-9_*][A-Za-z0-9_.:*/-]{0,159}$/.test(item) &&
+          !item.includes("://") &&
+          redactDiagnosticText(item) === item,
+      );
+  }
+  for (const key of ["retryAfterMs", "schemaVersion", "liveBytes", "storedBytes"] as const) {
     const value = read(key);
     if (counter(value)) controls[key] = value;
   }

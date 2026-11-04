@@ -16,6 +16,9 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 - Typed resolution controls preserve version/scopes/retry/import guidance without
   copying row content, arbitrary nested provider properties or malformed values.
   CLI `[options]` remains readable; malformed/opaque payload containers stay redacted.
+- The existing `themes publish` validation test stays unchanged and retains
+  contrast feedback. More than 32 contrast pairs are truncated; invalid ratios,
+  extra properties and credential-bearing pair labels do not bypass projection.
 - Runtime intake/trace tests preserve typed lifecycle controls and the event's
   failure cause, with raw provider body, stack and cookie sentinels absent.
 - Diagnostic limits include the truncation marker and any path anonymization;

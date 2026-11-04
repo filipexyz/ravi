@@ -148,6 +148,14 @@ The canonical failure value is a `ContractError` and its envelope:
   retry/schema/import counters. A version conflict exposes only the current row
   ID/version and instructs the caller to re-read it; it MUST NOT copy row values
   or body into the failure. Organization guidance projects only its redacted name.
+  Theme validation keeps `contrast: {ok, failed}` with at most 32 failed pairs.
+  Each pair has two redacted strings bounded to 160 characters, a finite
+  nonnegative ratio and minimum; arbitrary nested properties are excluded.
+  SDK drift, publication verification, proposal status, candidate machines and
+  watch setup keep their declared bounded control shapes. Environment metadata
+  exposes permitted key names, never values. Raw provider reason objects remain
+  excluded; the local daemon classification `admin_context_exists` is an enum.
+  The command/wrapper audit is recorded in `design/error-control-inventory.md`.
   Failure trace payloads retain typed lifecycle controls (intake reason/stage,
   agent ID, recovery/abort classification, retry counters and boolean state).
   A payload containing only those controls uses the event's error as its cause;

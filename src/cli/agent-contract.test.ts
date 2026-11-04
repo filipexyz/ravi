@@ -67,6 +67,236 @@ describe("ContractError mandatory diagnostic", () => {
   });
 });
 
+describe("audited operational error controls", () => {
+  const envelope = (details: Record<string, unknown>) =>
+    new ContractError("demo", "COMMAND_FAILED", "Operation failed.", 1, {
+      ...errorDiagnostic(new Error("Operation failed.")),
+      ...details,
+    }).envelope().error;
+
+  it("retains typed recovery and publication metadata without forwarding nested payloads", () => {
+    const result = envelope({
+      runId: "run_123",
+      proposalStatus: "proposed",
+      routine: "cron",
+      expectedSha: "a".repeat(40),
+      actualSha: "b".repeat(40),
+      objectType: "tree",
+      reason: "admin_context_exists",
+      liveBytes: 256,
+      storedBytes: 0,
+      allowedKeys: ["OPENAI_API_KEY", "RAVI_LOG_LEVEL"],
+      path: "/PRIVATE_OPENAPI_PATH/openapi.json",
+      dir: "/PRIVATE_SDK_DIR",
+      candidates: [
+        {
+          installationId: "install_1",
+          name: "Desk",
+          online: true,
+          reportedAt: "2026-11-04T14:00:00Z",
+          body: "PRIVATE_BODY",
+        },
+        { installationId: "install_2", name: null, online: false, reportedAt: null },
+      ],
+      arbitrary: "PRIVATE_ARBITRARY",
+    });
+    expect(result).toMatchObject({
+      runId: "run_123",
+      proposalStatus: "proposed",
+      routine: "cron",
+      reason: "admin_context_exists",
+      expectedSha: "a".repeat(40),
+      actualSha: "b".repeat(40),
+      objectType: "tree",
+      liveBytes: 256,
+      storedBytes: 0,
+      allowedKeys: ["OPENAI_API_KEY", "RAVI_LOG_LEVEL"],
+      path: "[REDACTED:path]",
+      dir: "[REDACTED:path]",
+      candidates: [
+        { installationId: "install_1", name: "Desk", online: true, reportedAt: "2026-11-04T14:00:00Z" },
+        { installationId: "install_2", name: null, online: false, reportedAt: null },
+      ],
+    });
+    expect(result.candidates).toEqual([
+      { installationId: "install_1", name: "Desk", online: true, reportedAt: "2026-11-04T14:00:00Z" },
+      { installationId: "install_2", name: null, online: false, reportedAt: null },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_");
+  });
+
+  it("redacts text and private SDK paths while keeping actionable watch patterns", () => {
+    const path = "/private/PRIVATE_DRIFT_PATH/types.ts";
+    const result = envelope({
+      candidates: [{ installationId: "install_1", name: "Desk?key=PRIVATE_NAME", online: true, reportedAt: null }],
+      drift: [
+        { file: "types.ts", reason: `missing on disk (${path}); token=PRIVATE_REASON`, path, body: "PRIVATE_BODY" },
+      ],
+      installUrl: "https://user:PRIVATE_PASSWORD@console.example/install?token=PRIVATE_QUERY#PRIVATE_FRAGMENT",
+      connectUrl: "https://console.example/connect/PRIVATE_PATH?key=PRIVATE_KEY",
+      missingPermissions: ["pull_requests:read", "repo?token=PRIVATE_PERMISSION"],
+      missingCapabilities: ["use:tool:*", "PRIVATE_CAPABILITY?key=secret"],
+      unsupportedEventTypes: ["watch.github.*", "https://PRIVATE_EVENT.invalid"],
+    });
+    expect(result.candidates).toEqual([
+      { installationId: "install_1", name: "Desk?[redacted:url-query]", online: true, reportedAt: null },
+    ]);
+    expect(result.drift).toEqual([
+      { file: "types.ts", reason: expect.stringContaining("missing on disk"), path: "[REDACTED:path]" },
+    ]);
+    expect(result.installUrl).toBe("https://console.example");
+    expect(result.connectUrl).toBe("https://console.example");
+    expect(result.missingPermissions).toEqual(["pull_requests:read"]);
+    expect(result.missingCapabilities).toEqual(["use:tool:*"]);
+    expect(result.unsupportedEventTypes).toEqual(["watch.github.*"]);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_");
+    expect(JSON.stringify(result)).not.toContain(path);
+    expect(envelope({ drift: false }).drift).toBe(false);
+    expect(envelope({ drift: true }).drift).toBe(true);
+  });
+
+  it("bounds operational arrays to 32 entries and display text independently", () => {
+    const result = envelope({
+      candidates: Array.from({ length: 40 }, (_, i) => ({
+        installationId: `install_${i}`,
+        name: "Desk ".repeat(100),
+        online: true,
+        reportedAt: null,
+      })),
+      drift: Array.from({ length: 40 }, (_, i) => ({
+        file: `file${i}_${"name".repeat(50)}`,
+        reason: "missing on disk ".repeat(100),
+      })),
+      allowedKeys: Array.from({ length: 40 }, (_, i) => `ENV_KEY_${i}`),
+      missingPermissions: Array.from({ length: 40 }, (_, i) => `permission.${i}`),
+      missingCapabilities: Array.from({ length: 40 }, (_, i) => `use:tool:${i}`),
+      unsupportedEventTypes: Array.from({ length: 40 }, (_, i) => `event.${i}`),
+    });
+    for (const key of [
+      "candidates",
+      "drift",
+      "allowedKeys",
+      "missingPermissions",
+      "missingCapabilities",
+      "unsupportedEventTypes",
+    ])
+      expect(result[key]).toHaveLength(32);
+    const candidate = (result.candidates as Array<{ name: string }>)[0]!;
+    const drift = (result.drift as Array<{ file: string; reason: string }>)[0]!;
+    expect(candidate.name.length).toBeLessThanOrEqual(160);
+    expect(drift.file.length).toBeLessThanOrEqual(160);
+    expect(drift.reason.length).toBeLessThanOrEqual(400);
+    expect(JSON.stringify(result)).not.toContain("install_32");
+  });
+
+  it("rejects malformed types, unknown enum values and credential-bearing identifiers", () => {
+    const result = envelope({
+      runId: "run?token=PRIVATE_RUN",
+      proposalStatus: "pending",
+      routine: "webhook",
+      reason: "PRIVATE_REASON",
+      expectedSha: "a".repeat(41),
+      actualSha: "g".repeat(40),
+      objectType: "tag",
+      liveBytes: -1,
+      storedBytes: Infinity,
+      path: {},
+      dir: 1,
+      installUrl: "javascript:PRIVATE_URL",
+      connectUrl: `https://example.test/${"a".repeat(2048)}`,
+      candidates: [
+        { installationId: "install_1", name: "Desk", online: true, reportedAt: "PRIVATE_TIMESTAMP" },
+        { installationId: "install_2", name: "Desk", online: "true", reportedAt: null },
+        { installationId: "install?key=PRIVATE_ID", name: null, online: true, reportedAt: null },
+      ],
+      drift: [
+        { file: {}, reason: "PRIVATE_REASON" },
+        { file: "types.ts", reason: 12 },
+      ],
+      allowedKeys: ["lowercase", "KEY=PRIVATE_VALUE", "K".repeat(97), 12],
+      missingPermissions: ["Authorization: Bearer PRIVATE_TOKEN", {}],
+    });
+    for (const key of [
+      "runId",
+      "proposalStatus",
+      "routine",
+      "reason",
+      "expectedSha",
+      "actualSha",
+      "objectType",
+      "liveBytes",
+      "storedBytes",
+      "path",
+      "dir",
+      "installUrl",
+      "connectUrl",
+    ])
+      expect(result).not.toHaveProperty(key);
+    for (const key of ["candidates", "drift", "allowedKeys", "missingPermissions"]) expect(result[key]).toEqual([]);
+    expect(envelope({ runId: "r".repeat(81) })).not.toHaveProperty("runId");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_");
+  });
+
+  it("does not evaluate arbitrary nested getters and tolerates a throwing allowed getter", () => {
+    let unknownReads = 0;
+    const result = envelope({
+      candidates: [
+        {
+          installationId: "install_1",
+          name: null,
+          online: true,
+          reportedAt: null,
+          get body() {
+            unknownReads++;
+            throw new Error("PRIVATE_BODY");
+          },
+        },
+      ],
+      drift: [
+        {
+          file: "types.ts",
+          reason: "byte mismatch",
+          get path() {
+            throw new Error("PRIVATE_PATH");
+          },
+          get body() {
+            unknownReads++;
+            throw new Error("PRIVATE_BODY");
+          },
+        },
+      ],
+    });
+    expect(result.candidates).toHaveLength(1);
+    expect(result.drift).toEqual([{ file: "types.ts", reason: "byte mismatch" }]);
+    expect(unknownReads).toBe(0);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_");
+  });
+
+  it("ignores a throwing contrast pair getter while preserving the cause and other checks", () => {
+    const pair = ["text.muted", "surface.page"];
+    Object.defineProperty(pair, "0", {
+      get() {
+        throw new Error("PRIVATE_PAIR_GETTER");
+      },
+    });
+    const result = envelope({
+      contrast: {
+        ok: false,
+        failed: [
+          { pair, ratio: 3.1, min: 4.5 },
+          { pair: ["text.primary", "surface.page"], ratio: 3.2, min: 4.5 },
+        ],
+      },
+    });
+    expect(result.cause).toBe("Operation failed.");
+    expect(result.contrast).toEqual({
+      ok: false,
+      failed: [{ pair: ["text.primary", "surface.page"], ratio: 3.2, min: 4.5 }],
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_");
+  });
+});
+
 describe("publicContractMessage", () => {
   it("preserves a sanitized COMMAND_FAILED cause instead of replacing it", () => {
     const cause = "CLI/runtime mismatch detected. Pass --allow-runtime-mismatch if you really mean it.";
@@ -206,6 +436,53 @@ describe("public expected-error credentials", () => {
 });
 
 describe("diagnostic identifier egress", () => {
+  it("bounds contrast failures to 32 pairs and projects only their redacted typed fields", () => {
+    const failed = Array.from({ length: 40 }, (_, index) => ({
+      pair: [`text.color${index}`, "surface.page"],
+      ratio: 3.1,
+      min: 4.5,
+      body: "PRIVATE_CHECK_BODY",
+    }));
+    failed[0]!.pair[0] = "text.color?key=PRIVATE_PAIR_SECRET";
+    const error = new ContractError("themes publish", "THEME_INVALID", "Theme has errors.", 2, {
+      ...errorDiagnostic(new Error("Theme has errors.")),
+      contrast: { ok: false, failed, body: "PRIVATE_CONTRAST_BODY" },
+      arbitrary: "PRIVATE_ARBITRARY",
+    });
+    const contrast = error.envelope().error.contrast as {
+      ok: boolean;
+      failed: Array<{ pair: [string, string]; ratio: number; min: number }>;
+    };
+    expect(contrast.ok).toBe(false);
+    expect(contrast.failed).toHaveLength(32);
+    expect(contrast.failed[0]).toEqual({
+      pair: ["text.color?[redacted:url-query]", "surface.page"],
+      ratio: 3.1,
+      min: 4.5,
+    });
+    expect(contrast.failed[31]).toEqual({ pair: ["text.color31", "surface.page"], ratio: 3.1, min: 4.5 });
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_");
+    expect(JSON.stringify(error.envelope())).not.toContain("text.color32");
+  });
+
+  it("rejects malformed contrast fields without coercing them", () => {
+    const error = new ContractError("themes publish", "THEME_INVALID", "Theme has errors.", 2, {
+      ...errorDiagnostic(new Error("Theme has errors.")),
+      contrast: {
+        ok: false,
+        failed: [
+          { pair: ["a", "b", "PRIVATE_THIRD"], ratio: 3, min: 4.5 },
+          { pair: ["a", {}], ratio: 3, min: 4.5 },
+          { pair: ["a", "b"], ratio: Infinity, min: 4.5 },
+          { pair: ["a", "b"], ratio: 3, min: -1 },
+          { pair: ["a", "b"], ratio: "3", min: 4.5 },
+        ],
+      },
+    });
+    expect(error.envelope().error.contrast).toEqual({ ok: false, failed: [] });
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_");
+  });
+
   it("preserves typed resolution controls while excluding provider row contents and arbitrary nested fields", () => {
     const error = new ContractError("bases rows update", "VERSION_CONFLICT", "Row changed.", 1, {
       ...errorDiagnostic(new Error("Row changed.")),
