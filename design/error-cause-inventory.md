@@ -307,33 +307,33 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/markdown-delivery.ts | 221 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:ccc0ed294946bae8a53fdb64 |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 222 | triaged-follow-up | rejection-without-binding | src/channels/slack/markdown-delivery.ts:ddbbf99b5618436506c18e7a |
 | channels-slack | src/channels/slack/media.ts | 164 | triaged-follow-up | catch-without-binding | src/channels/slack/media.ts:c080cae772801e60d5e1b98b |
-| channels-slack | src/channels/slack/socket-mode.ts | 333 | triaged-follow-up | catch-without-binding | src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0 |
-| channels-slack | src/channels/slack/socket-mode.ts | 405 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f9d1467f6e1de69cf31a8d52 |
-| channels-slack | src/channels/slack/socket-mode.ts | 486 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:6099dacad897d9487e5c0270 |
-| channels-slack | src/channels/slack/socket-mode.ts | 635 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7ef09df6c56777f5f2bc6163 |
-| channels-slack | src/channels/slack/socket-mode.ts | 647 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0d0875beb51d8ee37728b4d7 |
-| channels-slack | src/channels/slack/socket-mode.ts | 808 | triaged-follow-up | rejection-without-binding | src/channels/slack/socket-mode.ts:c2fdb542c65974c643e5b417 |
-| channels-slack | src/channels/slack/socket-mode.ts | 912 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:2298c74b282248b55c65f18a |
-| channels-slack | src/channels/slack/socket-mode.ts | 954 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:8e06965b6f7a08e847fe71dd |
-| channels-slack | src/channels/slack/socket-mode.ts | 978 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:76304872a7b7f5af84a766fb |
-| channels-slack | src/channels/slack/socket-mode.ts | 1006 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:4d9f3fbb21e3fcb6365994bf |
-| channels-slack | src/channels/slack/socket-mode.ts | 1014 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:360946747d4fd544bc197402 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1045 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c696a2f9983f8285c39ffe60 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1118 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0a240ad0d74775d8567b1500 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1158 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:b50e34b43048777fab39930d |
-| channels-slack | src/channels/slack/socket-mode.ts | 1227 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c4932057c509541d62020a35 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1385 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7a31d102bae43811b1e22488 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1552 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:75b1ddfaffa11c9a57945410 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1608 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:cc425e50d06483314ccdd599 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1871 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:860e2b2e0726e3796bd40958 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1906 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e7cc946eb68d118ae004c1c7 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1995 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:9ad24298b226ed9d4f0aa0ca |
-| channels-slack | src/channels/slack/socket-mode.ts | 2013 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e02fe64267df2775c851ecc0 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2318 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:023e0658ddc9f4d90e557bca |
-| channels-slack | src/channels/slack/socket-mode.ts | 2331 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:eee9b1dca53f26e40d046797 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2375 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c52256502098f1fcdf6ed28d |
-| channels-slack | src/channels/slack/socket-mode.ts | 2764 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:ece0f2429234cdb1c2567c17 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2893 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:bca6f7f65214760682070030 |
+| channels-slack | src/channels/slack/socket-mode.ts | 334 | triaged-follow-up | catch-without-binding | src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0 |
+| channels-slack | src/channels/slack/socket-mode.ts | 406 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f9d1467f6e1de69cf31a8d52 |
+| channels-slack | src/channels/slack/socket-mode.ts | 487 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:6099dacad897d9487e5c0270 |
+| channels-slack | src/channels/slack/socket-mode.ts | 636 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7ef09df6c56777f5f2bc6163 |
+| channels-slack | src/channels/slack/socket-mode.ts | 648 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0d0875beb51d8ee37728b4d7 |
+| channels-slack | src/channels/slack/socket-mode.ts | 809 | triaged-follow-up | rejection-without-binding | src/channels/slack/socket-mode.ts:c2fdb542c65974c643e5b417 |
+| channels-slack | src/channels/slack/socket-mode.ts | 913 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:2298c74b282248b55c65f18a |
+| channels-slack | src/channels/slack/socket-mode.ts | 955 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:8e06965b6f7a08e847fe71dd |
+| channels-slack | src/channels/slack/socket-mode.ts | 979 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:76304872a7b7f5af84a766fb |
+| channels-slack | src/channels/slack/socket-mode.ts | 1007 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:4d9f3fbb21e3fcb6365994bf |
+| channels-slack | src/channels/slack/socket-mode.ts | 1015 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:360946747d4fd544bc197402 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1046 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c696a2f9983f8285c39ffe60 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1119 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0a240ad0d74775d8567b1500 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1159 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:b50e34b43048777fab39930d |
+| channels-slack | src/channels/slack/socket-mode.ts | 1228 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c4932057c509541d62020a35 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1386 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7a31d102bae43811b1e22488 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1553 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:75b1ddfaffa11c9a57945410 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1609 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:cc425e50d06483314ccdd599 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1872 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:860e2b2e0726e3796bd40958 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1907 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e7cc946eb68d118ae004c1c7 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1996 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:9ad24298b226ed9d4f0aa0ca |
+| channels-slack | src/channels/slack/socket-mode.ts | 2014 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e02fe64267df2775c851ecc0 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2319 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:023e0658ddc9f4d90e557bca |
+| channels-slack | src/channels/slack/socket-mode.ts | 2332 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:eee9b1dca53f26e40d046797 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2376 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c52256502098f1fcdf6ed28d |
+| channels-slack | src/channels/slack/socket-mode.ts | 2765 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:ece0f2429234cdb1c2567c17 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2894 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:bca6f7f65214760682070030 |
 | channels-slack | src/channels/slack/text-send.ts | 173 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:0f1bf349b3fa2225c2574ce2 |
 | channels-slack | src/channels/slack/text-send.ts | 182 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:9945b3a4b2a039c94559999f |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 178 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b911f7b0646fdb37c1036be1 |
@@ -1605,9 +1605,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/credentials-store.ts | 87 | fixed | binding retained / no recognized error surface | src/runtime/credentials-store.ts:5fa4671927e8c37f289ded1a |
 | runtime-chat | src/runtime/daemon-restart-resume.ts | 272 | fixed | binding retained / no recognized error surface | src/runtime/daemon-restart-resume.ts:5bd341dd1bb44fd731706f3f |
 | runtime-chat | src/runtime/daemon-restart-resume.ts | 279 | fixed | binding retained / no recognized error surface | src/runtime/daemon-restart-resume.ts:5aa3f4c09d77703124f07b8f |
-| runtime-chat | src/runtime/delivery-queue.ts | 621 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:a717aade523ae78f6d2748d7 |
-| runtime-chat | src/runtime/delivery-queue.ts | 726 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:bb2022bcefeb349c6e90cfe8 |
-| runtime-chat | src/runtime/delivery-queue.ts | 745 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:aa85be7e8ba016a54aa934c8 |
+| runtime-chat | src/runtime/delivery-queue.ts | 589 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:a717aade523ae78f6d2748d7 |
+| runtime-chat | src/runtime/delivery-queue.ts | 694 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:bb2022bcefeb349c6e90cfe8 |
+| runtime-chat | src/runtime/delivery-queue.ts | 713 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:aa85be7e8ba016a54aa934c8 |
 | runtime-chat | src/runtime/goal-control-host.ts | 100 | fixed | binding retained / no recognized error surface | src/runtime/goal-control-host.ts:419567cd65986152a9638268 |
 | runtime-chat | src/runtime/grok-provider.ts | 464 | triaged-follow-up | rejection-without-binding | src/runtime/grok-provider.ts:3b6220acecff5afe5c4c61f6 |
 | runtime-chat | src/runtime/grok-provider.ts | 486 | triaged-follow-up | rejection-without-binding | src/runtime/grok-provider.ts:3b6220acecff5afe5c4c61f6 |
@@ -1786,14 +1786,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/runtime/session-dispatcher.ts | 2552 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:cf08f65d293c9575f0ea6959 |
 | sessions | src/runtime/session-dispatcher.ts | 2568 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f3a9e29dec513be89b423239 |
 | sessions | src/runtime/session-dispatcher.ts | 2701 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:1b0ec88b5e9890b937d700e2 |
-| sessions | src/runtime/session-dispatcher.ts | 2754 | triaged-follow-up | rejection-without-binding | src/runtime/session-dispatcher.ts:3492c97db9af80a465fd92bf |
-| sessions | src/runtime/session-dispatcher.ts | 2876 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:85b0fe593d30d58509983a67 |
-| sessions | src/runtime/session-dispatcher.ts | 2928 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:85b0fe593d30d58509983a67 |
-| sessions | src/runtime/session-dispatcher.ts | 2957 | triaged-follow-up | surface-bypasses-constructor | src/runtime/session-dispatcher.ts:aaa52d8cc280e8c4c5c5db58 |
-| sessions | src/runtime/session-dispatcher.ts | 3020 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:3f040970fed01bb89639a3cc |
-| sessions | src/runtime/session-dispatcher.ts | 3152 | triaged-follow-up | catch-without-binding | src/runtime/session-dispatcher.ts:855c60e17e371364329f36ef |
-| sessions | src/runtime/session-dispatcher.ts | 3472 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:83c38f7b3c42a656b76aaef9 |
-| sessions | src/runtime/session-dispatcher.ts | 3626 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:9fddb1856b8b7217e6bf2e4c |
+| sessions | src/runtime/session-dispatcher.ts | 2753 | triaged-follow-up | rejection-without-binding | src/runtime/session-dispatcher.ts:3492c97db9af80a465fd92bf |
+| sessions | src/runtime/session-dispatcher.ts | 2875 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:85b0fe593d30d58509983a67 |
+| sessions | src/runtime/session-dispatcher.ts | 2927 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:85b0fe593d30d58509983a67 |
+| sessions | src/runtime/session-dispatcher.ts | 2956 | triaged-follow-up | surface-bypasses-constructor | src/runtime/session-dispatcher.ts:aaa52d8cc280e8c4c5c5db58 |
+| sessions | src/runtime/session-dispatcher.ts | 3019 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:3f040970fed01bb89639a3cc |
+| sessions | src/runtime/session-dispatcher.ts | 3151 | triaged-follow-up | catch-without-binding | src/runtime/session-dispatcher.ts:855c60e17e371364329f36ef |
+| sessions | src/runtime/session-dispatcher.ts | 3471 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:83c38f7b3c42a656b76aaef9 |
+| sessions | src/runtime/session-dispatcher.ts | 3625 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:9fddb1856b8b7217e6bf2e4c |
 | sessions | src/runtime/session-goals.ts | 226 | fixed | binding retained / no recognized error surface | src/runtime/session-goals.ts:4ef050b2e8731ddd08e57a55 |
 | sessions | src/runtime/session-goals.ts | 500 | fixed | binding retained / no recognized error surface | src/runtime/session-goals.ts:2d19ffb7f402a9dd80b4b3d6 |
 | sessions | src/runtime/session-launcher.ts | 201 | fixed | binding retained / no recognized error surface | src/runtime/session-launcher.ts:786b7b96bc8faf7b7df73e4f |
