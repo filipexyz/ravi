@@ -2711,6 +2711,7 @@ describe("RaviBot streaming session lifecycle", () => {
 
   it("emits generated media on a native Slack backend turn without duplicating the backend-owned text", async () => {
     const sessionKey = "agent:main:generated-media-slack-backend";
+    const sessionName = "generated-media-slack-backend";
     const whatsappDefault = makeRuntimeGuardChat({
       suffix: "generated-media-backend-whatsapp-default",
       channel: "whatsapp",
@@ -2725,10 +2726,48 @@ describe("RaviBot streaming session lifecycle", () => {
       chatType: "thread",
     });
     attachMultiSurfaceOutputForSession({ sessionKey, defaultChat: whatsappDefault, sourceChat: slackSource });
+    actualRouterIndexModule.updateSessionName(sessionKey, sessionName);
+    getOrCreateSessionState(sessionKey, "main", "/tmp/ravi-test-bot/main", { name: sessionName });
     streamGeneratedImageTurn("texto do backend");
 
+    const target = {
+      channelKind: "slack",
+      connectionId: "slack-main",
+      conversationId: "CBACKEND~1781576000.010449",
+    };
+    const providerMessageId = "1781576000.010450";
+    const message = actualRouterDbModule.dbUpsertChatMessage({
+      chatId: slackSource.id,
+      channel: "slack",
+      instanceId: "slack-main",
+      providerMessageId,
+      rawChatId: "CBACKEND",
+      actorType: "unknown",
+      rawProvenance: { source: "slack.socket_mode", senderKind: "user" },
+    });
+    // Native backend metadata must refer to an accepted canonical human input.
+    const ingress = actualRouterDbModule.dbAcceptChannelBackendIngress({
+      channelInstanceId: "slack-main",
+      idempotencyKey: "generated-media-slack-backend",
+      requestFingerprint: "generated-media-slack-backend-fingerprint",
+      requestId: "request-generated-media-slack-backend",
+      localActorId: "slack-human",
+      agentId: "main",
+      clientMessageId: providerMessageId,
+      sessionKey,
+      sessionName,
+      turnId: "turn-generated-media-slack-backend",
+      external: { ...target, senderId: "UHUMAN", messageId: providerMessageId },
+      canonical: { chatId: slackSource.id, messageId: message.canonicalMessageId },
+      content: { text: "gera imagem no backend slack" },
+      receivedAt: Date.now(),
+    });
+    expect(ingress.status).toBe("accepted");
+    if (ingress.status === "conflict") throw new Error("Fixture ingress conflicted");
+    const receipt = ingress.receipt;
+
     const bot = createBot();
-    await (bot as any).handlePromptImmediate(sessionKey, {
+    await (bot as any).handlePromptImmediate(sessionName, {
       ...promptForChat("gera imagem no backend slack", slackSource),
       _channelBackend: {
         protocol: "ravi.channel.backend",
@@ -2736,23 +2775,19 @@ describe("RaviBot streaming session lifecycle", () => {
         ingressRequestId: "request-generated-media-slack-backend",
         correlationId: "correlation-generated-media-slack-backend",
         binding: {
-          channelInstanceId: "slack-main",
-          agentId: "main",
-          chatId: slackSource.id,
-          messageId: "message-generated-media-slack-backend",
-          sessionId: sessionKey,
-          turnId: "turn-generated-media-slack-backend",
+          channelInstanceId: receipt.channelInstanceId,
+          agentId: receipt.agentId,
+          chatId: receipt.chatId,
+          messageId: receipt.messageId,
+          sessionId: receipt.sessionName,
+          turnId: receipt.turnId,
         },
-        target: {
-          channelKind: "slack",
-          connectionId: "slack-main",
-          conversationId: "CBACKEND",
-        },
+        target,
       },
     });
-    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionName}.response`));
 
-    const responses = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`);
+    const responses = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionName}.response`);
     expect(responses).toHaveLength(1);
     expect(responses[0]?.data).toMatchObject({
       response: "",
