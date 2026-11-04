@@ -289,7 +289,17 @@ describe("credential intake boundary", () => {
     expect(statSync(secretDirectory).mode & 0o777).toBe(0o700);
     expect(statSync(secretPath).mode & 0o777).toBe(0o600);
     expect(readFileSync(secretPath, "utf8")).toBe(TOKEN);
-    const resolved = await resolveCredentialSecret({ provider: "github", connection: "local-test", action: "whoami" });
+    // Intake grants no use authority. The merged broker refuses an absent
+    // caller; this isolated host-side integration must declare its own intent.
+    await expect(
+      resolveCredentialSecret({ provider: "github", connection: "local-test", action: "whoami" }),
+    ).rejects.toMatchObject({ code: "caller_invalid" });
+    const resolved = await resolveCredentialSecret({
+      provider: "github",
+      connection: "local-test",
+      action: "whoami",
+      authority: { kind: "local-operator" },
+    });
     expect(resolved.secret).toBe(TOKEN);
     expect(getIntakeRequest(request.id)?.status).toBe("stored");
     expect(

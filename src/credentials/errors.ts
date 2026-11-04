@@ -4,6 +4,10 @@
  * may name the connection but never carries secret material.
  */
 export type CredentialBrokerErrorCode =
+  | "caller_invalid"
+  | "authorization_denied"
+  | "approval_required"
+  | "approval_denied"
   | "connection_not_found"
   | "connection_disabled"
   | "backend_unavailable"

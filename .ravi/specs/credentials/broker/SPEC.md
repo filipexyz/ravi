@@ -66,6 +66,37 @@ audit surfaces while still allowing Ravi to perform approved external actions.
 - Successful broker use SHOULD update `lastUsedAt` without storing secret
   material.
 
+## Consumption Authority
+
+- Every secret resolution MUST enforce the two capabilities through the
+  Permission Provider Runtime. Command authorization alone is insufficient.
+- Runtime callers MUST resolve their explicit key or in-process context against
+  the current persisted context and executor. Invalid, expired, revoked or
+  missing contexts MUST NOT fall back to a default credential or local operator.
+- The issued capability snapshot and current executor ceiling MUST both cover
+  the request. Provider denial or `needs_approval` MUST stop before backend read.
+- Sensitive runtime actions MUST obtain operation approval without adding a
+  capability grant. After waiting, the broker MUST revalidate caller, current
+  permissions, provider decision and unchanged active connection before reading.
+- Trusted host entrypoints MAY explicitly select operator-control for direct
+  local operator commands or named Slack infrastructure services. Internal
+  service authority MUST be limited to its provider/action allowlist, MUST NOT
+  be accepted from command arguments and MUST NOT override an active runtime
+  invocation. Missing context alone MUST NOT authorize secret access.
+- Local CLI provenance MUST distinguish a default credential loaded for
+  convenience from an explicit runtime caller. A scoped default MUST NOT turn
+  explicit host bootstrap into an agent invocation, and an invalid explicit
+  key MUST NOT fall back to that default.
+- Approval-card finalization MUST use the host delivery boundary instead of
+  recursively consuming credentials under the waiting agent's context. That
+  boundary MUST derive targets, terminal state and grant outcome from persisted
+  approval records, never arbitrary text or destinations from an event payload.
+- Audit MUST distinguish denied authorization, pending provider approval,
+  operation approval and explicit operator-control. It MUST NOT manufacture an
+  `allow` decision or retain backend exceptions that could contain plaintext.
+- The current diagnostic `broker exec` MUST remain `@CliOnly` until it executes
+  a real provider adapter. This fix does not make it a generic agent tool.
+
 ## Broker Flow
 
 1. Resolve caller context from `RAVI_CONTEXT_KEY`.

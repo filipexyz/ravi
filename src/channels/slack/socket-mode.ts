@@ -2806,6 +2806,7 @@ export async function createSlackNativeRuntimeFromEnv(
     channels,
     channel: options.channel,
     resolveSecret: options.resolveSecret,
+    authority: { kind: "internal-service", service: "slack-channel-runtime" },
   });
   if (!credentials) {
     log.warn("Slack native runtime disabled: configure a Slack channel with brokered credentials");

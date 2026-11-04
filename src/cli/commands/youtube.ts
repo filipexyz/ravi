@@ -338,7 +338,8 @@ type YouTubeClientFactory = (connection?: string) => YouTubeClient;
 })
 export class YouTubeCommands {
   constructor(
-    private readonly clientFactory: YouTubeClientFactory = (connection) => new YouTubeClient({ connection }),
+    private readonly clientFactory: YouTubeClientFactory = (connection) =>
+      new YouTubeClient({ connection, authority: { kind: "local-operator" } }),
   ) {}
 
   @Command({

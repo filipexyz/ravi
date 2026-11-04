@@ -503,6 +503,7 @@ export class CredentialBrokerCommands {
       connection,
       action,
       dryRun: Boolean(dryRun),
+      authority: { kind: "local-operator" },
     });
     if (asJson) {
       printJson(payload);
