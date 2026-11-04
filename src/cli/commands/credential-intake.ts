@@ -288,7 +288,7 @@ Example: ravi credentials request connection:slack:secondary --user U123ABC
   )
   async requestStatus(
     @Arg("target", { description: "remote:<destination>:<KEY>" }) target: string,
-    @Arg("request-id", { description: "Opaque request ID returned by credentials request" }) requestId: string,
+    @Arg("requestId", { description: "Opaque request ID returned by credentials request" }) requestId: string,
     @Option({ flags: "--json", description: "Print metadata and receipt only" }) asJson?: boolean,
   ) {
     try {

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "a4ad7bd81fb99938"
+    "version": "a5f2e120d74806e6"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -69011,7 +69011,7 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
-                  "request-id": {
+                  "requestId": {
                     "description": "Opaque request ID returned by credentials request",
                     "type": "string"
                   },
@@ -69022,7 +69022,7 @@
                 },
                 "required": [
                   "target",
-                  "request-id"
+                  "requestId"
                 ],
                 "type": "object"
               }

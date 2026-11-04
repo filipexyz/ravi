@@ -64045,7 +64045,7 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
-    "request-id": {
+    "requestId": {
       "description": "Opaque request ID returned by credentials request",
       "type": "string"
     },
@@ -64055,7 +64055,7 @@ class RaviSchemas {
     }
   },
   "required": [
-    "request-id",
+    "requestId",
     "target"
   ],
   "type": "object"

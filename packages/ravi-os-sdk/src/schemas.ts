@@ -63516,7 +63516,7 @@ export const CredentialsRequestReturnSchema = {
 export const CredentialsRequestStatusInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "request-id": {
+    "requestId": {
       "description": "Opaque request ID returned by credentials request",
       "type": "string"
     },
@@ -63526,7 +63526,7 @@ export const CredentialsRequestStatusInputSchema = {
     }
   },
   "required": [
-    "request-id",
+    "requestId",
     "target"
   ],
   "type": "object"

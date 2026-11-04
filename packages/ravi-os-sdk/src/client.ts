@@ -3454,11 +3454,11 @@ export class RaviClient {
       });
     },
     /** Reconcile a remote credential request without reading or resubmitting its secret */
-    requestStatus: async (target: string, request-id: string): Promise<CredentialsRequestStatusReturn> => {
+    requestStatus: async (target: string, requestId: string): Promise<CredentialsRequestStatusReturn> => {
       return this.transport.call({
         groupSegments: ["credentials"],
         command: "request-status",
-        body: { target, request-id },
+        body: { target, requestId },
       });
     }
   };

@@ -3587,7 +3587,7 @@ class CredentialsNamespace {
   Future<CredentialsRequestStatusReturn> requestStatus(String target, String requestId) async {
     final requestBody = <String, RaviJson>{};
     requestBody["target"] = RaviJson.from(target);
-    requestBody["request-id"] = RaviJson.from(requestId);
+    requestBody["requestId"] = RaviJson.from(requestId);
     return _transport.callJson(
       groupSegments: const ["credentials"],
       command: "request-status",

@@ -11664,7 +11664,7 @@ export type CredentialsRequestReturn = {
 
 /** Input shape for `credentials.request-status`. */
 export type CredentialsRequestStatusInput = {
-  "request-id": string;
+  requestId: string;
   target: string;
 };
 
