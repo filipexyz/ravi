@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { getRecentHistory, saveMessage, getChatDbPath } from "../db.js";
 import { Database } from "bun:sqlite";
 import { nats } from "../nats.js";
-import { channelRuntimeEventSinks } from "../channels/runtime-events.js";
 import { DEFAULT_PRICING_CATALOG_URL } from "../costs/pricing-catalog.js";
 import {
   attachChatToSession,
@@ -24,7 +23,7 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { getSessionTurnUsageSummary } from "../router/sessions.js";
-import { dbAcceptChannelBackendIngress, dbGetContext, dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
+import { dbGetContext, dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { getSessionTraceBlob, getSessionTurn } from "../session-trace/session-trace-db.js";
@@ -727,43 +726,23 @@ describe("runtime session trace instrumentation", () => {
     }
   });
 
-  it("does not reset or revoke a replacement after context recovery awaits channel projection", async () => {
-    const projectionEntered = runtimeRaceLatch();
-    const releaseProjection = runtimeRaceLatch();
-    const ingress = dbAcceptChannelBackendIngress({
-      channelInstanceId: "race-channel",
-      idempotencyKey: "race-ingress",
-      requestFingerprint: "race-fingerprint",
-      requestId: "race-request",
-      localActorId: "race-actor",
-      agentId: AGENT_ID,
-      clientMessageId: "race-client-message",
-      sessionKey: SESSION_KEY,
-      sessionName: SESSION_NAME,
-      turnId: "race-channel-turn",
-      external: {
-        channelKind: "custom",
-        connectionId: "race-connection",
-        conversationId: "race-conversation",
-        senderId: "race-sender",
-        messageId: "race-message",
+  it("does not reset or revoke a replacement while context failure awaits broker feedback", async () => {
+    const feedbackEntered = runtimeRaceLatch();
+    const releaseFeedback = runtimeRaceLatch();
+    const brokerId = "ownership-race-context-failure";
+    const feedback: ModelBrokerAttemptFeedback[] = [];
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      async resolveRoute() {
+        throw new Error("not used");
       },
-      content: { blocks: [{ type: "text", text: "recover the old request" }] },
-      receivedAt: Date.now(),
-    });
-    const target = {
-      channelKind: "custom",
-      connectionId: "race-connection",
-      conversationId: "race-conversation",
-    };
-    const unregisterSink = channelRuntimeEventSinks.register(target, {
-      async emit(event) {
-        if (event.kind === "turn.state_changed" && event.payload.state === "running") {
-          projectionEntered.release();
-          await releaseProjection.promise;
-        }
+      async reportAttempt(input) {
+        feedback.push(input);
+        feedbackEntered.release();
+        await releaseFeedback.promise;
+        return { recorded: true, nextAction: "retain" };
       },
-    });
+    }));
     updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
       providerSessionId: "native-before-recovery",
       runtimeSessionParams: { sessionId: "native-before-recovery" },
@@ -772,21 +751,7 @@ describe("runtime session trace instrumentation", () => {
     const old = makeStreamingSession({
       pendingMessages: [active],
       currentTurnPendingIds: [active.pendingId!],
-      currentChannelBackend: {
-        protocol: "ravi.channel.backend",
-        schemaVersion: 1,
-        ingressRequestId: "race-request",
-        correlationId: "race-request",
-        binding: {
-          channelInstanceId: ingress.receipt.channelInstanceId,
-          agentId: AGENT_ID,
-          chatId: ingress.receipt.chatId,
-          messageId: ingress.receipt.messageId,
-          sessionId: SESSION_NAME,
-          turnId: ingress.receipt.turnId,
-        },
-        target,
-      },
+      currentRuntimeCredential: makeRaceBrokerCredential(brokerId, "turn-old-await-recovery"),
     });
     seedAdapterTrace(old, "turn-old-await-recovery");
     const replacement = makeStreamingSession({ traceRunId: "run-recovery-replacement" });
@@ -815,7 +780,7 @@ describe("runtime session trace instrumentation", () => {
       },
     );
     try {
-      await projectionEntered.promise;
+      await feedbackEntered.promise;
       expect(old.currentCrashRecoveryTerminal?.status).toBe("failed");
       live.set(SESSION_NAME, replacement);
       stash.set(SESSION_NAME, successorQueue);
@@ -830,7 +795,7 @@ describe("runtime session trace instrumentation", () => {
         sessionName: SESSION_NAME,
         capabilities: [],
       });
-      releaseProjection.release();
+      releaseFeedback.release();
       await loop;
 
       expect(getSession(SESSION_KEY)).toMatchObject({
@@ -844,10 +809,14 @@ describe("runtime session trace instrumentation", () => {
       expect(replacement.abortController.signal.aborted).toBe(false);
       expect(restarts).toEqual([]);
       expect(getSessionTurn("turn-old-await-recovery")?.status).toBe("failed");
+      expect(feedback).toEqual([expect.objectContaining({ outcome: "provider_failed", effectState: "none" })]);
+      expect(
+        listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "session.context_window_exhausted"),
+      ).toBe(false);
     } finally {
-      releaseProjection.release();
+      releaseFeedback.release();
       await loop;
-      unregisterSink();
+      unregisterModelBroker(brokerId);
     }
   });
 

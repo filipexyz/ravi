@@ -4339,7 +4339,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionRecoveryFailure?.kind !== "provider_session_missing" || hasStoredProviderSessionId(session);
         const canRecoverSession = () =>
           mayRecoverCurrentTurn() && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable;
-        if (sessionRecoveryFailure && canRecoverSession()) await projectRuntimeEventToChannel(event);
         if (sessionRecoveryFailure && canRecoverSession()) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
           const history = getRecentHistory(sessionName, 48).filter(

@@ -107,6 +107,10 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
   MUST NOT be revived. Handoff MUST preserve each successor's delivery barrier,
   including an active task's `after_task` gate, and MUST NOT terminalize a logical
   channel binding merely because its physical runtime changes.
+  An approved replay-safe session/context recovery MUST defer logical channel
+  failure projection until recovery is exhausted or rejected. Its physical
+  failed attempt still retains trace and accounting; a recovered final response
+  keeps the existing channel binding and delivery policy.
 - An explicit abort waiting for tool-result delivery MUST also settle if a
   canonical terminal arrives first. Preserve that terminal's accounting, close
   the handle, and retain independent queued work dormant for later admission;

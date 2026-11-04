@@ -34,6 +34,10 @@
   C admission; no inactivity notice or automatic restart may replace it. Cover
   an unchanged lease, no-abort recovery, and replacement ownership across the
   await without changing the accepted terminal's accounting.
+- Compose approved context recovery with native Slack output delivery: no
+  premature safe-error manifest, the recovered final is delivered when allowed,
+  and cooldown still suppresses it. Replace the runtime while broker feedback
+  awaits and verify the old recovery cannot reset or revoke the replacement.
 - Abort or replace the runtime while credential refresh awaits: the retired
   handle cannot arm another retry. Reject an awaited failed-event emission
   with cancellation pending: finalization retains the accepted terminal and
