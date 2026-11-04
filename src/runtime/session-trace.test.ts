@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { getRecentHistory, saveMessage, getChatDbPath } from "../db.js";
 import { Database } from "bun:sqlite";
 import { nats } from "../nats.js";
+import { channelRuntimeEventSinks } from "../channels/runtime-events.js";
+import { DEFAULT_PRICING_CATALOG_URL } from "../costs/pricing-catalog.js";
 import {
   attachChatToSession,
   detachChatFromSession,
@@ -22,7 +24,7 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { getSessionTurnUsageSummary } from "../router/sessions.js";
-import { dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
+import { dbAcceptChannelBackendIngress, dbGetContext, dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { getSessionTraceBlob, getSessionTurn } from "../session-trace/session-trace-db.js";
@@ -35,6 +37,7 @@ import {
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
 import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { createRuntimeContext } from "./context-registry.js";
 import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
 import {
   RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
@@ -527,6 +530,40 @@ async function runTraceLoop(
   });
 }
 
+function runtimeRaceLatch() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+function makeRaceBrokerCredential(brokerId: string, turnId: string) {
+  return {
+    attemptId: `attempt_${turnId}`,
+    credentialId: `model-broker:${brokerId}:profile_main`,
+    modelBrokerId: brokerId,
+    modelBrokerProfileRef: "profile_main",
+    modelBrokerLeaseId: `lease_${turnId}`,
+    modelBrokerRuntimeId: "runtime_race",
+    modelBrokerSessionKey: SESSION_KEY,
+    modelBrokerTurnId: turnId,
+    modelBrokerRouteRevision: "route_race",
+    modelBrokerCompatibilityRevision: "compat_race",
+    modelBrokerSelectionCompatibilityKey: "selection_race",
+    modelBrokerLeaseExpiresAt: Date.now() + 60_000,
+    modelBrokerAttemptTerminal: false,
+    label: "Ownership race broker attempt",
+    fingerprint: "sha256:ownership-race",
+    runtimeProvider: PROVIDER,
+    authMethod: "model-broker",
+    resolvedEnv: {},
+    sensitiveEnvKeys: [],
+    remoteForwardEnvKeys: [],
+    bindings: [],
+  };
+}
+
 describe("runtime session trace instrumentation", () => {
   let natsEmitSpy: ReturnType<typeof spyOn> | undefined;
 
@@ -548,6 +585,331 @@ describe("runtime session trace instrumentation", () => {
     }
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("preserves a same-provider replacement after old completion awaits broker feedback", async () => {
+    const brokerId = "ownership-race-completion";
+    const feedbackEntered = runtimeRaceLatch();
+    const releaseFeedback = runtimeRaceLatch();
+    const replacementReady = runtimeRaceLatch();
+    const closeReplacement = runtimeRaceLatch();
+    const feedback: ModelBrokerAttemptFeedback[] = [];
+    updateSessionName(SESSION_KEY, SESSION_NAME);
+    const pricingDir = join(stateDir!, "pricing");
+    mkdirSync(pricingDir, { recursive: true });
+    writeFileSync(
+      join(pricingDir, "model_prices_and_context_window.json"),
+      JSON.stringify({
+        source: "test",
+        sourceUrl: DEFAULT_PRICING_CATALOG_URL,
+        sourceVersion: "ownership-race-fixture",
+        fetchedAt: Date.now(),
+        entries: {
+          [MODEL]: {
+            input_cost_per_token: 0.000001,
+            output_cost_per_token: 0.000002,
+            cache_read_input_token_cost: 0.0000005,
+            cache_creation_input_token_cost: 0.00000125,
+          },
+        },
+      }),
+    );
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      async resolveRoute() {
+        throw new Error("not used");
+      },
+      async reportAttempt(input) {
+        feedback.push(input);
+        feedbackEntered.release();
+        await releaseFeedback.promise;
+        return { recorded: true, nextAction: "retain" };
+      },
+    }));
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "native-before-race",
+      runtimeSessionParams: { sessionId: "native-before-race" },
+    });
+    const old = makeStreamingSession({
+      currentRuntimeCredential: makeRaceBrokerCredential(brokerId, "turn-old-await-feedback"),
+      runtimeProviderConfigRevision: 0,
+    });
+    seedAdapterTrace(old, "turn-old-await-feedback");
+    const replacement = makeStreamingSession({ traceRunId: "run-replacement", runtimeProviderConfigRevision: 0 });
+    const live = new Map([[SESSION_NAME, old]]);
+    const oldLoop = runTraceLoop(
+      old,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Old turn completed successfully." },
+        {
+          type: "turn.complete",
+          providerSessionId: "native-old-terminal",
+          session: { displayId: "native-old-terminal", params: { sessionId: "native-old-terminal", owner: "old" } },
+          usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 2, cacheCreationTokens: 3 },
+          execution: { model: MODEL },
+        },
+      ]),
+      { session: getSession(SESSION_KEY)!, streamingSessions: live },
+    );
+    let replacementLoop: Promise<void> | undefined;
+    try {
+      await feedbackEntered.promise;
+      expect(old.currentCrashRecoveryTerminal?.status).toBe("complete");
+      live.set(SESSION_NAME, replacement);
+      seedAdapterTrace(replacement, "turn-new-owner");
+      const replacementRuntime: RuntimeSessionHandle = {
+        provider: PROVIDER,
+        events: (async function* () {
+          yield {
+            type: "turn.complete" as const,
+            providerSessionId: "native-replacement",
+            session: {
+              displayId: "native-replacement",
+              params: { sessionId: "native-replacement", owner: "replacement" },
+            },
+            usage: { inputTokens: 300, outputTokens: 40, cacheReadTokens: 50, cacheCreationTokens: 10 },
+            execution: { model: MODEL },
+          };
+          replacementReady.release();
+          await closeReplacement.promise;
+        })(),
+        interrupt: async () => {},
+        close: async () => closeReplacement.release(),
+      };
+      replacementLoop = runTraceLoop(replacement, replacementRuntime, {
+        session: getSession(SESSION_KEY)!,
+        streamingSessions: live,
+      });
+      await replacementReady.promise;
+      expect(getSession(SESSION_KEY)).toMatchObject({ providerSessionId: "native-replacement", contextTokens: 360 });
+      releaseFeedback.release();
+      await oldLoop;
+
+      const persisted = getSession(SESSION_KEY);
+      expect(persisted).toMatchObject({
+        runtimeProvider: PROVIDER,
+        runtimeProviderConfigRevision: 0,
+        providerSessionId: "native-replacement",
+        runtimeSessionDisplayId: "native-replacement",
+        runtimeSessionParams: { sessionId: "native-replacement", owner: "replacement" },
+        contextTokens: 360,
+        inputTokens: 310,
+        outputTokens: 44,
+        totalTokens: 354,
+      });
+      expect(live.get(SESSION_NAME)).toBe(replacement);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(getSessionTurn("turn-old-await-feedback")).toMatchObject({
+        status: "complete",
+        inputTokens: 10,
+        outputTokens: 4,
+        cacheReadTokens: 2,
+        cacheCreationTokens: 3,
+      });
+      expect(getRuntimeLiveStateForSession(persisted!)).toMatchObject({ runId: "run-replacement" });
+      expect(getRecentHistory(SESSION_NAME).some((row) => row.content === "Old turn completed successfully.")).toBe(
+        true,
+      );
+      expect(feedback).toEqual([expect.objectContaining({ outcome: "succeeded" })]);
+      expect(
+        getDb()
+          .prepare("SELECT COUNT(*) AS count, SUM(input_tokens) AS input FROM cost_events WHERE session_key = ?")
+          .get(SESSION_KEY),
+      ).toMatchObject({ count: 2, input: 310 });
+      expect(getSessionTurn("turn-old-await-feedback")?.costUsd).toBeCloseTo(0.00002275, 10);
+    } finally {
+      releaseFeedback.release();
+      closeReplacement.release();
+      replacement.abortController.abort();
+      await Promise.all([oldLoop, replacementLoop]);
+      unregisterModelBroker(brokerId);
+    }
+  });
+
+  it("does not reset or revoke a replacement after context recovery awaits channel projection", async () => {
+    const projectionEntered = runtimeRaceLatch();
+    const releaseProjection = runtimeRaceLatch();
+    const ingress = dbAcceptChannelBackendIngress({
+      channelInstanceId: "race-channel",
+      idempotencyKey: "race-ingress",
+      requestFingerprint: "race-fingerprint",
+      requestId: "race-request",
+      localActorId: "race-actor",
+      agentId: AGENT_ID,
+      clientMessageId: "race-client-message",
+      sessionKey: SESSION_KEY,
+      sessionName: SESSION_NAME,
+      turnId: "race-channel-turn",
+      external: {
+        channelKind: "custom",
+        connectionId: "race-connection",
+        conversationId: "race-conversation",
+        senderId: "race-sender",
+        messageId: "race-message",
+      },
+      content: { blocks: [{ type: "text", text: "recover the old request" }] },
+      receivedAt: Date.now(),
+    });
+    const target = {
+      channelKind: "custom",
+      connectionId: "race-connection",
+      conversationId: "race-conversation",
+    };
+    const unregisterSink = channelRuntimeEventSinks.register(target, {
+      async emit(event) {
+        if (event.kind === "turn.state_changed" && event.payload.state === "running") {
+          projectionEntered.release();
+          await releaseProjection.promise;
+        }
+      },
+    });
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "native-before-recovery",
+      runtimeSessionParams: { sessionId: "native-before-recovery" },
+    });
+    const active = createQueuedRuntimeUserMessage({ prompt: "recover the old request", source, _agentId: AGENT_ID });
+    const old = makeStreamingSession({
+      pendingMessages: [active],
+      currentTurnPendingIds: [active.pendingId!],
+      currentChannelBackend: {
+        protocol: "ravi.channel.backend",
+        schemaVersion: 1,
+        ingressRequestId: "race-request",
+        correlationId: "race-request",
+        binding: {
+          channelInstanceId: ingress.receipt.channelInstanceId,
+          agentId: AGENT_ID,
+          chatId: ingress.receipt.chatId,
+          messageId: ingress.receipt.messageId,
+          sessionId: SESSION_NAME,
+          turnId: ingress.receipt.turnId,
+        },
+        target,
+      },
+    });
+    seedAdapterTrace(old, "turn-old-await-recovery");
+    const replacement = makeStreamingSession({ traceRunId: "run-recovery-replacement" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "new owner successor", source, _agentId: AGENT_ID });
+    const successorQueue = [successor];
+    const live = new Map([[SESSION_NAME, old]]);
+    const stash = new Map<string, RuntimeUserMessage[]>();
+    const restarts: unknown[] = [];
+    const loop = runTraceLoop(
+      old,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error:
+            "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+          recoverable: false,
+        },
+      ]),
+      {
+        session: getSession(SESSION_KEY)!,
+        streamingSessions: live,
+        stashedMessages: stash,
+        restartStashedSession: async (input) => {
+          restarts.push(input);
+        },
+      },
+    );
+    try {
+      await projectionEntered.promise;
+      expect(old.currentCrashRecoveryTerminal?.status).toBe("failed");
+      live.set(SESSION_NAME, replacement);
+      stash.set(SESSION_NAME, successorQueue);
+      updateProviderSession(SESSION_KEY, PROVIDER, "native-recovery-replacement", {
+        runtimeSessionParams: { sessionId: "native-recovery-replacement", owner: "replacement" },
+        runtimeSessionDisplayId: "native-recovery-replacement",
+      });
+      const replacementContext = createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: AGENT_ID,
+        sessionKey: SESSION_KEY,
+        sessionName: SESSION_NAME,
+        capabilities: [],
+      });
+      releaseProjection.release();
+      await loop;
+
+      expect(getSession(SESSION_KEY)).toMatchObject({
+        runtimeProvider: PROVIDER,
+        providerSessionId: "native-recovery-replacement",
+        runtimeSessionParams: { sessionId: "native-recovery-replacement", owner: "replacement" },
+      });
+      expect(dbGetContext(replacementContext.contextId)?.revokedAt).toBeUndefined();
+      expect(stash.get(SESSION_NAME)).toBe(successorQueue);
+      expect(live.get(SESSION_NAME)).toBe(replacement);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(restarts).toEqual([]);
+      expect(getSessionTurn("turn-old-await-recovery")?.status).toBe("failed");
+    } finally {
+      releaseProjection.release();
+      await loop;
+      unregisterSink();
+    }
+  });
+
+  it("does not restart a replacement after final cleanup awaits broker abandonment", async () => {
+    const brokerId = "ownership-race-cleanup";
+    const feedbackEntered = runtimeRaceLatch();
+    const releaseFeedback = runtimeRaceLatch();
+    const feedback: ModelBrokerAttemptFeedback[] = [];
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      async resolveRoute() {
+        throw new Error("not used");
+      },
+      async reportAttempt(input) {
+        feedback.push(input);
+        feedbackEntered.release();
+        await releaseFeedback.promise;
+        return { recorded: true, nextAction: "retain" };
+      },
+    }));
+    const active = createQueuedRuntimeUserMessage({ prompt: "old unfinished request", source, _agentId: AGENT_ID });
+    const old = makeStreamingSession({
+      pendingMessages: [active],
+      currentTurnPendingIds: [active.pendingId!],
+      currentRuntimeCredential: makeRaceBrokerCredential(brokerId, "turn-old-await-cleanup"),
+    });
+    seedAdapterTrace(old, "turn-old-await-cleanup");
+    const live = new Map([[SESSION_NAME, old]]);
+    const stash = new Map<string, RuntimeUserMessage[]>();
+    const restarts: unknown[] = [];
+    let drains = 0;
+    const loop = runTraceLoop(old, makeRuntimeSession([]), {
+      streamingSessions: live,
+      stashedMessages: stash,
+      restartStashedSession: async (input) => {
+        restarts.push(input);
+      },
+      drainPendingStarts: () => {
+        drains++;
+      },
+    });
+    try {
+      await feedbackEntered.promise;
+      expect(stash.get(SESSION_NAME)?.map((entry) => entry.message.content)).toEqual(["old unfinished request"]);
+      const replacement = makeStreamingSession({ traceRunId: "run-cleanup-replacement" });
+      const replacementQueue = [createQueuedRuntimeUserMessage({ prompt: "replacement request", source })];
+      live.set(SESSION_NAME, replacement);
+      stash.set(SESSION_NAME, replacementQueue);
+      releaseFeedback.release();
+      await loop;
+
+      expect(restarts).toEqual([]);
+      expect(drains).toBe(0);
+      expect(live.get(SESSION_NAME)).toBe(replacement);
+      expect(stash.get(SESSION_NAME)).toBe(replacementQueue);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(feedback).toEqual([expect.objectContaining({ outcome: "abandoned" })]);
+      expect(getSessionTurn("turn-old-await-cleanup")?.status).toBe("aborted");
+    } finally {
+      releaseFeedback.release();
+      await loop;
+      unregisterModelBroker(brokerId);
+    }
   });
 
   for (const child of [false, true]) {

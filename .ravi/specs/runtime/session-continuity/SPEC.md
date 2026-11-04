@@ -95,6 +95,15 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - Pending successor prompts accepted before a provider change MUST be retained
   and dispatched through the current provider selection after the active turn,
   rather than consumed by an incompatible old handle.
+- A saved provider transition MUST honor `after_response` and `after_task`
+  while the current turn is still generating. An accepted canonical completion
+  ends generation even if asynchronous accounting is still pending; it MUST
+  retain its completed classification and accounting during a later handoff.
+- Only the current live-slot owner may mutate shared successor stash, remove
+  the live handle, reset session continuity, or publish its current-state
+  snapshots. Ownership MUST be checked at the mutation after every intervening
+  await. An old turn still records its output, terminal, costs and additive
+  usage, but MUST NOT overwrite a replacement's native state or context snapshot.
 - Login / not-logged-in stubs (for example `Not logged in · Please run /login`) MUST be classified as `turn.failed` / auth error. They MUST NOT be saved as assistant transcript rows and MUST NOT be emitted to a bound chat.
 - Ravi MUST NOT clear compatible provider state solely because a terminal callback is missing. When an adapter can reconcile an ambiguous delivery, Ravi MUST preserve session continuity and the stable logical delivery id through recovery.
 - A provider that supports fork MUST define how parent provider state maps into the child or rebased session.

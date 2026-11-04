@@ -24,7 +24,8 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { logger } from "../utils/logger.js";
 import { syncAgentSessionsToAgentRuntime } from "./agent-session-runtime-sync.js";
 import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
+import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
@@ -442,6 +443,450 @@ describe("Slack thread provider configuration through the live dispatcher", () =
     );
   });
 });
+
+describe("provider changes with durable turns and real prompt generators", () => {
+  for (const order of ["clear-successor-terminal", "successor-clear-terminal", "clear-terminal-successor"] as const) {
+    it(`delivers the successor once without interrupting the completed input (${order})`, async () => {
+      await withGeneratedClaudeTurn({}, async (fixture) => {
+        if (order === "successor-clear-terminal") await fixture.dispatch(NEXT_PROMPT);
+        fixture.clear();
+        if (order === "clear-successor-terminal") await fixture.dispatch(NEXT_PROMPT);
+        fixture.expectActiveOriginal();
+        expect(fixture.snapshot().startedProviders).toEqual([]);
+
+        await fixture.finishOriginal(order !== "clear-terminal-successor");
+        if (order === "clear-terminal-successor") await fixture.dispatch(NEXT_PROMPT);
+        const snapshot = fixture.snapshot();
+        expect(snapshot.originalAttemptStatus).toBe("complete");
+        expect(snapshot.originalTraceStatus).toBe("complete");
+        expect(snapshot.oldInputs).toEqual([USER_PROMPT]);
+        expect(snapshot.replacementInputs).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+        expect(snapshot.startedProviders).toEqual(["codex"]);
+        expect(snapshot.stashedPrompts).toEqual([]);
+        expect(snapshot.assistantReplies).toEqual([ASSISTANT_REPLY]);
+      });
+    });
+  }
+
+  it("keeps a compatible provider and hands the queued successor to its original generator", async () => {
+    await withGeneratedClaudeTurn({ agentDefaultProvider: "claude" }, async (fixture) => {
+      fixture.clear();
+      await fixture.dispatch(NEXT_PROMPT);
+      fixture.expectActiveOriginal();
+      await fixture.finishOriginal(false);
+      await fixture.waitForOldSuccessor();
+      const snapshot = fixture.snapshot();
+      expect(snapshot.originalAttemptStatus).toBe("complete");
+      expect(snapshot.originalTraceStatus).toBe("complete");
+      expect(snapshot.oldInputs).toEqual([USER_PROMPT, expect.stringContaining(NEXT_PROMPT)]);
+      expect(snapshot.startedProviders).toEqual([]);
+      expect(snapshot.replacementInputs).toEqual([]);
+      expect(snapshot.stashedPrompts).toEqual([]);
+    });
+  });
+
+  it("does not resurrect B after a replacement consumes it while the old completion awaits pricing", async () => {
+    await withGeneratedClaudeTurn({ pausePricing: true }, async (fixture) => {
+      await fixture.dispatch(NEXT_PROMPT);
+      fixture.clear();
+      fixture.expectActiveOriginal();
+      fixture.releaseOriginalTerminal();
+      await fixture.waitForPricing();
+
+      await fixture.dispatch("A newer independent successor C.");
+      const replacement = fixture.snapshot();
+      expect(replacement.startedProviders).toEqual(["codex"]);
+      expect(replacement.replacementInputs).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+      expect(replacement.stashedPrompts).toEqual([]);
+      expect(replacement.replacementOwnsSlot).toBe(true);
+
+      fixture.releasePricing();
+      await fixture.waitForOldLoop();
+      const settled = fixture.snapshot();
+      expect(settled.originalAttemptStatus).toBe("complete");
+      expect(settled.originalTraceStatus).toBe("complete");
+      expect(settled.replacementOwnsSlot).toBe(true);
+      expect(settled.replacementInputs).toEqual(replacement.replacementInputs);
+      expect(settled.stashedPrompts).toEqual([]);
+      expect(settled.restarts).toEqual([]);
+      expect(settled.assistantReplies).toEqual([ASSISTANT_REPLY]);
+      fixture.expectCompletionAccounting();
+    });
+  });
+
+  it("preserves completed accounting when a rejected model switch replaces the handle during pricing", async () => {
+    await withGeneratedClaudeTurn({ pausePricing: true, rejectModelSwitch: true }, async (fixture) => {
+      await fixture.dispatch(NEXT_PROMPT);
+      fixture.expectActiveOriginal();
+      fixture.releaseOriginalTerminal();
+      await fixture.waitForPricing();
+
+      expect(await fixture.changeModel("sonnet")).toBe("restart-next-turn");
+      const replacement = fixture.snapshot();
+      expect(replacement.modelSwitchCalls).toEqual(["sonnet"]);
+      expect(replacement.startedProviders).toEqual(["claude"]);
+      expect(replacement.replacementInputs).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+      expect(replacement.stashedPrompts).toEqual([]);
+      expect(replacement.replacementOwnsSlot).toBe(true);
+
+      fixture.releasePricing();
+      await fixture.waitForOldLoop();
+      const settled = fixture.snapshot();
+      expect(settled.originalAttemptStatus).toBe("complete");
+      expect(settled.originalTraceStatus).toBe("complete");
+      expect(settled.replacementOwnsSlot).toBe(true);
+      expect(settled.replacementInputs).toEqual(replacement.replacementInputs);
+      expect(settled.stashedPrompts).toEqual([]);
+      expect(settled.restarts).toEqual([]);
+      expect(settled.assistantReplies).toEqual([ASSISTANT_REPLY]);
+      fixture.expectCompletionAccounting();
+    });
+  });
+});
+
+interface GeneratedTurnOptions {
+  agentDefaultProvider?: "claude" | "codex";
+  pausePricing?: boolean;
+  rejectModelSwitch?: boolean;
+}
+
+interface GeneratedTurnFixture {
+  clear(): void;
+  changeModel(model: string): ReturnType<RuntimeSessionDispatcher["applySessionModelChange"]>;
+  dispatch(prompt: string): Promise<void>;
+  expectActiveOriginal(): void;
+  expectCompletionAccounting(): void;
+  finishOriginal(expectRetired: boolean): Promise<void>;
+  waitForOldSuccessor(): Promise<void>;
+  releaseOriginalTerminal(): void;
+  waitForPricing(): Promise<void>;
+  releasePricing(): void;
+  waitForOldLoop(): Promise<void>;
+  snapshot(): {
+    originalAttemptStatus: string | undefined;
+    originalTraceStatus: string | undefined;
+    oldInputs: string[];
+    replacementInputs: string[];
+    startedProviders: string[];
+    stashedPrompts: string[];
+    restarts: string[];
+    assistantReplies: string[];
+    replacementOwnsSlot: boolean;
+    modelSwitchCalls: string[];
+  };
+}
+
+async function withGeneratedClaudeTurn(
+  options: GeneratedTurnOptions,
+  run: (fixture: GeneratedTurnFixture) => Promise<void>,
+) {
+  const { parent, child } = await seedThread(true, options);
+  const sessionName = child.name!;
+  configStore.refresh();
+  const recovery = new RuntimeCrashRecoveryCoordinator({ instanceId: "generated-provider-config" });
+  recovery.start();
+  const dispatcher = new RuntimeSessionDispatcher({
+    instanceId: "generated-provider-config",
+    maxConcurrentSessions: 2,
+    interactiveReservedSessions: 0,
+    safeEmit: async () => {},
+    notifyRuntimeRecoveryExhausted: async () => {},
+    getConfigModel: () => "gpt-6-astra",
+    crashRecovery: recovery,
+  });
+  const active = deferred();
+  const terminalAllowed = deferred();
+  const terminalProcessed = deferred();
+  const oldSuccessor = deferred();
+  const finishConsumer = deferred();
+  const costEntered = deferred();
+  const costReleased = deferred();
+  const oldInputs: string[] = [];
+  const replacementInputs: string[] = [];
+  const startedProviders: string[] = [];
+  const restarts: string[] = [];
+  const modelSwitchCalls: string[] = [];
+  const replacements: Array<{
+    streaming: RuntimeHostStreamingSession;
+    prompts: ReturnType<typeof createRuntimeMessageGenerator>;
+  }> = [];
+  let turnCounter = 0;
+  let originalTurnId: string | undefined;
+  let originalAttemptId: string | undefined;
+
+  const newStreaming = (
+    provider: string,
+    model: string,
+    messages: RuntimeUserMessage[],
+    revision: number,
+  ): RuntimeHostStreamingSession => ({
+    agentId: AGENT_ID,
+    queryHandle: { provider, events: (async function* () {})(), interrupt: mock(async () => {}) },
+    runtimeProviderConfigRevision: revision,
+    starting: false,
+    abortController: new AbortController(),
+    pushMessage: null,
+    pendingWake: false,
+    pendingMessages: messages,
+    currentModel: model,
+    toolRunning: false,
+    lastActivity: Date.now(),
+    done: false,
+    interrupted: false,
+    turnActive: false,
+    compacting: false,
+    onTurnComplete: null,
+    currentToolSafety: null,
+    pendingAbort: false,
+    agentMode: "sentinel",
+    traceRunId: "generated-provider-config-run",
+    toolEffectFence: "host_write_ahead",
+  });
+  const original = newStreaming(
+    "claude",
+    "opus",
+    [createQueuedRuntimeUserMessage({ prompt: USER_PROMPT, deliveryBarrier: "after_response" })],
+    child.runtimeProviderConfigRevision ?? 0,
+  );
+  const makePrompts = (streaming: RuntimeHostStreamingSession) =>
+    createRuntimeMessageGenerator({
+      sessionName,
+      session: streaming,
+      stashedMessages: dispatcher.stashedMessages,
+      traceTurnStart: ({ combinedPrompt, deliverableMessages }) => {
+        const turnId = `generated-provider-turn-${++turnCounter}`;
+        const trace = recordAdapterRequestTrace({
+          sessionKey: child.sessionKey,
+          sessionName,
+          agentId: AGENT_ID,
+          runId: streaming.traceRunId,
+          turnId,
+          provider: streaming.queryHandle.provider,
+          model: streaming.currentModel,
+          prompt: combinedPrompt,
+          systemPrompt: "Investigate the current thread.",
+          cwd: stateDir!,
+          resume: streaming === original,
+          fork: false,
+          hasHooks: false,
+          pluginNames: [],
+          mcpServerNames: [],
+          hasRemoteSpawn: false,
+        })!;
+        const attempt = recovery.startTurnAttempt({
+          turnId,
+          runId: streaming.traceRunId!,
+          sessionKey: child.sessionKey,
+          sessionName,
+          agentId: AGENT_ID,
+          provider: streaming.queryHandle.provider,
+          model: streaming.currentModel,
+          requestBlobSha256: trace.requestBlobSha256,
+          startedAt: trace.startedAt,
+          originKind: "human",
+          deliveryBarrier: "after_response",
+          pendingIds: deliverableMessages.map(({ pendingId }) => pendingId!),
+        });
+        if (!originalAttemptId && streaming === original) {
+          originalTurnId = turnId;
+          originalAttemptId = attempt.attemptId;
+        }
+        return { ...trace, crashRecoveryAttemptId: attempt.attemptId };
+      },
+    });
+  const originalPrompts = makePrompts(original);
+  const interrupt = mock(async () => {});
+  const originalHandle: RuntimeSessionHandle = {
+    provider: "claude",
+    events: (async function* (): AsyncGenerator<RuntimeEvent> {
+      for await (const prompt of originalPrompts) {
+        oldInputs.push(String(prompt.message.content));
+        if (oldInputs.length > 1) {
+          oldSuccessor.resolve();
+          await finishConsumer.promise;
+          return;
+        }
+        // Wrap the real generator's completion callback: the host must release
+        // that exact handoff before it can drain A or yield the successor.
+        const generatorCompleted = original.onTurnComplete!;
+        original.onTurnComplete = () => {
+          generatorCompleted();
+          terminalProcessed.resolve();
+        };
+        yield { type: "assistant.message", text: ASSISTANT_REPLY };
+        active.resolve();
+        await terminalAllowed.promise;
+        yield {
+          type: "turn.complete",
+          providerSessionId: PROVIDER_SESSION_AFTER,
+          session: { displayId: PROVIDER_SESSION_AFTER, params: { sessionId: PROVIDER_SESSION_AFTER } },
+          usage: { inputTokens: 10, outputTokens: 4 },
+        };
+      }
+    })(),
+    interrupt,
+    close: mock(async () => {}),
+    ...(options.rejectModelSwitch
+      ? {
+          setModel: async (model: string) => {
+            modelSwitchCalls.push(model);
+            throw new Error("Provider rejected the live model switch");
+          },
+        }
+      : {}),
+  };
+  original.queryHandle = originalHandle;
+  dispatcher.streamingSessions.set(sessionName, original);
+  saveMessage(sessionName, "user", USER_PROMPT, child.providerSessionId);
+  const costGate = options.pausePricing
+    ? spyOn(pricing, "calculateCost").mockImplementation(async () => {
+        costEntered.resolve();
+        await costReleased.promise;
+        return { inputCost: 0.01, outputCost: 0.02, cacheCost: 0, totalCost: 0.03, pricingStatus: "priced" };
+      })
+    : undefined;
+  const start = spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+    const resolved = resolveRuntimeSession({ sessionName: name, prompt, defaultRuntimeProviderId: "codex" });
+    if (!resolved) throw new Error("Replacement session was not resolved");
+    startedProviders.push(resolved.runtimeProviderId);
+    if (!prompt._resumeStashedMessages) saveMessage(name, "user", prompt.prompt);
+    const replacement = newStreaming(
+      resolved.runtimeProviderId,
+      resolved.session.modelOverride ?? (resolved.runtimeProviderId === "claude" ? "opus" : "gpt-6-astra"),
+      prompt._resumeStashedMessages ? [] : [createQueuedRuntimeUserMessage(prompt)],
+      resolved.session.runtimeProviderConfigRevision ?? 0,
+    );
+    dispatcher.streamingSessions.set(name, replacement);
+    const prompts = makePrompts(replacement);
+    replacements.push({ streaming: replacement, prompts });
+    const next = await prompts.next();
+    if (next.done) throw new Error("Replacement provider did not receive the successor");
+    replacementInputs.push(String(next.value.message.content));
+  });
+  const loop = runRuntimeEventLoop({
+    runId: original.traceRunId!,
+    sessionName,
+    session: child,
+    agent: dbGetAgent(AGENT_ID)!,
+    streaming: original,
+    runtimeSession: originalHandle,
+    runtimeCapabilities: createRuntimeProvider("claude").getCapabilities(),
+    model: "opus",
+    instanceId: "generated-provider-config",
+    defaultRuntimeProviderId: "codex",
+    streamingSessions: dispatcher.streamingSessions,
+    stashedMessages: dispatcher.stashedMessages,
+    safeEmit: async () => {},
+    drainPendingStarts: () => {},
+    crashRecovery: recovery,
+    restartStashedSession: async ({ reason }) => {
+      restarts.push(reason);
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "",
+        _agentId: AGENT_ID,
+        _resumeStashedMessages: true,
+        deliveryBarrier: "after_response",
+      });
+    },
+  });
+  const waitFor = (gate: ReturnType<typeof deferred>) =>
+    Promise.race([
+      gate.promise,
+      loop.then(() => {
+        throw new Error("Original loop ended before the expected generator boundary");
+      }),
+    ]);
+  try {
+    await waitFor(active);
+    await run({
+      clear: () => {
+        configureSlackThreadRuntime(
+          { parentSession: parent, ref: REQUEST_ID, provider: "clear", model: "clear" },
+          () => {},
+        );
+      },
+      changeModel: (model) => {
+        configureSlackThreadRuntime({ parentSession: parent, ref: REQUEST_ID, model }, () => {});
+        return dispatcher.applySessionModelChange(sessionName, model, { restartStashedMessages: true });
+      },
+      dispatch: (prompt) =>
+        dispatcher.handlePromptImmediate(sessionName, {
+          prompt,
+          _agentId: AGENT_ID,
+          deliveryBarrier: "after_response",
+          deliveryBarrierSource: "default",
+        }),
+      expectActiveOriginal: () => {
+        expect(original.turnActive).toBe(true);
+        expect(original.done).toBe(false);
+        expect(original.abortController.signal.aborted).toBe(false);
+        expect(interrupt).not.toHaveBeenCalled();
+        expect(getRuntimeTurnAttempt(originalAttemptId!)?.status).toBe("running");
+        expect(dispatcher.streamingSessions.get(sessionName)).toBe(original);
+      },
+      expectCompletionAccounting: () => {
+        expect(getSession(child.sessionKey)).toMatchObject({ inputTokens: 10, outputTokens: 4, totalTokens: 14 });
+        expect(dbGetCostForSession(child.sessionKey)).toMatchObject({
+          total_input: 10,
+          total_output: 4,
+          total_cost: 0.03,
+          turns: 1,
+        });
+        expect(getSessionTurn(originalTurnId!)).toMatchObject({
+          status: "complete",
+          provider: "claude",
+          model: "opus",
+          inputTokens: 10,
+          outputTokens: 4,
+          costUsd: 0.03,
+        });
+      },
+      finishOriginal: async (expectRetired) => {
+        terminalAllowed.resolve();
+        await terminalProcessed.promise;
+        if (expectRetired) await loop;
+      },
+      waitForOldSuccessor: () => waitFor(oldSuccessor),
+      releaseOriginalTerminal: terminalAllowed.resolve,
+      waitForPricing: () => waitFor(costEntered),
+      releasePricing: costReleased.resolve,
+      waitForOldLoop: () => loop,
+      snapshot: () => ({
+        originalAttemptStatus: getRuntimeTurnAttempt(originalAttemptId!)?.status,
+        originalTraceStatus: getSessionTurn(originalTurnId!)?.status,
+        oldInputs: [...oldInputs],
+        replacementInputs: [...replacementInputs],
+        startedProviders: [...startedProviders],
+        stashedPrompts: (dispatcher.stashedMessages.get(sessionName) ?? []).map((message) =>
+          String(message.message.content),
+        ),
+        restarts: [...restarts],
+        assistantReplies: getRecentHistory(sessionName)
+          .filter(({ role }) => role === "assistant")
+          .map(({ content }) => content),
+        replacementOwnsSlot: replacements.some(
+          ({ streaming }) => dispatcher.streamingSessions.get(sessionName) === streaming,
+        ),
+        modelSwitchCalls: [...modelSwitchCalls],
+      }),
+    });
+  } finally {
+    terminalAllowed.resolve();
+    costReleased.resolve();
+    finishConsumer.resolve();
+    original.done = true;
+    original.abortController.abort();
+    original.onTurnComplete?.();
+    original.pushMessage?.(null);
+    await loop;
+    start.mockRestore();
+    costGate?.mockRestore();
+    dispatcher.shutdownAll();
+    for (const { prompts } of replacements) await prompts.return(undefined);
+    await originalPrompts.return(undefined);
+    if (recovery.acceptingDeliveries) recovery.stopGracefully("test_cleanup");
+  }
+}
 
 function deferred() {
   let resolve!: () => void;

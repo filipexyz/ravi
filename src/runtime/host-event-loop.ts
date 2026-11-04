@@ -986,6 +986,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     restartStashedSession,
     onToolBarrierReleased,
   } = options;
+  const ownsRuntimeSlot = () => streamingSessions.get(sessionName) === streaming;
+  const updateOwnedLiveState = (input: Parameters<typeof updateRuntimeLiveState>[1]) => {
+    if (ownsRuntimeSlot()) updateRuntimeLiveState(sessionName, input);
+  };
+  const markOwnedLiveIdle = (summary: string) => {
+    if (ownsRuntimeSlot()) markRuntimeLiveIdle(sessionName, summary);
+  };
+  const stashOwnedPendingMessages = (options: Parameters<typeof stashPendingRuntimeMessages>[3]) =>
+    ownsRuntimeSlot() ? stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, options) : 0;
+  const stashOwnedCurrentTurnMessages = (options: Parameters<typeof stashCurrentTurnRuntimeMessages>[3]) =>
+    ownsRuntimeSlot() ? stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, options) : 0;
   let lastPersistedProvider = session.runtimeProvider;
   let lastPersistedOverride = session.runtimeProviderOverride;
   let providerConfigurationRevision = session.runtimeProviderConfigRevision ?? 0;
@@ -1312,7 +1323,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         runtimeSession.skillVisibility,
       )
     : runtimeSession.skillVisibility;
-  updateRuntimeLiveState(sessionName, {
+  updateOwnedLiveState({
     activity: "thinking",
     summary: "runtime active",
     agentId: agent.id,
@@ -1378,6 +1389,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     name: string;
     timeoutMs: number;
   }): void => {
+    if (!ownsRuntimeSlot()) return;
     const seconds = Math.round(input.timeoutMs / 1000);
     const subject = input.kind === "tool" ? `o tool \`${input.name}\`` : "o provider";
     const attempts = (inactivityRecoveryAttempts.get(sessionName) ?? 0) + 1;
@@ -1408,7 +1420,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       _runtimeProviderId: runtimeSession.provider,
     });
 
-    stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    stashOwnedPendingMessages({ crashRecovery });
     const queued = stashedMessages.get(sessionName) ?? [];
     const deduped = notice.clientMessageId
       ? queued.filter((message) => message.clientMessageId !== notice.clientMessageId)
@@ -1506,7 +1518,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
       },
     });
-    updateRuntimeLiveState(sessionName, {
+    updateOwnedLiveState({
       activity: "thinking",
       summary: "continuando apos inatividade",
       agentId: agent.id,
@@ -1666,7 +1678,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionDone: streaming.done,
         })
       ) {
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           ...buildSlowToolLivePatch(toolName, elapsedMs, streaming.pendingMessages.length),
           agentId: agent.id,
           runId,
@@ -1732,13 +1744,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
   const scheduleIdleSessionEviction = () => {
-    if (IDLE_SESSION_TTL_MS <= 0) {
+    if (!ownsRuntimeSlot() || IDLE_SESSION_TTL_MS <= 0) {
       return;
     }
     clearIdleSessionEvictionTimer();
     streaming.idleSessionEvictionTimer = setTimeout(() => {
       streaming.idleSessionEvictionTimer = undefined;
       if (
+        !ownsRuntimeSlot() ||
         streaming.done ||
         streaming.starting ||
         streaming.turnActive ||
@@ -1784,6 +1797,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
   const finishActiveToolBarrier = async () => {
     clearActiveToolState();
+    if (!ownsRuntimeSlot()) return;
 
     if (streaming.pendingAbort) {
       if (streaming.pendingMessages.length > 0) {
@@ -1791,7 +1805,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionName,
           count: streaming.pendingMessages.length,
         });
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+        stashOwnedPendingMessages({ crashRecovery });
       }
       log.info("Executing deferred abort after tool barrier released", {
         sessionName,
@@ -1840,12 +1854,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
   const terminateTurnAfterFatalTool = (failure: FatalToolFailure) => {
-    if (streaming.done || streaming.abortController.signal.aborted) {
+    if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) {
       return;
     }
 
     streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
-    const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    const stashedCount = stashOwnedPendingMessages({ crashRecovery });
     if (stashedCount > 0) {
       restartStashedReason = FATAL_TOOL_FAILURE_REASON;
     }
@@ -1920,7 +1934,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.turnActive = false;
     streaming.internalAbortReason = FATAL_TOOL_FAILURE_REASON;
     clearActiveToolState();
-    markRuntimeLiveIdle(sessionName, "fatal tool failure");
+    markOwnedLiveIdle("fatal tool failure");
     signalTurnComplete();
     clearTraceTurnState();
     streaming.done = true;
@@ -2225,6 +2239,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
    * restart they would stay in this dead session object and be lost.
    */
   const recoverQueueBehindSettledTurn = () => {
+    if (!ownsRuntimeSlot()) return;
     const reason =
       streaming.internalAbortReason ??
       (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
@@ -2251,12 +2266,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const prepareUnterminatedTurnRecovery = () => {
+    if (!ownsRuntimeSlot()) return;
     if (streaming.durableTurnPreparationFailed) {
       if (!restartStashedReason) {
         // The prompt was never yielded to the provider. Preserve it even when
         // the failed attempt write made the coordinator reject new work;
         // shutdown snapshots still need the exact original envelope.
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+        stashOwnedPendingMessages({ crashRecovery });
       }
       if (restartStashedReason || !crashRecovery?.acceptingDeliveries) {
         return;
@@ -2305,7 +2321,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
     const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
-    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+    const stashedCount = stashOwnedCurrentTurnMessages({
       crashRecovery,
       reconcileCurrentTurn,
     });
@@ -2356,7 +2372,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     input: Parameters<typeof updateRuntimeLiveState>[1],
     skillVisibility?: RuntimeSkillVisibilitySnapshot,
   ) =>
-    updateRuntimeLiveState(sessionName, {
+    updateOwnedLiveState({
       ...input,
       ...(skillVisibility
         ? {
@@ -2408,6 +2424,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   // The revision distinguishes an explicit clear (even of a null override) and
   // ABA from an unchanged launch. Compatible providers can keep continuity.
   const persistCurrentProviderState = (write: () => void): boolean => {
+    if (!ownsRuntimeSlot()) return false;
     const saved = executeWrite(
       getDb(),
       () => {
@@ -2471,6 +2488,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const persistPiContextSaturation = (usedTokens: number, limitTokens: number) => {
+    if (!ownsRuntimeSlot()) return;
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
       contextWindow: limitTokens,
@@ -2772,7 +2790,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     let timedOut = false;
     const timeout = new Promise<IteratorResult<RuntimeEvent>>((resolve) => {
       interval = setInterval(() => {
-        if (timedOut || streaming.done || streaming.abortController.signal.aborted) return;
+        if (!ownsRuntimeSlot() || timedOut || streaming.done || streaming.abortController.signal.aborted) return;
         if (!streaming.turnActive || streaming.toolRunning || streaming.compacting) return;
 
         const idleMs = Date.now() - streaming.lastActivity;
@@ -2781,7 +2799,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         timedOut = true;
         const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
         const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
-        const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+        const stashedCount = stashOwnedPendingMessages({
           crashRecovery,
           reconcileCurrentTurn,
         });
@@ -2810,7 +2828,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.turnActive = false;
         streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
         clearActiveToolState();
-        markRuntimeLiveIdle(sessionName, "provider turn inactive");
+        markOwnedLiveIdle("provider turn inactive");
         signalTurnComplete();
         clearTraceTurnState();
         streaming.done = true;
@@ -3058,7 +3076,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             metadata: event.metadata,
           });
         }
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "streaming",
           summary: truncateLiveSummary(event.text) || "streaming",
           agentId: agent.id,
@@ -3275,7 +3293,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           metadata: event.metadata,
           ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "thinking",
           summary: `${event.toolUse.name} running`,
           agentId: agent.id,
@@ -3460,7 +3478,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                     text: utterance,
                   });
                 }
-                updateRuntimeLiveState(sessionName, {
+                updateOwnedLiveState({
                   activity: "streaming",
                   summary: truncateLiveSummary(utterance) || "response",
                   agentId: agent.id,
@@ -3598,7 +3616,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
 
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: event.isError ? "blocked" : "thinking",
           summary: event.isError ? `${toolName} failed` : `${toolName} completed`,
           agentId: agent.id,
@@ -3698,7 +3716,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Visible assistant text is real progress. A silent, empty, or @@SILENT@@
         // completion — including a recovery that produced nothing — keeps the
         // consecutive inactivity budget so repeated silence reaches the cap.
-        if (inactivityRecoveryCompletionHasProgress(responseText)) {
+        if (ownsRuntimeSlot() && inactivityRecoveryCompletionHasProgress(responseText)) {
           resetInactivityRecoveryBudget(sessionName);
         }
         await recordRuntimeCredentialTurnSuccess(
@@ -3749,7 +3767,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
-        updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
+        // Totals belong to the completed turn; context is the current handle's snapshot.
+        updateTokens(
+          session.sessionKey,
+          inputTokens,
+          outputTokens,
+          ownsRuntimeSlot() ? inputTokens + cacheRead + cacheCreation : null,
+        );
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
@@ -3826,6 +3850,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           promptTooLongReset: streaming._promptTooLong ?? false,
         });
         if (
+          ownsRuntimeSlot() &&
           shouldRefreshTaskSessionTtlOnTurnComplete({
             sessionName,
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
@@ -3837,7 +3862,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         // Auto-reset session when prompt is too long (compact failed)
-        if (streaming._promptTooLong) {
+        if (ownsRuntimeSlot() && streaming._promptTooLong) {
           log.warn("Auto-resetting session due to 'Prompt is too long'", {
             sessionName,
           });
@@ -3903,6 +3928,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // generator, carrying only unconsumed successors into a fresh launch.
         const configuredSession = getSession(session.sessionKey);
         if (
+          ownsRuntimeSlot() &&
           configuredSession &&
           (configuredSession.runtimeProviderConfigRevision ?? 0) !==
             (streaming.runtimeProviderConfigRevision ?? session.runtimeProviderConfigRevision ?? 0) &&
@@ -3938,7 +3964,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "goal.updated") {
-        syncRuntimeSessionGoal(session.sessionKey, event.goal);
+        if (ownsRuntimeSlot()) syncRuntimeSessionGoal(session.sessionKey, event.goal);
         await emitRuntimeEvent({ type: "goal.updated", goal: event.goal });
         continue;
       }
@@ -4032,7 +4058,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
         clearTraceTurnState();
-        markRuntimeLiveIdle(sessionName, "turn interrupted");
+        markOwnedLiveIdle("turn interrupted");
         signalTurnComplete();
         continue;
       }
@@ -4123,7 +4149,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         if (suppressedRecoverable) {
           const restartReason = recoveryReason ?? "recoverable_interrupt_failure";
-          markRuntimeLiveIdle(sessionName, "turn interrupted");
+          markOwnedLiveIdle("turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
             sessionName,
@@ -4136,7 +4162,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
           // immediately; preserve queued/current messages so the next session
           // can drain them instead of losing the interrupted turn.
-          const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+          const stashedCount = stashOwnedPendingMessages({ crashRecovery });
           if (stashedCount > 0) {
             restartStashedReason = restartReason;
           } else {
@@ -4160,7 +4186,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
         if (credentialFailureSignal?.retryableByCredential && modelBrokerRetryApproved) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
-          const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+          const stashedCount = stashOwnedCurrentTurnMessages({
             crashRecovery,
           });
           if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
@@ -4241,9 +4267,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
         const sessionRecoveryHasStateToClear =
           sessionRecoveryFailure?.kind !== "provider_session_missing" || hasStoredProviderSessionId(session);
-        if (sessionRecoveryFailure && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable) {
+        const canRecoverSession = () =>
+          ownsRuntimeSlot() && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable;
+        if (sessionRecoveryFailure && canRecoverSession()) await projectRuntimeEventToChannel(event);
+        if (sessionRecoveryFailure && canRecoverSession()) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
-          await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48).filter(
             (message) => message.id > (session.historyResetAfterId ?? 0),
           );
@@ -4334,7 +4362,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               currentTurnHadToolStarted,
             },
           });
-          updateRuntimeLiveState(sessionName, {
+          updateOwnedLiveState({
             activity: "thinking",
             summary: recoveryPlan.liveSummary,
             agentId: agent.id,
@@ -4463,7 +4491,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             }
           }
         }
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "blocked",
           summary: truncateLiveSummary(publicRuntimeFailureDetail(operatorError)) || "turn failed",
           agentId: agent.id,
@@ -4543,10 +4571,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     await closeRuntimeSession();
 
-    const stillOwnsRuntimeSlot = streamingSessions.get(sessionName) === streaming;
-    if (stillOwnsRuntimeSlot) {
-      streamingSessions.delete(sessionName);
-    }
     try {
       const finalCredential = streaming.currentRuntimeCredential;
       if (
@@ -4572,7 +4596,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         error,
       });
     }
-    if (stillOwnsRuntimeSlot) {
+    // Feedback can yield to a replacement. Decide ownership only after every
+    // cleanup await, immediately before releasing the slot and its queued work.
+    if (ownsRuntimeSlot()) {
+      streamingSessions.delete(sessionName);
       try {
         if (restartStashedReason && restartStashedSession) {
           await restartStashedSession({

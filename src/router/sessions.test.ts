@@ -23,6 +23,7 @@ import {
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverride,
   updateSessionThreadId,
+  updateTokens,
 } from "./sessions.js";
 import { getRecentHistory, saveMessage } from "../db.js";
 import type { MessageContext } from "../runtime/message-types.js";
@@ -39,6 +40,20 @@ describe("sessions store", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("accounts for a retired turn without replacing the current context snapshot", () => {
+    const session = getOrCreateSession("agent:main:retired-usage", "main", stateDir!);
+    updateTokens(session.sessionKey, 100, 20, 800);
+    updateTokens(session.sessionKey, 10, 4, null);
+    expect(getSession(session.sessionKey)).toMatchObject({
+      inputTokens: 110,
+      outputTokens: 24,
+      totalTokens: 134,
+      contextTokens: 800,
+    });
+    updateTokens(session.sessionKey, 0, 0, 0);
+    expect(getSession(session.sessionKey)?.contextTokens).toBe(0);
   });
 
   it("reports unknown usage as null and counts it apart instead of summing it as zero", () => {

@@ -297,7 +297,7 @@ function getStatements(): SessionStatements {
         input_tokens = input_tokens + ?,
         output_tokens = output_tokens + ?,
         total_tokens = total_tokens + ?,
-        context_tokens = ?,
+        context_tokens = COALESCE(?, context_tokens),
         updated_at = ?
       WHERE session_key = ?
     `),
@@ -547,11 +547,11 @@ export function clearProviderSession(sessionKey: string): void {
 }
 
 /**
- * Update token usage
+ * Update additive usage. A null context preserves the current owner's snapshot.
  */
-export function updateTokens(sessionKey: string, input: number, output: number, context?: number): void {
+export function updateTokens(sessionKey: string, input: number, output: number, context?: number | null): void {
   const s = getStatements();
-  s.updateTokens.run(input, output, input + output, context ?? 0, Date.now(), sessionKey);
+  s.updateTokens.run(input, output, input + output, context === null ? null : (context ?? 0), Date.now(), sessionKey);
 }
 
 function numberFromRow(value: unknown): number {
