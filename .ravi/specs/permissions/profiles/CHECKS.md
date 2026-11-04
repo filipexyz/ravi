@@ -10,6 +10,20 @@ capability: profiles
 
 ## Regression Tests
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/permissions.test.ts`
+  covers all four built-ins before tag creation: dry-run without writes,
+  allow/deny expansion parity with the executor materializers, apply of eligible
+  profiles to a human in a Slack chat, read-back with `permissions list --chat`, empty grants,
+  idempotent replay and revoke. A second contact stays at zero authority.
+- Unknown profiles MUST name the available profiles and concrete inspection
+  commands. A `full-access` preview MUST include the expanded ceiling and the
+  explicit operator-approval requirement. `allow`/`resolve --profile full-access
+  --apply` MUST fail with `FULL_ACCESS_APPROVAL_REQUIRED` before any profile,
+  contact grant or agent-ceiling write while verified approval consumption is
+  unavailable. The dry-run MUST NOT suggest that blocked apply command.
+- More than 500 stored profiles, including older rows behind newer non-profile
+  tags, MUST all appear in `acceptedValues`; the inline diagnostic stays bounded.
+
 - Materialize an agent with `agent.defaults.runtimePermissions.profile =
   "full-access"` and assert `admin system:*`, `execute executable:*`,
   `use tool:*`, and `use skill:*` appear with `agent-default-capabilities`
@@ -63,3 +77,26 @@ bun test src/permissions/delegation.test.ts
 bun test src/cli/commands/agents.test.ts
 bun test src/cli/commands/permissions.test.ts src/cli/command-access.test.ts src/approval/service.test.ts
 ```
+
+## Shared definition reductions
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/router/router-db.contexts.test.ts`
+  MUST preserve context provenance, capabilities and lifecycle timestamps when
+  recording authority withdrawal. Metadata and descendant revocations MUST
+  commit or roll back together inside the caller's transaction; unrelated
+  contexts and existing lineage MUST remain intact.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/permissions.test.ts`
+  MUST cover a legacy chat-only definition shared by multiple contacts and chat,
+  chat-tag and global grants: dry-run leaves snapshots live, apply revokes all
+  affected roots, descendants and actor projections, and another profile stays
+  live. A rejected context write MUST roll back the profile and all revocations.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/permissions/apply-grant.test.ts src/runtime/context-registry.test.ts`
+  MUST retain direct profile-source snapshot revocation and prove label-only and
+  additive updates leave existing contexts live.
+  Regressions MUST cover live issued children behind revoked roots/projections
+  and unrelated colon-bearing profile names that share the target's suffix.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/runtime-request-context.test.ts`
+  MUST revoke issued and chained relays after a shared profile reduction and
+  prevent queued relays from historical callers restoring the old authority.
+  Ordinary turn rotation MUST still allow queued relays to preserve their
+  original narrowing, and contact attribution MUST survive authority withdrawal.

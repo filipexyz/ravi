@@ -7,6 +7,7 @@ import {
   dbGetContextByKeyReadOnly,
   dbListContexts,
   dbTouchContext,
+  dbUpdateContextMetadata,
   dbRevokeContextCascade,
   type ContextCapability,
   type ContextRecord,
@@ -198,6 +199,67 @@ export function revokeLiveRuntimeContextsForContactGrant(
       revokedAt: options.revokedAt,
     }),
   );
+}
+
+/** A definition is shared by every holder; narrowing it invalidates all of its snapshots. */
+export function revokeLiveRuntimeContextsForPermissionProfile(profile: string): RevokeContextResult[] {
+  // Turn rotation can leave issued children alive after their root is revoked.
+  // Retain historical lineage while finding every still-live dependent.
+  const all = dbListContexts({ includeInactive: true });
+  const contexts = all.filter((context) => {
+    const grants = context.metadata?.userOverlayGrants;
+    return (
+      (Array.isArray(grants) && grants.some((grant) => typeof grant === "string" && grant.startsWith(`${profile}@`))) ||
+      context.capabilities.some(
+        ({ source }) =>
+          source?.match(/^contact-policy:contact:[^:]+:tag:(.+)$/)?.[1] === profile ||
+          source?.match(/^contact-policy:contact:[^:]+:chat:[^:]+:profile:(.+)$/)?.[1] === profile,
+      )
+    );
+  });
+  const matchingIds = new Set(contexts.map((context) => context.contextId));
+  const dependents = new Map<string, string[]>();
+  for (const context of all) {
+    const turnOrigin = context.metadata?.turnOrigin;
+    const relayCaller =
+      context.metadata?.relayNarrowing === true && turnOrigin && typeof turnOrigin === "object"
+        ? (turnOrigin as Record<string, unknown>).callerContextId
+        : undefined;
+    for (const parent of [
+      context.metadata?.parentContextId,
+      readActorProjectionSourceContextId(context.metadata),
+      relayCaller,
+    ]) {
+      if (typeof parent !== "string") continue;
+      const children = dependents.get(parent) ?? [];
+      children.push(context.contextId);
+      dependents.set(parent, children);
+    }
+  }
+  const queue = [...matchingIds];
+  for (let index = 0; index < queue.length; index++) {
+    for (const child of dependents.get(queue[index]!) ?? []) {
+      if (matchingIds.has(child)) continue;
+      matchingIds.add(child);
+      queue.push(child);
+    }
+  }
+  const now = Date.now();
+  // Historical callers remain available for queued relays after ordinary turn
+  // rotation. Mark this authority withdrawal separately so they cannot lend the
+  // removed capabilities to a new relay after the profile update commits.
+  for (const context of all) {
+    if (!matchingIds.has(context.contextId)) continue;
+    dbUpdateContextMetadata(context.contextId, { ...context.metadata, permissionProfileRevokedAt: now });
+  }
+  const live = all.filter((context) => matchingIds.has(context.contextId) && isContextLive(context, now));
+  const liveIds = new Set(live.map((context) => context.contextId));
+  return live
+    .filter((context) => {
+      const parent = context.metadata?.parentContextId;
+      return typeof parent !== "string" || !liveIds.has(parent);
+    })
+    .map((context) => revokeRuntimeContext(context.contextId, { reason: "permission_profile_reduced" }));
 }
 
 export function snapshotAgentCapabilities(agentId: string): ContextCapability[] {

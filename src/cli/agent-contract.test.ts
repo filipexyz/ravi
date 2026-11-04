@@ -74,6 +74,30 @@ describe("audited operational error controls", () => {
       ...details,
     }).envelope().error;
 
+  it("preserves only the declared permission inspection commands and a typed truncation marker", () => {
+    const controls = envelope({
+      inspectCommands: [
+        "ravi skills show permissions",
+        "ravi skills show permissions",
+        "ravi tags list --kind system --source permissions --json",
+        "ravi permissions allow full-access --apply",
+        "ravi skills show permissions; echo unsafe",
+        { command: "ravi skills show permissions" },
+      ],
+      acceptedValuesTruncated: true,
+    });
+    expect(controls.inspectCommands).toEqual([
+      "ravi skills show permissions",
+      "ravi tags list --kind system --source permissions --json",
+    ]);
+    expect(controls.acceptedValuesTruncated).toBe(true);
+    expect(
+      envelope({ inspectCommands: "ravi skills show permissions", acceptedValuesTruncated: "true" }).inspectCommands,
+    ).toBeUndefined();
+    expect(envelope({ acceptedValuesTruncated: "true" }).acceptedValuesTruncated).toBeUndefined();
+    expect(JSON.stringify(controls)).not.toContain("full-access --apply");
+  });
+
   it("retains typed recovery and publication metadata without forwarding nested payloads", () => {
     const result = envelope({
       runId: "run_123",

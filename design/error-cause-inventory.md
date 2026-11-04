@@ -348,10 +348,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/thread-requester.ts | 34 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-requester.ts:906a166dfda93a7451e16429 |
 | channels-slack | src/channels/slack/thread-requester.ts | 64 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:518fbe45995656bbf2c7b34e |
 | channels-slack | src/channels/slack/thread-requester.ts | 73 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:4e96a74ec3eda3554d5b7d4b |
-| ci | src/ci/quality-gate.ts | 368 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
-| ci | src/ci/quality-gate.ts | 379 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
-| ci | src/ci/quality-gate.ts | 389 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
-| ci | src/ci/quality-gate.ts | 398 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
+| ci | src/ci/quality-gate.ts | 370 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
+| ci | src/ci/quality-gate.ts | 381 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
+| ci | src/ci/quality-gate.ts | 391 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
+| ci | src/ci/quality-gate.ts | 400 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
 | ci | src/ci/run-quality-gate.ts | 37 | triaged-follow-up | catch-without-binding | src/ci/run-quality-gate.ts:5271b06f964c5c57249517e5 |
 | cli | src/cli/audit.ts | 49 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
 | cli | src/cli/audit.ts | 52 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
@@ -779,22 +779,22 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/provenance.ts | 199 | triaged-follow-up | catch-without-binding | src/cli/provenance.ts:c0ae4fd7afdb260c7808081a |
 | cli | src/cli/provenance.ts | 226 | triaged-follow-up | catch-without-binding | src/cli/provenance.ts:697a0104724333c88985d096 |
 | cli | src/cli/provenance.ts | 234 | triaged-follow-up | catch-without-binding | src/cli/provenance.ts:ea763c4f44dd59067eead42a |
-| cli | src/cli/redaction.ts | 107 | triaged-follow-up | catch-without-binding | src/cli/redaction.ts:efcd62ceb965fe74d5cf1697 |
-| cli | src/cli/redaction.ts | 181 | triaged-follow-up | catch-without-binding | src/cli/redaction.ts:628d9f11075d7c7c57b9b0eb |
-| cli | src/cli/redaction.ts | 197 | triaged-follow-up | catch-without-binding | src/cli/redaction.ts:f983db582e58186d2af52cef |
+| cli | src/cli/redaction.ts | 114 | triaged-follow-up | catch-without-binding | src/cli/redaction.ts:efcd62ceb965fe74d5cf1697 |
+| cli | src/cli/redaction.ts | 196 | triaged-follow-up | catch-without-binding | src/cli/redaction.ts:628d9f11075d7c7c57b9b0eb |
+| cli | src/cli/redaction.ts | 212 | triaged-follow-up | catch-without-binding | src/cli/redaction.ts:f983db582e58186d2af52cef |
 | cli | src/cli/registry.ts | 257 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:93655d78883a03d1fbd85a5e |
 | cli | src/cli/registry.ts | 356 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:e75dd981fe9367c1cbd9478b |
 | cli | src/cli/registry.ts | 462 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:7b1c42218079b4b73c93330c |
-| relay | src/cli/remote-gateway.ts | 148 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:950513833066c4a74bd40ca2 |
-| relay | src/cli/remote-gateway.ts | 186 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:7b442ec9c6f86f3ce4264b74 |
-| relay | src/cli/remote-gateway.ts | 229 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c5ef9f575c42ea0e677fbf2c |
-| relay | src/cli/remote-gateway.ts | 320 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:1607538d1a25b7ef5066f1ea |
-| relay | src/cli/remote-gateway.ts | 359 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:184b15658d372cdd90140658 |
-| relay | src/cli/remote-gateway.ts | 385 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:ac623af48505defd94499ca8 |
-| relay | src/cli/remote-gateway.ts | 478 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c41d6e44f3fc6e90b2094dde |
-| relay | src/cli/remote-gateway.ts | 912 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:266a824d891cb5d497d3ac3e |
-| relay | src/cli/remote-gateway.ts | 979 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:b25c88a5d690b9855455a3a6 |
-| relay | src/cli/remote-gateway.ts | 1447 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
+| relay | src/cli/remote-gateway.ts | 153 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:950513833066c4a74bd40ca2 |
+| relay | src/cli/remote-gateway.ts | 191 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:7b442ec9c6f86f3ce4264b74 |
+| relay | src/cli/remote-gateway.ts | 234 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c5ef9f575c42ea0e677fbf2c |
+| relay | src/cli/remote-gateway.ts | 325 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:1607538d1a25b7ef5066f1ea |
+| relay | src/cli/remote-gateway.ts | 364 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:184b15658d372cdd90140658 |
+| relay | src/cli/remote-gateway.ts | 390 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:ac623af48505defd94499ca8 |
+| relay | src/cli/remote-gateway.ts | 483 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c41d6e44f3fc6e90b2094dde |
+| relay | src/cli/remote-gateway.ts | 917 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:266a824d891cb5d497d3ac3e |
+| relay | src/cli/remote-gateway.ts | 984 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:b25c88a5d690b9855455a3a6 |
+| relay | src/cli/remote-gateway.ts | 1496 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
 | cli | src/cli/runtime-target.ts | 33 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:a330f4808d976b8052774005 |
 | cli | src/cli/runtime-target.ts | 85 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:863230d57a244c76b7fe3ddb |
 | cli | src/cli/skill-gates.ts | 398 | triaged-follow-up | catch-without-binding | src/cli/skill-gates.ts:2393bd5726c3cde0dace38b5 |
@@ -1435,8 +1435,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | pages | src/pages/ship.ts | 340 | triaged-follow-up | cause-not-forwarded-at-surface | src/pages/ship.ts:131cc6f0f892cc59859ca8b5 |
 | pages | src/pages/ship.ts | 354 | triaged-follow-up | cause-not-forwarded-at-surface | src/pages/ship.ts:96963fea4700dbc3eec4d37a |
 | permissions | src/permissions/app-permission-provider-runtime.ts | 860 | triaged-follow-up | catch-without-binding | src/permissions/app-permission-provider-runtime.ts:4478b841cb301b890bbc21f3 |
-| permissions | src/permissions/apply-grant.ts | 535 | triaged-follow-up | catch-without-binding | src/permissions/apply-grant.ts:0eee170084f07ce787c3ecd8 |
-| permissions | src/permissions/apply-grant.ts | 543 | triaged-follow-up | catch-without-binding | src/permissions/apply-grant.ts:6ada072696100c42d659145f |
+| permissions | src/permissions/apply-grant.ts | 550 | triaged-follow-up | catch-without-binding | src/permissions/apply-grant.ts:0eee170084f07ce787c3ecd8 |
+| permissions | src/permissions/apply-grant.ts | 558 | triaged-follow-up | catch-without-binding | src/permissions/apply-grant.ts:6ada072696100c42d659145f |
 | permissions | src/permissions/authorization-guidance.ts | 186 | triaged-follow-up | catch-without-binding | src/permissions/authorization-guidance.ts:36025c6e1d9b9b58bf5f2cb4 |
 | permissions | src/permissions/codex-knowledge-parity.ts | 77 | triaged-follow-up | catch-without-binding | src/permissions/codex-knowledge-parity.ts:a5bc337ebaffcbf0ed2f1f58 |
 | permissions | src/permissions/command-access-kind-migration.ts | 207 | triaged-follow-up | catch-without-binding | src/permissions/command-access-kind-migration.ts:97984697b7c7d7e3f96e8a79 |
@@ -1542,8 +1542,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | router | src/router/router-db.ts | 9694 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:454c1d7739a0c56467723de6 |
 | router | src/router/router-db.ts | 10317 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:7d283c7fdec8206ee1c0ed64 |
 | router | src/router/router-db.ts | 10348 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:eb6c608285aac837be753ebb |
-| router | src/router/router-db.ts | 11620 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
-| router | src/router/router-db.ts | 11623 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
+| router | src/router/router-db.ts | 11628 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
+| router | src/router/router-db.ts | 11631 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
 | sessions | src/router/sessions.ts | 704 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:7d1bb7744cf9f62680b55377 |
 | sessions | src/router/sessions.ts | 718 | triaged-follow-up | catch-without-binding | src/router/sessions.ts:4cea4fc40c424fe5e35e394b |
 | sessions | src/router/sessions.ts | 1331 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:c6829bbd0def352b36c4b5d7 |
@@ -1773,7 +1773,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1122 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:f49adb7da30eef0673bbfeb3 |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1201 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
 | runtime-chat | src/runtime/runtime-request-context.ts | 332 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 534 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
+| runtime-chat | src/runtime/runtime-request-context.ts | 540 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
 | sessions | src/runtime/session-dispatcher.ts | 519 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f62a129921ede3d5cf54be0f |
 | sessions | src/runtime/session-dispatcher.ts | 528 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:083324775001a686ec7a5875 |
 | sessions | src/runtime/session-dispatcher.ts | 663 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:4e182c47be33a9110d382f81 |
@@ -1829,9 +1829,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | gateway | src/sdk/gateway/console-handler.ts | 98 | triaged-follow-up | surface-bypasses-constructor | src/sdk/gateway/console-handler.ts:746efd4a3e79e4bd8bd93ea7 |
 | gateway | src/sdk/gateway/console-socket.ts | 77 | triaged-follow-up | catch-without-binding | src/sdk/gateway/console-socket.ts:643ab17c30b1d9c5168bf456 |
 | gateway | src/sdk/gateway/cors.ts | 52 | triaged-follow-up | catch-without-binding | src/sdk/gateway/cors.ts:0e58b8aa5e49ff699c166be3 |
-| gateway | src/sdk/gateway/dispatcher.ts | 109 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:43b648156dd92e80fbb32ece |
-| gateway | src/sdk/gateway/dispatcher.ts | 218 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:dea691b37b72d27b9d44e8aa |
-| gateway | src/sdk/gateway/dispatcher.ts | 223 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:4f815b9f1377bda6d8e76b93 |
+| gateway | src/sdk/gateway/dispatcher.ts | 110 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:43b648156dd92e80fbb32ece |
+| gateway | src/sdk/gateway/dispatcher.ts | 219 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:dea691b37b72d27b9d44e8aa |
+| gateway | src/sdk/gateway/dispatcher.ts | 224 | fixed | binding retained / no recognized error surface | src/sdk/gateway/dispatcher.ts:4f815b9f1377bda6d8e76b93 |
 | gateway | src/sdk/gateway/server.ts | 123 | triaged-follow-up | cause-not-forwarded-at-surface | src/sdk/gateway/server.ts:1df34faab520c118eaf10317 |
 | gateway | src/sdk/gateway/server.ts | 240 | triaged-follow-up | catch-without-binding | src/sdk/gateway/server.ts:40b12c8b888522db78241907 |
 | gateway | src/sdk/gateway/server.ts | 252 | triaged-follow-up | catch-without-binding | src/sdk/gateway/server.ts:446b84ce0b533ce0a7758163 |
