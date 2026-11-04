@@ -134,6 +134,77 @@ describe("channel backend core contract", () => {
     expect(contexts).toEqual([context, context]);
   });
 
+  it.each([
+    ["without a restriction", "a".repeat(64), undefined],
+    ["with a matching fingerprint", "a".repeat(64), "a".repeat(64)],
+    ["with a mismatching fingerprint", "b".repeat(64), "a".repeat(64)],
+  ] as const)("preserves unfinished unknown evidence %s", async (_name, requestFingerprint, expectedRequestFingerprint) => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const evidence = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1 as const,
+      identity: createChannelOutputHandoffIdentity(output),
+      idempotencyKey: output.outputId,
+      requestFingerprint,
+      disposition: "unknown" as const,
+      operationFinished: false,
+      code: "OUTCOME_UNKNOWN" as const,
+    };
+    const context = expectedRequestFingerprint === undefined ? undefined : {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      expectedRequestFingerprint,
+    };
+    const contexts: Array<ChannelOutputEmissionContext | undefined> = [];
+    registry.register(output.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit(_output, restriction) {
+        contexts.push(restriction);
+        throw new RuntimeHandoffError(evidence);
+      },
+    });
+
+    for (const method of ["emit", "tryEmit"] as const) {
+      await expect(registry[method](output, context)).rejects.toHaveProperty("evidence", evidence);
+    }
+    expect(contexts).toEqual([context, context]);
+    expect(context?.expectedRequestFingerprint).toBe(expectedRequestFingerprint);
+  });
+
+  it("normalizes a finished pre-save fingerprint mismatch to conflict", async () => {
+    const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
+    const registry = new ChannelOutputSinkRegistry();
+    const evidence = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1 as const,
+      identity: createChannelOutputHandoffIdentity(output),
+      idempotencyKey: output.outputId,
+      requestFingerprint: "b".repeat(64),
+      disposition: "finished_pre_save_missing" as const,
+      operationFinished: true as const,
+      code: "SQLITE_BUSY" as const,
+    };
+    const context = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      expectedRequestFingerprint: "a".repeat(64),
+    };
+    registry.register(output.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit() {
+        throw new RuntimeHandoffError(evidence);
+      },
+    });
+
+    for (const method of ["emit", "tryEmit"] as const) {
+      await expect(registry[method](output, context)).rejects.toHaveProperty("evidence", {
+        ...evidence,
+        disposition: "conflict",
+        code: "REQUEST_FINGERPRINT_CONFLICT",
+      });
+    }
+    expect(context.expectedRequestFingerprint).toBe("a".repeat(64));
+  });
+
   it("validates runtime-produced identity and the pinned fingerprint with the independent SDK mirror", async () => {
     const output = await fixture<ChannelOutputEnvelope>("output-envelope.json");
     const registry = new ChannelOutputSinkRegistry();

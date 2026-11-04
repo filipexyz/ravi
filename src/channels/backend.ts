@@ -328,7 +328,7 @@ export class ChannelOutputSinkRegistry {
   }
 }
 
-/** Validates failures against the frozen output, preserving a permanent pin conflict. */
+/** Validates output identity without treating a pin conflict as proof of completion. */
 export function matchingChannelOutputHandoffEvidence(
   error: unknown,
   envelope: ChannelOutputEnvelope,
@@ -337,6 +337,8 @@ export function matchingChannelOutputHandoffEvidence(
   const evidence = getChannelOutputHandoffEvidence(error);
   if (!evidence || !channelOutputHandoffEvidenceMatches(evidence, envelope)) return undefined;
   if (!channelOutputHandoffEvidenceMatches(evidence, envelope, context?.expectedRequestFingerprint)) {
+    // A changed fingerprint forbids replay but cannot certify an ongoing operation finished.
+    if (evidence.disposition === "unknown" && evidence.operationFinished === false) return evidence;
     return {
       capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
       schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,

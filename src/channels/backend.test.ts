@@ -32,7 +32,12 @@ import {
   readChannelRuntime,
   type KnownChannelRuntimeEvent,
 } from "./runtime-events.js";
-import { CHANNEL_OUTPUT_HANDOFF_CAPABILITY, type ChannelOutputEmissionContext } from "./output-handoff.js";
+import {
+  CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+  ChannelOutputHandoffError,
+  createChannelOutputHandoffIdentity,
+  type ChannelOutputEmissionContext,
+} from "./output-handoff.js";
 
 let stateDir: string | null = null;
 
@@ -476,6 +481,83 @@ describe("channel backend output sinks", () => {
     await expect(registry.emit(envelope, context)).resolves.toBeUndefined();
     await expect(registry.tryEmit(envelope, context)).resolves.toBe(true);
     expect(restrictions).toEqual([context, context]);
+  });
+
+  it.each([
+    ["without a restriction", "a".repeat(64), undefined],
+    ["with a matching fingerprint", "a".repeat(64), "a".repeat(64)],
+    ["with a mismatching fingerprint", "b".repeat(64), "a".repeat(64)],
+  ] as const)(
+    "preserves unfinished unknown evidence %s",
+    async (_name, requestFingerprint, expectedRequestFingerprint) => {
+      const registry = new ChannelOutputSinkRegistry();
+      const envelope = outputEnvelope();
+      const evidence = {
+        capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        schemaVersion: 1 as const,
+        identity: createChannelOutputHandoffIdentity(envelope),
+        idempotencyKey: envelope.outputId,
+        requestFingerprint,
+        disposition: "unknown" as const,
+        operationFinished: false,
+        code: "OUTCOME_UNKNOWN" as const,
+      };
+      const context =
+        expectedRequestFingerprint === undefined
+          ? undefined
+          : {
+              capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+              expectedRequestFingerprint,
+            };
+      const restrictions: Array<ChannelOutputEmissionContext | undefined> = [];
+      registry.register(envelope.target, {
+        handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        async emit(_output, restriction) {
+          restrictions.push(restriction);
+          throw new ChannelOutputHandoffError(evidence);
+        },
+      });
+
+      for (const method of ["emit", "tryEmit"] as const) {
+        await expect(registry[method](envelope, context)).rejects.toHaveProperty("evidence", evidence);
+      }
+      expect(restrictions).toEqual([context, context]);
+      expect(context?.expectedRequestFingerprint).toBe(expectedRequestFingerprint);
+    },
+  );
+
+  it("normalizes a finished pre-save fingerprint mismatch to conflict", async () => {
+    const registry = new ChannelOutputSinkRegistry();
+    const envelope = outputEnvelope();
+    const evidence = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1 as const,
+      identity: createChannelOutputHandoffIdentity(envelope),
+      idempotencyKey: envelope.outputId,
+      requestFingerprint: "b".repeat(64),
+      disposition: "finished_pre_save_missing" as const,
+      operationFinished: true as const,
+      code: "SQLITE_BUSY" as const,
+    };
+    const context = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      expectedRequestFingerprint: "a".repeat(64),
+    };
+    registry.register(envelope.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit() {
+        throw new ChannelOutputHandoffError(evidence);
+      },
+    });
+
+    for (const method of ["emit", "tryEmit"] as const) {
+      await expect(registry[method](envelope, context)).rejects.toHaveProperty("evidence", {
+        ...evidence,
+        disposition: "conflict",
+        code: "REQUEST_FINGERPRINT_CONFLICT",
+      });
+    }
+    expect(context.expectedRequestFingerprint).toBe("a".repeat(64));
   });
 });
 

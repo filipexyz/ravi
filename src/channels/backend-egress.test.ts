@@ -33,6 +33,7 @@ import {
   createChannelOutputHandoffIdentity,
   type ChannelOutputEmissionContext,
 } from "./output-handoff.js";
+import { handoffTerminalOutputWithRecovery, type TerminalOutputHandoffState } from "./terminal-output-handoff.js";
 
 describe("channel backend cross-process egress", () => {
   it("relays validated runtime events and terminal output to runner-local sinks", async () => {
@@ -210,6 +211,120 @@ describe("channel backend cross-process egress", () => {
         disposition: "deferred",
       });
       expect(contexts).toEqual([undefined, context]);
+    } finally {
+      await responder.stop();
+    }
+  });
+
+  for (const scenario of ["no pin", "matching pin", "different pin"] as const) {
+    it(`preserves unfinished evidence through the real wire with ${scenario}`, async () => {
+      const connection = new InMemoryRequestReplyConnection();
+      const outputSinks = new ChannelOutputSinkRegistry();
+      const contexts: Array<ChannelOutputEmissionContext | undefined> = [];
+      const evidence = {
+        capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        schemaVersion: 1 as const,
+        identity: createChannelOutputHandoffIdentity(outputEnvelope),
+        idempotencyKey: outputEnvelope.outputId,
+        requestFingerprint: (scenario === "different pin" ? "b" : "a").repeat(64),
+        disposition: "unknown" as const,
+        operationFinished: false,
+        code: "OUTCOME_UNKNOWN" as const,
+      };
+      const context =
+        scenario === "no pin"
+          ? undefined
+          : {
+              capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+              expectedRequestFingerprint: "a".repeat(64),
+            };
+      outputSinks.register(target, {
+        handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        async emit(_output, restriction) {
+          contexts.push(restriction);
+          throw new ChannelOutputHandoffError(evidence);
+        },
+      });
+      const responder = startChannelBackendEgressResponder({ connection, outputSinks });
+      const responses: unknown[] = [];
+      const request = mock(async (subject: string, data: Uint8Array, options: { timeout: number }) => {
+        const response = await connection.request(subject, data, options);
+        responses.push(JSONCodec<unknown>().decode(response.data));
+        return response;
+      });
+      const requester = createChannelBackendEgressRequester({ connect: async () => ({ request }) });
+      try {
+        await expect(requester.emitOutput(outputEnvelope, context)).rejects.toHaveProperty("evidence", evidence);
+        expect(responses).toHaveLength(1);
+        expect(responses[0]).toHaveProperty("evidence", evidence);
+        expect(contexts).toEqual([context]);
+        expect(context?.expectedRequestFingerprint).toBe(scenario === "no pin" ? undefined : "a".repeat(64));
+        expect(request).toHaveBeenCalledTimes(1);
+      } finally {
+        await responder.stop();
+      }
+    });
+  }
+
+  it("stops after a pinned retry receives unfinished different-fingerprint evidence without certifying completion", async () => {
+    const connection = new InMemoryRequestReplyConnection();
+    const outputSinks = new ChannelOutputSinkRegistry();
+    const contexts: Array<ChannelOutputEmissionContext | undefined> = [];
+    const states: TerminalOutputHandoffState[] = [];
+    const prepared = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1 as const,
+      identity: createChannelOutputHandoffIdentity(outputEnvelope),
+      idempotencyKey: outputEnvelope.outputId,
+    };
+    const unfinished = {
+      ...prepared,
+      requestFingerprint: "b".repeat(64),
+      disposition: "unknown" as const,
+      operationFinished: false,
+      code: "OUTCOME_UNKNOWN" as const,
+    };
+    outputSinks.register(target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit(_output, context) {
+        contexts.push(context);
+        if (contexts.length === 1)
+          throw new ChannelOutputHandoffError({
+            ...prepared,
+            requestFingerprint: "a".repeat(64),
+            disposition: "finished_pre_save_missing",
+            operationFinished: true,
+            code: "SQLITE_BUSY",
+          });
+        throw new ChannelOutputHandoffError(unfinished);
+      },
+    });
+    const responder = startChannelBackendEgressResponder({ connection, outputSinks });
+    const request = mock(connection.request.bind(connection));
+    const requester = createChannelBackendEgressRequester({ connect: async () => ({ request }) });
+    try {
+      let failure: unknown;
+      try {
+        await handoffTerminalOutputWithRecovery(outputEnvelope, requester.emitOutput, {
+          mayEmit: () => true,
+          onState: (state) => states.push(state),
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        outcome: { status: "non_retryable", errorCode: "OUTPUT_OR_REQUEST_CONFLICT", attempt: 2 },
+      });
+      expect(failure).toHaveProperty("cause.evidence", unfinished);
+      expect(contexts).toEqual([
+        undefined,
+        {
+          capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+          expectedRequestFingerprint: "a".repeat(64),
+        },
+      ]);
+      expect(states.map((state) => state.status)).toEqual(["retry_scheduled", "non_retryable"]);
+      expect(request).toHaveBeenCalledTimes(2);
     } finally {
       await responder.stop();
     }

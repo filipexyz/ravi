@@ -43,3 +43,7 @@
   before sinks, malformed/generic ACKs, bounded pre-save retry and no unknown retry.
 - Existing host/Slack terminal fixtures MUST prove automatic recovery of only
   the missing logical/text stage, with one physical terminal and independent media.
+- Runtime/SDK registries and egress MUST preserve bound `unknown(false)` evidence
+  with no pin, a matching pin or a different actual fingerprint. A later unknown
+  fingerprint MUST stop the terminal retry without replacing the first pin or
+  asserting completion; finished mismatches MUST remain conflicts.

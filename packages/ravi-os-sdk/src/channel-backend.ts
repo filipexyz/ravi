@@ -465,6 +465,10 @@ export class ChannelOutputSinkRegistry {
       if (restriction?.expectedRequestFingerprint !== undefined &&
         "requestFingerprint" in evidence && evidence.requestFingerprint !== undefined &&
         evidence.requestFingerprint !== restriction.expectedRequestFingerprint) {
+        // A changed fingerprint forbids replay but cannot certify an ongoing operation finished.
+        if (evidence.disposition === "unknown" && evidence.operationFinished === false) {
+          throw new ChannelOutputHandoffError(evidence);
+        }
         throw new ChannelOutputHandoffError({
           capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
           schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,

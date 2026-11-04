@@ -218,6 +218,12 @@ replaced; each retry MUST validate it before saving. A job-less `not_started`,
 conflict, untyped exception, timeout or unknown outcome MUST NOT cause resending.
 After a confirmed save, the existing outbox reconciler owns pending work.
 
+A request-fingerprint mismatch MUST block replay without asserting that an
+operation finished. Validated `unknown` evidence with `operationFinished: false`
+MUST retain its full identity, actual fingerprint and uncertainty through runtime,
+SDK and egress normalization, including under a different immutable caller pin.
+Evidence for a completed conflicting operation MUST remain non-retryable.
+
 Internal egress version 2 MUST reject unsupported or unknown restrictive
 capabilities before sink invocation, without fallback or downgrade. A generic
 `ok: true` or resolved `Promise<void>` MUST NOT mean durable save or delivery.
