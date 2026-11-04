@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { nats } from "../nats.js";
+import { discardSlackAutomaticPendingReply } from "./slack/automatic-pending-reply.js";
 import {
   dbClaimChannelBackendRuntimeInterrupt,
   dbGetChatMessage,
@@ -711,6 +712,11 @@ async function recordAndEmit(
     terminalError: input.safeError,
     occurredAt: input.occurredAt,
   });
+  if (input.state === "completed" || input.state === "failed" || input.state === "interrupted") {
+    // Clear registry ownership only after the terminal transition succeeds.
+    // A host currently freezing/releasing this terminal still owns its copy.
+    discardSlackAutomaticPendingReply(input.metadata.binding);
+  }
   const payload =
     typeof input.payload === "function"
       ? input.payload(

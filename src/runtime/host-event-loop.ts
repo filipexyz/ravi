@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import {
-  createChannelBackendAutomaticOutputOrigin,
-  resolveSlackAutomaticOutputContextFromBinding,
-  type SlackAutomaticOutputContext,
-} from "../channels/slack/automatic-output-origin.js";
+  getSlackAutomaticPendingReply,
+  discardSlackAutomaticPendingReply,
+  type SlackAutomaticPendingReply as AutomaticSlackReply,
+} from "../channels/slack/automatic-pending-reply.js";
 import {
   freezeSlackAutomaticTerminalManifest,
   type SlackAutomaticTerminalManifest,
@@ -139,12 +139,7 @@ import type {
 } from "./types.js";
 import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
-import type {
-  ChannelAutomaticOutputOrigin,
-  ChannelBackendPromptMetadata,
-  ResponseContentPart,
-  ResponseMediaAttachment,
-} from "./message-types.js";
+import type { ChannelBackendPromptMetadata, ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
 import {
   createApprovalWaitLeaseTracker,
   createToolLivenessLease,
@@ -1132,34 +1127,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const turnOutputCounts = { final: 0, commentary: 0 };
   let reportedTerminalUsage: Extract<RuntimeEvent, { type: "turn.complete" }>["usage"] | undefined;
   const turnToolContinuation = createTurnToolContinuationLedger();
-  interface AutomaticSlackReply {
-    context: SlackAutomaticOutputContext;
-    origin: ChannelAutomaticOutputOrigin;
-    media: ResponseMediaAttachment[];
-    mediaKeys: Set<string>;
-    manifest?: SlackAutomaticTerminalManifest;
-    mediaReleased?: boolean;
-  }
-  // Logical channel requests can span physical provider turns. Keep their generated
-  // attachments with the immutable request, never the generic per-turn media buffer.
-  const automaticSlackReplies = new Map<string, AutomaticSlackReply>();
   const automaticSlackReply = (
     metadata: ChannelBackendPromptMetadata | undefined = streaming.currentChannelBackend,
-  ): AutomaticSlackReply | undefined => {
-    if (metadata?.target.channelKind !== "slack") return undefined;
-    const existing = automaticSlackReplies.get(metadata.binding.turnId);
-    if (existing) return existing;
-    const context = resolveSlackAutomaticOutputContextFromBinding(metadata.binding);
-    if (!context) return undefined;
-    const reply: AutomaticSlackReply = {
-      context,
-      origin: createChannelBackendAutomaticOutputOrigin(metadata.binding),
-      media: [],
-      mediaKeys: new Set(),
-    };
-    automaticSlackReplies.set(context.turnId, reply);
-    return reply;
-  };
+  ): AutomaticSlackReply | undefined => getSlackAutomaticPendingReply(metadata);
   const freezeAutomaticSlackReply = (
     reply: AutomaticSlackReply,
     kind: SlackAutomaticTerminalManifest["kind"],
@@ -1171,6 +1141,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       text,
       media: kind === "final_answer" ? reply.media : [],
     });
+    discardSlackAutomaticPendingReply(reply.origin.binding);
     if (kind !== "final_answer") {
       reply.media = [];
       reply.mediaKeys.clear();
@@ -4294,7 +4265,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionRecoveryFailure?.kind !== "provider_session_missing" || hasStoredProviderSessionId(session);
         if (sessionRecoveryFailure && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
-          await projectRuntimeEventToChannel(event);
+          // Recovery continues this same logical channel request. Record the
+          // failed physical attempt below, but defer its channel terminal output
+          // until the recovered request completes or fails without recovery.
           const history = getRecentHistory(sessionName, 48).filter(
             (message) => message.id > (session.historyResetAfterId ?? 0),
           );
@@ -4327,6 +4300,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             deliveryBarrier: "after_tool",
             deliveryBarrierSource: "inferred",
             ...streaming.currentTurnAuthority,
+            _channelBackend: streaming.currentChannelBackend,
             source: streaming.currentSource,
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
             _agentId: agent.id,

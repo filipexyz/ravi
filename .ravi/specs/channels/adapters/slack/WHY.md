@@ -122,3 +122,23 @@ for a bound on rapid logical reply admission. It recovers on new input without
 human intervention, but slow feedback and authorized explicit sends remain
 outside that guarantee. Tests retain these counterexamples so the mitigation
 cannot be mistaken for universal loop prevention.
+## Continuation lifetime and recovery provenance
+
+The first grouped-output implementation kept pending media inside one event-loop
+invocation. A test that yielded twice in that same invocation missed the real
+launcher boundary: replacing the streaming object lost generated members before
+the final manifest. Pending membership now belongs to the logical request in a
+process-local collection, partitioned by canonical database identity. Terminal
+cleanup removes collection ownership; a live terminal frame keeps its copy for
+freeze/release. This fixes ordinary in-process relaunch, not process-crash or
+core-NATS replay recovery.
+
+Session recovery already omitted the backend binding before this output guard
+existed. The guard made that omission a policy-coverage defect: a recovered bot
+answer could fall back to unrelated output during cooldown. Copying the binding
+alone still left a premature safe-error terminal. The replay-safe recovery branch
+therefore preserves the binding separately from authority and defers only its
+logical failure projection, keeping physical failure accounting and replay
+decisions intact. Positive bot, human and non-Slack controls are required alongside
+cooldown suppression; deleting terminal state or suppressing every recovered
+answer would not satisfy the contract.

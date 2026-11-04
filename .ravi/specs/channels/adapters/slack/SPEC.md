@@ -335,6 +335,16 @@ MUST NOT redirect it. Native bot media is deferred until that logical terminal;
 human media and explicit tool sends retain their existing paths. Safe-error
 and cancellation discard still-deferred attachments rather than releasing
 partial work as a later successful terminal.
+Pending bot media membership MUST belong to the immutable logical backend
+request, not one event-loop invocation or streaming-session object. Replacing
+those objects during an in-process provider continuation MUST retain that
+membership until the final manifest or logical cancellation closes it. The
+pending collection is process-local and partitioned by canonical router
+database identity. Reopening the same database connection within that process
+MUST retain live request membership; it does not persist descriptors for a
+process restart.
+Closed or cancelled requests MUST NOT recreate a pending collection or revive
+previous members.
 Only logical terminal cancellation may freeze a cancelled manifest; a physical
 interruption accepted by the existing recovery path MUST NOT add a premature
 cancelled-manifest tombstone. This does not change the runtime's recovery state
@@ -342,6 +352,19 @@ machine. Failure in a notification/text sink MUST NOT silently discard media
 whose final manifest already froze successfully; their delivery outcomes remain
 independent. The separate text outbox and core media path do not guarantee
 physical text-before-media delivery order.
+
+The replay-safe session-recovery branch MUST carry its trusted `_channelBackend`
+binding explicitly into the restated input, separately from actor authority.
+When that branch has accepted continuation of the same request, its failed
+physical attempt MUST NOT project a logical terminal failure or freeze a
+safe-error manifest before the continuation. The existing physical trace and
+replay/provider decisions remain intact. The recovered final MUST retain its
+original source, destination and automatic-output policy, including cooldown;
+it MUST NOT fall back to unrelated output because recovery lost the binding.
+Human bindings in that same branch MUST also remain able to deliver their
+legitimate final. Refused recovery and genuinely terminal failure retain their
+normal terminal projection; no backend terminal or suppression decision may be
+deleted or reopened to make recovery pass.
 
 The adapter MAY skip reapplying reply-mode policy only for an internal delivery
 request derived from a validated manifest and durable origin. An external flag,
