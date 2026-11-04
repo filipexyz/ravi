@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn, type Mock } from "bun:test";
 import {
   mkdtempSync,
   mkdirSync,
@@ -90,8 +90,8 @@ function register(command: CredentialDestinationsCommands, execute?: boolean) {
   );
 }
 
-let output: ReturnType<typeof spyOn>;
-let errors: ReturnType<typeof spyOn>;
+let output: Mock<typeof console.log>;
+let errors: Mock<typeof console.error>;
 let root: string;
 beforeEach(() => {
   output = spyOn(console, "log").mockImplementation(() => {});
