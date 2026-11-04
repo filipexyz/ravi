@@ -180,6 +180,42 @@ function result(overrides: Partial<RemoteDispatchResult>): RemoteDispatchResult 
 }
 
 describe("remote gateway exit taxonomy", () => {
+  it.each([true, false])(
+    "bounds remote cause after redaction including denial fallback (explicit cause: %s)",
+    (withCause) => {
+      const source = ["provider returned 401; token=RELAY_BOUNDARY_SECRET", ...Array(5).fill("a".repeat(1000))].join(
+        "\n",
+      );
+      const error = remoteGatewayErrorToContractError(
+        "commands list",
+        result({
+          status: 403,
+          body: JSON.stringify({
+            success: false,
+            op: "commands list",
+            exitCode: 1,
+            outcome: "denied",
+            error: {
+              code: "PERMISSION_DENIED",
+              message: withCause ? "provider denied access" : source,
+              ...(withCause ? { cause: source } : {}),
+              retryable: false,
+              context: { provider: "fixture", file: source },
+            },
+          }),
+        }),
+      );
+      expect(error).not.toBeNull();
+      if (!error) throw new Error("Expected projected denial");
+      const cause = error.details.cause as string;
+      expect(cause).toStartWith("provider returned 401; token=[redacted:token]");
+      expect(cause).toEndWith(" [truncated]");
+      expect(cause.length).toBeLessThanOrEqual(4096);
+      expect((error.details.context as { file: string }).file.length).toBeLessThanOrEqual(4096);
+      expect(JSON.stringify(error?.envelope())).not.toContain("RELAY_BOUNDARY_SECRET");
+    },
+  );
+
   it("preserves projected denial context when the remote response has no cause", () => {
     const error = remoteGatewayErrorToContractError(
       "commands list",

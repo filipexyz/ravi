@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { projectProviderDiagnosticText, safeDiagnosticField } from "../diagnostic-redactor.js";
+import { projectProviderDiagnosticText, redactDiagnosticText, safeDiagnosticField } from "../diagnostic-redactor.js";
 
 import {
   RaviAuthError,
@@ -75,6 +75,23 @@ describe("provider diagnostic field access", () => {
 });
 
 describe("gateway ContractError compatibility", () => {
+  it("bounds_redacted_multiline_diagnostics_including_a_stable_truncation_marker", () => {
+    const source = ["provider returned 401; token=SDK_BOUNDARY_SECRET", ...Array(5).fill("a".repeat(1000))].join("\n");
+    const body = contractBody(1, "failed");
+    body.error.message = source;
+    body.error.cause = source;
+    const error = buildErrorFromGateway(422, body, "audio.generate") as RaviContractError;
+    for (const text of [error.message, error.cause!]) {
+      expect(text).toStartWith("provider returned 401; token=[redacted:token]");
+      expect(text).toEndWith(" [truncated]");
+      expect(text.length).toBeLessThanOrEqual(4096);
+      expect(text).not.toContain("SDK_BOUNDARY_SECRET");
+      expect(redactDiagnosticText(text)).toBe(text);
+    }
+    const projectedAgain = buildErrorFromGateway(422, error.contractBody, "audio.generate") as RaviContractError;
+    expect(projectedAgain.contractBody).toEqual(error.contractBody);
+  });
+
   it.each([
     "AUTH_REQUIRED?token=SDK_CODE_QUERY_798",
     "rctx_sdk_code_secret798",

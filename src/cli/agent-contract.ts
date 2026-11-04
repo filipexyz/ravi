@@ -88,6 +88,8 @@ const CONTROL_FIELDS = [
   "existing",
   "operation",
   "ownerPrincipal",
+  "jobId",
+  "refusalReason",
   "pipelineId",
   "timeoutSeconds",
   "mediaPathPresent",

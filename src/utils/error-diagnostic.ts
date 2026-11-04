@@ -51,7 +51,10 @@ export function projectDiagnosticContext(value: unknown, options: DiagnosticOpti
   }
   const file = safeDiagnosticField(source, "file");
   if (typeof file === "string") {
-    result.file = redactDiagnosticText(file, options).replace(/\/(Users|home)\/[^/\s]+/g, "/$1/[redacted:user]");
+    result.file = redactDiagnosticText(
+      redactDiagnosticText(file, options).replace(/\/(Users|home)\/[^/\s]+/g, "/$1/[redacted:user]"),
+      options,
+    );
   }
   const status = safeDiagnosticField(source, "status");
   if (Number.isInteger(status) && Number(status) >= 100 && Number(status) <= 599) result.status = Number(status);

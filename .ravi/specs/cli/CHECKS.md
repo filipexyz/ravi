@@ -9,6 +9,10 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 
 ## Required checks
 
+- Diagnostic limits include the truncation marker and any path anonymization;
+  repeated projections MUST preserve normalized text. Core, relay (explicit
+  cause and denial fallback), and SDK regressions exercise the 4096-character
+  boundary after credential redaction.
 - `bun test src/sdk/gateway/dispatcher.test.ts` verifies that a missing task
   decision table produces HTTP 500 with caller-visible normalized cause and
   bounded diagnostic logging without a stack, and that restoring the schema

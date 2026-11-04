@@ -109,6 +109,21 @@ describe("error diagnostics", () => {
     expect(errorDiagnostic(error).cause.length).toBeLessThan(4096);
   });
 
+  it("bounds the complete public cause and file including the truncation marker", () => {
+    const text = ["provider returned 401; token=BOUNDARY_SECRET", ...Array(5).fill("a".repeat(1000))].join("\n");
+    const result = errorDiagnostic(new Error(text), { file: text, operation: "transcribe file" });
+    expect(result.cause).toStartWith("provider returned 401; token=[redacted:token]");
+    expect(result.cause).toEndWith(" [truncated]");
+    expect(result.cause.length).toBeLessThanOrEqual(4096);
+    expect(result.context.file?.length).toBeLessThanOrEqual(4096);
+    expect(JSON.stringify(result)).not.toContain("BOUNDARY_SECRET");
+    expect(redactDiagnosticText(result.cause)).toBe(result.cause);
+    const homePaths = Array(4).fill("/home/u/".repeat(120)).join("\n");
+    const file = projectDiagnosticContext({ file: homePaths }).file!;
+    expect(file.length).toBeLessThanOrEqual(4096);
+    expect(file).not.toContain("/home/u/");
+  });
+
   it("preserves long filesystem paths assembled from non-secret components", () => {
     const path = "/var/folders/34/z527s1r52n74f5349z9x9rzh0000gn/T/ravi-transcribe-test-w84dsg/voz.mp3";
     expect(errorDiagnostic(new Error(`EACCES: permission denied, open ${path}`), { file: path })).toEqual({

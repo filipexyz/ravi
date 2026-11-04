@@ -5,6 +5,7 @@ export interface DiagnosticRedactionOptions {
 }
 const MAX_INPUT = 8192;
 const MAX_OUTPUT = 4096;
+const TRUNCATION_MARKER = " [truncated]";
 const MAX_SEGMENT = 2048;
 const IDENTIFIER = /^[A-Za-z0-9_][A-Za-z0-9_.:/ -]{0,159}$/;
 const MARKER = /^\[redacted(?::[a-z0-9_.-]+)?\]$/i;
@@ -68,7 +69,8 @@ function normalizeContainers(text: string, options: DiagnosticRedactionOptions, 
     if (
       text.slice(i, i + 9).toLowerCase() === "[redacted" ||
       text.startsWith("[circular cause]", i) ||
-      text.startsWith("[cause chain truncated]", i)
+      text.startsWith("[cause chain truncated]", i) ||
+      text.startsWith(TRUNCATION_MARKER.trimStart(), i)
     ) {
       const end = text.indexOf("]", i);
       if (end >= 0) {
@@ -201,7 +203,9 @@ function normalizeText(value: string, options: DiagnosticRedactionOptions, depth
   text = text.replace(/\b[A-Za-z0-9+/=_-]{48,}\b/g, (candidate, offset: number, whole: string) =>
     whole[offset - 1] === "/" || (candidate.includes("/") && candidate.includes("-")) ? candidate : encoded(candidate),
   );
-  return text.length > MAX_OUTPUT ? `${text.slice(0, MAX_OUTPUT)} [truncated]` : text;
+  return text.length > MAX_OUTPUT
+    ? `${text.slice(0, MAX_OUTPUT - TRUNCATION_MARKER.length)}${TRUNCATION_MARKER}`
+    : text;
 }
 
 /** Bounded normalization for already textual diagnostics; structured errors use errorDiagnostic. */
