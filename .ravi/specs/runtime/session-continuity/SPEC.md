@@ -99,6 +99,18 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
   while the current turn is still generating. An accepted canonical completion
   ends generation even if asynchronous accounting is still pending; it MUST
   retain its completed classification and accounting during a later handoff.
+- Successor handoff MUST recheck saved provider selection after `turn.complete`,
+  non-recovered `turn.failed`, and `turn.interrupted`, before waking the old
+  generator. A terminal failure or interruption MUST retain its own outcome.
+  Existing recovery decisions take precedence: eligible interrupted input keeps
+  its replay envelope ahead of successors; failed/completed or cancelled input
+  MUST NOT be revived. Handoff MUST preserve each successor's delivery barrier,
+  including an active task's `after_task` gate, and MUST NOT terminalize a logical
+  channel binding merely because its physical runtime changes.
+- An explicit abort waiting for tool-result delivery MUST also settle if a
+  canonical terminal arrives first. Preserve that terminal's accounting, close
+  the handle, and retain independent queued work dormant for later admission;
+  a concurrent provider change MUST NOT resume it automatically.
 - Only the current live-slot owner may mutate shared successor stash, remove
   the live handle, reset session continuity, or publish its current-state
   snapshots. Ownership MUST be checked at the mutation after every intervening

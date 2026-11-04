@@ -20,6 +20,7 @@ import {
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
 import { querySessionTrace } from "../session-trace/query.js";
+import { dbCompleteTask, dbCreateTask, dbDispatchTask, dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { logger } from "../utils/logger.js";
 import { syncAgentSessionsToAgentRuntime } from "./agent-session-runtime-sync.js";
@@ -544,7 +545,151 @@ describe("provider changes with durable turns and real prompt generators", () =>
   });
 });
 
+describe("provider configuration at every terminal generator boundary", () => {
+  for (const terminal of ["complete", "failed", "interrupted"] as const) {
+    for (const deliveryBarrier of ["after_response", "after_task"] as const) {
+      for (const configuration of ["incompatible-clear", "compatible-clear", "unchanged"] as const) {
+        it(`preserves ${terminal} and delivers B once (${deliveryBarrier}, ${configuration})`, async () => {
+          const incompatible = configuration === "incompatible-clear";
+          await withGeneratedClaudeTurn(
+            {
+              terminal,
+              deliveryBarrier,
+              activeTaskBarrier: deliveryBarrier === "after_task",
+              agentDefaultProvider: configuration === "compatible-clear" ? "claude" : "codex",
+            },
+            async (fixture) => {
+              if (configuration !== "unchanged") fixture.clear();
+              await fixture.dispatch(NEXT_PROMPT);
+              fixture.expectActiveOriginal();
+              expect(fixture.snapshot().startedProviders).toEqual([]);
+
+              await fixture.finishOriginal(false);
+              await fixture.waitForSuccessorSettlement();
+              fixture.expectTerminalAccounting(terminal);
+              if (deliveryBarrier === "after_task") {
+                // The task is still dispatched in SQLite after A terminalizes.
+                // A replacement handle may exist, but neither generator may yield B.
+                fixture.expectTaskBlocked();
+                await fixture.releaseTaskBarrier();
+              }
+              await fixture.waitForSuccessorInput();
+              fixture.expectSuccessorBinding();
+              const settled = fixture.snapshot();
+              expect(settled.originalAttemptStatus).toBe(terminal);
+              expect(settled.originalTraceStatus).toBe(terminal);
+              expect(settled.oldInputs).toEqual(
+                incompatible ? [USER_PROMPT] : [USER_PROMPT, expect.stringContaining(NEXT_PROMPT)],
+              );
+              expect(settled.replacementInputs).toEqual(incompatible ? [expect.stringContaining(NEXT_PROMPT)] : []);
+              expect(settled.startedProviders).toEqual(incompatible ? ["codex"] : []);
+              expect(settled.restarts).toEqual(incompatible ? ["provider_change"] : []);
+              expect(settled.stashedPrompts).toEqual([]);
+              expect(settled.assistantReplies).toEqual([ASSISTANT_REPLY]);
+              const successorOccurrences = [...settled.oldInputs, ...settled.replacementInputs].reduce(
+                (count, input) => count + input.split(NEXT_PROMPT).length - 1,
+                0,
+              );
+              expect(successorOccurrences).toBe(1);
+            },
+          );
+        });
+      }
+    }
+  }
+
+  for (const terminal of ["complete", "failed", "interrupted"] as const) {
+    it(`does not automatically resume the queued successor after explicit cancellation (${terminal})`, async () => {
+      await withGeneratedClaudeTurn({ terminal }, async (fixture) => {
+        fixture.clear();
+        await fixture.dispatch(NEXT_PROMPT);
+        fixture.expectActiveOriginal();
+        fixture.abortOriginal();
+        await fixture.finishOriginal(true);
+        const settled = fixture.snapshot();
+        expect(settled.originalAttemptStatus).toBe("aborted");
+        expect(settled.originalTraceStatus).toBe("aborted");
+        expect(settled.oldInputs).toEqual([USER_PROMPT]);
+        expect(settled.replacementInputs).toEqual([]);
+        expect(settled.startedProviders).toEqual([]);
+        expect(settled.restarts).toEqual([]);
+        // Abort keeps independent queued work for an explicit later resume.
+        expect(settled.stashedPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+      });
+    });
+
+    it(`keeps a deferred explicit abort dormant after provider clear (${terminal})`, async () => {
+      await withGeneratedClaudeTurn({ terminal }, async (fixture) => {
+        fixture.clear();
+        await fixture.dispatch(NEXT_PROMPT);
+        fixture.expectActiveOriginal();
+        fixture.abortOriginal(true);
+        await fixture.finishOriginal(false);
+        await fixture.waitForSuccessorSettlement();
+        fixture.expectTerminalAccounting(terminal);
+        const settled = fixture.snapshot();
+        expect(settled.oldInputs).toEqual([USER_PROMPT]);
+        expect(settled.replacementInputs).toEqual([]);
+        expect(settled.startedProviders).toEqual([]);
+        expect(settled.restarts).toEqual([]);
+        expect(settled.stashedPrompts).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+        expect(settled.originalDone).toBe(true);
+      });
+    });
+  }
+
+  for (const clear of [true, false]) {
+    it(`preserves replay-safe interruption recovery (${clear ? "provider clear" : "unchanged config"})`, async () => {
+      await withGeneratedClaudeTurn({ terminal: "interrupted", emitAssistant: false }, async (fixture) => {
+        if (clear) fixture.clear();
+        await fixture.dispatch(NEXT_PROMPT);
+        fixture.expectActiveOriginal();
+        await fixture.finishOriginal(false);
+        await fixture.waitForSuccessorInput();
+        fixture.expectTerminalAccounting("interrupted");
+        const settled = fixture.snapshot();
+        expect(settled.originalMaterializedOutput).toBe(false);
+        expect(settled.originalAttemptStatus).toBe("interrupted");
+        expect(settled.originalTraceStatus).toBe("interrupted");
+        const replay = clear ? settled.replacementInputs : settled.oldInputs.slice(1);
+        expect(replay).toHaveLength(1);
+        expect(replay[0]).toContain(USER_PROMPT);
+        expect(replay[0]).toContain(NEXT_PROMPT);
+        expect(settled.startedProviders).toEqual(clear ? ["codex"] : []);
+        expect(settled.restarts).toEqual(clear ? ["provider_change"] : []);
+        expect(settled.assistantReplies).toEqual([]);
+      });
+    });
+
+    it(`retains legitimate transport recovery before provider handoff (${clear ? "provider clear" : "unchanged config"})`, async () => {
+      await withGeneratedClaudeTurn({ terminal: "recoverable", emitAssistant: false }, async (fixture) => {
+        if (clear) fixture.clear();
+        await fixture.dispatch(NEXT_PROMPT);
+        fixture.expectActiveOriginal();
+        await fixture.finishOriginal(true);
+        fixture.expectTerminalAccounting("interrupted");
+        const settled = fixture.snapshot();
+        expect(settled.originalMaterializedOutput).toBe(false);
+        expect(settled.originalAttemptStatus).toBe("interrupted");
+        expect(settled.originalTraceStatus).toBe("interrupted");
+        expect(settled.oldInputs).toEqual([USER_PROMPT]);
+        expect(settled.replacementInputs).toHaveLength(1);
+        expect(settled.replacementInputs[0]).toContain(USER_PROMPT);
+        expect(settled.replacementInputs[0]).toContain(NEXT_PROMPT);
+        expect(settled.startedProviders).toEqual([clear ? "codex" : "claude"]);
+        expect(settled.restarts).toEqual(["provider_transport_failure"]);
+        expect(settled.stashedPrompts).toEqual([]);
+        expect(settled.assistantReplies).toEqual([]);
+      });
+    });
+  }
+});
+
 interface GeneratedTurnOptions {
+  terminal?: "complete" | "failed" | "interrupted" | "recoverable";
+  deliveryBarrier?: "after_response" | "after_task";
+  activeTaskBarrier?: boolean;
+  emitAssistant?: boolean;
   agentDefaultProvider?: "claude" | "codex";
   pausePricing?: boolean;
   rejectModelSwitch?: boolean;
@@ -552,12 +697,19 @@ interface GeneratedTurnOptions {
 
 interface GeneratedTurnFixture {
   clear(): void;
+  abortOriginal(deferred?: boolean): void;
   changeModel(model: string): ReturnType<RuntimeSessionDispatcher["applySessionModelChange"]>;
   dispatch(prompt: string): Promise<void>;
   expectActiveOriginal(): void;
   expectCompletionAccounting(): void;
+  expectTerminalAccounting(status: "complete" | "failed" | "interrupted"): void;
+  expectTaskBlocked(): void;
+  expectSuccessorBinding(): void;
+  releaseTaskBarrier(): Promise<void>;
   finishOriginal(expectRetired: boolean): Promise<void>;
   waitForOldSuccessor(): Promise<void>;
+  waitForSuccessorSettlement(): Promise<void>;
+  waitForSuccessorInput(): Promise<void>;
   releaseOriginalTerminal(): void;
   waitForPricing(): Promise<void>;
   releasePricing(): void;
@@ -565,6 +717,8 @@ interface GeneratedTurnFixture {
   snapshot(): {
     originalAttemptStatus: string | undefined;
     originalTraceStatus: string | undefined;
+    originalMaterializedOutput: boolean | undefined;
+    originalDone: boolean;
     oldInputs: string[];
     replacementInputs: string[];
     startedProviders: string[];
@@ -598,6 +752,8 @@ async function withGeneratedClaudeTurn(
   const terminalAllowed = deferred();
   const terminalProcessed = deferred();
   const oldSuccessor = deferred();
+  const replacementConsumed = deferred();
+  const generatorWaiting = deferred();
   const finishConsumer = deferred();
   const costEntered = deferred();
   const costReleased = deferred();
@@ -606,6 +762,17 @@ async function withGeneratedClaudeTurn(
   const startedProviders: string[] = [];
   const restarts: string[] = [];
   const modelSwitchCalls: string[] = [];
+  const replacementConsumers: Promise<void>[] = [];
+  const blockerTask = options.activeTaskBarrier
+    ? dbCreateTask({ title: "Hold the successor until task completion", instructions: "Keep the task barrier active" })
+        .task
+    : undefined;
+  const successorTask = options.activeTaskBarrier
+    ? dbCreateTask({ title: "Successor task context", instructions: "Preserve this independent task envelope" }).task
+    : undefined;
+  if (blockerTask) {
+    dbDispatchTask(blockerTask.id, { agentId: AGENT_ID, sessionName, assignedBy: "test" });
+  }
   const replacements: Array<{
     streaming: RuntimeHostStreamingSession;
     prompts: ReturnType<typeof createRuntimeMessageGenerator>;
@@ -619,29 +786,39 @@ async function withGeneratedClaudeTurn(
     model: string,
     messages: RuntimeUserMessage[],
     revision: number,
-  ): RuntimeHostStreamingSession => ({
-    agentId: AGENT_ID,
-    queryHandle: { provider, events: (async function* () {})(), interrupt: mock(async () => {}) },
-    runtimeProviderConfigRevision: revision,
-    starting: false,
-    abortController: new AbortController(),
-    pushMessage: null,
-    pendingWake: false,
-    pendingMessages: messages,
-    currentModel: model,
-    toolRunning: false,
-    lastActivity: Date.now(),
-    done: false,
-    interrupted: false,
-    turnActive: false,
-    compacting: false,
-    onTurnComplete: null,
-    currentToolSafety: null,
-    pendingAbort: false,
-    agentMode: "sentinel",
-    traceRunId: "generated-provider-config-run",
-    toolEffectFence: "host_write_ahead",
-  });
+  ): RuntimeHostStreamingSession => {
+    let pushMessage: RuntimeHostStreamingSession["pushMessage"] = null;
+    return {
+      agentId: AGENT_ID,
+      queryHandle: { provider, events: (async function* () {})(), interrupt: mock(async () => {}) },
+      runtimeProviderConfigRevision: revision,
+      starting: false,
+      abortController: new AbortController(),
+      get pushMessage() {
+        return pushMessage;
+      },
+      set pushMessage(value) {
+        pushMessage = value;
+        // Observe the real generator's empty/non-deliverable queue boundary.
+        if (value) generatorWaiting.resolve();
+      },
+      pendingWake: false,
+      pendingMessages: messages,
+      currentModel: model,
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      interrupted: false,
+      turnActive: false,
+      compacting: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      agentMode: "sentinel",
+      traceRunId: "generated-provider-config-run",
+      toolEffectFence: "host_write_ahead",
+    };
+  };
   const original = newStreaming(
     "claude",
     "opus",
@@ -684,7 +861,8 @@ async function withGeneratedClaudeTurn(
           requestBlobSha256: trace.requestBlobSha256,
           startedAt: trace.startedAt,
           originKind: "human",
-          deliveryBarrier: "after_response",
+          deliveryBarrier: deliverableMessages[0]?.deliveryBarrier ?? "after_response",
+          taskBarrierTaskId: deliverableMessages[0]?.taskBarrierTaskId,
           pendingIds: deliverableMessages.map(({ pendingId }) => pendingId!),
         });
         if (!originalAttemptId && streaming === original) {
@@ -713,15 +891,34 @@ async function withGeneratedClaudeTurn(
           generatorCompleted();
           terminalProcessed.resolve();
         };
-        yield { type: "assistant.message", text: ASSISTANT_REPLY };
+        if (options.emitAssistant !== false) yield { type: "assistant.message", text: ASSISTANT_REPLY };
         active.resolve();
         await terminalAllowed.promise;
-        yield {
-          type: "turn.complete",
-          providerSessionId: PROVIDER_SESSION_AFTER,
-          session: { displayId: PROVIDER_SESSION_AFTER, params: { sessionId: PROVIDER_SESSION_AFTER } },
-          usage: { inputTokens: 10, outputTokens: 4 },
-        };
+        if (options.terminal === "failed") {
+          yield {
+            type: "turn.failed",
+            error: "Generic nonrecoverable provider failure",
+            recoverable: false,
+            usage: { inputTokens: 10, outputTokens: 4 },
+          };
+        } else if (options.terminal === "interrupted") {
+          yield { type: "turn.interrupted", usage: { inputTokens: 10, outputTokens: 4 } };
+        } else if (options.terminal === "recoverable") {
+          yield {
+            type: "turn.failed",
+            error: "Provider transport disconnected before any output",
+            recoverable: true,
+            failureKind: "transport",
+            usage: { inputTokens: 10, outputTokens: 4 },
+          };
+        } else {
+          yield {
+            type: "turn.complete",
+            providerSessionId: PROVIDER_SESSION_AFTER,
+            session: { displayId: PROVIDER_SESSION_AFTER, params: { sessionId: PROVIDER_SESSION_AFTER } },
+            usage: { inputTokens: 10, outputTokens: 4 },
+          };
+        }
       }
     })(),
     interrupt,
@@ -759,9 +956,15 @@ async function withGeneratedClaudeTurn(
     dispatcher.streamingSessions.set(name, replacement);
     const prompts = makePrompts(replacement);
     replacements.push({ streaming: replacement, prompts });
-    const next = await prompts.next();
-    if (next.done) throw new Error("Replacement provider did not receive the successor");
-    replacementInputs.push(String(next.value.message.content));
+    const consume = prompts.next().then((next) => {
+      if (next.done) return;
+      replacementInputs.push(String(next.value.message.content));
+      replacementConsumed.resolve();
+    });
+    replacementConsumers.push(consume);
+    // An active task can legitimately keep the new provider waiting. Starting
+    // that handle must not wait for input and deadlock the old host's cleanup.
+    if (!options.activeTaskBarrier) await consume;
   });
   const loop = runRuntimeEventLoop({
     runId: original.traceRunId!,
@@ -805,6 +1008,11 @@ async function withGeneratedClaudeTurn(
           () => {},
         );
       },
+      abortOriginal: (deferredAbort = false) => {
+        if (deferredAbort) original.toolResultDeliveryPending = true;
+        expect(dispatcher.abortSession(sessionName, { reason: "explicit_abort" })).toBe(true);
+        if (deferredAbort) expect(original.pendingAbort).toBe(true);
+      },
       changeModel: (model) => {
         configureSlackThreadRuntime({ parentSession: parent, ref: REQUEST_ID, model }, () => {});
         return dispatcher.applySessionModelChange(sessionName, model, { restartStashedMessages: true });
@@ -813,8 +1021,9 @@ async function withGeneratedClaudeTurn(
         dispatcher.handlePromptImmediate(sessionName, {
           prompt,
           _agentId: AGENT_ID,
-          deliveryBarrier: "after_response",
+          deliveryBarrier: options.deliveryBarrier ?? "after_response",
           deliveryBarrierSource: "default",
+          taskBarrierTaskId: successorTask?.id,
         }),
       expectActiveOriginal: () => {
         expect(original.turnActive).toBe(true);
@@ -841,12 +1050,80 @@ async function withGeneratedClaudeTurn(
           costUsd: 0.03,
         });
       },
+      expectTerminalAccounting: (status) => {
+        const attempt = getRuntimeTurnAttempt(originalAttemptId!)!;
+        const trace = getSessionTurn(originalTurnId!)!;
+        expect(attempt.status).toBe(status);
+        expect(trace).toMatchObject({
+          status,
+          provider: "claude",
+          model: "opus",
+          inputTokens: 10,
+          outputTokens: 4,
+          completedAt: attempt.completedAt,
+          costUsd: status === "complete" ? 0.03 : null,
+        });
+        expect(attempt.completedAt).not.toBeNull();
+        if (status === "complete") {
+          expect(getSession(child.sessionKey)).toMatchObject({ inputTokens: 10, outputTokens: 4, totalTokens: 14 });
+          expect(dbGetCostForSession(child.sessionKey)).toMatchObject({
+            total_input: 10,
+            total_output: 4,
+            total_cost: 0.03,
+            turns: 1,
+          });
+        } else {
+          // Failed/interrupted usage remains trace evidence; this change must
+          // not fabricate the successful turn's session/cost accounting.
+          expect(getSession(child.sessionKey)).toMatchObject({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+          expect(dbGetCostForSession(child.sessionKey)).toMatchObject({ total_cost: 0, turns: 0 });
+        }
+      },
+      expectTaskBlocked: () => {
+        expect(blockerTask).toBeDefined();
+        expect(dbHasActiveTaskForSession(sessionName, successorTask!.id)).toBe(true);
+        expect(oldInputs).toEqual([USER_PROMPT]);
+        expect(replacementInputs).toEqual([]);
+        const owner = dispatcher.streamingSessions.get(sessionName)!;
+        expect(owner.turnActive).toBe(false);
+        expect(owner.pushMessage).not.toBeNull();
+        expect(owner.pendingMessages).toEqual([
+          expect.objectContaining({
+            message: { role: "user", content: expect.stringContaining(NEXT_PROMPT) },
+            deliveryBarrier: "after_task",
+            taskBarrierTaskId: successorTask!.id,
+          }),
+        ]);
+      },
+      expectSuccessorBinding: () => {
+        const owner = dispatcher.streamingSessions.get(sessionName)!;
+        const pending = owner.pendingMessages.find((message) => String(message.message.content).includes(NEXT_PROMPT))!;
+        expect(pending).toBeDefined();
+        const attempt = getRuntimeTurnAttempt(owner.currentCrashRecoveryAttemptId!)!;
+        expect(attempt).toMatchObject({
+          status: "running",
+          provider: owner.queryHandle.provider,
+          deliveryBarrier: options.deliveryBarrier ?? "after_response",
+          taskBarrierTaskId: successorTask?.id ?? null,
+          pendingIds: [pending.pendingId],
+        });
+        expect(attempt.attemptId).not.toBe(originalAttemptId);
+      },
+      releaseTaskBarrier: async () => {
+        if (!blockerTask) throw new Error("No active task barrier in this fixture");
+        dbCompleteTask(blockerTask.id, { actor: "test", agentId: AGENT_ID, sessionName, message: "done" });
+        expect(dbHasActiveTaskForSession(sessionName, successorTask!.id)).toBe(false);
+        dispatcher.wakeStreamingSessionIfDeliverable(sessionName);
+        await dispatcher.startDeferredAfterTaskSessionIfDeliverable(sessionName);
+      },
       finishOriginal: async (expectRetired) => {
         terminalAllowed.resolve();
         await terminalProcessed.promise;
         if (expectRetired) await loop;
       },
       waitForOldSuccessor: () => waitFor(oldSuccessor),
+      waitForSuccessorSettlement: () => Promise.race([oldSuccessor.promise, generatorWaiting.promise, loop]),
+      waitForSuccessorInput: () => Promise.race([oldSuccessor.promise, replacementConsumed.promise]),
       releaseOriginalTerminal: terminalAllowed.resolve,
       waitForPricing: () => waitFor(costEntered),
       releasePricing: costReleased.resolve,
@@ -854,6 +1131,8 @@ async function withGeneratedClaudeTurn(
       snapshot: () => ({
         originalAttemptStatus: getRuntimeTurnAttempt(originalAttemptId!)?.status,
         originalTraceStatus: getSessionTurn(originalTurnId!)?.status,
+        originalMaterializedOutput: getRuntimeTurnAttempt(originalAttemptId!)?.materializedOutput,
+        originalDone: original.done,
         oldInputs: [...oldInputs],
         replacementInputs: [...replacementInputs],
         startedProviders: [...startedProviders],
@@ -882,6 +1161,7 @@ async function withGeneratedClaudeTurn(
     start.mockRestore();
     costGate?.mockRestore();
     dispatcher.shutdownAll();
+    await Promise.all(replacementConsumers);
     for (const { prompts } of replacements) await prompts.return(undefined);
     await originalPrompts.return(undefined);
     if (recovery.acceptingDeliveries) recovery.stopGracefully("test_cleanup");

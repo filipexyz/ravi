@@ -1951,6 +1951,63 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
 
+  // Run after terminal accounting and replay decisions, before waking the
+  // generator. Existing recovery branches retain their own restart path.
+  const finishPendingTerminalTransition = (
+    terminal: "complete" | "failed" | "interrupted",
+    pendingAbortBeforeCleanup?: string,
+  ): boolean => {
+    if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) return false;
+    if (streaming.pendingAbort || pendingAbortBeforeCleanup) {
+      // A terminal can arrive before the tool-result callback that was meant
+      // to finish an explicit abort. Preserve A's terminal and keep independent
+      // queued work dormant, as the ordinary deferred-abort path does.
+      stashOwnedPendingMessages({ crashRecovery });
+      streaming.internalAbortReason = streaming.internalAbortReason ?? pendingAbortBeforeCleanup ?? "deferred_abort";
+      revokeAgentRuntimeContextsForSession(session.sessionKey, { reason: streaming.internalAbortReason });
+      restartStashedReason = undefined;
+      streaming.done = true;
+      streaming.pendingAbort = false;
+      markOwnedLiveIdle("turn interrupted");
+      return true;
+    }
+    const configuredSession = getSession(session.sessionKey);
+    if (
+      !configuredSession ||
+      (configuredSession.runtimeProviderConfigRevision ?? 0) ===
+        (streaming.runtimeProviderConfigRevision ?? session.runtimeProviderConfigRevision ?? 0) ||
+      resolveEffectiveSessionRuntime({
+        session: configuredSession,
+        agent: getAgent(configuredSession.agentId) ?? agent,
+      }).provider.value === runtimeSession.provider
+    ) {
+      return false;
+    }
+    const successors = getPendingRuntimeTurnSuccessors(streaming);
+    if (successors.length === 0) return false;
+
+    // Unexpected interruption may replay A before B. Keep that existing safety
+    // decision and its envelope; a completed/failed A is never replayed here.
+    const pending =
+      terminal === "interrupted"
+        ? getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery)
+        : successors;
+    stashedMessages.set(
+      sessionName,
+      pending.map((message) => ({ ...message })),
+    );
+    restartStashedReason = "provider_change";
+    streaming.internalAbortReason = "provider_change";
+    streaming.done = true;
+    recordTraceEvent({
+      eventType: "dispatch.restart_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      payloadJson: { reason: "provider_change", queuedSuccessors: successors.length, terminal },
+    });
+    return true;
+  };
+
   const emitLegacyProviderEvent = async (event: Record<string, unknown>) => {
     const legacyEventTopicSuffix = runtimeCapabilities.legacyEventTopicSuffix;
     if (!legacyEventTopicSuffix) {
@@ -3903,6 +3960,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
+        const pendingAbortBeforeCleanup = streaming.pendingAbort
+          ? (streaming.internalAbortReason ?? "deferred_abort")
+          : undefined;
         streaming.pendingAbort = false;
         streaming.currentTurnToolStarted = false;
         resetTurnToolContinuationLedger(turnToolContinuation);
@@ -3923,38 +3983,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           terminalSkillVisibility,
         );
 
-        // A successor accepted before configuration changed will not pass
-        // through the dispatcher again. Retire this handle before waking its
-        // generator, carrying only unconsumed successors into a fresh launch.
-        const configuredSession = getSession(session.sessionKey);
-        if (
-          ownsRuntimeSlot() &&
-          configuredSession &&
-          (configuredSession.runtimeProviderConfigRevision ?? 0) !==
-            (streaming.runtimeProviderConfigRevision ?? session.runtimeProviderConfigRevision ?? 0) &&
-          resolveEffectiveSessionRuntime({
-            session: configuredSession,
-            agent: getAgent(configuredSession.agentId) ?? agent,
-          }).provider.value !== runtimeSession.provider
-        ) {
-          const successors = getPendingRuntimeTurnSuccessors(streaming);
-          if (successors.length > 0) {
-            stashedMessages.set(
-              sessionName,
-              successors.map((message) => ({ ...message })),
-            );
-            restartStashedReason = "provider_change";
-            streaming.internalAbortReason = "provider_change";
-            streaming.done = true;
-            recordTraceEvent({
-              eventType: "dispatch.restart_requested",
-              eventGroup: "dispatch",
-              status: "requested",
-              payloadJson: { reason: "provider_change", queuedSuccessors: successors.length },
-            });
-            signalTurnComplete();
-            break;
-          }
+        if (finishPendingTerminalTransition("complete", pendingAbortBeforeCleanup)) {
+          signalTurnComplete();
+          break;
         }
 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
@@ -4059,6 +4090,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.turnActive = false;
         clearTraceTurnState();
         markOwnedLiveIdle("turn interrupted");
+        if (finishPendingTerminalTransition("interrupted")) {
+          signalTurnComplete();
+          break;
+        }
         signalTurnComplete();
         continue;
       }
@@ -4143,6 +4178,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
+        const pendingAbortBeforeCleanup = streaming.pendingAbort
+          ? (streaming.internalAbortReason ?? "deferred_abort")
+          : undefined;
         streaming.pendingAbort = false;
         streaming.turnActive = false;
         streaming.internalAbortReason = undefined;
@@ -4501,6 +4539,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           source: streaming.currentSource,
         });
 
+        if (finishPendingTerminalTransition("failed", pendingAbortBeforeCleanup)) {
+          signalTurnComplete();
+          break;
+        }
         signalTurnComplete();
       }
     }

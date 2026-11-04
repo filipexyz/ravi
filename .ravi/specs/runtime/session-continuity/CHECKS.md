@@ -17,6 +17,13 @@
 - Replace the slot across model-switch, terminal-feedback and recovery awaits:
   old cleanup cannot remove/reset the replacement or overwrite its native/context
   state; old-turn accounting remains recorded exactly once.
+- Exercise complete, generic non-recoverable failure, and interruption with
+  incompatible clear, compatible clear and unchanged configuration. The old
+  attempt keeps its terminal status and every successor is consumed once.
+- Run `after_task` through the real generator with an active task in disposable
+  storage: no successor input is yielded until task release, including after
+  failure/interruption. Keep replay-safe interrupted input ahead of successors,
+  preserve legitimate recovery paths, and never resurrect cancelled work.
 
 ## Prompt Atom Ledger
 
