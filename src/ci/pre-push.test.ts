@@ -4,14 +4,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-it("does not leak the hook's Git repository or Ravi runtime identity into checks", () => {
+it("does not leak the hook's Git repository, Ravi identity or model selection into checks", () => {
   const dir = mkdtempSync(join(tmpdir(), "ravi-pre-push-env-"));
   try {
     const log = join(dir, "calls");
     writeFileSync(
       join(dir, "bun"),
       `#!/bin/sh
-if env | grep -Eq '^(GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|PREFIX|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES)|RAVI_CONTEXT_KEY|RAVI_SESSION_NAME)='; then
+if env | grep -Eq '^(GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|PREFIX|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES)|RAVI_CONTEXT_KEY|RAVI_SESSION_NAME|RAVI_MODEL)='; then
   exit 42
 fi
 printf '%s\\n' "$*" >> "$HOOK_CALL_LOG"
@@ -31,6 +31,7 @@ printf '%s\\n' "$*" >> "$HOOK_CALL_LOG"
         GIT_PREFIX: "wrong-prefix/",
         RAVI_CONTEXT_KEY: "synthetic-context",
         RAVI_SESSION_NAME: "synthetic-session",
+        RAVI_MODEL: "fixture-provider/fixture-model",
       },
       timeout: 10_000,
     });

@@ -32,6 +32,7 @@ run_local_check() {
     -u RAVI_GROUP_ID \
     -u RAVI_GROUP_NAME \
     -u RAVI_INSTANCE_ID \
+    -u RAVI_MODEL \
     -u RAVI_NORMALIZED_SENDER_ID \
     -u RAVI_PLATFORM_IDENTITY_ID \
     -u RAVI_RAW_SENDER_ID \
