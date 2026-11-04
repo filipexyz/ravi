@@ -13,6 +13,7 @@
 
 import type { CommandRegistryEntry, RegistrySnapshot } from "../../cli/registry-snapshot.js";
 import {
+  camelCase,
   inputSchemaName,
   inputTypeName,
   methodName,
@@ -20,6 +21,7 @@ import {
   returnSchemaName,
   returnTypeName,
   assertIdentifier,
+  assertParameterIdentifier,
 } from "./naming.js";
 import { jsonSchemaToTs } from "./json-schema-to-ts.js";
 import { buildInputSchema, buildReturnSchema, buildSignature, type CommandSignature } from "./registry-shape.js";
@@ -297,10 +299,19 @@ function renderMethod(cmd: CommandRegistryEntry, indent: number, typeImports: Se
   typeImports.add(returnName);
 
   const params: string[] = [];
-  const variadicArg = sig.args.find((a) => a.variadic);
-  for (const arg of sig.args) {
+  const usedNames = new Set(sig.options.length > 0 ? ["options"] : []);
+  const args = sig.args.map((arg) => {
+    const baseName = camelCase(arg.name);
+    assertParameterIdentifier(baseName, `argument(${cmd.fullName}, ${arg.name})`);
+    let paramName = baseName;
+    let suffix = 2;
+    while (usedNames.has(paramName)) paramName = `${baseName}_${suffix++}`;
+    usedNames.add(paramName);
+    return { ...arg, paramName };
+  });
+  for (const arg of args) {
     const optional = arg.required ? "" : "?";
-    params.push(`${arg.name}${optional}: ${arg.type}`);
+    params.push(`${arg.paramName}${optional}: ${arg.type}`);
   }
   if (sig.options.length > 0) {
     const optBag = renderOptionsBag(sig, indent + 1);
@@ -312,15 +323,14 @@ function renderMethod(cmd: CommandRegistryEntry, indent: number, typeImports: Se
   const commandLiteral = JSON.stringify(cmd.command);
 
   const bodyParts: string[] = [];
-  for (const arg of sig.args) {
-    bodyParts.push(arg.name);
+  for (const arg of args) {
+    // Local identifiers are language-specific; the gateway requires the raw registry key.
+    bodyParts.push(arg.name === arg.paramName ? arg.paramName : `${JSON.stringify(arg.name)}: ${arg.paramName}`);
   }
   if (sig.options.length > 0) {
     bodyParts.push(`...(options ?? {})`);
   }
   const bodyLiteral = bodyParts.length > 0 ? `{ ${bodyParts.join(", ")} }` : "{}";
-
-  void variadicArg; // signature already encodes variadic via type
 
   const lines: string[] = [];
   lines.push(`async (${params.join(", ")}): Promise<${returnName}> => {`);

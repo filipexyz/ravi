@@ -6534,26 +6534,26 @@ export class RaviClient {
   readonly prox = {
     calls: {
       /** Cancel a pending call request */
-      cancel: async (call_request_id: string, options?: {
+      cancel: async (callRequestId: string, options?: {
         reason?: string;
       }): Promise<ProxCallsCancelReturn> => {
         return this.transport.call({
           groupSegments: ["prox","calls"],
           command: "cancel",
-          body: { call_request_id, ...(options ?? {}) },
+          body: { "call_request_id": callRequestId, ...(options ?? {}) },
         });
       },
       /** Show event timeline for a call request */
-      events: async (call_request_id: string): Promise<ProxCallsEventsReturn> => {
+      events: async (callRequestId: string): Promise<ProxCallsEventsReturn> => {
         return this.transport.call({
           groupSegments: ["prox","calls"],
           command: "events",
-          body: { call_request_id },
+          body: { "call_request_id": callRequestId },
         });
       },
       profiles: {
         /** Configure a call profile's provider settings */
-        configure: async (profile_id: string, options?: {
+        configure: async (profileId: string, options?: {
           agentId?: string;
           dynamicPlaceholder?: string[];
           execute?: boolean;
@@ -6569,7 +6569,7 @@ export class RaviClient {
           return this.transport.call({
             groupSegments: ["prox","calls","profiles"],
             command: "configure",
-            body: { profile_id, ...(options ?? {}) },
+            body: { "profile_id": profileId, ...(options ?? {}) },
           });
         },
         /** List available call profiles */
@@ -6586,11 +6586,11 @@ export class RaviClient {
           });
         },
         /** Show a call profile by ID */
-        show: async (profile_id: string): Promise<ProxCallsProfilesShowReturn> => {
+        show: async (profileId: string): Promise<ProxCallsProfilesShowReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","profiles"],
             command: "show",
-            body: { profile_id },
+            body: { "profile_id": profileId },
           });
         }
       },
@@ -6623,16 +6623,16 @@ export class RaviClient {
         });
       },
       /** Show details of a call request */
-      show: async (call_request_id: string): Promise<ProxCallsShowReturn> => {
+      show: async (callRequestId: string): Promise<ProxCallsShowReturn> => {
         return this.transport.call({
           groupSegments: ["prox","calls"],
           command: "show",
-          body: { call_request_id },
+          body: { "call_request_id": callRequestId },
         });
       },
       tools: {
         /** Bind a tool to a profile */
-        bind: async (profile_id: string, tool_id: string, options?: {
+        bind: async (profileId: string, toolId: string, options?: {
           providerToolName?: string;
           required?: boolean;
           toolPrompt?: string;
@@ -6640,22 +6640,22 @@ export class RaviClient {
           return this.transport.call({
             groupSegments: ["prox","calls","tools"],
             command: "bind",
-            body: { profile_id, tool_id, ...(options ?? {}) },
+            body: { "profile_id": profileId, "tool_id": toolId, ...(options ?? {}) },
           });
         },
         /** Configure a call tool */
-        configure: async (tool_id: string, options?: {
+        configure: async (toolId: string, options?: {
           enabled?: string;
           timeoutMs?: string;
         }): Promise<ProxCallsToolsConfigureReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","tools"],
             command: "configure",
-            body: { tool_id, ...(options ?? {}) },
+            body: { "tool_id": toolId, ...(options ?? {}) },
           });
         },
         /** Create a new call tool */
-        create: async (tool_id: string, options?: {
+        create: async (toolId: string, options?: {
           description?: string;
           executor?: string;
           inputSchema?: string;
@@ -6666,7 +6666,7 @@ export class RaviClient {
           return this.transport.call({
             groupSegments: ["prox","calls","tools"],
             command: "create",
-            body: { tool_id, ...(options ?? {}) },
+            body: { "tool_id": toolId, ...(options ?? {}) },
           });
         },
         /** List call tools */
@@ -6684,7 +6684,7 @@ export class RaviClient {
           });
         },
         /** Execute a tool (dry-run validates without side effects) */
-        run: async (tool_id: string, options?: {
+        run: async (toolId: string, options?: {
           dryRun?: boolean;
           input?: string;
           profile?: string;
@@ -6692,57 +6692,57 @@ export class RaviClient {
           return this.transport.call({
             groupSegments: ["prox","calls","tools"],
             command: "run",
-            body: { tool_id, ...(options ?? {}) },
+            body: { "tool_id": toolId, ...(options ?? {}) },
           });
         },
         /** List tool runs for a call request */
-        runs: async (call_request_id: string): Promise<ProxCallsToolsRunsReturn> => {
+        runs: async (callRequestId: string): Promise<ProxCallsToolsRunsReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","tools"],
             command: "runs",
-            body: { call_request_id },
+            body: { "call_request_id": callRequestId },
           });
         },
         /** Show a call tool by ID */
-        show: async (tool_id: string): Promise<ProxCallsToolsShowReturn> => {
+        show: async (toolId: string): Promise<ProxCallsToolsShowReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","tools"],
             command: "show",
-            body: { tool_id },
+            body: { "tool_id": toolId },
           });
         },
         /** Unbind a tool from a profile */
-        unbind: async (profile_id: string, tool_id: string): Promise<ProxCallsToolsUnbindReturn> => {
+        unbind: async (profileId: string, toolId: string): Promise<ProxCallsToolsUnbindReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","tools"],
             command: "unbind",
-            body: { profile_id, tool_id },
+            body: { "profile_id": profileId, "tool_id": toolId },
           });
         }
       },
       /** Show call transcript, syncing provider state when needed */
-      transcript: async (call_request_id: string, options?: {
+      transcript: async (callRequestId: string, options?: {
         sync?: boolean;
       }): Promise<ProxCallsTranscriptReturn> => {
         return this.transport.call({
           groupSegments: ["prox","calls"],
           command: "transcript",
-          body: { call_request_id, ...(options ?? {}) },
+          body: { "call_request_id": callRequestId, ...(options ?? {}) },
         });
       },
       voiceAgents: {
         /** Bind a tool to a voice agent */
-        bindTool: async (voice_agent_id: string, tool_id: string, options?: {
+        bindTool: async (voiceAgentId: string, toolId: string, options?: {
           providerToolName?: string;
         }): Promise<ProxCallsVoiceAgentsBindToolReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","voice-agents"],
             command: "bind-tool",
-            body: { voice_agent_id, tool_id, ...(options ?? {}) },
+            body: { "voice_agent_id": voiceAgentId, "tool_id": toolId, ...(options ?? {}) },
           });
         },
         /** Configure a voice agent */
-        configure: async (voice_agent_id: string, options?: {
+        configure: async (voiceAgentId: string, options?: {
           firstMessage?: string;
           providerAgentId?: string;
           systemPromptPath?: string;
@@ -6751,11 +6751,11 @@ export class RaviClient {
           return this.transport.call({
             groupSegments: ["prox","calls","voice-agents"],
             command: "configure",
-            body: { voice_agent_id, ...(options ?? {}) },
+            body: { "voice_agent_id": voiceAgentId, ...(options ?? {}) },
           });
         },
         /** Create a new voice agent */
-        create: async (voice_agent_id: string, options?: {
+        create: async (voiceAgentId: string, options?: {
           name?: string;
           provider?: string;
           systemPromptPath?: string;
@@ -6764,7 +6764,7 @@ export class RaviClient {
           return this.transport.call({
             groupSegments: ["prox","calls","voice-agents"],
             command: "create",
-            body: { voice_agent_id, ...(options ?? {}) },
+            body: { "voice_agent_id": voiceAgentId, ...(options ?? {}) },
           });
         },
         /** List voice agents */
@@ -6781,30 +6781,30 @@ export class RaviClient {
           });
         },
         /** Show a voice agent by ID */
-        show: async (voice_agent_id: string): Promise<ProxCallsVoiceAgentsShowReturn> => {
+        show: async (voiceAgentId: string): Promise<ProxCallsVoiceAgentsShowReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","voice-agents"],
             command: "show",
-            body: { voice_agent_id },
+            body: { "voice_agent_id": voiceAgentId },
           });
         },
         /** Sync voice agent to provider (dry-run by default) */
-        sync: async (voice_agent_id: string, options?: {
+        sync: async (voiceAgentId: string, options?: {
           dryRun?: boolean;
           provider?: boolean;
         }): Promise<ProxCallsVoiceAgentsSyncReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","voice-agents"],
             command: "sync",
-            body: { voice_agent_id, ...(options ?? {}) },
+            body: { "voice_agent_id": voiceAgentId, ...(options ?? {}) },
           });
         },
         /** Unbind a tool from a voice agent */
-        unbindTool: async (voice_agent_id: string, tool_id: string): Promise<ProxCallsVoiceAgentsUnbindToolReturn> => {
+        unbindTool: async (voiceAgentId: string, toolId: string): Promise<ProxCallsVoiceAgentsUnbindToolReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","voice-agents"],
             command: "unbind-tool",
-            body: { voice_agent_id, tool_id },
+            body: { "voice_agent_id": voiceAgentId, "tool_id": toolId },
           });
         }
       }

@@ -11,6 +11,10 @@
 
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
@@ -55,6 +59,38 @@ class AppsCommands {
   }
 }
 
+@Group({ name: "arg-names", description: "Argument naming", scope: "open" })
+class ArgNamesCommands {
+  @Command({ name: "show", description: "Read a kebab-case argument" })
+  show(
+    @Arg("request-id") _requestId: string,
+    @Arg("display_name", { required: false }) _displayName?: string,
+    @Arg("artifact-paths", { required: false, variadic: true }) _paths?: string[],
+    @Option({ flags: "--force" }) _force?: boolean,
+  ) {
+    return {};
+  }
+
+  @Command({ name: "collisions", description: "Keep distinct wire arguments distinct" })
+  collisions(
+    @Arg("artifactId") _canonical: string,
+    @Arg("artifact_id") _snake: string,
+    @Arg("artifact-id") _kebab: string,
+  ) {
+    return {};
+  }
+
+  @Command({ name: "reserved", description: "Keep the options bag distinct from a positional argument" })
+  reserved(@Arg("options") _options: string, @Option({ flags: "--force" }) _force?: boolean) {
+    return {};
+  }
+
+  @Command({ name: "class", description: "Allow keyword property names" })
+  keywordProperty(@Option({ flags: "--default <value>" }) _default?: string) {
+    return {};
+  }
+}
+
 @Group({ name: "crm", description: "CRM ops", scope: "open" })
 class CrmCommands {
   @Command({ name: "account", description: "Show account" })
@@ -80,6 +116,19 @@ const FIXED_VERSION = {
 function emitMockSdk() {
   const registry = buildRegistry([ArtifactsCommands, ContextCredentialsCommands]);
   return { registry, output: emitAll(registry, { version: FIXED_VERSION }) };
+}
+
+// Parsing/importing emitted code catches invalid syntax; invoking its methods also
+// catches unbound body references. Drift checks only establish byte equality.
+async function importClient(source: string) {
+  const dir = mkdtempSync(join(tmpdir(), "ravi-codegen-client-"));
+  try {
+    const path = join(dir, "client.ts");
+    writeFileSync(path, source);
+    return await import(pathToFileURL(path).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe("client-codegen :: emitAll", () => {
@@ -136,6 +185,89 @@ describe("client-codegen :: emitAll", () => {
 
     expect(output.client).toContain("run: async (id: string, operation?: string, args?: string[])");
     expect(output.client).toContain(`body: { id, operation, args }`);
+  });
+
+  it("imports and invokes camelCase parameters while preserving raw argument wire keys", async () => {
+    const registry = buildRegistry([ArgNamesCommands]);
+    const output = emitAll(registry, { version: FIXED_VERSION });
+    expect(output.client).toContain("show: async (requestId: string, displayName?: string, artifactPaths?: string[]");
+    expect(output.client).toContain(
+      'body: { "request-id": requestId, "display_name": displayName, "artifact-paths": artifactPaths, ...(options ?? {}) }',
+    );
+    expect(output.types).toContain('"request-id": string;');
+    expect(output.schemas).toContain('"request-id"');
+
+    const { RaviClient } = await importClient(output.client);
+    const client = new RaviClient({ call: async (input: unknown) => input });
+    expect(await client.argNames.show("req-1", "report", ["a", "b"], { force: true })).toEqual({
+      groupSegments: ["arg-names"],
+      command: "show",
+      body: { "request-id": "req-1", display_name: "report", "artifact-paths": ["a", "b"], force: true },
+    });
+    const omitted = await client.argNames.show("req-2");
+    expect(JSON.parse(JSON.stringify(omitted.body))).toEqual({ "request-id": "req-2" });
+  });
+
+  it("keeps colliding normalized arguments bound to distinct symbols in positional order", async () => {
+    const registry = buildRegistry([ArgNamesCommands]);
+    const output = emitAll(registry, { version: FIXED_VERSION });
+    expect(emitAll(registry, { version: FIXED_VERSION }).client).toBe(output.client);
+    const { RaviClient } = await importClient(output.client);
+    const client = new RaviClient({ call: async (input: { body: unknown }) => input.body });
+
+    expect(await client.argNames.collisions("canonical", "snake", "kebab")).toEqual({
+      artifactId: "canonical",
+      artifact_id: "snake",
+      "artifact-id": "kebab",
+    });
+  });
+
+  it("keeps an argument named options distinct from the generated options bag", async () => {
+    const registry = buildRegistry([ArgNamesCommands]);
+    const output = emitAll(registry, { version: FIXED_VERSION });
+    const { RaviClient } = await importClient(output.client);
+    const client = new RaviClient({ call: async (input: { body: unknown }) => input.body });
+    expect(await client.argNames.reserved("positional", { force: true })).toEqual({
+      options: "positional",
+      force: true,
+    });
+  });
+
+  it("allows keyword method and option property names while rejecting reserved parameter bindings", async () => {
+    const registry = buildRegistry([ArgNamesCommands]);
+    const output = emitAll(registry, { version: FIXED_VERSION });
+    const { RaviClient } = await importClient(output.client);
+    const client = new RaviClient({ call: async (input: unknown) => input });
+    expect(await client.argNames.class({ default: "value" })).toEqual({
+      groupSegments: ["arg-names"],
+      command: "class",
+      body: { default: "value" },
+    });
+  });
+
+  it("rejects argument names that remain invalid identifiers after normalization", () => {
+    const registry = buildRegistry([ArtifactsCommands]);
+    registry.commands[0].args[0].name = "request.id";
+    expect(() => emitAll(registry, { version: FIXED_VERSION })).toThrow(
+      'Codegen: argument(artifacts.show, request.id) produced invalid TS identifier "request.id"',
+    );
+  });
+
+  it.each(["Class", "Await", "Arguments", "Eval", "Yield", "Interface"])(
+    "rejects %s when normalization creates a reserved async/strict parameter binding",
+    (rawName) => {
+      const registry = buildRegistry([ArtifactsCommands]);
+      registry.commands[0].args[0].name = rawName;
+      expect(() => emitAll(registry, { version: FIXED_VERSION })).toThrow(
+        `Codegen: argument(artifacts.show, ${rawName}) produced reserved TS parameter identifier "${rawName.toLowerCase()}"`,
+      );
+    },
+  );
+
+  it("imports the checked-in generated client outside the root tsconfig include", async () => {
+    const source = readFileSync(new URL("../../../packages/ravi-os-sdk/src/client.ts", import.meta.url), "utf8");
+    const { RaviClient } = await importClient(source);
+    expect(typeof RaviClient).toBe("function");
   });
 
   it("uses inferred return type when @Returns is declared", () => {
