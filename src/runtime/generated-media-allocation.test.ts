@@ -399,7 +399,13 @@ describe("accepted-recorder media disposal", () => {
     ts.ScriptTarget.Latest,
     true,
   );
-  const functions = ["recordAndEmit", "prepareTerminalOutput", "reportAutomaticMediaDisposalFailure", "isTerminalState"]
+  const functions = [
+    "recordAndEmit",
+    "recordedRuntimeEvent",
+    "prepareTerminalOutput",
+    "reportAutomaticMediaDisposalFailure",
+    "isTerminalState",
+  ]
     .map((name) => {
       const matches = source.statements.filter(ts.isFunctionDeclaration).filter((node) => node.name?.text === name);
       expect(matches).toHaveLength(1);
