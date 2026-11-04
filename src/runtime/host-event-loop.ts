@@ -2097,6 +2097,68 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   /**
+   * Captures a logical terminal before any stream/diagnostic await. Extra
+   * recovery stays with this handle, physical terminal latch and full accepted
+   * binding; it never obtains authority from a successor's current source.
+   * Initial cancellation projection remains separate from permission to retry.
+   */
+  const captureChannelTerminalProjection = (event: RuntimeEvent, text?: string) => {
+    if (
+      !streaming.currentChannelBackend ||
+      (event.type !== "turn.complete" && event.type !== "turn.failed" && event.type !== "turn.interrupted")
+    )
+      return undefined;
+    const metadata = structuredClone(streaming.currentChannelBackend);
+    const capturedEvent = structuredClone(stripRuntimeRawEvent(event)) as RuntimeEvent;
+    const handle = streaming.queryHandle;
+    const traceTurnId = streaming.currentTraceTurnId;
+    const terminal = streaming.currentCrashRecoveryTerminal;
+    const bootEpoch = crashRecovery?.bootEpoch;
+    const cancellationAlreadyRequested =
+      streaming.pendingAbort || isExplicitLocalRuntimeAbort(streaming.internalAbortReason);
+    /** Slot retirement alone never substitutes for the captured request and lease identities. */
+    const matchesCapturedIdentity = () =>
+      streaming.queryHandle === handle &&
+      streaming.currentTraceTurnId === traceTurnId &&
+      streaming.currentCrashRecoveryTerminal === terminal &&
+      isDeepStrictEqual(streaming.currentChannelBackend, metadata) &&
+      (!crashRecovery || (crashRecovery.bootEpoch === bootEpoch && !crashRecovery.ownershipFailure));
+    /**
+     * An explicit cancellation may retire the slot before its first logical
+     * terminal. Permit that initial settlement only while every captured identity
+     * still matches and no replacement owns the slot; retries remain stricter.
+     */
+    const ownsProjection = () =>
+      (streamingSessions.get(sessionName) === streaming ||
+        (!streamingSessions.get(sessionName) &&
+          (cancellationAlreadyRequested ||
+            streaming.pendingAbort ||
+            isExplicitLocalRuntimeAbort(streaming.internalAbortReason)))) &&
+      matchesCapturedIdentity();
+    /** No new work after cancellation, handle retirement, accepted yield or lease loss. */
+    const mayRecover = () =>
+      ownsProjection() &&
+      streamingSessions.get(sessionName) === streaming &&
+      !cancellationAlreadyRequested &&
+      !streaming.done &&
+      !streaming.abortController.signal.aborted &&
+      !streaming.pendingAbort &&
+      !isExplicitLocalRuntimeAbort(streaming.internalAbortReason) &&
+      !streaming.currentTurnYieldContinuationId &&
+      (!crashRecovery || crashRecovery.acceptingDeliveries);
+    return {
+      metadata,
+      event: capturedEvent,
+      responseText: text,
+      occurredAt: terminal?.completedAt ?? Date.now(),
+      ownsProjection,
+      matchesCapturedIdentity,
+      mayRecover,
+    };
+  };
+  type CapturedChannelTerminalProjection = NonNullable<ReturnType<typeof captureChannelTerminalProjection>>;
+
+  /**
    * Projects against the supplied request binding and revalidated owner fence.
    * A yielding physical attempt leaves its logical request open. For automatic
    * Slack replies, preparation has no DB/cleanup effects and local readiness
@@ -2108,6 +2170,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     projectedResponseText?: string,
     metadata = streaming.currentChannelBackend,
     mayProject: () => boolean = () => true,
+    capturedTerminal?: CapturedChannelTerminalProjection,
   ) => {
     if (!metadata || !mayProject()) return;
     // The physical turn ends, but its queued continuation still owns this channel request.
@@ -2146,6 +2209,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Initial running-state sinks can yield to another owner. The pure
         // guard is checked again inside each synchronous DB transaction attempt.
         beforeRecordEvent: mayProject,
+        ...(capturedTerminal
+          ? {
+              occurredAt: capturedTerminal.occurredAt,
+              terminalRecovery: {
+                mayRecover: () => mayProject() && capturedTerminal.mayRecover(),
+                onState: (state) => {
+                  log.debug("Channel terminal persistence recovery", {
+                    sessionName,
+                    turnId: metadata.binding.turnId,
+                    ...state,
+                  });
+                },
+              },
+            }
+          : {}),
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
         ...(automaticReply
           ? {
@@ -3124,21 +3202,30 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
       }
 
+      const capturedChannelTerminal = captureChannelTerminalProjection(
+        event,
+        event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
+      );
       const directInterruptedRequest =
         event.type === "turn.interrupted" ? captureDirectInterruptedRequest(streaming) : undefined;
       /** Project only the accepted request, rechecking the current owner inside the DB boundary. */
       const projectDirectInterruption = async (mayTerminalize: () => boolean = () => true) => {
-        if (event.type !== "turn.interrupted" || !directInterruptedRequest?.channelBackend) return;
+        if (event.type !== "turn.interrupted" || !directInterruptedRequest?.channelBackend || !capturedChannelTerminal)
+          return;
+        if (!isDeepStrictEqual(directInterruptedRequest.channelBackend, capturedChannelTerminal.metadata)) return;
         await projectRuntimeEventToChannel(
-          event,
+          capturedChannelTerminal.event,
           undefined,
-          directInterruptedRequest.channelBackend,
+          capturedChannelTerminal.metadata,
           () =>
             mayProjectDirectInterruptedRequest(
               streaming,
               directInterruptedRequest,
               streamingSessions.get(sessionName),
-            ) && mayTerminalize(),
+            ) &&
+            mayTerminalize() &&
+            capturedChannelTerminal.ownsProjection(),
+          capturedChannelTerminal,
         );
       };
 
@@ -3173,10 +3260,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       await chunkEmitTail;
 
-      if (event.type !== "turn.failed" && event.type !== "turn.interrupted" && event.type !== "assistant.message") {
+      if (
+        event.type !== "turn.failed" &&
+        event.type !== "turn.interrupted" &&
+        event.type !== "assistant.message" &&
+        (!receivedTerminalStatus || capturedChannelTerminal)
+      ) {
         await projectRuntimeEventToChannel(
-          event,
-          event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
+          capturedChannelTerminal?.event ?? event,
+          capturedChannelTerminal?.responseText,
+          capturedChannelTerminal?.metadata ?? streaming.currentChannelBackend,
+          capturedChannelTerminal?.ownsProjection,
+          capturedChannelTerminal,
         );
       }
 
@@ -4170,9 +4265,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Snapshot the accepted request before diagnostics can yield to a new
         // owner or mutate queued envelopes. Only this exact request may defer
         // its logical terminal when the existing recovery path actually stashes it.
-        const interruptedChannelBackend = streaming.currentChannelBackend
-          ? structuredClone(streaming.currentChannelBackend)
-          : undefined;
+        const interruptedChannelBackend = capturedChannelTerminal?.metadata;
         let interruptedRecoveryCancelled =
           streaming.pendingAbort ||
           isExplicitLocalRuntimeAbort(internalAbortReason) ||
@@ -4199,7 +4292,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             { type: "turn.interrupted", metadata: event.metadata },
             undefined,
             interruptedChannelBackend,
-            mayProjectInterruptedRequest,
+            () => mayProjectInterruptedRequest() && capturedChannelTerminal?.matchesCapturedIdentity() === true,
+            capturedChannelTerminal,
           );
         };
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
@@ -4583,8 +4677,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // the chat channel keeps the provider's original failure text.
           log.warn("Runtime credential provider failure", { runId, sessionName, error: operatorError });
         }
-        if (!loginStubFailure) {
-          await projectRuntimeEventToChannel(event);
+        if (!loginStubFailure && capturedChannelTerminal) {
+          await projectRuntimeEventToChannel(
+            capturedChannelTerminal.event,
+            undefined,
+            capturedChannelTerminal?.metadata,
+            capturedChannelTerminal?.ownsProjection,
+            capturedChannelTerminal,
+          );
         }
         await emitRuntimeEvent({
           ...stripRuntimeRawEvent(event),

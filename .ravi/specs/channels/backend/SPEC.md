@@ -196,3 +196,15 @@ commercial policy, private endpoint schemas, or private authorization rules.
 - Allowing a driver to escape its provider or Channel-instance scope.
 - Retrying publication by creating another Message or Turn.
 - Putting hosted product policy or entities in the public ABI.
+
+
+### Bounded terminal projection
+
+The host MUST capture terminal event, response, time, full accepted binding and
+destination before asynchronous projection work. Additional recovery MUST use
+the same slot, handle, terminal latch, trace and coordinator ownership; it MUST
+NOT acquire authority from a successor. Initial explicit-cancellation cleanup
+retains its existing semantics. Receipt/runtime/assistant/manifest readback MUST
+be consistent, and positive settlement MUST match the post-bootstrap sequence
+plus one, delta/generation, terminal time/error and complete authored content.
+Post-commit callbacks or notification failures MUST NOT repeat persistence.

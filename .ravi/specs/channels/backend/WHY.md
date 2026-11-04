@@ -20,3 +20,11 @@ The runtime state preserves ordered readback; the outbound ledger owns
 transport retry and deduplication. Keeping provider API calls out of the
 runtime event loop prevents a transient provider failure from losing the only
 retryable copy of commentary.
+
+### Retain the accepted terminal during bounded persistence recovery
+
+A provider can finish once while a transient SQLite failure prevents logical
+projection. Replaying the provider duplicates effects. The host instead retains
+one accepted operation, checks the same owner and consistent preterminal state,
+and settles an exact ambiguous commit without repeating callbacks. This bounded
+process-local operation is not a durable queue and cannot survive process loss.

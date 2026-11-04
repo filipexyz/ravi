@@ -439,8 +439,18 @@ without changing a previously accepted immutable manifest. Manifest schema
 initialization MUST NOT cache uncommitted DDL as ready. Only a successful commit
 may assign the local manifest/readiness, clear cancelled or failed media, or
 discard registry ownership; runtime notifications and output follow that commit.
-This atomicity contract adds no delivery retry, availability guarantee after
-write retries exhaust, durable media payload or core NATS replay.
+The physical terminal, trace and usage MUST remain recorded once while logical
+projection recovery is pending. The current owner MAY retain one immutable
+terminal operation inline and attempt the recorder once more after a typed
+transient refusal exhausts the existing six write attempts. A consistent
+preterminal witness captured after running bootstrap, plus an unchanged owner,
+MUST be rechecked after the bounded wait and within the extra write. Exact
+terminal/assistant/manifest readback MAY settle an ambiguous commit; an unknown
+readback MUST NOT authorize another write. Positive commit acceptance MUST run
+local readiness/disposal once before awaiting notifications. Owner loss forbids
+new attempts but MUST NOT skip settlement/disposal of an already committed reply.
+This process-local recovery adds no provider replay, crash-durable projection
+queue, infinite availability, durable media payload or core NATS replay.
 
 The adapter MAY skip reapplying reply-mode policy only for an internal delivery
 request derived from a validated manifest and durable origin. An external flag,

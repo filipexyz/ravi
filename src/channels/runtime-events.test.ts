@@ -84,6 +84,35 @@ afterEach(async () => {
 });
 
 describe("channel runtime event projection", () => {
+  it("does not restart persistence when the committed callback throws", async () => {
+    const metadata = await acceptedMetadata();
+    const callbackError = new Error("synthetic post-commit callback failure");
+    let callbacks = 0;
+    const output = mock(async () => {});
+    unregisterOutput = channelOutputSinks.register(metadata.target, { emit: output });
+    await expect(
+      projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } },
+        responseText: "One committed reply",
+        sinks: runtimeSinks(metadata, []),
+        terminalRecovery: { mayRecover: () => true },
+        afterRecordEvent: (state) => {
+          if (state !== "completed") return;
+          callbacks += 1;
+          throw callbackError;
+        },
+      }),
+    ).rejects.toBe(callbackError);
+    expect(callbacks).toBe(1);
+    expect(output).not.toHaveBeenCalled();
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+      state: "completed",
+      lastSequence: 2,
+    });
+    expect(terminalDatabaseCounts(metadata).assistants).toBe(1);
+  });
+
   it("commits the terminal, assistant and exact manifest before notifying or releasing output", async () => {
     const metadata = await acceptedMetadata();
     const order: string[] = [];

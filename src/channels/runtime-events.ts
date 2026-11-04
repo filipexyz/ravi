@@ -5,6 +5,11 @@ import { nats } from "../nats.js";
 import type { SlackAutomaticTerminalManifest } from "./slack/automatic-terminal-manifest.js";
 import { discardSlackAutomaticPendingReply } from "./slack/automatic-pending-reply.js";
 import {
+  recordTerminalProjectionWithRecovery,
+  type TerminalProjectionRecoveryOptions,
+} from "./terminal-projection-recovery.js";
+
+import {
   ChannelBackendRuntimeOwnershipLostError,
   dbClaimChannelBackendRuntimeInterrupt,
   dbGetChatMessage,
@@ -45,6 +50,9 @@ import {
   type ExternalChannelTarget,
   type LocalChannelMessageBinding,
 } from "./backend.js";
+
+/** Host-only recovery hooks; never serialized or accepted from a channel request. */
+export type ChannelTerminalRecoveryOptions = Omit<TerminalProjectionRecoveryOptions, "onCommitted">;
 
 export const CHANNEL_RUNTIME_EVENTS_PROTOCOL = "ravi.channel.runtime-events" as const;
 export const CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION = 1 as const;
@@ -436,6 +444,8 @@ export async function projectChannelRuntimeEvent(input: {
   }) => SlackAutomaticTerminalManifest;
   /** The whole DB unit committed; no notification or output await has occurred. */
   afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined, manifest?: SlackAutomaticTerminalManifest) => void;
+  /** Internal, owned inline recovery. Never accepted from a serialized channel request. */
+  terminalRecovery?: ChannelTerminalRecoveryOptions;
 }): Promise<KnownChannelRuntimeEvent[]> {
   const metadata = parseChannelBackendMetadata(input.metadata);
   const occurredAt = input.occurredAt ?? Date.now();
@@ -451,6 +461,7 @@ export async function projectChannelRuntimeEvent(input: {
       mayWrite: () => (input.beforeRecordEvent ? input.beforeRecordEvent(eventInput.state) === true : true),
       afterRecordEvent: input.afterRecordEvent,
       prepareTerminalManifest: input.prepareTerminalManifest,
+      terminalRecovery: input.terminalRecovery,
     });
     if (!recorded) return;
     projected.push(recorded.event);
@@ -732,6 +743,7 @@ interface RecordAndEmitInput {
     output?: ChannelOutputEnvelope;
   }) => SlackAutomaticTerminalManifest;
   afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined, manifest?: SlackAutomaticTerminalManifest) => void;
+  terminalRecovery?: ChannelTerminalRecoveryOptions;
 }
 
 /**
@@ -768,13 +780,11 @@ function prepareTerminalOutput(input: RecordAndEmitInput): ChannelOutputEnvelope
 
 /**
  * Prepares output before atomically recording runtime state and its manifest.
- * Ownership loss returns without projection; other preparation/DB errors throw
- * without consuming the pending reply. After commit, the local callback and
- * registry detachment precede notification and output, whose sinks are attempted
- * independently. A returned dispatchError does not undo the commit or establish
- * remote delivery. Committed non-final allocation disposal runs asynchronously
- * in finally, including post-commit callback/validation errors; it neither masks
- * those errors nor adds an output retry.
+ * Owned recovery retains one terminal for bounded persistence recovery. Commit
+ * confirmation synchronously detaches private handles before readiness callbacks;
+ * disposal is awaited outside the transaction even if recovery/callback/schema
+ * or sinks throw. Independent sinks preserve the first dispatchError, which does
+ * not undo commit or establish remote delivery. This phase adds no output retry.
  */
 async function recordAndEmit(
   input: RecordAndEmitInput,
@@ -786,45 +796,77 @@ async function recordAndEmit(
       ? input.prepareTerminalManifest?.({ state: input.state, output })
       : undefined;
   let persisted: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>;
-  try {
-    persisted = dbRecordChannelBackendRuntimeEvent({
-      turnId: input.metadata.binding.turnId,
-      state: input.state,
-      assistantDelta: input.assistantDelta,
-      assistantText: input.assistantText,
-      runtimeGenerationId: channelRuntimeGenerationId,
-      terminalError: input.safeError,
-      occurredAt: input.occurredAt,
-      mayWrite: input.mayWrite,
-      slackTerminalManifest: preparedManifest,
-    });
-  } catch (error) {
-    if (error instanceof ChannelBackendRuntimeOwnershipLostError) return;
-    throw error;
-  }
   const discardedAllocations: Array<() => Promise<GeneratedMediaCleanupResult>> = [];
-  try {
-    if (input.state === "completed" || input.state === "failed" || input.state === "interrupted") {
-      // Only this accepted transition can transfer disposal authority. Capture
-      // it before callbacks can throw or erase descriptors, without filesystem I/O.
-      const reply = discardSlackAutomaticPendingReply(input.metadata.binding);
-      if (reply && isDeepStrictEqual(reply.origin.binding, input.metadata.binding)) {
-        for (const allocation of reply.ownedMediaAllocations) {
-          if (input.state === "completed") {
-            generatedMediaAllocations.retain(allocation, reply);
-          } else {
-            const dispose = generatedMediaAllocations.prepareDiscard(allocation, reply);
-            if (dispose) discardedAllocations.push(dispose);
+  /**
+   * Confirmed commit/readback settles only this reply before readiness callbacks.
+   * The recovery helper latches this synchronous callback once, outside DB catches.
+   * Preserve a callback's original error even if private-handle settlement also fails.
+   */
+  const afterCommit = (recorded: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>) => {
+    let settlementFailed = false;
+    let settlementError: unknown;
+    try {
+      if (input.state === "completed" || input.state === "failed" || input.state === "interrupted") {
+        // Only this accepted transition can transfer disposal authority. Capture
+        // it before callbacks can throw or erase descriptors, without filesystem I/O.
+        const reply = discardSlackAutomaticPendingReply(input.metadata.binding);
+        if (reply && isDeepStrictEqual(reply.origin.binding, input.metadata.binding)) {
+          for (const allocation of reply.ownedMediaAllocations) {
+            if (input.state === "completed") {
+              generatedMediaAllocations.retain(allocation, reply);
+            } else {
+              const dispose = generatedMediaAllocations.prepareDiscard(allocation, reply);
+              if (dispose) discardedAllocations.push(dispose);
+            }
+          }
+          if (input.state !== "completed") {
+            reply.ownedMediaAllocations.clear();
+            reply.media = [];
+            reply.mediaKeys.clear();
           }
         }
-        if (input.state !== "completed") {
-          reply.ownedMediaAllocations.clear();
-          reply.media = [];
-          reply.mediaKeys.clear();
-        }
       }
+    } catch (error) {
+      settlementFailed = true;
+      settlementError = error;
     }
-    input.afterRecordEvent?.(input.state, persisted.slackTerminalManifest);
+    let callbackFailed = false;
+    let callbackError: unknown;
+    try {
+      input.afterRecordEvent?.(input.state, recorded.slackTerminalManifest);
+    } catch (error) {
+      callbackFailed = true;
+      callbackError = error;
+    }
+    if (callbackFailed) throw callbackError;
+    if (settlementFailed) throw settlementError;
+  };
+  const recordInput = {
+    turnId: input.metadata.binding.turnId,
+    state: input.state,
+    assistantDelta: input.assistantDelta,
+    assistantText: input.assistantText,
+    runtimeGenerationId: channelRuntimeGenerationId,
+    terminalError: input.safeError,
+    occurredAt: input.occurredAt,
+    mayWrite: input.mayWrite,
+    slackTerminalManifest: preparedManifest,
+  };
+  try {
+    if (input.terminalRecovery && input.state && isTerminalState(input.state)) {
+      persisted = await recordTerminalProjectionWithRecovery(recordInput, {
+        ...input.terminalRecovery,
+        onCommitted: afterCommit,
+      });
+    } else {
+      try {
+        persisted = dbRecordChannelBackendRuntimeEvent(recordInput);
+      } catch (error) {
+        if (error instanceof ChannelBackendRuntimeOwnershipLostError) return;
+        throw error;
+      }
+      afterCommit(persisted);
+    }
     const payload =
       typeof input.payload === "function"
         ? input.payload(

@@ -930,6 +930,45 @@ describe("interrupted logical projection revalidates runtime ownership", () => {
     });
   }
 
+  it("refuses the captured terminal when cancellation removes the slot and replaces the query handle", async () => {
+    const f = await fixture();
+    const first = await prepareInterruptedReplay(f);
+    let changedHandle: RuntimeSessionHandle | undefined;
+    let before: ReturnType<typeof dbGetChannelBackendRuntimeState>;
+    f.setSafeEmitHook(async (_topic, data) => {
+      if ((data as { type?: string }).type !== "turn.interrupted") return;
+      before = dbGetChannelBackendRuntimeState(f.metadata.binding.turnId);
+      f.streaming.pendingAbort = true;
+      f.streaming.internalAbortReason = "explicit_abort";
+      f.streaming.abortController.abort();
+      f.streamingSessions.delete(f.session.name!);
+      changedHandle = { ...f.streaming.queryHandle! };
+      f.streaming.queryHandle = changedHandle;
+    });
+    await f.run(
+      (async function* () {
+        yield transportFailure();
+      })(),
+    );
+    await first.return(undefined);
+    expect(changedHandle).toBeDefined();
+    expect(f.streaming.queryHandle).toBe(changedHandle!);
+    expect(f.streamingSessions.has(f.session.name!)).toBe(false);
+    expect(f.restarts).toHaveLength(0);
+    expect(dbGetChannelBackendRuntimeState(f.metadata.binding.turnId)).toEqual(before!);
+    expect(interruptedManifest(f)).toBeNull();
+    expect(f.outputs).toHaveLength(0);
+    expect(f.responses).toHaveLength(0);
+    const decisions = getDb()
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'slack_automatic_output_decisions'")
+      .get();
+    if (decisions) {
+      expect(getDb().prepare("SELECT COUNT(*) AS count FROM slack_automatic_output_decisions").get()).toEqual({
+        count: 0,
+      });
+    }
+  });
+
   it("cannot cancel a replacement owner of the same accepted binding during diagnostics", async () => {
     const f = await fixture();
     const first = await prepareInterruptedReplay(f);

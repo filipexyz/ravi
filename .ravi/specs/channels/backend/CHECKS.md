@@ -34,3 +34,9 @@
 - Interrupted, sentinel, suppressed, and unknown-phase assistant content MUST
   NOT enter commentary delivery.
 - Public types MUST contain no hosted product entities or private policy.
+
+- `terminal-projection-recovery.test.ts` MUST distinguish unchanged preterminal,
+  exact ambiguous commit, conflicting/unknown readback, owner loss, exhaustion
+  and post-commit callback error without repeating callbacks or physical work.
+- Existing host/Slack terminal fixtures MUST preserve explicit cancellation
+  while refusing stale request identities and limiting recovery to logical persistence.
