@@ -298,6 +298,23 @@ under the same identity MUST fail closed. Media fingerprints MUST cover the
 actual file bytes; a fresh upload MUST use the same verified bytes, without
 reopening a mutable path after verification. Observed success with a persisted
 receipt MUST resume bookkeeping without requiring the original local file.
+The last-hop egress guard MUST still run for frozen bot text. If it would
+change that text, delivery MUST fail explicitly and non-retryably before a
+provider send; it MUST NOT send sanitized replacement bytes under the same
+immutable part identity or mark the original part delivered. The integrity
+failure MUST survive wrapper changes, guard removal and database reopen. A
+physical terminal receipt may retain the failure, but its readbacks MUST NOT
+report policy suppression or create a policy-suppressed publication outbox.
+An already observed send MUST resume bookkeeping for its original bytes,
+without another provider send. Provider acceptance before receipt persistence
+remains ambiguous; a later integrity failure does not prove no earlier send.
+Ordinary human text and no-op guard decisions MUST retain their normal behavior.
+Media content conflicts MUST likewise remain failed and non-retryable on every
+receipt read or claim, including database reopen and restoration of the original
+file bytes. Their retained terminal reason MUST NOT become policy suppression,
+successful delivery or success cleanup. Mixed bundles MUST retain failed files
+without reuploading siblings whose success was already persisted. Legitimate
+cooldown suppression retains its existing disposition and cleanup behavior.
 The manifest is an immutable admission and membership boundary, not a remote
 all-or-nothing transaction: a later part failing file verification or delivery
 cannot roll back earlier successful Slack posts. Hashing adds work proportional

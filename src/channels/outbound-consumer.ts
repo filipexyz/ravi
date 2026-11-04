@@ -51,6 +51,7 @@ import {
 const log = logger.child("channels:outbound-consumer");
 const sc = StringCodec();
 const CONSUMER_RETRY_DELAY_MS = 2_000;
+const SLACK_AUTOMATIC_EGRESS_CONFLICT = "slack_bot_reply_egress_content_conflict";
 export const CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_BASE_MS = 30_000;
 export const CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_MAX_MS = 5 * 60_000;
 
@@ -305,10 +306,9 @@ export async function processChannelOutboundJob(
   } catch (error) {
     return { disposition: "nak", status: "failed", retryable: true, phase: "policy", error: errorMessage(error) };
   }
-  // Last hop of the Knowledge egress guard. The receipt fingerprint stays on
-  // the job as published, so a redelivery after the mirror changed is not a
-  // fingerprint conflict.
-  const job = guardChannelOutboundJob(inputJob, options);
+  // Always apply the last-hop guard. Frozen automatic parts additionally
+  // require unchanged bytes before sending under their canonical identity.
+  let job = guardChannelOutboundJob(inputJob, options);
   const emitEvent = options.emitEvent ?? nats.emit;
   const flushTelemetry = options.flushNats ?? flushNatsConnection;
   const recordTrace = options.recordDeliveryTrace ?? recordDeliveryTrace;
@@ -509,7 +509,13 @@ export async function processChannelOutboundJob(
     }
 
     try {
-      const reason = automaticSlackSuppressionReason(automatic, (options.now ?? Date.now)());
+      const reason =
+        automatic.kind === "terminal" &&
+        job.request.content.type === "text" &&
+        inputJob.request.content.type === "text" &&
+        job.request.content.text !== inputJob.request.content.text
+          ? SLACK_AUTOMATIC_EGRESS_CONFLICT
+          : automaticSlackSuppressionReason(automatic, (options.now ?? Date.now)());
       if (reason) {
         receipt = receiptStore.markSuppressed({
           idempotencyKey: receiptKey,
@@ -599,6 +605,11 @@ export async function processChannelOutboundJob(
       return postSendPhaseFailure(job, receipt, receiptStore, "receipt_write", error);
     }
   }
+
+  // A persisted send receipt resumes bookkeeping, never another provider
+  // send. Record the frozen bytes actually sent, even if today's guard would
+  // reject a new send. Ordinary non-frozen output keeps its existing behavior.
+  if (automatic.kind === "terminal") job = inputJob;
 
   if (receipt.persistedAt === undefined) {
     try {
@@ -728,6 +739,32 @@ async function acknowledgeSuppressedReceipt(
   publicationRequestFingerprint: string,
 ): Promise<ChannelOutboundProcessingResult> {
   try {
+    if (receipt.suppressionReason === SLACK_AUTOMATIC_EGRESS_CONFLICT) {
+      // The physical tombstone closes an unsent identity. This is an integrity
+      // failure, not policy suppression: leave the publication outbox alone.
+      await emitDelivery(emitEvent, recordTrace, job, {
+        status: "failed",
+        reason: SLACK_AUTOMATIC_EGRESS_CONFLICT,
+        error: SLACK_AUTOMATIC_EGRESS_CONFLICT,
+        retryable: false,
+        target: job.request.target,
+        emitId: job.request.origin.emitId,
+        idempotencyKey: receipt.idempotencyKey,
+        ...(receipt.idempotencyKey !== job.request.idempotencyKey
+          ? { publicationIdempotencyKey: job.request.idempotencyKey }
+          : {}),
+        ...outboundContentTelemetry(job),
+        durationMs: Math.max(0, Date.now() - startedAt),
+      });
+      await flushTelemetry();
+      return {
+        disposition: "ack",
+        status: "failed",
+        retryable: false,
+        phase: "policy",
+        error: SLACK_AUTOMATIC_EGRESS_CONFLICT,
+      };
+    }
     // Publication and platform delivery are separate. A published workqueue
     // item can later end in policy suppression; it must never be retried as
     // pending output after the circuit recovers.
@@ -760,11 +797,14 @@ async function acknowledgeSuppressedReceipt(
     return { disposition: "ack", status: "dropped", retryable: false };
   } catch (error) {
     // The durable terminal receipt prevents a send even when telemetry needs
-    // another attempt after a crash or connection failure.
+    // another attempt after a crash or connection failure. NAK retries only
+    // that bookkeeping; an integrity failure is still non-retryable delivery.
+    const integrityFailure = receipt.suppressionReason === SLACK_AUTOMATIC_EGRESS_CONFLICT;
     return {
       disposition: "nak",
       status: "failed",
-      retryable: true,
+      retryable: !integrityFailure,
+      ...(integrityFailure ? { nakDelayMs: CONSUMER_RETRY_DELAY_MS } : {}),
       phase: "telemetry_emit",
       error: errorMessage(error),
     };

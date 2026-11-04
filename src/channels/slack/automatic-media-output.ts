@@ -155,6 +155,9 @@ export async function deliverSlackAutomaticMedia(
   };
   const suppressed = async (receipt: ChannelOutboundReceipt): Promise<SlackAutomaticMediaResult> => {
     const reason = receipt.suppressionReason ?? "slack_bot_reply_cooldown";
+    // Content conflicts use the same terminal no-resend tombstone, but remain
+    // integrity failures on every replay; policy suppression permits cleanup.
+    if (reason === "slack_bot_reply_media_content_conflict") return failed(reason, false, idempotencyKey);
     const ok = await emit({
       status: "dropped",
       reason,

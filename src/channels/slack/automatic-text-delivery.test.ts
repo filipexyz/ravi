@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configStore } from "../../config-store.js";
+import { deleteGuardedSession, guardedSessionForChat, upsertGuardedSession } from "../../knowledge/egress/guard.js";
+import { closeKnowledgeDb } from "../../knowledge/store/db.js";
 import {
   closeRouterDb,
   dbAcceptChannelBackendIngress,
@@ -25,7 +27,11 @@ import {
   pruneExpiredChannelOutboundReceipts,
   sqliteChannelOutboundReceiptStore,
 } from "../outbound-receipts.js";
-import { getChannelOutboundPublishJob, saveChannelOutboundPublishJob } from "../outbound-publish-outbox.js";
+import {
+  getChannelOutboundPublishJob,
+  publishChannelOutboundJobDurably,
+  saveChannelOutboundPublishJob,
+} from "../outbound-publish-outbox.js";
 import { buildChannelTextOutboundJob, type ChannelOutboundJob } from "../outbound-stream.js";
 import type { NativeTextDelivery, NativeTextDeliveryRequest } from "../native/types.js";
 import {
@@ -48,6 +54,7 @@ beforeEach(async () => {
   configStore.refresh();
 });
 afterEach(async () => {
+  closeKnowledgeDb();
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
@@ -58,6 +65,7 @@ function fixture(
   threadId: string | undefined = "1.000001",
   media: ResponseMediaAttachment[] = [],
   text = "Complete answer",
+  senderKind: "bot" | "user" = "bot",
 ) {
   const chat = dbUpsertChat({ channel: "slack", instanceId: "local", platformChatId: "C123", chatType: "group" });
   const message = dbUpsertChatMessage({
@@ -67,7 +75,7 @@ function fixture(
     providerMessageId: turn,
     rawChatId: "C123",
     actorType: "unknown",
-    rawProvenance: { source: "slack.socket_mode", senderKind: "bot" },
+    rawProvenance: { source: "slack.socket_mode", senderKind },
   });
   dbAcceptChannelBackendIngress({
     channelInstanceId: "local",
@@ -102,14 +110,21 @@ function fixture(
   };
   const context = resolveSlackAutomaticOutputContextFromBinding(binding)!;
   const freezeManifest = () => freezeSlackAutomaticTerminalManifest({ ...context, kind: "final_answer", text, media });
-  const manifest = freeze ? freezeManifest() : undefined;
+  const manifest = freeze && context ? freezeManifest() : undefined;
   const job = (wrapper: string) =>
     buildChannelTextOutboundJob({
       requestId: wrapper,
       sessionName: "session-a",
       emitId: wrapper,
       idempotencyKey: wrapper,
-      target: context.target,
+      target: context?.target ?? {
+        channel: "slack",
+        accountId: "local",
+        instanceId: "local",
+        chatId: "C123",
+        threadId,
+        canonicalChatId: chat.id,
+      },
       text,
       format: "markdown",
       responsePhase: "final_answer",
@@ -140,6 +155,298 @@ const baseOptions = {
   knowledgeGuard: () => null,
   now: () => 101,
 };
+
+describe("frozen Slack text with a late egress guard", () => {
+  const text = "Complete answer: https://synthetic-integrity.ravi.page/unmarked\nSecond line intact.";
+  const conflict = "slack_bot_reply_egress_content_conflict";
+  const failed = { disposition: "ack", status: "failed", retryable: false, phase: "policy", error: conflict };
+  function guard() {
+    upsertGuardedSession({
+      sessionName: "synthetic-guard",
+      agentId: "agent-a",
+      instanceId: "local",
+      channel: "slack",
+      chatId: "C123",
+      normalizedChatId: "C123",
+      contactId: "synthetic-contact",
+      guardedUntil: Date.now() + 60_000,
+    });
+    closeKnowledgeDb();
+    expect(guardedSessionForChat("slack", "C123")).not.toBeNull();
+  }
+  function unguard() {
+    deleteGuardedSession("synthetic-guard");
+    closeKnowledgeDb();
+  }
+  function transport() {
+    const posts: unknown[] = [];
+    const events: Record<string, unknown>[] = [];
+    const texts: string[] = [];
+    const adapter = new SlackTextDelivery(
+      {
+        postMessage: async (request: unknown) => {
+          posts.push(request);
+          return { ok: true, ts: "1.000009", messageId: "synthetic-message", raw: {} };
+        },
+      } as never,
+      { subscriptionScope: "thread", threadReplyMode: "same_thread", rootReplyMode: "channel_root" },
+    );
+    return {
+      posts,
+      events,
+      texts,
+      options: {
+        ...baseOptions,
+        knowledgeGuard: undefined,
+        deliveries: [adapter],
+        emitEvent: async (_topic: string, event: Record<string, unknown>) => {
+          events.push(event);
+        },
+        persistDeliveredMessage: (_job: unknown, _result: unknown, value: string) => {
+          texts.push(value);
+          return {};
+        },
+      },
+    };
+  }
+
+  it("fails before sending changed frozen bytes and remains failed across wrappers, guard removal and DB reopen", async () => {
+    const f = fixture("egress", true, "1.000001", [], text);
+    guard();
+    const t = transport();
+    const key = `${f.manifest!.responseId}:text`;
+    for (const wrapper of ["guarded", "guard-removed", "db-reopened"]) {
+      const job = f.job(wrapper);
+      saveChannelOutboundPublishJob(job, 100);
+      expect(await processChannelOutboundJob(job, t.options)).toMatchObject(failed);
+      expect(getChannelOutboundPublishJob(wrapper)?.status).toBe("pending");
+      expect(getChannelOutboundReceipt(key)).toMatchObject({
+        state: "suppressed",
+        suppressionReason: conflict,
+        retainIdentity: true,
+      });
+      expect(getChannelOutboundReceipt(key)?.sentAt).toBeUndefined();
+      expect(getSlackAutomaticTerminalManifest(f.manifest!.responseId)).toEqual(f.manifest!);
+      unguard();
+      closeRouterDb();
+    }
+    expect(t.posts).toHaveLength(0);
+    expect(t.texts).toHaveLength(0);
+    expect(getSlackAutomaticOutputDecision(f.manifest!.responseId)).toBeNull();
+    expect(t.events).toHaveLength(3);
+    for (const event of t.events) {
+      expect(event).toMatchObject({ status: "failed", reason: conflict, retryable: false, idempotencyKey: key });
+      expect(event.policyDisposition).toBeUndefined();
+    }
+    const future = Date.now() + 60 * 24 * 60 * 60 * 1_000;
+    expect(pruneExpiredChannelOutboundReceipts(future, future)).toBe(0);
+    expect(await processChannelOutboundJob(f.job("after-prune"), t.options)).toMatchObject(failed);
+    expect(t.posts).toHaveLength(0);
+  });
+
+  it("keeps the failure when claim finds a terminal receipt after a stale read", async () => {
+    const f = fixture("claim-readback", true, "1.000001", [], text);
+    guard();
+    const t = transport();
+    expect(await processChannelOutboundJob(f.job("initial"), t.options)).toMatchObject(failed);
+    unguard();
+    expect(
+      await processChannelOutboundJob(f.job("stale-read"), {
+        ...t.options,
+        receiptStore: { ...sqliteChannelOutboundReceiptStore, get: () => null },
+      }),
+    ).toMatchObject(failed);
+    expect(t.posts).toHaveLength(0);
+    expect(t.events.every((event) => event.status === "failed" && event.policyDisposition === undefined)).toBe(true);
+  });
+
+  it("keeps publication success separate from terminal delivery failure on outbox replay", async () => {
+    const f = fixture("outbox-egress", true, "1.000001", [], text);
+    guard();
+    const t = transport();
+    const job = f.job("published-wrapper");
+    const publisher = mock(async (published: ChannelOutboundJob) => {
+      expect(await processChannelOutboundJob(published, t.options)).toMatchObject(failed);
+    });
+    expect(await publishChannelOutboundJobDurably(job, { publisher })).toMatchObject({
+      ok: true,
+      disposition: "published",
+      publishedNow: true,
+    });
+    expect(getChannelOutboundPublishJob(job.request.idempotencyKey)?.status).toBe("published");
+    unguard();
+    closeRouterDb();
+    expect(await publishChannelOutboundJobDurably(job, { publisher })).toMatchObject({
+      ok: true,
+      disposition: "published",
+      publishedNow: false,
+    });
+    expect(publisher).toHaveBeenCalledTimes(1);
+    expect(await processChannelOutboundJob(job, t.options)).toMatchObject(failed);
+    expect(t.posts).toHaveLength(0);
+    expect(t.events.every((event) => event.status === "failed" && !event.policyDisposition)).toBe(true);
+  });
+
+  it("keeps the publication receipt readback a failure without a policy outbox tombstone", async () => {
+    const f = fixture("wrapper-readback", true, "1.000001", [], text);
+    guard();
+    const t = transport();
+    expect(await processChannelOutboundJob(f.job("initial"), t.options)).toMatchObject(failed);
+    const terminal = getChannelOutboundReceipt(`${f.manifest!.responseId}:text`)!;
+    const job = f.job("wrapper-readback");
+    saveChannelOutboundPublishJob(job, 100);
+    // Exercise the legacy wrapper terminal readback without changing the ledger schema.
+    expect(
+      await processChannelOutboundJob(job, {
+        ...t.options,
+        receiptStore: {
+          ...sqliteChannelOutboundReceiptStore,
+          get: (key) =>
+            key === job.request.idempotencyKey
+              ? {
+                  ...terminal,
+                  idempotencyKey: key,
+                  requestFingerprint: channelOutboundRequestFingerprint(job),
+                }
+              : sqliteChannelOutboundReceiptStore.get(key),
+        },
+      }),
+    ).toMatchObject(failed);
+    expect(getChannelOutboundPublishJob(job.request.idempotencyKey)?.status).toBe("pending");
+    expect(t.posts).toHaveLength(0);
+  });
+
+  it("retries failed telemetry without reopening the content failure after guard removal", async () => {
+    const f = fixture("telemetry", true, "1.000001", [], text);
+    guard();
+    const t = transport();
+    expect(
+      await processChannelOutboundJob(f.job("first"), {
+        ...t.options,
+        flushNats: async () => {
+          throw new Error("synthetic telemetry unavailable");
+        },
+      }),
+    ).toMatchObject({
+      disposition: "nak",
+      status: "failed",
+      retryable: false,
+      nakDelayMs: 2000,
+      phase: "telemetry_emit",
+    });
+    unguard();
+    closeRouterDb();
+    expect(await processChannelOutboundJob(f.job("replay"), t.options)).toMatchObject(failed);
+    expect(t.posts).toHaveLength(0);
+    expect(
+      t.events.every((event) => event.status === "failed" && event.retryable === false && !event.policyDisposition),
+    ).toBe(true);
+  });
+
+  it("never sends different bytes under the same token after ambiguous provider acceptance", async () => {
+    const f = fixture("ambiguous-egress", true, "1.000001", [], text);
+    const t = transport();
+    expect(
+      await processChannelOutboundJob(f.job("accepted"), {
+        ...t.options,
+        claimLeaseMs: 10,
+        receiptStore: {
+          ...sqliteChannelOutboundReceiptStore,
+          recordSent: () => {
+            throw new Error("synthetic storage failure after provider acceptance");
+          },
+        },
+      }),
+    ).toMatchObject({ disposition: "nak", phase: "receipt_write" });
+    expect(t.posts).toHaveLength(1);
+    guard();
+    expect(await processChannelOutboundJob(f.job("guarded-retry"), { ...t.options, now: () => 112 })).toMatchObject(
+      failed,
+    );
+    unguard();
+    closeRouterDb();
+    expect(await processChannelOutboundJob(f.job("unguarded-retry"), { ...t.options, now: () => 123 })).toMatchObject(
+      failed,
+    );
+    expect(t.posts).toHaveLength(1); // Acceptance of the first send remains ambiguous; no remote rollback claimed.
+    expect(t.texts).toHaveLength(0);
+  });
+
+  it("resumes bookkeeping for observed original bytes without resending when the guard later changes", async () => {
+    const f = fixture("sent-egress", true, "1.000001", [], text);
+    const t = transport();
+    expect(
+      await processChannelOutboundJob(f.job("sent"), {
+        ...t.options,
+        persistDeliveredMessage: () => {
+          throw new Error("synthetic canonical persist unavailable");
+        },
+      }),
+    ).toMatchObject({ disposition: "nak", phase: "canonical_persist" });
+    expect(getChannelOutboundReceipt(`${f.manifest!.responseId}:text`)?.state).toBe("sent");
+    guard();
+    closeRouterDb();
+    expect(await processChannelOutboundJob(f.job("bookkeeping"), t.options)).toMatchObject({
+      disposition: "ack",
+      status: "delivered",
+    });
+    expect(t.posts).toHaveLength(1);
+    expect(t.texts).toEqual([text]);
+  });
+
+  it("preserves complete safe text when the real guard is a no-op", async () => {
+    const safe = "Complete safe response\nAll details preserved.";
+    const f = fixture("safe-egress", true, "1.000001", [], safe);
+    guard();
+    const t = transport();
+    expect(await processChannelOutboundJob(f.job("safe"), t.options)).toMatchObject({
+      disposition: "ack",
+      status: "delivered",
+    });
+    expect(await processChannelOutboundJob(f.job("safe-replay"), t.options)).toMatchObject({
+      disposition: "ack",
+      status: "delivered",
+    });
+    expect(t.posts).toHaveLength(1);
+    expect(t.texts).toEqual([safe]);
+  });
+
+  it("still sanitizes ordinary non-frozen text with the mandatory guard", async () => {
+    const job = buildChannelTextOutboundJob({
+      requestId: "ordinary",
+      idempotencyKey: "ordinary",
+      sessionName: "session-a",
+      emitId: "ordinary",
+      target: { channel: "slack", instanceId: "local", accountId: "local", chatId: "C123" },
+      text,
+      format: "markdown",
+      responsePhase: "final_answer",
+    });
+    guard();
+    const t = transport();
+    expect(await processChannelOutboundJob(job, t.options)).toMatchObject({ disposition: "ack", status: "delivered" });
+    expect(t.texts).toEqual(["Complete answer: [link removido]\nSecond line intact."]);
+    expect(JSON.stringify(t.posts)).not.toContain("synthetic-integrity.ravi.page");
+  });
+
+  it("preserves guarded human backend delivery without adding a bot manifest or failure", async () => {
+    const f = fixture("human-egress", false, "1.000001", [], text, "user");
+    expect(f.manifest).toBeUndefined();
+    guard();
+    const t = transport();
+    expect(await processChannelOutboundJob(f.job("human"), t.options)).toMatchObject({
+      disposition: "ack",
+      status: "delivered",
+    });
+    expect(await processChannelOutboundJob(f.job("human"), t.options)).toMatchObject({
+      disposition: "ack",
+      status: "delivered",
+    });
+    expect(t.posts).toHaveLength(1);
+    expect(t.texts).toEqual(["Complete answer: [link removido]\nSecond line intact."]);
+    expect(JSON.stringify(t.posts)).not.toContain("synthetic-integrity.ravi.page");
+  });
+});
 
 describe("canonical Slack terminal text delivery", () => {
   it("sends one text part once across different wrapper IDs and fresh consumer invocations", async () => {

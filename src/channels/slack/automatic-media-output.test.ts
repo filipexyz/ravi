@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { configStore } from "../../config-store.js";
+import * as natsModule from "../../nats.js";
 import {
   closeRouterDb,
+  dbAcceptChannelBackendIngress,
+  dbCreateAgent,
+  dbUpsertChannel,
+  dbUpsertChat,
+  dbUpsertChatMessage,
   getDb,
   type ChannelBackendIngressReceiptRecord,
   type ChatMessageRecord,
@@ -22,6 +29,7 @@ import {
   freezeSlackAutomaticTerminalManifest,
 } from "./automatic-terminal-manifest.js";
 import { sendSlackMedia } from "./media.js";
+import * as slackMedia from "./media.js";
 import * as automaticMediaOutput from "./automatic-media-output.js";
 import type { ResponseMessage } from "../../runtime/message-types.js";
 
@@ -153,6 +161,98 @@ function callbacks(originDependencies: SlackAutomaticOutputOriginDependencies) {
   };
 }
 
+function gatewayFixture(index = 1, count = 1, unavailable = false) {
+  const chat = dbUpsertChat({ channel: "slack", instanceId: "local", platformChatId: "C123", chatType: "group" });
+  const message = dbUpsertChatMessage({
+    chatId: chat.id,
+    channel: "slack",
+    instanceId: "local",
+    providerMessageId: `1.${String(index).padStart(6, "0")}`,
+    rawChatId: "C123",
+    actorType: "unknown",
+    rawProvenance: { source: "slack.socket_mode", senderKind: "bot" },
+  });
+  const ingress = dbAcceptChannelBackendIngress({
+    channelInstanceId: "local",
+    idempotencyKey: `input-${index}`,
+    requestFingerprint: `request-${index}`,
+    requestId: `request-${index}`,
+    localActorId: "unlinked",
+    agentId: "agent-a",
+    clientMessageId: `client-${index}`,
+    sessionKey: "agent:agent-a:slack:local:group:C123",
+    sessionName: "session-a",
+    turnId: `turn-${index}`,
+    external: {
+      channelKind: "slack",
+      connectionId: "local",
+      conversationId: "C123~1.000001",
+      senderId: "BEXTERNAL",
+      messageId: `1.${String(index).padStart(6, "0")}`,
+    },
+    content: {},
+    receivedAt: time,
+    acceptedAt: time,
+    canonical: { chatId: chat.id, messageId: message.canonicalMessageId },
+  });
+  if (ingress.status !== "accepted") throw new Error("Test ingress was not accepted");
+  const binding = {
+    channelInstanceId: ingress.receipt.channelInstanceId,
+    agentId: ingress.receipt.agentId,
+    chatId: ingress.receipt.chatId,
+    messageId: ingress.receipt.messageId,
+    sessionId: ingress.receipt.sessionName,
+    turnId: ingress.receipt.turnId,
+  };
+  const context = resolveSlackAutomaticOutputContextFromBinding(binding);
+  if (!context) throw new Error("Test bot origin was not resolved");
+  const media: ResponseMediaAttachment[] = Array.from({ length: count }, (_, ordinal) => ({
+    type: "image",
+    filePath: join(stateDir!, `gateway-${index}-${ordinal}.png`),
+    filename: `gateway-${index}-${ordinal}.png`,
+    idempotencyKey: `gateway-media-${index}-${ordinal}`,
+    source: "runtime.generated_media",
+  }));
+  for (const part of media) writeFileSync(part.filePath, `Original bytes ${part.filename}`);
+  if (unavailable) unlinkSync(media[0]!.filePath);
+  const manifest = freezeSlackAutomaticTerminalManifest({ ...context, kind: "final_answer", text: "", media });
+  const response: ResponseMessage = {
+    _emitId: `gateway-wrapper-${index}`,
+    _automaticOutputOrigin: createChannelBackendAutomaticOutputOrigin(binding),
+    _automaticTerminalResponseId: manifest.responseId,
+    target: context.target,
+    content: media.map((part) => ({ type: "media", media: part })),
+  };
+  const input = (ordinal = 0): SlackAutomaticMediaInput => ({
+    sessionName: binding.sessionId,
+    response,
+    target: context.target,
+    media: media[ordinal]!,
+    originalMedia: media[ordinal]!,
+    mediaIndex: ordinal,
+  });
+  const key = (ordinal = 0) =>
+    assertSlackAutomaticTerminalPart(manifest, { type: "media", index: ordinal, media: media[ordinal]! });
+  return { manifest, media, response, input, key };
+}
+
+async function realGateway() {
+  const { Gateway } = await import("../../gateway.js");
+  const events: Array<Record<string, unknown>> = [];
+  const gateway = new Gateway({
+    omniSender: {} as never,
+    omniConsumer: {} as never,
+    emitEvent: async (_topic, data) => {
+      events.push(data as Record<string, unknown>);
+    },
+  });
+  const handle = (response: ResponseMessage) =>
+    (
+      gateway as unknown as { handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void> }
+    ).handleResponseEvent("session-a", response);
+  return { events, handle };
+}
+
 describe("native bot automatic media terminal delivery", () => {
   it("reports a frozen unavailable member as terminal failed while sending valid siblings, without revival", async () => {
     const f = fixture(1, "bot", false, true);
@@ -204,29 +304,70 @@ describe("native bot automatic media terminal delivery", () => {
     }
   });
 
-  it("rejects changed media bytes before upload even when its path and declared content-hash identity stay equal", async () => {
-    const f = fixture();
-    const deps = callbacks(f.originDependencies);
-    const input = f.input();
-    writeFileSync(input.media.filePath, "changed actual content, same file name and idempotency key");
-    expect(await deliverSlackAutomaticMedia(input, deps)).toMatchObject({
-      status: "failed",
-      reason: "slack_bot_reply_media_content_conflict",
-      retryable: false,
+  for (const receiptPath of ["read", "claim"] as const) {
+    it(`keeps changed media bytes failed across ${receiptPath} replay and SQLite reopen without revival`, async () => {
+      const f = fixture();
+      const deps = callbacks(f.originDependencies);
+      const input = f.input();
+      const originalBytes = readFileSync(input.media.filePath);
+      writeFileSync(input.media.filePath, "changed actual content, same file name and idempotency key");
+      const first = await deliverSlackAutomaticMedia(input, deps);
+      expect(first).toMatchObject({
+        status: "failed",
+        reason: "slack_bot_reply_media_content_conflict",
+        retryable: false,
+      });
+      expect(deps.send).toHaveBeenCalledTimes(0);
+      const partId = assertSlackAutomaticTerminalPart(f.manifest!, {
+        type: "media",
+        index: 0,
+        media: input.originalMedia,
+      });
+      const receipt = getChannelOutboundReceipt(partId);
+      expect(receipt).toMatchObject({
+        state: "suppressed",
+        suppressionReason: "slack_bot_reply_media_content_conflict",
+      });
+      expect(receipt?.sentAt).toBeUndefined();
+      expect(receipt?.deliveryMessageId).toBeUndefined();
+      // A stale pre-claim read must preserve the same terminal outcome as a
+      // direct receipt read; the real SQLite claim still finds the tombstone.
+      const replayDeps = {
+        ...deps,
+        ...(receiptPath === "claim" ? { receiptStore: { ...sqliteChannelOutboundReceiptStore, get: () => null } } : {}),
+      };
+      expect(await deliverSlackAutomaticMedia(input, replayDeps)).toEqual(first);
+      expect(getChannelOutboundReceipt(partId)).toEqual(receipt);
+      closeRouterDb();
+      time += WINDOW_MS * 2 + 1;
+      writeFileSync(input.media.filePath, originalBytes);
+      expect(await deliverSlackAutomaticMedia(input, replayDeps)).toEqual(first);
+      expect(getChannelOutboundReceipt(partId)).toEqual(receipt);
+      expect(deps.emitDelivery).toHaveBeenCalledTimes(3);
+      for (const [event] of deps.emitDelivery.mock.calls) {
+        expect(event).toMatchObject({
+          status: "failed",
+          reason: "slack_bot_reply_media_content_conflict",
+          retryable: false,
+          idempotencyKey: partId,
+        });
+        expect(event.policyDisposition).toBeUndefined();
+      }
+      for (const phase of ["emitDelivery", "flushTelemetry"] as const) {
+        expect(
+          await deliverSlackAutomaticMedia(input, {
+            ...replayDeps,
+            [phase]: async () => {
+              throw new Error("telemetry unavailable");
+            },
+          }),
+        ).toEqual(first);
+        expect(getChannelOutboundReceipt(partId)).toEqual(receipt);
+      }
+      expect(existsSync(input.media.filePath)).toBe(true);
+      expect(deps.send).toHaveBeenCalledTimes(0);
     });
-    expect(deps.send).toHaveBeenCalledTimes(0);
-    const partId = assertSlackAutomaticTerminalPart(f.manifest!, {
-      type: "media",
-      index: 0,
-      media: input.originalMedia,
-    });
-    expect(getChannelOutboundReceipt(partId)).toMatchObject({
-      state: "suppressed",
-      suppressionReason: "slack_bot_reply_media_content_conflict",
-    });
-    expect(await deliverSlackAutomaticMedia(input, deps)).toMatchObject({ status: "suppressed" });
-    expect(deps.send).toHaveBeenCalledTimes(0);
-  });
+  }
 
   it("delivers identical descriptors at distinct ordinals and retries each canonical part independently", async () => {
     const f = fixture(1, "bot", true);
@@ -504,5 +645,190 @@ describe("native bot automatic media terminal delivery", () => {
     expect(await deliverSlackAutomaticMedia(human.input(), humanDeps)).toEqual({ handled: false });
     expect(deps.send).toHaveBeenCalledTimes(0);
     expect(humanDeps.send).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe("native bot automatic media through the real gateway", () => {
+  let sendSpy: ReturnType<typeof spyOn>;
+  let flushSpy: ReturnType<typeof spyOn>;
+  const uploads: Array<{ filename: string | undefined; bytes: Buffer }> = [];
+
+  beforeEach(() => {
+    time = Date.now();
+    uploads.length = 0;
+    dbCreateAgent({ id: "agent-a", name: "Test agent", cwd: stateDir! });
+    dbUpsertChannel({ name: "local", provider: "slack", credentialConnection: "test-installation" });
+    configStore.refresh();
+    flushSpy = spyOn(natsModule, "flushNats").mockResolvedValue(undefined);
+    sendSpy = spyOn(slackMedia, "sendSlackMedia").mockImplementation(async (input) => {
+      if (!input.fileBytes) throw new Error("Expected the verified buffer at the Slack boundary");
+      uploads.push({ filename: input.filename, bytes: Buffer.from(input.fileBytes) });
+      return {
+        transport: "slack-native",
+        provider: "slack",
+        success: true,
+        status: "sent",
+        fileId: `F-GATEWAY-${uploads.length}`,
+        messageId: "1.123456",
+        raw: { ok: true },
+      };
+    });
+  });
+  afterEach(() => {
+    sendSpy.mockRestore();
+    flushSpy.mockRestore();
+  });
+
+  it("retains a conflicted bundle across replay and SQLite reopen without resending its valid sibling", async () => {
+    const f = gatewayFixture(1, 2);
+    const originalBytes = f.media.map((part) => readFileSync(part.filePath));
+    writeFileSync(f.media[0]!.filePath, "Changed bytes under the frozen descriptor");
+    const first = await realGateway();
+    await first.handle(f.response);
+    expect(first.events.map((event) => event.status)).toEqual(["failed", "delivered"]);
+    expect(first.events[0]).toMatchObject({
+      status: "failed",
+      reason: "slack_bot_reply_media_content_conflict",
+      retryable: false,
+      idempotencyKey: f.key(),
+    });
+    expect(first.events[0]!.policyDisposition).toBeUndefined();
+    expect(f.media.map((part) => existsSync(part.filePath))).toEqual([true, true]);
+    expect(uploads).toEqual([{ filename: f.media[1]!.filename, bytes: originalBytes[1] }]);
+    const receipts = f.media.map((_, ordinal) => getChannelOutboundReceipt(f.key(ordinal)));
+    expect(receipts[0]).toMatchObject({
+      state: "suppressed",
+      suppressionReason: "slack_bot_reply_media_content_conflict",
+    });
+    expect(receipts[0]?.sentAt).toBeUndefined();
+    expect(receipts[0]?.deliveryMessageId).toBeUndefined();
+    expect(receipts[1]?.state).toBe("complete");
+
+    // Replay the same wrapper, then a new wrapper after SQLite reopen. Neither
+    // restoring original bytes nor completed sibling receipts may erase failure.
+    for (const reopen of [false, true]) {
+      if (reopen) {
+        closeRouterDb();
+        writeFileSync(f.media[0]!.filePath, originalBytes[0]!);
+      }
+      const repeated = await realGateway();
+      await repeated.handle({ ...f.response, ...(reopen ? { _emitId: "gateway-conflict-replay" } : {}) });
+      expect(repeated.events).toHaveLength(1);
+      expect(repeated.events[0]).toMatchObject({
+        status: "failed",
+        reason: "slack_bot_reply_media_content_conflict",
+        retryable: false,
+        idempotencyKey: f.key(),
+      });
+      expect(repeated.events[0]!.policyDisposition).toBeUndefined();
+      expect(f.media.map((part) => existsSync(part.filePath))).toEqual([true, true]);
+      expect(f.media.map((_, ordinal) => getChannelOutboundReceipt(f.key(ordinal)))).toEqual(receipts);
+    }
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays a completed receipt after gateway cleanup without requiring the source file or uploading again", async () => {
+    const f = gatewayFixture();
+    const originalBytes = readFileSync(f.media[0]!.filePath);
+    const first = await realGateway();
+    await first.handle(f.response);
+    expect(first.events.map((event) => event.status)).toEqual(["delivered"]);
+    expect(uploads).toEqual([{ filename: f.media[0]!.filename, bytes: originalBytes }]);
+    expect(existsSync(f.media[0]!.filePath)).toBe(false);
+    const receipt = getChannelOutboundReceipt(f.key());
+    expect(receipt?.state).toBe("complete");
+    closeRouterDb();
+    const repeated = await realGateway();
+    await repeated.handle({ ...f.response, _emitId: "gateway-complete-replay" });
+    expect(repeated.events).toHaveLength(0);
+    expect(getChannelOutboundReceipt(f.key())).toEqual(receipt);
+    const send = mock(async () => ({ fileId: "FMUSTNOTUPLOAD" }));
+    expect(
+      await deliverSlackAutomaticMedia(f.input(), {
+        send,
+        emitDelivery: async () => {},
+        now: () => time + WINDOW_MS * 2,
+      }),
+    ).toMatchObject({ status: "delivered", newlySent: false, retryable: false });
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps unavailable-at-freeze media failed when its source file later appears", async () => {
+    const f = gatewayFixture(1, 1, true);
+    const first = await realGateway();
+    await first.handle(f.response);
+    expect(first.events).toHaveLength(1);
+    expect(first.events[0]).toMatchObject({
+      status: "failed",
+      reason: "slack_bot_reply_media_unavailable",
+      retryable: false,
+    });
+    expect(first.events[0]!.policyDisposition).toBeUndefined();
+    writeFileSync(f.media[0]!.filePath, "File appeared after freeze");
+    closeRouterDb();
+    const repeated = await realGateway();
+    await repeated.handle({ ...f.response, _emitId: "gateway-unavailable-replay" });
+    expect(repeated.events).toHaveLength(1);
+    expect(repeated.events[0]).toMatchObject({
+      status: "failed",
+      reason: "slack_bot_reply_media_unavailable",
+      retryable: false,
+    });
+    expect(repeated.events[0]!.policyDisposition).toBeUndefined();
+    expect(existsSync(f.media[0]!.filePath)).toBe(true);
+    expect(getChannelOutboundReceipt(f.key())).toBeNull();
+    expect(sendSpy).toHaveBeenCalledTimes(0);
+  });
+
+  it("preserves legitimate cooldown suppression across gateway cleanup and SQLite reopen", async () => {
+    for (let index = 1; index <= 4; index++) {
+      const { manifest } = gatewayFixture(index);
+      expect(
+        reserveSlackAutomaticOutput({
+          idempotencyKey: manifest.responseId,
+          requestFingerprint: manifest.requestFingerprint,
+          scope: manifest.scope,
+          sourceId: manifest.sourceId,
+          sourceReceivedAt: manifest.sourceReceivedAt,
+          now: time,
+        }).status,
+      ).toBe("allowed");
+    }
+    const f = gatewayFixture(5);
+    const first = await realGateway();
+    await first.handle(f.response);
+    expect(first.events).toHaveLength(1);
+    expect(first.events[0]).toMatchObject({
+      status: "dropped",
+      reason: "slack_bot_reply_cooldown",
+      policyDisposition: "suppressed",
+      retryable: false,
+    });
+    expect(existsSync(f.media[0]!.filePath)).toBe(false);
+    const receipt = getChannelOutboundReceipt(f.key());
+    expect(receipt).toMatchObject({ state: "suppressed", suppressionReason: "slack_bot_reply_cooldown" });
+    closeRouterDb();
+    const repeated = await realGateway();
+    await repeated.handle({ ...f.response, _emitId: "gateway-cooldown-replay" });
+    expect(repeated.events).toHaveLength(1);
+    expect(repeated.events[0]).toMatchObject({
+      status: "dropped",
+      reason: "slack_bot_reply_cooldown",
+      policyDisposition: "suppressed",
+      retryable: false,
+    });
+    const send = mock(async () => ({ fileId: "FMUSTNOTUPLOAD" }));
+    expect(
+      await deliverSlackAutomaticMedia(f.input(), {
+        send,
+        emitDelivery: async () => {},
+        now: () => time + WINDOW_MS * 2,
+      }),
+    ).toMatchObject({ status: "suppressed", reason: "slack_bot_reply_cooldown", retryable: false });
+    expect(getChannelOutboundReceipt(f.key())).toEqual(receipt);
+    expect(getSlackAutomaticOutputDecision(f.manifest.responseId)?.status).toBe("suppressed");
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(sendSpy).toHaveBeenCalledTimes(0);
   });
 });

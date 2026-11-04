@@ -582,6 +582,51 @@ describe("channel outbound consumer", () => {
       );
     });
 
+    it("retries only telemetry for a permanent integrity tombstone without policy suppression", async () => {
+      const job = makeJob();
+      const fingerprint = channelOutboundRequestFingerprint(job);
+      const reason = "slack_bot_reply_egress_content_conflict";
+      saveChannelOutboundPublishJob(job, 100);
+      sqliteChannelOutboundReceiptStore.claim({
+        idempotencyKey: job.request.idempotencyKey,
+        requestFingerprint: fingerprint,
+        owner: "integrity-runner",
+        jobId: job.jobId,
+        requestId: job.request.requestId,
+        sessionName: job.request.origin.sessionName,
+        provider: "slack",
+        now: 100,
+      });
+      sqliteChannelOutboundReceiptStore.markSuppressed({
+        idempotencyKey: job.request.idempotencyKey,
+        requestFingerprint: fingerprint,
+        owner: "integrity-runner",
+        reason,
+        suppressedAt: 110,
+      });
+      const delivery = makeDelivery();
+      const first = await processChannelOutboundJob(job, {
+        deliveries: [delivery],
+        emitEvent: async () => {
+          throw new Error("telemetry disconnected");
+        },
+      });
+      expect(first).toMatchObject({ disposition: "nak", status: "failed", retryable: false, phase: "telemetry_emit" });
+      const ack = mock(() => {});
+      const nak = mock((_delayMs?: number) => {});
+      acknowledgeChannelOutboundMessage({ ack, nak }, first);
+      expect(ack).not.toHaveBeenCalled();
+      expect(nak).toHaveBeenCalledWith(2000);
+      const emitEvent = mock(async (_topic: string, _data: Record<string, unknown>) => {});
+      const retried = await processChannelOutboundJob(job, { deliveries: [delivery], emitEvent });
+      expect(retried).toMatchObject({ disposition: "ack", status: "failed", retryable: false, error: reason });
+      expect(delivery.deliverText).not.toHaveBeenCalled();
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)?.suppressionReason).toBe(reason);
+      expect(getChannelOutboundPublishJob(job.request.idempotencyKey)?.status).toBe("pending");
+      expect(emitEvent.mock.calls[0]?.[1]).toMatchObject({ status: "failed", reason, retryable: false });
+      expect(emitEvent.mock.calls[0]?.[1].policyDisposition).toBeUndefined();
+    });
+
     it("delivers once from a fresh ledger and exposes canonical provider identity in telemetry", async () => {
       const delivery = makeDelivery();
       const emitEvent = mock(async () => {});
