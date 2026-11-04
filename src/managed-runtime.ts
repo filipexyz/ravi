@@ -1,6 +1,14 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
+import {
+  getRuntimeBootObservation,
+  readRuntimeBootReceipt,
+  runtimeBundleFingerprint,
+  runtimeFileMetadata,
+  type RuntimeBundleFingerprint,
+} from "./runtime-process-identity.js";
+import { getRaviStateDir } from "./utils/paths.js";
 
 const RAVI_PACKAGE_NAMES = new Set(["ravi.bot", "@filipelabs/ravi"]);
 
@@ -25,7 +33,14 @@ export type ManagedRuntimeMemberIdentity = {
   pid: number | null;
   bundlePath: string | null;
   cwd: string | null;
-  version: string | null;
+  runningVersion: string | null;
+  diskVersion: string | null;
+  startedAt: number | null;
+  stale: boolean;
+  codeStale: boolean;
+  envStale: boolean;
+  identityVerified: boolean;
+  warnings: string[];
   matchesCli: boolean | null;
 };
 
@@ -130,32 +145,105 @@ export function managedRuntimeBundlePath(process: Pm2Process | undefined): strin
   return null;
 }
 
+export type ManagedRuntimeIdentityOptions = {
+  stateDir?: string;
+  envFile?: string;
+};
+
 function identityForProcess(
   name: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME,
   process: Pm2Process | undefined,
   cliBundlePath: string | null,
+  cliFingerprint: RuntimeBundleFingerprint | null,
+  options: ManagedRuntimeIdentityOptions,
+  fingerprint: (path: string | null) => RuntimeBundleFingerprint | null,
 ): ManagedRuntimeMemberIdentity {
-  const bundlePath = managedRuntimeBundlePath(process);
-  const target = resolveManagedRuntimeTargetFromBundle(bundlePath);
+  const diskBundlePath = managedRuntimeBundlePath(process);
+  const receipt = process ? readRuntimeBootReceipt(process, options.stateDir) : null;
+  const bundlePath = receipt?.bundlePath ?? diskBundlePath;
+  const diskBundle = fingerprint(diskBundlePath);
   const normalizedCli = normalizeRuntimePath(cliBundlePath);
   const normalizedBundle = normalizeRuntimePath(bundlePath);
+  const online = process?.status === "online";
+  const startedAt = process?.startedAt ?? null;
+  const envFile = receipt?.envFile ?? options.envFile ?? join(options.stateDir ?? getRaviStateDir(), ".env");
+  const diskEnv = runtimeFileMetadata(envFile);
+  const codeStale =
+    online &&
+    Boolean(
+      (startedAt !== null && diskBundle && diskBundle.mtimeMs > startedAt) ||
+        (receipt?.bundle && (!diskBundle || receipt.bundle.sha256 !== diskBundle.sha256)) ||
+        (receipt && normalizeRuntimePath(receipt.bundlePath) !== normalizeRuntimePath(diskBundlePath)),
+    );
+  const envStale =
+    online &&
+    Boolean(
+      (startedAt !== null && diskEnv && diskEnv.mtimeMs > startedAt) ||
+        (receipt &&
+          (Boolean(receipt.env) !== Boolean(diskEnv) ||
+            (receipt.env &&
+              diskEnv &&
+              (receipt.env.mtimeMs !== diskEnv.mtimeMs ||
+                receipt.env.size !== diskEnv.size ||
+                receipt.env.ino !== diskEnv.ino)))),
+    );
+  const stale = codeStale || envStale;
+  const identityVerified = online && Boolean(receipt?.bundle && diskBundle);
+  const samePath = normalizedCli && normalizedBundle ? normalizedCli === normalizedBundle : null;
+  const matchesCli =
+    samePath === false || stale
+      ? false
+      : identityVerified && samePath && cliFingerprint
+        ? receipt!.bundle!.sha256 === cliFingerprint.sha256
+        : null;
+  const restart =
+    name === CHANNELS_PM2_PROCESS_NAME ? "ravi channels restart" : 'ravi daemon restart -m "reconcile runtime"';
+  const warnings: string[] = [];
+  if (codeStale)
+    warnings.push(
+      `${name} is running stale code: the bundle on disk changed after process start. Reconcile explicitly: ${restart}`,
+    );
+  if (envStale)
+    warnings.push(
+      `${name} has a stale environment: .env changed after process start. Reconcile explicitly: ${restart}`,
+    );
+  if (online && !identityVerified)
+    warnings.push(
+      `${name} running version is unverified (no valid boot identity for this PID and start time). Reconcile explicitly: ${restart}`,
+    );
+  if (online && matchesCli === false && !stale)
+    warnings.push(
+      `${name} does not match the CLI bundle. Reconcile explicitly from the intended installation: ${restart}`,
+    );
   return {
     name,
     managed: Boolean(process),
-    online: process?.status === "online",
+    online,
     status: process?.status ?? "not_managed_by_pm2",
     pid: process?.pid ?? null,
     bundlePath,
     cwd: safeRuntimeRealpath(process?.cwd),
-    version: target?.version ?? readRaviVersion(findRaviPackageRoot(bundlePath)),
-    matchesCli: normalizedCli && normalizedBundle ? normalizedCli === normalizedBundle : null,
+    runningVersion: online ? (receipt?.runningVersion ?? null) : null,
+    diskVersion: readRaviVersion(findRaviPackageRoot(diskBundlePath)),
+    startedAt,
+    stale,
+    codeStale,
+    envStale,
+    identityVerified,
+    warnings,
+    matchesCli,
   };
+}
+
+export function managedRuntimeWarnings(identity: ManagedRuntimeIdentity): string[] {
+  return [...identity.daemon.warnings, ...identity.channels.warnings];
 }
 
 export function buildManagedRuntimeIdentity(
   processes: Pm2Process[],
   cliBundleCandidate: string | null | undefined,
   currentProcessPid = process.pid,
+  options: ManagedRuntimeIdentityOptions = {},
 ): ManagedRuntimeIdentity {
   const daemonProcess = processes.find((entry) => entry.name === PM2_PROCESS_NAME);
   const channelsProcess = processes.find((entry) => entry.name === CHANNELS_PM2_PROCESS_NAME);
@@ -163,15 +251,47 @@ export function buildManagedRuntimeIdentity(
   const cliBundlePath =
     daemonProcess?.pid === currentProcessPid ? daemonBundlePath : safeRuntimeRealpath(cliBundleCandidate);
   const cliTarget = resolveManagedRuntimeTargetFromBundle(cliBundlePath);
-  const daemon = identityForProcess(PM2_PROCESS_NAME, daemonProcess, cliBundlePath);
-  const channels = identityForProcess(CHANNELS_PM2_PROCESS_NAME, channelsProcess, cliBundlePath);
+  const fingerprints = new Map<string, RuntimeBundleFingerprint | null>();
+  const fingerprint = (path: string | null): RuntimeBundleFingerprint | null => {
+    if (!path) return null;
+    if (!fingerprints.has(path)) fingerprints.set(path, runtimeBundleFingerprint(path));
+    return fingerprints.get(path) ?? null;
+  };
+  const observation = currentProcessPid === process.pid ? getRuntimeBootObservation() : null;
+  const cliBoot =
+    observation && normalizeRuntimePath(observation.bundlePath) === normalizeRuntimePath(cliBundlePath)
+      ? observation
+      : null;
+  const cliFingerprint = cliBoot?.bundle ?? fingerprint(cliBundlePath);
+  const daemon = identityForProcess(
+    PM2_PROCESS_NAME,
+    daemonProcess,
+    cliBundlePath,
+    cliFingerprint,
+    options,
+    fingerprint,
+  );
+  const channels = identityForProcess(
+    CHANNELS_PM2_PROCESS_NAME,
+    channelsProcess,
+    cliBundlePath,
+    cliFingerprint,
+    options,
+    fingerprint,
+  );
   const onlineMembers = [daemon, channels].filter((member) => member.online);
   const managedMembers = [daemon, channels].filter((member) => member.managed);
 
   let alignment: ManagedRuntimeIdentity["alignment"] = "not_running";
   if (onlineMembers.length > 0) {
-    const paths = [cliBundlePath, ...managedMembers.map((member) => member.bundlePath)].map(normalizeRuntimePath);
-    alignment = paths.some((path) => !path) ? "unknown" : new Set(paths as string[]).size === 1 ? "aligned" : "drifted";
+    if (managedMembers.some((member) => member.stale || member.matchesCli === false)) alignment = "drifted";
+    else if (
+      !daemon.online ||
+      !cliFingerprint ||
+      managedMembers.some((member) => !member.identityVerified || member.matchesCli !== true)
+    )
+      alignment = "unknown";
+    else alignment = "aligned";
   }
 
   return {
@@ -179,7 +299,7 @@ export function buildManagedRuntimeIdentity(
     cli: {
       bundlePath: cliBundlePath,
       cwd: cliTarget?.cwd ?? findRaviPackageRoot(cliBundlePath),
-      version: cliTarget?.version ?? readRaviVersion(findRaviPackageRoot(cliBundlePath)),
+      version: cliBoot?.runningVersion ?? cliTarget?.version ?? readRaviVersion(findRaviPackageRoot(cliBundlePath)),
     },
     daemon,
     channels,
@@ -190,7 +310,9 @@ export function managedRuntimeMatchesTarget(
   previousProcesses: ManagedRuntimeProcessSnapshot[],
   currentProcesses: Pm2Process[],
   target: ManagedRuntimeTarget,
+  options: ManagedRuntimeIdentityOptions = {},
 ): boolean {
+  const identity = buildManagedRuntimeIdentity(currentProcesses, target.bundlePath, -1, options);
   for (const name of [PM2_PROCESS_NAME, CHANNELS_PM2_PROCESS_NAME] as const) {
     const previous = previousProcesses.find((process) => process.name === name);
     if (!previous) continue;
@@ -205,7 +327,13 @@ export function managedRuntimeMatchesTarget(
     if (normalizeRuntimePath(managedRuntimeBundlePath(current)) !== normalizeRuntimePath(target.bundlePath))
       return false;
     if (normalizeRuntimePath(current.cwd) !== normalizeRuntimePath(target.cwd)) return false;
-    if (resolveManagedRuntimeTargetFromBundle(managedRuntimeBundlePath(current))?.version !== target.version)
+    const member = name === PM2_PROCESS_NAME ? identity.daemon : identity.channels;
+    if (
+      !member.identityVerified ||
+      member.stale ||
+      member.matchesCli !== true ||
+      member.runningVersion !== target.version
+    )
       return false;
     if (
       previous.pid > 0 &&
