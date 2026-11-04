@@ -1,4 +1,5 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { logger } from "../../utils/logger.js";
 /**
  * Session Commands - manage agent sessions
  */
@@ -7610,7 +7611,10 @@ function assertSessionProviderSelectionAuthorized(session: SessionEntry, provide
   let configuredProvider: string;
   try {
     configuredProvider = resolveAgentRuntimeDefaultProvider(configuredAgent ?? {});
-  } catch {
+  } catch (error) {
+    logger.child("cli:sessions").warn("Could not resolve the default provider for session authorization", {
+      diagnostic: errorDiagnostic(error, { operation: "session_provider_selection_authorization" }),
+    });
     configuredProvider = configuredAgent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
   }
   if (

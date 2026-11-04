@@ -20,6 +20,8 @@ import { parseRuntimeEffort, type RuntimeEffort } from "../../runtime/effort.js"
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { logger } from "../../utils/logger.js";
 import {
   findSlackThreadForParent,
   slackThreadError,
@@ -27,6 +29,8 @@ import {
   summarizeSlackThread,
   type SlackThreadSummary,
 } from "./thread-lifecycle.js";
+
+const log = logger.child("channels:slack:thread-runtime");
 
 export interface SlackThreadRuntimeOverrides {
   provider: string | null;
@@ -167,7 +171,10 @@ function providerAuthorizationState(
   let defaultProvider: string;
   try {
     defaultProvider = resolveAgentRuntimeDefaultProvider(agent ?? {});
-  } catch {
+  } catch (error) {
+    log.warn("Could not resolve the default provider for thread authorization", {
+      diagnostic: errorDiagnostic(error, { operation: "thread_runtime_provider_authorization" }),
+    });
     defaultProvider = agent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
   }
   // These are the persisted identity and inputs to set-provider's authority

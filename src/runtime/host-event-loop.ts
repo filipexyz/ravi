@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
@@ -2107,9 +2108,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (pending) pending.safetyFenced = true;
   };
 
-  const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
-    const metadata = streaming.currentChannelBackend;
-    if (!metadata) return;
+  const projectRuntimeEventToChannel = async (
+    event: RuntimeEvent,
+    projectedResponseText?: string,
+    metadata = streaming.currentChannelBackend,
+    mayProject?: () => boolean,
+  ) => {
+    if (!metadata || (mayProject && !mayProject())) return;
     // The physical turn ends, but its queued continuation still owns this channel request.
     if (
       streaming.currentTurnYieldContinuationId &&
@@ -2140,6 +2145,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       await projectChannelRuntimeEvent({
         metadata,
         event: stripRuntimeRawEvent(event),
+        ...(mayProject ? { beforeRecordEvent: mayProject } : {}),
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
         ...toolProjection,
       });
@@ -3123,6 +3129,37 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           suppressProviderRawForCurrentTurn = true;
         }
       }
+
+      // A reset exception must settle this accepted request, never an envelope
+      // installed while diagnostics or the running-state sink are awaited.
+      // This is initial settlement, not replay or a native-state write. A
+      // next-turn provider revision or cancellation does not replace the failed
+      // outcome while this exact request still owns the slot and lease.
+      const failedChannelProjection =
+        event.type === "turn.failed" && streaming.currentChannelBackend
+          ? (() => {
+              const metadata = structuredClone(streaming.currentChannelBackend);
+              const failedEvent = structuredClone(stripRuntimeRawEvent(event)) as RuntimeEvent;
+              const handle = streaming.queryHandle;
+              const traceTurnId = streaming.currentTraceTurnId;
+              const terminal = streaming.currentCrashRecoveryTerminal;
+              const bootEpoch = crashRecovery?.bootEpoch;
+              return {
+                metadata,
+                event: failedEvent,
+                mayProject: () =>
+                  ownsRuntimeSlot() &&
+                  streaming.queryHandle === handle &&
+                  streaming.currentTraceTurnId === traceTurnId &&
+                  streaming.currentCrashRecoveryTerminal === terminal &&
+                  isDeepStrictEqual(streaming.currentChannelBackend, metadata) &&
+                  (!crashRecovery ||
+                    (crashRecovery.bootEpoch === bootEpoch &&
+                      !crashRecovery.ownershipFailure &&
+                      crashRecovery.acceptingDeliveries)),
+              };
+            })()
+          : undefined;
 
       if (event.type === "text.delta") {
         // The chunk can be queued for external emission below, so persist the
@@ -4359,7 +4396,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           const queuedSuccessors = streaming.pendingMessages
             .filter((message) => !message.pendingId || !ownPendingIds.has(message.pendingId))
             .map((message) => ({ ...message }));
-          const resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
+          let resetApplied: boolean;
+          try {
+            resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
+          } catch (error) {
+            // The physical attempt is already terminal. Without a successful
+            // reset there is no recovery handoff to settle this logical request.
+            try {
+              if (failedChannelProjection) {
+                await projectRuntimeEventToChannel(
+                  failedChannelProjection.event,
+                  undefined,
+                  failedChannelProjection.metadata,
+                  failedChannelProjection.mayProject,
+                );
+              }
+            } catch (projectionError) {
+              log.warn("Failed to settle channel request after provider-state reset failure", {
+                sessionName,
+                errorKind: projectionError instanceof Error ? projectionError.name : typeof projectionError,
+              });
+            }
+            throw error;
+          }
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
           session.runtimeProvider = undefined;

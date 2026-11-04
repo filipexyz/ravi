@@ -93,6 +93,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Reset refusal must still settle its captured logical request under ownership fences.
+    "src/runtime/host-event-loop.reset-failure.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
     // Signals piggyback: the transformTurnPrompt seam in the delivery queue.

@@ -15,6 +15,8 @@
 - A context-window `turn.failed` records a terminal failed turn with `autoRecovered=true`.
 - The event loop records `session.context_window_exhausted`.
 - Provider state is cleared with `resetSession`.
+- A real SQLite trigger refusing only the native-id reset MUST leave one failed physical attempt/trace and one logical failure, with no stash/restart or raw reset error in channel output.
+- Recheck captured owner, binding and lease after an awaited running-state sink; a replacement owner MUST NOT receive or authorize the old request's terminal. A successful reset still defers logical finalization until recovery completes.
 - The current user-visible raw provider error is not emitted as a runtime response.
 - A restart is requested with reason `runtime_context_window_exhausted`.
 - The stashed restart prompt contains the latest user request and local recent history.

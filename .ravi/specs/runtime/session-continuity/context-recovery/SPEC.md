@@ -81,6 +81,7 @@ Providers own native compaction, thread/session ids, and raw error strings. Prov
 - Recovery MUST record trace data showing the failure, reset, provider, model, classifier match, prompt size, and restart reason.
 - Recovery MUST distinguish `runtime_context_window_exhausted` from `runtime_provider_session_missing` in restart reasons and session trace events.
 - If recovery prompt construction fails or no restart prompt can be built, Ravi MUST fail closed with a normal terminal failure.
+- If provider-state reset throws before the recovery handoff, the host MUST settle the captured logical channel request with its terminal failure under the existing owner, accepted-binding and lease fences, then preserve the reset error for diagnostics. A recorded physical terminal MUST NOT suppress that logical settlement. Successful recovery MUST keep the logical request open, without replaying or accounting for the failed physical attempt again.
 
 ## Provider Notes
 

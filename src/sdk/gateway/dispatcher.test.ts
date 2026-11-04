@@ -481,6 +481,7 @@ describe("dispatch — sessions thread-configure authorization", () => {
     const handler = spyOn(SessionCommands.prototype, "threadConfigure").mockImplementation(() => {
       contractFail("sessions thread-configure", "THREAD_NOT_FOUND", "The fixture thread does not exist", {
         exitCode: 1,
+        diagnostic: errorDiagnostic("The fixture thread does not exist", { operation: "sessions thread-configure" }),
       });
     });
     try {
