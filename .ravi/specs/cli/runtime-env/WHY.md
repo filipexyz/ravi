@@ -19,3 +19,9 @@ paths.
 Writes are not braked. They are local, reversible via `unset`, and the
 intended Hub happy path. Adding `--execute` would block closed-box
 automation for no irreversibility.
+
+The daemon and runner load the same env file into independent processes.
+A successful write can update the caller's environment while leaving the
+channel runner unchanged. Warnings therefore use observed process/file
+freshness for both siblings; they never imply that writing the file reloaded
+either process and never restart channel intake implicitly.

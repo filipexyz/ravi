@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import {
   conversationSchema,
   historySchema,
@@ -27,6 +28,12 @@ function invoke(command: BridgeRequest["command"], input: Record<string, unknown
       "sessions conversations",
       "CONSOLE_AUTHORITY_REQUIRED",
       "A current signed Console delegation is required",
+      {
+        ...{},
+        diagnostic: errorDiagnostic("A current signed Console delegation is required", {
+          operation: "sessions conversations",
+        }),
+      },
     );
   const { grant, enrollment, service } = invocation;
   if (
@@ -34,17 +41,28 @@ function invoke(command: BridgeRequest["command"], input: Record<string, unknown
     input.requestId !== grant.operationId ||
     input.createdAt !== grant.createdAt
   )
-    contractFail("sessions conversations", "INVALID_DELEGATION", "Invocation identity does not match the delegation");
+    contractFail("sessions conversations", "INVALID_DELEGATION", "Invocation identity does not match the delegation", {
+      ...{},
+      diagnostic: errorDiagnostic("Invocation identity does not match the delegation", {
+        operation: "sessions conversations",
+      }),
+    });
   if (
     "conversationId" in input &&
     (grant.scope.kind !== "session" || grant.scope.conversationId !== input.conversationId)
   )
-    contractFail("sessions conversations", "NOT_FOUND_OR_DENIED", "Session is outside the delegation");
+    contractFail("sessions conversations", "NOT_FOUND_OR_DENIED", "Session is outside the delegation", {
+      ...{},
+      diagnostic: errorDiagnostic("Session is outside the delegation", { operation: "sessions conversations" }),
+    });
   try {
     return service.executeAuthorized({ ...input, command } as BridgeRequest, grant, enrollment);
   } catch (error) {
     if (error instanceof BridgeError)
-      contractFail("sessions conversations", error.code, error.code, { details: { effectState: error.effectState } });
+      contractFail("sessions conversations", error.code, error.code, {
+        ...{ details: { effectState: error.effectState } },
+        diagnostic: errorDiagnostic(error, { operation: "sessions conversations" }),
+      });
     throw error;
   }
 }

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Shared helpers of the cloud agents product commands (`ravi cloud secrets|
  * triggers|credits|settings|catalog|webhook|worker` and the agent admin
@@ -70,9 +71,12 @@ export function refuseInAgentRuntime(
   const d = productDefaults(deps);
   if (!d.inAgentRuntime()) return;
   contractFail(op, input.code, input.message, {
-    asJson: input.asJson,
-    exitCode: CONTRACT_EXIT_POLICY,
-    details: { suggestedAction: input.suggestedAction },
+    ...{
+      asJson: input.asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: { suggestedAction: input.suggestedAction },
+    },
+    diagnostic: errorDiagnostic(input.message, { operation: op }),
   });
 }
 
@@ -88,14 +92,17 @@ export async function requireProjectAgent(
   const found = matchCloudAgent(agents, ref);
   if (found) return found;
   contractFail(op, "CLOUD_AGENT_NOT_FOUND", `No cloud agent '${ref.slice(0, 80)}' in project ${project}.`, {
-    asJson,
-    details: {
-      suggestedAction: `List them with: ravi cloud agents list --project ${project}`,
-      suggestions: suggestSimilar(
-        ref,
-        agents.map((agent) => agent.library.slug || agent.name),
-      ),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: `List them with: ravi cloud agents list --project ${project}`,
+        suggestions: suggestSimilar(
+          ref,
+          agents.map((agent) => agent.library.slug || agent.name),
+        ),
+      },
     },
+    diagnostic: errorDiagnostic(`No cloud agent '${ref.slice(0, 80)}' in project ${project}.`, { operation: op }),
   });
 }
 

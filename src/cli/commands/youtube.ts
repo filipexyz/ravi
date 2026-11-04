@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import { YouTubeClient } from "../../apps/youtube/client.js";
@@ -14,11 +15,14 @@ import { jsonPrimitiveSchema } from "../return-schemas.js";
  */
 function failYouTubeVideoNotFound(op: string, videoId: string, asJson?: boolean): never {
   contractFail(op, "VIDEO_NOT_FOUND", `YouTube video not found: ${videoId}`, {
-    asJson,
-    details: {
-      suggestedAction:
-        "List channel uploads with `ravi yt videos --json` or search with `ravi yt search <query> --json` to find the correct video ID",
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "List channel uploads with `ravi yt videos --json` or search with `ravi yt search <query> --json` to find the correct video ID",
+      },
     },
+    diagnostic: errorDiagnostic(`YouTube video not found: ${videoId}`, { operation: op }),
   });
 }
 

@@ -6,6 +6,7 @@
 import OpenAI from "openai";
 import { logger } from "../utils/logger.js";
 import { getAudioDuration, splitAudioChunks } from "./chunker.js";
+import { diagnosticError, errorDiagnostic, type ErrorDiagnosticContext } from "../utils/error-diagnostic.js";
 
 const log = logger.child("transcribe");
 
@@ -55,6 +56,7 @@ interface TranscribeProvider {
   name: string;
   client: OpenAI;
   model: string;
+  credential: string;
 }
 
 /** Max duration in seconds before chunking (10 minutes) */
@@ -72,6 +74,7 @@ function getProvider(): TranscribeProvider {
       name: "groq",
       client: new OpenAI({ apiKey: groqKey, baseURL: "https://api.groq.com/openai/v1" }),
       model: "whisper-large-v3-turbo",
+      credential: groqKey,
     };
   }
 
@@ -81,6 +84,7 @@ function getProvider(): TranscribeProvider {
       name: "openai",
       client: new OpenAI({ apiKey: openaiKey }),
       model: "whisper-1",
+      credential: openaiKey,
     };
   }
 
@@ -100,15 +104,35 @@ async function transcribeChunk(
   const filename = `audio.${ext}`;
   const file = new File([buffer], filename, { type: mimetype });
 
-  const response = await provider.client.audio.transcriptions.create({
-    file,
-    model: provider.model,
-    language: options.language ?? "pt",
-    response_format: "verbose_json",
-    timestamp_granularities: ["segment"],
-  });
+  try {
+    const response = await provider.client.audio.transcriptions.create({
+      file,
+      model: provider.model,
+      language: options.language ?? "pt",
+      response_format: "verbose_json",
+      timestamp_granularities: ["segment"],
+    });
 
-  return normalizeTranscriptionResponse(response);
+    return normalizeTranscriptionResponse(response);
+  } catch (error) {
+    // Preserve the provider's original exception and add the identity known at
+    // this boundary. A generic CLI headline must not erase its diagnostic.
+    throw transcriptionFailure(
+      error,
+      {
+        operation: "audio.transcriptions.create",
+        provider: provider.name,
+        model: provider.model,
+      },
+      [provider.credential],
+    );
+  }
+}
+
+function transcriptionFailure(error: unknown, context: ErrorDiagnosticContext, secrets: readonly string[] = []): Error {
+  // Preserve the throwable internally. Normalization happens at diagnostic egress,
+  // using the integration's credential to remove even an unlabeled provider echo.
+  return diagnosticError(error, context, { secrets });
 }
 
 function extensionForMimeType(mimetype: string): string {
@@ -118,7 +142,7 @@ function extensionForMimeType(mimetype: string): string {
 }
 
 function isAudioTooShortError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorDiagnostic(err).cause;
   return /audio file is too short|minimum audio length/i.test(message);
 }
 
@@ -241,11 +265,16 @@ export async function transcribeAudio(
 
   // Long audio — split into chunks and transcribe each
   log.info("Audio exceeds threshold, chunking", { duration, threshold: CHUNK_THRESHOLD_SEC });
-  const chunks = await splitAudioChunks(buffer, ext, {
-    chunkDuration: CHUNK_THRESHOLD_SEC,
-    overlap: 15,
-    durationHintSec: duration,
-  });
+  let chunks: Awaited<ReturnType<typeof splitAudioChunks>>;
+  try {
+    chunks = await splitAudioChunks(buffer, ext, {
+      chunkDuration: CHUNK_THRESHOLD_SEC,
+      overlap: 15,
+      durationHintSec: duration,
+    });
+  } catch (error) {
+    throw transcriptionFailure(error, { operation: "audio.split", provider: "ffmpeg" });
+  }
 
   const texts: string[] = [];
   const segments: TranscriptionSegment[] = [];

@@ -580,11 +580,14 @@ describe("media send contract", () => {
     expect(mediaSendCalls).toHaveLength(0);
   });
 
-  it("does not expose a provider failure in the MEDIA_SEND_FAILED envelope", async () => {
+  it("media_send_preserves_provider_cause_and_redacts_credential", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ravi-media-provider-failure-"));
     const filePath = join(dir, "sample.png");
     writeFileSync(filePath, "png");
-    mediaSendError = new Error("PRIVATE_MESSAGE_8K2R sk-abcdefghijklmnop");
+    mediaSendError = Object.assign(
+      new Error("Omni upload rejected: unsupported media format; api_key=sk-abcdefghijklmnop"),
+      { status: 415, code: "unsupported_media_type" },
+    );
     try {
       const error = await expectContractError(
         () =>
@@ -595,7 +598,13 @@ describe("media send contract", () => {
 
       expect(error.message).toBe("Media delivery failed.");
       expect(error.details.retryable).toBe(true);
-      expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(error.details.cause).toContain("Omni upload rejected: unsupported media format");
+      expect(error.details.context).toMatchObject({
+        operation: "media send",
+        provider: "omni",
+        status: 415,
+        code: "unsupported_media_type",
+      });
       expect(JSON.stringify(error.envelope())).not.toContain("sk-abcdefghijklmnop");
       expect(mediaSendCalls).toHaveLength(1);
     } finally {

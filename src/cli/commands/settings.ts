@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Settings Commands - Global settings management CLI
  */
@@ -401,11 +402,14 @@ function settingKeyCandidates(): string[] {
 
 function failSettingNotFound(op: string, key: string, asJson?: boolean): never {
   contractFail(op, "SETTING_NOT_FOUND", `Setting not found: ${key}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the setting key (see suggestions) or run `ravi settings list`",
-      suggestions: suggestSimilar(key, settingKeyCandidates()),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the setting key (see suggestions) or run `ravi settings list`",
+        suggestions: suggestSimilar(key, settingKeyCandidates()),
+      },
     },
+    diagnostic: errorDiagnostic(`Setting not found: ${key}`, { operation: op }),
   });
 }
 

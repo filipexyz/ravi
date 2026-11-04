@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmodSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -296,7 +297,10 @@ describe("verified Git Data API publication", () => {
       executePublication(prepared, f.request, {
         ...f.options,
         authorize: () => {
-          throw new ContractError("pr publish", "PERMISSION_DENIED", "denied", 1);
+          throw new ContractError("pr publish", "PERMISSION_DENIED", "denied", 1, {
+            ...errorDiagnostic("denied", { operation: "pr publish" }),
+            ...{},
+          });
         },
       }),
     ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });

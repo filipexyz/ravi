@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Transparent runtime controls for active sessions.
  *
@@ -53,13 +54,16 @@ function parsePositiveInt(value: string | number | undefined, fallback: number):
  * controls, modify) get the same typed answer, so the refusal does not reveal
  * which sessions exist.
  */
-function failControlSessionNotFound(op: string, ref: string, asJson: boolean | undefined): never {
-  contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${ref}`, {
-    asJson,
-    details: {
-      suggestedAction:
-        "List visible sessions with: ravi sessions list --json (mutating runtime controls also need modify access)",
+function failControlSessionNotFound(op: string, _ref: string, asJson: boolean | undefined): never {
+  contractFail(op, "SESSION_NOT_FOUND", "Session not found, or not visible to this context.", {
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "List visible sessions with: ravi sessions list --json (mutating runtime controls also need modify access)",
+      },
     },
+    diagnostic: errorDiagnostic("Session not found, or not visible to this context.", { operation: op }),
   });
 }
 
@@ -119,7 +123,13 @@ function runtimeControlContractError(op: string, result: RuntimeControlResult): 
     code,
     result.error ?? catalog?.message ?? `Runtime control failed: ${result.operation}`,
     CONTRACT_EXIT_ERROR,
-    details,
+    {
+      ...errorDiagnostic(result.error ?? catalog?.message ?? `Runtime control failed: ${result.operation}`, {
+        operation: op,
+        provider: result.state?.provider,
+      }),
+      ...details,
+    },
   );
 }
 
@@ -129,15 +139,15 @@ function printRuntimeControlResult(
   asJson: boolean | undefined,
   successMessage?: string,
 ): RuntimeControlResult {
+  if (!result.ok) {
+    const error = runtimeControlContractError(op, result);
+    renderContractError(error, asJson);
+    throw error;
+  }
+
   if (asJson) {
     console.log(JSON.stringify(result, null, 2));
     return result;
-  }
-
-  if (!result.ok) {
-    const error = runtimeControlContractError(op, result);
-    renderContractError(error, false);
-    throw error;
   }
 
   if (successMessage) {
@@ -167,25 +177,31 @@ async function requestRuntimeControl(
       RUNTIME_CONTROL_TIMEOUT_MS,
     );
   } catch (error) {
-    // Timeout, NATS emit failure or a daemon `{ error }` reply: never surface the raw text.
+    // Keep the catalog headline and carry the normalized, redacted transport cause.
     const timedOut = error instanceof Error && error.message.startsWith("Request timeout");
     const code = timedOut ? RUNTIME_CONTROL_TIMEOUT : RUNTIME_CONTROL_UNAVAILABLE;
     const catalog = runtimeControlCatalogCopy(code);
     contractFail(op, code, catalog?.message ?? "Runtime control request failed.", {
-      asJson,
-      details: {
-        retryable: isRetryableRuntimeControlCode(code, request.operation),
-        suggestedAction: catalog?.suggestedAction,
-        operation: request.operation,
+      ...{
+        asJson,
+        details: {
+          retryable: isRetryableRuntimeControlCode(code, request.operation),
+          suggestedAction: catalog?.suggestedAction,
+          operation: request.operation,
+        },
       },
+      diagnostic: errorDiagnostic(error, { operation: op }),
     });
   }
 
   if (!reply.result) {
     const catalog = runtimeControlCatalogCopy(RUNTIME_CONTROL_FAILED);
     contractFail(op, RUNTIME_CONTROL_FAILED, "Runtime control reply did not include a result.", {
-      asJson,
-      details: { suggestedAction: catalog?.suggestedAction, operation: request.operation },
+      ...{
+        asJson,
+        details: { suggestedAction: catalog?.suggestedAction, operation: request.operation },
+      },
+      diagnostic: errorDiagnostic("Runtime control reply did not include a result.", { operation: op }),
     });
   }
 

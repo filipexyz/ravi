@@ -10,6 +10,7 @@ import {
 } from "../permissions/agent-default-capabilities-provider.js";
 import { dbGetAgent } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
+import { errorDiagnostic, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
 import {
   CodexAppServerRequestError,
@@ -72,7 +73,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
-import { createRuntimeTerminalEventTracker } from "./terminality.js";
+import { createRuntimeTerminalEventTracker, type RuntimeFailedTerminalInput } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 
 const DEFAULT_CODEX_MODEL = "gpt-5";
@@ -1132,15 +1133,9 @@ async function* normalizeCodexEvents(
             { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
             { threadId: turnSessionId, turnId: activeTurnId },
           );
-          const terminal = terminalTracker.fail({
-            error: lastErrorMessage ?? "Codex app-server connection closed without a terminal event",
-            recoverable: true,
-            // A Codex error event (an unavailable model, a usage limit) explains the
-            // failure; replaying it would only fail again.
-            failureKind: lastErrorMessage ? undefined : "transport",
-            rawEvent: { ...buildCodexExitRawEvent(result, stderrTail), error: error.message, ...lastErrorEvent },
-            metadata,
-          });
+          const terminal = terminalTracker.fail(
+            buildCodexTransportFailure(error, { result, stderrTail, lastErrorMessage, lastErrorEvent, metadata }),
+          );
           if (terminal) {
             yield terminal;
           }
@@ -1179,7 +1174,7 @@ const CODEX_STDERR_TAIL_MAX = 2_000;
 /** A failure of the app-server connection itself, not of the native turn. */
 export class CodexAppServerTransportError extends Error {
   constructor(cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause));
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
     this.name = "CodexAppServerTransportError";
   }
 }
@@ -1201,6 +1196,32 @@ function buildCodexExitRawEvent(result: CodexCliTurnResult, stderrTail: string |
     exitCode: result.exitCode,
     signal: result.signal,
     ...(stderrTail ? { message: stderrTail } : {}),
+  };
+}
+
+function buildCodexTransportFailure(
+  cause: CodexAppServerTransportError,
+  input: {
+    result: CodexCliTurnResult;
+    stderrTail?: string;
+    lastErrorMessage?: string;
+    lastErrorEvent?: Record<string, unknown>;
+    metadata: RuntimeEventMetadata;
+  },
+): RuntimeFailedTerminalInput {
+  const diagnostic = errorDiagnostic(cause, { provider: "codex", operation: "app-server transport" });
+  return {
+    error: input.lastErrorMessage ?? "Codex app-server connection closed without a terminal event",
+    recoverable: true,
+    // A provider error already explains the failure; replaying it would fail again.
+    failureKind: input.lastErrorMessage ? undefined : "transport",
+    rawEvent: {
+      ...buildCodexExitRawEvent(input.result, input.stderrTail),
+      error: redactDiagnosticText(cause.message),
+      ...input.lastErrorEvent,
+      ...diagnostic,
+    },
+    metadata: input.metadata,
   };
 }
 
@@ -1546,8 +1567,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           persisted?.status === "failed" &&
           (persisted.itemsView === undefined || persisted.itemsView === "full") &&
           hasOnlyOriginalInput(persisted.items);
-      } catch {
+      } catch (error) {
         // Readback is optional evidence. Failure must never authorize replay.
+        log.debug("Codex capacity readback unavailable; replay remains unproven", {
+          ...errorDiagnostic(error, { provider: "codex", operation: "thread/read" }),
+        });
       }
     }
     if (turn.settled || activeTurn !== turn) return;

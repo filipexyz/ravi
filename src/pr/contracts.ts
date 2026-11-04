@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { z } from "zod";
 import { ContractError } from "../cli/agent-contract.js";
 
@@ -77,9 +78,12 @@ export function prError(
   exitCode = 1,
 ): ContractError {
   return new ContractError("pr publish", code, message, exitCode, {
-    retryable: false,
-    suggestedAction: "Correct the reported condition and rerun ravi pr publish with the same expected SHA.",
-    ...details,
+    ...errorDiagnostic(message, { operation: "pr publish" }),
+    ...{
+      retryable: false,
+      suggestedAction: "Correct the reported condition and rerun ravi pr publish with the same expected SHA.",
+      ...details,
+    },
   });
 }
 

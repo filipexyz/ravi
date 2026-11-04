@@ -1,3 +1,4 @@
+import { errorDiagnostic, redactDiagnosticText } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
@@ -522,9 +523,12 @@ export class PagesCommands {
             failure.code,
             block ? `${failure.message} This turn is not the operator's own: ${block.why}.` : failure.message,
             {
-              asJson,
-              exitCode: failure.exitCode,
-              details: block ? { ...failure.details, turn: block.turn } : failure.details,
+              ...{
+                asJson,
+                exitCode: failure.exitCode,
+                details: block ? { ...failure.details, turn: block.turn } : failure.details,
+              },
+              diagnostic: errorDiagnostic(error, { operation: "pages read" }),
             },
           );
         }
@@ -1530,14 +1534,17 @@ export class PagesAssertionAudienceCommands {
         const rejection = describeAssertionAudienceSetRejection(error);
         if (rejection) {
           contractFail("pages assertion audiences set", "PAYLOAD_INVALID", rejection.message, {
-            asJson,
-            exitCode: CONTRACT_EXIT_USAGE,
-            details: {
-              retryable: false,
-              status: 400,
-              suggestedAction: rejection.suggestedAction,
-              ...(rejection.issues ? { issues: rejection.issues } : {}),
+            ...{
+              asJson,
+              exitCode: CONTRACT_EXIT_USAGE,
+              details: {
+                retryable: false,
+                status: 400,
+                suggestedAction: rejection.suggestedAction,
+                ...(rejection.issues ? { issues: rejection.issues } : {}),
+              },
             },
+            diagnostic: errorDiagnostic(error, { operation: "pages assertion audiences set" }),
           });
         }
         throw error;
@@ -2423,16 +2430,28 @@ function artifactInputToCloudError(error: unknown): unknown {
  */
 function failPagesNotFoundFromConsole(op: string, error: CloudAuthError, asJson?: boolean): void {
   const message = error.message;
+  const diagnostic = errorDiagnostic(error, { operation: op });
+  // Pages lookup failures may name private hosts/routes. Keep the provider's
+  // reason and cause chain while treating those URLs as private input.
+  diagnostic.cause = redactDiagnosticText(diagnostic.cause, {
+    secrets: diagnostic.cause.match(/\bhttps?:\/\/\S+/gi) ?? [],
+  });
   if (/route\b.*not.?found|not.?found.*\broute/i.test(message)) {
     contractFail(op, "ROUTE_NOT_FOUND", "Pages route was not found.", {
-      asJson,
-      details: { suggestedAction: "List published routes with: ravi pages published --json" },
+      ...{
+        asJson,
+        details: { suggestedAction: "List published routes with: ravi pages published --json" },
+      },
+      diagnostic,
     });
   }
   if (/(site|pages host)\b.*not.?found|not.?found.*\bsite/i.test(message)) {
     contractFail(op, "SITE_NOT_FOUND", "Pages site was not found.", {
-      asJson,
-      details: { suggestedAction: "List Pages sites with: ravi pages list --json" },
+      ...{
+        asJson,
+        details: { suggestedAction: "List Pages sites with: ravi pages list --json" },
+      },
+      diagnostic,
     });
   }
 }
@@ -2660,16 +2679,23 @@ async function resolveShipHost(
 function failShipLiveDataOnPublicRoute(basesUses: string[], asJson: boolean | undefined): never {
   const [headline] = SHIP_LIVE_DATA_REFUSAL_LINES;
   contractFail("pages ship", "LIVE_DATA_PUBLIC_ROUTE", headline, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      retryable: false,
-      suggestedAction: `Drop --visibility to keep the route private for members, or ship a snapshot without ravi.bases.* in --uses for outsiders. Pass ${SHIP_MEMBERS_BEST_EFFORT_FLAG} only when every reader is an org member already signed in`,
-      basesUses,
-      visibility: "public",
-      override: SHIP_MEMBERS_BEST_EFFORT_FLAG,
-      issues: SHIP_LIVE_DATA_REFUSAL_LINES.map((line) => ({ path: [], code: "LIVE_DATA_PUBLIC_ROUTE", message: line })),
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        retryable: false,
+        suggestedAction: `Drop --visibility to keep the route private for members, or ship a snapshot without ravi.bases.* in --uses for outsiders. Pass ${SHIP_MEMBERS_BEST_EFFORT_FLAG} only when every reader is an org member already signed in`,
+        basesUses,
+        visibility: "public",
+        override: SHIP_MEMBERS_BEST_EFFORT_FLAG,
+        issues: SHIP_LIVE_DATA_REFUSAL_LINES.map((line) => ({
+          path: [],
+          code: "LIVE_DATA_PUBLIC_ROUTE",
+          message: line,
+        })),
+      },
     },
+    diagnostic: errorDiagnostic(headline, { operation: "pages ship" }),
   });
 }
 
@@ -2688,18 +2714,24 @@ function failShipKitInvalid(diagnostics: PageKitDiagnostic[], asJson: boolean | 
     "KIT_INVALID",
     `Refusing to ship: the page kit found ${errors} error(s) in the HTML. Nothing was uploaded or published.`,
     {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        retryable: false,
-        suggestedAction:
-          "Fix each listed path:line:column in the HTML (tags, widget refs, field mappings, theme ref), then ship again",
-        issues: diagnostics.slice(0, 50).map((diagnostic) => ({
-          path: [],
-          code: diagnostic.code,
-          message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
-        })),
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          retryable: false,
+          suggestedAction:
+            "Fix each listed path:line:column in the HTML (tags, widget refs, field mappings, theme ref), then ship again",
+          issues: diagnostics.slice(0, 50).map((diagnostic) => ({
+            path: [],
+            code: diagnostic.code,
+            message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
+          })),
+        },
       },
+      diagnostic: errorDiagnostic(
+        `Refusing to ship: the page kit found ${errors} error(s) in the HTML. Nothing was uploaded or published.`,
+        { operation: "pages ship" },
+      ),
     },
   );
 }
@@ -2725,19 +2757,25 @@ function failShipKitWidgetUnaudited(diagnostics: PageKitDiagnostic[], asJson: bo
     KIT_WIDGET_UNAUDITED,
     `Refusing to ship: ${names.length > 0 ? names.join(", ") : "a widget with code"} has no passing accessibility audit yet. Nothing was uploaded or published.`,
     {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        retryable: false,
-        suggestedAction: `An org owner or admin must ${where} and run the accessibility audit until it passes, then ship again`,
-        // The URLs stay in suggestedAction and the issue lines: detail values are sanitized to their origin.
-        widgets: names,
-        issues: diagnostics.slice(0, 50).map((diagnostic) => ({
-          path: [],
-          code: diagnostic.code,
-          message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
-        })),
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          retryable: false,
+          suggestedAction: `An org owner or admin must ${where} and run the accessibility audit until it passes, then ship again`,
+          // The URLs stay in suggestedAction and the issue lines: detail values are sanitized to their origin.
+          widgets: names,
+          issues: diagnostics.slice(0, 50).map((diagnostic) => ({
+            path: [],
+            code: diagnostic.code,
+            message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
+          })),
+        },
       },
+      diagnostic: errorDiagnostic(
+        `Refusing to ship: ${names.length > 0 ? names.join(", ") : "a widget with code"} has no passing accessibility audit yet. Nothing was uploaded or published.`,
+        { operation: "pages ship" },
+      ),
     },
   );
 }

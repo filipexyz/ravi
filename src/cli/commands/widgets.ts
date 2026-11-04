@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Widgets Commands - widget templates in the Console Library.
  *
@@ -367,12 +368,15 @@ export class WidgetsCommands {
     if (isReservedPresentationSlug("widget", widgetSlug)) {
       const message = `"${widgetSlug}" is reserved: the Library's widget routes use it.`;
       contractFail(op, "LIBRARY_SLUG_RESERVED", message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Pick another slug with --slug",
-          issues: libraryContractIssues(["slug"], "LIBRARY_SLUG_RESERVED", message, "Pick another slug with --slug"),
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Pick another slug with --slug",
+            issues: libraryContractIssues(["slug"], "LIBRARY_SLUG_RESERVED", message, "Pick another slug with --slug"),
+          },
         },
+        diagnostic: errorDiagnostic(message, { operation: op }),
       });
     }
     const view = fromView?.trim();

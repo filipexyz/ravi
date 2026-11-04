@@ -1,8 +1,9 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
+import { logger } from "../utils/logger.js";
 import {
   buildCodexDisabledSkillConfig,
   buildCodexExecArgs,
@@ -1541,11 +1542,15 @@ process.on("SIGTERM", () => {
   });
 
   it("treats a dropped app-server connection as a recoverable transport failure", async () => {
+    const secret = ["fixture", "transport", "credential"].join("-");
+    const cause = new Error("codex websocket closed (code=1006, reason=n/a)", {
+      cause: new Error(`upstream refused token=${secret}`),
+    });
     const { transport } = createMockTransport([
       () => ({
         events: (async function* () {
           yield { type: "turn.started" };
-          throw new CodexAppServerTransportError(new Error("codex websocket closed (code=1006, reason=n/a)"));
+          throw new CodexAppServerTransportError(cause);
         })(),
         result: Promise.resolve({ exitCode: 1, signal: null, stderr: "\u001b[33m WARN\u001b[0m codex_core: gone\n" }),
       }),
@@ -1567,7 +1572,11 @@ process.on("SIGTERM", () => {
       type: "process.exit",
       error: "codex websocket closed (code=1006, reason=n/a)",
       message: "WARN codex_core: gone",
+      context: { provider: "codex", operation: "app-server transport" },
     });
+    expect(failures[0]?.rawEvent?.cause).toContain("codex websocket closed");
+    expect(failures[0]?.rawEvent?.cause).toContain("upstream refused");
+    expect(JSON.stringify(failures[0])).not.toContain(secret);
   });
 
   it("keeps a Codex error event as the failure when the connection drops after it", async () => {
@@ -4117,6 +4126,7 @@ describe("Codex native capacity admission failures", () => {
   ])("preserves structured errors and proves pre-execution rejection: $mode", async ({ mode, expectedProof }) => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-capacity-"));
     const command = join(cwd, "fake-capacity.mjs");
+    const readbackSecret = ["fixture", "readback", "credential"].join("-");
     writeFileSync(
       command,
       `#!/usr/bin/env node
@@ -4138,7 +4148,7 @@ createInterface({input: process.stdin}).on("line", (line) => {
       error,items:[],itemsView:mode === "full" ? "full" : "notLoaded"}}});
   }
   if (message.method === "thread/read") {
-    if (mode === "unavailable") return send({id:message.id,error:{code:-32601,message:"unavailable"}});
+    if (mode === "unavailable") return send({id:message.id,error:{code:-32601,message:${JSON.stringify(`readback unavailable token=${readbackSecret}`)}}});
     send({id:message.id,result:{thread:{id:"thread_capacity",turns:[{id:"turn_capacity",status:"failed",itemsView:"full",
       items:mode === "nonempty" ? [{type:"commandExecution",id:"tool_one"}] :
         ["inputOnly", "changedInput", "extraInput"].includes(mode) ?
@@ -4150,17 +4160,29 @@ createInterface({input: process.stdin}).on("line", (line) => {
     );
     chmodSync(command, 0o755);
     const provider = createCodexRuntimeProvider({ command, syncSkills: () => [] });
-    const events = await collectEvents(provider.startSession(makeStartRequest(["run"], { cwd })).events);
-    const failures = findEventsByType(events, "turn.failed");
-    expect(failures).toHaveLength(1);
-    expect(failures[0]?.error).toBe("Selected model is at capacity. Please try a different model.");
-    expect(failures[0]?.rawEvent).toMatchObject({
-      status: mode === "ordinary400" ? 400 : 503,
-      headers: { "retry-after": "4" },
-    });
-    expect(failures[0]?.preExecutionRejected === true).toBe(expectedProof);
-    expect(failures[0]?.providerSessionId).toBe("thread_capacity");
-    expect(failures[0]?.session?.displayId).toBe("thread_capacity");
+    const debug = mode === "unavailable" ? spyOn(Object.getPrototypeOf(logger), "debug") : undefined;
+    try {
+      const events = await collectEvents(provider.startSession(makeStartRequest(["run"], { cwd })).events);
+      const failures = findEventsByType(events, "turn.failed");
+      expect(failures).toHaveLength(1);
+      expect(failures[0]?.error).toBe("Selected model is at capacity. Please try a different model.");
+      expect(failures[0]?.rawEvent).toMatchObject({
+        status: mode === "ordinary400" ? 400 : 503,
+        headers: { "retry-after": "4" },
+      });
+      expect(failures[0]?.preExecutionRejected === true).toBe(expectedProof);
+      expect(failures[0]?.providerSessionId).toBe("thread_capacity");
+      expect(failures[0]?.session?.displayId).toBe("thread_capacity");
+      if (debug) {
+        expect(debug).toHaveBeenCalledWith("Codex capacity readback unavailable; replay remains unproven", {
+          cause: expect.stringContaining("readback unavailable"),
+          context: { provider: "codex", operation: "thread/read" },
+        });
+        expect(JSON.stringify(debug.mock.calls)).not.toContain(readbackSecret);
+      }
+    } finally {
+      debug?.mockRestore();
+    }
   });
 
   it("preserves a newly created thread across failure and the next attempt", async () => {

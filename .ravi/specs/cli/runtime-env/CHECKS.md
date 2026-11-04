@@ -12,5 +12,8 @@
 - `runtime env unset CODEX_HOME --json` MUST remove the assignment and stay
   idempotent when the key is already absent.
 - Gateway route table MUST include `/api/v1/runtime/env/set|unset|get`.
+- A fixture with live daemon/runner starts older than the env write MUST emit
+  warnings naming both processes and their restart commands in JSON and text;
+  the secret used in the write MUST be absent from all output.
 - `bun test src/runtime/ravi-env-file.test.ts src/cli/commands/runtime-env.test.ts`
   SHOULD pass after any change to this surface.

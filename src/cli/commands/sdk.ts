@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { execSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -260,11 +261,16 @@ export class SdkOpenApiCommands {
           "OPENAPI_DRIFT",
           `OpenAPI drift detected: ${absolute} differs from the live registry.`,
           {
-            asJson,
-            details: {
-              ...payload,
-              suggestedAction: "Re-run 'ravi sdk openapi emit --out <path>' to refresh the snapshot",
+            ...{
+              asJson,
+              details: {
+                ...payload,
+                suggestedAction: "Re-run 'ravi sdk openapi emit --out <path>' to refresh the snapshot",
+              },
             },
+            diagnostic: errorDiagnostic(`OpenAPI drift detected: ${absolute} differs from the live registry.`, {
+              operation: "sdk openapi check",
+            }),
           },
         );
       }
@@ -379,11 +385,16 @@ export class SdkClientCommands {
           "SDK_CLIENT_DRIFT",
           `${drift.length} TypeScript SDK artifact(s) differ from the live registry.`,
           {
-            asJson,
-            details: {
-              ...payload,
-              suggestedAction: "Re-run 'ravi sdk client generate' to refresh the generated client",
+            ...{
+              asJson,
+              details: {
+                ...payload,
+                suggestedAction: "Re-run 'ravi sdk client generate' to refresh the generated client",
+              },
             },
+            diagnostic: errorDiagnostic(`${drift.length} TypeScript SDK artifact(s) differ from the live registry.`, {
+              operation: "sdk client check",
+            }),
           },
         );
       }
@@ -498,11 +509,16 @@ export class SdkSwiftCommands {
           "SDK_SWIFT_DRIFT",
           `${drift.length} Swift SDK artifact(s) differ from the live registry.`,
           {
-            asJson,
-            details: {
-              ...payload,
-              suggestedAction: "Re-run 'ravi sdk swift generate' to refresh the generated client",
+            ...{
+              asJson,
+              details: {
+                ...payload,
+                suggestedAction: "Re-run 'ravi sdk swift generate' to refresh the generated client",
+              },
             },
+            diagnostic: errorDiagnostic(`${drift.length} Swift SDK artifact(s) differ from the live registry.`, {
+              operation: "sdk swift check",
+            }),
           },
         );
       }
@@ -617,11 +633,16 @@ export class SdkDartCommands {
           "SDK_DART_DRIFT",
           `${drift.length} Dart SDK artifact(s) differ from the live registry.`,
           {
-            asJson,
-            details: {
-              ...payload,
-              suggestedAction: "Re-run 'ravi sdk dart generate' to refresh the generated client",
+            ...{
+              asJson,
+              details: {
+                ...payload,
+                suggestedAction: "Re-run 'ravi sdk dart generate' to refresh the generated client",
+              },
             },
+            diagnostic: errorDiagnostic(`${drift.length} Dart SDK artifact(s) differ from the live registry.`, {
+              operation: "sdk dart check",
+            }),
           },
         );
       }

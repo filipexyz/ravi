@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Signals Commands - durable world conditions with piggyback delivery.
  * Spec: `runtime/signals`.
@@ -341,16 +342,28 @@ function signalCaller(): SignalCaller {
 function failSignal(op: string, error: unknown, asJson?: boolean): never {
   if (error instanceof ContractError) throw error;
   if (error instanceof SignalUsageError) {
-    contractFail(op, "USAGE_ERROR", error.message, { asJson, exitCode: CONTRACT_EXIT_USAGE });
+    contractFail(op, "USAGE_ERROR", error.message, {
+      ...{ asJson, exitCode: CONTRACT_EXIT_USAGE },
+      diagnostic: errorDiagnostic(error, { operation: op }),
+    });
   }
   if (error instanceof SignalNotFoundError) {
-    contractFail(op, "NOT_FOUND", error.message, { asJson });
+    contractFail(op, "NOT_FOUND", error.message, {
+      ...{ asJson },
+      diagnostic: errorDiagnostic(error, { operation: op }),
+    });
   }
-  contractFail(op, "COMMAND_FAILED", error instanceof Error ? error.message : String(error), { asJson });
+  contractFail(op, "COMMAND_FAILED", error instanceof Error ? error.message : String(error), {
+    ...{ asJson },
+    diagnostic: errorDiagnostic(error, { operation: op }),
+  });
 }
 
 function usage(op: string, message: string, asJson?: boolean): never {
-  contractFail(op, "USAGE_ERROR", message, { asJson, exitCode: CONTRACT_EXIT_USAGE });
+  contractFail(op, "USAGE_ERROR", message, {
+    ...{ asJson, exitCode: CONTRACT_EXIT_USAGE },
+    diagnostic: errorDiagnostic(message, { operation: op }),
+  });
 }
 
 @Group({
@@ -735,7 +748,13 @@ export class SignalsCommands {
         "signals.tick",
         disabled ? "SIGNALS_DISABLED" : "TICK_LOCKED",
         disabled ? "Signals are disabled (signals.enabled != true)." : "Another tick holds the lock; nothing ran.",
-        { asJson },
+        {
+          ...{ asJson },
+          diagnostic: errorDiagnostic(
+            disabled ? "Signals are disabled (signals.enabled != true)." : "Another tick holds the lock; nothing ran.",
+            { operation: "signals.tick" },
+          ),
+        },
       );
     }
     if (asJson) printJson(result);

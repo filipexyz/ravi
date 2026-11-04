@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -110,11 +111,14 @@ function failObserverBindingNotFound(op: string, bindingId: string, asJson?: boo
     .slice(0, 40)
     .flatMap((binding) => [binding.id, binding.observerSessionName]);
   contractFail(op, "OBSERVER_NOT_FOUND", `Observer binding not found: ${bindingId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the binding id (see suggestions; list with: ravi observers list --json)",
-      suggestions: suggestSimilar(bindingId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the binding id (see suggestions; list with: ravi observers list --json)",
+        suggestions: suggestSimilar(bindingId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Observer binding not found: ${bindingId}`, { operation: op }),
   });
 }
 
@@ -123,31 +127,40 @@ function failObserverRuleNotFound(op: string, ruleId: string, asJson?: boolean):
     .slice(0, 40)
     .map((rule) => rule.id);
   contractFail(op, "OBSERVER_NOT_FOUND", `Observer rule not found: ${ruleId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the rule id (see suggestions; list with: ravi observers rules list --json)",
-      suggestions: suggestSimilar(ruleId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the rule id (see suggestions; list with: ravi observers rules list --json)",
+        suggestions: suggestSimilar(ruleId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Observer rule not found: ${ruleId}`, { operation: op }),
   });
 }
 
 function failObserverProfileNotFound(op: string, profileId: string, asJson?: boolean): never {
   const candidates = listObserverProfiles().map((profile) => profile.id);
   contractFail(op, "OBSERVER_NOT_FOUND", `Observer profile not found: ${profileId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the profile id (see suggestions; list with: ravi observers profiles list --json)",
-      suggestions: suggestSimilar(profileId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the profile id (see suggestions; list with: ravi observers profiles list --json)",
+        suggestions: suggestSimilar(profileId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Observer profile not found: ${profileId}`, { operation: op }),
   });
 }
 
 function failObserverSessionNotFound(op: string, sessionRef: string, asJson?: boolean): never {
   contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${sessionRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the session name/key (list visible sessions with: ravi sessions list --json)",
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the session name/key (list visible sessions with: ravi sessions list --json)",
+      },
     },
+    diagnostic: errorDiagnostic(`Session not found: ${sessionRef}`, { operation: op }),
   });
 }
 
@@ -171,8 +184,11 @@ function assertObserverRuleWithinCallerScope(
   if (!isScopeEnforced(scopeCtx)) return;
   const deny = (message: string): never =>
     contractFail(op, "PERMISSION_DENIED", `Permission denied: ${message}`, {
-      asJson,
-      details: { suggestedAction: "Scope the rule to one of your own sessions, or ask an operator" },
+      ...{
+        asJson,
+        details: { suggestedAction: "Scope the rule to one of your own sessions, or ask an operator" },
+      },
+      diagnostic: errorDiagnostic(`Permission denied: ${message}`, { operation: op }),
     });
   const scope = rule.scope ?? "global";
   if (scope !== "session" || !rule.sourceSession) {
@@ -810,11 +826,16 @@ export class ObserverRuleCommands {
         "OBSERVER_RULE_VALIDATION_FAILED",
         `Observer rule validation failed with ${result.errors.length} error(s).`,
         {
-          asJson,
-          details: {
-            errors: result.errors,
-            suggestedAction: "Correct the reported observer rules, then run validation again",
+          ...{
+            asJson,
+            details: {
+              errors: result.errors,
+              suggestedAction: "Correct the reported observer rules, then run validation again",
+            },
           },
+          diagnostic: errorDiagnostic(`Observer rule validation failed with ${result.errors.length} error(s).`, {
+            operation: "observers rules validate",
+          }),
         },
       );
     }
@@ -997,11 +1018,16 @@ export class ObserverProfileCommands {
         "OBSERVER_PROFILE_VALIDATION_FAILED",
         `Observer profile validation failed with ${result.errors.length} error(s).`,
         {
-          asJson,
-          details: {
-            errors: result.errors.map(({ profileId: id, message }) => ({ profileId: id, message })),
-            suggestedAction: "Correct the reported observer profiles, then run validation again",
+          ...{
+            asJson,
+            details: {
+              errors: result.errors.map(({ profileId: id, message }) => ({ profileId: id, message })),
+              suggestedAction: "Correct the reported observer profiles, then run validation again",
+            },
           },
+          diagnostic: errorDiagnostic(`Observer profile validation failed with ${result.errors.length} error(s).`, {
+            operation: "observers profiles validate",
+          }),
         },
       );
     }

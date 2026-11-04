@@ -36,7 +36,10 @@ triggered runtime execution use risk-based confirmation.
 
 ## Invariants
 
-1. With `--json`, every failure on a migrated op MUST return the envelope
+1. Runtime control failures MUST pass through `ContractError` before either JSON
+   or text rendering; an `ok: false` runtime reply MUST NOT bypass diagnostic
+   projection. Successful runtime replies retain their declared result shape.
+   With `--json`, every failure on a migrated op MUST return the envelope
    `{success:false, op, error:{code, message, retryable, suggestedAction, acceptedFlags?}}`.
 2. Exit codes MUST follow the taxonomy: `0` success · `1` error · `2` usage
    error · `3` blocked by policy (write brake).

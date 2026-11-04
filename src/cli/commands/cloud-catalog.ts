@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * `ravi cloud catalog list|install` and `ravi cloud catalog packs install`:
  * the curated catalog of cloud agents (and agency packs) Ravi lists. Installing
@@ -285,13 +286,16 @@ function requireCatalogItem<T extends { id: string; slug: string; name: string }
   const found = findByRef(items, ref);
   if (found) return found;
   contractFail(op, "CLOUD_CATALOG_NOT_FOUND", `No catalog ${what} '${ref.slice(0, 80)}'.`, {
-    asJson,
-    details: {
-      suggestedAction: "List the catalog with: ravi cloud catalog list",
-      suggestions: suggestSimilar(
-        ref,
-        items.map((item) => item.slug),
-      ),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "List the catalog with: ravi cloud catalog list",
+        suggestions: suggestSimilar(
+          ref,
+          items.map((item) => item.slug),
+        ),
+      },
     },
+    diagnostic: errorDiagnostic(`No catalog ${what} '${ref.slice(0, 80)}'.`, { operation: op }),
   });
 }

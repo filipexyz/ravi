@@ -27,6 +27,12 @@ status: active
 
 ## CI Integration Checks
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/tasks/` passes
+  with observer, checkpoint and thread-core suites in the same process.
+- Each of `observer.test.ts` and `checkpoint-runner.test.ts`, run alone in a
+  fresh test process, imports the real runtime prompt subscription and preserves session-stream
+  exports required by `RuntimePromptSubscription` (`SESSION_STREAM`,
+  `SESSION_SUBJECT_FILTER`, `getConsumerName` and infrastructure helpers).
 - `bun test --timeout 20000 --preload ./src/test/isolated-runtime-preload.ts src/runtime/session-dispatcher.test.ts` passes and is selected by `test:runtime-host`.
 - Replacing fixture cleanup with the former unconditional removal of
   `RAVI_STATE_DIR` makes that command fail with `TEST_PRODUCTION_DB_BLOCKED`

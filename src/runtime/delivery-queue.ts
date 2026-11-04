@@ -104,7 +104,6 @@ export function hasIsolatedRuntimeTurnEnvelope(
 export interface RuntimeInterruptSuccessorPreparation {
   message: RuntimeUserMessage;
   coalescedMessages: RuntimeUserMessage[];
-  continuation?: RuntimeUserMessage;
 }
 
 /**
@@ -131,9 +130,11 @@ export function prepareRuntimeInterruptSuccessor(
     )?.launchPrompt?.source ??
     (session.suppressChatEmit ? undefined : session.currentReplyTarget);
   const nextSource = successors[0]?.launchPrompt?.source;
-  const yielding = !isSameRuntimeTurnSurface(activeSource, nextSource);
-  // Source-less/CLI turns must not acquire a chat destination through a yield.
-  if (yielding && (!activeSource || !nextSource || session.suppressChatEmit)) return null;
+  // An unfinished request must finish on its bound chat before another surface
+  // enters the shared transcript. Switching turns early lets the provider answer
+  // the old request under the next chat's reply target. Keep FIFO at this boundary;
+  // later same-surface input must not jump past a different queued surface.
+  if (!isSameRuntimeTurnSurface(activeSource, nextSource)) return null;
   const nextSurfaceIndex = successors.findIndex(
     (message) => !isSameRuntimeTurnSurface(nextSource, message.launchPrompt?.source),
   );
@@ -171,48 +172,15 @@ export function prepareRuntimeInterruptSuccessor(
   const active = session.pendingMessages.filter(
     (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
   );
-  if (yielding && active.length === 0) return null;
   const remaining = session.pendingMessages.filter(
     (message) => !cohortSet.has(message) && (!message.pendingId || !activePendingIds.has(message.pendingId)),
   );
-  const continuation = yielding ? createYieldContinuation(session, active, activeSource ?? undefined) : undefined;
-  session.pendingMessages = [...active, merged, ...remaining, ...(continuation ? [continuation] : [])];
+  session.pendingMessages = [...active, merged, ...remaining];
 
   return {
     message: merged,
     coalescedMessages: cohort.filter((message) => message !== interrupting),
-    ...(continuation ? { continuation } : {}),
   };
-}
-
-function createYieldContinuation(
-  session: RuntimeHostStreamingSession,
-  active: RuntimeUserMessage[],
-  source: RuntimeLaunchPrompt["source"],
-): RuntimeUserMessage {
-  const original = active[active.length - 1]?.launchPrompt;
-  const request = active.map((message) => message.yieldedRequest ?? message.message.content).join("\n\n");
-  const continuation = createQueuedRuntimeUserMessage({
-    ...original,
-    ...session.currentTurnAuthority,
-    source,
-    prompt: [
-      "[System] Resume the unfinished request below after yielding to another chat or thread.",
-      "Continue from the existing conversation and tool results. Do not repeat completed actions.",
-      "If a command was interrupted, verify its outcome before retrying it.",
-      "",
-      request,
-    ].join("\n"),
-    _runtimePrompt: undefined,
-    _modelBrokerTurnId: undefined,
-    _resumeStashedMessages: undefined,
-    _daemonRestartResume: undefined,
-    commands: undefined,
-    deliveryBarrier: "after_response",
-    deliveryBarrierSource: "inferred",
-  });
-  continuation.yieldedRequest = request;
-  return continuation;
 }
 
 function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): RuntimeLaunchPrompt {

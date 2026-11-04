@@ -1,3 +1,5 @@
+import { redactDiagnosticText } from "./diagnostic-redactor.js";
+
 /**
  * Error hierarchy thrown by `@ravi-os/sdk` transports.
  *
@@ -33,6 +35,23 @@ export interface RaviErrorBody {
 
 export type RaviContractOutcome = "blocked" | "usage_error" | "denied" | "failed";
 
+export interface RaviDiagnosticActor {
+  type: string;
+  id: string;
+}
+
+/** Normalized diagnostic fields supplied by the gateway, never raw exception data. */
+export interface RaviDiagnosticContext {
+  status?: number;
+  provider?: string;
+  model?: string;
+  operation?: string;
+  actor?: RaviDiagnosticActor;
+  file?: string;
+  syscall?: string;
+  code?: string;
+}
+
 export interface RaviContractErrorPayload {
   requestId?: string;
   diagnosticRequestId?: string;
@@ -40,6 +59,8 @@ export interface RaviContractErrorPayload {
   argument?: string;
   code: string;
   message: string;
+  cause?: string;
+  context?: RaviDiagnosticContext;
   retryable: boolean;
   suggestedAction?: string;
   suggestions?: string[];
@@ -96,10 +117,13 @@ export class RaviContractError extends RaviError {
   public readonly exitCode: 1 | 2 | 3;
   public readonly outcome: RaviContractOutcome;
   public readonly contractBody: RaviContractErrorBody;
+  public readonly cause?: string;
+  public readonly context?: RaviDiagnosticContext;
 
   constructor(status: number, body: RaviContractErrorBody, command: string | null = null) {
-    const projectedBody = projectContractErrorBody(body);
-    super(projectedBody.error.message, status, projectedBody, command);
+    const safeCommand = safeContractOperation(command);
+    const projectedBody = projectContractErrorBody(body, safeCommand);
+    super(projectedBody.error.message, status, projectedBody, safeCommand);
     this.name = "RaviContractError";
     this.op = projectedBody.op;
     this.code = projectedBody.error.code;
@@ -107,6 +131,8 @@ export class RaviContractError extends RaviError {
     this.exitCode = projectedBody.exitCode;
     this.outcome = projectedBody.outcome;
     this.contractBody = projectedBody;
+    this.cause = projectedBody.error.cause;
+    this.context = projectedBody.error.context;
   }
 }
 
@@ -203,10 +229,7 @@ export function buildErrorFromGateway(
 function isUnsafeGatewayErrorBody(body: RaviGatewayErrorBody | null): boolean {
   if (!body) return false;
   if (body.error === "MalformedResponse") return true;
-  return (
-    body.success === false &&
-    (typeof body.op === "string" || "exitCode" in body || "outcome" in body)
-  );
+  return body.success === false && (typeof body.op === "string" || "exitCode" in body || "outcome" in body);
 }
 
 /** Runtime guard for consumers that inspect raw SDK error bodies. */
@@ -274,13 +297,28 @@ const RAW_CONTRACT_KEYS = new Set([
 ]);
 
 /** Keep the SDK contract transport-independent without retaining arbitrary gateway fields. */
-function projectContractErrorBody(body: RaviContractErrorBody): RaviContractErrorBody {
+function safeContractOperation(value: unknown): string | null {
+  return typeof value === "string" &&
+    value.length <= 160 &&
+    /^[A-Za-z][A-Za-z0-9_-]*(?:[ .][A-Za-z][A-Za-z0-9_-]*)*$/.test(value) &&
+    redactDiagnosticText(value) === value
+    ? value
+    : null;
+}
+
+function safeContractCode(value: string): string {
+  return /^[A-Za-z][A-Za-z0-9_]{0,95}$/.test(value) && redactDiagnosticText(value) === value ? value : "REMOTE_ERROR";
+}
+
+function projectContractErrorBody(body: RaviContractErrorBody, command: string | null): RaviContractErrorBody {
   const remote = body.error as RaviContractErrorPayload & Record<string, unknown>;
   const error: RaviContractErrorPayload = {
-    code: remote.code,
-    message: remote.message,
+    code: safeContractCode(remote.code),
+    message: redactDiagnosticText(remote.message),
     retryable: remote.retryable,
   };
+  if (typeof remote.cause === "string") error.cause = redactDiagnosticText(remote.cause);
+  if (isRecord(remote.context)) error.context = projectDiagnosticContext(remote.context);
 
   for (const key of CONTRACT_DETAIL_STRING_KEYS) {
     const value = remote[key];
@@ -297,7 +335,8 @@ function projectContractErrorBody(body: RaviContractErrorBody): RaviContractErro
     if (typeof value === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) error[key] = value;
   }
   if (typeof remote.field === "string" && /^[a-z][A-Za-z0-9_]{0,63}$/.test(remote.field)) error.field = remote.field;
-  if (typeof remote.argument === "string" && /^--[a-z][a-z0-9-]{0,63}$/.test(remote.argument)) error.argument = remote.argument;
+  if (typeof remote.argument === "string" && /^--[a-z][a-z0-9-]{0,63}$/.test(remote.argument))
+    error.argument = remote.argument;
   const issues = projectContractIssues(remote.issues);
   if (issues) error.issues = issues;
   if (isRecord(remote.plan)) {
@@ -306,11 +345,47 @@ function projectContractErrorBody(body: RaviContractErrorBody): RaviContractErro
 
   return {
     success: false,
-    op: body.op,
+    op: safeContractOperation(body.op) ?? command ?? "gateway",
     error,
     exitCode: body.exitCode,
     outcome: body.outcome,
   };
+}
+
+function projectDiagnosticContext(value: Readonly<Record<string, unknown>>): RaviDiagnosticContext {
+  const context: RaviDiagnosticContext = {};
+  for (const key of ["provider", "model", "operation", "syscall", "code"] as const) {
+    const field = value[key];
+    if (
+      typeof field === "string" &&
+      /^[A-Za-z0-9_][A-Za-z0-9_.:/ -]{0,159}$/.test(field) &&
+      !field.includes("://") &&
+      redactDiagnosticText(field) === field
+    )
+      context[key] = field;
+  }
+  if (typeof value.file === "string" && value.file.length <= 4096) context.file = redactDiagnosticText(value.file);
+  if (
+    typeof value.status === "number" &&
+    Number.isInteger(value.status) &&
+    value.status >= 100 &&
+    value.status <= 599
+  ) {
+    context.status = value.status;
+  }
+  if (isRecord(value.actor)) {
+    const { type, id } = value.actor;
+    if (
+      typeof type === "string" &&
+      typeof id === "string" &&
+      /^[a-z][a-z0-9_-]{0,31}$/.test(type) &&
+      /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id) &&
+      redactDiagnosticText(id) === id
+    ) {
+      context.actor = { type, id };
+    }
+  }
+  return context;
 }
 
 function boundedContractStringList(value: unknown): string[] | undefined {

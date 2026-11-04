@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ZodTypeAny } from "zod";
 import { CliExpectedError } from "../expected-error.js";
@@ -2312,7 +2313,10 @@ describe("SessionCommands attach hints", () => {
       "THREAD_TRIGGERS_PENDING",
       "Thread still receives active triggers: abcd1234.",
       1,
-      { triggerIds: ["abcd1234"], suggestedAction: "ravi triggers set abcd1234 replySession parent" },
+      {
+        ...errorDiagnostic("Thread still receives active triggers: abcd1234.", { operation: "sessions close-thread" }),
+        ...{ triggerIds: ["abcd1234"], suggestedAction: "ravi triggers set abcd1234 replySession parent" },
+      },
     );
     await expect(new SessionCommands().closeThread("done", undefined, true)).rejects.toBe(closeThreadError);
     expect(closedSlackThreads).toHaveLength(0);
@@ -4248,7 +4252,7 @@ describe("SessionCommands recap", () => {
     scopeEnforced = true;
     canAccess = false;
     let thrown: unknown;
-    await captureLogsAsync(async () => {
+    const output = await captureLogsAsync(async () => {
       try {
         new SessionCommands().recap("main-dm-615153", undefined, true);
       } catch (error) {
@@ -4258,6 +4262,9 @@ describe("SessionCommands recap", () => {
     expect(thrown).toBeInstanceOf(ContractError);
     const contractError = thrown as InstanceType<typeof ContractError>;
     expect(contractError.envelope().error.code).toBe("SESSION_NOT_FOUND");
+    expect(contractError.envelope().error.cause).toBe("Session not found, or not visible to this context.");
+    expect(JSON.stringify(contractError.envelope())).not.toContain("main-dm-615153");
+    expect(output).not.toContain("main-dm-615153");
   });
 });
 

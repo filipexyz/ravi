@@ -64,7 +64,7 @@ describe("CLI audit outcomes", () => {
     let failure: unknown;
     try {
       await runWithCliAudit({ group: "demo", name: "boom", input: { json: true } }, () => {
-        throw new Error("private provider detail");
+        throw new Error("provider returned 401; token=PRIVATE_PROVIDER_DETAIL_8K2R");
       });
     } catch (error) {
       failure = error;
@@ -78,7 +78,7 @@ describe("CLI audit outcomes", () => {
     expect(failure).toMatchObject({ op: "demo boom", code: "UNHANDLED_ERROR", exitCode: 1 });
     expect(wasContractErrorAudited(failure as ContractError)).toBe(true);
     expect(output).toHaveLength(1);
-    expect(output[0]).not.toContain("private provider detail");
+    expect(output[0]).not.toContain("PRIVATE_PROVIDER_DETAIL_8K2R");
     expect(JSON.parse(output[0] ?? "{}")).toMatchObject({
       success: false,
       op: "demo boom",
@@ -86,6 +86,8 @@ describe("CLI audit outcomes", () => {
         code: "UNHANDLED_ERROR",
         message: "demo boom failed internally. Report the operation to the operator before retrying.",
         retryable: false,
+        cause: "provider returned 401; token=[redacted:token]",
+        context: { operation: "demo boom" },
       },
     });
     expect(output[0]).not.toContain("requestId");

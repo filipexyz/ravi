@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Ravi Bot CLI - Unified command-line interface
  *
@@ -216,7 +217,6 @@ program
   .option("--expected-integrity <sri>", "Require the npm sha512 SRI for an exact release")
   .option("--next", "Switch to dev builds (npm @next tag)")
   .option("--stable", "Switch to stable releases (npm @latest tag)")
-  .option("--no-restart", "Do not restart managed Ravi processes after updating")
   .option("--json", "Print a machine-readable result")
   .action(async (options: RaviUpdateOptions) => {
     refuseRootCommandInRuntimeSession("update", options.json);
@@ -333,11 +333,14 @@ program
     const sessionName = session?.trim();
     if (!sessionName) {
       contractFail("tui", "USAGE_ERROR", "Usage: ravi tui <session>", {
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Pass a session name: ravi tui <session>",
-          usage: "ravi tui <session>",
+        ...{
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Pass a session name: ravi tui <session>",
+            usage: "ravi tui <session>",
+          },
         },
+        diagnostic: errorDiagnostic("Usage: ravi tui <session>", { operation: "tui" }),
       });
     }
     await runWithCliAudit(
@@ -414,7 +417,7 @@ void bootstrapCli().catch(async (error: unknown) => {
     return;
   }
   const contractError =
-    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap");
+    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap", error);
   renderContractError(contractError, process.argv.includes("--json"));
   await emitCliAuditEvent({
     group: "cli",
