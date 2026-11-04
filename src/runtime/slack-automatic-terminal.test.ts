@@ -1,9 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { createHash } from "node:crypto";
-import { unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import * as fs from "node:fs";
 import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
 import {
@@ -238,8 +235,13 @@ describe("native bot terminal grouping in the host", () => {
       (async function* () {
         yield* imageEvents("missing-file");
         yield* imageEvents("valid-file");
-        const hash = createHash("sha256").update(Buffer.from(imageBase64, "base64")).digest("hex").slice(0, 16);
-        unlinkSync(join(tmpdir(), `ravi-generated-media-terminal-session-missing-file-${hash}.png`));
+        const missingPath = getSlackAutomaticPendingReply(f.metadata)!.media[0]!.filePath;
+        const openSync = fs.openSync;
+        const unavailable = spyOn(fs, "openSync").mockImplementation((...args: Parameters<typeof fs.openSync>) => {
+          if (args[0] === missingPath) throw Object.assign(new Error("fixture unavailable media"), { code: "ENOENT" });
+          return openSync(...args);
+        });
+        cleanups.push(() => unavailable.mockRestore());
         yield final();
         yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } };
       })(),

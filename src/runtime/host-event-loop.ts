@@ -1,9 +1,11 @@
 import { syncRuntimeSessionGoal } from "./session-goals.js";
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import {
+  GeneratedMediaAllocationError,
+  generatedMediaAllocations,
+  type AllocatedGeneratedMedia,
+} from "./generated-media-allocation.js";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import {
@@ -416,6 +418,11 @@ function safeFileComponent(value: unknown, fallback: string): string {
   return normalized || fallback;
 }
 
+/**
+ * Validates generated image bytes and returns their exclusive private allocation.
+ * The caller must adopt an accepted member or dispose the fresh rejected one;
+ * its semantic deduplication key does not depend on the unique physical path.
+ */
 async function materializeGeneratedImageAttachment(input: {
   sessionKey: string;
   sessionName: string;
@@ -423,7 +430,7 @@ async function materializeGeneratedImageAttachment(input: {
   toolUseId?: string;
   content: unknown;
   metadata?: RuntimeEventMetadata;
-}): Promise<ResponseMediaAttachment | null> {
+}): Promise<AllocatedGeneratedMedia | null> {
   const payload = extractGeneratedImagePayload(input.content);
   if (!payload) return null;
 
@@ -436,23 +443,22 @@ async function materializeGeneratedImageAttachment(input: {
   const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
   const itemId = payload.id ?? input.metadata?.item?.id ?? input.toolUseId ?? "image";
   const filename = `${GENERATED_MEDIA_FILE_PREFIX}-${safeFileComponent(input.sessionName, "session")}-${safeFileComponent(itemId, "image")}-${hash}.${format.extension}`;
-  const filePath = join(tmpdir(), filename);
-  await writeFile(filePath, bytes);
-
-  return {
-    type: "image",
-    filePath,
-    filename,
-    mimeType: format.mimeType,
-    idempotencyKey: `runtime.generated_media:${input.sessionKey}:${itemId}:${hash}`,
-    source: "runtime.generated_media",
-    metadata: {
-      provider: input.provider,
-      ...(input.toolUseId ? { toolUseId: input.toolUseId } : {}),
-      ...(payload.id ? { providerOutputId: payload.id } : {}),
-      ...(input.metadata?.item?.id ? { providerItemId: input.metadata.item.id } : {}),
+  return generatedMediaAllocations.allocate({
+    bytes,
+    attachment: {
+      type: "image",
+      filename,
+      mimeType: format.mimeType,
+      idempotencyKey: `runtime.generated_media:${input.sessionKey}:${itemId}:${hash}`,
+      source: "runtime.generated_media",
+      metadata: {
+        provider: input.provider,
+        ...(input.toolUseId ? { toolUseId: input.toolUseId } : {}),
+        ...(payload.id ? { providerOutputId: payload.id } : {}),
+        ...(input.metadata?.item?.id ? { providerItemId: input.metadata.item.id } : {}),
+      },
     },
-  };
+  });
 }
 
 function summarizeGeneratedImageToolOutput(input: {
@@ -1170,18 +1176,25 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
    * Deduplicates generated attachments by key within the logical bot reply, or
    * the existing per-attempt queue for other turns. Bot members remain in memory
    * until terminal preparation; additions after a manifest exists are rejected.
+   * Accepted allocations acquire this collector's private ownership. The caller
+   * disposes only fresh allocations rejected before adoption.
    */
-  const queueGeneratedMedia = (attachment: ResponseMediaAttachment): boolean => {
+  const queueGeneratedMedia = (allocated: AllocatedGeneratedMedia): boolean => {
+    const { attachment, allocation } = allocated;
     const key = attachment.idempotencyKey ?? attachment.filePath;
     const automaticReply = automaticSlackReply();
     if (automaticReply) {
       if (automaticReply.manifest) throw new Error("Generated media arrived after the Slack terminal was frozen");
       if (automaticReply.mediaKeys.has(key)) return false;
+      generatedMediaAllocations.adopt(allocated, automaticReply);
       automaticReply.mediaKeys.add(key);
       automaticReply.media.push(attachment);
+      automaticReply.ownedMediaAllocations.add(allocation);
       return true;
     }
     if (generatedMediaKeys.has(key)) return false;
+    generatedMediaAllocations.adopt(allocated, generatedMediaKeys);
+    generatedMediaAllocations.retain(allocation, generatedMediaKeys);
     generatedMediaKeys.add(key);
     pendingGeneratedMedia.push(attachment);
     return true;
@@ -2141,17 +2154,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   media: kind === "final_answer" ? automaticReply!.media : [],
                 });
               },
-              /** Marks local readiness only after commit and discards members of non-final terminals. */
+              /** Marks local readiness after commit; the projector owns non-final allocation disposal. */
               afterRecordEvent: (_state, manifest) => {
                 if (!manifest) return;
                 // The DB terminal and complete manifest committed together.
                 // No tentative attempt may consume pending media or readiness.
                 automaticReply!.manifest = manifest;
                 terminalManifestReady = true;
-                if (manifest.kind !== "final_answer") {
-                  automaticReply!.media = [];
-                  automaticReply!.mediaKeys.clear();
-                }
               },
             }
           : {}),
@@ -3590,8 +3599,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const generatedImageCompletion = isGeneratedImageToolCompletion(event);
         let generatedImageAttachment: ResponseMediaAttachment | null = null;
         if (generatedImageCompletion) {
+          let allocated: AllocatedGeneratedMedia | null = null;
+          let queued = false;
           try {
-            generatedImageAttachment = await materializeGeneratedImageAttachment({
+            allocated = await materializeGeneratedImageAttachment({
               sessionKey: session.sessionKey,
               sessionName,
               provider: runtimeSession.provider,
@@ -3599,13 +3610,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               content: event.content,
               metadata: event.metadata,
             });
-            if (generatedImageAttachment) {
-              const queued = queueGeneratedMedia(generatedImageAttachment);
+            generatedImageAttachment = allocated?.attachment ?? null;
+            if (allocated) {
+              queued = queueGeneratedMedia(allocated);
               log.info(queued ? "Generated image queued for next response" : "Duplicate generated image ignored", {
                 sessionName,
                 toolId,
-                filename: generatedImageAttachment.filename,
-                idempotencyKey: generatedImageAttachment.idempotencyKey,
+                filename: allocated.attachment.filename,
+                idempotencyKey: allocated.attachment.idempotencyKey,
               });
             } else {
               log.warn("Generated image tool completed without materializable image payload", {
@@ -3614,7 +3626,34 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               });
             }
           } catch (error) {
-            log.warn("Failed to materialize generated image", { sessionName, toolId, error });
+            log.warn("Failed to materialize generated image", {
+              sessionName,
+              toolId,
+              error,
+              ...(error instanceof GeneratedMediaAllocationError
+                ? {
+                    allocationCause: error.cause,
+                    allocationCleanup: error.cleanup,
+                    allocationCleanupError: "error" in error.cleanup ? error.cleanup.error : undefined,
+                    allocationCloseError: error.closeError,
+                  }
+                : {}),
+            });
+          } finally {
+            // Unique allocations rejected by dedup/enqueue have no delivery owner.
+            // An already-adopted allocation never gains disposal authority here.
+            const dispose =
+              allocated && !queued && generatedMediaAllocations.prepareUnadoptedDiscard(allocated.allocation);
+            if (dispose) {
+              try {
+                const result = await dispose();
+                if (result.status === "failed" || result.status === "rejected") {
+                  log.warn("Generated image allocation disposal failed", { sessionName, toolId, ...result });
+                }
+              } catch (error) {
+                log.warn("Generated image allocation disposal failed", { sessionName, toolId, error });
+              }
+            }
           }
         }
         const output = generatedImageCompletion

@@ -352,6 +352,32 @@ MUST NOT redirect it. Native bot media is deferred until that logical terminal;
 human media and explicit tool sends retain their existing paths. Safe-error
 and cancellation discard still-deferred attachments rather than releasing
 partial work as a later successful terminal.
+Runtime-generated attachments MUST receive distinct exclusively created files
+and private process-local allocation capabilities. A filename prefix, source
+marker, copied descriptor or matching path MUST NOT grant disposal authority.
+The semantic deduplication key MUST remain independent of the random allocation
+path. Rejecting a newly allocated duplicate MUST release only that unadopted
+allocation, never the already accepted member. A private allocation MUST NOT be
+adopted by a second pending owner; final handoff pins its retention.
+
+An accepted failed/interrupted logical transition MUST capture and detach its
+owned deferred allocations synchronously after COMMIT and before callbacks can
+erase descriptors or throw. Async disposal MUST run outside the transaction and
+synchronous callback, including direct cancellation without a host callback and
+post-commit callback/payload/schema/sink failures. Cleanup errors MUST NOT replace
+the original exception, change dispatchError, hide safe-error output or undo the
+accepted terminal. Owner/identity/transition refusal and rollback MUST NOT grant
+disposal authority. Final, pending continuation and ambiguous/retryable delivery
+MUST retain their files under the existing delivery lifecycle.
+
+Each disposal capability permits at most one automatic removal attempt; ENOENT
+is already released, while other errors MUST be observable without reopening the
+terminal. Observed file-identity changes or symlink/non-file replacements MUST
+reject removal. A prior inode check is not an atomic conditional unlink and MUST
+NOT be described as protection against arbitrary concurrent path replacement.
+These capabilities survive in-process continuation with their collector, not
+process exit; this contract adds no sweeper, delivery-history registry or outbox.
+
 Pending bot media membership MUST belong to the immutable logical backend
 request, not one event-loop invocation or streaming-session object. Replacing
 those objects during an in-process provider continuation MUST retain that

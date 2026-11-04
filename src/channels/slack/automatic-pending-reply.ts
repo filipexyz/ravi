@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import { dbGetChannelBackendRuntimeState, getDb } from "../../router/router-db.js";
+import type { GeneratedMediaAllocation } from "../../runtime/generated-media-allocation.js";
 import type {
   ChannelAutomaticOutputOrigin,
   ChannelBackendPromptMetadata,
@@ -21,6 +22,8 @@ export interface SlackAutomaticPendingReply {
   origin: ChannelAutomaticOutputOrigin;
   media: ResponseMediaAttachment[];
   mediaKeys: Set<string>;
+  /** Private producer capabilities, never reconstructed from serialized descriptors. */
+  ownedMediaAllocations: Set<GeneratedMediaAllocation>;
   manifest?: SlackAutomaticTerminalManifest;
   mediaReleased?: boolean;
 }
@@ -87,6 +90,7 @@ export function getSlackAutomaticPendingReply(
     origin: createChannelBackendAutomaticOutputOrigin(metadata.binding),
     media: [],
     mediaKeys: new Set(),
+    ownedMediaAllocations: new Set(),
   };
   const entries = pending ?? new Map<string, SlackAutomaticPendingReply>();
   entries.set(context.turnId, reply);
@@ -96,14 +100,19 @@ export function getSlackAutomaticPendingReply(
 
 /**
  * Idempotently remove registry ownership for the current database and turn.
- * In-flight work keeps its local copy; this neither cancels it, removes files,
- * nor changes durable manifests or delivery receipts.
+ * Return the detached reply so an accepted terminal can settle its private
+ * allocation capabilities. In-flight work keeps its local copy; removal alone
+ * grants no file-disposal authority and changes no durable state.
  */
-export function discardSlackAutomaticPendingReply(binding: ChannelBackendPromptMetadata["binding"]): void {
+export function discardSlackAutomaticPendingReply(
+  binding: ChannelBackendPromptMetadata["binding"],
+): SlackAutomaticPendingReply | undefined {
   const key = databaseKey();
   const entries = pendingByDatabase.get(key);
+  const reply = entries?.get(binding.turnId);
   entries?.delete(binding.turnId);
   if (entries?.size === 0) pendingByDatabase.delete(key);
+  return reply;
 }
 
 /** Aggregate only: test cleanup/lifetime observability, never expose descriptors. */
