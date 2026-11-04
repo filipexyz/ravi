@@ -1840,9 +1840,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | gateway | src/sdk/gateway/server.ts | 242 | triaged-follow-up | catch-without-binding | src/sdk/gateway/server.ts:40b12c8b888522db78241907 |
 | gateway | src/sdk/gateway/server.ts | 254 | triaged-follow-up | catch-without-binding | src/sdk/gateway/server.ts:446b84ce0b533ce0a7758163 |
 | gateway | src/sdk/gateway/streaming/channels.ts | 613 | triaged-follow-up | rejection-without-binding | src/sdk/gateway/streaming/channels.ts:bb2dd8d6b86b0f98f0cf08e4 |
-| gateway | src/sdk/gateway/streaming/handler.ts | 179 | triaged-follow-up | catch-without-binding | src/sdk/gateway/streaming/handler.ts:6cd17db5e69a5062a4113878 |
-| gateway | src/sdk/gateway/streaming/handler.ts | 223 | triaged-follow-up | rejection-without-binding | src/sdk/gateway/streaming/handler.ts:314d1e69b11f79b2f9bf69d8 |
-| gateway | src/sdk/gateway/streaming/handler.ts | 241 | triaged-follow-up | rejection-without-binding | src/sdk/gateway/streaming/handler.ts:314d1e69b11f79b2f9bf69d8 |
+| gateway | src/sdk/gateway/streaming/handler.ts | 181 | triaged-follow-up | catch-without-binding | src/sdk/gateway/streaming/handler.ts:6cd17db5e69a5062a4113878 |
+| gateway | src/sdk/gateway/streaming/handler.ts | 225 | triaged-follow-up | rejection-without-binding | src/sdk/gateway/streaming/handler.ts:314d1e69b11f79b2f9bf69d8 |
+| gateway | src/sdk/gateway/streaming/handler.ts | 243 | triaged-follow-up | rejection-without-binding | src/sdk/gateway/streaming/handler.ts:314d1e69b11f79b2f9bf69d8 |
 | gateway | src/sdk/gateway/streaming/session-view.ts | 106 | triaged-follow-up | catch-without-binding | src/sdk/gateway/streaming/session-view.ts:eaca0422e74d2fe3153f83d9 |
 | gateway | src/sdk/gateway/streaming/session-view.ts | 126 | fixed | binding retained / no recognized error surface | src/sdk/gateway/streaming/session-view.ts:768e9ed5a35840b0583cb9eb |
 | gateway | src/sdk/gateway/streaming/sse.ts | 64 | triaged-follow-up | catch-without-binding | src/sdk/gateway/streaming/sse.ts:6f7f381832976cb2630cf9db |
