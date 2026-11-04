@@ -26,6 +26,13 @@ Regras válidas hoje:
 
 O restante deste documento descreve o desenho original, mantido para memória. Nenhuma linha abaixo é normativa enquanto este status for `archived`.
 
+### Confirmação pós-merge — 2026-11-04 18:16 BRT
+
+- `#805` mergeado em `dev` como squash `c7cf7ce` (`c7cf7ce60a3d961d79f0ce104003a849a4b12911`).
+- `.github/workflows/review-gate.yml` não existe mais em `dev`: a listagem de workflows do repositório traz apenas `CI`, `PR Description`, `Release`, `SDK Release`, `Deploy Site` e `Version And Publish`.
+- Nenhum check `Review Gate` / `Review Gate Tests` volta a aparecer em PR nova; o estado anterior era `disabled_manually`, agora o workflow não existe.
+- Verificado por leitura direta da árvore de `dev` e da API de Actions em 04/11/2026 18:20 BRT.
+
 
 # Review Merge Gate
 
