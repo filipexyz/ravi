@@ -37,14 +37,38 @@ describe("logger terminal stream", () => {
     expect(String(stdoutSpy.mock.calls[0]?.[0] ?? "")).toContain("[ravi] stdout opt-in");
   });
 
-  it("includes Error stacks for warning-level logs", () => {
+  it("includes normalized causes without stacks for warning-level logs", () => {
     logger.warn("recoverable failure", { error: new Error("boom") });
 
     const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
     expect(output).toContain("[ravi] recoverable failure");
     expect(output).toContain("error=boom");
-    expect(output).toContain("errorName=Error");
-    expect(output).toContain("stack=");
+    expect(output).toContain("cause=boom");
+    expect(output).not.toContain("stack=");
+  });
+
+  it("drops arbitrary exception fields from error log lines and normalizes persistent context", () => {
+    logger.withContext({ sessionKey: "session?key=PRIVATE_QUERY" }).error("Provider failed", {
+      code: "DENIED",
+      message: "provider returned 401",
+      cause: "provider returned 401; cookie=PRIVATE_COOKIE; PRIVATE_TAIL",
+      context: { operation: "media send", status: 401 },
+      arbitrary: "PRIVATE_UNKNOWN",
+      body: "PRIVATE_BODY",
+      stack: "PRIVATE_STACK",
+    });
+    const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+    expect(output).toContain("cause=provider returned 401; cookie=[redacted:cookie]");
+    expect(output).toContain('"status":401');
+    for (const secret of [
+      "PRIVATE_QUERY",
+      "PRIVATE_COOKIE",
+      "PRIVATE_TAIL",
+      "PRIVATE_UNKNOWN",
+      "PRIVATE_BODY",
+      "PRIVATE_STACK",
+    ])
+      expect(output).not.toContain(secret);
   });
 
   it("keeps NATS lifecycle logs off stdout", () => {

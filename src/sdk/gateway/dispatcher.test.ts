@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { describe, expect, it, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
@@ -171,19 +172,36 @@ class GatewayDemoCommands {
   @Command({ name: "cloud-auth-error", description: "Throws an authentication error" })
   @CommandAccess({ kind: "read", resource: "demo", action: "cloud-auth-error", risk: "low" })
   cloudAuthError() {
-    throw new CloudAuthError("AUTH_REQUIRED", "private provider authentication response", { status: 401 });
+    throw new CloudAuthError(
+      "AUTH_REQUIRED",
+      "Provider rejected expired authentication; token=PRIVATE_PROVIDER_TOKEN_798",
+      {
+        status: 401,
+        details: { body: "PRIVATE_PROVIDER_BODY_798" },
+      },
+    );
   }
 
   @Command({ name: "cloud-access-error", description: "Throws an access error" })
   @CommandAccess({ kind: "read", resource: "demo", action: "cloud-access-error", risk: "low" })
   cloudAccessError() {
-    throw new CloudAuthError("PROJECT_ACCESS_DENIED", "private provider access response", { status: 403 });
+    throw new CloudAuthError(
+      "PROJECT_ACCESS_DENIED",
+      "Provider denied the project scope; token=PRIVATE_PROVIDER_TOKEN_798",
+      {
+        status: 403,
+        details: { body: "PRIVATE_PROVIDER_BODY_798" },
+      },
+    );
   }
 
   @Command({ name: "cloud-rate-error", description: "Throws a rate limit error" })
   @CommandAccess({ kind: "read", resource: "demo", action: "cloud-rate-error", risk: "low" })
   cloudRateError() {
-    throw new CloudAuthError("RATE_LIMITED", "private provider rate limit response", { status: 429 });
+    throw new CloudAuthError("RATE_LIMITED", "Provider quota exhausted; token=PRIVATE_PROVIDER_TOKEN_798", {
+      status: 429,
+      details: { body: "PRIVATE_PROVIDER_BODY_798" },
+    });
   }
 
   @Command({ name: "cloud-invalid-status", description: "Throws an auth error with an invalid HTTP status" })
@@ -201,7 +219,7 @@ class GatewayDemoCommands {
   @Command({ name: "app-error", description: "Throws an app-domain expected error" })
   @CommandAccess({ kind: "read", resource: "demo", action: "app-error", risk: "low" })
   appError() {
-    throw new RaviAppError("not_found", "Missing app at private-path/app-secret", [
+    throw new RaviAppError("not_found", "App manifest missing from local configuration; token=APP_SECRET_798", [
       { kind: "manifest", detail: "private-path/app-secret" },
     ]);
   }
@@ -219,11 +237,14 @@ class GatewayDemoCommands {
     const code =
       numericExitCode === 2 ? "USAGE_ERROR" : numericExitCode === 3 ? "WRITE_REQUIRES_EXECUTE" : "DEMO_NOT_FOUND";
     contractFail("demo contract", code, "contract stopped execution", {
-      exitCode: numericExitCode,
-      details: {
-        retryable: false,
-        suggestedAction: "inspect the structured response",
+      ...{
+        exitCode: numericExitCode,
+        details: {
+          retryable: false,
+          suggestedAction: "inspect the structured response",
+        },
       },
+      diagnostic: errorDiagnostic("contract stopped execution", { operation: "demo contract" }),
     });
   }
 
@@ -745,7 +766,7 @@ describe("dispatch — error path", () => {
     }
   });
 
-  it("returns the original SQLite cause while keeping the stack in local diagnostics", async () => {
+  it("returns the original SQLite cause and excludes stacks from response and logs", async () => {
     const fixture = new Database(":memory:");
     const handler = spyOn(GatewayDemoCommands.prototype, "boom").mockImplementation(() => {
       fixture.query("SELECT * FROM task_decisions").all();
@@ -755,15 +776,23 @@ describe("dispatch — error path", () => {
     try {
       const result = await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: () => {} });
       expect(result.response.status).toBe(500);
-      const body = JSON.stringify(await result.response.json());
+      const envelope = await result.response.json();
+      expect(envelope).toMatchObject({
+        error: {
+          code: "UNHANDLED_ERROR",
+          cause: "no such table: task_decisions",
+          context: { operation: "demo boom" },
+        },
+      });
+      const body = JSON.stringify(envelope);
       expect(body).toContain("UNHANDLED_ERROR");
       expect(body).toContain("no such table: task_decisions");
       expect(body).not.toContain("dispatcher.test.ts");
       const diagnostic = stderr.mock.calls.map((call) => String(call[0])).join("");
       expect(diagnostic).toContain("no such table: task_decisions");
       expect(diagnostic).toContain("command=demo boom");
-      expect(diagnostic).toContain("stack=");
-      expect(diagnostic).toContain("dispatcher.test.ts");
+      expect(diagnostic).not.toContain("stack=");
+      expect(diagnostic).not.toContain("dispatcher.test.ts");
     } finally {
       stderr.mockRestore();
       handler.mockRestore();
@@ -793,10 +822,10 @@ describe("dispatch — error path", () => {
   });
 
   it.each([
-    ["demo.cloud-auth-error", 401, "AUTH_REQUIRED"],
-    ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED"],
-    ["demo.cloud-rate-error", 429, "RATE_LIMITED"],
-  ] as const)("preserves CloudAuthError HTTP status for %s", async (command, status, code) => {
+    ["demo.cloud-auth-error", 401, "AUTH_REQUIRED", "Provider rejected expired authentication"],
+    ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED", "Provider denied the project scope"],
+    ["demo.cloud-rate-error", 429, "RATE_LIMITED", "Provider quota exhausted"],
+  ] as const)("preserves CloudAuthError HTTP status and real cause for %s", async (command, status, code, reason) => {
     const result = await dispatch(findCmd(command), {}, {}, { contextRecord: demoContext });
 
     expect(result.response.status).toBe(status);
@@ -805,9 +834,14 @@ describe("dispatch — error path", () => {
       success: false,
       exitCode: 1,
       outcome: "failed",
-      error: { code },
+      error: {
+        code,
+        cause: `${reason}; token=[redacted:token]`,
+        context: { operation: command.replaceAll(".", " "), code, status },
+      },
     });
-    expect(JSON.stringify(body)).not.toContain("private provider");
+    expect(JSON.stringify(body)).not.toContain("PRIVATE_PROVIDER_BODY_798");
+    expect(JSON.stringify(body)).not.toContain("PRIVATE_PROVIDER_TOKEN_798");
   });
 
   it("falls back to the contract status for an invalid provider HTTP status", async () => {
@@ -887,10 +921,16 @@ describe("dispatch — error path", () => {
       op: "demo app-error",
       exitCode: 1,
       outcome: "failed",
-      error: { code: "not_found", message: "Ravi app was not found." },
+      error: {
+        code: "not_found",
+        message: "Ravi app was not found.",
+        cause: "App manifest missing from local configuration; token=[redacted:token]",
+        context: { operation: "demo app-error", code: "not_found", status: 404 },
+      },
     });
     expect(JSON.stringify(body)).not.toContain("private-path");
     expect(JSON.stringify(body)).not.toContain("app-secret");
+    expect(JSON.stringify(body)).not.toContain("APP_SECRET_798");
     expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "not_found" });
   });
 
@@ -962,7 +1002,15 @@ describe("dispatch — error path", () => {
         op: string;
         exitCode: number;
         outcome: string;
-        error: { code: string; message: string; retryable: boolean; suggestedAction: string; requestId: string };
+        error: {
+          code: string;
+          message: string;
+          cause: string;
+          context: { operation: string };
+          retryable: boolean;
+          suggestedAction: string;
+          requestId: string;
+        };
       };
       expect(body).toEqual({
         success: false,
@@ -972,6 +1020,8 @@ describe("dispatch — error path", () => {
         error: {
           code,
           message: "contract stopped execution",
+          cause: "contract stopped execution",
+          context: { operation: "demo contract" },
           retryable: false,
           suggestedAction: "inspect the structured response",
           requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),

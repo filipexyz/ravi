@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 // Exit mapping for `ravi knowledge *` (contract §10.4, §10.6). Every exit-3
 // envelope carries one English line in `issues[]` telling the agent what to
 // do; `issues` survives the remote gateway's projection.
@@ -61,23 +62,32 @@ export function toKnowledgeContractError(op: string, error: unknown): ContractEr
       case "KNOWLEDGE_TURN_NOT_OPERATOR":
       case "KNOWLEDGE_DISABLED":
         return new ContractError(op, error.code, policyMessage(error.code), CONTRACT_EXIT_POLICY, {
-          ...details,
-          retryable: false,
-          issues: [KNOWLEDGE_ISSUE_TEXT[error.code] as string],
+          ...errorDiagnostic(error, { operation: op }),
+          ...{
+            ...details,
+            retryable: false,
+            issues: [KNOWLEDGE_ISSUE_TEXT[error.code] as string],
+          },
         });
       case "PAYLOAD_INVALID": {
         const message = error.message?.trim() || "Knowledge request input was invalid.";
         return new ContractError(op, "PAYLOAD_INVALID", message, CONTRACT_EXIT_USAGE, {
-          ...details,
-          retryable: false,
-          issues: [message, KNOWLEDGE_ISSUE_TEXT.PAYLOAD_INVALID as string],
+          ...errorDiagnostic(error, { operation: op }),
+          ...{
+            ...details,
+            retryable: false,
+            issues: [message, KNOWLEDGE_ISSUE_TEXT.PAYLOAD_INVALID as string],
+          },
         });
       }
       case "NOT_FOUND":
         return new ContractError(op, "KNOWLEDGE_NOT_FOUND", "Knowledge ref was not found.", CONTRACT_EXIT_ERROR, {
-          ...details,
-          retryable: false,
-          issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_NOT_FOUND as string],
+          ...errorDiagnostic(error, { operation: op }),
+          ...{
+            ...details,
+            retryable: false,
+            issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_NOT_FOUND as string],
+          },
         });
       default:
         break;
@@ -89,10 +99,13 @@ export function toKnowledgeContractError(op: string, error: unknown): ContractEr
         `The Console is unavailable for Knowledge (${error.code}).`,
         CONTRACT_EXIT_ERROR,
         {
-          ...details,
-          cause: error.code,
-          retryable: error.code !== "KNOWLEDGE_UNAVAILABLE",
-          issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_CONSOLE_UNAVAILABLE as string],
+          ...errorDiagnostic(error, { operation: op }),
+          ...{
+            ...details,
+            cause: error.code,
+            retryable: error.code !== "KNOWLEDGE_UNAVAILABLE",
+            issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_CONSOLE_UNAVAILABLE as string],
+          },
         },
       );
     }

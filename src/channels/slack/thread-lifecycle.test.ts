@@ -69,8 +69,15 @@ describe("Slack thread lifecycle", () => {
       deps.publishEvent.mockClear();
       deps.publishOutbound.mockClear();
       await expect(closeSlackThreadRecord(record, "done", deps)).rejects.toMatchObject({
+        op: "sessions close-thread",
         code: "THREAD_TRIGGERS_PENDING",
-        details: { triggerIds: [trigger.id], suggestedAction: expect.stringContaining("ravi triggers set") },
+        message: `Thread still receives active triggers: ${trigger.id}.`,
+        details: {
+          cause: `Thread still receives active triggers: ${trigger.id}.`,
+          context: { operation: "sessions close-thread" },
+          triggerIds: [trigger.id],
+          suggestedAction: expect.stringContaining("ravi triggers set"),
+        },
       });
       expect(getSlackThreadLifecycle(record.requestId)).toMatchObject({
         status: "open",

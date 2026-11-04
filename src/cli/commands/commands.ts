@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -49,11 +50,14 @@ function resolveAgent(agentId: string | undefined, site: ContractCallSite): Agen
   const agent = config.agents[resolvedAgentId];
   if (!agent) {
     contractFail(site.op, "AGENT_NOT_FOUND", `Agent not found: ${resolvedAgentId}`, {
-      asJson: site.asJson,
-      details: {
-        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-        suggestions: suggestSimilar(resolvedAgentId, Object.keys(config.agents)),
+      ...{
+        asJson: site.asJson,
+        details: {
+          suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+          suggestions: suggestSimilar(resolvedAgentId, Object.keys(config.agents)),
+        },
       },
+      diagnostic: errorDiagnostic(`Agent not found: ${resolvedAgentId}`, { operation: site.op }),
     });
   }
   return agent;
@@ -66,14 +70,17 @@ function resolveAgent(agentId: string | undefined, site: ContractCallSite): Agen
  */
 function failCommandNotFound(site: ContractCallSite, id: string, registry: { commands: RaviCommandRecord[] }): never {
   contractFail(site.op, "COMMAND_NOT_FOUND", `Ravi command not found: #${id}`, {
-    asJson: site.asJson,
-    details: {
-      suggestedAction: "Check the command name (see suggestions; list with: ravi commands list --json)",
-      suggestions: suggestSimilar(
-        id,
-        registry.commands.map((command) => command.id),
-      ),
+    ...{
+      asJson: site.asJson,
+      details: {
+        suggestedAction: "Check the command name (see suggestions; list with: ravi commands list --json)",
+        suggestions: suggestSimilar(
+          id,
+          registry.commands.map((command) => command.id),
+        ),
+      },
     },
+    diagnostic: errorDiagnostic(`Ravi command not found: #${id}`, { operation: site.op }),
   });
 }
 

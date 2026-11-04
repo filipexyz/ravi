@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
@@ -93,30 +94,36 @@ function failEnv(op: string, err: unknown, asJson?: boolean): never {
   if (err instanceof ContractError) throw err;
   if (err instanceof RaviEnvFileError) {
     contractFail(op, err.code, err.message, {
-      asJson,
-      exitCode:
-        err.code === "ENV_KEY_NOT_ALLOWED" ||
-        err.code === "ENV_KEY_INVALID" ||
-        err.code === "ENV_VALUE_INVALID" ||
-        err.code === "SECRET_SHAPE_MISMATCH"
-          ? CONTRACT_EXIT_USAGE
-          : undefined,
-      details: {
-        suggestedAction:
-          err.code === "ENV_KEY_NOT_ALLOWED"
-            ? `Use an allowlisted key: ${RAVI_ENV_ALLOWLIST.join(", ")}`
-            : err.code === "SECRET_SHAPE_MISMATCH"
-              ? "Use CLAUDE_CODE_OAUTH_TOKEN for sk-ant-oat tokens and ANTHROPIC_API_KEY for sk-ant-api keys"
-              : "Inspect the key/value constraints and retry",
-        ...(err.code === "ENV_KEY_NOT_ALLOWED" ? { allowedKeys: [...RAVI_ENV_ALLOWLIST] } : {}),
+      ...{
+        asJson,
+        exitCode:
+          err.code === "ENV_KEY_NOT_ALLOWED" ||
+          err.code === "ENV_KEY_INVALID" ||
+          err.code === "ENV_VALUE_INVALID" ||
+          err.code === "SECRET_SHAPE_MISMATCH"
+            ? CONTRACT_EXIT_USAGE
+            : undefined,
+        details: {
+          suggestedAction:
+            err.code === "ENV_KEY_NOT_ALLOWED"
+              ? `Use an allowlisted key: ${RAVI_ENV_ALLOWLIST.join(", ")}`
+              : err.code === "SECRET_SHAPE_MISMATCH"
+                ? "Use CLAUDE_CODE_OAUTH_TOKEN for sk-ant-oat tokens and ANTHROPIC_API_KEY for sk-ant-api keys"
+                : "Inspect the key/value constraints and retry",
+          ...(err.code === "ENV_KEY_NOT_ALLOWED" ? { allowedKeys: [...RAVI_ENV_ALLOWLIST] } : {}),
+        },
       },
+      diagnostic: errorDiagnostic(err, { operation: op }),
     });
   }
   const message = err instanceof Error ? err.message : String(err);
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: { suggestedAction: "Provide --stdin or --value for set; use an allowlisted key" },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: "Provide --stdin or --value for set; use an allowlisted key" },
+    },
+    diagnostic: errorDiagnostic(err, { operation: op }),
   });
 }
 

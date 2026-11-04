@@ -85,9 +85,10 @@ export function errorResponse(status: number, error: string, extras: Record<stri
       [400, 405, 413, 422].includes(status) ? 2 : 1,
       {
         suggestedAction,
-        ...(typeof extras.reason === "string" || typeof extras.message === "string"
-          ? errorDiagnostic(extras.reason ?? extras.message, { operation: gatewayRequestContext().op, status })
-          : {}),
+        ...errorDiagnostic(extras.reason ?? extras.message ?? message, {
+          operation: gatewayRequestContext().op,
+          status,
+        }),
         ...(Array.isArray(extras.issues) ? { issues: extras.issues } : {}),
         ...(typeof extras.limitBytes === "number" ? { limitBytes: extras.limitBytes } : {}),
       },
@@ -181,8 +182,11 @@ export function returnShapeError(op: string, issues: JsonIssue[]): Response {
     "Command returned an invalid response shape.",
     CONTRACT_EXIT_ERROR,
     {
-      suggestedAction: "Report the invalid SDK return contract to the command owner",
-      issues,
+      ...errorDiagnostic("Command returned an invalid response shape.", { operation: op }),
+      ...{
+        suggestedAction: "Report the invalid SDK return contract to the command owner",
+        issues,
+      },
     },
   );
   logGatewayFailure(error, error.code);

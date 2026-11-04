@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Permissions Commands - provider-runtime introspection only.
  *
@@ -893,13 +894,18 @@ function buildPermissionDenyPlan(input: PermissionDenyInput): PermissionDenyPlan
   const targets = parseSubjectRefs(input.subjects);
   if (targets.length === 0 || targets.some((target) => target.type !== "contact")) {
     contractFail(op, "USAGE_ERROR", "permissions deny revokes contact grants; pass --to contact:<id>.", {
-      asJson: input.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction:
-          "Pass --to contact:<id>. Agent identity ceilings are managed with `ravi agents permissions <agent>`.",
-        acceptedFlags: ["--to contact:<id>", "--chat <chat-id|current>", "--chat-tag <tag>", "--force"],
+      ...{
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction:
+            "Pass --to contact:<id>. Agent identity ceilings are managed with `ravi agents permissions <agent>`.",
+          acceptedFlags: ["--to contact:<id>", "--chat <chat-id|current>", "--chat-tag <tag>", "--force"],
+        },
       },
+      diagnostic: errorDiagnostic("permissions deny revokes contact grants; pass --to contact:<id>.", {
+        operation: op,
+      }),
     });
   }
   const contacts = resolveContactTargets(op, targets, input.asJson);
@@ -981,12 +987,17 @@ function buildPermissionListResult(input: PermissionListInput): PermissionListRe
   const targets = parseSubjectRefs(input.subjects);
   if (targets.some((target) => target.type !== "contact")) {
     contractFail(op, "USAGE_ERROR", "permissions list filters contact grants; pass --to contact:<id>.", {
-      asJson: input.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction: "Inspect agent identity ceilings with `ravi permissions materialize --subject-type agent`.",
-        acceptedFlags: ["--to contact:<id>", "--chat <chat-id|current>", "--chat-tag <tag>", "--force", "--profile"],
+      ...{
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Inspect agent identity ceilings with `ravi permissions materialize --subject-type agent`.",
+          acceptedFlags: ["--to contact:<id>", "--chat <chat-id|current>", "--chat-tag <tag>", "--force", "--profile"],
+        },
       },
+      diagnostic: errorDiagnostic("permissions list filters contact grants; pass --to contact:<id>.", {
+        operation: op,
+      }),
     });
   }
   const contacts = resolveContactTargets(op, targets, input.asJson);
@@ -1092,8 +1103,11 @@ function resolveContactTargets(op: string, targets: AuthorizationSubject[], asJs
     const contact = getContact(target.id);
     if (!contact) {
       contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${target.id}`, {
-        asJson,
-        details: { suggestedAction: "Check the contact id with `ravi contacts find <query> --json`" },
+        ...{
+          asJson,
+          details: { suggestedAction: "Check the contact id with `ravi contacts find <query> --json`" },
+        },
+        diagnostic: errorDiagnostic(`Contact not found: ${target.id}`, { operation: op }),
       });
     }
     if (!contacts.some((existing) => existing.id === contact.id)) contacts.push(contact);
@@ -1108,12 +1122,18 @@ function rejectScopeWithoutContacts(op: string, input: ContactScopeInput): Resol
     "USAGE_ERROR",
     "--chat, --chat-tag and --force scope contact grants; add --to contact:<id> or drop them.",
     {
-      asJson: input.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction:
-          "Agent targets and --agent ceilings are not chat-scoped. Pass --to contact:<id> to grant a user in a chat.",
+      ...{
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction:
+            "Agent targets and --agent ceilings are not chat-scoped. Pass --to contact:<id> to grant a user in a chat.",
+        },
       },
+      diagnostic: errorDiagnostic(
+        "--chat, --chat-tag and --force scope contact grants; add --to contact:<id> or drop them.",
+        { operation: op },
+      ),
     },
   );
 }
@@ -1127,12 +1147,17 @@ function resolveContactScopes(
   const chatTagRef = input.chatTag?.trim();
   if (input.force && (chatRef || chatTagRef)) {
     contractFail(op, "USAGE_ERROR", "--force selects the global scope; it cannot be combined with --chat/--chat-tag.", {
-      asJson: input.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction: "Keep --chat/--chat-tag for a scoped grant (recommended), or use only --force for global.",
-        suggestions: [options.suggest(scopeFlagsFor({ chat: chatRef, chatTag: chatTagRef, force: false })).join(" ")],
+      ...{
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Keep --chat/--chat-tag for a scoped grant (recommended), or use only --force for global.",
+          suggestions: [options.suggest(scopeFlagsFor({ chat: chatRef, chatTag: chatTagRef, force: false })).join(" ")],
+        },
       },
+      diagnostic: errorDiagnostic("--force selects the global scope; it cannot be combined with --chat/--chat-tag.", {
+        operation: op,
+      }),
     });
   }
   if (!input.force && !chatRef && !chatTagRef) {
@@ -1147,16 +1172,22 @@ function resolveContactScopes(
       "CHAT_SCOPE_REQUIRED",
       "Contact permissions are chat-scoped: pass --chat <chat-id|current> or --chat-tag <tag>. Use --force only for an explicit global grant.",
       {
-        asJson: input.asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: currentChat
-            ? `Ask the human whether this should apply only in this chat (--chat ${currentChat}) before considering --force.`
-            : "Ask the human which chat/group this should apply to before considering --force.",
-          suggestions,
-          acceptedFlags: ["--chat <chat-id|current>", "--chat-tag <tag>", "--force"],
-          ...(currentChat ? { currentChat } : {}),
+        ...{
+          asJson: input.asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: currentChat
+              ? `Ask the human whether this should apply only in this chat (--chat ${currentChat}) before considering --force.`
+              : "Ask the human which chat/group this should apply to before considering --force.",
+            suggestions,
+            acceptedFlags: ["--chat <chat-id|current>", "--chat-tag <tag>", "--force"],
+            ...(currentChat ? { currentChat } : {}),
+          },
         },
+        diagnostic: errorDiagnostic(
+          "Contact permissions are chat-scoped: pass --chat <chat-id|current> or --chat-tag <tag>. Use --force only for an explicit global grant.",
+          { operation: op },
+        ),
       },
     );
   }
@@ -1168,11 +1199,14 @@ function resolveContactScopes(
     const chatTag = tryNormalizeTagSlug(chatTagRef);
     if (!chatTag) {
       contractFail(op, "USAGE_ERROR", `Invalid chat tag: ${chatTagRef}`, {
-        asJson: input.asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Use a tag slug: lowercase letters, numbers, dots, underscores, colons or dashes.",
+        ...{
+          asJson: input.asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Use a tag slug: lowercase letters, numbers, dots, underscores, colons or dashes.",
+          },
         },
+        diagnostic: errorDiagnostic(`Invalid chat tag: ${chatTagRef}`, { operation: op }),
       });
     }
     scopes.push({
@@ -1193,9 +1227,12 @@ function resolveChatScope(
   const current = chatRef === "current" ? readCurrentChatSource() : null;
   if (chatRef === "current" && !current) {
     contractFail(op, "USAGE_ERROR", "No current chat in this context; pass --chat <chat-id>.", {
-      asJson: options.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: { suggestedAction: "Find the chat id with `ravi chats list --json` and pass --chat <chat-id>." },
+      ...{
+        asJson: options.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "Find the chat id with `ravi chats list --json` and pass --chat <chat-id>." },
+      },
+      diagnostic: errorDiagnostic("No current chat in this context; pass --chat <chat-id>.", { operation: op }),
     });
   }
   const ref = current?.chatId ?? chatRef;
@@ -1237,18 +1274,26 @@ function findChatForScope(
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) {
     contractFail(op, "CHAT_AMBIGUOUS", `Chat reference ${ref} matches ${matches.length} chats; pass a canonical id.`, {
-      asJson: options.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction: "Re-run with --chat <canonical-chat-id> from the suggestions.",
-        suggestions: matches.map((chat) => `${chat.id} (${chat.channel}${chat.title ? `: ${chat.title}` : ""})`),
+      ...{
+        asJson: options.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Re-run with --chat <canonical-chat-id> from the suggestions.",
+          suggestions: matches.map((chat) => `${chat.id} (${chat.channel}${chat.title ? `: ${chat.title}` : ""})`),
+        },
       },
+      diagnostic: errorDiagnostic(`Chat reference ${ref} matches ${matches.length} chats; pass a canonical id.`, {
+        operation: op,
+      }),
     });
   }
   if (options.requireKnownChat) {
     contractFail(op, "CHAT_NOT_FOUND", `Chat not found: ${ref}`, {
-      asJson: options.asJson,
-      details: { suggestedAction: "Find the chat id with `ravi chats list --json` and pass --chat <chat-id>." },
+      ...{
+        asJson: options.asJson,
+        details: { suggestedAction: "Find the chat id with `ravi chats list --json` and pass --chat <chat-id>." },
+      },
+      diagnostic: errorDiagnostic(`Chat not found: ${ref}`, { operation: op }),
     });
   }
   return null;
@@ -1537,9 +1582,15 @@ function resolveProfileCapabilities(
       "USAGE_ERROR",
       "No capabilities found for this profile. Provide --capabilities <permission>:<objectType>:<objectId> to create or bootstrap it.",
       {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Re-run with --capabilities <permission>:<objectType>:<objectId>." },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: "Re-run with --capabilities <permission>:<objectType>:<objectId>." },
+        },
+        diagnostic: errorDiagnostic(
+          "No capabilities found for this profile. Provide --capabilities <permission>:<objectType>:<objectId> to create or bootstrap it.",
+          { operation: op },
+        ),
       },
     );
   }

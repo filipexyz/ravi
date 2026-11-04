@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -179,6 +180,41 @@ function result(overrides: Partial<RemoteDispatchResult>): RemoteDispatchResult 
 }
 
 describe("remote gateway exit taxonomy", () => {
+  it("preserves projected denial context when the remote response has no cause", () => {
+    const error = remoteGatewayErrorToContractError(
+      "commands list",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "commands list",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message: "provider denied access",
+            retryable: false,
+            context: {
+              provider: "fixture",
+              model: "audio-1",
+              actor: { type: "agent", id: "reader" },
+              body: "PRIVATE_BODY",
+            },
+          },
+        }),
+      }),
+    );
+    expect(error?.details.cause).toBe("provider denied access");
+    expect(error?.details.context).toEqual({
+      operation: "commands list",
+      status: 403,
+      provider: "fixture",
+      model: "audio-1",
+      actor: { type: "agent", id: "reader" },
+    });
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_BODY");
+  });
+
   it.each([1, 2, 3] as const)("preserves contract exit %i", (exitCode) => {
     const outcome = exitCode === 2 ? "usage_error" : exitCode === 3 ? "blocked" : "failed";
     expect(
@@ -220,7 +256,7 @@ describe("remote gateway exit taxonomy", () => {
       op: "commands list",
       code: "PERMISSION_DENIED",
       exitCode: 1,
-      message: "Permission denied: executable ffmpeg is blocked; api_key=[redacted]",
+      message: "Permission denied: executable ffmpeg is blocked; api_key=[redacted:api_key]",
     });
     expect(error?.envelope()).toMatchObject({ success: false, error: { code: "PERMISSION_DENIED" } });
     expect(JSON.stringify(error?.envelope())).not.toContain("opaque");
@@ -228,15 +264,18 @@ describe("remote gateway exit taxonomy", () => {
 
   it("preserves transcription cause and diagnostic context through gateway and remote CLI", async () => {
     const local = new ContractError("transcribe file", "TRANSCRIBE_FAILED", "Audio transcription failed.", 1, {
-      cause: "HTTP 429: quota exhausted; api_key=fixture-token",
-      context: {
-        operation: "transcribe file",
-        provider: "openai",
-        model: "whisper-1",
-        status: 429,
-        file: "/tmp/voice.mp3",
-        code: "insufficient_quota",
-        authorization: "fixture-token",
+      ...errorDiagnostic("Audio transcription failed.", { operation: "transcribe file" }),
+      ...{
+        cause: "HTTP 429: quota exhausted; api_key=fixture-token",
+        context: {
+          operation: "transcribe file",
+          provider: "openai",
+          model: "whisper-1",
+          status: 429,
+          file: "/tmp/voice.mp3",
+          code: "insufficient_quota",
+          ...{ authorization: "fixture-token" },
+        },
       },
     });
     const response = contractErrorResponse(local);
@@ -244,7 +283,7 @@ describe("remote gateway exit taxonomy", () => {
       "transcribe file",
       result({ status: response.status, body: await response.text() }),
     );
-    expect(remote?.details.cause).toBe("HTTP 429: quota exhausted; api_key=[redacted]");
+    expect(remote?.details.cause).toBe("HTTP 429: quota exhausted; api_key=[redacted:api_key]");
     expect(remote?.details.context).toEqual({
       operation: "transcribe file",
       provider: "openai",
@@ -594,7 +633,7 @@ describe("remote gateway exit taxonomy", () => {
     } finally {
       console.error = originalError;
     }
-    expect(lines).toEqual(["title: Expected string, received undefined", "status: 400"]);
+    expect(lines).toEqual(["title: Expected string, received undefined", "operation: tasks create", "status: 400"]);
   });
 
   it("rejects partial or incoherent contract-looking responses", () => {
@@ -652,8 +691,8 @@ describe("remote gateway exit taxonomy", () => {
   });
 
   it.each([
-    [1, "failed", "COMMAND_FAILED", "Command refused; token=[redacted]"],
-    [1, "denied", "PERMISSION_DENIED", "Command refused; token=[redacted]"],
+    [1, "failed", "COMMAND_FAILED", "Command refused; token=[redacted:token]"],
+    [1, "denied", "PERMISSION_DENIED", "Command refused; token=[redacted:token]"],
     [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],
     [
       3,
@@ -746,7 +785,7 @@ describe("remote gateway exit taxonomy", () => {
           outcome: "denied",
           error: {
             code: "PERMISSION_DENIED",
-            message: "PRIVATE_REASON_9X2 no missing line here",
+            message: "Policy rejected the operation; token=DENIAL_TOKEN_798",
             retryable: false,
           },
         }),
@@ -759,7 +798,8 @@ describe("remote gateway exit taxonomy", () => {
     });
     expect(error?.details.capability).toBeUndefined();
     const serialized = JSON.stringify(error?.envelope());
-    expect(serialized).toContain("PRIVATE_REASON_9X2");
+    expect(error?.details.cause).toBe("Policy rejected the operation; token=[redacted:token]");
+    expect(serialized).not.toContain("DENIAL_TOKEN_798");
   });
 
   it("drops a remote capability field that is not a canonical capability", () => {
@@ -1081,7 +1121,7 @@ describe("remote gateway exit taxonomy", () => {
     [OMNI_AUTH_FAILED_CODE, false, OMNI_AUTH_FAILED_MESSAGE, OMNI_AUTH_FAILED_SUGGESTED_ACTION],
     [FILE_NOT_FOUND_CODE, false, FILE_NOT_FOUND_MESSAGE, FILE_NOT_FOUND_SUGGESTED_ACTION],
   ] as const)(
-    "projects isolated media send %s through the local catalog without remote text",
+    "preserves media send %s cause with local catalog headline and redacted credential",
     (code, retryable, message, suggestedAction) => {
       const error = remoteGatewayErrorToContractError(
         "media send",
@@ -1095,6 +1135,8 @@ describe("remote gateway exit taxonomy", () => {
             error: {
               code,
               message: "PRIVATE_MESSAGE_8K2R sk-abcdefghijklmnop omni://internal",
+              cause: "Omni rejected upload: unsupported media format; api_key=MEDIA_RELAY_SECRET_798",
+              context: { operation: "media send", provider: "omni", code: "UNSUPPORTED_MEDIA", status: 415 },
               retryable,
               suggestedAction: "PRIVATE_ACTION_8K2R",
             },
@@ -1114,6 +1156,9 @@ describe("remote gateway exit taxonomy", () => {
       expect(serialized).not.toContain("PRIVATE_ACTION_8K2R");
       expect(serialized).not.toContain("sk-abcdefghijklmnop");
       expect(serialized).not.toContain("omni://internal");
+      expect(serialized).not.toContain("MEDIA_RELAY_SECRET_798");
+      expect(error?.details.cause).toBe("Omni rejected upload: unsupported media format; api_key=[redacted:api_key]");
+      expect(error?.details.context).toMatchObject({ provider: "omni", code: "UNSUPPORTED_MEDIA", status: 415 });
     },
   );
 
@@ -1180,7 +1225,7 @@ describe("ravi link failures over the gateway", () => {
     async (code) => {
       const local = cloudErrorToContractError(
         "identity link",
-        new CloudAuthError(code, "Audio file /tmp/audio.wav was not found U0LUIS"),
+        new CloudAuthError(code, "Identity service rejected the link request; token=LINK_RELAY_SECRET_798"),
       );
       const response = contractErrorResponse(local);
 
@@ -1197,8 +1242,8 @@ describe("ravi link failures over the gateway", () => {
       });
       expect(error?.message).not.toBe("Remote command failed.");
       const serialized = JSON.stringify(error?.envelope());
-      expect(serialized).not.toContain("Audio file /tmp/audio.wav was not found");
-      expect(serialized).not.toContain("U0LUIS");
+      expect(error?.details.cause).toBe("Identity service rejected the link request; token=[redacted:token]");
+      expect(serialized).not.toContain("LINK_RELAY_SECRET_798");
     },
   );
 });
@@ -1560,24 +1605,34 @@ describe("personal connector blocks over the gateway", () => {
     });
   });
 
-  it("uses the catalog copy, not remote text, for connector failures without a chat line", async () => {
+  it("uses the catalog headline while preserving connector failure cause without credentials", async () => {
     const { remote } = await relay(
       "gmail list",
-      new CloudAuthError("CONNECTOR_TOOL_BLOCKED", "PRIVATE_MESSAGE_8K2R", { exitCode: 3 }),
+      new CloudAuthError(
+        "CONNECTOR_TOOL_BLOCKED",
+        "Connector policy blocked the tool; token=CONNECTOR_RELAY_SECRET_798",
+        { exitCode: 3 },
+      ),
     );
 
     expect(remote).toMatchObject({
       code: "CONNECTOR_TOOL_BLOCKED",
       message: "The account owner or the organization blocked this tool.",
     });
-    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(remote?.details.cause).toBe("Connector policy blocked the tool; token=[redacted:token]");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("CONNECTOR_RELAY_SECRET_798");
 
-    const auth = await relay("gmail list", new CloudAuthError("AUTH_REQUIRED", "PRIVATE_MESSAGE_8K2R"));
+    const auth = await relay(
+      "gmail list",
+      new CloudAuthError("AUTH_REQUIRED", "Console rejected the credential; token=AUTH_RELAY_SECRET_798"),
+    );
     expect(auth.remote).toMatchObject({
       code: "AUTH_REQUIRED",
       message: "Console authentication is required.",
       details: { suggestedAction: "run 'ravi login' and retry" },
     });
+    expect(auth.remote?.details.cause).toBe("Console rejected the credential; token=[redacted:token]");
+    expect(JSON.stringify(auth.remote?.envelope())).not.toContain("AUTH_RELAY_SECRET_798");
   });
 
   it("does not let other commands carry connector chat lines", () => {
@@ -1771,7 +1826,10 @@ describe("Library refusals over the gateway", () => {
 
   it("preserves diagnostic copy from other commands", async () => {
     const local = new ContractError("transcribe file", "CONFLICT", "Audio resource is locked", 1, {
-      suggestedAction: "Retry after unlocking the resource",
+      ...errorDiagnostic("Audio resource is locked", { operation: "transcribe file" }),
+      ...{
+        suggestedAction: "Retry after unlocking the resource",
+      },
     });
     const response = contractErrorResponse(local);
     const remote = remoteGatewayErrorToContractError(
@@ -1789,9 +1847,12 @@ describe("pages read refusals over the gateway", () => {
     const message =
       "https://acme.ravi.page/weekly is not public. Private Ravi Pages are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the owner's direct chat runs in a session other people's chats share (dmScope main, a route that names the session, or another chat attached to it).";
     const local = new ContractError("pages read", "PAGE_ACCESS_DENIED", message, 3, {
-      reason: "public_only",
-      turn: "shared_session",
-      suggestedAction: "Tell the person you cannot open this private Page for them.",
+      ...errorDiagnostic(message, { operation: "pages read" }),
+      ...{
+        reason: "public_only",
+        turn: "shared_session",
+        suggestedAction: "Tell the person you cannot open this private Page for them.",
+      },
     });
     const response = contractErrorResponse(local);
     const remote = remoteGatewayErrorToContractError(
@@ -1819,12 +1880,15 @@ describe("operator-only refusals over the gateway", () => {
     const message =
       "The calendar is used only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: the answer would go to a group, where everyone in it would read it.";
     const local = new ContractError("agenda list", "CALENDAR_ACCESS_DENIED", message, 3, {
-      refusal: "operator_only",
-      turn: "group",
-      suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
-      chatLine,
-      chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
-      replyTo: "same_chat",
+      ...errorDiagnostic(message, { operation: "agenda list" }),
+      ...{
+        refusal: "operator_only",
+        turn: "group",
+        suggestedAction: `The operator asked in a group. Reply here with the chat line: "${chatLine}"`,
+        chatLine,
+        chatLinePt: "Me peça no nosso chat privado que eu vejo a agenda lá.",
+        replyTo: "same_chat",
+      },
     });
     const response = contractErrorResponse(local);
     const remote = remoteGatewayErrorToContractError(
@@ -1853,9 +1917,12 @@ describe("operator-only refusals over the gateway", () => {
     const message =
       "Meeting transcripts are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: this turn answers into a group or a chat that is not the owner's direct chat.";
     const local = new ContractError("meetings read", "MEETING_ACCESS_DENIED", message, 3, {
-      refusal: "operator_only",
-      turn: "group",
-      suggestedAction: "Tell the person you cannot read meeting transcripts for other people.",
+      ...errorDiagnostic(message, { operation: "meetings read" }),
+      ...{
+        refusal: "operator_only",
+        turn: "group",
+        suggestedAction: "Tell the person you cannot read meeting transcripts for other people.",
+      },
     });
     const response = contractErrorResponse(local);
     const remote = remoteGatewayErrorToContractError(
@@ -1875,15 +1942,27 @@ describe("operator-only refusals over the gateway", () => {
   });
 
   it("does not relay the refusal copy for the same code on another command", async () => {
-    const local = new ContractError("transcribe file", "MEETING_ACCESS_DENIED", "PRIVATE_MESSAGE_8K2R", 3, {
-      suggestedAction: "PRIVATE_ACTION",
-    });
+    const local = new ContractError(
+      "transcribe file",
+      "MEETING_ACCESS_DENIED",
+      "Access policy rejected transcription; token=PRIVATE_POLICY_TOKEN_798",
+      3,
+      {
+        ...errorDiagnostic("Access policy rejected transcription; token=PRIVATE_POLICY_TOKEN_798", {
+          operation: "transcribe file",
+        }),
+        ...{
+          suggestedAction: "PRIVATE_ACTION",
+        },
+      },
+    );
     const response = contractErrorResponse(local);
     const remote = remoteGatewayErrorToContractError(
       "transcribe file",
       result({ status: response.status, body: await response.text() }),
     );
     expect(remote?.message).toBe("Remote command was blocked by policy.");
+    expect(remote?.details.cause).toBe("Access policy rejected transcription; token=[redacted:token]");
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
   });
 });
@@ -1900,15 +1979,21 @@ describe("sessions runtime remote relay", () => {
       new ContractError(
         "sessions runtime steer",
         RUNTIME_CONTROL_DISABLED,
-        "PRIVATE_DAEMON_TEXT_8K2R session-private-name",
+        "Runtime provider does not support turn steering; token=PRIVATE_RUNTIME_TOKEN_798",
         1,
         {
-          retryable: false,
-          suggestedAction: "PRIVATE_ACTION_8K2R",
-          operation: "turn.steer",
-          activeTurn: true,
-          turnId: "turn_123",
-          disabledReason: RUNTIME_CONTROL_DISABLED_REASON,
+          ...errorDiagnostic("Runtime provider does not support turn steering; token=PRIVATE_RUNTIME_TOKEN_798", {
+            operation: "sessions runtime steer",
+          }),
+          ...{
+            retryable: false,
+            suggestedAction: "PRIVATE_ACTION_8K2R",
+            operation: "turn.steer",
+            sessionName: "session-private-name",
+            activeTurn: true,
+            turnId: "turn_123",
+            disabledReason: RUNTIME_CONTROL_DISABLED_REASON,
+          },
         },
       ),
     );
@@ -1929,7 +2014,8 @@ describe("sessions runtime remote relay", () => {
       },
     });
     const serialized = JSON.stringify(remote?.envelope());
-    expect(serialized).not.toContain("PRIVATE_DAEMON_TEXT_8K2R");
+    expect(remote?.details.cause).toBe("Runtime provider does not support turn steering; token=[redacted:token]");
+    expect(serialized).not.toContain("PRIVATE_RUNTIME_TOKEN_798");
     expect(serialized).not.toContain("PRIVATE_ACTION_8K2R");
     expect(serialized).not.toContain("session-private-name");
   });
@@ -1937,13 +2023,24 @@ describe("sessions runtime remote relay", () => {
   it("keeps the timeout retryable and drops unbounded details", async () => {
     const remote = await relay(
       "sessions runtime read",
-      new ContractError("sessions runtime read", RUNTIME_CONTROL_TIMEOUT, "PRIVATE_8K2R", 1, {
-        retryable: true,
-        suggestedAction: "PRIVATE_ACTION_8K2R",
-        operation: "thread.read",
-        turnId: "turn with spaces and PRIVATE_8K2R",
-        disabledReason: "PRIVATE_REASON_8K2R",
-      }),
+      new ContractError(
+        "sessions runtime read",
+        RUNTIME_CONTROL_TIMEOUT,
+        "Runtime read exceeded its deadline; token=PRIVATE_TIMEOUT_TOKEN_798",
+        1,
+        {
+          ...errorDiagnostic("Runtime read exceeded its deadline; token=PRIVATE_TIMEOUT_TOKEN_798", {
+            operation: "sessions runtime read",
+          }),
+          ...{
+            retryable: true,
+            suggestedAction: "PRIVATE_ACTION_8K2R",
+            operation: "thread.read",
+            turnId: "turn with spaces and PRIVATE_8K2R",
+            disabledReason: "PRIVATE_REASON_8K2R",
+          },
+        },
+      ),
     );
 
     expect(remote).toMatchObject({
@@ -1953,6 +2050,7 @@ describe("sessions runtime remote relay", () => {
     });
     expect(remote?.details.turnId).toBeUndefined();
     expect(remote?.details.disabledReason).toBeUndefined();
+    expect(remote?.details.cause).toBe("Runtime read exceeded its deadline; token=[redacted:token]");
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
   });
 
@@ -1960,8 +2058,11 @@ describe("sessions runtime remote relay", () => {
     const remote = await relay(
       "sessions runtime rollback",
       new ContractError("sessions runtime rollback", RUNTIME_CONTROL_TIMEOUT, "x", 1, {
-        retryable: true,
-        operation: "thread.rollback",
+        ...errorDiagnostic("x", { operation: "sessions runtime rollback" }),
+        ...{
+          retryable: true,
+          operation: "thread.rollback",
+        },
       }),
     );
 
@@ -1970,7 +2071,13 @@ describe("sessions runtime remote relay", () => {
 
   it("renders missing sessions for info and orphan-close without leaking names", async () => {
     for (const op of ["sessions info", "sessions close-thread"]) {
-      const remote = await relay(op, new ContractError(op, "SESSION_NOT_FOUND", "private-session-8k2r", 1));
+      const remote = await relay(
+        op,
+        new ContractError(op, "SESSION_NOT_FOUND", "private-session-8k2r", 1, {
+          ...errorDiagnostic("private-session-8k2r", { operation: op }),
+          ...{},
+        }),
+      );
       expect(remote?.message).toBe("Session not found, or not visible to this context.");
       expect(JSON.stringify(remote?.envelope())).not.toContain("private-session-8k2r");
     }
@@ -1980,7 +2087,10 @@ describe("sessions runtime remote relay", () => {
     const remote = await relay(
       "sessions runtime steer",
       new ContractError("sessions runtime steer", "SESSION_NOT_FOUND", "Session not found: private-session-8k2r", 1, {
-        suggestedAction: "List visible sessions with: ravi sessions list --json",
+        ...errorDiagnostic("Session not found: private-session-8k2r", { operation: "sessions runtime steer" }),
+        ...{
+          suggestedAction: "List visible sessions with: ravi sessions list --json",
+        },
       }),
     );
 
@@ -1994,7 +2104,10 @@ describe("sessions runtime remote relay", () => {
   it("does not apply the runtime catalog to other ops", async () => {
     const remote = await relay(
       "media send",
-      new ContractError("media send", RUNTIME_CONTROL_DISABLED, "PRIVATE_8K2R", 1, { suggestedAction: "x" }),
+      new ContractError("media send", RUNTIME_CONTROL_DISABLED, "PRIVATE_8K2R", 1, {
+        ...errorDiagnostic("PRIVATE_8K2R", { operation: "media send" }),
+        ...{ suggestedAction: "x" },
+      }),
     );
 
     expect(remote?.message).toBe("PRIVATE_8K2R");
@@ -2010,19 +2123,42 @@ describe("thread command remote relay", () => {
   it("returns a creation failure for an incompatible model instead of generic remote text", async () => {
     const remote = await relay(
       "sessions create-thread",
-      new ContractError("sessions create-thread", "THREAD_MODEL_INVALID", "PRIVATE_MODEL_8K2R", 1),
+      new ContractError(
+        "sessions create-thread",
+        "THREAD_MODEL_INVALID",
+        "Provider rejected the configured model; token=PRIVATE_MODEL_TOKEN_798",
+        1,
+        {
+          ...errorDiagnostic("Provider rejected the configured model; token=PRIVATE_MODEL_TOKEN_798", {
+            operation: "sessions create-thread",
+          }),
+          ...{},
+        },
+      ),
     );
     expect(remote?.message).toContain("Thread was not created");
     expect(remote?.details.suggestedAction).toContain("--provider codex");
-    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE_MODEL_8K2R");
+    expect(remote?.details.cause).toBe("Provider rejected the configured model; token=[redacted:token]");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE_MODEL_TOKEN_798");
   });
 
   it("relays a report outside a thread with local copy instead of Remote command failed", async () => {
     const remote = await relay(
       "sessions report",
-      new ContractError("sessions report", "THREAD_NOT_THREAD_CHILD", "PRIVATE_DAEMON_TEXT_8K2R thread-private", 1, {
-        suggestedAction: "PRIVATE_ACTION_8K2R",
-      }),
+      new ContractError(
+        "sessions report",
+        "THREAD_NOT_THREAD_CHILD",
+        "Session is not bound to a thread; token=PRIVATE_THREAD_TOKEN_798",
+        1,
+        {
+          ...errorDiagnostic("Session is not bound to a thread; token=PRIVATE_THREAD_TOKEN_798", {
+            operation: "sessions report",
+          }),
+          ...{
+            suggestedAction: "PRIVATE_ACTION_8K2R",
+          },
+        },
+      ),
     );
     expect(remote).toMatchObject({
       code: "THREAD_NOT_THREAD_CHILD",
@@ -2030,45 +2166,97 @@ describe("thread command remote relay", () => {
       message: "This command is available only inside a Slack thread child session.",
       details: { suggestedAction: "Run it from the Slack thread's own session, or pass --session <thread session>" },
     });
+    expect(remote?.details.cause).toBe("Session is not bound to a thread; token=[redacted:token]");
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
   });
 
   it("relays the identity mismatch and a missing thread session for close-thread and thread-send", async () => {
     const mismatch = await relay(
       "sessions close-thread",
-      new ContractError("sessions close-thread", "THREAD_IDENTITY_MISMATCH", "PRIVATE_8K2R", 1),
+      new ContractError(
+        "sessions close-thread",
+        "THREAD_IDENTITY_MISMATCH",
+        "Thread request and session identities differ; token=PRIVATE_IDENTITY_TOKEN_798",
+        1,
+        {
+          ...errorDiagnostic("Thread request and session identities differ; token=PRIVATE_IDENTITY_TOKEN_798", {
+            operation: "sessions close-thread",
+          }),
+          ...{},
+        },
+      ),
     );
     expect(mismatch?.message).toContain("lost its session");
     const missing = await relay(
       "sessions thread-send",
-      new ContractError("sessions thread-send", "THREAD_SESSION_MISSING", "PRIVATE_8K2R", 1),
+      new ContractError(
+        "sessions thread-send",
+        "THREAD_SESSION_MISSING",
+        "Thread child session is unavailable; token=PRIVATE_IDENTITY_TOKEN_798",
+        1,
+        {
+          ...errorDiagnostic("Thread child session is unavailable; token=PRIVATE_IDENTITY_TOKEN_798", {
+            operation: "sessions thread-send",
+          }),
+          ...{},
+        },
+      ),
     );
     expect(missing?.message).toBe("The Slack thread's session no longer exists.");
+    expect(mismatch?.details.cause).toBe("Thread request and session identities differ; token=[redacted:token]");
+    expect(missing?.details.cause).toBe("Thread child session is unavailable; token=[redacted:token]");
     expect(JSON.stringify([mismatch?.envelope(), missing?.envelope()])).not.toContain("PRIVATE");
   });
 
   it("relays the task dispatch thread identity conflict", async () => {
     const remote = await relay(
       "tasks dispatch",
-      new ContractError("tasks dispatch", "TASK_SESSION_THREAD_IDENTITY_CONFLICT", "PRIVATE_8K2R", 1),
+      new ContractError(
+        "tasks dispatch",
+        "TASK_SESSION_THREAD_IDENTITY_CONFLICT",
+        "Dispatch target conflicts with the thread session identity; token=PRIVATE_IDENTITY_TOKEN_798",
+        1,
+        {
+          ...errorDiagnostic(
+            "Dispatch target conflicts with the thread session identity; token=PRIVATE_IDENTITY_TOKEN_798",
+            { operation: "tasks dispatch" },
+          ),
+          ...{},
+        },
+      ),
     );
     expect(remote?.message).toContain("open Slack thread");
     expect(remote?.details.suggestedAction).toContain("--session");
+    expect(remote?.details.cause).toBe(
+      "Dispatch target conflicts with the thread session identity; token=[redacted:token]",
+    );
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
   });
 
   it("relays active trigger IDs and repoint guidance without forwarding arbitrary remote text", async () => {
     const remote = await relay(
       "sessions close-thread",
-      new ContractError("sessions close-thread", "THREAD_TRIGGERS_PENDING", "PRIVATE_TEXT", 1, {
-        triggerIds: ["abcd1234", "bad;command", "1234abcd"],
-        suggestedAction: "PRIVATE_ACTION",
-      }),
+      new ContractError(
+        "sessions close-thread",
+        "THREAD_TRIGGERS_PENDING",
+        "Active triggers prevent thread closure; token=PRIVATE_TRIGGER_TOKEN_798",
+        1,
+        {
+          ...errorDiagnostic("Active triggers prevent thread closure; token=PRIVATE_TRIGGER_TOKEN_798", {
+            operation: "sessions close-thread",
+          }),
+          ...{
+            triggerIds: ["abcd1234", "bad;command", "1234abcd"],
+            suggestedAction: "PRIVATE_ACTION",
+          },
+        },
+      ),
     );
     expect(remote?.code).toBe("THREAD_TRIGGERS_PENDING");
     expect(remote?.details.triggerIds).toEqual(["abcd1234", "1234abcd"]);
     expect(remote?.details.suggestedAction).toContain("abcd1234, 1234abcd");
     expect(remote?.details.suggestedAction).toContain("ravi triggers set <id> replySession <parent-session>");
+    expect(remote?.details.cause).toBe("Active triggers prevent thread closure; token=[redacted:token]");
     expect(JSON.stringify(remote?.envelope())).not.toMatch(/PRIVATE|bad;command/);
   });
 
@@ -2078,8 +2266,17 @@ describe("thread command remote relay", () => {
       ["decisions retry", "DECISION_DELIVERY_UNCERTAIN", "uncertain"],
       ["sessions close-thread", "THREAD_DECISIONS_PENDING", "open decisions"],
     ]) {
-      const remote = await relay(op!, new ContractError(op!, code!, "PRIVATE_DECISION_TEXT", 1));
+      const remote = await relay(
+        op!,
+        new ContractError(op!, code!, "Decision policy rejected the transition; token=PRIVATE_DECISION_TOKEN_798", 1, {
+          ...errorDiagnostic("Decision policy rejected the transition; token=PRIVATE_DECISION_TOKEN_798", {
+            operation: op!,
+          }),
+          ...{},
+        }),
+      );
       expect(remote?.message).toContain(copy!);
+      expect(remote?.details.cause).toBe("Decision policy rejected the transition; token=[redacted:token]");
       expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE");
     }
   });
@@ -2090,7 +2287,13 @@ describe("thread command remote relay", () => {
       ["sessions report", "toString"],
       ["sessions list", "THREAD_NOT_THREAD_CHILD"],
     ] as const) {
-      const remote = await relay(op, new ContractError(op, code, "PRIVATE_8K2R", 1));
+      const remote = await relay(
+        op,
+        new ContractError(op, code, "PRIVATE_8K2R", 1, {
+          ...errorDiagnostic("PRIVATE_8K2R", { operation: op }),
+          ...{},
+        }),
+      );
       if (code === "toString") expect(remote?.message).toContain("without a valid error envelope");
       else expect(remote?.message).toBe("PRIVATE_8K2R");
       expect(remote?.message).not.toContain("Remote command failed");

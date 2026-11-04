@@ -5,8 +5,10 @@ Terms and transport names follow the normative definitions in
 
 ## Diagnose a contract regression
 
-1. Reproduce through the real surface that failed. Record command/body,
-   runtime-context presence, stdout, stderr, status and side-effect evidence.
+1. Reproduce through the real surface that failed using synthetic input when
+   possible. Record the operation, context presence, normalized stdout/stderr,
+   status and side-effect evidence; never copy raw credential-bearing request
+   bodies or command arguments into the diagnostic report.
 2. Identify the stage: authorization, input parsing, entity resolution,
    confirmation, handler, transport adapter or audit.
 3. Reproduce the same semantic invocation through process CLI, exported tool
@@ -17,10 +19,11 @@ Terms and transport names follow the normative definitions in
    `UNHANDLED_ERROR` or `RETURN_SHAPE_ERROR` envelope. Any other known
    `ContractError` must be translated before the unexpected-error path and
    retain its own non-500 status mapping.
-   Inspect `gateway:dispatcher` / `Unhandled command exception` in the local
-   daemon log for the original cause and stack. Access logs alone only contain
-   the resulting status. Inspect the envelope cause/context first. Keep stack traces and arbitrary
-   payloads in local diagnostics; redact secret values, not the failure cause.
+   Inspect the envelope cause/context first, then correlate its request ID
+   with `gateway:dispatcher` diagnostics. Logs use the same allowlist and
+   redactor: do not print an exception stack, request/body, headers or raw
+   provider response to recover missing information. Access logs alone contain
+   only the resulting status and cannot establish the original cause.
 6. In remote mode, verify the target gateway performs authorization. Reject a
    response as non-canonical if `success`, `op`, `exitCode`, `outcome` and the
    error shape are incomplete or incoherent; never trust or print its raw body.
@@ -36,15 +39,31 @@ Terms and transport names follow the normative definitions in
 9. If a smoke breaks after adding a brake, update the consumer only when the
    classification is correct. Otherwise remove the brake; do not teach callers
    to confirm low-risk routine work.
-10. For a redaction failure, inspect the parser message, plan, suggestion,
-    transport body and audit independently. Assert absence of the sentinel,
-    not merely presence of a mask.
-11. Compare local and CI failures by test name and platform. A changed shared
-   dependency can regress an unchanged test file.
+10. For a redaction failure, add one synthetic row to
+    `src/cli/error-egress-corpus.test.ts` with literal expected cause/code and
+    every secret sentinel. Run all nine sinks, including the mocked Slack
+    payload. Fix the shared versioned redactor or ingress projection; assert
+    sentinel absence as well as exact retained diagnosis. A marker alone does
+    not prove that a password tail or embedded body was removed.
+11. For a masking failure, keep the original throwable on the internal cause
+    chain and attach typed operation/provider context. Normalize only at
+    egress, using `errorDiagnostic` for `contractFail.diagnostic` or the required
+    `ContractError` diagnostic. Do not invent a headline as the cause of a
+    caught exception. Expected preconditions without a throwable must state
+    the actual failed lookup or validation.
+12. Run `bun scripts/error-cause-scan.ts`. After fixing a recorded site, run
+    `bun scripts/error-cause-scan.ts --update` to regenerate the shrinking
+    baseline and inventory, then inspect the diff and rerun the gate. Do not
+    add baseline entries, increase counts, hand-edit generated inventory, or
+    hide a failure behind an unsupported `no-cause` annotation.
+13. Compare local and CI failures by test name and platform. A changed shared
+    dependency can regress an unchanged test file.
 
 ## Pre-merge sequence
 
-1. Run every [focused validation group](./CHECKS.md#focused-validation).
+1. Run the relevant [focused validation groups](./CHECKS.md#focused-validation)
+   locally; on the production host, do not run the full suite, build or install.
+   Run the corpus and AST ratchet for diagnostic changes.
 2. Run the pull-request workflow from
    [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) on the same
    head.
@@ -70,5 +89,5 @@ Only after those checks are green for the current head:
 1. change [`SPEC.md`](./SPEC.md) from `draft` to `active`;
 2. update [`MIGRACAO-LEDGER.md`](../../../MIGRACAO-LEDGER.md) with the exact CI
    run and observed failures;
-3. request final review and issue `APPROVE` or `DO NOT APPROVE`;
+3. request independent review; the author must not approve their own change;
 4. do not merge automatically.

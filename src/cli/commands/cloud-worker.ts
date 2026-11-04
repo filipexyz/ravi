@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * `ravi cloud worker list|enable|disable|session` and `ravi cloud worker key
  * set|remove`: this machine as the executor of cloud agents placed on it
@@ -332,8 +333,11 @@ export class CloudWorkerCommands {
     } catch (error) {
       if (error instanceof WorkerSessionError) {
         contractFail(op, error.code, error.message, {
-          asJson,
-          exitCode: error.code === "SESSION_UNAUTHORIZED" ? 1 : CONTRACT_EXIT_USAGE,
+          ...{
+            asJson,
+            exitCode: error.code === "SESSION_UNAUTHORIZED" ? 1 : CONTRACT_EXIT_USAGE,
+          },
+          diagnostic: errorDiagnostic(error, { operation: op }),
         });
       }
       throw error;
@@ -400,15 +404,21 @@ export class CloudWorkerKeyCommands {
         const worker = (await listCloudWorkers(session.client)).find((entry) => entry.id === workerId);
         if (!worker) {
           contractFail(op, "CLOUD_WORKER_NOT_FOUND", `No cloud worker '${workerId}'.`, {
-            asJson,
-            details: { suggestedAction: "List them with: ravi cloud worker list" },
+            ...{
+              asJson,
+              details: { suggestedAction: "List them with: ravi cloud worker list" },
+            },
+            diagnostic: errorDiagnostic(`No cloud worker '${workerId}'.`, { operation: op }),
           });
         }
         if (worker.installationId && worker.installationId !== session.installationId) {
           contractFail(op, "CLOUD_WORKER_OTHER_INSTALLATION", `Worker ${workerId} is placed on another installation.`, {
-            asJson,
-            exitCode: CONTRACT_EXIT_USAGE,
-            details: { suggestedAction: "Set the key on the machine the agent is placed on." },
+            ...{
+              asJson,
+              exitCode: CONTRACT_EXIT_USAGE,
+              details: { suggestedAction: "Set the key on the machine the agent is placed on." },
+            },
+            diagnostic: errorDiagnostic(`Worker ${workerId} is placed on another installation.`, { operation: op }),
           });
         }
         const key = (await d.readSecret()).trim();

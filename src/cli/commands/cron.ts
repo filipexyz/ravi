@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Cron Commands - Manage scheduled jobs
  */
@@ -193,11 +194,14 @@ function failCronJobNotFound(op: string, id: string, asJson?: boolean): never {
     .filter((job) => canReadCronJob(scopeCtx, job))
     .flatMap((job) => [job.id, job.name]);
   contractFail(op, "CRON_JOB_NOT_FOUND", `Job not found: ${id}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the job id (see suggestions; list with: ravi cron list --json)",
-      suggestions: suggestSimilar(id, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the job id (see suggestions; list with: ravi cron list --json)",
+        suggestions: suggestSimilar(id, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Job not found: ${id}`, { operation: op }),
   });
 }
 
@@ -220,14 +224,17 @@ function assertCronJobMutable(op: string, id: string, job: CronJob, asJson?: boo
     command: op,
   });
   contractFail(op, "PERMISSION_DENIED", denial.message, {
-    asJson,
-    details: {
-      suggestedAction: denial.requiredCapability
-        ? `Request ${denial.requiredCapability} from an operator and retry '${op}'`
-        : `Request modify authority on the owning agent from an operator and retry '${op}'`,
-      ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}),
-      ...(denial.denialId ? { denialId: denial.denialId } : {}),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: denial.requiredCapability
+          ? `Request ${denial.requiredCapability} from an operator and retry '${op}'`
+          : `Request modify authority on the owning agent from an operator and retry '${op}'`,
+        ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}),
+        ...(denial.denialId ? { denialId: denial.denialId } : {}),
+      },
     },
+    diagnostic: errorDiagnostic(denial.message, { operation: op }),
   });
 }
 
@@ -253,12 +260,18 @@ function assertCronTargetAuthorized(
       command: op,
     });
     contractFail(op, "PERMISSION_DENIED", denial.message, {
-      asJson,
-      details: { ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}) },
+      ...{
+        asJson,
+        details: { ...(denial.requiredCapability ? { requiredCapability: denial.requiredCapability } : {}) },
+      },
+      diagnostic: errorDiagnostic(denial.message, { operation: op }),
     });
   }
   if (target.replySession && isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, target.replySession)) {
-    contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${target.replySession}`, { asJson });
+    contractFail(op, "PERMISSION_DENIED", `Permission denied for session target: ${target.replySession}`, {
+      ...{ asJson },
+      diagnostic: errorDiagnostic(`Permission denied for session target: ${target.replySession}`, { operation: op }),
+    });
   }
 }
 
@@ -301,9 +314,15 @@ function assertShellOwnerActsAsOperator(op: string, ownerPrincipal: string | nul
     "CRON_SHELL_NOT_OPERATOR",
     `A shell cron job would run as ${ownerPrincipal ?? "unknown"}, not the operator. A shell command runs with this machine's access and the operator's credentials, so only the operator can own one. Next: ${suggestedAction}.`,
     {
-      asJson,
-      exitCode: CONTRACT_EXIT_POLICY,
-      details: { ownerPrincipal: ownerPrincipal ?? "unknown", suggestedAction },
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_POLICY,
+        details: { ownerPrincipal: ownerPrincipal ?? "unknown", suggestedAction },
+      },
+      diagnostic: errorDiagnostic(
+        `A shell cron job would run as ${ownerPrincipal ?? "unknown"}, not the operator. A shell command runs with this machine's access and the operator's credentials, so only the operator can own one. Next: ${suggestedAction}.`,
+        { operation: op },
+      ),
     },
   );
 }

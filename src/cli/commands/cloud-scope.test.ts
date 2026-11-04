@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
@@ -192,7 +193,10 @@ describe("cloud scope CLI commands", () => {
 
   it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {
     stateDir = await createIsolatedRaviState("ravi-cloud-scope-contract-test-");
-    const boom = new ContractError("cloud scope set", "SOME_CONTRACT_CODE", "boom", 3, { dryRun: true });
+    const boom = new ContractError("cloud scope set", "SOME_CONTRACT_CODE", "boom", 3, {
+      ...errorDiagnostic("boom", { operation: "cloud scope set" }),
+      ...{ dryRun: true },
+    });
     const command = new CloudScopeCommands({
       client: makeClient(),
       readCredentials: makeReadCredentials(),

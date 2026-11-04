@@ -23,7 +23,13 @@ import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write
 import { isRuntimeContextError } from "../runtime/context-errors.js";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
-import { errorDiagnostic, projectDiagnosticContext, redactDiagnosticText } from "../utils/error-diagnostic.js";
+import {
+  errorDiagnostic,
+  projectDiagnosticContext,
+  redactDiagnosticText,
+  type ErrorDiagnostic,
+} from "../utils/error-diagnostic.js";
+export { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { sanitizePublicValue } from "./redaction.js";
 
 export const GENERIC_COMMAND_FAILED_MESSAGE = "Command could not be completed.";
@@ -50,24 +56,125 @@ export interface ContractErrorEnvelope {
   error: { code: string; message: string; retryable: boolean } & ContractErrorDetails;
 }
 
+/** Existing control contracts are explicit; arbitrary exception properties are not controls. */
+const CONTROL_FIELDS = [
+  "retryable",
+  "suggestedAction",
+  "suggestions",
+  "acceptedFlags",
+  "acceptedPositionals",
+  "acceptedValues",
+  "usage",
+  "dryRun",
+  "plan",
+  "status",
+  "requestId",
+  "diagnosticRequestId",
+  "field",
+  "argument",
+  "issues",
+  "capability",
+  "requiredCapability",
+  "missingCapability",
+  "denialStage",
+  "denialId",
+  "domainSetup",
+  "triggerIds",
+  "conflict",
+  "currentVersion",
+  "refusal",
+  "effectState",
+  "written",
+  "existing",
+  "operation",
+  "ownerPrincipal",
+  "pipelineId",
+  "timeoutSeconds",
+  "mediaPathPresent",
+  "visibility",
+  "basesUses",
+  "ruleCount",
+  "totalGaps",
+  "highSeverityGaps",
+  "gaps",
+  "offenders",
+  "errors",
+  "warnings",
+  "files",
+  "widgets",
+  "options",
+  "override",
+  "turn",
+  "linkFlow",
+  "stage",
+  "authorizationDecision",
+  "limitBytes",
+  "partial",
+  "chatLine",
+  "chatLinePt",
+  "replyTo",
+  "reconnectLink",
+  "approvalId",
+  "approvalLink",
+  "expiresAt",
+  "retryWith",
+  "consentLink",
+  "ref",
+  "scope",
+  "project",
+  "viewProject",
+  "archived",
+  "view",
+  "baseVersion",
+  "latestVersion",
+  "activeTurn",
+  "turnId",
+  "disabledReason",
+] as const;
+
+function projectFailureDetails(details: ContractErrorDetails & ErrorDiagnostic): ContractErrorDetails {
+  const controls: Record<string, unknown> = {};
+  for (const field of CONTROL_FIELDS) {
+    if (Object.hasOwn(details, field)) controls[field] = sanitizePublicValue(details[field], field);
+  }
+  // Control text is also egress: retaining a known field does not make its value public.
+  for (const field of ["suggestedAction", "usage"] as const) {
+    if (typeof details[field] === "string") controls[field] = redactDiagnosticText(details[field]);
+  }
+  return {
+    ...controls,
+    cause: redactDiagnosticText(details.cause),
+    context: projectDiagnosticContext(details.context),
+  };
+}
+
 export class ContractError extends Error {
   readonly op: string;
   readonly code: string;
   readonly exitCode: number;
   readonly details: ContractErrorDetails;
 
-  constructor(op: string, code: string, message: string, exitCode: number, details: ContractErrorDetails = {}) {
+  constructor(
+    op: string,
+    code: string,
+    message: string,
+    exitCode: number,
+    details: ContractErrorDetails & ErrorDiagnostic,
+  ) {
+    if (!details || typeof details.cause !== "string" || !details.context || typeof details.context !== "object") {
+      throw new TypeError("A user failure requires an explicit cause and diagnostic context.");
+    }
     super(redactDiagnosticText(message));
     const canonicalExitCode = validateContractTaxonomy(code, exitCode);
     this.name = "ContractError";
-    this.op = op;
-    this.code = code;
+    this.op =
+      op.length <= 160 && /^[a-z][a-z0-9._-]*(?: [a-z][a-z0-9._-]*)*$/i.test(op) && redactDiagnosticText(op) === op
+        ? op
+        : "command";
+    this.code =
+      /^[A-Za-z][A-Za-z0-9_]{0,95}$/.test(code) && redactDiagnosticText(code) === code ? code : "COMMAND_FAILED";
     this.exitCode = canonicalExitCode;
-    this.details = {
-      ...(sanitizePublicValue(details) as ContractErrorDetails),
-      ...(typeof details.cause === "string" ? { cause: redactDiagnosticText(details.cause) } : {}),
-      ...(details.context ? { context: projectDiagnosticContext(details.context) } : {}),
-    };
+    this.details = projectFailureDetails(details);
   }
 
   envelope(): ContractErrorEnvelope {
@@ -117,17 +224,24 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
     const argument = required[1]!;
     const field = argument.slice(2).replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
     return new ContractError(op, "VALIDATION_ERROR", `${argument} is required.`, CONTRACT_EXIT_USAGE, {
-      argument,
-      field,
-      issues: [{ path: [field], code: "required", message: `${argument} is required.` }],
-      suggestedAction: sanitizePublicContractMessage(error.suggestedAction) ?? `Provide ${argument} and retry '${op}'`,
+      ...errorDiagnostic(error, { operation: op }),
+      ...{
+        argument,
+        field,
+        issues: [{ path: [field], code: "required", message: `${argument} is required.` }],
+        suggestedAction:
+          sanitizePublicContractMessage(error.suggestedAction) ?? `Provide ${argument} and retry '${op}'`,
+      },
     });
   }
   const message = sanitizePublicContractMessage(error.message) ?? GENERIC_COMMAND_FAILED_MESSAGE;
   const suggestedAction =
     sanitizePublicContractMessage(error.suggestedAction) ?? `Inspect the command input and retry '${op}'`;
   return new ContractError(op, error.code, message, error.exitCode, {
-    suggestedAction,
+    ...errorDiagnostic(error, { operation: op }),
+    ...{
+      suggestedAction,
+    },
   });
 }
 
@@ -147,17 +261,23 @@ export function unexpectedErrorToContractError(op: string, error?: unknown): Con
 export function runtimeContextErrorToContractError(op: string, error: unknown): ContractError | null {
   if (!isRuntimeContextError(error)) return null;
   return new ContractError(op, error.code, error.message, error.exitCode, {
-    suggestedAction: error.suggestedAction,
-    ...error.details,
+    ...errorDiagnostic(error, { operation: op }),
+    ...{
+      suggestedAction: error.suggestedAction,
+      ...error.details,
+    },
   });
 }
 
 export function sqliteCapacityToContractError(op: string, error: unknown): ContractError | null {
   if (!isSqliteCapacityError(error)) return null;
   return new ContractError(op, "SQLITE_CAPACITY", SQLITE_CAPACITY_USER_MESSAGE, CONTRACT_EXIT_ERROR, {
-    retryable: false,
-    suggestedAction:
-      "Reduce concurrent sessions and retry. A large SQLite file can OOM the process even when disk is free. Vacuum is an operator maintenance step, not a product default.",
+    ...errorDiagnostic(error, { operation: op }),
+    ...{
+      retryable: false,
+      suggestedAction:
+        "Reduce concurrent sessions and retry. A large SQLite file can OOM the process even when disk is free. Vacuum is an operator maintenance step, not a product default.",
+    },
   });
 }
 
@@ -185,33 +305,36 @@ export function permissionDeniedToContractError(
 export function binaryResponseToContractError(op: string, status: number): ContractError {
   const details = { status, suggestedAction: "Inspect the binary resource identifier and retry" };
   if (status === 400) {
-    return new ContractError(op, "USAGE_ERROR", "Binary resource request was invalid.", CONTRACT_EXIT_USAGE, details);
+    return new ContractError(op, "USAGE_ERROR", "Binary resource request was invalid.", CONTRACT_EXIT_USAGE, {
+      ...errorDiagnostic("Binary resource request was invalid.", { operation: op }),
+      ...details,
+    });
   }
   if (status === 401) {
-    return new ContractError(
-      op,
-      "AUTH_REQUIRED",
-      "Binary resource authentication failed.",
-      CONTRACT_EXIT_ERROR,
-      details,
-    );
+    return new ContractError(op, "AUTH_REQUIRED", "Binary resource authentication failed.", CONTRACT_EXIT_ERROR, {
+      ...errorDiagnostic("Binary resource authentication failed.", { operation: op }),
+      ...details,
+    });
   }
   if (status === 403) {
-    return new ContractError(
-      op,
-      "PERMISSION_DENIED",
-      "Binary resource access was denied.",
-      CONTRACT_EXIT_ERROR,
-      details,
-    );
+    return new ContractError(op, "PERMISSION_DENIED", "Binary resource access was denied.", CONTRACT_EXIT_ERROR, {
+      ...errorDiagnostic("Binary resource access was denied.", { operation: op }),
+      ...details,
+    });
   }
   if (status === 404) {
-    return new ContractError(op, "RESOURCE_NOT_FOUND", "Binary resource was not found.", CONTRACT_EXIT_ERROR, details);
+    return new ContractError(op, "RESOURCE_NOT_FOUND", "Binary resource was not found.", CONTRACT_EXIT_ERROR, {
+      ...errorDiagnostic("Binary resource was not found.", { operation: op }),
+      ...details,
+    });
   }
   if (status === 429) {
     return new ContractError(op, "RATE_LIMITED", "Binary resource request was rate limited.", CONTRACT_EXIT_ERROR, {
-      ...details,
-      retryable: true,
+      ...errorDiagnostic("Binary resource request was rate limited.", { operation: op }),
+      ...{
+        ...details,
+        retryable: true,
+      },
     });
   }
   if (status >= 500) {
@@ -221,12 +344,18 @@ export function binaryResponseToContractError(op: string, status: number): Contr
       "Binary resource provider is unavailable.",
       CONTRACT_EXIT_ERROR,
       {
-        ...details,
-        retryable: true,
+        ...errorDiagnostic("Binary resource provider is unavailable.", { operation: op }),
+        ...{
+          ...details,
+          retryable: true,
+        },
       },
     );
   }
-  return new ContractError(op, "COMMAND_FAILED", "Binary resource request failed.", CONTRACT_EXIT_ERROR, details);
+  return new ContractError(op, "COMMAND_FAILED", "Binary resource request failed.", CONTRACT_EXIT_ERROR, {
+    ...errorDiagnostic("Binary resource request failed.", { operation: op }),
+    ...details,
+  });
 }
 
 export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
@@ -282,6 +411,7 @@ export function sanitizePublicContractMessage(message: string | undefined): stri
 }
 
 export interface ContractFailOptions {
+  diagnostic: ErrorDiagnostic;
   asJson?: boolean;
   exitCode?: number;
   details?: ContractErrorDetails;
@@ -292,9 +422,9 @@ export interface ContractFailOptions {
  * Rendering happens here exactly once; the active transport catches the
  * structured error and owns process exit / protocol status / audit flushing.
  */
-export function contractFail(op: string, code: string, message: string, options: ContractFailOptions = {}): never {
+export function contractFail(op: string, code: string, message: string, options: ContractFailOptions): never {
   const exitCode = options.exitCode ?? CONTRACT_EXIT_ERROR;
-  const error = new ContractError(op, code, message, exitCode, options.details ?? {});
+  const error = new ContractError(op, code, message, exitCode, { ...options.diagnostic, ...options.details });
   renderContractError(error, options.asJson);
   throw error;
 }
@@ -311,9 +441,14 @@ export function contractDryRun(op: string, plan: Record<string, unknown>, option
     `Dry-run: nothing was written. Re-run with --execute to perform the write.`,
     CONTRACT_EXIT_POLICY,
     {
-      suggestedAction: `Re-run '${op}' adding --execute to perform the write`,
-      dryRun: true,
-      plan,
+      ...errorDiagnostic(`Dry-run: nothing was written. Re-run with --execute to perform the write.`, {
+        operation: op,
+      }),
+      ...{
+        suggestedAction: `Re-run '${op}' adding --execute to perform the write`,
+        dryRun: true,
+        plan,
+      },
     },
   );
   if (getContext({ localOnly: true })?.suppressCliOutput !== true) {
@@ -393,14 +528,17 @@ function failUsage(command: CommanderCommand, error: CommanderError): never {
     .filter((line): line is string => line !== null)
     .join("\n");
   contractFail(op, "USAGE_ERROR", asJson ? safeMessage : textMessage, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction: `Fix the invocation and re-run: ${usage}`,
-      usage,
-      acceptedFlags,
-      acceptedPositionals,
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: `Fix the invocation and re-run: ${usage}`,
+        usage,
+        acceptedFlags,
+        acceptedPositionals,
+      },
     },
+    diagnostic: errorDiagnostic(error, { operation: op }),
   });
 }
 

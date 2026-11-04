@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Cost Commands - inspect token/cost tracking recorded by Ravi
  */
@@ -355,22 +356,30 @@ async function recomputePricingRows(input: {
 function failCostsAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
   const candidates = getAllAgents().flatMap((agent) => [agent.id, agent.name ?? null]);
   contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId} (no config entry and no cost history)`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-      suggestions: suggestSimilar(agentId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+        suggestions: suggestSimilar(agentId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Agent not found: ${agentId} (no config entry and no cost history)`, { operation: op }),
   });
 }
 
 function failCostsSessionNotFound(op: string, nameOrKey: string, asJson?: boolean): never {
   const candidates = listSessions().flatMap((session) => [session.name ?? null, session.sessionKey]);
   contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${nameOrKey} (no session record and no cost history)`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the session name/key (see suggestions; list with: ravi sessions list --json)",
-      suggestions: suggestSimilar(nameOrKey, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the session name/key (see suggestions; list with: ravi sessions list --json)",
+        suggestions: suggestSimilar(nameOrKey, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Session not found: ${nameOrKey} (no session record and no cost history)`, {
+      operation: op,
+    }),
   });
 }
 

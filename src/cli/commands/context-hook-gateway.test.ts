@@ -209,7 +209,7 @@ describe("Codex hook through the host gateway", () => {
       expect(reason).toContain("executable ffmpeg is blocked");
       expect(reason).toContain("agent:worker");
       expect(reason).toContain("HTTP 403");
-      expect(reason).toContain("api_key=[redacted]");
+      expect(reason).toContain("api_key=[redacted:api_key]");
       expect(reason).not.toContain("fixture-token");
     } finally {
       await server.stop(true);

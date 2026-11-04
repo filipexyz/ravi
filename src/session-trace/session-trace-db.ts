@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { projectFailureDiagnostic, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { getDb } from "../router/router-db.js";
 import { normalizeLimitOffsetPage, normalizePageLimit, type ListPage } from "../utils/pagination.js";
 import type {
@@ -416,9 +417,17 @@ function rowToSessionTurn(row: SessionTurnRow): SessionTurnRecord {
 export function recordSessionEvent(input: RecordSessionEventInput): SessionEventRecord {
   const db = getDb();
   const now = Date.now();
-  const payload = hasOwn(input, "payloadJson") ? redactJson(input.payloadJson) : null;
-  const preview = input.preview === undefined || input.preview === null ? null : redactText(input.preview).value;
-  const error = input.error === undefined || input.error === null ? null : redactText(input.error).value;
+  const failure = Boolean(input.error) || /(?:^|[._-])(?:error|failed|failure)(?:$|[._-])/.test(input.eventType);
+  const payload = hasOwn(input, "payloadJson")
+    ? redactJson(failure ? projectFailureDiagnostic(input.payloadJson) : input.payloadJson)
+    : null;
+  const preview =
+    input.preview === undefined || input.preview === null
+      ? null
+      : failure
+        ? redactDiagnosticText(input.preview)
+        : redactText(input.preview).value;
+  const error = input.error === undefined || input.error === null ? null : redactDiagnosticText(input.error);
   const identityProvenance =
     input.identityProvenance === undefined || input.identityProvenance === null
       ? null
@@ -493,14 +502,21 @@ export function recordSessionBlob(input: RecordSessionBlobInput): SessionTraceBl
   let storedContent: string;
 
   if (hasText) {
-    const result = redactText(input.contentText);
+    const failure = /(?:^|[._-])(?:error|failure|diagnostic)(?:$|[._-])/.test(kind);
+    const result = failure
+      ? {
+          value: redactDiagnosticText(input.contentText),
+          redacted: redactDiagnosticText(input.contentText) !== input.contentText,
+        }
+      : redactText(input.contentText);
     contentText = result.value;
     redacted = result.redacted;
     storedContent = contentText;
   } else {
-    const result = redactJson(input.contentJson);
+    const failure = /(?:^|[._-])(?:error|failure|diagnostic)(?:$|[._-])/.test(kind);
+    const result = redactJson(failure ? projectFailureDiagnostic(input.contentJson) : input.contentJson);
     contentJson = stableStringifyJson(result.value);
-    redacted = result.redacted;
+    redacted = failure || result.redacted;
     storedContent = contentJson;
   }
 
@@ -561,13 +577,13 @@ function normalizeTurn(input: UpsertSessionTurnInput, current: StoredTurn | null
     hasOwn(input, "error") && input.error !== undefined
       ? input.error === null
         ? null
-        : redactText(input.error).value
+        : redactDiagnosticText(input.error)
       : (current?.error ?? null);
   const abortReason =
     hasOwn(input, "abortReason") && input.abortReason !== undefined
       ? input.abortReason === null
         ? null
-        : redactText(input.abortReason).value
+        : redactDiagnosticText(input.abortReason)
       : (current?.abortReason ?? null);
 
   return {

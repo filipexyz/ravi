@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Command as CommanderCommand } from "commander";
@@ -29,7 +30,10 @@ class CloudFailureCommands {
   @CommandAccess({ kind: "read", resource: "cloud.fixture", action: "fail", risk: "low" })
   @Returns(z.object({ ok: z.literal(true) }))
   fail(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean) {
-    throw new CloudAuthError("RATE_LIMITED", "PRIVATE_PROVIDER_BODY_8K2R", { status: 429 });
+    throw new CloudAuthError("RATE_LIMITED", "Provider quota exhausted; token=TRANSPORT_TOKEN_798", {
+      status: 429,
+      details: { body: "PRIVATE_PROVIDER_BODY_8K2R" },
+    });
   }
 
   @Command({ name: "os-failure", description: "OS failure fixture" })
@@ -140,7 +144,7 @@ describe("global cloud failure contract", () => {
 
     expect(contract).toMatchObject({
       code: "CUSTOM_EXPECTED",
-      message: "HTTP 429 quota exhausted; token=[redacted]",
+      message: "HTTP 429 quota exhausted; token=[redacted:token]",
       exitCode: 1,
     });
     expect(JSON.stringify(contract)).not.toContain("HTTP 429 quota exhausted; token=fixture-token");
@@ -192,15 +196,38 @@ describe("global cloud failure contract", () => {
   });
 
   it("classifies an internal PERMISSION_DENIED contract as denied", () => {
-    expect(contractFailureOutcome(new ContractError("apps run", "PERMISSION_DENIED", "denied", 1))).toBe("denied");
+    expect(
+      contractFailureOutcome(
+        new ContractError("apps run", "PERMISSION_DENIED", "denied", 1, {
+          ...errorDiagnostic("denied", { operation: "apps run" }),
+          ...{},
+        }),
+      ),
+    ).toBe("denied");
   });
 
   it("rejects invalid or semantically incoherent exit taxonomy at the contract source", () => {
     const attempts = [
-      () => new ContractError("demo invalid", "CUSTOM_ERROR", "private", 9),
-      () => new ContractError("demo invalid", "PERMISSION_DENIED", "private", 3),
-      () => new ContractError("demo invalid", "WRITE_REQUIRES_EXECUTE", "private", 1),
-      () => new ContractError("demo invalid", "USAGE_ERROR", "private", 1),
+      () =>
+        new ContractError("demo invalid", "CUSTOM_ERROR", "private", 9, {
+          ...errorDiagnostic("private", { operation: "demo invalid" }),
+          ...{},
+        }),
+      () =>
+        new ContractError("demo invalid", "PERMISSION_DENIED", "private", 3, {
+          ...errorDiagnostic("private", { operation: "demo invalid" }),
+          ...{},
+        }),
+      () =>
+        new ContractError("demo invalid", "WRITE_REQUIRES_EXECUTE", "private", 1, {
+          ...errorDiagnostic("private", { operation: "demo invalid" }),
+          ...{},
+        }),
+      () =>
+        new ContractError("demo invalid", "USAGE_ERROR", "private", 1, {
+          ...errorDiagnostic("private", { operation: "demo invalid" }),
+          ...{},
+        }),
     ];
 
     for (const attempt of attempts) {
@@ -216,14 +243,17 @@ describe("global cloud failure contract", () => {
 
   it("sanitizes contract details before every transport can observe them", () => {
     const failure = new ContractError("media send", "WRITE_REQUIRES_EXECUTE", "confirmation required", 3, {
-      dryRun: true,
-      plan: {
-        caption: "PRIVATE_MESSAGE_8K2R",
-        filePath: "C:/sentinel/private/file-9P3X.txt",
-        key: "custom.password",
-        value: "SENTINEL_SECRET_7M4Q",
-        count: 2,
-        captionPresent: true,
+      ...errorDiagnostic("confirmation required", { operation: "media send" }),
+      ...{
+        dryRun: true,
+        plan: {
+          caption: "PRIVATE_MESSAGE_8K2R",
+          filePath: "C:/sentinel/private/file-9P3X.txt",
+          key: "custom.password",
+          value: "SENTINEL_SECRET_7M4Q",
+          count: 2,
+          captionPresent: true,
+        },
       },
     });
 
@@ -412,11 +442,14 @@ describe("global cloud failure contract", () => {
       error: {
         code: "RATE_LIMITED",
         message: "Console request was rate limited.",
+        cause: "Provider quota exhausted; token=[redacted:token]",
+        context: { operation: "cloud fixture fail", code: "RATE_LIMITED", status: 429 },
         retryable: true,
         status: 429,
       },
     });
     expect(JSON.stringify(cliEnvelope)).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
+    expect(JSON.stringify(cliEnvelope)).not.toContain("TRANSPORT_TOKEN_798");
   });
 
   it("preserves expected error causes with redacted secrets across CLI, tool and gateway", async () => {
@@ -473,7 +506,7 @@ describe("global cloud failure contract", () => {
       ...cliEnvelope,
       error: {
         ...cliEnvelope.error,
-        message: "HTTP 401: invalid key; api_key=[redacted]",
+        message: "HTTP 401: invalid key; api_key=[redacted:api_key]",
         requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       },
     });
@@ -482,7 +515,7 @@ describe("global cloud failure contract", () => {
       op: "cloud fixture expected",
       error: {
         code: "COMMAND_FAILED",
-        message: "HTTP 401: invalid key; api_key=[redacted]",
+        message: "HTTP 401: invalid key; api_key=[redacted:api_key]",
         retryable: false,
       },
     });
@@ -498,7 +531,7 @@ describe("global cloud failure contract", () => {
     );
     const envelope = JSON.parse(output.content[0]!.text);
     expect(envelope.error.cause).toBe(
-      "Cannot read audio\nCaused by: EACCES: permission denied, open /tmp/audio.wav; token=[redacted]",
+      "Cannot read audio\nCaused by: EACCES: permission denied, open /tmp/audio.wav; token=[redacted:token]",
     );
     expect(envelope.error.context).toMatchObject({
       operation: "cloud fixture os-failure",
@@ -588,7 +621,10 @@ describe("global cloud failure contract", () => {
   it("marks root contract failures after their semantic audit is emitted", async () => {
     const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
     process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
-    const failure = new ContractError("login", "AUTH_REQUIRED", "login required", 1);
+    const failure = new ContractError("login", "AUTH_REQUIRED", "login required", 1, {
+      ...errorDiagnostic("login required", { operation: "login" }),
+      ...{},
+    });
     try {
       await expect(
         runWithCliAudit({ group: "_root", name: "login", input: {} }, () => {

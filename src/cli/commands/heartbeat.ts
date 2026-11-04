@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Heartbeat Commands - Manage agent heartbeat scheduling
  */
@@ -143,11 +144,14 @@ function serializeHeartbeatAgent(agent: AgentConfig) {
 function failHeartbeatAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
   const candidates = getAllAgents().flatMap((agent) => [agent.id, agent.name ?? null]);
   contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-      suggestions: suggestSimilar(agentId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+        suggestions: suggestSimilar(agentId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Agent not found: ${agentId}`, { operation: op }),
   });
 }
 

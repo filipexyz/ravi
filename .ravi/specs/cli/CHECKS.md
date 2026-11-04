@@ -10,10 +10,29 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 ## Required checks
 
 - `bun test src/sdk/gateway/dispatcher.test.ts` verifies that a missing task
-  decision table produces a HTTP 500 with caller-visible cause plus a local stack, and that
-  restoring the schema DDL in a fixture recovers show and dry-run dispatch.
-- Unexpected-error diagnostics exclude sentinel context/bearer tokens and
-  arbitrary exception payloads while preserving the diagnostic cause.
+  decision table produces HTTP 500 with caller-visible normalized cause and
+  bounded diagnostic logging without a stack, and that restoring the schema
+  DDL in a fixture recovers show and dry-run dispatch.
+- Unexpected-error diagnostics apply the ingress field allowlist and shared
+  egress redactor. Sentinel credentials, arbitrary properties, headers,
+  cookies, query/body payloads and stacks are absent even in local/debug logs.
+- The user-failure constructor rejects missing cause/context, and its type
+  contract has no message-only overload. Catch paths preserve the actual
+  throwable; expected refusals provide their concrete precondition/origin.
+- The AST gate rejects new unannotated bindingless catches/rejection handlers
+  and unused bindings at recognized error surfaces. Tests prove that a new
+  violation fails, removing it passes, and baseline entries/counts cannot grow
+  or be reintroduced after removal. Generated inventory freshness is checked.
+- The table-driven corpus has 13 rows and nine required sinks: CLI, tool,
+  gateway, relay, gateway log, trace event, trace blob, TypeScript SDK and
+  mocked Slack `chat.postMessage`. Every row checks all sinks for exact
+  expected cause/code and absence of each sentinel. Missing a sink fails the
+  harness. The vectors include query key, signed URL, cookie, Authorization,
+  a real APIError with body/PII, password tail, escaped-quote password tail,
+  DSN, token-bearing path, arbitrary properties, high-entropy base64, Omni
+  media failure and an exact original-cause positive.
+- Swift/Dart tests verify diagnostic envelope typing/decoding; the nine-sink
+  corpus exercises TypeScript SDK redaction, not native redactor equivalence.
 
 - Every migrated JSON failure has one canonical envelope and the correct
   operation path.
@@ -113,6 +132,10 @@ Run these as independent groups so a failure identifies its contract layer.
 ### Envelope, exit taxonomy and transport parity
 
 ```bash
+bun test src/cli/error-egress-corpus.test.ts
+bun test src/utils/error-diagnostic.test.ts
+bun test scripts/error-cause-scan.test.ts
+bun scripts/error-cause-scan.ts
 bun test src/cli/commands/usage-exit.smoke.test.ts
 bun test src/cli/agent-contract.test.ts
 bun test src/cli/transport-contract.test.ts
@@ -191,8 +214,8 @@ until the focused groups and the four validation steps (build, typecheck, test
 and quality gate) are green for the exact current head. Compare failures by
 test identity and platform evidence, not only totals.
 
-- `bun test src/utils/error-diagnostic.test.ts` proves idempotent secret-value
-  redaction, preservation of paths/cause chains, and projection of metadata.
+- `bun test src/utils/error-diagnostic.test.ts` proves idempotent finite-pattern
+  redaction, safe path/cause-chain preservation, and allowlisted metadata.
 - `bun test src/cli/transport-contract.test.ts` proves an OS exception reaches
   exported tool content and the gateway with its original cause.
 - `bun test src/cli/remote-gateway.test.ts src/sdk/gateway/error-contract.test.ts`

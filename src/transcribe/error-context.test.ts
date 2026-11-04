@@ -6,6 +6,7 @@ let providerFailure: unknown;
 let chunkFailure: unknown;
 let duration = 10;
 let requestCalls = 0;
+const ActualAPIError = (await import("openai")).APIError;
 
 mock.module("openai", () => ({
   default: class {
@@ -50,6 +51,45 @@ afterEach(() => {
 afterAll(() => mock.restore());
 
 describe("transcription provider error context", () => {
+  it("does_not_relay_api_error_body_or_pii", async () => {
+    providerFailure = new ActualAPIError(
+      400,
+      {
+        code: "invalid_audio",
+        debug: { transcript: "PERSONAL_AUDIO_FIXTURE", headers: { "x-custom-auth": "OPAQUE_HEADER_FIXTURE" } },
+      },
+      undefined,
+      new Headers(),
+    );
+    let caught: unknown;
+    try {
+      await transcribeAudio(Buffer.from("fixture"), "audio/mpeg");
+    } catch (error) {
+      caught = error;
+    }
+    const diagnostic = errorDiagnostic(caught);
+    expect(diagnostic.cause).toBe("HTTP 400: invalid_audio: [redacted:provider.body]");
+    expect(diagnostic.context).toMatchObject({
+      provider: "openai",
+      model: "whisper-1",
+      status: 400,
+      code: "invalid_audio",
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("PERSONAL_AUDIO_FIXTURE");
+    expect(JSON.stringify(diagnostic)).not.toContain("OPAQUE_HEADER_FIXTURE");
+  });
+
+  it("redacts a known provider credential echoed without a field label", async () => {
+    providerFailure = new Error("Provider rejected synthetic-openai-key");
+    let caught: unknown;
+    try {
+      await transcribeAudio(Buffer.from("fixture"), "audio/mpeg");
+    } catch (error) {
+      caught = error;
+    }
+    expect(errorDiagnostic(caught).cause).toBe("Provider rejected [redacted:credential]");
+  });
+
   it.each([
     { provider: "openai", model: "whisper-1", status: 429 },
     { provider: "groq", model: "whisper-large-v3-turbo", status: 503 },
@@ -70,7 +110,7 @@ describe("transcription provider error context", () => {
     expect((caught as Error).cause).toBe(providerFailure);
     const diagnostic = errorDiagnostic(caught, { operation: "transcribe file", file: "/tmp/fixture.mp3" });
     expect(diagnostic.cause).toContain("audio quota exceeded");
-    expect(diagnostic.cause).toContain("api_key=[redacted]");
+    expect(diagnostic.cause).toContain("api_key=[redacted:api_key]");
     expect(diagnostic.context).toMatchObject({
       operation: "transcribe file",
       file: "/tmp/fixture.mp3",

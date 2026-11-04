@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -785,12 +786,15 @@ export async function runUpdate(options: RaviUpdateOptions = {}): Promise<RaviUp
   } catch (error) {
     if (!(error instanceof UpdateFailure)) throw error;
     contractFail("ravi update", error.code, error.message, {
-      asJson: options.json,
-      exitCode: error.exitCode,
-      details: {
-        retryable: error.code === "REGISTRY_UNAVAILABLE" || error.code === "UPDATE_FAILED",
-        suggestedAction: "Verify the requested release and retry.",
+      ...{
+        asJson: options.json,
+        exitCode: error.exitCode,
+        details: {
+          retryable: error.code === "REGISTRY_UNAVAILABLE" || error.code === "UPDATE_FAILED",
+          suggestedAction: "Verify the requested release and retry.",
+        },
       },
+      diagnostic: errorDiagnostic(error, { operation: "ravi update" }),
     });
   }
 }

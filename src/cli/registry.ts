@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * CLI Registry - Bridges decorators to Commander.js
  *
@@ -437,7 +438,10 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       "Remote gateway mode requires a runtime context key.",
       1,
       {
-        suggestedAction: "Set RAVI_CONTEXT_KEY or add a local Ravi context credential issued by the target gateway",
+        ...errorDiagnostic("Remote gateway mode requires a runtime context key.", { operation: op }),
+        ...{
+          suggestedAction: "Set RAVI_CONTEXT_KEY or add a local Ravi context credential issued by the target gateway",
+        },
       },
     );
     renderContractError(error, input.input.json === true);
@@ -455,10 +459,13 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       cwd: process.cwd(),
       timeoutMs: input.timeoutMs,
     });
-  } catch {
+  } catch (caughtError) {
     const error = new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {
-      retryable: true,
-      suggestedAction: "Check gateway availability and retry",
+      ...errorDiagnostic(caughtError, { operation: op }),
+      ...{
+        retryable: true,
+        suggestedAction: "Check gateway availability and retry",
+      },
     });
     renderContractError(error, input.input.json === true);
     process.exit(error.exitCode);

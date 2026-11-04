@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { stripVTControlCharacters } from "node:util";
 import {
   CLOUD_AUTH_ERROR_CODES,
@@ -42,14 +43,17 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
         ? CONTRACT_EXIT_POLICY
         : CONTRACT_EXIT_ERROR,
     {
-      retryable: isRetryableCloudAuthError(error),
-      ...(error.status !== undefined ? { status: error.status } : {}),
-      ...(issues ? { issues } : {}),
-      suggestedAction: suggestedAction(error.code),
-      ...(domainSetup ? { domainSetup } : {}),
-      ...(connectorTurn?.details ?? {}),
-      ...(turnLink?.details ?? {}),
-      ...(turnRefusal?.details ?? {}),
+      ...errorDiagnostic(error, { operation: op }),
+      ...{
+        retryable: isRetryableCloudAuthError(error),
+        ...(error.status !== undefined ? { status: error.status } : {}),
+        ...(issues ? { issues } : {}),
+        suggestedAction: suggestedAction(error.code),
+        ...(domainSetup ? { domainSetup } : {}),
+        ...(connectorTurn?.details ?? {}),
+        ...(turnLink?.details ?? {}),
+        ...(turnRefusal?.details ?? {}),
+      },
     },
   );
 }

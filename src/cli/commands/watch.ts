@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import {
@@ -60,11 +61,14 @@ function failWatchNotFound(op: string, watchId: string, asJson?: boolean): never
     watch.resourceRef,
   ]);
   contractFail(op, "WATCH_NOT_FOUND", `Watch not found: ${watchId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the watch id (see suggestions; list with: ravi watch list --json)",
-      suggestions: suggestSimilar(watchId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the watch id (see suggestions; list with: ravi watch list --json)",
+        suggestions: suggestSimilar(watchId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Watch not found: ${watchId}`, { operation: op }),
   });
 }
 
@@ -458,11 +462,14 @@ export class WatchCommands {
       );
     }
     contractFail("watch run", "LOCAL_RUNNER_NOT_IMPLEMENTED", "Local watch polling runner is not implemented.", {
-      asJson,
-      details: {
-        retryable: false,
-        suggestedAction: "Run the watch through a supported Console placement or wait for local runner support",
+      ...{
+        asJson,
+        details: {
+          retryable: false,
+          suggestedAction: "Run the watch through a supported Console placement or wait for local runner support",
+        },
       },
+      diagnostic: errorDiagnostic("Local watch polling runner is not implemented.", { operation: "watch run" }),
     });
   }
 }
@@ -554,37 +561,49 @@ async function runWatchCommand<T>(
     const expected = expectedErrorToContractError(op, error);
     if (expected) {
       contractFail(op, expected.code, expected.message, {
-        asJson,
-        exitCode: expected.exitCode,
-        details: expected.details,
+        ...{
+          asJson,
+          exitCode: expected.exitCode,
+          details: expected.details,
+        },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
     if (isWatchApiError(error)) {
       const details = safeWatchErrorDetails(error.details);
       const hint = actionableHint({ code: error.code, details });
       contractFail(op, error.code, `Watch provider request failed (${error.code}).`, {
-        asJson,
-        details: {
-          ...details,
-          retryable: isRetryableWatchError(error.code),
-          suggestedAction: hint ?? "Inspect the watch provider configuration and retry",
+        ...{
+          asJson,
+          details: {
+            ...details,
+            retryable: isRetryableWatchError(error.code),
+            suggestedAction: hint ?? "Inspect the watch provider configuration and retry",
+          },
         },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
     const sqliteCapacity = sqliteCapacityToContractError(op, error);
     if (sqliteCapacity) {
       contractFail(op, sqliteCapacity.code, sqliteCapacity.message, {
-        asJson,
-        exitCode: sqliteCapacity.exitCode,
-        details: sqliteCapacity.details,
+        ...{
+          asJson,
+          exitCode: sqliteCapacity.exitCode,
+          details: sqliteCapacity.details,
+        },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
     contractFail(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", {
-      asJson,
-      details: {
-        retryable: false,
-        suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
+      ...{
+        asJson,
+        details: {
+          retryable: false,
+          suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
+        },
       },
+      diagnostic: errorDiagnostic(error, { operation: op }),
     });
   }
 }

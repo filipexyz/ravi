@@ -11,6 +11,7 @@ import {
   getSessionTurn,
   listRecentSessionEventsByType,
   recordSessionEvent,
+  recordSessionBlob,
   upsertSessionTurn,
 } from "./session-trace-db.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
@@ -37,6 +38,42 @@ describe("session trace query", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("persists only normalized failure diagnostics in trace events and artifacts", () => {
+    const cause = "provider returned 401 on POST /v1/audio; cookie=session=fixture-cookie; private-tail";
+    const projectedCause = "provider returned 401 on POST /v1/audio; cookie=[redacted:cookie]";
+    const failure = {
+      code: "PROVIDER_DENIED",
+      message: "Upload failed",
+      cause,
+      context: { operation: "media send", provider: "omni", status: 401 },
+      body: { transcript: "PRIVATE_BODY" },
+      stack: "PRIVATE_STACK",
+      extra: "PRIVATE_FIELD",
+    };
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      eventType: "tool.error",
+      eventGroup: "tool",
+      payloadJson: failure,
+      error: cause,
+      preview: cause,
+    });
+    const blob = recordSessionBlob({ kind: "tool.error", contentJson: failure });
+    const stored = querySessionTrace({ session: "trace-limit", limit: 10 }).events.find((item) => item.id === event.id);
+    expect(stored?.payloadJson).toEqual({
+      code: "PROVIDER_DENIED",
+      message: "Upload failed",
+      cause: projectedCause,
+      context: failure.context,
+    });
+    expect(stored?.error).toBe(projectedCause);
+    expect(stored?.preview).toBe(projectedCause);
+    expect(getSessionTraceBlob(blob.sha256)?.contentJson).toEqual(stored?.payloadJson);
+    for (const secret of ["fixture-cookie", "private-tail", "PRIVATE_BODY", "PRIVATE_STACK", "PRIVATE_FIELD"])
+      expect(JSON.stringify({ stored, blob })).not.toContain(secret);
   });
 
   it("applies stream suppression before the bounded timeline limit", () => {

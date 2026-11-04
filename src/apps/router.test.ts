@@ -7,7 +7,9 @@ import { runWithContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { createRuntimeContext, getContextLineage, resolveRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
+import { raviAppErrorToContractError } from "./error-contract.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
+import { RaviAppError } from "./types.js";
 
 declare const Bun: {
   serve(options: { hostname: string; port: number; fetch(request: Request): Response | Promise<Response> }): {
@@ -432,6 +434,32 @@ afterEach(async () => {
 });
 
 describe("Ravi app router", () => {
+  it("retains the original app exception and file cause in the public failure contract", () => {
+    const original = Object.assign(
+      new RaviAppError("not_found", "App manifest is missing from local discovery.", [
+        { kind: "app", detail: "PRIVATE_APP_EVIDENCE_798" },
+      ]),
+      {
+        cause: Object.assign(
+          new Error("ENOENT: no such file or directory, open /tmp/ravi.app.json; token=APP_TOKEN_798"),
+          { syscall: "open", path: "/tmp/ravi.app.json" },
+        ),
+      },
+    );
+    const envelope = raviAppErrorToContractError("apps show", original).envelope();
+
+    expect(envelope.error).toMatchObject({
+      code: "not_found",
+      message: "Ravi app was not found.",
+      cause:
+        "App manifest is missing from local discovery.\nCaused by: ENOENT: no such file or directory, open /tmp/ravi.app.json; token=[redacted:token]",
+      context: { operation: "apps show", code: "not_found", status: 404, syscall: "open", file: "/tmp/ravi.app.json" },
+    });
+    expect(envelope.error).not.toHaveProperty("evidence");
+    expect(JSON.stringify(envelope)).not.toContain("PRIVATE_APP_EVIDENCE_798");
+    expect(JSON.stringify(envelope)).not.toContain("APP_TOKEN_798");
+  });
+
   it("runs builtin app operations through the canonical app route", async () => {
     const root = makeRepo();
     writeManifest(root, "khal-tasks", manifest("khal-tasks"));

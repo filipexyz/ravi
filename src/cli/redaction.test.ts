@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import { ContractError } from "./agent-contract.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
@@ -175,21 +176,25 @@ describe("public contract redaction", () => {
     });
   });
 
-  it("applies the same aliases to ContractError details", () => {
+  it("drops non-allowlisted ContractError details while preserving normalized diagnosis", () => {
     const error = new ContractError("demo run", "COMMAND_FAILED", "Command failed.", 1, {
-      cwd: "C:/private/customer/project",
-      outputDir: "C:/private/customer/output",
-      endpoint: "https://example.com/SENTINEL_SECRET_7M4Q/result?token=private",
-      credential: "SENTINEL_SECRET_7M4Q",
-      credentials: "SENTINEL_SECRET_7M4Q",
+      ...errorDiagnostic("Provider rejected the command; token=CONTRACT_SECRET_798", { operation: "demo run" }),
+      ...{
+        cwd: "C:/private/customer/project",
+        outputDir: "C:/private/customer/output",
+        endpoint: "https://example.com/SENTINEL_SECRET_7M4Q/result?token=private",
+        credential: "SENTINEL_SECRET_7M4Q",
+        credentials: "SENTINEL_SECRET_7M4Q",
+      },
     });
 
     expect(error.details).toEqual({
-      cwd: "[REDACTED:path]",
-      outputDir: "[REDACTED:path]",
-      endpoint: "https://example.com",
-      credential: "[REDACTED]",
-      credentials: "[REDACTED]",
+      cause: "Provider rejected the command; token=[redacted:token]",
+      context: { operation: "demo run" },
     });
+    const envelope = JSON.stringify(error.envelope());
+    expect(envelope).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(envelope).not.toContain("CONTRACT_SECRET_798");
+    expect(envelope).not.toContain("C:/private/customer");
   });
 });

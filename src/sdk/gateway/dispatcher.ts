@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Generic dispatcher for the SDK gateway.
  *
@@ -370,8 +371,11 @@ async function usageErrorResult(
 ): Promise<DispatchResult> {
   const op = commandOperation(group, cmd.command);
   const error = new ContractError(op, "USAGE_ERROR", `Invalid input for ${op}.`, CONTRACT_EXIT_USAGE, {
-    suggestedAction: `Correct the request body and retry ${op}`,
-    issues: redactValidationIssues(cmd, issues),
+    ...errorDiagnostic(`Invalid input for ${op}.`, { operation: op }),
+    ...{
+      suggestedAction: `Correct the request body and retry ${op}`,
+      issues: redactValidationIssues(cmd, issues),
+    },
   });
   const outcome = contractFailureOutcome(error);
   const audit = buildAuditEvent(cmd, tool, {}, outcome, startedAt, lineage, error.exitCode, error.code);

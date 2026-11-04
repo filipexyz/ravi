@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Group Commands - WhatsApp group management
  */
@@ -377,11 +378,16 @@ function validateParticipantsAreContacts(op: string, participants: string[], asJ
   ).slice(0, 3);
 
   contractFail(op, "CONTACT_NOT_FOUND", `Unknown participant(s): ${unknown.join(", ")}. Verify against contacts.`, {
-    asJson,
-    details: {
-      suggestedAction: "Only known contacts can join groups (list with: ravi contacts list --json)",
-      suggestions: suggestionCandidates,
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Only known contacts can join groups (list with: ravi contacts list --json)",
+        suggestions: suggestionCandidates,
+      },
     },
+    diagnostic: errorDiagnostic(`Unknown participant(s): ${unknown.join(", ")}. Verify against contacts.`, {
+      operation: op,
+    }),
   });
 }
 
@@ -549,14 +555,17 @@ async function getGroupInfoViaOmni(
     // fetched for resolution above (omni REST, or the local chat model when
     // the bridge is down) — no extra provider call is made for suggestions.
     contractFail(contract.op, "GROUP_NOT_FOUND", `Group not found via Omni REST: ${groupId}`, {
-      asJson: contract.asJson,
-      details: {
-        suggestedAction: "Check the group id/JID (list with: ravi whatsapp group list --json)",
-        suggestions: suggestSimilar(
-          groupId,
-          list.groups.flatMap((item) => [item.id, item.subject]),
-        ),
+      ...{
+        asJson: contract.asJson,
+        details: {
+          suggestedAction: "Check the group id/JID (list with: ravi whatsapp group list --json)",
+          suggestions: suggestSimilar(
+            groupId,
+            list.groups.flatMap((item) => [item.id, item.subject]),
+          ),
+        },
       },
+      diagnostic: errorDiagnostic(`Group not found via Omni REST: ${groupId}`, { operation: contract.op }),
     });
   }
 

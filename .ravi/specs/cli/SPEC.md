@@ -62,6 +62,8 @@ The canonical failure value is a `ContractError` and its envelope:
   "error": {
     "code": "STABLE_MACHINE_CODE",
     "message": "Human-readable explanation",
+    "cause": "Original failure reason after diagnostic normalization",
+    "context": { "operation": "<group> <operation>", "code": "PROVIDER_OR_OS_CODE" },
     "retryable": false,
     "suggestedAction": "Concrete next action"
   }
@@ -91,28 +93,83 @@ The canonical failure value is a `ContractError` and its envelope:
   `--allow-runtime-mismatch`) MUST reach the envelope. This fallback is not a
   substitute for a domain-specific code or `USAGE_ERROR` when the handler can
   classify the failure more precisely.
+- `ContractError` is the shared user-failure constructor. It requires an
+  explicit diagnostic `cause` and typed `context`; there is no message-only
+  overload. `contractFail` requires its `diagnostic` argument. A caught
+  exception MUST supply the actual throwable to the diagnostic projection;
+  an expected refusal without a throwable MUST state the concrete failed
+  precondition and its operation/origin.
 - An unexpected exception is normalized as `UNHANDLED_ERROR`, exit `1`, with
-  the real operation, a failure headline and an explicit `cause`. The cause
-  MUST retain the original exception/provider/OS message and nested cause
-  chain. Only secret values are replaced by `[redacted]`; the presence of a
-  secret MUST NOT discard the rest of the diagnosis.
-- Diagnostic `context` MUST preserve available `operation`, `provider`,
-  `model`, `status`, `file`, `code` and `syscall`. Paths and OS error codes are
-  diagnostic information, not credentials. Context uses this explicit
-  projection; arbitrary request bodies, headers, exception properties and
-  stacks MUST NOT be copied into the envelope.
-- CLI text, exported tools, gateway and remote relay MUST retain `cause` and
-  diagnostic context. Human text prints the cause and context after the
-  headline, even without validation issues. Permission denial MUST say which
-  operation/principal/policy refused it whenever the source supplies them.
-- The gateway retains local stack diagnostics, correlation via requestId and
-  rate limiting. This supplements the caller's cause; it MUST NOT replace it
-  with an instruction to look in private logs. Audit remains a separate,
+  the real operation, a stable headline and its original failure reason.
+  Internal throws retain the original throwable and nested cause chain.
+  Integration wrappers may attach typed context and known credential values
+  for later redaction; they MUST NOT replace the throwable with a sanitized
+  string before the output boundary.
+- Diagnostic ingress is an allowlist: only normalized `code`, `message`,
+  `cause`, and typed `context` may cross from an exception/provider object.
+  Context admits `status`, `provider`, `model`, `operation`, typed `actor`
+  (`type`, `id`), `file`, `syscall`, and provider/OS `code`. Headers, cookies,
+  query objects, bodies, arbitrary properties and stack are excluded by
+  default. Provider payload normalization may extract declared reason/code
+  fields; it MUST NOT serialize the rest of the payload, including body/PII
+  already embedded in an SDK error message. Domain-owned envelope details
+  such as validation issues and dry-run plans retain their separate typed
+  projections; they do not widen the diagnostic allowlist.
+- Allowed text is still untrusted. The single versioned redactor in
+  `packages/ravi-os-sdk/src/diagnostic-redactor.ts` runs at diagnostic egress:
+  tool/CLI/gateway envelopes, remote relay, logs, trace events/artifacts and
+  the TypeScript SDK envelope. Its finite patterns cover URL/DSN userinfo,
+  URL queries/fragments, sensitive query assignments (`key`, `token`, `sig`,
+  `secret`, `password`), bearer/API-key credentials, cookies, password tails,
+  key-shaped strings and long high-entropy encoded values. Structured or
+  opaque embedded payloads are projected or replaced with a field marker.
+  Markers such as `[redacted:url-query]` identify the removed field; the
+  remaining diagnostic reason and original stable code MUST stay readable.
+  A new unrecognized credential encoding requires a corpus row and a shared
+  redactor update, not a claim that a finite pattern set detects every secret.
+- CLI text, exported tools, gateway, remote relay and client error envelopes
+  MUST retain normalized cause/context. Human text prints these after the
+  headline. Permission denial retains its supplied operation and typed actor.
+  An HTTP status, including 422 or 500, MUST NOT replace the failure reason.
+- Logger output is an egress sink, including local/debug output. Raw stacks,
+  headers, bodies and arbitrary exception properties MUST NOT be logged or
+  persisted in diagnostic trace rows/artifacts. Correlation by request ID,
+  bounded context and rate limiting remain available; private logs are not a
+  substitute for the caller-visible reason. Audit remains a separate,
   content-minimized projection.
+- TypeScript shares the versioned redactor. Swift and Dart preserve the same
+  typed diagnostic envelope received from the server; their shape/decoding
+  contract is not evidence of an identical native redaction implementation.
 - A return-shape violation is `RETURN_SHAPE_ERROR`, exit `1`, outcome `failed`
   and MAY retain HTTP `500`. A non-success binary response is normalized to a
   safe stable code before it reaches SDK callers or audit; provider response
   bodies are not forwarded as contract details.
+
+## Mechanical regression gate
+
+`scripts/error-cause-scan.ts` scans the non-test `src` AST and blocks unannotated
+catch clauses without bindings, rejection callbacks without bindings, and
+unused catch bindings when the block emits a recognized failure surface.
+It also rejects logging a caught binding while constructing an unrelated failure,
+and manufacturing a recognized failure envelope outside the shared constructor.
+Intentional non-error fallbacks require `// no-cause: <concrete reason>`.
+
+Existing debt is enumerated in `scripts/error-cause-baseline.json` against the
+frozen baseline. Entries/counts can only decrease; new entries, increased
+counts, and debt reintroduced after removal fail CI. The scan generates
+`design/error-cause-inventory.md` with directory counts and site states
+(`no-cause`, `fixed`, `triaged-follow-up`). Do not maintain a parallel handwritten
+follow-up list. A `fixed` static site means the configured AST rules pass; it
+does not establish end-to-end propagation through dynamic or aliased code.
+
+`src/cli/error-egress-corpus.test.ts` supplies that complementary behavioral
+proof for 13 corpus rows across nine required sinks: process CLI envelope,
+exported tool, gateway response, remote relay, gateway log, trace event, trace
+blob, TypeScript SDK envelope, and the Slack `chat.postMessage` payload captured
+by a mock. Each row asserts exact expected cause/code and absence of every
+sentinel at every sink. The harness rejects a missing required sink. This is
+finite corpus coverage, not a claim that every application failure boundary or
+live chat transport has been exercised.
 
 ## Transport equivalence
 
@@ -144,11 +201,13 @@ details and policy outcome:
   remote contract body only when `success`, `op`, `exitCode`, `outcome` and the
   error shape are coherent; partial, mismatched or legacy failures are
   normalized to the same safe envelope. Invalid gateway configuration is a
-  usage error (`REMOTE_GATEWAY_INVALID`, exit `2`). Remote failure diagnostics MUST redact credential values; provider/OS cause
-  text and actionable paths MUST survive the relay.
+  usage error (`REMOTE_GATEWAY_INVALID`, exit `2`). Remote failure diagnostics
+  use the same ingress allowlist and egress redactor; safe provider/OS reason
+  text and actionable path components survive the relay.
 - Remote details MUST be projected through a local allowlist instead of copied
   blindly. `cause` and diagnostic `context` are explicit members of that
-  projection and use secret-only redaction, separately from dry-run plans. `suggestions` may preserve only bounded stable identifiers. A
+  projection and use the shared egress redactor, separately from dry-run plans.
+  `suggestions` may preserve only bounded stable identifiers. A
   remote `plan` may preserve typed booleans/numbers and identifier/ref/enum
   strings that match restricted grammars; free text, paths, URLs,
   token-shaped values, commands and arbitrary objects are discarded. Flags

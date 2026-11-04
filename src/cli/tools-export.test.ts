@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { AppsCommands } from "./commands/apps.js";
@@ -72,9 +73,12 @@ class ContractToolCommands {
   @CommandAccess({ kind: "read", resource: "contract", action: "emitted", risk: "low" })
   emitted() {
     contractFail("contract emitted", "USAGE_ERROR", "invalid tool input", {
-      asJson: true,
-      exitCode: 2,
-      details: { acceptedFlags: ["--json"] },
+      ...{
+        asJson: true,
+        exitCode: 2,
+        details: { acceptedFlags: ["--json"] },
+      },
+      diagnostic: errorDiagnostic("invalid tool input", { operation: "contract emitted" }),
     });
   }
 
@@ -82,7 +86,10 @@ class ContractToolCommands {
   @CommandAccess({ kind: "read", resource: "contract", action: "silent", risk: "low" })
   silent() {
     throw new ContractError("contract silent", "WRITE_REQUIRES_EXECUTE", "confirmation required", 3, {
-      dryRun: true,
+      ...errorDiagnostic("confirmation required", { operation: "contract silent" }),
+      ...{
+        dryRun: true,
+      },
     });
   }
 
@@ -295,7 +302,7 @@ describe("tools export contract errors", () => {
 
     expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
     const text = result.content[0]?.text ?? "{}";
-    expect(JSON.parse(text).error.cause).toBe("HTTP 503: transcription service unavailable; token=[redacted]");
+    expect(JSON.parse(text).error.cause).toBe("HTTP 503: transcription service unavailable; token=[redacted:token]");
     expect(text).not.toContain("fixture-token");
     expect(JSON.parse(text)).toMatchObject({
       success: false,
@@ -322,7 +329,7 @@ describe("tools export contract errors", () => {
     expect(JSON.parse(text)).toMatchObject({
       success: false,
       op: "contract legacy",
-      error: { code: "COMMAND_FAILED", message: "Audio format is invalid; api_key=[redacted]" },
+      error: { code: "COMMAND_FAILED", message: "Audio format is invalid; api_key=[redacted:api_key]" },
     });
     expect(text).not.toContain("Audio format is invalid; api_key=fixture-token");
   });

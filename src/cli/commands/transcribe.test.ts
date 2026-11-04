@@ -141,20 +141,25 @@ describe("transcribe file contract", () => {
   });
 
   it("exits 1 with FILE_NOT_FOUND when the audio file does not exist", async () => {
-    const missingPath = "/tmp/ravi-missing-audio-fixture.mp3";
-    const error = await expectContractError(
-      () => new TranscribeCommands().file(missingPath, "pt", true),
-      "FILE_NOT_FOUND",
-      1,
-    );
+    const missingDir = mkdtempSync(join(tmpdir(), "ravi-missing-audio-test-"));
+    const missingPath = join(missingDir, "missing.mp3");
+    try {
+      const error = await expectContractError(
+        () => new TranscribeCommands().file(missingPath, "pt", true),
+        "FILE_NOT_FOUND",
+        1,
+      );
 
-    expect(error.message).toBe("Audio file was not found.");
-    expect(error.details.suggestedAction).toContain("audio file path");
-    expect(error.envelope().error).toMatchObject({
-      cause: "The requested audio file does not exist.",
-      context: { operation: "transcribe file", file: resolve(missingPath), code: "ENOENT" },
-    });
-    expect(transcribeCalls).toHaveLength(0);
+      expect(error.message).toBe("Audio file was not found.");
+      expect(error.details.suggestedAction).toContain("audio file path");
+      expect(error.envelope().error).toMatchObject({
+        cause: "The requested audio file does not exist.",
+        context: { operation: "transcribe file", file: resolve(missingPath), code: "ENOENT" },
+      });
+      expect(transcribeCalls).toHaveLength(0);
+    } finally {
+      rmSync(missingDir, { recursive: true, force: true });
+    }
   });
 
   it.each([true, false])("preserves the provider cause and context in final output (json=%s)", async (asJson) => {
@@ -180,7 +185,7 @@ describe("transcribe file contract", () => {
       expect(error.exitCode).toBe(1);
       expect(error.envelope().error).toMatchObject({
         retryable: true,
-        cause: "HTTP 429: audio quota exceeded; api_key=[redacted]",
+        cause: "HTTP 429: audio quota exceeded; api_key=[redacted:api_key]",
         context: {
           operation: "transcribe file",
           file: filePath,
@@ -191,7 +196,7 @@ describe("transcribe file contract", () => {
         },
       });
       expect(output).toContain("HTTP 429: audio quota exceeded");
-      expect(output).toContain("api_key=[redacted]");
+      expect(output).toContain("api_key=[redacted:api_key]");
       expect(output).toContain("openai");
       expect(output).toContain(filePath);
       expect(output).not.toContain("synthetic-credential");

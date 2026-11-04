@@ -90,17 +90,12 @@ describe("session trace db", () => {
     expect(first.id).not.toBe(second.id);
     expect(first.seq).toBe(1);
     expect(second.seq).toBe(2);
-    expect(first.preview).toBe(`Authorization: Bearer [REDACTED]`);
-    expect(first.error).toBe(`OPENAI_API_KEY=[REDACTED]`);
+    expect(first.preview).toBe(`Authorization: [redacted:authorization]`);
+    expect(first.error).toBe(`OPENAI_API_KEY=[redacted:openai_api_key]`);
     expect(first.payloadJson).toEqual({
-      env: {
-        OPENAI_API_KEY: "[REDACTED]",
-        RAVI_CONTEXT_KEY: "[REDACTED]",
-        RAVI_STATE_DIR: "/tmp/ravi-test",
-      },
-      headers: {
-        authorization: "[REDACTED]",
-      },
+      message: "Error object has no message or cause",
+      cause: "Error object has no message or cause",
+      context: {},
     });
 
     expect(listSessionEventsForTest("agent:main:main")).toHaveLength(2);

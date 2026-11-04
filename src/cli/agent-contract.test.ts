@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import {
   ContractError,
@@ -9,11 +10,73 @@ import {
 } from "./agent-contract.js";
 import { CliExpectedError } from "./expected-error.js";
 
+describe("ContractError mandatory diagnostic", () => {
+  it("rejects a literal message without diagnostic at compile time and runtime", () => {
+    expect(() => {
+      // @ts-expect-error A user-facing failure must supply cause and context.
+      return new ContractError("media send", "MEDIA_SEND_FAILED", "Media delivery failed.", 1);
+    }).toThrow("A user failure requires an explicit cause and diagnostic context.");
+  });
+
+  it("requires both cause and context at compile time and runtime", () => {
+    expect(() => {
+      // @ts-expect-error A cause without diagnostic context is incomplete.
+      return new ContractError("media send", "MEDIA_SEND_FAILED", "Media delivery failed.", 1, {
+        cause: "provider refused media",
+      });
+    }).toThrow("A user failure requires an explicit cause and diagnostic context.");
+    expect(() => {
+      // @ts-expect-error Diagnostic context cannot replace the original cause.
+      return new ContractError("media send", "MEDIA_SEND_FAILED", "Media delivery failed.", 1, {
+        context: { operation: "media send" },
+      });
+    }).toThrow("A user failure requires an explicit cause and diagnostic context.");
+  });
+
+  it("retains the exact cause and typed context supplied to the constructor", () => {
+    const original = Object.assign(
+      new Error("Cannot read audio", {
+        cause: new Error("EACCES: permission denied, open /tmp/audio.wav"),
+      }),
+      { code: "EACCES", syscall: "open", path: "/tmp/audio.wav", status: 403 },
+    );
+    const diagnostic = errorDiagnostic(original, { operation: "transcribe file", provider: "fixture" });
+    const failure = new ContractError(
+      "transcribe file",
+      "TRANSCRIPTION_FAILED",
+      "Audio transcription failed.",
+      1,
+      diagnostic,
+    );
+    expect(failure.envelope().error).toEqual({
+      code: "TRANSCRIPTION_FAILED",
+      message: "Audio transcription failed.",
+      retryable: false,
+      cause: "Cannot read audio\nCaused by: EACCES: permission denied, open /tmp/audio.wav",
+      context: {
+        operation: "transcribe file",
+        provider: "fixture",
+        code: "EACCES",
+        syscall: "open",
+        file: "/tmp/audio.wav",
+        status: 403,
+      },
+    });
+    expect(failure.details.cause).toBe(diagnostic.cause);
+    expect(failure.details.context).toEqual(diagnostic.context);
+  });
+});
+
 describe("publicContractMessage", () => {
   it("preserves a sanitized COMMAND_FAILED cause instead of replacing it", () => {
     const cause = "CLI/runtime mismatch detected. Pass --allow-runtime-mismatch if you really mean it.";
     expect(publicContractMessage("COMMAND_FAILED", cause)).toBe(cause);
-    expect(new ContractError("instances routes add", "COMMAND_FAILED", cause, 1).envelope().error.message).toBe(cause);
+    expect(
+      new ContractError("instances routes add", "COMMAND_FAILED", cause, 1, {
+        ...errorDiagnostic(cause, { operation: "instances routes add" }),
+        ...{},
+      }).envelope().error.message,
+    ).toBe(cause);
   });
 
   it("uses the generic headline only when the cause is empty", () => {
@@ -25,9 +88,11 @@ describe("publicContractMessage", () => {
 
   it("redacts only credential values and preserves non-secret diagnostics", () => {
     expect(publicContractMessage("COMMAND_FAILED", "HTTP 429: quota exhausted; api_key=opaque")).toBe(
-      "HTTP 429: quota exhausted; api_key=[redacted]",
+      "HTTP 429: quota exhausted; api_key=[redacted:api_key]",
     );
-    expect(publicContractMessage("COMMAND_FAILED", "leak sk-ant-abcdefghijklmnopqrstuv")).toBe("leak [redacted]");
+    expect(publicContractMessage("COMMAND_FAILED", "leak sk-ant-abcdefghijklmnopqrstuv")).toBe(
+      "leak [redacted:credential]",
+    );
     expect(publicContractMessage("COMMAND_FAILED", "Cannot read file /tmp/config.json")).toBe(
       "Cannot read file /tmp/config.json",
     );
@@ -109,8 +174,8 @@ describe("expectedErrorToContractError", () => {
     });
     expect(unsafe?.envelope().error).toMatchObject({
       code: "COMMAND_FAILED",
-      message: "HTTP 401: invalid API key; api_key=[redacted]",
-      suggestedAction: "Replace the api_key=[redacted]",
+      message: "HTTP 401: invalid API key; api_key=[redacted:api_key]",
+      suggestedAction: "Replace the api_key=[redacted:api_key]",
     });
     expect(JSON.stringify(unsafe?.envelope())).not.toContain("opaque");
   });
@@ -134,8 +199,24 @@ describe("public expected-error credentials", () => {
     (secret) => {
       const result = sanitizePublicContractMessage(`Lookup failed: ${secret}`);
       expect(result).toContain("Lookup failed:");
-      expect(result).toContain("[redacted]");
+      expect(result).toContain("[redacted:");
       expect(result).not.toContain(secret);
     },
   );
+});
+
+describe("diagnostic identifier egress", () => {
+  it("rejects credential-bearing code and operation fields without discarding the cause", () => {
+    const error = new ContractError(
+      "upload?key=PRIVATE_OP",
+      "FAIL_token=PRIVATE_CODE",
+      "provider unavailable",
+      1,
+      errorDiagnostic(new Error("provider unavailable")),
+    );
+    expect(error.op).toBe("command");
+    expect(error.code).toBe("COMMAND_FAILED");
+    expect(error.envelope().error.cause).toBe("provider unavailable");
+    expect(JSON.stringify(error.envelope())).not.toMatch(/PRIVATE_OP|PRIVATE_CODE/);
+  });
 });

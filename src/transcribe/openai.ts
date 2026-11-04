@@ -6,7 +6,7 @@
 import OpenAI from "openai";
 import { logger } from "../utils/logger.js";
 import { getAudioDuration, splitAudioChunks } from "./chunker.js";
-import { errorDiagnostic, type ErrorDiagnosticContext } from "../utils/error-diagnostic.js";
+import { diagnosticError, errorDiagnostic, type ErrorDiagnosticContext } from "../utils/error-diagnostic.js";
 
 const log = logger.child("transcribe");
 
@@ -56,6 +56,7 @@ interface TranscribeProvider {
   name: string;
   client: OpenAI;
   model: string;
+  credential: string;
 }
 
 /** Max duration in seconds before chunking (10 minutes) */
@@ -73,6 +74,7 @@ function getProvider(): TranscribeProvider {
       name: "groq",
       client: new OpenAI({ apiKey: groqKey, baseURL: "https://api.groq.com/openai/v1" }),
       model: "whisper-large-v3-turbo",
+      credential: groqKey,
     };
   }
 
@@ -82,6 +84,7 @@ function getProvider(): TranscribeProvider {
       name: "openai",
       client: new OpenAI({ apiKey: openaiKey }),
       model: "whisper-1",
+      credential: openaiKey,
     };
   }
 
@@ -114,18 +117,22 @@ async function transcribeChunk(
   } catch (error) {
     // Preserve the provider's original exception and add the identity known at
     // this boundary. A generic CLI headline must not erase its diagnostic.
-    throw transcriptionFailure(error, {
-      operation: "audio.transcriptions.create",
-      provider: provider.name,
-      model: provider.model,
-    });
+    throw transcriptionFailure(
+      error,
+      {
+        operation: "audio.transcriptions.create",
+        provider: provider.name,
+        model: provider.model,
+      },
+      [provider.credential],
+    );
   }
 }
 
-function transcriptionFailure(error: unknown, context: ErrorDiagnosticContext): Error {
-  return Object.assign(new Error(error instanceof Error ? error.message : String(error), { cause: error }), {
-    context: errorDiagnostic(error, context).context,
-  });
+function transcriptionFailure(error: unknown, context: ErrorDiagnosticContext, secrets: readonly string[] = []): Error {
+  // Preserve the throwable internally. Normalization happens at diagnostic egress,
+  // using the integration's credential to remove even an unlabeled provider echo.
+  return diagnosticError(error, context, { secrets });
 }
 
 function extensionForMimeType(mimetype: string): string {
@@ -135,7 +142,7 @@ function extensionForMimeType(mimetype: string): string {
 }
 
 function isAudioTooShortError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorDiagnostic(err).cause;
   return /audio file is too short|minimum audio length/i.test(message);
 }
 

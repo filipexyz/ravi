@@ -57,15 +57,18 @@ export class TranscribeCommands {
     const absPath = resolve(filePath);
     if (!existsSync(absPath)) {
       contractFail("transcribe file", "FILE_NOT_FOUND", "Audio file was not found.", {
-        asJson,
-        details: {
-          ...errorDiagnostic("The requested audio file does not exist.", {
-            operation: "transcribe file",
-            file: absPath,
-            code: "ENOENT",
-          }),
-          suggestedAction: "Check the local audio file path and re-run",
+        ...{
+          asJson,
+          details: {
+            ...errorDiagnostic("The requested audio file does not exist.", {
+              operation: "transcribe file",
+              file: absPath,
+              code: "ENOENT",
+            }),
+            suggestedAction: "Check the local audio file path and re-run",
+          },
         },
+        diagnostic: errorDiagnostic("Audio file was not found.", { operation: "transcribe file" }),
       });
     }
 
@@ -78,12 +81,15 @@ export class TranscribeCommands {
       result = await transcribeFile({ filePath: absPath, mimeType: mimetype, language: _lang ?? "pt" });
     } catch (error) {
       contractFail("transcribe file", "TRANSCRIBE_FAILED", "Audio transcription failed.", {
-        asJson,
-        details: {
-          ...errorDiagnostic(error, { operation: "transcribe file", file: absPath }),
-          retryable: true,
-          suggestedAction: "Resolve the reported provider or file error, then retry",
+        ...{
+          asJson,
+          details: {
+            ...errorDiagnostic(error, { operation: "transcribe file", file: absPath }),
+            retryable: true,
+            suggestedAction: "Resolve the reported provider or file error, then retry",
+          },
         },
+        diagnostic: errorDiagnostic(error, { operation: "transcribe file" }),
       });
     }
 

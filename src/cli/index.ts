@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Ravi Bot CLI - Unified command-line interface
  *
@@ -333,11 +334,14 @@ program
     const sessionName = session?.trim();
     if (!sessionName) {
       contractFail("tui", "USAGE_ERROR", "Usage: ravi tui <session>", {
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Pass a session name: ravi tui <session>",
-          usage: "ravi tui <session>",
+        ...{
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Pass a session name: ravi tui <session>",
+            usage: "ravi tui <session>",
+          },
         },
+        diagnostic: errorDiagnostic("Usage: ravi tui <session>", { operation: "tui" }),
       });
     }
     await runWithCliAudit(
