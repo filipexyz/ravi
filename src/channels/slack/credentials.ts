@@ -1,4 +1,5 @@
 import { resolveCredentialSecret } from "../../credentials/index.js";
+import type { CredentialBrokerAuthority } from "../../credentials/broker.js";
 import type { ChannelConfig } from "../../router/router-db.js";
 
 export interface SlackCredentialConfig {
@@ -29,12 +30,14 @@ export type SlackCredentialResolver = (input: {
   provider: string;
   connection: string;
   action: string;
+  authority?: CredentialBrokerAuthority;
 }) => Promise<{ secret: string; connection?: { connection: string } }>;
 
 export async function resolveSlackCredentialConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   options: {
     resolveSecret?: SlackCredentialResolver;
+    authority?: CredentialBrokerAuthority;
     action?: string;
     channel?: ChannelConfig;
     channels?: Record<string, ChannelConfig>;
@@ -50,6 +53,7 @@ export async function resolveSlackCredentialConfigFromEnv(
       provider: "slack",
       connection,
       action: options.action ?? "socket_mode.connect",
+      ...(options.authority ? { authority: options.authority } : {}),
     });
     const payload = parseSlackSecretPayload(resolved.secret);
     const channelName = channel?.name ?? resolved.connection?.connection ?? connection;
@@ -154,7 +158,13 @@ export function parseSlackSecretPayload(secret: string): SlackSecretPayload {
 }
 
 function parseJsonSecret(secret: string): Record<string, unknown> {
-  const parsed = JSON.parse(secret) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(secret);
+  } catch {
+    // SyntaxError messages can quote the provider token. Keep no raw cause.
+    throw new Error("Slack credential JSON secret is invalid.");
+  }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Slack credential JSON secret must be an object.");
   }

@@ -1294,6 +1294,12 @@ describe("Slack Socket Mode routing", () => {
     });
 
     expect(resolveSecret.mock.calls.map((call) => call[0].connection)).toEqual(["hana-secret", "rbbt-secret"]);
+    expect(resolveSecret).toHaveBeenCalledWith({
+      provider: "slack",
+      connection: "hana-secret",
+      action: "socket_mode.connect",
+      authority: { kind: "internal-service", service: "slack-channel-runtime" },
+    });
     expect(runtimes.map((runtime) => runtime.accountId)).toEqual(["hana-slack", "ravi-rbbt-slack"]);
     expect(runtimes.map((runtime) => runtime.connection)).toEqual(["hana-secret", "rbbt-secret"]);
   });

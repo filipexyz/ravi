@@ -41,6 +41,23 @@ Tests MUST cover:
 - Missing `execute:<provider>:<action>` denies before backend read.
 - Sensitive action requests approval before backend read.
 - Approval denial prevents backend read.
+- An invalid key never falls back to default credentials or operator-control.
+- Stale in-process context copies cannot survive revocation or capability removal.
+- A missing executor or blocked invocation actor cannot use a saved snapshot.
+- Both the issued scope and current executor ceiling apply, including narrowed children.
+- External provider `deny` and `needs_approval` prevent backend read, including
+  after a local human approves a sensitive operation.
+- Revocation or connection changes during approval prevent backend read.
+- Named internal Slack bootstrap authority works without an invocation and
+  cannot override an invocation, select another provider or run unrelated actions.
+- Slack adapter resolution uses the checked broker path and does not expose the
+  token in action output, audit or diagnostic errors (including nested causes).
+
+Focused host-safe regression:
+
+```bash
+bun test --preload ./src/test/isolated-runtime-preload.ts src/credentials/broker-authorization.test.ts src/credentials/credentials.test.ts
+```
 
 ## Lifecycle Checks
 
