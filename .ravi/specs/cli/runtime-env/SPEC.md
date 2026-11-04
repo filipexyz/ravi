@@ -40,6 +40,13 @@ gateway. This is not `ravi setup` and not `ravi login`.
    Tokens, rctx keys, and secret values MUST NEVER appear in envelopes, audit,
    or `--json` output.
 5. Mutations are local and reversible (`unset`). They are declared unbraked.
+6. `set` and `unset` MUST return `warnings` naming every live managed daemon or
+   channel runner whose bundle or env file is newer than its boot observation.
+   Text output MUST print the same warnings with explicit restart commands.
+   Warning content MUST NOT include env values.
+7. Env mutations MUST NOT restart either process. Updating one caller's
+   `process.env` does not reconcile its sibling or prove the complete file was
+   loaded; the operator follows the reported reconciliation commands.
 
 ## Allowlist v1
 

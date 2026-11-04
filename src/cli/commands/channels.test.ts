@@ -1,7 +1,16 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { listen, spawn } from "bun";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createChannelRunnerHealthSnapshot, type ChannelRunnerRuntimeStatus } from "../../channels/health.js";
@@ -408,6 +417,41 @@ const ONLINE_CHANNELS_PROCESS = {
 };
 
 describe("channels live status", () => {
+  it("reports code and env staleness even while the runner answers healthy", async () => {
+    const startedAt = 1_721_563_200_000;
+    const cwd = join(stateDir!, "runtime");
+    const bundlePath = join(cwd, "dist/bundle/index.js");
+    mkdirSync(join(cwd, "dist/bundle"), { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "ravi.bot", version: "disk-version" }));
+    writeFileSync(bundlePath, "// newly installed code");
+    writeFileSync(join(stateDir!, ".env"), "EXAMPLE_KEY=secret-fixture\n");
+    for (const path of [bundlePath, join(stateDir!, ".env")]) {
+      utimesSync(path, new Date(startedAt + 1_000), new Date(startedAt + 1_000));
+    }
+    process.env.RAVI_BUNDLE = bundlePath;
+    const payload = await buildChannelsLiveStatusJson({
+      pm2Available: true,
+      processes: [
+        { ...ONLINE_CHANNELS_PROCESS, cwd, execPath: "/usr/bin/bun", args: [bundlePath, "channels", "run"], startedAt },
+      ],
+      probe: async () => ({ reachable: true, snapshot: liveRunnerStatus() }),
+    });
+    expect(payload).toMatchObject({
+      channels: {
+        runningVersion: null,
+        diskVersion: "disk-version",
+        startedAt,
+        stale: true,
+        codeStale: true,
+        envStale: true,
+      },
+      runtime: { alignment: "drifted" },
+      health: { status: "ready", reachable: true },
+    });
+    expect((payload.warnings as string[]).join("\n")).toContain("ravi channels restart");
+    expect(JSON.stringify(payload)).not.toContain("secret-fixture");
+  });
+
   it("separates PM2 process liveness from runner and Slack readiness", async () => {
     const snapshot = liveRunnerStatus();
     const probe = mock(async () => ({ reachable: true as const, snapshot }));

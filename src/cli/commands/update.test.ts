@@ -2,8 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -21,6 +23,8 @@ import {
   rebindManagedRuntimeProcesses,
 } from "../../managed-runtime-rebind.js";
 import type { Pm2Process } from "../../pm2.js";
+import { observeRuntimeBoot, writeRuntimeBootReceipt } from "../../runtime-process-identity.js";
+import { getRaviStateDir } from "../../utils/paths.js";
 import {
   buildSourceUpdateOutcome,
   describePathCli,
@@ -58,7 +62,15 @@ function git(cwd: string, ...args: string[]): void {
  * separate global install that `ravi` on PATH resolves to. Bun, npm, and pm2 are
  * shimmed so the run never reads the developer's real global packages or PM2.
  */
-function createSourceUpdateScenario(options: { linkPathToCheckout?: boolean } = {}) {
+function createSourceUpdateScenario(
+  options: {
+    linkPathToCheckout?: boolean;
+    managedProcesses?: boolean;
+    supervisor?: "rebind" | "noop";
+    failRunnerStart?: boolean;
+    failPm2Status?: boolean;
+  } = {},
+) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "ravi-update-scenario-")));
   const seed = join(root, "seed");
   const origin = join(root, "origin.git");
@@ -66,6 +78,8 @@ function createSourceUpdateScenario(options: { linkPathToCheckout?: boolean } = 
   const globalRoot = join(root, "global", "node_modules", "ravi.bot");
   const bin = join(root, "bin");
   const stateDir = join(root, "state");
+  const pm2Calls = join(root, "pm2-calls");
+  const pm2Snapshot = join(root, "pm2.json");
   mkdirSync(seed, { recursive: true });
   mkdirSync(join(seed, "bin"), { recursive: true });
   mkdirSync(join(globalRoot, "bin"), { recursive: true });
@@ -77,12 +91,18 @@ function createSourceUpdateScenario(options: { linkPathToCheckout?: boolean } = 
       {
         name: "ravi.bot",
         version,
-        scripts: { build: "mkdir -p dist/bundle && printf 'console.log(1)\\n' > dist/bundle/index.js" },
+        scripts: { build: "mkdir -p dist/bundle && cp supervisor.js dist/bundle/index.js" },
       },
       null,
       2,
     );
   writeFileSync(join(seed, "package.json"), packageJson(OLD_VERSION), "utf8");
+  writeFileSync(
+    join(seed, "supervisor.js"),
+    options.supervisor === "noop"
+      ? "// Deliberately exits zero without implementing the rebind protocol.\n"
+      : `import { maybeRunManagedRuntimeRebindFromEnv } from ${JSON.stringify(join(process.cwd(), "src/managed-runtime-rebind.ts"))};\nawait maybeRunManagedRuntimeRebindFromEnv();\n`,
+  );
   writeFileSync(join(seed, ".gitignore"), "dist/\nnode_modules/\nbun.lock\n", "utf8");
   writeExecutable(join(seed, "bin", "ravi"), "#!/usr/bin/env bash\necho checkout\n");
   git(seed, "init", "-q", "-b", "dev");
@@ -119,7 +139,60 @@ function createSourceUpdateScenario(options: { linkPathToCheckout?: boolean } = 
     ].join("\n"),
   );
   writeExecutable(join(bin, "npm"), "#!/usr/bin/env bash\nexit 1\n");
-  writeExecutable(join(bin, "pm2"), '#!/usr/bin/env bash\n[ "$1" = "jlist" ] && echo "[]" && exit 0\nexit 1\n');
+  writeFileSync(
+    pm2Snapshot,
+    JSON.stringify(
+      options.managedProcesses
+        ? ["ravi", "ravi-channels"].map((name, index) => ({
+            name,
+            pm_id: index,
+            pid: 700_001 + index,
+            pm2_env: {
+              status: "online",
+              pm_exec_path: name === "ravi" ? join(checkout, "dist", "bundle", "index.js") : process.execPath,
+              pm_cwd: checkout,
+              args:
+                name === "ravi" ? ["daemon", "run"] : [join(checkout, "dist", "bundle", "index.js"), "channels", "run"],
+              created_at: 1,
+              pm_uptime: 1,
+              RAVI_STATE_DIR: stateDir,
+            },
+          }))
+        : [],
+    ),
+  );
+  writeExecutable(
+    join(bin, "pm2"),
+    `#!${process.execPath}
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { observeRuntimeBoot, writeRuntimeBootReceipt } from ${JSON.stringify(join(process.cwd(), "src/runtime-process-identity.ts"))};
+const args = process.argv.slice(2);
+const snapshotPath = ${JSON.stringify(pm2Snapshot)};
+appendFileSync(${JSON.stringify(pm2Calls)}, args.join(" ") + "\\n");
+let entries = JSON.parse(readFileSync(snapshotPath, "utf8"));
+if (args[0] === "jlist") {
+  if (${Boolean(options.failPm2Status)}) process.exit(1);
+  console.log(JSON.stringify(entries)); process.exit(0);
+}
+if (args[0] === "delete") entries = entries.filter(entry => entry.name !== args[1]);
+else if (args[0] === "start") {
+  const name = args[args.indexOf("--name") + 1];
+  if (${Boolean(options.failRunnerStart)} && name === "ravi-channels") process.exit(1);
+  const bundlePath = name === "ravi" ? args[1] : args[args.indexOf("--") + 1];
+  const startedAt = Date.now();
+  const pid = name === "ravi" ? 800001 : 800002;
+  const envFile = join(process.env.RAVI_STATE_DIR, ".env");
+  const runningVersion = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")).version;
+  writeRuntimeBootReceipt({ ...observeRuntimeBoot({ bundlePath, runningVersion, envFile }), schemaVersion: 1, name, pid, startedAt });
+  entries.push({ name, pm_id: name === "ravi" ? 0 : 1, pid, pm2_env: {
+    status: "online", pm_exec_path: args[1], pm_cwd: process.cwd(),
+    args: args.slice(args.indexOf("--") + 1), pm_uptime: startedAt, created_at: startedAt,
+  } });
+} else if (args[0] !== "save") process.exit(1);
+writeFileSync(snapshotPath, JSON.stringify(entries));
+`,
+  );
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -134,8 +207,10 @@ function createSourceUpdateScenario(options: { linkPathToCheckout?: boolean } = 
     checkout,
     globalRoot,
     pathRavi: join(bin, "ravi"),
+    pm2Calls,
+    pm2Snapshot,
     run(...args: string[]) {
-      return spawnSync("bun", ["src/cli/index.ts", "update", "--next", "--no-restart", ...args], {
+      return spawnSync("bun", ["src/cli/index.ts", "update", "--next", ...args], {
         cwd: process.cwd(),
         encoding: "utf8",
         env,
@@ -419,6 +494,109 @@ describe("update command helpers", () => {
     }
   }, 60_000);
 
+  it("restarts and verifies both live siblings by default", () => {
+    const scenario = createSourceUpdateScenario({ linkPathToCheckout: true, managedProcesses: true });
+    try {
+      const result = scenario.run("--json");
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      const payload = JSON.parse(result.stdout);
+      expect(payload).toMatchObject({
+        currentVersion: NEW_VERSION,
+        restarted: true,
+        runtime: { managed: true, rebound: true, version: NEW_VERSION },
+      });
+      const calls = readFileSync(scenario.pm2Calls, "utf8").trim().split("\n");
+      expect(calls.filter((call) => !call.startsWith("jlist")).map((call) => call.split(" ")[0])).toEqual([
+        "delete",
+        "delete",
+        "start",
+        "start",
+        "save",
+      ]);
+      expect(JSON.parse(readFileSync(scenario.pm2Snapshot, "utf8")).map((entry: { pid: number }) => entry.pid)).toEqual(
+        [800_001, 800_002],
+      );
+      expect(
+        payload.warnings.some((warning: string) => warning.includes("unverified") || warning.includes("stale code")),
+      ).toBe(false);
+    } finally {
+      scenario.cleanup();
+    }
+  }, 60_000);
+
+  it("fails when the supervisor exits zero without replacing the live siblings", () => {
+    const scenario = createSourceUpdateScenario({
+      linkPathToCheckout: true,
+      managedProcesses: true,
+      supervisor: "noop",
+    });
+    try {
+      const result = scenario.run("--json");
+      expect(result.status).toBe(1);
+      const payload = JSON.parse(result.stdout);
+      expect(payload).toMatchObject({ success: false, error: { code: "UPDATE_FAILED" } });
+      expect(payload.error.message).toContain("ravi daemon restart");
+      expect(payload.error.message).toContain("ravi channels restart");
+      expect(payload.error.message).toContain("ravi-channels is running stale code");
+      expect(
+        readFileSync(scenario.pm2Calls, "utf8")
+          .trim()
+          .split("\n")
+          .every((call) => call === "jlist"),
+      ).toBe(true);
+    } finally {
+      scenario.cleanup();
+    }
+  }, 60_000);
+
+  it("fails if restarting the runner fails after the daemon has restarted", () => {
+    const scenario = createSourceUpdateScenario({
+      linkPathToCheckout: true,
+      managedProcesses: true,
+      failRunnerStart: true,
+    });
+    try {
+      const result = scenario.run("--json");
+      expect(result.status).toBe(1);
+      expect(JSON.parse(result.stdout)).toMatchObject({ success: false, error: { code: "UPDATE_FAILED" } });
+      expect(
+        JSON.parse(readFileSync(scenario.pm2Snapshot, "utf8")).map((entry: { name: string }) => entry.name),
+      ).toEqual(["ravi"]);
+      expect(readFileSync(scenario.pm2Calls, "utf8")).not.toContain("save --force");
+    } finally {
+      scenario.cleanup();
+    }
+  }, 60_000);
+
+  it("rejects the removed no-restart bypass", () => {
+    const scenario = createSourceUpdateScenario({ managedProcesses: true });
+    try {
+      const result = scenario.run("--no-restart", "--json");
+      expect(result.status).not.toBe(0);
+      expect(result.stdout + result.stderr).toContain("unknown option '--no-restart'");
+    } finally {
+      scenario.cleanup();
+    }
+  }, 60_000);
+
+  it("refuses an unreadable PM2 snapshot before updating packages or restarting", () => {
+    const scenario = createSourceUpdateScenario({ managedProcesses: true, failPm2Status: true });
+    try {
+      const result = scenario.run("--json");
+      expect(result.status).toBe(1);
+      const payload = JSON.parse(result.stdout);
+      expect(payload).toMatchObject({ success: false, error: { code: "UPDATE_FAILED" } });
+      expect(payload.error.message).toContain("Could not read PM2 runtime status");
+      expect(payload.error.cause).toContain("Unable to read the managed PM2 processes");
+      expect(payload.error.cause).toContain("pm2 jlist");
+      expect(JSON.parse(readFileSync(join(scenario.checkout, "package.json"), "utf8")).version).toBe(OLD_VERSION);
+      expect(readFileSync(scenario.pm2Calls, "utf8").trim().split("\n")).toEqual(["jlist"]);
+    } finally {
+      scenario.cleanup();
+    }
+  }, 60_000);
+
   it("finds the package root from this test file", () => {
     const root = findPackageRoot(import.meta.path);
     expect(root).toBeTruthy();
@@ -516,58 +694,110 @@ describe("update command helpers", () => {
     }
   });
 
-  it("deletes, recreates, verifies, and persists the managed runtime", async () => {
-    const runtime = createRuntimePackage();
+  it("keeps the managed rebind fixture out of its caller's runtime receipts", () => {
+    const callerState = mkdtempSync(join(tmpdir(), "ravi-update-caller-state-"));
+    const receiptsDir = join(callerState, "runtime-processes");
+    mkdirSync(receiptsDir);
+    const receipts = ["ravi.json", "ravi-channels.json"];
+    const original = receipts.map((name, index) => JSON.stringify({ name, pid: 1000 + index }));
     try {
-      const old = createRuntimePackage("3.260730.3");
-      try {
-        let processes: Pm2Process[] = [
-          pm2Process("ravi", old.bundlePath, old.root, { pid: 10, createdAt: 1 }),
-          pm2Process("ravi-channels", old.bundlePath, old.root, { pid: 20, createdAt: 1 }),
-        ];
-        const calls: string[] = [];
-        const ok = await rebindManagedRuntimeProcesses(
-          processes.map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
-          runtime.target,
-          {
-            bunPath: "/usr/bin/bun",
-            runnerEnv: () => ({ RAVI_CHANNELS_CONSUME_OUTBOUND: "1" }),
-            getProcesses: () => processes,
-            run: async (_command, args, options) => {
-              calls.push(args.join(" "));
-              if (args[0] === "delete") {
-                processes = processes.filter((process) => process.name !== args[1]);
-              } else if (args[0] === "start") {
-                const name = args[args.indexOf("--name") + 1] as "ravi" | "ravi-channels";
-                processes.push(
-                  pm2Process(name, runtime.bundlePath, runtime.root, {
-                    pid: name === "ravi" ? 11 : 21,
-                    createdAt: 2,
-                  }),
-                );
-                if (name === "ravi-channels") {
-                  expect(options?.env?.RAVI_CHANNELS_CONSUME_OUTBOUND).toBe("1");
-                }
-              }
-              return { success: true, output: "" };
-            },
-          },
-        );
+      receipts.forEach((name, index) => {
+        writeFileSync(join(receiptsDir, name), original[index]!);
+      });
+      const result = spawnSync(
+        process.execPath,
+        ["test", import.meta.path, "-t", "^.*deletes, recreates, verifies, and persists the managed runtime$"],
+        { env: { ...process.env, RAVI_STATE_DIR: callerState }, encoding: "utf8", timeout: 10_000 },
+      );
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain("1 pass");
+      receipts.forEach((name, index) => {
+        expect(readFileSync(join(receiptsDir, name), "utf8")).toBe(original[index]);
+      });
+      expect(readdirSync(receiptsDir).sort()).toEqual([...receipts].sort());
+      expect(readdirSync(callerState)).toEqual(["runtime-processes"]);
+    } finally {
+      rmSync(callerState, { recursive: true, force: true });
+    }
+  });
 
-        expect(ok).toBe(true);
-        expect(calls.map((call) => call.split(" ").slice(0, 2).join(" "))).toEqual([
-          "delete ravi-channels",
-          "delete ravi",
-          `start ${runtime.bundlePath}`,
-          "start /usr/bin/bun",
-          "save --force",
-        ]);
+  it("deletes, recreates, verifies, and persists the managed runtime", async () => {
+    const previousStateDir = process.env.RAVI_STATE_DIR;
+    const stateDir = mkdtempSync(join(tmpdir(), "ravi-update-rebind-state-"));
+    process.env.RAVI_STATE_DIR = stateDir;
+    try {
+      const runtime = createRuntimePackage();
+      try {
+        const old = createRuntimePackage("3.260730.3");
+        try {
+          let processes: Pm2Process[] = [
+            pm2Process("ravi", old.bundlePath, old.root, { pid: 10, createdAt: 1 }),
+            pm2Process("ravi-channels", old.bundlePath, old.root, { pid: 20, createdAt: 1 }),
+          ];
+          const calls: string[] = [];
+          const ok = await rebindManagedRuntimeProcesses(
+            processes.map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
+            runtime.target,
+            {
+              bunPath: "/usr/bin/bun",
+              runnerEnv: () => ({ RAVI_CHANNELS_CONSUME_OUTBOUND: "1" }),
+              getProcesses: () => processes,
+              run: async (_command, args, options) => {
+                calls.push(args.join(" "));
+                if (args[0] === "delete") {
+                  processes = processes.filter((process) => process.name !== args[1]);
+                } else if (args[0] === "start") {
+                  const name = args[args.indexOf("--name") + 1] as "ravi" | "ravi-channels";
+                  const startedAt = Date.now();
+                  const pid = name === "ravi" ? 11 : 21;
+                  processes.push(
+                    pm2Process(name, runtime.bundlePath, runtime.root, {
+                      pid,
+                      createdAt: 2,
+                      startedAt,
+                    }),
+                  );
+                  writeRuntimeBootReceipt({
+                    ...observeRuntimeBoot({
+                      bundlePath: runtime.bundlePath,
+                      runningVersion: runtime.target.version,
+                      envFile: join(getRaviStateDir(), ".env"),
+                    }),
+                    schemaVersion: 1,
+                    name,
+                    pid,
+                    startedAt,
+                  });
+                  if (name === "ravi-channels") {
+                    expect(options?.env?.RAVI_CHANNELS_CONSUME_OUTBOUND).toBe("1");
+                  }
+                }
+                return { success: true, output: "" };
+              },
+            },
+          );
+
+          expect(ok).toBe(true);
+          expect(calls.map((call) => call.split(" ").slice(0, 2).join(" "))).toEqual([
+            "delete ravi-channels",
+            "delete ravi",
+            `start ${runtime.bundlePath}`,
+            "start /usr/bin/bun",
+            "save --force",
+          ]);
+        } finally {
+          old.cleanup();
+        }
       } finally {
-        old.cleanup();
+        runtime.cleanup();
       }
     } finally {
-      runtime.cleanup();
+      if (previousStateDir === undefined) delete process.env.RAVI_STATE_DIR;
+      else process.env.RAVI_STATE_DIR = previousStateDir;
+      rmSync(stateDir, { recursive: true, force: true });
     }
+    expect(process.env.RAVI_STATE_DIR).toBe(previousStateDir);
+    expect(existsSync(stateDir)).toBe(false);
   });
 });
 
