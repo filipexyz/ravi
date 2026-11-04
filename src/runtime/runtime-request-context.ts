@@ -489,7 +489,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
  * A turn another turn produced (a session relay, a Slack thread bootstrap,
  * report or return) never holds more than that turn when it was narrowed to a
  * contact's chat grants. The caller context is looked up in ravi.db; one that
- * no longer exists narrows to nothing.
+ * no longer exists or whose profile authority was reduced narrows to nothing.
  */
 function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   narrowing?: ContextCapability[];
@@ -501,6 +501,9 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   const caller = dbGetContext(callerContextId);
   if (!caller) return { narrowing: [] };
   const metadata = caller.metadata ?? {};
+  // Ordinary turn rotation revokes the key but intentionally keeps queued relays
+  // usable. A profile reduction invalidates the authority snapshot as well.
+  const profileRevoked = typeof metadata.permissionProfileRevokedAt === "number";
   const narrowed =
     metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE || metadata.relayNarrowing === true;
   const actorPrincipal = typeof metadata.actorPrincipal === "string" ? metadata.actorPrincipal : "";
@@ -509,7 +512,10 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
     : typeof metadata.relayCallerContactId === "string"
       ? metadata.relayCallerContactId
       : undefined;
-  return { ...(narrowed ? { narrowing: caller.capabilities } : {}), ...(contactId ? { contactId } : {}) };
+  return {
+    ...(profileRevoked || narrowed ? { narrowing: profileRevoked ? [] : caller.capabilities } : {}),
+    ...(contactId ? { contactId } : {}),
+  };
 }
 
 function buildUserOverlayMetadata(overlay: ContactChatOverlay, applied: boolean): Record<string, unknown> {

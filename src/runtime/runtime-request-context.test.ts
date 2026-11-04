@@ -6,6 +6,7 @@ import { recordBridgeRuntimeEvent } from "../bridge/native.js";
 import { bridgeContextCapabilities, bridgeContextLive } from "../bridge/authority.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
+import { upsertPermissionProfileDefinition } from "../permissions/apply-grant.js";
 import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
 import { dbCreateCronJob, dbUpdateCronJob } from "../cron/cron-db.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
@@ -2058,6 +2059,98 @@ describe("runtime request context chat-scoped user overlay", () => {
   function grant(contactId: string, scopeType: "chat" | "chat_tag", scopeId: string) {
     dbEnsureContactChatGrant({ contactId, profileSlug: "permission-image", scopeType, scopeId });
   }
+
+  function relayFor(caller: ReturnType<typeof contextFor>) {
+    const relaySessionName = `relay-${caller.contextId}`;
+    const relaySessionKey = `agent:${agent.id}:relay:${caller.contextId}`;
+    getOrCreateSession(relaySessionKey, agent.id, agent.cwd, { name: relaySessionName });
+    return buildRuntimeRequestContext({
+      dbSessionKey: relaySessionKey,
+      sessionName: relaySessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: {
+        prompt: "[System] Inform: complete the queued request",
+        _turnOrigin: buildSessionRelayTurnOrigin("inform", {
+          agentId: agent.id,
+          sessionKey: caller.sessionKey,
+          sessionName: caller.sessionName,
+          contextId: caller.contextId,
+        }),
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    }).runtimeContext;
+  }
+
+  it("keeps rotated callers usable for queued relays until their permission profile is reduced", () => {
+    const chat = groupChat("120363400000000012@g.us");
+    const plainChat = groupChat("120363400000000013@g.us");
+    const ana = createContact({ phone: "5511900000012", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const caller = contextFor(ana.id, chat);
+    const plainCaller = contextFor(ana.id, plainChat);
+
+    contextFor(ana.id, chat);
+    contextFor(ana.id, plainChat);
+    expect(resolveRuntimeContext(caller.contextKey)).toBeNull();
+    expect(resolveRuntimeContext(plainCaller.contextKey)).toBeNull();
+    const before = relayFor(caller);
+    expect(canWithCapabilities(before.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(before.metadata?.relayCallerContactId).toBe(ana.id);
+
+    upsertPermissionProfileDefinition({ profile: "image", capabilities: [], explicitCapabilities: true });
+
+    const queued = relayFor(caller);
+    expect(queued.capabilities).toEqual([]);
+    expect(queued.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+    expect(typeof dbGetContext(caller.contextId)?.metadata?.permissionProfileRevokedAt).toBe("number");
+
+    const chained = relayFor(queued);
+    expect(chained.capabilities).toEqual([]);
+    expect(chained.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+
+    const plain = relayFor(plainCaller);
+    expect(plain.metadata?.relayNarrowing).toBeUndefined();
+    expect(canWithCapabilities(plain.capabilities, "execute", "executable", "curl")).toBe(true);
+    expect(dbGetContext(plainCaller.contextId)?.metadata?.permissionProfileRevokedAt).toBeUndefined();
+  });
+
+  it("revokes existing relay chains from a rotated profile holder and prevents their queued reuse", () => {
+    const chat = groupChat("120363400000000014@g.us");
+    const ana = createContact({ phone: "5511900000014", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const caller = contextFor(ana.id, chat);
+    contextFor(ana.id, chat);
+    const relay = relayFor(caller);
+    const chained = relayFor(relay);
+    expect(resolveRuntimeContext(caller.contextKey)).toBeNull();
+    for (const context of [relay, chained]) {
+      expect(resolveRuntimeContext(context.contextKey)?.contextId).toBe(context.contextId);
+      expect(canWithCapabilities(context.capabilities, "mutate", "image", "generate")).toBe(true);
+      expect(context.metadata?.relayCallerContactId).toBe(ana.id);
+    }
+    const snapshots = [caller, relay, chained].map((context) => dbGetContext(context.contextId)!);
+    expect(snapshots[0]!.sessionName).toBeDefined();
+    expect(snapshots[0]!.source).toBeDefined();
+
+    upsertPermissionProfileDefinition({ profile: "image", capabilities: [], explicitCapabilities: true });
+
+    for (const snapshot of snapshots) {
+      const stored = dbGetContext(snapshot.contextId)!;
+      expect(stored.sessionName).toBe(snapshot.sessionName);
+      expect(stored.source).toEqual(snapshot.source);
+      expect(stored.lastUsedAt).toBe(snapshot.lastUsedAt);
+    }
+    for (const context of [relay, chained]) {
+      expect(resolveRuntimeContext(context.contextKey)).toBeNull();
+      expect(typeof dbGetContext(context.contextId)?.metadata?.permissionProfileRevokedAt).toBe("number");
+      const queued = relayFor(context);
+      expect(queued.capabilities).toEqual([]);
+      expect(queued.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+    }
+  });
 
   it("intersects a chat-scoped contact grant with the executor agent ceiling", () => {
     const chat = groupChat("120363400000000001@g.us");

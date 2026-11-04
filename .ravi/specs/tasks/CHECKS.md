@@ -39,6 +39,7 @@
 
 ## Commands
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/tasks/checkpoint-runner.test.ts src/tasks/observer.test.ts src/tasks/thread-core.test.ts` MUST pass in disposable state. Observer and checkpoint fixtures use their resettable publisher hooks rather than replacing `session-stream`; loading task admission in the same process MUST retain the stream's named exports, including `SESSION_STREAM`.
 - `bun test src/tasks/service.test.ts src/tasks/runtime-options.test.ts`
 - `bun test src/cli/commands/tasks.test.ts src/cli/commands/tasks-profiles.test.ts`
 
