@@ -5,6 +5,9 @@
   variadic arguments must retain their existing semantics.
 - In the same suite, distinct `artifactId`, `artifact_id`, and `artifact-id`
   values and an argument named `options` must survive transport serialization.
+- An accepted `__proto__` argument must remain an own request-body property
+  after importing and invoking the generated client, survive JSON serialization,
+  and leave the request object's prototype unchanged.
 - `Class`, `Await`, and strict-only names such as `Arguments` must fail
   generation explicitly after normalization, instead of emitting illegal
   parameter bindings; non-identifier punctuation must also fail explicitly.

@@ -325,7 +325,10 @@ function renderMethod(cmd: CommandRegistryEntry, indent: number, typeImports: Se
   const bodyParts: string[] = [];
   for (const arg of args) {
     // Local identifiers are language-specific; the gateway requires the raw registry key.
-    bodyParts.push(arg.name === arg.paramName ? arg.paramName : `${JSON.stringify(arg.name)}: ${arg.paramName}`);
+    const rawKey = JSON.stringify(arg.name);
+    // Even quoted __proto__ uses the prototype setter; a computed key creates an own property.
+    const propertyKey = arg.name === "__proto__" ? `[${rawKey}]` : rawKey;
+    bodyParts.push(arg.name === arg.paramName ? arg.paramName : `${propertyKey}: ${arg.paramName}`);
   }
   if (sig.options.length > 0) {
     bodyParts.push(`...(options ?? {})`);

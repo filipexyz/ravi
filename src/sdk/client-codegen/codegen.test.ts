@@ -85,6 +85,11 @@ class ArgNamesCommands {
     return {};
   }
 
+  @Command({ name: "prototype-key", description: "Preserve a special object-literal property name" })
+  prototypeKey(@Arg("__proto__") _proto: string) {
+    return {};
+  }
+
   @Command({ name: "class", description: "Allow keyword property names" })
   keywordProperty(@Option({ flags: "--default <value>" }) _default?: string) {
     return {};
@@ -231,6 +236,19 @@ describe("client-codegen :: emitAll", () => {
       options: "positional",
       force: true,
     });
+  });
+
+  it("preserves __proto__ as an own wire property when importing and invoking the generated client", async () => {
+    const registry = buildRegistry([ArgNamesCommands]);
+    const output = emitAll(registry, { version: FIXED_VERSION });
+    const { RaviClient } = await importClient(output.client);
+    const client = new RaviClient({ call: async (input: { body: Record<string, unknown> }) => input.body });
+
+    const body = await client.argNames.prototypeKey("kept");
+
+    expect(Object.hasOwn(body, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(body)).toBe(Object.prototype);
+    expect(JSON.stringify(body)).toBe('{"__proto__":"kept"}');
   });
 
   it("allows keyword method and option property names while rejecting reserved parameter bindings", async () => {
