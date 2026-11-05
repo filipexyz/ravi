@@ -66,3 +66,64 @@ export function assertIdentifier(value: string, location: string): void {
     throw new Error(`Codegen: ${location} produced invalid TS identifier ${JSON.stringify(value)}`);
   }
 }
+
+// Generated methods are async functions in an ES module (strict mode).
+// These words can be property names, but cannot be parameter bindings there.
+const RESERVED_PARAMETER_NAMES = new Set([
+  "arguments",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "eval",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "let",
+  "new",
+  "null",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+]);
+
+/** Validate a local binding, without restricting legal keyword property names. */
+export function assertParameterIdentifier(value: string, location: string): void {
+  assertIdentifier(value, location);
+  if (RESERVED_PARAMETER_NAMES.has(value)) {
+    throw new Error(`Codegen: ${location} produced reserved TS parameter identifier ${JSON.stringify(value)}`);
+  }
+}
