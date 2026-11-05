@@ -57,6 +57,11 @@ export function errorResponse(status: number, error: string, extras: Record<stri
       "Gateway authentication failed.",
       "Refresh the runtime context credential before retrying",
     ],
+    ContextExpired: [
+      "CONTEXT_EXPIRED",
+      "The runtime context credential has expired.",
+      "Have the runtime renew or reissue the context credential before retrying; no permission grant is required",
+    ],
     PayloadTooLarge: [
       "PAYLOAD_TOO_LARGE",
       "Request body exceeds the gateway size limit.",

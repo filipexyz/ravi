@@ -2653,6 +2653,13 @@ public struct CredentialsNamespace: Sendable {
   public var policies: CredentialsPoliciesNamespace {
     CredentialsPoliciesNamespace(transport: transport)
   }
+
+  public func request(_ target: String, _ options: CredentialsRequestOptions = .init()) async throws -> CredentialsRequestReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["target"] = try RaviJSON.fromEncodable(target)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials"], command: "request", body: requestBody, as: CredentialsRequestReturn.self)
+  }
 }
 
 public struct CredentialsConnectionsNamespace: Sendable {

@@ -11,6 +11,10 @@ normative: true
 
 # Checks
 
+- `bun test src/runtime/runtime-request-context-lifetime.test.ts` MUST prove
+  active renewal never adds grants, revocation wins, actor eligibility is
+  revalidated and a terminal owner cannot renew its turn credential.
+
 ## Unit Tests
 
 - Given an executor agent with `admin system:*`, when the actor has no delegated capability, `use tool:Bash` is denied for a user-initiated invocation.

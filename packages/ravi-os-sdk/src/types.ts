@@ -11531,7 +11531,7 @@ export type CredentialsConnectionsDisableInput = {
 /** Return shape for `credentials.connections.disable`. */
 export type CredentialsConnectionsDisableReturn = {
   connection: ({
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -11553,7 +11553,7 @@ export type CredentialsConnectionsEnableInput = {
 /** Return shape for `credentials.connections.enable`. */
 export type CredentialsConnectionsEnableReturn = {
   connection: ({
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -11579,7 +11579,7 @@ export type CredentialsConnectionsListInput = {
 /** Return shape for `credentials.connections.list`. */
 export type CredentialsConnectionsListReturn = {
   items: Array<{
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -11611,7 +11611,7 @@ export type CredentialsConnectionsShowInput = {
 /** Return shape for `credentials.connections.show`. */
 export type CredentialsConnectionsShowReturn = {
   connection: {
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -11641,6 +11641,25 @@ export type CredentialsPoliciesExplainReturn = {
   connection: string;
   provider: string;
   requiredCapabilities: string[];
+};
+
+/** Input shape for `credentials.request`. */
+export type CredentialsRequestInput = {
+  backend?: string;
+  execute?: boolean;
+  label?: string;
+  reason?: string;
+  scopes?: string;
+  target: string;
+  user?: string;
+};
+
+/** Return shape for `credentials.request`. */
+export type CredentialsRequestReturn = {
+  delivery: "ephemeral";
+  expiresAt: number;
+  requestId: string;
+  target: string;
 };
 
 /** Input shape for `crm.account`. */

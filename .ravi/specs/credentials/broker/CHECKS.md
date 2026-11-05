@@ -1,5 +1,9 @@
 # Credential Broker Checks
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/credentials/file-backend.test.ts src/credentials/backends.test.ts src/credentials/intake.test.ts`
+- Verify private-file connection intake resolves through the existing broker and
+  no token appears in connection metadata, logs, errors or audit.
+
 ## PoC Regression
 
 ```bash
