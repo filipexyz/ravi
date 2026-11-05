@@ -288,6 +288,17 @@ export interface PromptMessage {
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */
   _turnOrigin?: RuntimeTurnOriginMetadata;
+  /** Trusted Slack lifecycle provenance, used to batch lossless progress reports. */
+  _slackThreadLifecycle?: {
+    eventId?: string;
+    eventType: string;
+    requestId: string;
+    parentSessionKey: string;
+    childSessionKey: string;
+    childSessionName?: string;
+    providerThreadId?: string;
+    [key: string]: unknown;
+  };
   /**
    * Channel bootstrap that must not occupy a runtime pool slot until a later
    * interactive turn. The dispatcher stashes the inform and prepends it.

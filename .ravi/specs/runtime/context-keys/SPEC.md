@@ -48,6 +48,28 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
 - Bulk cleanup of historical `agent-runtime` contexts MUST be opt-in and
   exposed through an explicit CLI path. It MUST NOT run automatically during
   dispatch or daemon startup.
+- An active provider turn MAY renew its own `turn-runtime` lease before expiry,
+  only after revalidating the original invocation against current authority.
+  Renewal MUST preserve the issued key, capabilities, actor and surface; new
+  grants MUST wait for the next turn. A reduced ceiling, ineligible actor,
+  changed authorization mode or failed revalidation MUST revoke the context
+  and its descendants. Token use/touch alone MUST NOT renew a context.
+- Renewal MUST NOT revive an expired, revoked or deleted context, change the
+  default TTL, renew derived children, or override bridge delegation expiry.
+  `relayNarrowing` contexts MUST NOT renew: their historical caller snapshot
+  does not yet encode every individual grant revocation in relay lineage.
+  They retain their original expiry and require a new turn after it expires.
+  The host-owned renewal timer MUST end on terminal settlement, failed turn
+  preparation, generator closure or abort. Terminal settlement MUST revoke the
+  turn key immediately; ordinary completion preserves independently issued
+  children as existing turn rotation does, while abort cascades revocation.
+- Session reset/abort MUST also revoke still-live derived credentials in that
+  session whose turn root already completed. Ordinary launch reclamation with
+  `cascade: false` MUST continue preserving independent child lifetimes.
+- Context replacement MUST preserve the object reference retained by host
+  services while removing optional fields absent from the new snapshot,
+  including `revokedAt` and `source`. A live key in storage is insufficient if
+  host tools still see stale revocation or surface state from the previous turn.
 
 ## Acceptance
 
@@ -58,3 +80,5 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
 - Reset or abort revokes live runtime contexts for the session and the next
   dispatch issues a fresh agent-identity context.
 - Stale historical contexts can be inspected in dry-run mode before any revoke.
+- A turn active for longer than an hour remains authorized with its original
+  capabilities, while a new grant never appears in that turn's snapshot.

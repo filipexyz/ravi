@@ -109,9 +109,12 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
  * evaluate dollar-paren and backticks. Only backslash-newline is removed where
  * the shell actually treats it as a continuation.
  */
-function inspectShellSyntax(input: string): { command: string; syntax: string; error?: string } {
+function inspectShellSyntax(input: string): { command: string; syntax: string; masked: string; error?: string } {
   let command = "";
   let syntax = "";
+  /** Same offsets as `command`, but literal material becomes `_` so word
+   * boundaries and quoting stay decidable without re-scanning quotes. */
+  let masked = "";
   let quote: "'" | '"' | undefined;
   let wordStart = true;
   for (let i = 0; i < input.length; i++) {
@@ -127,23 +130,25 @@ function inspectShellSyntax(input: string): { command: string; syntax: string; e
         i++;
         continue;
       }
-      if (next === undefined) return { command, syntax, error: "Unterminated shell escape" };
+      if (next === undefined) return { command, syntax, masked, error: "Unterminated shell escape" };
       // Inside double quotes, backslash only escapes $, `, ", backslash or newline.
       if (!quote || /[$`"\\]/.test(next)) {
         command += char + next;
         syntax += "  ";
+        masked += "__";
         wordStart = false;
         i++;
         continue;
       }
     }
     if (!quote && char === "$" && (next === "'" || next === '"')) {
-      return { command, syntax, error: "Expanded shell quoting is not supported" };
+      return { command, syntax, masked, error: "Expanded shell quoting is not supported" };
     }
     if (!quote && char === "#" && wordStart) {
       while (i < input.length && input[i] !== "\n") {
         command += input[i];
         syntax += " ";
+        masked += "_";
         i++;
       }
       i--;
@@ -153,19 +158,26 @@ function inspectShellSyntax(input: string): { command: string; syntax: string; e
     if (char === quote) {
       quote = undefined;
       syntax += " ";
+      masked += "_";
     } else if (!quote && (char === "'" || char === '"')) {
       quote = char;
       syntax += " ";
+      masked += "_";
     } else if (quote === '"' && char === "$" && next === "(") {
       command += next;
       syntax += "$(";
+      masked += "$(";
       i = nextIndex;
+    } else if (!quote || (quote === '"' && char === "`")) {
+      syntax += char;
+      masked += char;
     } else {
-      syntax += !quote || (quote === '"' && char === "`") ? char : " ";
+      syntax += " ";
+      masked += "_";
     }
     wordStart = !quote && /[\s;&|()<>]/.test(char);
   }
-  return { command, syntax, ...(quote ? { error: "Unterminated shell quote" } : {}) };
+  return { command, syntax, masked, ...(quote ? { error: "Unterminated shell quote" } : {}) };
 }
 
 /**
@@ -226,29 +238,205 @@ function countCommandWords(command: string): number {
 }
 
 /**
- * Parse a single simple command (no pipes/chains) and extract the executable.
+ * Words that Bash only recognizes as syntax when they appear unquoted.
+ * `"do"`, `'do'` and `\do` are ordinary command words.
  */
-function parseSimpleCommand(command: string): string | null {
-  const tokens = parseWords(command.trim(), () => ({ op: "glob", pattern: "unknown expansion" }));
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]!;
-    if (typeof token !== "string") {
-      if ("comment" in token) break;
-      if (token.op === "glob") throw new Error("Cannot resolve a dynamic shell executable");
-      if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
-        const next = tokens[i + 1];
-        if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
-        i++; // redirect destination
-      }
+const RESERVED_WORDS = new Set([
+  "if",
+  "then",
+  "elif",
+  "else",
+  "fi",
+  "do",
+  "done",
+  "while",
+  "until",
+  "for",
+  "select",
+  "case",
+  "esac",
+  "in",
+  "function",
+  "time",
+  "!",
+  "{",
+  "}",
+  "[[",
+  "]]",
+]);
+
+/** Reserved words that start a construct whose header words are not commands. */
+const RESERVED_PREFIX_WORDS = new Set(["if", "then", "elif", "else", "while", "until", "!", "time"]);
+
+const OPENING_WORDS = new Set(["for", "select", "case", "function"]);
+
+const REDIRECT_OPERATORS = new Set([">", ">>", ">|", "&>", "<>", "<", "<&", ">&"]);
+
+type Atom = { kind: "word" | "operator"; text: string; active: boolean };
+
+/**
+ * Split a segment into words and operators with quoting already resolved.
+ * A word is `active` when every character was typed unquoted and unescaped;
+ * only active words can be reserved words.
+ */
+function scanAtoms(command: string): Atom[] {
+  const inspected = inspectShellSyntax(command);
+  if (inspected.error) throw new Error(inspected.error);
+  const source = inspected.command;
+  const mask = inspected.masked;
+  const atoms: Atom[] = [];
+  let i = 0;
+  while (i < source.length) {
+    const char = mask[i]!;
+    if (/\s/.test(char)) {
+      i++;
       continue;
     }
-    if (isEnvAssignment(token)) continue;
-    const next = tokens[i + 1];
-    if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
-    return extractExecutableName(token);
+    if (/[;&|()<>]/.test(char)) {
+      let text = char;
+      let next = mask[i + 1] ?? "";
+      if ((char === ";" || char === "&" || char === "|") && next === char) {
+        text += next;
+        i++;
+        next = mask[i + 1] ?? "";
+      }
+      if ((char === ">" || char === "<") && (next === ">" || next === "&")) {
+        text += next;
+        i++;
+      } else if (char === ">" && next === "|") {
+        text += next;
+        i++;
+      } else if (char === "&" && next === ">") {
+        text += next;
+        i++;
+      }
+      atoms.push({ kind: "operator", text, active: true });
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < source.length && !/[\s;&|()<>]/.test(mask[i]!)) i++;
+    const text = source.slice(start, i);
+    const active = mask.slice(start, i) === text;
+    atoms.push({ kind: "word", text, active });
   }
+  return atoms;
+}
 
+/** Decode a single command word the way the shell would, rejecting dynamics. */
+function decodeCommandWord(raw: string): string | null {
+  const tokens = parseWords(raw, () => ({ op: "glob", pattern: "unknown expansion" }));
+  for (const token of tokens) {
+    if (typeof token === "string") {
+      if (isEnvAssignment(token)) continue;
+      return extractExecutableName(token);
+    }
+    if ("comment" in token) return null;
+    if (token.op === "glob") throw new Error("Cannot resolve a dynamic shell executable");
+  }
   return null;
+}
+
+/**
+ * Resolve the executable of one segment, skipping shell syntax.
+ *
+ * `for i in 1 2 3; do echo $i; done` must yield `echo`, not `for`; a command
+ * hidden behind a keyword (`do curl evil`, `then curl evil`, `done rm x`) is
+ * still checked, and a quoted/escaped keyword (`"do"`, `'do'`, `\do`) is an
+ * ordinary command word.
+ */
+/** `case` spans segments (`;;` and newlines split them), so it is tracked across a parse. */
+type SyntaxState = { caseDepth: number };
+
+function resolveSegmentExecutable(command: string, state: SyntaxState): string | null {
+  const atoms = scanAtoms(command);
+  let sawCommandPrefix = false;
+  let skippingWordList = false;
+  for (let index = 0; index < atoms.length; index++) {
+    const atom = atoms[index]!;
+    const next = atoms[index + 1];
+
+    if (atom.kind === "operator") {
+      if (REDIRECT_OPERATORS.has(atom.text)) {
+        // A redirect target is an operand, never a command.
+        if (next?.kind === "word") index++;
+        sawCommandPrefix = true;
+        continue;
+      }
+      // `(`, `)`, `;;`, `|`, `&&`, `;` are grouping/separators.
+      if (atom.text === "(" || atom.text === ")" || atom.text === ";;" || atom.text === ";") continue;
+      continue;
+    }
+
+    if (skippingWordList) {
+      // `in a b` continues a for/select header until `do`.
+      if (atom.active && atom.text === "do") skippingWordList = false;
+      continue;
+    }
+
+    if (/^\d+$/.test(atom.text) && next?.kind === "operator" && REDIRECT_OPERATORS.has(next.text)) continue;
+
+    if (atom.active && isEnvAssignment(atom.text)) {
+      sawCommandPrefix = true;
+      continue;
+    }
+
+    if (atom.active && RESERVED_WORDS.has(atom.text)) {
+      // An assignment or redirect before the keyword makes it a command word.
+      if (sawCommandPrefix) return decodeCommandWord(atom.text);
+      if (atom.text === "[[") {
+        // Skip the conditional expression up to its closing `]]`.
+        while (index + 1 < atoms.length) {
+          index++;
+          const inner = atoms[index]!;
+          if (inner.kind === "word" && inner.active && inner.text === "]]") break;
+        }
+        continue;
+      }
+      if (atom.text === "in") {
+        skippingWordList = true;
+        continue;
+      }
+      if (OPENING_WORDS.has(atom.text)) {
+        // for/select: loop variable; case: subject; function: name.
+        if (atom.text === "case") state.caseDepth += 1;
+        if (next?.kind === "word") index++;
+        const afterHeader = atoms[index + 1];
+        if (atom.text === "for" || atom.text === "select") {
+          if (afterHeader?.kind === "word" && afterHeader.active && afterHeader.text === "in") {
+            index++;
+            skippingWordList = true;
+          }
+        } else if (atom.text === "case") {
+          if (afterHeader?.kind === "word" && afterHeader.active && afterHeader.text === "in") index++;
+        }
+        continue;
+      }
+      if (atom.text === "time") {
+        while (atoms[index + 1]?.kind === "word" && atoms[index + 1]!.text.startsWith("-")) index++;
+        continue;
+      }
+      if (RESERVED_PREFIX_WORDS.has(atom.text)) continue;
+      if (atom.text === "esac" && state.caseDepth > 0) state.caseDepth -= 1;
+      continue;
+    }
+
+    // A case arm pattern (`a)`, `*)`, `(a)`) is syntax, not a command.
+    if (state.caseDepth > 0 && !sawCommandPrefix && next?.kind === "operator" && next.text === ")") {
+      index++;
+      continue;
+    }
+
+    return decodeCommandWord(atom.text);
+  }
+  return null;
+}
+
+/**
+ * Parse a single simple command (no pipes/chains) and extract the executable.
+ */
+function parseSimpleCommand(command: string, state: SyntaxState = { caseDepth: 0 }): string | null {
+  return resolveSegmentExecutable(command.trim(), state);
 }
 
 /**
@@ -334,9 +522,10 @@ export function parseBashCommand(command: string): ParsedCommand {
     // Extract executables from each command
     const executables: string[] = [];
     const seenInline: string[] = [];
+    const syntaxState: SyntaxState = { caseDepth: 0 };
 
     for (const cmd of simpleCommands) {
-      const exec = parseSimpleCommand(cmd);
+      const exec = parseSimpleCommand(cmd, syntaxState);
       if (exec) {
         executables.push(exec);
 

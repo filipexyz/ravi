@@ -616,6 +616,7 @@ describe("Slack thread orchestration", () => {
         "Progresso: Found the failing commit",
       ].join("\n"),
       source: { chatId: "C123", actorType: "system" },
+      deliveryBarrier: "after_response",
       _slackThreadLifecycle: { eventType: "thread.report", eventId: report.messageId },
       _turnOrigin: { producer: "channel", action: "session.return" },
     });

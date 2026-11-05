@@ -217,10 +217,12 @@ async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHan
 
   const isOpenRoute = cmd.scope === "open";
   const resolved = resolveAuth(request, ctx.auth);
-  if (!isOpenRoute) {
-    if (!resolved.authenticated) {
-      return unauthorized(authFailureMessage(resolved.reason));
-    }
+  // Open routes may omit authentication, but an explicitly supplied invalid
+  // credential must not fall through as an anonymous command-access denial.
+  if (!resolved.authenticated && (!isOpenRoute || resolved.reason !== "missing")) {
+    return resolved.reason === "expired"
+      ? errorResponse(401, "ContextExpired")
+      : unauthorized(authFailureMessage(resolved.reason));
   }
 
   if (cmd.access?.consoleOnly && !currentConsoleInvocation()) {
