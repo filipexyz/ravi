@@ -220,22 +220,33 @@ Console credits the write to that person through this installation's
   gateway runs the command under (the daemon's own environment has no
   `RAVI_CONTEXT_KEY`). The CLI MUST NOT take it from `RAVI_CONTACT_ID`, a
   flag or any other value the agent's shell can change.
-- The operator's own turns, routines the operator owns, turns Ravi cannot
-  attribute and calls outside a runtime turn MUST send no header: Console
-  then acts as the `ravi login` user.
+- The operator's own turns, routines the operator owns and calls outside a
+  runtime turn MUST send no header: Console then acts as the `ravi login`
+  user. This does not authorize fallback for an unattributed Bases request.
 - A turn another turn produced (a session relay, a Slack thread bootstrap,
   report or return) whose producing turn acted for a contact MUST send that
-  contact, read from the daemon's record of the producing context
-  (`relayCallerContactId`), even though the relayed turn itself names an
-  agent. A contact's request never goes out as the operator alone by being
-  relayed.
+  contact through the host-admitted credential lineage, bound to the caller,
+  source session, target session and admission time, even though the relayed
+  turn itself names an agent. A bare `relayCallerContactId`, prompt text or
+  session's previous speaker MUST NOT establish that identity. This applies
+  even when the verified person is the operator: delegation sends the contact
+  and leaves the executor and capability ceiling unchanged. Completed or
+  rotated source turns MAY remain historical evidence; explicit withdrawal
+  and current contact/grant/profile restrictions MUST still be enforced.
 - `/api/cli/auth/**` and `/api/cli/me` MUST NOT carry it.
-- A failure to classify the turn MUST NOT fail the call; it sends no header.
+- Bases JSON and byte requests MUST revalidate the actor before each HTTP
+  dispatch, including retries and subsequent calls on the same client. An
+  unresolved or revoked actor, or a classification error, MUST fail before
+  fetch rather than send without the header. A successful preflight or cached
+  earlier actor MUST NOT authorize the next request.
+- Other routes retain the optional actor-header contract: failure to classify
+  omits the header and leaves authorization to that route's access policy.
 
-Console decides who acts. With no active binding approved by that person,
-reads keep the operator and writes are refused with `ACTOR_NOT_LINKED`; a
-person who is not an active member of the session's organization gets
-`PROJECT_ACCESS_DENIED` on writes.
+Console decides who acts through the current binding, membership and resource
+ACL. Bases reads and writes require the person's active binding and MUST NOT
+fall back to the operator when it is absent (`cli/bases`). Other routes retain
+their existing binding policy; this delegation contract does not grant access
+to any resource or connector.
 
 When a call that named a contact gets `ACTOR_NOT_LINKED` (outside
 `/api/cli/link/**`), the client MUST start that person's `ravi link`

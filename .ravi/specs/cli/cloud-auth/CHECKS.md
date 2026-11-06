@@ -36,6 +36,17 @@
 - In provider mode, a Console exchange retry reuses the provider token and does
   not poll the provider again with the consumed device code.
 
+## Delegated Actor Checks
+
+- `src/access/delegated-actor.test.ts` verifies host-admitted human lineage,
+  rejected bare hints, current credentials and historical withdrawal.
+- `src/channels/slack/thread-delegated-actor.test.ts` exercises native thread
+  creation, continuation, reopen, report/return and request-time revocation
+  with isolated real SQLite and mocked HTTP transport.
+- `src/cloud-auth/client.test.ts` rejects a later Bases JSON or byte request
+  after actor resolution becomes refused, without reusing a cached actor or
+  sending a headerless request. Other routes retain their optional lookup.
+
 ## Login Smoke
 
 ```bash
