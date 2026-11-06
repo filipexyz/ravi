@@ -15,6 +15,8 @@ tags:
   - roles
   - contacts
 applies_to:
+  - src/access/delegated-actor.ts
+  - src/access/actor.ts
   - src/permissions
   - src/runtime/runtime-request-context.ts
   - src/runtime/context-registry.ts
@@ -31,9 +33,14 @@ normative: true
 
 ## Intent
 
-Delegation defines how a user, chat, route, automation, or system actor lends authority to an agent for one execution.
+Delegation records who caused an execution and the bounds an admitted handoff
+must preserve. The active runtime authority model is
+`permissions/agent-identity`: the executor acts under its compartment-scoped
+agent identity, with the chat-scoped user overlay when applicable.
 
-The model is Discord-role-like: nothing is available by default, and capabilities are unlocked only by explicit grants on principals or roles. Broad agent grants remain useful as a technical ceiling, but they MUST NOT become ambient authority for every person who can speak to that agent.
+Attributing a Console operation to a person is separate from granting tools.
+A verified handoff MAY preserve that person's request without changing the
+agent producer, executor, capability ceiling, or Console resource policy.
 
 ## Definitions
 
@@ -49,8 +56,10 @@ The model is Discord-role-like: nothing is available by default, and capabilitie
 - Delegation MUST be explicit, auditable, and explainable.
 - Effective authority for user-initiated execution MUST be derived by intersection, not union.
 - A role MAY grant capabilities, but a role assignment MUST be scoped. Global role assignment is a conscious explicit operation, not the default.
-- Chat or route policy MAY further restrict authority. It MUST NOT expand authority beyond the actor and agent ceilings.
-- Explicit `delegate_<relation>` overrides MAY replace a missing actor grant only inside delegated context materialization. They MUST NOT become ambient capabilities or exceed the executor agent ceiling.
+- Provider-owned policy MAY further restrict authority. It MUST NOT expand
+  authority beyond the executor agent ceiling or applicable turn bounds.
+- The retired `delegate_<relation>` actor/surface substitutions MUST NOT be
+  reintroduced into runtime context creation by a handoff.
 - Unknown or unresolved actors MUST receive no delegated tool/executable/CLI/session/contact authority.
 - A user-facing response channel is not the same as tool authority. Ravi MAY answer textually while denying tools.
 - Break-glass authority MUST be distinguishable from normal delegated authority in traces and context provenance.
@@ -59,38 +68,57 @@ The model is Discord-role-like: nothing is available by default, and capabilitie
 
 ## Canonical Formula
 
-For a user-initiated turn:
+For a user-initiated turn, following `permissions/agent-identity` and
+`permissions/user-overlay`:
 
 ```text
 effective_caps =
-  agent_caps
-  INTERSECT (actor_caps OR actor_overrides)
-  INTERSECT (surface_constraints OR surface_overrides OR inherited_actor_caps_when_no_surface_decision)
-  INTERSECT turn_caps
+  agent_identity_capabilities
+  INTERSECT contact_chat_capabilities_when_chat_is_governed
+  INTERSECT turn_capabilities_when_present
 ```
 
 Where:
 
-- `agent_caps` are the maximum technical capabilities of the executor.
-- `actor_caps` are capabilities the current speaker can delegate.
-- `surface_constraints` are explicit constraints from chat, thread, route, instance, project, or session policy.
-- `turn_caps` are short-lived caps for this invocation, approval, or explicit user confirmation.
-- `actor_overrides` come from explicit `delegate_<relation>` grants on the executor agent or current surface and apply only for resolved contacts.
-- `surface_overrides` come only from explicit `delegate_<relation>` grants on the current surface.
-- A surface with no explicit grant, `deny_<relation>`, or `constrain role:<id>` decision for the same capability inherits the actor branch. This keeps normal chats from requiring duplicate grants while preserving the actor and agent ceilings.
-- `deny_<relation>` on the surface is an explicit veto and MUST win over actor inheritance, surface grants, delegation overrides, and broader wildcards that would include the denied capability.
-- `constrain role:<id>` remains an explicit surface boundary. If a surface constraint exists, capabilities outside that constraint are denied unless a surface-level delegation override explicitly allows them.
+- The agent identity is materialized from the executor's provider-owned
+  capabilities in the selected compartment.
+- An ungoverned chat MUST NOT require an independent actor or surface grant.
+- In a governed chat, contact grants only narrow the agent ceiling.
+- Turn approvals, observer grants and applicable caller narrowing remain
+  upper bounds; a handoff MUST NOT add or globalize capabilities.
+- Internal handoffs retain their explicit agent producer; automations retain
+  their own principal. Neither MUST infer authority from the last human
+  speaker, thread creator, display name, or session attachment.
 
-Overrides are not union authority. They are narrow branch substitutions and the
-agent and turn ceilings still win.
+## Verified Console Actor Handoffs
 
-For internal execution:
-
-```text
-effective_caps = automation_caps INTERSECT agent_caps INTERSECT target_surface_caps
-```
-
-Internal execution MUST use an explicit `automation:<id>` or `system:<id>` principal. It MUST NOT silently inherit the last human speaker.
+- Only a host-issued turn and its verified context lineage MAY establish a
+  delegated Console actor. An admission MUST bind `callerContextId`,
+  `callerSessionKey`, `targetSessionKey` and `admittedAt` to the producing
+  agent and receiving session. Wire shape alone is not authentication; the
+  internal prompt transport MUST remain restricted to trusted producers.
+- Every caller credential in the chain MUST have been valid at its admission.
+  The current credential and its derived lineage MUST remain live. Missing,
+  contradictory, cyclic, wrongly targeted, or unbound chains MUST fail closed.
+- Queued delivery MAY retain the admitted person after normal caller
+  completion, rotation or later expiry. Explicit revocation, removal of a
+  grant used by the caller, profile reduction, or an ineligible/blocked/
+  opted-out person MUST invalidate the affected attribution, including
+  historical callers and their pending or active descendants.
+- A verified chain ending at a resolved, eligible person MUST send that
+  person's contact id to Console, including when that person is the operator.
+  Console MUST resolve the current link, membership and resource ACL; the
+  installation login MUST NOT become a fallback identity.
+- Resolved `pending` or `discovered` group participants MUST NOT be rejected
+  solely for that intake status: they may hold explicit scoped grants.
+  Attribution itself MUST NOT add capabilities. Blocked, missing or opted-out
+  people remain ineligible.
+- The executor agent and agent-origin provenance MUST remain intact. This
+  attribution MUST NOT grant global authority, revive a credential, change
+  personal connector or Knowledge eligibility, or authorize unrelated work.
+- `relayCallerContactId`, prompt text, trace labels and a prior human message
+  MUST NOT independently authenticate an actor. Producers without a verified
+  admission remain subject to their existing refusal/automation rules.
 
 ## Externally Governed Compartments
 

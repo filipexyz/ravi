@@ -45,8 +45,12 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
 - If a route forces a parent session name and that parent exists, the thread child session key MUST be `<parent_session_key>:thread:<thread_ts>`.
 - If no forced parent exists, the thread child session key SHOULD use the normal channel-derived parent key plus `:thread:<thread_ts>`.
 - The child session MUST use the same agent and cwd as the route-resolved parent.
-- The child session MUST receive the same resolved actor metadata as the inbound message: `actorType`, `contactId`, `platformIdentityId`, raw sender ids and identity provenance.
-- Permission checks MUST evaluate the child thread turn with the same actor/source semantics as the parent channel turn.
+- A direct human reply routed to the child MUST retain the inbound message's
+  resolved `actorType`, `contactId`, `platformIdentityId`, raw sender ids and
+  identity provenance. Programmatic handoffs retain their agent producer and
+  use the verified admission rules below for Console actor attribution.
+- Permission checks MUST evaluate each child turn's own actor/source and
+  admitted lineage, never the previous human speaker of either session.
 - Runtime continuity MAY fork provider state from the parent session when the provider supports `supportsSessionFork`.
 - Once the child session has its own resumable provider state, Ravi MUST prefer the child state over re-forking from the parent.
 - Outbound responses from a thread child session MUST target the same Slack `thread_ts` by default.
@@ -105,6 +109,34 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
 
 - A programmatic thread requested by a human turn MUST use interactive admission via `_interactiveStart`. This fact MUST come from the persisted initiating context's canonical turn provenance, never its requester display name. Cron, observer and agent turns MUST retain background admission; bootstrap actor authority and turn origin MUST remain unchanged.
 - `sessions create-thread --provider <provider> --model <model>` MUST validate the effective pair before creating lifecycle or outbound records. Known incompatible models MUST fail with `THREAD_MODEL_PROVIDER_MISMATCH` and an explicit provider hint. Bare Codex model selectors on Pi MUST be refused; explicit Pi `provider/model` selectors remain available.
+
+## Console Actor Admission
+
+- A programmatic bootstrap MUST bind its persisted initiating context and
+  initiating session to the materialized child session, using the lifecycle's
+  creation time as `admittedAt`. Delivery retries MUST preserve this admission
+  instead of looking up the parent's current turn or last human speaker.
+- `thread.send`, including reopen, MUST admit the current caller context for
+  the selected child. It MUST NOT reuse the thread creator's identity. A
+  queued send MUST keep its admitted caller after another human turn starts.
+- Progress reports MUST bind the reporting child context to the parent.
+  Close returns MUST use the persisted closing context and close time so
+  retrying a pending return does not substitute the latest caller.
+- Each `callerContextId` plus `delegation { callerSessionKey,
+  targetSessionKey, admittedAt }` MUST originate from trusted host command/
+  lifecycle records and pass the chain rules in `permissions/delegation`.
+  Names, root-card `requestedBy`, actor hints and `_interactiveStart` alone
+  MUST NOT authorize a Console call.
+- A verified human chain MUST let `resolveAccessActor` attribute the Console
+  call to that person's contact id while preserving the agent producer and
+  current executor. Console applies the person's live link and resource ACL;
+  an absent or invalid chain MUST NOT fall back to the operator's login.
+- Normal caller completion, rotation and later expiry MAY precede queued
+  delivery. Explicit revocation, removal of a used grant, profile reduction
+  and an ineligible/blocked/opted-out contact MUST deny affected attribution.
+- This contract does not add tool capabilities, change personal connector or
+  Knowledge eligibility, or imply that every task/automation producer emits
+  a verified Console actor admission.
 
 ## Route Semantics
 

@@ -12,6 +12,41 @@ import {
 } from "./turn-origin.js";
 
 describe("runtime turn origin", () => {
+  it.each(["send", "ask", "answer", "execute", "inform"] as const)(
+    "binds admitted %s to the authenticated caller and resolved target",
+    (action) => {
+      const origin = buildSessionRelayTurnOrigin(
+        action,
+        {
+          agentId: "origin-agent",
+          sessionKey: "source",
+          contextId: "caller",
+        },
+        "target",
+      );
+      expect(resolveRuntimeTurnOrigin(origin)).toEqual(origin);
+      expect(origin.delegation).toEqual({
+        callerSessionKey: "source",
+        targetSessionKey: "target",
+        admittedAt: expect.any(Number),
+      });
+      expect(
+        buildSessionRelayTurnOrigin(action, { agentId: "origin-agent", sessionKey: "source" }, "target").delegation,
+      ).toBeUndefined();
+    },
+  );
+
+  it.each([0, -1, Infinity, 1.5, "1", null])("does not accept malformed admission time %s", (admittedAt) => {
+    const origin = buildSessionRelayTurnOrigin(
+      "send",
+      { agentId: "agent", sessionKey: "source", contextId: "caller" },
+      "target",
+    );
+    expect(
+      resolveRuntimeTurnOrigin({ ...origin, delegation: { ...origin.delegation, admittedAt } })?.delegation,
+    ).toBeUndefined();
+  });
+
   it("recognizes a signal escalation only through its typed automation envelope", () => {
     const origin = buildSignalTurnOrigin("sig_test");
     expect(resolveRuntimeTurnOrigin(origin)).toEqual(origin);

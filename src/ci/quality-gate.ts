@@ -44,6 +44,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/client.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
+    // Host-admitted human attribution survives thread handoff, queues and ordinary rotation.
+    "src/channels/slack/thread-delegated-actor.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
     "src/channels/slack/markdown-layout.test.ts",
     "src/channels/slack/markdown-delivery.test.ts",
@@ -100,6 +102,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     "src/runtime/context-registry.test.ts",
+    "src/runtime/turn-origin.test.ts",
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/observation-plane.test.ts",
     "src/runtime/runtime-request-context.test.ts",

@@ -1,5 +1,9 @@
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../omni/session-stream.js";
-import type { ChannelTurnAction, RuntimeTurnOriginPrincipal } from "../runtime/message-types.js";
+import type {
+  ChannelTurnAction,
+  RuntimeTurnOriginPrincipal,
+  TurnDelegationAdmission,
+} from "../runtime/message-types.js";
 import { buildChannelTurnOrigin } from "../runtime/turn-origin.js";
 
 export type ChannelPromptTransport = (
@@ -14,6 +18,7 @@ export interface PublishChannelSessionPromptInput {
   principal: RuntimeTurnOriginPrincipal;
   /** Runtime context of the turn this one comes from; it can only narrow the new turn. */
   callerContextId?: string;
+  delegation?: TurnDelegationAdmission;
   payload: Record<string, unknown>;
   options?: PublishSessionPromptOptions;
 }
@@ -31,7 +36,7 @@ export async function publishChannelSessionPrompt(
     input.sessionName,
     {
       ...input.payload,
-      _turnOrigin: buildChannelTurnOrigin(input.action, input.principal, input.callerContextId),
+      _turnOrigin: buildChannelTurnOrigin(input.action, input.principal, input.callerContextId, input.delegation),
     },
     input.options,
   );

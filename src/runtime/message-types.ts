@@ -151,6 +151,13 @@ export interface RuntimeTurnOriginPrincipal {
   id: string;
 }
 
+/** Trusted producer admission, bound to one receiving session (not a grant). */
+export interface TurnDelegationAdmission {
+  callerSessionKey: string;
+  targetSessionKey: string;
+  admittedAt: number;
+}
+
 interface RuntimeTurnOriginEnvelope {
   protocol: "ravi.runtime.turn-origin";
   schemaVersion: 1;
@@ -160,6 +167,7 @@ interface RuntimeTurnOriginEnvelope {
    * the new turn (to a contact overlay's capabilities), never widen it.
    */
   callerContextId?: string;
+  delegation?: TurnDelegationAdmission;
 }
 
 export interface SessionRelayTurnOriginMetadata extends RuntimeTurnOriginEnvelope {

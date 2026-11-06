@@ -159,6 +159,11 @@ export async function finalizeSlackThreadCreation(
           materialized.agentId,
         ),
         callerContextId: record.initiatorContextId,
+        delegation: {
+          callerSessionKey: record.initiatorSessionKey ?? record.parentSessionKey,
+          targetSessionKey: materialized.childSessionKey,
+          admittedAt: record.createdAt,
+        },
         payload: buildSlackThreadInitialPrompt(record, materialized),
         options: {
           messageId: `slack-thread-start:${record.requestId}`,
@@ -407,6 +412,15 @@ export async function deliverSlackThreadParentReturn(
         action: "session.return",
         principal: resolveChannelLifecyclePrincipal("session.return", record.childSessionKey),
         callerContextId: record.closeContextId,
+        ...(record.childSessionKey && record.closedAt
+          ? {
+              delegation: {
+                callerSessionKey: record.childSessionKey,
+                targetSessionKey: parent.sessionKey,
+                admittedAt: record.closedAt,
+              },
+            }
+          : {}),
         payload: {
           prompt: buildSlackThreadParentNotice(record, "concluída.", "Resultado", record.closeResult),
           source: buildSlackThreadParentSource(record, record.providerThreadId),
@@ -670,6 +684,11 @@ export async function reportSlackThreadProgress(
       action: "session.return",
       principal: resolveChannelLifecyclePrincipal("session.return", session.sessionKey),
       callerContextId: getContext({ localOnly: true })?.contextId,
+      delegation: {
+        callerSessionKey: session.sessionKey,
+        targetSessionKey: parent.sessionKey,
+        admittedAt: Date.now(),
+      },
       payload: {
         prompt: buildSlackThreadParentNotice(record, "reporta progresso.", "Progresso", text),
         source: buildSlackThreadParentSource(record, record.providerThreadId),
@@ -765,6 +784,7 @@ export async function sendSlackThreadMessage(
       _turnOrigin: buildSessionRelayTurnOrigin(
         "execute",
         input.origin ?? { agentId: parent.agentId, sessionKey: parent.sessionKey, sessionName: parent.name },
+        child.sessionKey,
       ),
     },
     { messageId },

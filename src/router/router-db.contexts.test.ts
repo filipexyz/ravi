@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   type ContextRecord,
@@ -8,6 +9,7 @@ import {
   dbRenewActiveContext,
   dbRevokeContextCascade,
   dbUpdateContextMetadata,
+  dbUpdateContextRuntimeState,
   getDb,
 } from "./router-db.js";
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
@@ -99,7 +101,7 @@ describe("context metadata and transactional revocation persistence", () => {
     expect(result.context).toEqual({
       ...root,
       revokedAt: REVOKED_AT,
-      metadata: { ...metadata, revocationReason: "permission_profile_reduced" },
+      metadata: { ...metadata, authorityRevokedAt: REVOKED_AT, revocationReason: "permission_profile_reduced" },
     });
     expect(dbGetContext(root.contextId)).toEqual(result.context);
     expect(result.cascaded.map((context) => context.contextId).sort()).toEqual(["child", "grandchild"]);
@@ -109,6 +111,7 @@ describe("context metadata and transactional revocation persistence", () => {
         revokedAt: REVOKED_AT,
         metadata: {
           ...original.metadata,
+          authorityRevokedAt: REVOKED_AT,
           revocationReason: "permission_profile_reduced",
           revokedViaCascade: true,
           cascadeRootContextId: root.contextId,
@@ -140,6 +143,80 @@ describe("context metadata and transactional revocation persistence", () => {
       expect(dbGetContext(original.contextId)).toEqual(original);
     }
     expect(getDb().inTransaction).toBe(false);
+  });
+
+  it("keeps explicit withdrawal after ordinary completion and metadata refresh", () => {
+    const root = createContext("withdrawn");
+    const unaffected = createContext("normal");
+    dbRevokeContextCascade(root.contextId, { revokedAt: 3_000, reason: "turn_context_completed" });
+    expect(dbGetContext(root.contextId)?.metadata?.authorityRevokedAt).toBeUndefined();
+    dbRevokeContextCascade(root.contextId, { revokedAt: REVOKED_AT });
+    dbRevokeContextCascade(root.contextId, { revokedAt: 5_000, reason: "turn_context_completed" });
+    dbUpdateContextMetadata(root.contextId, { arbitraryRefresh: true, authorityRevokedAt: null });
+    dbUpdateContextRuntimeState(root.contextId, { metadata: { activation: true } });
+    expect(dbGetContext(root.contextId)?.metadata).toEqual({ activation: true, authorityRevokedAt: REVOKED_AT });
+    dbUpdateContextRuntimeState(root.contextId, {});
+    expect(dbGetContext(root.contextId)?.metadata).toEqual({ authorityRevokedAt: REVOKED_AT });
+    expect(dbGetContext(root.contextId)?.revokedAt).toBe(5_000);
+    expect(dbGetContext(unaffected.contextId)).toEqual(unaffected);
+  });
+
+  it("preserves a withdrawal committed after cascade targets were read but before completion acquires its lock", () => {
+    const { root, child, grandchild, unrelated } = createFamily();
+    const db = getDb();
+    const writer = new Database(db.filename);
+    const originalExec = db.exec;
+    let interleavings = 0;
+
+    // Intercept timing only: another connection commits a real withdrawal
+    // after the cascade captured stale targets, before its BEGIN IMMEDIATE.
+    db.exec = ((sql: string) => {
+      if (sql === "BEGIN IMMEDIATE" && interleavings === 0) {
+        interleavings++;
+        expect(db.inTransaction).toBe(false);
+        writer.transaction(() => {
+          writer
+            .prepare(`
+            UPDATE contexts
+            SET revoked_at = ?, metadata_json = json_set(
+              metadata_json, '$.authorityRevokedAt', ?, '$.revocationReason', 'explicit_revoke'
+            )
+            WHERE context_id IN (?, ?, ?)
+          `)
+            .run(REVOKED_AT, REVOKED_AT, root.contextId, child.contextId, grandchild.contextId);
+        })();
+        expect(writer.inTransaction).toBe(false);
+      }
+      return originalExec.call(db, sql);
+    }) as typeof db.exec;
+
+    try {
+      const result = dbRevokeContextCascade(root.contextId, {
+        revokedAt: 5_000,
+        reason: "turn_context_completed",
+      });
+
+      expect(interleavings).toBe(1);
+      for (const context of [result.context, ...result.cascaded]) {
+        expect(context.metadata?.authorityRevokedAt).toBe(REVOKED_AT);
+        expect(context.metadata?.revocationReason).toBe("turn_context_completed");
+        expect(context.revokedAt).toBe(5_000);
+      }
+      expect(result.cascaded.map((context) => context.contextId).sort()).toEqual(["child", "grandchild"]);
+
+      db.transaction(() => {
+        dbUpdateContextMetadata(root.contextId, { refresh: "metadata", authorityRevokedAt: null });
+        dbUpdateContextRuntimeState(child.contextId, { metadata: { refresh: "runtime", authorityRevokedAt: null } });
+        expect(db.inTransaction).toBe(true);
+      })();
+      expect(dbGetContext(root.contextId)?.metadata).toEqual({ refresh: "metadata", authorityRevokedAt: REVOKED_AT });
+      expect(dbGetContext(child.contextId)?.metadata).toEqual({ refresh: "runtime", authorityRevokedAt: REVOKED_AT });
+      expect(dbGetContext(unrelated.contextId)).toEqual(unrelated);
+      expect(db.inTransaction).toBe(false);
+    } finally {
+      db.exec = originalExec;
+      writer.close();
+    }
   });
 
   it("still revokes descendants when no caller transaction exists", () => {

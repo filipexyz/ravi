@@ -6,6 +6,7 @@ import type {
   SessionRelayAction,
   SignalTurnOriginMetadata,
   SessionRelayTurnOriginMetadata,
+  TurnDelegationAdmission,
 } from "./message-types.js";
 
 export const RUNTIME_TURN_ORIGIN_PROTOCOL = "ravi.runtime.turn-origin" as const;
@@ -24,6 +25,7 @@ export interface SessionRelayOriginContext {
 export function buildSessionRelayTurnOrigin(
   action: SessionRelayAction,
   context?: SessionRelayOriginContext,
+  targetSessionKey?: string,
 ): SessionRelayTurnOriginMetadata {
   const agentId = cleanString(context?.agentId);
   const sessionKey = cleanString(context?.sessionKey);
@@ -42,6 +44,9 @@ export function buildSessionRelayTurnOrigin(
     principal: buildRuntimeCallerPrincipal({ agentId, sessionKey, sessionName }),
     ...(session ? { session } : {}),
     ...(callerContextId ? { callerContextId } : {}),
+    ...(callerContextId && sessionKey && targetSessionKey
+      ? { delegation: { callerSessionKey: sessionKey, targetSessionKey, admittedAt: Date.now() } }
+      : {}),
   };
 }
 
@@ -85,6 +90,7 @@ export function buildChannelTurnOrigin(
   action: ChannelTurnAction,
   principal: RuntimeTurnOriginPrincipal,
   callerContextId?: string,
+  delegation?: TurnDelegationAdmission,
 ): ChannelTurnOriginMetadata {
   if (!isChannelTurnAction(action)) throw new Error(`Unsupported channel turn action: ${action}`);
   const resolvedPrincipal = resolvePrincipal(principal);
@@ -96,6 +102,7 @@ export function buildChannelTurnOrigin(
     action,
     principal: resolvedPrincipal,
     ...(cleanString(callerContextId) ? { callerContextId: cleanString(callerContextId) } : {}),
+    ...(callerContextId && delegation ? { delegation } : {}),
   };
 }
 
@@ -129,7 +136,8 @@ export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetad
   const principal = resolvePrincipal(value.principal);
   if (!principal) return null;
   const callerContextId = cleanString(value.callerContextId);
-  const caller = callerContextId ? { callerContextId } : {};
+  const delegation = resolveDelegation(value.delegation);
+  const caller = callerContextId ? { callerContextId, ...(delegation ? { delegation } : {}) } : {};
 
   if (value.producer === "session-relay" && isSessionRelayAction(value.action)) {
     const session = resolveSession(value.session);
@@ -177,6 +185,22 @@ function resolvePrincipal(value: unknown): RuntimeTurnOriginMetadata["principal"
   if (!isRecord(value) || (value.type !== "agent" && value.type !== "automation")) return null;
   const id = cleanString(value.id);
   return id ? { type: value.type, id } : null;
+}
+
+function resolveDelegation(value: unknown): TurnDelegationAdmission | null {
+  if (!isRecord(value)) return null;
+  const callerSessionKey = cleanString(value.callerSessionKey);
+  const targetSessionKey = cleanString(value.targetSessionKey);
+  const admittedAt = value.admittedAt;
+  if (
+    !callerSessionKey ||
+    !targetSessionKey ||
+    typeof admittedAt !== "number" ||
+    !Number.isSafeInteger(admittedAt) ||
+    admittedAt <= 0
+  )
+    return null;
+  return { callerSessionKey, targetSessionKey, admittedAt };
 }
 
 function resolveSession(value: unknown): SessionRelayTurnOriginMetadata["session"] | undefined {

@@ -180,7 +180,8 @@ export function revokeLiveRuntimeContextsForAgent(
 }
 
 /**
- * Revoke live authority snapshots whose user overlay used one contact grant.
+ * Invalidate snapshots whose user overlay used one contact grant, including
+ * historical callers of queued handoffs, and revoke their live dependents.
  *
  * `grantRef` is the `<profile>@<scope>` entry recorded in `userOverlayGrants`.
  * Like agent permission reductions, a revoked grant must stop authorizing
@@ -192,23 +193,15 @@ export function revokeLiveRuntimeContextsForContactGrant(
   options: RevokeRuntimeContextOptions = {},
 ): RevokeContextResult[] {
   const actorPrincipal = `contact:${contactId}`;
-  const contexts = dbListContexts({ includeInactive: false }).filter((context) => {
+  const all = dbListContexts({ includeInactive: true });
+  const contexts = all.filter((context) => {
     const grants = context.metadata?.userOverlayGrants;
     return context.metadata?.actorPrincipal === actorPrincipal && Array.isArray(grants) && grants.includes(grantRef);
   });
-  const matchingIds = new Set(contexts.map((context) => context.contextId));
-  const roots = contexts.filter((context) => {
-    const parentContextId = context.metadata?.parentContextId;
-    return typeof parentContextId !== "string" || !matchingIds.has(parentContextId);
+  return invalidateAuthoritySnapshots(all, contexts, "authorityRevokedAt", {
+    ...options,
+    reason: options.reason ?? "contact_grant_revoked",
   });
-
-  return roots.map((context) =>
-    revokeRuntimeContext(context.contextId, {
-      cascade: options.cascade,
-      reason: options.reason ?? "contact_grant_revoked",
-      revokedAt: options.revokedAt,
-    }),
-  );
 }
 
 /** A definition is shared by every holder; narrowing it invalidates all of its snapshots. */
@@ -227,12 +220,24 @@ export function revokeLiveRuntimeContextsForPermissionProfile(profile: string): 
       )
     );
   });
+  return invalidateAuthoritySnapshots(all, contexts, "permissionProfileRevokedAt", {
+    reason: "permission_profile_reduced",
+  });
+}
+
+/** Preserve withdrawal on historical callers as well as still-live descendants. */
+function invalidateAuthoritySnapshots(
+  all: ContextRecord[],
+  contexts: ContextRecord[],
+  marker: "authorityRevokedAt" | "permissionProfileRevokedAt",
+  options: RevokeRuntimeContextOptions,
+): RevokeContextResult[] {
   const matchingIds = new Set(contexts.map((context) => context.contextId));
   const dependents = new Map<string, string[]>();
   for (const context of all) {
     const turnOrigin = context.metadata?.turnOrigin;
     const relayCaller =
-      context.metadata?.relayNarrowing === true && turnOrigin && typeof turnOrigin === "object"
+      turnOrigin && typeof turnOrigin === "object"
         ? (turnOrigin as Record<string, unknown>).callerContextId
         : undefined;
     for (const parent of [
@@ -254,13 +259,13 @@ export function revokeLiveRuntimeContextsForPermissionProfile(profile: string): 
       queue.push(child);
     }
   }
-  const now = Date.now();
+  const now = options.revokedAt ?? Date.now();
   // Historical callers remain available for queued relays after ordinary turn
   // rotation. Mark this authority withdrawal separately so they cannot lend the
   // removed capabilities to a new relay after the profile update commits.
   for (const context of all) {
     if (!matchingIds.has(context.contextId)) continue;
-    dbUpdateContextMetadata(context.contextId, { ...context.metadata, permissionProfileRevokedAt: now });
+    dbUpdateContextMetadata(context.contextId, { ...context.metadata, [marker]: now });
   }
   const live = all.filter((context) => matchingIds.has(context.contextId) && isContextLive(context, now));
   const liveIds = new Set(live.map((context) => context.contextId));
@@ -269,7 +274,7 @@ export function revokeLiveRuntimeContextsForPermissionProfile(profile: string): 
       const parent = context.metadata?.parentContextId;
       return typeof parent !== "string" || !liveIds.has(parent);
     })
-    .map((context) => revokeRuntimeContext(context.contextId, { reason: "permission_profile_reduced" }));
+    .map((context) => revokeRuntimeContext(context.contextId, options));
 }
 
 export function snapshotAgentCapabilities(agentId: string): ContextCapability[] {

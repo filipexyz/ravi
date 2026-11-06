@@ -81,6 +81,7 @@ export async function runEvalTask(task: LoadedEvalTaskSpec, outputDir?: string):
 
   const execution = await runPromptAndWait({
     sessionName,
+    sessionKey: session.sessionKey,
     prompt: task.spec.prompt,
     timeoutMs: task.spec.runner.timeoutMs,
     historyCursor: snapshotTranscriptCursor(getRecentHistory(sessionName, 1)),
@@ -176,6 +177,7 @@ export type OwnTurnText = { readable: false; pending?: boolean } | { readable: t
 
 export interface RunPromptAndWaitInput {
   sessionName: string;
+  sessionKey: string;
   prompt: string;
   timeoutMs: number;
   /** Highest message id in the session history before the prompt was sent. */
@@ -265,7 +267,7 @@ async function runPromptAndWait(input: RunPromptAndWaitInput): Promise<EvalExecu
     deliveryBarrier: "after_response",
     deliveryBarrierSource: "default",
     _cliDestination: true,
-    _turnOrigin: buildSessionRelayTurnOrigin("send", getContext()),
+    _turnOrigin: buildSessionRelayTurnOrigin("send", getContext(), input.sessionKey),
   });
   const completionState = await completion;
   cleanup();

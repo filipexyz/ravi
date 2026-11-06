@@ -194,6 +194,11 @@ describe("generic decisions and managed threads", () => {
     );
     expect(payload._turnOrigin.principal).toEqual({ type: "agent", id: "main" });
     expect(payload._turnOrigin.callerContextId).toBe(parent.context!.contextId);
+    expect(payload._turnOrigin.delegation).toEqual({
+      callerSessionKey: "decision-parent",
+      targetSessionKey: origin.sessionKey,
+      admittedAt: expect.any(Number),
+    });
   });
 
   it("retains task authorization and nested active-assignment self-answer denial", async () => {

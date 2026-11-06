@@ -20,6 +20,8 @@ tags:
   - runtime
   - tools
 applies_to:
+  - src/access/delegated-actor.ts
+  - src/access/actor.ts
   - src/permissions/provider-runtime.ts
   - src/permissions/capability-context.ts
   - src/permissions/scope.ts
@@ -63,7 +65,8 @@ runtime context creation and remains only as historical spec/test context.
 - `agent_identity`: compartment-scoped authority principal, formatted
   `agent_identity:<agent-id>:<compartment-type>:<compartment-id>`.
 - `effective_capabilities`: materialized agent identity capabilities,
-  intersected with turn caps when present.
+  intersected with the contact overlay in governed chats and turn caps when
+  present.
 - `ambient agent authority`: long-lived root agent context reused without a
   turn-scoped context. This remains forbidden for external turns.
 
@@ -86,10 +89,9 @@ For external user-initiated invocations in the active model:
 
 ```text
 effective_capabilities =
-  intersect(
-    resolveAgentIdentityCapabilities(executor_agent, compartment),
-    resolveTurnApprovals(invocation)
-  )
+  agent_identity_capabilities
+  INTERSECT contact_chat_capabilities_when_chat_is_governed
+  INTERSECT turn_capabilities_when_present
 ```
 
 Rules:
@@ -110,17 +112,38 @@ Rules:
   identity and never exceeds it.
 - `contact_policies.status=allowed` permits interaction, not tools. It MUST NOT imply `use tool:*`, `execute executable:*`, `execute group:*`, session access, or contact writes.
 
-Legacy delegated fallback formula:
+The retired actor/surface delegated intersection MUST NOT be a runtime
+fallback. The normative active formula is `permissions/agent-identity`;
+`permissions/user-overlay` defines its implemented contact branch.
 
-```text
-effective_capabilities =
-  agent_caps
-  INTERSECT (actor_caps OR actor_overrides)
-  INTERSECT surface_caps
-  INTERSECT turn_caps
-```
+## Console Actor Across Admitted Handoffs
 
-This fallback MUST NOT be the production default.
+- `resolveAccessActor` MAY resolve the person behind a host-admitted handoff
+  under the chain rules in `permissions/delegation`. This is Console request
+  attribution, not a change to the runtime's `actorPrincipal`, agent producer
+  or executor capability ceiling.
+- Each admission MUST bind the host's caller context, caller session, exact
+  target session and admission time. CLI or prompt-supplied actor hints MUST
+  NOT substitute for that binding. Derived credentials MUST resolve through
+  their host-issued lineage rather than their own actor metadata.
+- Already-admitted work MAY wait in a queue and survive normal completion or
+  rotation of its caller. It MUST keep the admitted person even if another
+  person later speaks in either session. This MUST NOT revive the old key or
+  authorize a new admission after that key expired or was revoked.
+- Explicit revoke, removal of a grant used by the caller, profile reduction,
+  or blocked/opted-out/ineligible contact MUST fail closed. Authority
+  withdrawal MUST remain visible on historical caller records so pending
+  handoffs cannot recover removed authority after rotation.
+- Console operations MUST send the verified contact id and let Console check
+  the current link and resource ACL. Even an operator's relayed request MUST
+  NOT become an unattributed request under the installation login.
+- Personal connector and Knowledge eligibility MUST remain unchanged.
+  Handoffs without this admission, unrelated agent work and automations MUST
+  NOT inherit the session's last human actor.
+- A resolved pending/discovered group participant MAY remain attributable;
+  intake status alone MUST NOT replace the scoped grant and executor checks.
+  Attribution MUST add no capability and MUST refuse blocked/missing/opted-out
+  people.
 
 ## Runtime Context Requirements
 
@@ -180,9 +203,11 @@ are audit artifacts, not a second source of truth:
   `actorAuthorizationMode=user-overlay`, where `actorCapabilityCount` is the
   contact's chat grant count and does gate the turn.
 - Contact chat grants, chat-tag coverage, and global contact tags are read at
-  turn start. `ravi permissions deny --apply` MUST revoke live contexts whose
-  overlay used the removed grant, so revocation stops authorizing at the next
-  check. New grants and chat-tag changes apply from the next turn.
+  turn start. `ravi permissions deny --apply` MUST invalidate snapshots whose
+  overlay used the removed grant, including historical callers and their
+  dependent relays, and revoke affected live contexts. Revocation stops
+  authorizing at the next check. New grants and chat-tag changes apply from
+  the next turn.
 - The Bash/tool hook's live executor ceiling MUST NOT widen a user-overlay
   turn: it authorizes only what both the issued snapshot and the live ceiling
   allow.
@@ -264,40 +289,14 @@ Role/profile expansion MUST be deterministic and auditable. In the active
 model, expansion feeds agent identity materialization unless a documented
 overlay provider says otherwise.
 
-## Explicit Delegation Overrides
+## Retired Delegation Overrides
 
-Some operations are intentionally allowed in a specific agent or chat even when
-the current contact does not have the corresponding capability directly. This
-MUST use an explicit override relation:
-
-```text
-agent:<agent-id> delegate_use tool:Bash
-chat:<chat-id> delegate_use tool:Bash
-chat:<chat-id> delegate_execute group:apps_run
-```
-
-Rules:
-
-- Delegation overrides are legacy fallback semantics and MUST NOT be presented
-  as the normal agent-identity operator workflow.
-- `delegate_<relation>` is not a normal capability and MUST NOT appear in
-  `actor_caps`, `surface_caps`, or `effective_capabilities`.
-- The override maps only to the underlying relation during delegated context
-  construction, e.g. `delegate_use tool:Bash` can satisfy `use tool:Bash`.
-- Agent-level overrides satisfy the actor branch only. The surface still needs
-  a normal surface grant or a surface override.
-- Surface-level overrides satisfy both the actor branch and the surface branch
-  for that surface.
-- Overrides apply only when the actor resolved to a concrete contact. Unknown
-  actors and automation principals MUST NOT receive human delegation overrides.
-- The executor agent MUST still have the requested capability through normal
-  grants. `delegate_use tool:Bash` cannot make an agent without `use tool:Bash`
-  run Bash.
-- `delegate_admin` MUST be rejected or ignored. Superadmin delegation requires
-  the separate break-glass/admin-delegated path.
-- Turn/observer approval grants remain an upper bound and MUST NOT be overridden.
-- Runtime metadata and denial audit MUST expose override counts and the
-  principals that supplied overrides.
+`delegate_<relation>` actor/surface substitutions belong to retired resolver
+fixtures. They MUST NOT enter active runtime materialization or serve as the
+operator workflow for granting access. Provider-owned agent identity profiles
+and the governed-chat overlay remain the active paths. A verified Console
+actor handoff MUST NOT introduce such substitutions, bypass turn/observer
+bounds, or create administrator authority.
 
 ## Automation And Observer Boundary
 

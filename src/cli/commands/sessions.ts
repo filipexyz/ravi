@@ -6061,7 +6061,7 @@ export class SessionCommands {
         deliveryBarrierSource,
         ...(promptPayload ?? {}),
         ...(cliDestination ? { _cliDestination: true } : {}),
-        _turnOrigin: buildSessionRelayTurnOrigin(action, getContext()),
+        _turnOrigin: buildSessionRelayTurnOrigin(action, getContext(), session.sessionKey),
       } as Record<string, unknown>);
     } catch (error) {
       failSessionRelay(`sessions ${action}`, error, asJson);
@@ -6204,7 +6204,7 @@ export class SessionCommands {
         deliveryBarrierSource,
         ...(options.promptPayload ?? {}),
         ...(options.cliDestination ? { _cliDestination: true } : {}),
-        _turnOrigin: buildSessionRelayTurnOrigin("send", getContext()),
+        _turnOrigin: buildSessionRelayTurnOrigin("send", getContext(), session.sessionKey),
       } as Record<string, unknown>);
     } catch (error) {
       failSessionRelay("sessions send", error, options.asJson);

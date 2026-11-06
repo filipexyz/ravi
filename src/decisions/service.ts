@@ -192,10 +192,14 @@ export async function answerDecision(id: string, text: string, by?: string) {
       deliveryBarrierSource: "default",
       _decisionDeliveryId: deliveryId,
       _decisionSessionKey: current.origin.sessionKey,
-      _turnOrigin: buildSessionRelayTurnOrigin("answer", {
-        ...scope,
-        contextId: scope.contextId ?? scope.context?.contextId,
-      }),
+      _turnOrigin: buildSessionRelayTurnOrigin(
+        "answer",
+        {
+          ...scope,
+          contextId: scope.contextId ?? scope.context?.contextId,
+        },
+        current.origin.sessionKey ?? undefined,
+      ),
     };
     getDb().query("UPDATE decision_deliveries SET payload_json=? WHERE id=?").run(JSON.stringify(payload), deliveryId);
     return { decision: answered };

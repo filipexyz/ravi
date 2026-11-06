@@ -47,7 +47,8 @@ export interface ConsoleApiClientOptions {
   timeoutMs?: number;
   /**
    * The contact who wrote the current turn, sent as `x-ravi-actor-contact` on
-   * authenticated calls (default: `turnActorContactId`, read once per client).
+   * authenticated calls. Bases revalidates before every request; other routes
+   * use the optional `turnActorContactId` lookup once per client.
    */
   actorContact?: () => string | null | Promise<string | null>;
   /**
@@ -59,11 +60,12 @@ export interface ConsoleApiClientOptions {
 
 /** Calls that are about the `ravi login` session itself never name the turn's author. */
 const SESSION_PATHS = ["/api/cli/auth/", "/api/cli/me"];
+const BASES_PATH = /^\/api\/cli\/projects\/[^/]+\/bases(?:[/?#]|$)/;
 
 export class ConsoleApiClient {
   readonly consoleUrl: string;
   private readonly fetchImpl: FetchLike;
-  private readonly actorContact: () => string | null | Promise<string | null>;
+  private readonly actorContact: (path: string) => string | null | Promise<string | null>;
   private readonly startActorLink: (contactId: string) => Promise<TurnLinkFlow>;
   private actorContactValue: Promise<string | null> | null = null;
 
@@ -76,12 +78,12 @@ export class ConsoleApiClient {
       });
     this.actorContact =
       options.actorContact ??
-      (async () => {
+      (async (path) => {
         // Only a runtime turn can have an author other than the operator; the
         // check covers commands the daemon gateway runs for a turn, whose
         // process has no RAVI_CONTEXT_KEY.
-        const { turnActorContactId } = await import("./turn-actor.js");
-        return turnActorContactId();
+        const { turnActorContactId, requireTurnActorContactId } = await import("./turn-actor.js");
+        return BASES_PATH.test(path) ? requireTurnActorContactId() : turnActorContactId();
       });
     this.startActorLink =
       options.startActorLink ??
@@ -307,8 +309,11 @@ export class ConsoleApiClient {
 
   private async turnActorContact(path: string): Promise<string | null> {
     if (SESSION_PATHS.some((prefix) => path.startsWith(prefix))) return null;
+    // A caller can be revoked during project resolution or between requests on
+    // this client. Never cache Bases attribution or turn a refusal into operator access.
+    if (BASES_PATH.test(path)) return this.actorContact(path);
     this.actorContactValue ??= Promise.resolve()
-      .then(() => this.actorContact())
+      .then(() => this.actorContact(path))
       .catch(() => null);
     return this.actorContactValue;
   }

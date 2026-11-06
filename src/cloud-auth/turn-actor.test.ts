@@ -20,7 +20,7 @@ describe("turnActorContactId", () => {
     ).toBeNull();
   });
 
-  it("keeps a relay a contact's turn produced attributed to that contact", () => {
+  it("does not use a bare relay contact hint after attribution was refused", () => {
     const env = { RAVI_CONTEXT_KEY: "ctx_1" };
     const refused = { kind: "refused" as const, message: "agent relay", actorPrincipal: "agent:x" };
     const relayed = {
@@ -33,7 +33,7 @@ describe("turnActorContactId", () => {
         metadata: { relayCallerContactId: "c_ana" },
       },
     };
-    expect(runWithContext(relayed, () => turnActorContactId(env, { actor: refused }))).toBe("c_ana");
+    expect(runWithContext(relayed, () => turnActorContactId(env, { actor: refused }))).toBeNull();
     expect(runWithContext(relayed, () => turnActorContactId(env, { actor: { kind: "operator" } }))).toBeNull();
   });
 

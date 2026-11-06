@@ -2082,13 +2082,6 @@
       "count": 1
     },
     {
-      "id": "src/cloud-auth/turn-actor.ts:c09a3c19702c22a994915d83",
-      "file": "src/cloud-auth/turn-actor.ts",
-      "boundary": "cloud-auth",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/cloud-auth/verification-uri.ts:8f9b7ddb8da2f1a52101388b",
       "file": "src/cloud-auth/verification-uri.ts",
       "boundary": "cloud-auth",
@@ -5961,7 +5954,7 @@
     }
   ],
   "totals": {
-    "violations": 892,
+    "violations": 891,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5982,7 +5975,7 @@
       "src/cli": 34,
       "src/cli/commands": 145,
       "src/cloud-agents": 30,
-      "src/cloud-auth": 11,
+      "src/cloud-auth": 10,
       "src/console-scope": 5,
       "src": 45,
       "src/costs": 2,

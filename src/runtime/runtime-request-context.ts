@@ -642,7 +642,8 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   const metadata = caller.metadata ?? {};
   // Ordinary turn rotation revokes the key but intentionally keeps queued relays
   // usable. A profile reduction invalidates the authority snapshot as well.
-  const profileRevoked = typeof metadata.permissionProfileRevokedAt === "number";
+  const profileRevoked =
+    typeof metadata.permissionProfileRevokedAt === "number" || typeof metadata.authorityRevokedAt === "number";
   const narrowed =
     metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE || metadata.relayNarrowing === true;
   const actorPrincipal = typeof metadata.actorPrincipal === "string" ? metadata.actorPrincipal : "";

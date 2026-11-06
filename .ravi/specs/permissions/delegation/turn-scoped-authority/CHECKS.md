@@ -17,56 +17,79 @@ normative: true
 
 ## Unit Tests
 
-- Given an executor agent with `admin system:*`, when the actor has no delegated capability, `use tool:Bash` is denied for a user-initiated invocation.
-- Given an executor agent with `use tool:*` and `execute executable:*`, when the actor has only `use tool:Bash` but no executable grant, Bash command execution is denied for the missing executable.
-- Given an actor role grants `use tool:Bash` and `execute executable:git`, when the agent lacks `execute executable:git`, the effective capability does not include git.
-- Given a chat/surface constraint lacks Bash, when both actor and agent allow Bash, Bash is denied in that chat.
-- Given an actor grants `execute group:sessions_info` and the current surface has no grant, deny, or constraint for that command, `ravi sessions info` is allowed through actor inheritance.
-- Given an actor grants `execute group:context_codex-bash-hook` and the current surface has no grant, deny, or constraint for that command, `ravi context codex-bash-hook` is allowed through actor inheritance.
-- Given the same delegated `contextId` is reused for multiple scope checks, actor-inherited effective capabilities remain available and are not recomputed as an empty surface branch.
-- Given the actor grants `execute group:<x>` and the current surface has `deny_execute group:<x>`, the command is denied.
-- Given the actor lacks `execute group:<x>`, the command is denied even if the executor agent has it.
-- Given `contact_policies.status=allowed` with no role/grant, no tool/executable/CLI/session/contact authority is produced.
+- In an ungoverned chat, a resolved contact with no independent grants MUST
+  receive the executor's compartment-scoped agent identity bounded by turn
+  caps; an empty surface capability set MUST NOT zero it.
+- In a governed chat, missing contact grants MUST deny the capability; a
+  covering contact grant MUST NOT exceed the executor ceiling.
+- Given a contact grant for git but no executor capability for git, the
+  effective context MUST omit git.
+- `contact_policies.status=allowed` MUST NOT itself grant capabilities.
+- Repeated scope checks MUST use the same effective invocation snapshot and
+  MUST NOT reintroduce the retired actor/surface fallback formula.
 - Given actor is unresolved, all authority-bearing checks deny except non-tool textual response delivery.
 - Given a child context requests a capability not present in the effective parent invocation context, issuing the child context fails.
 - Given an observer rule grants a task tool, the grant appears only in the observer context, not in the source invocation context.
 - Given a cron job fires, the actor principal is `automation:<id>` or equivalent and not the last human speaker.
-- Given `chat:<id> delegate_use tool:Bash`, an executor agent with `use tool:Bash`, and a resolved contact with no direct grant, Bash is allowed in that chat.
-- Given `agent:<id> delegate_use tool:Bash`, an executor agent with `use tool:Bash`, a resolved contact with no direct grant, and no chat grant/override, Bash is denied by the surface branch.
-- Given `agent:<id> delegate_use tool:Bash` and a normal chat grant for Bash, a resolved contact with no direct grant can invoke Bash through that executor agent.
-- Given `delegate_use tool:Bash` but the executor agent lacks `use tool:Bash`, Bash is denied.
-- Given actor is unresolved or automation, `delegate_*` human overrides do not add authority.
-- Given `delegate_admin system:*`, the CLI rejects it and runtime override normalization ignores it if present in legacy data.
-- Given a subject has `delegate_use tool:Bash`, `snapshotSubjectCapabilities` omits it and `snapshotSubjectDelegationOverrides` exposes it as `use tool:Bash`.
+- Legacy `delegate_*` fixtures MUST NOT establish a production runtime path.
+- `src/runtime/runtime-request-context.test.ts` and the user-overlay checks
+  MUST exercise the active materialization contract.
+
+## Admitted Console Actor Tests
+
+- `src/access/delegated-actor.test.ts` MUST test verified caller, session,
+  emitter, target and admission time; both preflight and header MUST resolve
+  the same person and preserve the current executor agent.
+- A hint, forged derived actor metadata, missing caller/admission, invalid
+  time, cycle or wrong target MUST fail closed. A logged-in operator MUST
+  NOT turn an unattributed relay into an allowed Console call.
+- Normal completion/rotation and expiry after admission MUST retain the
+  recorded person. Explicit revoke, removed grant, reduced profile and
+  ineligible/opted-out contact MUST deny even after the caller rotated.
+- `src/channels/slack/thread-delegated-actor.test.ts` MUST pass captured
+  lifecycle prompts through queue/runtime context creation and access actor
+  resolution, covering bootstrap, thread-send and reopen without replacing
+  the producer's agent provenance or choosing a later human speaker.
+- Personal connectors MUST remain refused for an otherwise verified agent
+  relay; Knowledge MUST retain its existing turn eligibility contract.
+- Pending/discovered group participants MUST retain resolved attribution
+  without new capabilities; blocked/missing/opted-out contacts MUST fail.
+- Real used-grant revocation after source rotation MUST deny both queued and
+  materialized children without affecting a different contact or scope
+  (`src/channels/slack/thread-delegated-actor.test.ts`).
 
 ## Capability Freshness Tests
 
-- Given a delegated denial for a missing surface grant, when the grant is
-  created, the next turn of the same session allows the capability without
-  daemon restart.
+- Given a denial for a missing agent capability or governed-chat grant, the
+  applicable new grant MUST take effect on the next turn without restart.
 - Given a surface whose grants were revoked in bulk, the next denial
   diagnosis reports grant state `revoked` with the revocation batch, not
   `never_granted` (see `permissions/explain`).
 - Given context metadata with stale capability counts, explain/denial tooling
   re-resolves current graph state instead of echoing the snapshot counts as
   live.
-- Given a role membership added for the actor, the next turn's actor branch
-  includes the role-expanded capabilities.
+- Given a new covering contact profile grant in a governed chat, the next
+  turn MUST include its capabilities only within the executor ceiling.
 
 ## Group Chat Regression Tests
 
-- In one group session, contact A with role `trusted-dev` invokes `ravi sessions read`; it is allowed if the agent and actor allow it and the surface has no explicit deny/constraint for that command.
-- In one group session with a surface constraint role that omits `ravi sessions read`, contact A with role `trusted-dev` is denied even when agent and actor allow it.
-- In the next turn of the same group session, contact B with no role invokes the same tool; it is denied without resetting the session.
+- In an ungoverned group, resolved contacts A and B MUST use the same agent
+  identity ceiling while retaining distinct actor provenance.
+- In a governed group, contact A with a covering grant MAY use an agent-held
+  capability; contact B without that grant MUST be denied on the next turn
+  without resetting the session.
 - A system interruption between contact A and contact B does not transfer contact A's authority to contact B or to the system event.
 - If contact A asks for contact B's personal resource, the request denies unless contact B or an approved higher-scope policy grants target access.
 
 ## Superadmin Boundary Tests
 
-- `agent:main admin system:*` does not allow a user-initiated invocation from an untrusted contact to execute Bash.
-- `agent:<x> admin system:*` allows an internal admin context only when context kind/provenance is admin/internal.
-- Actor `contact:<owner>` with explicit break-glass role can delegate `admin system:*` only when the invocation trace marks break-glass/admin-delegated mode.
-- Revoking the actor's break-glass role prevents the next tool call from using cached admin authority.
+- An unresolved external actor MUST receive no agent identity authority even
+  when the executor has `admin system:*`.
+- Live executor admin status MUST NOT bypass the issued invocation snapshot.
+- A contact's administrator status MUST NOT become agent tool authority;
+  break-glass remains a separate, auditable operator path.
+- Revoking applicable authority MUST prevent the next check from using cached
+  administrator capabilities.
 
 ## Runtime Trace Checks
 
@@ -79,10 +102,10 @@ Each authority-bearing allow/deny trace SHOULD include:
 - chat/session/source;
 - requested permission/object;
 - agent capability decision;
-- actor capability decision;
-- actor override capability decision;
-- surface capability decision;
-- surface override capability decision;
+- agent identity compartment;
+- governed-chat overlay decision when applicable;
+- turn and caller-narrowing bounds when applicable;
+- verified Console actor admission lineage when applicable;
 - final effective decision;
 - role ids and relation sources involved;
 - stale/revoked context status.
@@ -127,15 +150,7 @@ ravi permissions materialize --subject-type agent --subject-id <agent-id> --json
 
 ## CLI Acceptance
 
-Future CLI should support a delegated check equivalent to:
-
-```bash
-ravi permissions check-delegated \
-  --agent <agent-id> \
-  --actor contact:<contact-id> \
-  --chat <chat-id> \
-  use tool:Bash \
-  --json
-```
-
-Until that exists, tests MUST exercise the resolver directly rather than relying only on `ravi permissions check agent:<id> ...`, because agent-only checks are insufficient for delegated authority.
+Tests MUST exercise runtime context creation and the relevant actor resolver,
+not infer successful Console attribution from an agent-only capability check,
+trace label or root-card requester name. Inspection of the effective context
+and `resolveAccessActor` MUST agree with the preflight/header outcome.

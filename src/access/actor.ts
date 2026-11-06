@@ -20,8 +20,11 @@
  *   the contact who owns the cron job this turn runs:
  *   `actor: { contactId }`, so Console acts for that person, never for the
  *   operator.
- * - Anything else (an unresolved speaker, an agent relaying for another
- *   session, a routine with no person as owner, a turn that already ended): refused
+ * - An agent's host-admitted handoff with verified human lineage acts for that
+ *   person's linked account, including when the person is the operator. The
+ *   executor remains the agent and connector/Knowledge authority is unchanged.
+ * - Anything else (an unresolved speaker, an agent relay without verified
+ *   delegation, a routine with no person as owner, a turn that already ended): refused
  *   here, with that reason, and nothing is sent. A turn that cannot be
  *   attributed never falls back to the operator's authority.
  */
@@ -31,6 +34,7 @@ import type { ConnectorTurn, ConnectorTurnDeps, ConnectorTurnResult } from "../l
 import { resolveTurnForActiveLogin } from "../pages/read.js";
 import { turnRefusalMessageWithNext, type TurnRefusalReason } from "../cloud-auth/turn-refusal.js";
 import type { PagesClientDeps } from "../pages/client.js";
+import { resolveDelegatedAccessContact } from "./delegated-actor.js";
 
 export type AccessActorDecision =
   | {
@@ -79,7 +83,17 @@ export interface AccessActorBody {
 
 export function resolveAccessActor(deps: AccessActorDeps = {}): AccessActorDecision {
   if (deps.actor) return deps.actor;
-  return accessActorFromTurn(resolveTurnForActiveLogin(deps), deps);
+  const decision = accessActorFromTurn(resolveTurnForActiveLogin(deps), deps);
+  if (decision.kind !== "refused") return decision;
+  const delegated = resolveDelegatedAccessContact(deps.turn);
+  // A handoff remains this person's request, never an operator fallback.
+  if (!delegated) return decision;
+  const name = readAgentName(delegated.agentId, deps);
+  return {
+    kind: "contact",
+    contactId: delegated.contactId,
+    agent: { id: delegated.agentId, ...(name ? { name } : {}) },
+  };
 }
 
 export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessActorDeps = {}): AccessActorDecision {

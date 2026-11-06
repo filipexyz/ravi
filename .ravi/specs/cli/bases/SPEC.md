@@ -100,7 +100,7 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    and writes act as that person. The Console refuses an unlinked person's
    reads and writes with `ACTOR_NOT_LINKED` (403, which starts the link
    flow); the CLI never retries them as the operator. Inside a runtime turn
-   that `resolveAccessActor` refuses (another agent's turn, an unresolved
+   that `resolveAccessActor` refuses (an unattributed agent relay, an unresolved
    speaker) or cannot classify, `openBasesClient` MUST fail `ACTOR_UNKNOWN`
    (exit 3, policy) before any Console call, reads included, instead of
    sending no actor (which the Console would serve as the operator). A run
@@ -118,6 +118,20 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    a job that acts as the operator may be a shell job (connectors 13b). Operator turns,
    owner relays and owner-owned routines act as the operator. Outside a turn
    no actor header is sent.
+   A host-admitted handoff whose verified lineage ends at a resolved person
+   MUST carry that person's `x-ravi-actor-contact`, even if the person is the
+   operator. `resolveAccessActor`, preflight and the header MUST agree; an
+   actor hint alone MUST NOT bypass preflight. The admission binds the caller
+   context/session, executor of the producing turn, target session and time
+   as specified in `permissions/delegation`. The runtime producer stays an
+   agent and the current executor remains in the ledger. Console checks the
+   person's current link, membership and resource ACL; a missing link MUST
+   NOT retry as the operator. Normal completion/rotation and expiry after
+   admission MAY preserve queued work. Explicit revoke, removed grant,
+   reduced profile or an ineligible/opted-out contact MUST deny it. Neither
+   the last human message nor the thread creator supplies identity to a new
+   handoff. This attribution adds no global/tool authority and changes
+   neither personal connector nor Knowledge eligibility.
    When a cron run's contact is not linked, the link flow MUST NOT message
    anyone (nobody is asking in a scheduled run): the refusal carries
    `linkFlow: routine`, no `chatLinePt`, and a suggested action to report
@@ -136,6 +150,13 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    cloud-run clients) build, marked by its class, never to an
    `ACTOR_UNKNOWN` a Console response carries, which keeps the catalog copy
    whatever its `details` say.
+   At the HTTP dispatch boundary, every Bases JSON or byte request MUST
+   resolve attribution again without reusing a client-wide actor cache. A
+   refusal or lookup failure MUST stop before fetch, never omit the actor
+   header and fall back to the installation login. This includes query-string
+   list calls, writes and retries after credential refresh. Login/link and
+   unrelated API route policies remain unchanged.
+
 7. `rows update`, `rows archive`, and `rows restore` MUST require exactly one
    of `--expected-version <n>` or `--last-write-wins`, checked before any
    Console call.

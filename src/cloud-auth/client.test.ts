@@ -804,7 +804,28 @@ describe("ConsoleApiClient", () => {
       null,
       null,
     ]);
-    expect(actorContact).toHaveBeenCalledTimes(1);
+    expect(actorContact).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "/api/cli/projects/p/bases",
+    "/api/cli/projects/p/bases?includeArchived=1",
+    "/api/cli/projects/p/bases/b/views/v/share",
+  ])("does not cache attribution or send an unattributed request after refusal at %s", async (path) => {
+    let revoked = false;
+    const refusal = new CloudAuthError("ACTOR_UNKNOWN", "fixture withdrawal");
+    const fetch = mock(async () => jsonResponse({ ok: true }));
+    const actorContact = mock(() => {
+      if (revoked) throw refusal;
+      return "c_ana";
+    });
+    const client = new ConsoleApiClient({ consoleUrl: "https://console.example", actorContact, fetch });
+    await client.requestJson("GET", path, undefined, "fixture-token");
+    revoked = true;
+    await expect(client.requestJson("POST", path, {}, "fixture-token")).rejects.toBe(refusal);
+    await expect(client.requestBytes(path, "fixture-token")).rejects.toBe(refusal);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(actorContact).toHaveBeenCalledTimes(3);
   });
 
   it("sends no author when the turn is the operator's or cannot be read", async () => {

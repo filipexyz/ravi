@@ -286,27 +286,11 @@ Rules:
 The previous delegated intersection is retired from runtime context creation.
 It remains only as historical spec context and isolated test fixtures.
 
-Retired formula:
-
-```text
-effective_caps =
-  agent_caps
-  INTERSECT (actor_caps OR actor_overrides)
-  INTERSECT (surface_constraints OR surface_overrides OR inherited_actor_caps_when_no_surface_decision)
-  INTERSECT turn_caps
-```
-
-Rules:
-
-- Explicit deny on any branch vetoes the capability.
-- A surface with no explicit decision for the same object inherits the actor
-  branch.
-- Surface constraints bound the surface to expanded constraint capabilities.
-- Delegation overrides cannot exceed the executor-agent ceiling.
-- Automation and unresolved actors do not receive human delegation overrides.
-
-Specs, skills, prompts, and CLI guidance MUST NOT present this legacy
-intersection as the production default.
+The active formula and its governed-chat exception are defined in
+`permissions/agent-identity` and `permissions/user-overlay`. Specs, skills,
+prompts, and CLI guidance MUST NOT reintroduce the retired actor/surface
+intersection or delegation overrides as runtime fallback. Verified attribution
+of a handoff to a person (`permissions/delegation`) does not change that formula.
 
 ## Profiles And Tags
 

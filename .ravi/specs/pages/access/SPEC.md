@@ -50,12 +50,22 @@ the write brake and who the turn says is acting.
 
 ## Invariants
 
-1. Who acts MUST come from `resolveConnectorTurn`. The operator's own turn
+1. Who acts MUST come from `resolveAccessActor`, using `resolveConnectorTurn`
+   for ordinary turns and the verified handoff contract in
+   `permissions/delegation` for admitted agent relays. The operator's own turn
    (terminal, the owner's own chat, the owner's own relay, routines the owner
    owns; also the owner refused only for where they asked) sends no `actor`.
-   A resolved contact who is not the owner sends `actor: { contactId }`. Any
-   other turn MUST be refused locally with `ACTOR_UNKNOWN` (exit 3) before any
-   Console call; it MUST NOT fall back to the operator.
+   A resolved contact who is not the owner sends `actor: { contactId }`. A
+   verified handoff MUST also send its admitted person's contact id, even if
+   that person is the operator; Console checks their current link, membership
+   and resource ACL. The current executor agent remains in audit metadata.
+   An unattributed relay or unresolved turn MUST be refused locally with
+   `ACTOR_UNKNOWN` (exit 3) before any Console call; it MUST NOT fall back to
+   the operator, a prior human speaker, or a `relayCallerContactId` hint.
+   Normal caller completion/rotation after admission MAY preserve queued
+   work; explicit revoke, removed grant, reduced profile or an ineligible/
+   opted-out contact MUST deny it. This attribution adds no tool authority
+   and changes neither personal connector nor Knowledge eligibility.
 2. `invites list` (a GET with no actor) MUST run only when the operator acts.
 3. `access request` MUST send `agent: { id, name? }` when the turn names an
    agent.

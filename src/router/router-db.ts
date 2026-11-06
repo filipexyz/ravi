@@ -1,5 +1,6 @@
 import { migrateDecisions } from "../decisions/schema.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
+import { isOrdinaryContextRetirement } from "../runtime/context-revocation.js";
 /**
  * Router Database - SQLite-backed configuration storage
  *
@@ -10422,29 +10423,49 @@ export function dbUpdateContextRuntimeState(
   },
   lastUsedAt = Date.now(),
 ): ContextRecord {
-  if (!dbGetContext(contextId)) {
-    throw new Error(`Context not found: ${contextId}`);
-  }
   const source = input.source === undefined ? undefined : ContextSourceSchema.parse(input.source);
-  const metadata = input.metadata === undefined ? undefined : z.record(z.string(), z.unknown()).parse(input.metadata);
-  const s = getStatements();
-  s.updateContextRuntimeState.run(
-    input.sessionName ?? null,
-    source ? JSON.stringify(source) : null,
-    metadata ? JSON.stringify(metadata) : null,
-    lastUsedAt,
-    contextId,
-  );
-  return dbGetContext(contextId)!;
+  const parsed = z.record(z.string(), z.unknown()).parse(input.metadata ?? {});
+  const db = getDb();
+  const update = () => {
+    const existing = dbGetContext(contextId);
+    if (!existing) throw new Error(`Context not found: ${contextId}`);
+    const metadata = preserveContextWithdrawal(existing.metadata, { ...parsed });
+    getStatements().updateContextRuntimeState.run(
+      input.sessionName ?? null,
+      source ? JSON.stringify(source) : null,
+      JSON.stringify(metadata),
+      lastUsedAt,
+      contextId,
+    );
+    return dbGetContext(contextId)!;
+  };
+  return db.inTransaction ? update() : executeWrite(db, update, { label: "router:updateContextRuntimeState" });
 }
 
 /** Update authority metadata without changing provenance or last-use timestamps. */
 export function dbUpdateContextMetadata(contextId: string, metadata: Record<string, unknown>): void {
   const parsed = z.record(z.string(), z.unknown()).parse(metadata);
-  const result = getDb()
-    .prepare("UPDATE contexts SET metadata_json = ? WHERE context_id = ?")
-    .run(JSON.stringify(parsed), contextId);
-  if (result.changes === 0) throw new Error(`Context not found: ${contextId}`);
+  const db = getDb();
+  const update = () => {
+    const retained = preserveContextWithdrawal(dbGetContext(contextId)?.metadata, { ...parsed });
+    const result = db
+      .prepare("UPDATE contexts SET metadata_json = ? WHERE context_id = ?")
+      .run(JSON.stringify(retained), contextId);
+    if (result.changes === 0) throw new Error(`Context not found: ${contextId}`);
+  };
+  if (db.inTransaction) update();
+  else executeWrite(db, update, { label: "router:updateContextMetadata" });
+}
+
+/** Refreshing a snapshot cannot undo a withdrawal already committed for it. */
+function preserveContextWithdrawal(
+  previous: Record<string, unknown> | undefined,
+  next: Record<string, unknown>,
+): Record<string, unknown> {
+  for (const field of ["authorityRevokedAt", "permissionProfileRevokedAt"]) {
+    if (typeof previous?.[field] === "number") next[field] = previous[field];
+  }
+  return next;
 }
 
 export interface RevokeContextOptions {
@@ -10518,8 +10539,15 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
         // Still update metadata if a reason or cascade flag should be set.
       }
       const metadata: Record<string, unknown> = {
-        ...(target.metadata ?? {}),
+        // Targets may have been enumerated before another writer acquired the
+        // lock. Read authority metadata again inside this write transaction.
+        ...(dbGetContext(target.contextId)?.metadata ?? target.metadata ?? {}),
       };
+      // Explicit withdrawal is permanent for this snapshot. A late turn stop
+      // may update its lifecycle reason, but must never restore delegation.
+      if (!isOrdinaryContextRetirement(reasonNote) && typeof metadata.authorityRevokedAt !== "number") {
+        metadata.authorityRevokedAt = revokedAt;
+      }
       if (reasonNote) {
         metadata[reasonKey] = reasonNote;
       }

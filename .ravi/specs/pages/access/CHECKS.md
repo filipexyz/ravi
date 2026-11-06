@@ -3,8 +3,18 @@
 - The terminal, the owner's own direct chat and an owner routine MUST send no
   `actor`; a contact in a direct chat or a group MUST send
   `actor: { contactId }`.
-- An unresolved sender, a relay from another agent and an unresolvable
-  context MUST fail with `ACTOR_UNKNOWN` (exit 3) and make no Console call.
+- An unresolved sender, an agent relay without verified admission and an
+  unresolvable context MUST fail with `ACTOR_UNKNOWN` (exit 3) and make no
+  Console call.
+- A verified relay MUST send its admitted person's `actor: { contactId }`,
+  preserve the current executor and leave link/resource ACL enforcement to
+  Console, even when that person is the operator
+  (`src/access/delegated-actor.test.ts`). A hint or later human speaker MUST
+  NOT replace host-verified caller/time/target lineage.
+- Normal caller completion/rotation after admission MUST preserve queued
+  attribution; explicit authority withdrawal and contact ineligibility or
+  opt-out MUST deny it. The Slack producer integration lives in
+  `src/channels/slack/thread-delegated-actor.test.ts`.
 - `invites list` on a contact turn fails before any Console call.
 - `pages share`, `invites create` and `access request` without `--execute`
   MUST exit 3 with `WRITE_REQUIRES_EXECUTE`, a plan showing the page and who

@@ -79,6 +79,18 @@
 - Inside a runtime turn Ravi cannot attribute, every Bases command (reads
   included) MUST fail `ACTOR_UNKNOWN` (exit 3) with no Console call
   (`src/bases/client.test.ts`, `src/cloud-auth/turn-actor.test.ts`).
+- For a verified human handoff, preflight MUST permit the attributed call
+  and the header MUST carry the same contact, preserving the current agent
+  (`src/access/delegated-actor.test.ts`). An operator caller MUST still be
+  sent as that contact rather than silently using the installation login.
+- `src/channels/slack/thread-delegated-actor.test.ts` MUST verify first-turn,
+  thread-send and reopen attribution across real lifecycle/runtime/queue
+  boundaries. Later human turns MUST NOT replace an admitted caller.
+- Missing or mismatched caller/time/target bindings and unverified actor
+  hints MUST fail closed. Normal caller rotation after admission MAY
+  preserve the request; explicit revoke, grant/profile withdrawal and
+  contact ineligibility/opt-out MUST defeat it. Console link and ACL failures
+  MUST retain their denial without an operator retry.
 - A run of a cron job a contact owns MUST send that contact as the actor
   (`x-ravi-actor-contact`, access body `actor`), never refuse locally and
   never act as the operator (`src/access/actor.test.ts`,

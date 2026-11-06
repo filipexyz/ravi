@@ -8,7 +8,9 @@
 - [ ] Prompt `source.threadId` MUST equal the inbound Slack `thread_ts`.
 - [ ] Canonical chat MUST use platform id `<channel_id>#<thread_ts>` and `chatType=thread`.
 - [ ] Child session output target MUST resolve back to the same Slack thread.
-- [ ] Actor metadata MUST be preserved on `source`, `context`, stored message and participant rows.
+- [ ] Direct inbound actor metadata MUST be preserved on `source`, `context`,
+      stored message and participant rows. Agent-produced handoffs MUST keep
+      agent provenance while independently verifying their Console actor.
 - [ ] Runtime continuity MUST fork from parent provider state when the child has no resumable state.
 - [ ] Runtime continuity MUST resume child provider state after the child has its own state.
 - [ ] `thread.create` MUST be discoverable only on executable Slack surfaces.
@@ -63,6 +65,24 @@ bun run build
 - `bun test src/decisions/decisions.test.ts src/channels/slack/thread-card.test.ts` MUST verify pending close refusal, one admission, sibling isolation, retry and pending-card fallback.
 
 - `src/channels/slack/thread-lifecycle.test.ts` MUST classify human-requested bootstraps as interactive while keeping agent/cron/observer bootstraps background and actor authority unchanged.
+- `src/channels/slack/thread-delegated-actor.test.ts` MUST feed captured real
+  lifecycle publications through queue/runtime context creation and
+  `resolveAccessActor`, with isolated state and transport mocks. It MUST
+  cover initial bootstrap for a contact and operator, root delivery after
+  parent rotation, a new thread-send caller, queued send and reopen after
+  rotation, and genuinely agent/unknown/missing-context initiators.
+- The admitted person MUST match both preflight and actor header while the
+  runtime actor and provenance remain the producing agent. No later human
+  message, requester display name or installation login may supply identity.
+- Real report/close-return publications and a subsequent parent continuation
+  MUST retain the verified chain; retrying a pending return MUST retain its
+  saved closing context and admission time. See
+  `src/access/delegated-actor.test.ts` for chain-level negative controls and
+  `src/channels/slack/thread-delegated-actor.test.ts` for producer integration.
+- Explicit revoke, used-grant removal, profile reduction and contact
+  ineligibility/opt-out MUST defeat a queued handoff, including after caller
+  rotation. Source/emitter/target mismatch, malformed admission and actor
+  hints without verified lineage MUST fail closed.
 - `src/cli/commands/sessions.test.ts` and `src/cli/remote-gateway.test.ts` MUST reject an inherited Pi/Codex model mismatch before side effects and preserve an actionable remote error.
 
 ## Orphan close

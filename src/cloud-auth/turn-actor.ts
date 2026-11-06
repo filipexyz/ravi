@@ -23,9 +23,27 @@ import { resolveAccessActor, type AccessActorDeps } from "../access/actor.js";
 import { getContext } from "../cli/context.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
 import { readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
-import type { TurnRefusal } from "./turn-refusal.js";
+import { TurnRefusalError, type TurnRefusal } from "./turn-refusal.js";
+import { CloudAuthError } from "./errors.js";
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
+import { logger } from "../utils/logger.js";
 
 export const ACTOR_CONTACT_HEADER = "x-ravi-actor-contact";
+
+/** Bases checks attribution again at dispatch; a refusal must never become an absent header. */
+export function requireTurnActorContactId(
+  env: NodeJS.ProcessEnv = process.env,
+  deps: AccessActorDeps = {},
+): string | null {
+  let decision: ReturnType<typeof resolveAccessActor>;
+  try {
+    decision = resolveAccessActor({ ...deps, turn: { ...deps.turn, env } });
+  } catch (error) {
+    throw new CloudAuthError("ACTOR_UNKNOWN", "Cannot verify who authorized this Bases request.", { cause: error });
+  }
+  if (decision.kind === "refused") throw new TurnRefusalError(decision.reason ?? { kind: "unknown" }, "bases");
+  return decision.kind === "contact" ? decision.contactId : null;
+}
 
 /** The contact who wrote the current turn when it is not the operator, else null. */
 export function turnActorContactId(env: NodeJS.ProcessEnv = process.env, deps: AccessActorDeps = {}): string | null {
@@ -33,18 +51,13 @@ export function turnActorContactId(env: NodeJS.ProcessEnv = process.env, deps: A
   try {
     const decision = resolveAccessActor({ ...deps, turn: { ...deps.turn, env } });
     if (decision.kind === "contact") return decision.contactId;
-    // A relay a contact's turn produced is still that contact's request: it
-    // never goes out as the operator alone.
-    if (decision.kind === "refused") return relayCallerContactId();
     return null;
-  } catch {
-    return relayCallerContactId();
+  } catch (error) {
+    logger
+      .child("cloud-auth:turn-actor")
+      .warn("Unable to resolve optional turn attribution", { error: errorDiagnostic(error) });
+    return null;
   }
-}
-
-function relayCallerContactId(): string | null {
-  const value = getContext()?.context?.metadata?.relayCallerContactId;
-  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 /**
