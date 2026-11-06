@@ -11662,6 +11662,21 @@ export type CredentialsRequestReturn = {
   target: string;
 };
 
+/** Input shape for `credentials.request-status`. */
+export type CredentialsRequestStatusInput = {
+  requestId: string;
+  target: string;
+};
+
+/** Return shape for `credentials.request-status`. */
+export type CredentialsRequestStatusReturn = {
+  activation: "not_requested";
+  receipt?: string;
+  requestId: string;
+  status: string;
+  target: string;
+};
+
 /** Input shape for `crm.account`. */
 export type CrmAccountInput = {
   account: string;

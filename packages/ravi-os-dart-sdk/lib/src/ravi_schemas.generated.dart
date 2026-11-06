@@ -63998,7 +63998,7 @@ class RaviSchemas {
       "type": "string"
     },
     "target": {
-      "description": "env:<key> or connection:<provider>:<connection>",
+      "description": "env:<key>, connection:<provider>:<connection> or remote:<destination>:<KEY>",
       "type": "string"
     },
     "user": {
@@ -64036,6 +64036,58 @@ class RaviSchemas {
     "target",
     "expiresAt",
     "delivery"
+  ],
+  "type": "object"
+}
+''';
+
+  static const credentialsRequestStatusInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "description": "Opaque request ID returned by credentials request",
+      "type": "string"
+    },
+    "target": {
+      "description": "remote:<destination>:<KEY>",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target"
+  ],
+  "type": "object"
+}
+''';
+
+  static const credentialsRequestStatusReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "activation": {
+      "const": "not_requested",
+      "type": "string"
+    },
+    "receipt": {
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target",
+    "status",
+    "activation"
   ],
   "type": "object"
 }

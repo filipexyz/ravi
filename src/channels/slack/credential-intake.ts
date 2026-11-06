@@ -10,6 +10,7 @@ import {
   storeIntakeSecret,
   IntakeError,
   type IntakeRequest,
+  type IntakeReceipt,
 } from "../../credentials/intake.js";
 import type { SlackWebApiClient } from "./client.js";
 import type { SlackSocketEnvelope } from "./types.js";
@@ -126,6 +127,11 @@ function section(text: string): Record<string, unknown> {
 
 function destination(request: IntakeRequest): string {
   const target = normalizeIntakeTarget(request.target);
+  if (target.kind === "remote") {
+    if (!request.remote) throw new IntakeError("INTAKE_METADATA_INVALID");
+    const remote = request.remote;
+    return `Ambiente: ${remote.label}\nVariável: ${target.key}\nServidor: ${remote.sshAlias} (${remote.user}@${remote.host}:${remote.port})\nArquivo: ${remote.envPath}\nOperação: adicionar somente se a variável não existir. A aplicação não será reiniciada.`;
+  }
   return target.kind === "env"
     ? `Destino: ${target.key}\nEscopo: este servidor (todos os processos que usam esta chave).`
     : `Provedor: ${target.provider}\nConexão: ${target.connection}\nEscopo: conexão do provedor; permissões atuais dos agentes.`;
@@ -208,13 +214,14 @@ function credentialInput(blockId: string, label: string, hint: string): Record<s
 
 export function buildCredentialIntakeStatus(
   state: "saving" | "stored" | "failed" | "verify",
-  receipt?: { fingerprint: string; daemonReloadRequired: boolean },
+  receipt?: IntakeReceipt,
+  request?: IntakeRequest,
 ): Record<string, unknown> {
   const text =
     state === "saving"
       ? "Salvando credencial… O campo foi removido."
       : state === "stored" && receipt
-        ? `Credencial salva.\nFingerprint: ${receipt.fingerprint.slice(0, 12)}${receipt.daemonReloadRequired ? "\nO servidor precisa recarregar a configuração para usar esta chave." : ""}`
+        ? `Credencial salva.\n${receipt.receiptKind === "opaque" ? "Recibo" : "Fingerprint"}: ${receipt.fingerprint.slice(0, 12)}${receipt.daemonReloadRequired ? "\nO servidor precisa recarregar a configuração para usar esta chave." : ""}${receipt.activationRequired ? "\nArquivo atualizado. A aplicação ainda precisa carregar a nova configuração." : ""}`
         : state === "verify"
           ? "A gravação precisa ser conferida antes de tentar novamente. Não envie o token de novo."
           : "Não foi possível salvar esta credencial. O campo foi removido. Solicite um novo convite e confira suas permissões.";
@@ -231,7 +238,7 @@ export function buildCredentialIntakeStatus(
             : "Credencial não salva",
     ),
     close: plain("Fechar"),
-    blocks: [section(text)],
+    blocks: [section(text), ...(request?.remote ? [section(destination(request))] : [])],
   };
 }
 
@@ -315,14 +322,21 @@ export async function handleCredentialIntakeEnvelope(input: {
       if (request.status === "open") return undefined;
       if (request.status === "stored") {
         return request.fingerprint && /^[a-f0-9]{64}$/.test(request.fingerprint)
-          ? buildCredentialIntakeStatus("stored", {
-              fingerprint: request.fingerprint,
-              daemonReloadRequired: normalizeIntakeTarget(request.target).kind === "env",
-            })
-          : buildCredentialIntakeStatus("verify");
+          ? buildCredentialIntakeStatus(
+              "stored",
+              {
+                fingerprint: request.fingerprint,
+                daemonReloadRequired: normalizeIntakeTarget(request.target).kind === "env",
+                ...(request.remote ? { receiptKind: "opaque" as const, activationRequired: true } : {}),
+              },
+              request,
+            )
+          : buildCredentialIntakeStatus("verify", undefined, request);
       }
       return buildCredentialIntakeStatus(
         request.status === "pending" || request.errorCode === "INTAKE_RECONCILIATION_REQUIRED" ? "verify" : "failed",
+        undefined,
+        request,
       );
     };
     const request = deps.getRequest(requestId);
@@ -386,13 +400,13 @@ export async function handleCredentialIntakeEnvelope(input: {
       return true;
     }
     pendingRequestId = claimed.id;
-    await ack({ response_action: "update", view: buildCredentialIntakeStatus("saving") });
+    await ack({ response_action: "update", view: buildCredentialIntakeStatus("saving", undefined, claimed) });
     storeStarted = true;
     const receipt = await deps.store(claimed, secret);
     secret = undefined;
     // A failed UI refresh must not turn a successful store into a false failure.
     const displayed = await input.client
-      .viewsUpdate({ viewId, view: buildCredentialIntakeStatus("stored", receipt) })
+      .viewsUpdate({ viewId, view: buildCredentialIntakeStatus("stored", receipt, claimed) })
       .then(
         () => true,
         () => false,
@@ -403,7 +417,7 @@ export async function handleCredentialIntakeEnvelope(input: {
           channel: request.channelId,
           user: request.userId,
           threadTs: request.threadTs,
-          text: `Credencial salva. Fingerprint: ${receipt.fingerprint.slice(0, 12)}.${receipt.daemonReloadRequired ? " O servidor precisa recarregar a configuração." : ""}`,
+          text: `Credencial salva. ${receipt.receiptKind === "opaque" ? "Recibo" : "Fingerprint"}: ${receipt.fingerprint.slice(0, 12)}.${receipt.daemonReloadRequired ? " O servidor precisa recarregar a configuração." : ""}${receipt.activationRequired ? " A aplicação ainda precisa carregar a nova configuração." : ""}`,
         })
         .catch(() => {
           // no-cause: Receipt delivery is best effort after durable storage; Slack diagnostics must not escape.
@@ -418,7 +432,7 @@ export async function handleCredentialIntakeEnvelope(input: {
       (storeStarted && !(error instanceof IntakeError))
         ? "verify"
         : "failed";
-    const failureView = replayView ?? buildCredentialIntakeStatus(failureState);
+    const failureView = replayView ?? buildCredentialIntakeStatus(failureState, undefined, feedbackRequest);
     if (pendingRequestId && !storeStarted) {
       try {
         deps.complete(pendingRequestId, { status: "failed", errorCode: "INTAKE_STORE_FAILED" });

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "cb95bc98b21fd374"
+    "version": "a5f2e120d74806e6"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -68938,7 +68938,7 @@
                     "type": "string"
                   },
                   "target": {
-                    "description": "env:<key> or connection:<provider>:<connection>",
+                    "description": "env:<key>, connection:<provider>:<connection> or remote:<destination>:<KEY>",
                     "type": "string"
                   },
                   "user": {
@@ -68997,6 +68997,84 @@
         },
         "security": [],
         "summary": "Send a private Slack button to add an API credential; accepts metadata only",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/request-status": {
+      "post": {
+        "operationId": "credentials.request-status",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "requestId": {
+                    "description": "Opaque request ID returned by credentials request",
+                    "type": "string"
+                  },
+                  "target": {
+                    "description": "remote:<destination>:<KEY>",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "target",
+                  "requestId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "activation": {
+                      "const": "not_requested",
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requestId",
+                    "target",
+                    "status",
+                    "activation"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Reconcile a remote credential request without reading or resubmitting its secret",
         "tags": [
           "credentials"
         ]

@@ -11,6 +11,8 @@ import {
 } from "../runtime/ravi-env-file.js";
 import { deleteSecret, writeSecret } from "./backends.js";
 import { createCredentialConnectionIfAbsent, getCredentialConnection, normalizeCredentialIdentifier } from "./store.js";
+import { remoteIntakeSnapshotSchema, storeRemoteIntake, inspectRemoteIntake } from "./remote-intake.js";
+import { RemoteCredentialError } from "./remote/ssh.js";
 
 export const INTAKE_TTL_MS = 10 * 60 * 1_000;
 export const INTAKE_REQUEST_RESOURCE = "credentials.requests";
@@ -26,6 +28,7 @@ export type IntakeErrorCode =
   | "INTAKE_ALREADY_USED"
   | "INTAKE_TARGET_BUSY"
   | "INTAKE_SECRET_INVALID"
+  | "INTAKE_REMOTE_CONFLICT"
   | "INTAKE_STORE_FAILED"
   | "INTAKE_RECONCILIATION_REQUIRED";
 
@@ -58,6 +61,7 @@ export const intakeMetadataSchema = z
     issuerSessionKey: z.string().min(1).max(512).optional(),
     reason: z.string().trim().min(1).max(500),
     label: z.string().trim().min(1).max(100).optional(),
+    remote: remoteIntakeSnapshotSchema.optional(),
     backend: z.enum(["file", "keychain", "vault"]).optional(),
     scopes: z
       .array(
@@ -95,11 +99,18 @@ export interface IntakeBinding {
 
 export type IntakeTarget =
   | { kind: "env"; target: string; key: string; scope: "host" }
+  | { kind: "remote"; target: string; destinationId: string; key: string; scope: "remote-file" }
   | { kind: "connection"; target: string; provider: string; connection: string; scope: "provider" };
 
 export function normalizeIntakeTarget(value: string): IntakeTarget {
   try {
     const parts = value.split(":");
+    if (parts.length === 3 && parts[0] === "remote") {
+      const destinationId = normalizeCredentialIdentifier(parts[1]!, "destination");
+      const key = parts[2]!;
+      if (!/^[A-Z_][A-Z0-9_]{0,127}$/.test(key)) throw new IntakeError("INTAKE_TARGET_INVALID");
+      return { kind: "remote", target: `remote:${destinationId}:${key}`, destinationId, key, scope: "remote-file" };
+    }
     if (parts.length === 2 && parts[0] === "env") {
       const key = assertRaviEnvKey(parts[1]!);
       if (!isRaviEnvSecretKey(key) || key === "CLAUDE_CODE_OAUTH_TOKEN") throw new IntakeError("INTAKE_TARGET_INVALID");
@@ -190,10 +201,11 @@ export function createIntakeRequest(input: IntakeMetadata, options: { now?: numb
   const parsed = intakeMetadataSchema.safeParse(input);
   if (!parsed.success) throw new IntakeError("INTAKE_METADATA_INVALID");
   const target = normalizeIntakeTarget(parsed.data.target);
-  if (target.kind === "env" && (parsed.data.backend || parsed.data.scopes?.length)) {
+  if (target.kind !== "connection" && (parsed.data.backend || parsed.data.scopes?.length)) {
     throw new IntakeError("INTAKE_METADATA_INVALID");
   }
   if (target.kind === "connection" && !parsed.data.backend) throw new IntakeError("INTAKE_METADATA_INVALID");
+  if ((target.kind === "remote") !== Boolean(parsed.data.remote)) throw new IntakeError("INTAKE_METADATA_INVALID");
   const metadata: IntakeMetadata = { ...parsed.data, target: target.target };
   const now = options.now ?? Date.now();
   const request: IntakeRequest = {
@@ -361,6 +373,14 @@ export interface IntakeSecretDeps {
   deleteSecret?: typeof deleteSecret;
   saveConnection?: typeof createCredentialConnectionIfAbsent;
   complete?: typeof completeIntakeRequest;
+  remoteStore?: typeof storeRemoteIntake;
+}
+
+export interface IntakeReceipt {
+  fingerprint: string;
+  daemonReloadRequired: boolean;
+  receiptKind?: "opaque";
+  activationRequired?: boolean;
 }
 
 /** Secret exists only in memory and the destination store; never in request/audit. */
@@ -368,7 +388,7 @@ export async function storeIntakeSecret(
   request: IntakeRequest,
   secret: string,
   deps: IntakeSecretDeps = {},
-): Promise<{ fingerprint: string; daemonReloadRequired: boolean }> {
+): Promise<IntakeReceipt> {
   const current = getIntakeRequest(request.id);
   if (!current || current.status !== "pending") throw new IntakeError("INTAKE_ALREADY_USED");
   // Trust only the persisted request, not copies supplied by a caller.
@@ -388,6 +408,17 @@ export async function storeIntakeSecret(
       throw new IntakeError("INTAKE_SECRET_INVALID");
     }
     if (/sk-ant-oat\d*(?:-|$)/i.test(secret)) throw new IntakeError("INTAKE_SECRET_INVALID");
+    if (target.kind === "remote") {
+      const receipt = await (deps.remoteStore ?? storeRemoteIntake)(current, secret);
+      secretWritten = true;
+      complete(current.id, { status: "stored", fingerprint: receipt.receipt });
+      return {
+        fingerprint: receipt.receipt,
+        daemonReloadRequired: false,
+        receiptKind: "opaque",
+        activationRequired: true,
+      };
+    }
     if (target.kind === "env") {
       const existing = (deps.getEnvKey ?? getRaviEnvKey)(target.key);
       if (existing.present || existing.processPresent) throw new IntakeError("INTAKE_TARGET_EXISTS");
@@ -431,6 +462,14 @@ export async function storeIntakeSecret(
     // not happen. The pending request keeps the target blocked for inspection.
     // Typed writer rejections before rename are known to have made no write.
     // An existing key may belong to a competing request, not this submission.
+    if (
+      target.kind === "remote" &&
+      (secretWritten ||
+        !(error instanceof IntakeError || error instanceof RemoteCredentialError) ||
+        (error instanceof RemoteCredentialError && ["REMOTE_UNCERTAIN", "UNCERTAIN"].includes(error.code)))
+    ) {
+      throw new IntakeError("INTAKE_RECONCILIATION_REQUIRED");
+    }
     if (error instanceof RaviEnvFileError && error.code === "ENV_WRITE_UNCERTAIN") {
       throw new IntakeError("INTAKE_RECONCILIATION_REQUIRED");
     }
@@ -462,11 +501,15 @@ export async function storeIntakeSecret(
     const code =
       error instanceof IntakeError
         ? error.code
-        : error instanceof RaviEnvFileError && error.code === "ENV_KEY_EXISTS"
-          ? "INTAKE_TARGET_EXISTS"
-          : error instanceof RaviEnvFileError && error.code === "ENV_FILE_BUSY"
-            ? "INTAKE_TARGET_BUSY"
-            : "INTAKE_STORE_FAILED";
+        : error instanceof RemoteCredentialError && ["VERSION_CONFLICT", "REQUEST_CONFLICT"].includes(error.code)
+          ? "INTAKE_REMOTE_CONFLICT"
+          : error instanceof RemoteCredentialError && error.code === "KEY_EXISTS"
+            ? "INTAKE_TARGET_EXISTS"
+            : error instanceof RaviEnvFileError && error.code === "ENV_KEY_EXISTS"
+              ? "INTAKE_TARGET_EXISTS"
+              : error instanceof RaviEnvFileError && error.code === "ENV_FILE_BUSY"
+                ? "INTAKE_TARGET_BUSY"
+                : "INTAKE_STORE_FAILED";
     try {
       complete(current.id, { status: "failed", errorCode: code });
     } catch {
@@ -475,4 +518,28 @@ export async function storeIntakeSecret(
     }
     throw new IntakeError(code);
   }
+}
+
+/** Reconcile only a pending remote request; a network failure never declares it unwritten. */
+export async function reconcileRemoteIntakeRequest(
+  id: string,
+  dependencies: { inspect?: typeof inspectRemoteIntake } = {},
+): Promise<IntakeRequest> {
+  const request = getIntakeRequest(id);
+  if (!request || normalizeIntakeTarget(request.target).kind !== "remote")
+    throw new IntakeError("INTAKE_NOT_AVAILABLE");
+  // A status request must not fence an open invitation before its first submit.
+  if (request.status !== "pending" && request.status !== "stored") throw new IntakeError("INTAKE_NOT_AVAILABLE");
+  const status = await (dependencies.inspect ?? inspectRemoteIntake)(request);
+  // The status operation itself reauthorizes even for completed/expired requests.
+  const current = getIntakeRequest(id);
+  if (!current) throw new IntakeError("INTAKE_NOT_AVAILABLE");
+  if (current.status !== "pending") return current;
+  if (status.status === "stored") return completeIntakeRequest(id, { status: "stored", fingerprint: status.receipt });
+  // Receiver returns not_found only after durably fencing this request ID,
+  // including when our coordinator has not sent PREPARE yet. Late writers
+  // therefore cannot race this terminal failure or a new invitation.
+  if (status.status === "not_found")
+    return completeIntakeRequest(id, { status: "failed", errorCode: "INTAKE_STORE_FAILED" });
+  return current;
 }
