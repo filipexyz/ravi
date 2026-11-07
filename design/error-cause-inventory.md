@@ -418,7 +418,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/audit.ts | 112 | fixed | binding retained / no recognized error surface | src/cli/audit.ts:af01abebdab1195a6f2d8e21 |
 | cli | src/cli/cloud-agents-contract.ts | 241 | fixed | binding retained / no recognized error surface | src/cli/cloud-agents-contract.ts:c8dbf439594a6d405bc0f209 |
 | cli | src/cli/codex-hook-transport.ts | 75 | fixed | binding retained / no recognized error surface | src/cli/codex-hook-transport.ts:815eaacac7107596f024c4a0 |
-| cli | src/cli/command-access.ts | 341 | triaged-follow-up | catch-without-binding | src/cli/command-access.ts:5b7e49b64c2fd8e3ff6c70a5 |
+| cli | src/cli/command-access.ts | 351 | triaged-follow-up | catch-without-binding | src/cli/command-access.ts:5b7e49b64c2fd8e3ff6c70a5 |
 | cli | src/cli/commands/agenda.ts | 469 | fixed | binding retained / no recognized error surface | src/cli/commands/agenda.ts:80070e42e9e3ab05f92009cb |
 | cli | src/cli/commands/agenda.ts | 607 | fixed | binding retained / no recognized error surface | src/cli/commands/agenda.ts:d53c5654d696bcde56eb1e12 |
 | cli | src/cli/commands/agents-library.ts | 65 | triaged-follow-up | rejection-without-binding | src/cli/commands/agents-library.ts:165d62a4d87b9cfbbd546147 |

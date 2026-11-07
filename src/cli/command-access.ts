@@ -176,12 +176,22 @@ function buildCommandAccessApprovalMessage(
   return [
     `Approval required: ${authorityLabel} cannot execute ${formatCommand(input)} (${input.access.kind} ${input.access.resource}.${input.access.action}, risk ${input.access.risk})`,
     `${decision.providerId}@${decision.providerVersion} (${decision.reasonCode}) requires human approval for ${decision.permission}:${decision.objectType}:${decision.objectId}.`,
-    APPROVAL_REQUIRED_HINT,
+    approvalRequiredHint(input.access),
   ].join("\n");
 }
 
 const APPROVAL_REQUIRED_HINT =
-  "The CLI cannot request approval inline; ask the authority to reissue the scope without requiresApproval, or have the operator run it.";
+  "The CLI cannot request approval inline; ask the authority to reissue the scope without requiresApproval";
+
+function approvalRequiredHint(access: CommandAccessOptions): string {
+  if (access.localOperator !== false) return `${APPROVAL_REQUIRED_HINT}, or have the operator run it.`;
+  return [
+    `${APPROVAL_REQUIRED_HINT}, then retry with an authorized runtime context through the gateway/agent.`,
+    access.notes,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 function buildCommandAccessDenialMessage(
   input: CliCommandAccessInput & { access: CommandAccessOptions },
@@ -404,7 +414,7 @@ function recordCliCommandAccessDenial(
         reasonCode: requested.reasonCode,
         canonicalCapability: grantGuidance.canonicalCapability,
         candidateCapabilities: grantGuidance.candidateCapabilities,
-        message: APPROVAL_REQUIRED_HINT,
+        message: approvalRequiredHint(input.access),
       }
     : grantGuidance;
 
@@ -452,7 +462,7 @@ function recordCliCommandAccessDenial(
         ? {
             canonicalCapability: grantGuidance.canonicalCapability,
             candidateCapabilities: grantGuidance.candidateCapabilities,
-            recommendedPath: APPROVAL_REQUIRED_HINT,
+            recommendedPath: approvalRequiredHint(input.access),
           }
         : {
             canonicalCapability: grantGuidance.canonicalCapability,

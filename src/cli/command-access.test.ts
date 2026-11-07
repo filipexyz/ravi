@@ -212,6 +212,7 @@ describe("CLI command access enforcement", () => {
       expect(result.errorMessage).toContain("external_authority_requires_approval");
       expect(result.errorMessage).not.toContain("Missing capability");
       expect(result.errorMessage).not.toContain("ravi permissions allow");
+      expect(result.errorMessage).toContain("or have the operator run it");
       expect(auditEvents).toEqual([
         {
           topic: "ravi.audit.denied",
@@ -222,6 +223,37 @@ describe("CLI command access enforcement", () => {
           }),
         },
       ]);
+    });
+
+    it("keeps the operator approval alternative when localOperator is explicitly true", () => {
+      configureExternalAuthority("external-authority", approvalOnSemantic);
+      const result = runWithContext({ agentId: "dev", context: context([]) }, () =>
+        enforceCliCommandAccess({
+          group: "demo",
+          command: "create",
+          access: { ...ACCESS, localOperator: true },
+          source: "gateway",
+        }),
+      );
+      expect(result.allowed).toBe(false);
+      expect(result.decision?.decision).toBe("needs_approval");
+      expect(result.errorMessage).toContain("or have the operator run it");
+    });
+
+    it("does not offer the operator alternative for commands that disallow it without a custom note", () => {
+      configureExternalAuthority("external-authority", approvalOnSemantic);
+      const result = runWithContext({ agentId: "dev", context: context([]) }, () =>
+        enforceCliCommandAccess({
+          group: "demo",
+          command: "create",
+          access: { ...ACCESS, localOperator: false },
+          source: "gateway",
+        }),
+      );
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain("ask the authority to reissue the scope without requiresApproval");
+      expect(result.errorMessage).toContain("authorized runtime context through the gateway/agent");
+      expect(result.errorMessage).not.toContain("or have the operator run it");
     });
 
     it("keeps the approval when context-capabilities denies earlier candidates first", () => {

@@ -58,6 +58,11 @@ PR reconciliation and follow are internal helpers, not separate public commands.
   caller sees the required execution path instead of a journal failure.
   Authorization runs before filesystem/network reads and before effects.
   `--execute` grants neither capability nor review approval. No auto-grants.
+- When authorization requires approval, response and permission-audit recovery
+  guidance MUST respect `localOperator:false`: request approval/reissuance from
+  the authority and retry through the authenticated gateway/agent session.
+  Neither surface may recommend running as the bare operator. Commands that
+  still allow local operators keep their existing recovery alternative.
 
 ## Integrity and supported scope
 

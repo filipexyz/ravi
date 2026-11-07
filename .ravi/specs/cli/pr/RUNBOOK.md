@@ -16,6 +16,9 @@ with `pr publish requires an authenticated session context; run through the
 gateway/agent.` means the execution surface/session identity is missing.
 Do not repair this by bypassing the journal or bootstrapping an admin key.
 Cloud login does not currently exchange human identity for a gateway `rctx`.
+If the refusal says `Approval required`, obtain approval and a reissued scope
+from that authority, then retry through the authenticated session. Running the
+command as a bare local operator does not satisfy this approval path.
 Runtime and client must both contain this feature.
 `FOLLOW_RUNTIME_UNAVAILABLE` means update/start the normal Ravi
 runtime; never start a second runner or disable this check.

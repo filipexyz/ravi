@@ -1,5 +1,12 @@
 # Verified PR publication / CHECKS
 
+- `bun test src/cli/commands/pr-approval.test.ts src/cli/command-access.test.ts`
+  exercises `pr.publish` through the real gateway dispatcher with a signed
+  external authority requiring approval. HTTP 403 / `PERMISSION_DENIED`,
+  and both denial-guidance inputs MUST point to the authenticated gateway/agent
+  session and MUST NOT offer bare-operator execution. Persistence and emission
+  retain their existing sanitization of those inputs. Commands
+  with omitted/true `localOperator` retain their operator alternative.
 - `bun test src/cli/commands/pr.test.ts src/pr/context.test.ts src/cli/command-access.test.ts`
   proves bare operator admission is denied with the authenticated-session
   message, even with `--execute`; direct unauthenticated, default-credential,

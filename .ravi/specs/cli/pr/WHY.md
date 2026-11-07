@@ -32,6 +32,14 @@ and must not wait for an operator-login feature.
 
 ## What exists today
 
+Approval refusal is part of this same contract. A generic hint offering local
+operator execution becomes invalid when `localOperator:false`; reusing that
+hint in responses and audit merely moves the user to another guaranteed denial.
+Recovery now selects one hint from command metadata and uses it consistently
+in the response and both denial-audit inputs, preserving their existing
+sanitization on storage/emission. Other commands that allow local operators
+retain their existing alternative.
+
 - `src/sdk/gateway/auth.ts` validates bearer runtime credentials through the
   registry; a reachable socket does not authenticate the caller.
 - `src/cli/commands/context.ts` implements `issue` and `authorize` only after
