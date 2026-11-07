@@ -385,12 +385,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 202 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3931e436098dcef7fb8f6040 |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 223 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0c07e521d00e171ade1709c5 |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 236 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b1f7078520b6527d71c97b7f |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 312 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3a974b064a56e148acd68bb8 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 420 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 446 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 459 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 512 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 906 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 340 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3a974b064a56e148acd68bb8 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 448 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 474 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 487 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 540 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 934 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
 | channels-slack | src/channels/slack/thread-requester.ts | 34 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-requester.ts:906a166dfda93a7451e16429 |
 | channels-slack | src/channels/slack/thread-requester.ts | 64 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:518fbe45995656bbf2c7b34e |
 | channels-slack | src/channels/slack/thread-requester.ts | 73 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:4e96a74ec3eda3554d5b7d4b |
@@ -1748,29 +1748,29 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/host-event-loop.ts | 2957 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:dc0a01aad194fe9e7d901eeb |
 | runtime-chat | src/runtime/host-event-loop.ts | 2967 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:75b9b5864354616c5d37d351 |
 | runtime-chat | src/runtime/host-event-loop.ts | 3000 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:1bf7d27f14bd7d6bd19d9294 |
-| runtime-chat | src/runtime/host-event-loop.ts | 3087 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:ecfad7dcb54e896e416af54b |
-| runtime-chat | src/runtime/host-event-loop.ts | 3085 | triaged-follow-up | rejection-without-binding | src/runtime/host-event-loop.ts:3f3091db8f8381e637db92aa |
-| runtime-chat | src/runtime/host-event-loop.ts | 3106 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:6c10ae9d69df19fd91b3e7c6 |
-| runtime-chat | src/runtime/host-event-loop.ts | 3119 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:6c8fbbef7235c02287e85bc5 |
-| runtime-chat | src/runtime/host-event-loop.ts | 3131 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:1fdd96e1c6c05dd759f3d98c |
-| runtime-chat | src/runtime/host-event-loop.ts | 3550 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:558f886d6961a841578fd657 |
-| runtime-chat | src/runtime/host-event-loop.ts | 3565 | triaged-follow-up | rejection-without-binding | src/runtime/host-event-loop.ts:a3483d35d6a04be93367e764 |
-| runtime-chat | src/runtime/host-event-loop.ts | 3666 | triaged-follow-up | rejection-without-binding | src/runtime/host-event-loop.ts:a3483d35d6a04be93367e764 |
-| runtime-chat | src/runtime/host-event-loop.ts | 3669 | triaged-follow-up | rejection-without-binding | src/runtime/host-event-loop.ts:a3483d35d6a04be93367e764 |
-| runtime-chat | src/runtime/host-event-loop.ts | 3742 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:8749de6c6ddc611a552e2928 |
-| runtime-chat | src/runtime/host-event-loop.ts | 4021 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:89fbcc6aca053217233ac568 |
-| runtime-chat | src/runtime/host-event-loop.ts | 4046 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:ac9d1d7dffede7ef6fce3667 |
-| runtime-chat | src/runtime/host-event-loop.ts | 4099 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:0501f8ebfce90b7f1e7f73de |
-| runtime-chat | src/runtime/host-event-loop.ts | 4366 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:22761bd2bf8ff28ea3f863ea |
-| runtime-chat | src/runtime/host-event-loop.ts | 4444 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:a1ff8d432cf4682eb5ed8b32 |
-| runtime-chat | src/runtime/host-event-loop.ts | 4523 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:9113f376d4cb0d0288ca5abc |
-| runtime-chat | src/runtime/host-event-loop.ts | 4835 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:f7fa94ee99bc8f44c36a17a2 |
-| runtime-chat | src/runtime/host-event-loop.ts | 4989 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:51d4653adc80400bc7a711fb |
-| runtime-chat | src/runtime/host-event-loop.ts | 5081 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:dc28cc2029ff17b8ed44bf63 |
-| runtime-chat | src/runtime/host-event-loop.ts | 5095 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:0dc9855a0697c079832fc152 |
-| runtime-chat | src/runtime/host-event-loop.ts | 5357 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:7f0cb67b7494201e6381c3bf |
-| runtime-chat | src/runtime/host-event-loop.ts | 5377 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:f390568a71b693614b1bc83b |
-| runtime-chat | src/runtime/host-event-loop.ts | 5429 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:37c27d5398f8176bf76f03da |
+| runtime-chat | src/runtime/host-event-loop.ts | 3091 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:ecfad7dcb54e896e416af54b |
+| runtime-chat | src/runtime/host-event-loop.ts | 3089 | triaged-follow-up | rejection-without-binding | src/runtime/host-event-loop.ts:3f3091db8f8381e637db92aa |
+| runtime-chat | src/runtime/host-event-loop.ts | 3110 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:6c10ae9d69df19fd91b3e7c6 |
+| runtime-chat | src/runtime/host-event-loop.ts | 3123 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:6c8fbbef7235c02287e85bc5 |
+| runtime-chat | src/runtime/host-event-loop.ts | 3135 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:1fdd96e1c6c05dd759f3d98c |
+| runtime-chat | src/runtime/host-event-loop.ts | 3554 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:558f886d6961a841578fd657 |
+| runtime-chat | src/runtime/host-event-loop.ts | 3569 | triaged-follow-up | rejection-without-binding | src/runtime/host-event-loop.ts:a3483d35d6a04be93367e764 |
+| runtime-chat | src/runtime/host-event-loop.ts | 3670 | triaged-follow-up | rejection-without-binding | src/runtime/host-event-loop.ts:a3483d35d6a04be93367e764 |
+| runtime-chat | src/runtime/host-event-loop.ts | 3673 | triaged-follow-up | rejection-without-binding | src/runtime/host-event-loop.ts:a3483d35d6a04be93367e764 |
+| runtime-chat | src/runtime/host-event-loop.ts | 3746 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:8749de6c6ddc611a552e2928 |
+| runtime-chat | src/runtime/host-event-loop.ts | 4025 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:89fbcc6aca053217233ac568 |
+| runtime-chat | src/runtime/host-event-loop.ts | 4050 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:ac9d1d7dffede7ef6fce3667 |
+| runtime-chat | src/runtime/host-event-loop.ts | 4103 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:0501f8ebfce90b7f1e7f73de |
+| runtime-chat | src/runtime/host-event-loop.ts | 4370 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:22761bd2bf8ff28ea3f863ea |
+| runtime-chat | src/runtime/host-event-loop.ts | 4448 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:a1ff8d432cf4682eb5ed8b32 |
+| runtime-chat | src/runtime/host-event-loop.ts | 4527 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:9113f376d4cb0d0288ca5abc |
+| runtime-chat | src/runtime/host-event-loop.ts | 4839 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:f7fa94ee99bc8f44c36a17a2 |
+| runtime-chat | src/runtime/host-event-loop.ts | 4993 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:51d4653adc80400bc7a711fb |
+| runtime-chat | src/runtime/host-event-loop.ts | 5085 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:dc28cc2029ff17b8ed44bf63 |
+| runtime-chat | src/runtime/host-event-loop.ts | 5099 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:0dc9855a0697c079832fc152 |
+| runtime-chat | src/runtime/host-event-loop.ts | 5362 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:7f0cb67b7494201e6381c3bf |
+| runtime-chat | src/runtime/host-event-loop.ts | 5382 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:f390568a71b693614b1bc83b |
+| runtime-chat | src/runtime/host-event-loop.ts | 5434 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:37c27d5398f8176bf76f03da |
 | runtime-chat | src/runtime/host-hooks.ts | 250 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:9fca6f5c4663292e01dc53c0 |
 | runtime-chat | src/runtime/host-hooks.ts | 309 | triaged-follow-up | catch-without-binding | src/runtime/host-hooks.ts:7dace61e0fb823aac0ce35af |
 | runtime-chat | src/runtime/host-hooks.ts | 316 | triaged-follow-up | catch-without-binding | src/runtime/host-hooks.ts:b3cd318de28be884aba1db1a |

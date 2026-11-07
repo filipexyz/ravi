@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { getOrCreateSession } from "../../router/sessions.js";
-import { closeRouterDb } from "../../router/router-db.js";
+import { closeRouterDb, dbCreateAgent, dbRevokeContext, getDb } from "../../router/router-db.js";
+import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { buildRuntimeRequestContext } from "../../runtime/runtime-request-context.js";
+import { canWithCapabilities } from "../../permissions/provider-runtime.js";
+import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import {
   createRuntimeBootEpoch,
   createRuntimeTurnAttempt,
@@ -65,7 +69,15 @@ function seedTurn() {
     startedAt,
     updatedAt: startedAt,
   });
-  event("adapter.request", startedAt);
+  const context = createRuntimeContext({
+    kind: "turn-runtime",
+    agentId: "main",
+    sessionKey: childKey,
+    sessionName: childName,
+    capabilities: [],
+    metadata: { actorAuthorizationMode: "invoke-only" },
+  });
+  event("adapter.request", startedAt, { context_id: context.contextId });
 }
 function event(eventType: string, timestamp: number, payloadJson: Record<string, unknown> = {}) {
   recordSessionEvent({
@@ -127,6 +139,73 @@ function lease(expiresAt: number) {
 }
 
 describe("thread turn health reconciliation", () => {
+  it("keeps the observed restricted turn authority in its parent attention notice", async () => {
+    const caller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "main",
+      sessionKey: childKey,
+      sessionName: childName,
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+      metadata: { actorAuthorizationMode: "user-overlay", actorPrincipal: "contact:restricted-caller" },
+    });
+    getDb()
+      .prepare("UPDATE session_events SET payload_json = ? WHERE turn_id = ? AND event_type = 'adapter.request'")
+      .run(JSON.stringify({ context_id: caller.contextId }), turnId);
+    // Normal completion revokes the key; the persisted caller snapshot still narrows a queued relay.
+    dbRevokeContext(caller.contextId);
+    terminal("complete", "incomplete");
+    await tick();
+    const payload = publishPrompt.mock.calls[0]?.[1];
+    expect(payload).toMatchObject({ _turnOrigin: { callerContextId: caller.contextId } });
+    const parentContext = buildRuntimeRequestContext({
+      dbSessionKey: parentKey,
+      sessionName: parentKey,
+      sessionCwd: "/tmp/ravi",
+      agent: { id: "main", cwd: "/tmp/ravi" },
+      prompt: payload as unknown as RuntimeLaunchPrompt,
+      runtimeProviderId: "codex",
+      model: "test-model",
+      runtimeResolution: {
+        options: {},
+        sources: { model: null, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+    }).runtimeContext;
+    expect(parentContext.metadata?.relayNarrowing).toBe(true);
+    expect(parentContext.metadata?.relayCallerContactId).toBe("restricted-caller");
+    expect(canWithCapabilities(parentContext.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(parentContext.capabilities, "use", "tool", "Read")).toBe(false);
+  });
+
+  for (const binding of ["missing", "unknown", "other-session", "wrong-agent", "wrong-kind", "ambiguous"] as const) {
+    it(`does not publish attention without the observed turn authority: ${binding}`, async () => {
+      if (binding === "wrong-agent") dbCreateAgent({ id: "other-agent", cwd: "/tmp/ravi" });
+      const contextId =
+        binding === "missing"
+          ? null
+          : binding === "unknown"
+            ? "ctx_missing"
+            : createRuntimeContext({
+                kind: binding === "wrong-kind" ? "runtime" : "turn-runtime",
+                agentId: binding === "wrong-agent" ? "other-agent" : "main",
+                sessionKey: binding === "other-session" ? parentKey : childKey,
+                capabilities: [],
+              }).contextId;
+      getDb()
+        .prepare("UPDATE session_events SET payload_json = ? WHERE turn_id = ? AND event_type = 'adapter.request'")
+        .run(JSON.stringify({ context_id: contextId }), turnId);
+      if (binding === "ambiguous") event("adapter.request", startedAt + 1, { context_id: contextId });
+      const result = await reconcileSlackThreadLifecycle({
+        publishPrompt,
+        publishEvent: mock(async () => {}),
+        now: () => now,
+      });
+      expect(result.failures).toBe(1);
+      expect(publishPrompt).not.toHaveBeenCalled();
+      expect(getThreadTurnHealth(requestId)).toMatchObject({ state: "attention", reason: "no_signal" });
+    });
+  }
+
   it("makes an unterminated turn visible and sends one notice across ticks and database reopen", async () => {
     expect(await tick()).toMatchObject({ state: "attention", reason: "no_signal", turnId });
     closeRouterDb();

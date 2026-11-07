@@ -4704,6 +4704,60 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it.each(["@@SILENT@@", "Routine finished HEARTBEAT_OK", "No response requested."])(
+    "preserves explicit silence through later commentary: %s",
+    async (marker) => {
+      const streaming = makeStreamingSession();
+      seedAdapterTrace(streaming, "turn-silent-then-commentary");
+
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: marker },
+          { type: "assistant.message", text: "Recorded the routine.", metadata: { item: { phase: "commentary" } } },
+          { type: "assistant.message", text: "" },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ]),
+      );
+
+      const assistant = getRecentHistory(SESSION_NAME).filter(({ role }) => role === "assistant");
+      expect(assistant.map(({ content, utterance_class }) => [content, utterance_class])).toEqual([
+        ["Recorded the routine.", "commentary"],
+      ]);
+      expect(getSessionTurn("turn-silent-then-commentary")).toMatchObject({
+        status: "complete",
+        outputState: "silent",
+      });
+    },
+  );
+
+  it.each(["final", "tool"])("invalidates explicit silence after a subsequent %s", async (continuation) => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-silence-invalidated");
+    const events: RuntimeEvent[] =
+      continuation === "final"
+        ? [{ type: "assistant.message", text: "Here is the result.", metadata: { item: { phase: "final_answer" } } }]
+        : [
+            { type: "tool.started", toolUse: { id: "read-after-silent", name: "Read", input: { path: "README.md" } } },
+            { type: "tool.completed", toolUseId: "read-after-silent", toolName: "Read", content: "ok" },
+          ];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "@@SILENT@@" },
+        ...events,
+        { type: "assistant.message", text: "Recorded the routine.", metadata: { item: { phase: "commentary" } } },
+        { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+      ]),
+    );
+
+    expect(getSessionTurn("turn-silence-invalidated")).toMatchObject({
+      status: "complete",
+      outputState: continuation === "final" ? "final" : "incomplete",
+    });
+  });
+
   it("suppresses a truncated silence marker and keeps prose that cites the marker", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-silent-truncated-citation");
@@ -6377,10 +6431,12 @@ describe("runtime session trace instrumentation", () => {
     const streaming = makeStreamingSession({ agentMode: "active", currentSource: attachedSource });
     seedAdapterTrace(streaming, "turn-internal-failure");
     const responses: string[] = [];
+    const traceTurnIds: unknown[] = [];
     const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
       if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
         const response = (data as { response?: unknown }).response;
         if (typeof response === "string") responses.push(response);
+        traceTurnIds.push((data as { traceTurnId?: unknown }).traceTurnId);
       }
     });
 
@@ -6409,6 +6465,10 @@ describe("runtime session trace instrumentation", () => {
 
     const terminal = listSessionEventsForTest(SESSION_KEY).find((event) => event.eventType === "turn.failed");
     expect(terminal?.error).toBe(rawError);
+    expect(terminal?.turnId).toBe("turn-internal-failure");
+    expect(getSessionTurn("turn-internal-failure")?.status).toBe("failed");
+    expect(streaming.currentTraceTurnId).toBeUndefined();
+    expect(traceTurnIds).toEqual(["turn-internal-failure"]);
   });
 
   it("deduplicates user-facing provider session limit failures within the same reset window", () => {

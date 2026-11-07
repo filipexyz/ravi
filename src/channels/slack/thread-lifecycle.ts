@@ -252,6 +252,33 @@ export async function reconcileSlackThreadLifecycle(
   return { creations, parentReturns, failures };
 }
 
+/** Resolve authority from this physical attempt, never the session's later active context. */
+function observedTurnCallerContextId(childSessionKey: string, turnId: string): string {
+  const child = getSession(childSessionKey);
+  const requests = getDb()
+    .prepare(`
+      SELECT session_key, json_extract(payload_json, '$.context_id') AS context_id
+      FROM session_events WHERE turn_id = ? AND event_type = 'adapter.request'
+      ORDER BY seq ASC, id ASC LIMIT 2
+    `)
+    .all(turnId) as Array<{ session_key: string; context_id: unknown }>;
+  const request = requests.length === 1 ? requests[0] : undefined;
+  const caller = typeof request?.context_id === "string" ? dbGetContext(request.context_id) : null;
+  if (
+    !child ||
+    request?.session_key !== childSessionKey ||
+    !caller ||
+    caller.kind !== "turn-runtime" ||
+    caller.sessionKey !== childSessionKey ||
+    caller.agentId !== child.agentId
+  ) {
+    throw new Error(`Slack thread attention authority unavailable for turn: ${turnId}`);
+  }
+  // A completed turn's revoked key still identifies its historical narrowing snapshot.
+  // The existing relay resolver also applies later permission-profile revocations.
+  return caller.contextId;
+}
+
 async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDependencies): Promise<number> {
   let failures = 0;
   for (const requestId of listThreadTurnHealthCandidates()) {
@@ -288,6 +315,7 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
           sessionName: parent.name ?? parent.sessionKey,
           action: "session.return",
           principal: resolveChannelLifecyclePrincipal("session.return", record.childSessionKey),
+          callerContextId: observedTurnCallerContextId(record.childSessionKey, health.turnId),
           payload: {
             prompt: buildSlackThreadParentNotice(record, "precisa de atenção.", "Estado", description),
             source: buildSlackThreadParentSource(record, record.providerThreadId),

@@ -3007,7 +3007,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
 
-  const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
+  const emitResponse = async (
+    text: string,
+    metadata?: RuntimeEventMetadata,
+    traceTurnId = streaming.currentTraceTurnId,
+  ) => {
     const mediaParts = isCommentaryResponse(metadata) ? [] : pendingGeneratedMedia.splice(0);
     const channelBackendOwnsText = streaming.currentChannelBackend !== undefined;
     if (channelBackendOwnsText && mediaParts.length === 0) {
@@ -3059,7 +3063,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       channelBackendOwnsText,
     });
     await nats.emit(`ravi.session.${sessionName}.response`, {
-      traceTurnId: streaming.currentTraceTurnId,
+      traceTurnId,
       response: responseText,
       ...(content ? { content } : {}),
       target: resolvedTarget,
@@ -3755,8 +3759,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       // Handle assistant messages
       if (event.type === "assistant.message") {
-        // A marker is an explicit outcome, not evidence that the provider ended.
-        intentionalSilence = false;
         streaming.lastToolFailure = undefined;
         let messageText = event.text;
         if (messageText) {
@@ -3915,6 +3917,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 noteTurnPostToolAssistant(turnToolContinuation, utterance.length);
                 recordAssistantState(true, utterance);
                 if (!commentaryResponse) {
+                  // Commentary does not replace an explicit silent outcome.
+                  intentionalSilence = false;
                   channelResponseText = appendAssistantResponse(channelResponseText, utterance);
                   deliveredVisibleThisTurn.push(utterance);
                 }
@@ -5269,6 +5273,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           error: publicRuntimeFailureDetail(operatorError),
           abortReason: capacityTerminalReason ?? null,
         });
+        const failedTraceTurnId = streaming.currentTraceTurnId;
         clearTraceTurnState();
 
         streaming.currentTurnToolStarted = false;
@@ -5316,7 +5321,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 previousExpiresAt: suppression.previousExpiresAt,
               });
             } else {
-              await emitResponse(formatUserFacingTurnFailure(event.error));
+              await emitResponse(formatUserFacingTurnFailure(event.error), undefined, failedTraceTurnId);
             }
           }
         }
