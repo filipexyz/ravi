@@ -17,6 +17,10 @@ import {
 } from "../router/router-db.js";
 import { classifyRuntimeCredentialFailure } from "../runtime/credential-classifier.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
+import {
+  PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+  PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+} from "../runtime/provider-capacity-retry.js";
 import { isRuntimeCredentialResolutionFailure } from "../runtime/public-failure.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import type { ChannelBackendEgressRequester } from "./backend-egress.js";
@@ -859,6 +863,12 @@ type ChannelRuntimeFailureClass = Pick<ChannelSafeError, "code" | "category" | "
 
 export function classifyChannelRuntimeFailure(errorText: string, recoverable: boolean): ChannelRuntimeFailureClass {
   const text = errorText.trim();
+  if (text === PROVIDER_CAPACITY_UNSAFE_MESSAGE) {
+    return { code: "OVERLOADED", category: "capacity", retryable: false };
+  }
+  if (text === PROVIDER_CAPACITY_EXHAUSTED_MESSAGE) {
+    return { code: "OVERLOADED", category: "capacity", retryable: true };
+  }
   if (isRuntimeCredentialResolutionFailure(text)) {
     return { code: "UNAVAILABLE", category: "availability", retryable: false };
   }

@@ -17,6 +17,10 @@ import { RuntimeSessionDispatcher } from "../runtime/session-dispatcher.js";
 import { createQueuedRuntimeUserMessage } from "../runtime/delivery-queue.js";
 import type { RuntimeCrashRecoveryCoordinator } from "../runtime/crash-recovery.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
+import {
+  PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+  PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+} from "../runtime/provider-capacity-retry.js";
 import type { RuntimeCapabilities, RuntimeEvent, RuntimeSessionHandle } from "../runtime/types.js";
 import {
   acceptChannelIngress,
@@ -408,6 +412,36 @@ describe("channel runtime event projection", () => {
         error: expect.objectContaining({ code: "UNAVAILABLE", category: "availability", retryable: false }),
       }),
     ]);
+  });
+
+  it.each([
+    { name: "exhausted", message: PROVIDER_CAPACITY_EXHAUSTED_MESSAGE, retryable: true },
+    { name: "replay-unsafe", message: PROVIDER_CAPACITY_UNSAFE_MESSAGE, retryable: false },
+  ])("preserves $name capacity replay safety in channel projection", async ({ message, retryable }) => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+    await projectChannelRuntimeEvent({
+      metadata,
+      event: {
+        type: "turn.failed",
+        error: message,
+        recoverable: false,
+        rawEvent: { code: "serverOverloaded", diagnostics: "private provider payload" },
+      },
+      sinks: runtimeSinks(metadata, events),
+    });
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      kind: "safe_error",
+      error: { code: "OVERLOADED", category: "capacity", retryable },
+    });
+    expect(JSON.stringify([outputs, events])).not.toContain("private provider payload");
   });
 
   it("classifies runtime failure text into channel-safe codes", () => {

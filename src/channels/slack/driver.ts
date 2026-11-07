@@ -201,6 +201,9 @@ const SLACK_UNAVAILABLE_MESSAGE =
 const SLACK_INTERNAL_ERROR_MESSAGE = "The agent could not complete this request because of an internal error.";
 
 export function renderSlackSafeError(error: ChannelSafeError | undefined): string {
+  if (error?.code === "OVERLOADED" && error.category === "capacity" && !error.retryable) {
+    return "The agent's model provider is overloaded right now. Your session and completed work are preserved; this turn was not repeated to avoid duplicate actions.";
+  }
   if (error?.code === "UNAVAILABLE") {
     return error.retryable ? SLACK_UNAVAILABLE_RETRYABLE_MESSAGE : SLACK_UNAVAILABLE_MESSAGE;
   }

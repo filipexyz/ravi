@@ -7,6 +7,8 @@
 - Idle exclusion: leave a session idle with no pending work, restart daemon, expect no event.
 - Stale exclusion: simulate a non-idle stop snapshot older than 1 hour, restart daemon, expect no event.
 - Pending queue: queue a user message behind an active turn, restart daemon, expect the queued user message remains pending and the resume event does not reorder or clear it.
+- Capacity backoff: snapshot a failed physical attempt while its separately authorized retry waits; the exact cohort survives as `pending_only`, with unchanged retries/startedAt and absolute notBefore. Restore midway through Retry-After and wait only its remainder. Expiration before handoff emits capacity exhaustion without a provider request. Generic terminal states, stale checkpoints, abort/supersession and effect markers never regain replay permission.
+- Channel handoff: snapshot a retry with a live channel binding, shut down, restore, and complete against that same binding. The shutdown must not mark it interrupted, including if unused broker lease cleanup fails. Explicit cancellation still closes it exactly once.
 - Awaiting approval: restart while awaiting user approval, expect resume without auto-approval.
 - Idempotency: rerun boot resume hook for same restart epoch, expect no duplicate session event.
 - Fenced resume: restart while a session's current turn is unsafe to replay (tool started or output emitted) with no durable successors, expect one restart notice with the restart reason, no "Continue de onde parou", and a delivery record with kind `notice`.
