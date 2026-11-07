@@ -217,6 +217,46 @@ describe("runtime delivery queue", () => {
     await generator.return(undefined);
   });
 
+  for (const capacity of [true, false]) {
+    it(`checks the deadline after preparing a live retry only for capacity (capacity=${capacity})`, async () => {
+      const retry = createQueuedRuntimeUserMessage({ prompt: "retry work" });
+      retry.clientMessageId = "failed-live-delivery";
+      retry.replay = true;
+      if (capacity) retry.providerCapacityRetry = { startedAt: 1_000, retries: 1 };
+      const successor = createQueuedRuntimeUserMessage({ prompt: "fresh successor" });
+      const session = makeStreamingSession({ pendingMessages: [retry, successor] });
+      let now = 2_000;
+      let released = 0;
+      const expired: RuntimeUserMessage[][] = [];
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "dev",
+        session,
+        stashedMessages: new Map(),
+        capacityRetryRuntime: { now: () => now },
+        afterTurnEnd: () => {
+          released++;
+        },
+        traceTurnStart: async () => {
+          now = 31_000;
+          return undefined;
+        },
+        onCapacityRetryExhausted: ({ deliverableMessages, reason }) => {
+          expired.push(deliverableMessages);
+          expect(reason).toBe(PROVIDER_CAPACITY_EXHAUSTED_REASON);
+          expect(session.pendingMessages).toEqual([successor]);
+        },
+      });
+      const result = await generator.next();
+      expect(result.value?.message.content).toBe(capacity ? "fresh successor" : "retry work");
+      expect(expired).toEqual(capacity ? [[retry]] : []);
+      expect(released).toBe(capacity ? 1 : 0);
+      expect(successor.providerCapacityRetry).toBeUndefined();
+      session.done = true;
+      session.onTurnComplete?.();
+      await generator.return(undefined);
+    });
+  }
+
   for (const cancellation of ["abort", "supersession"] as const) {
     it(`cancels a restored capacity wait on ${cancellation} without delivering its old cohort`, async () => {
       const retry = createQueuedRuntimeUserMessage({ prompt: "cancelled work" });

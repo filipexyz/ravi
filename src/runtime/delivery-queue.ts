@@ -1005,8 +1005,16 @@ export async function* createRuntimeMessageGenerator({
     try {
       // Preparing a turn can itself await I/O. It must not extend the budget or
       // turn a cancellation during preparation into a provider delivery.
-      if (restoredRetry) {
-        const finalGate = await waitForRestoredCapacityRetry(session, deliverable, capacityRetryRuntime);
+      const liveCapacityRetryExpired = deliverable.some(
+        (message) =>
+          message.providerCapacityRetry !== undefined &&
+          (capacityRetryRuntime?.now?.() ?? Date.now()) - message.providerCapacityRetry.startedAt >=
+            PROVIDER_CAPACITY_MAX_ELAPSED_MS,
+      );
+      if (restoredRetry || liveCapacityRetryExpired) {
+        const finalGate = restoredRetry
+          ? await waitForRestoredCapacityRetry(session, deliverable, capacityRetryRuntime)
+          : "exhausted";
         if (finalGate !== "ready") {
           settlePromptTransform(sessionName, promptTransform, "release", `capacity retry ${finalGate}`);
           if (finalGate === "cancelled") {

@@ -359,15 +359,75 @@ describe("capacity retry exhaustion credential settlement", () => {
     expect(feedback).toEqual([]);
   });
 
-  it("does not advance past failed broker settlement", async () => {
+  it("reports capacity exhaustion without advancing past failed broker settlement", async () => {
     const h = harness();
     const feedback: ModelBrokerAttemptFeedback[] = [];
     installBroker(feedback, true);
     h.streaming.currentRuntimeCredential = brokerBinding(h.session.sessionKey);
     await expect(expire(h, { prompt: "expired" })).rejects.toThrow("broker feedback unavailable");
     expect(h.streaming.currentRuntimeCredential.modelBrokerAttemptTerminal).not.toBe(true);
-    expect(h.emitted).toEqual([]);
+    expect(h.emitted).toHaveLength(1);
+    expect(h.emitted[0]?.data).toMatchObject({
+      type: "turn.failed",
+      failureKind: "provider_capacity_exhausted",
+      error: PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+    });
   });
+
+  for (const delivery of ["backend", "legacy"] as const) {
+    it(`delivers ${delivery} exhaustion after preparation even when broker feedback fails`, async () => {
+      const h = harness();
+      const source = attach(h, "feedback-failed");
+      const feedback: ModelBrokerAttemptFeedback[] = [];
+      installBroker(feedback, true);
+      h.streaming.currentRuntimeCredential = brokerBinding(h.session.sessionKey);
+      const metadata = { binding: { turnId: "channel-expired" } } as ChannelBackendPromptMetadata;
+      const projected = spyOn(channelRuntime, "projectChannelRuntimeEvent").mockResolvedValue([]);
+      restoreProjection = () => projected.mockRestore();
+      const retry = createQueuedRuntimeUserMessage({
+        prompt: "expired",
+        source,
+        ...(delivery === "backend" ? { _channelBackend: metadata } : {}),
+      });
+      retry.providerCapacityRetry = { startedAt: 1_000, retries: 3, notBefore: 2_000 };
+      const successor = createQueuedRuntimeUserMessage({ prompt: "successor" });
+      h.streaming.pendingMessages = [retry, successor];
+      let now = 2_000;
+      const prepared: string[] = [];
+      const generator = createRuntimeMessageGenerator({
+        sessionName: h.session.name!,
+        session: h.streaming,
+        stashedMessages: new Map(),
+        capacityRetryRuntime: { now: () => now },
+        onCapacityRetryExhausted: h.handler,
+        traceTurnStart: ({ combinedPrompt }) => {
+          prepared.push(combinedPrompt);
+          h.streaming.currentCrashRecoveryAttemptId = "durable-expired";
+          h.streaming.currentTraceTurnId = "turn-expired";
+          now = 31_000;
+          return undefined;
+        },
+      });
+      await expect(generator.next()).rejects.toThrow("broker feedback unavailable");
+      expect(prepared).toEqual(["expired"]);
+      expect(h.streaming.pendingMessages).toEqual([successor]);
+      expect(h.terminalized).toEqual(["durable-expired"]);
+      expect(h.streaming.currentRuntimeCredential.modelBrokerAttemptTerminal).not.toBe(true);
+      expect(h.emitted.filter(({ data }) => data.type === "turn.failed")).toHaveLength(1);
+      if (delivery === "backend") {
+        expect(projected).toHaveBeenCalledTimes(1);
+        expect(projected.mock.calls[0]?.[0]).toEqual({
+          metadata,
+          event: { type: "turn.failed", error: PROVIDER_CAPACITY_EXHAUSTED_MESSAGE, recoverable: false },
+        });
+        expect(responses(h)).toHaveLength(0);
+      } else {
+        expect(projected).not.toHaveBeenCalled();
+        expect(responses(h)).toHaveLength(1);
+        expect(responses(h)[0]?.data.target).toMatchObject({ chatId: source.chatId });
+      }
+    });
+  }
 });
 
 describe("restored capacity cancellation delivery", () => {
