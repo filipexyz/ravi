@@ -53,7 +53,7 @@ bun run test         # the CI suite, including SDK, OpenAPI, Swift and Dart drif
 bun test <path>      # one focused suite
 ```
 
-- Pre-commit runs Biome on staged files. Ordinary pre-push runs SDK/build/typecheck/full tests on development machines. On production hosts use `bun scripts/publish-branch.ts --branch fix/name --test src/path.test.ts` (preview), then `--execute`; see CONTRIBUTING.md. Full validation remains mandatory in PR CI. Never disable hooks or use `--no-verify`.
+- Pre-commit runs Biome on staged files. Ordinary pre-push runs SDK/build/typecheck/full tests on development machines. On production hosts run focused checks in isolated state and use `ravi pr publish --repo filipexyz/ravi --base dev --title "..." --body-file <file>` (preview), then `--execute`; see CONTRIBUTING.md. Full validation remains mandatory in PR CI. Never disable hooks or use `--no-verify`.
 - After publishing through the Git Data API, create or update the ready PR from the publishing Ravi session and register its standard CI follow. Verify the uploaded tree/SHA and record the literal publication commands in the PR. Do not claim persistent follow-up before the watcher exists.
 - Changing a command's flags or return schema changes the generated SDKs and `openapi.json`/`docs/openapi.json`; `CONTRIBUTING.md` lists the regenerate commands.
 - `src/cli/execute-consumers.test.ts` checks exact command strings in `README.md`, `AGENTS.md`, skills and docs. When a command gains or loses its `--execute` brake, update that test and those files.

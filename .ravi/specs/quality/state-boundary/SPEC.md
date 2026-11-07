@@ -16,7 +16,6 @@ applies_to:
   - src/pr/journal.ts
   - src/router/router-db.ts
   - src/test/ravi-state.ts
-  - scripts/publish-branch.ts
   - .github/workflows/ci.yml
 ---
 
@@ -42,9 +41,8 @@ applies_to:
 ## Publication on the live host
 
 - The live host MUST NOT run complete builds/suites or install dependencies in a new worktree as a prerequisite for publication.
-- `scripts/publish-branch.ts` is the sanctioned Git Data API path. Preview is the default; `--execute` requires clean committed work, focused tests and the spec/coverage gate in isolated state.
-- Uploaded blob and tree hashes MUST match the checked local objects, including deletion, binary data, symlinks and executable modes.
-- Work-branch creation MUST refuse existing refs. Explicit `--update` MUST require the fetched remote head in local history, recheck that head and append with `force: false`. Updates MUST also require the fetched dev head in local history and preserve it as a second parent when it is not already an ancestor of the remote work branch. Stale heads and non-fast-forward races MUST refuse. No direct publication to `dev`, `main`, release branches or tags.
+- `ravi pr publish`, governed by `cli/pr`, is the canonical Git Data API path. Preview is the default; `--execute` requires clean committed work. Focused tests and the spec/coverage gate MUST run separately in isolated state before publication.
+- Uploaded Git object hashes, tree and commit SHA MUST match the local objects. Published history MUST remain a fast-forward update with `force: false`; no snapshot substitute, release-branch write or hook bypass is permitted.
 - Complete build, typecheck, lint, tests and generated-contract checks MUST run in PR CI. Publication does not mean validated; merge still requires green CI and operator instruction.
 - Hooks MUST NOT be disabled to publish, including `git -c core.hooksPath=/dev/null push`. Unchanged persistent config does not make per-command bypass compliant.
 

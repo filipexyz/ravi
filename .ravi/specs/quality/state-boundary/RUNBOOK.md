@@ -44,12 +44,17 @@ No package installation, environment mutation, daemon restart or live-state repa
 
 ## Publication
 
-Commit on a work branch from `origin/dev`, keeping pre-commit enabled, then preview:
+Run focused tests and the spec/coverage gate with isolated state, then commit on
+a work branch with pre-commit enabled. From the publishing Ravi session, preview
+and execute the canonical publisher through the installed daemon gateway:
 
 ```bash
-bun scripts/publish-branch.ts --branch fix/example --test src/router/state-boundary.test.ts
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --execute
 ```
 
-Repeat `--test` for relevant exact files. Execute the same command with `--execute`, then open a PR against dev with every template section. Full checks run in PR CI; no merge without the operator's instruction.
-
-For the same PR's next revision, fetch its remote branch and merge that snapshot locally (`git merge --no-edit origin/<work-branch>`), then use `--update` for preview and execution. Integrate current `origin/dev` too. The tool appends to the exact remote work-branch parent with `force: false`, retaining integrated dev as a second parent when necessary; a moved head requires fetching/integrating again. No hooks are changed. API errors can leave unreachable Git objects, not an unchecked ref after a hash mismatch.
+The command preserves the exact local commit and tree and reconciles the ready
+PR and its CI follow. It does not run tests or merge. On a partial result, repeat
+the same expected SHA after inspecting the reported phase. Use the complete
+publication/recovery contract in `cli/pr`; do not revive the earlier snapshot
+publisher or disable hooks. Full checks run in PR CI before merge.

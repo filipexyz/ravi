@@ -85,18 +85,6 @@ not inherit the pushing checkout's `GIT_DIR`, index or worktree paths.
 
 Never bypass the hooks with `--no-verify`, per-command `git -c core.hooksPath=/dev/null push`, or shared hook settings. Per-command bypass is still bypass even when persistent config and hook files remain unchanged.
 
-### Production-host publication
-
-On a machine running the live daemon, do not run the full build/suite or install dependencies in a new worktree. Use the sanctioned Git Data API tool after committing:
-
-```bash
-bun scripts/publish-branch.ts --branch fix/example --test src/router/state-boundary.test.ts
-bun scripts/publish-branch.ts --branch fix/example --test src/router/state-boundary.test.ts --execute
-gh pr create --base dev --head fix/example --body-file /path/to/pr-description.md
-```
-
-Repeat `--test` for relevant exact test files. Both preview and execute run focused tests and the spec/coverage gate in temporary state. The tool requires clean committed work and verifies the uploaded tree equals HEAD before creating a fresh work branch. It never changes hooks or publishes directly to release branches. Existing refs require explicit `--update`: fetch and merge the remote work-branch snapshot first; updates append to that exact parent with `force: false` and refuse stale heads. Current fetched dev must also be integrated and is preserved as a second parent when necessary, so upstream ancestry survives publication. It creates a squash snapshot with a different commit id; local signatures/history are not preserved. Use the explicit update flow for subsequent publications on the same PR. Full build, typecheck, lint, generated-code checks and suite are enforced by PR CI; wait for green CI before merge.
-
 ### Real state and caller identity
 
 There is one real state directory, not a "production environment" opt-in. Only the installed runtime registered in PM2 may initialize/migrate real state. Identity is checked through the code location, actual process/parent PID and live registration; inherited env labels or argv alone are insufficient. No new launcher flag is required.
@@ -114,10 +102,19 @@ the remote tree and commit SHA against the local commit. Do not use `git push`
 with disabled hooks. Record the literal upload commands and checks left to CI
 in the PR description.
 
-After upload, create or update the ready PR from the publishing Ravi session and
-register its CI follow. Verify the live watcher and its reply session before
-claiming persistent follow-up. A thread publisher hands CI to its durable
-parent; never close the only recipient while its checks are pending.
+Publish from the Ravi session and committed worktree through the installed
+daemon gateway:
+
+```bash
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --execute
+```
+
+The command previews by default, preserves the exact local commit/tree and
+history, creates or reuses the ready PR and verifies the CI follow. It does not
+run local tests: record focused validation honestly before publishing. Repeat
+the command to reconcile a partial result. A thread publisher hands CI to its
+durable parent; never close the only recipient while its checks are pending.
 
 Independent review belongs in the PR description. Quality Gate is the required
 merge check; the retired Review Gate must not be reinstated by this workflow.

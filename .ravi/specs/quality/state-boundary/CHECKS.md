@@ -11,7 +11,7 @@ normative: true
 # Regression checks
 
 ```bash
-bun test src/db/schema-owner.test.ts src/router/state-boundary.test.ts src/ci/publish-branch.test.ts src/test/ravi-state.test.ts
+bun test src/db/schema-owner.test.ts src/router/state-boundary.test.ts src/test/ravi-state.test.ts
 bun test src/runtime/session-dispatcher.test.ts -t 'runtime recovery'
 RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 ```
@@ -22,7 +22,7 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - Refusal occurs before SQLite creates a file or initializes schema. Existing sentinel data/schema survive a refused destructive initializer.
 - Symlink aliases, dangling file links, hardlinks and the legacy DB path cannot evade the boundary.
 - Original dispatcher recovery cases own isolated fixtures and pass without a harness wrapper.
-- Publication tests use disposable Git repos/fake API. Cover binary/deleted/executable/symlink data, dirty trees, forbidden branch targets, unrelated parents, hash mismatches, explicit non-forced updates and stale heads.
+- `bun test src/pr/service.test.ts src/pr/journal.test.ts` verifies the canonical publisher and state journal; the complete publication contract is checked by `cli/pr`.
 - #766/#767 are the negative publication case: matching trees and unchanged shared config do not legalize per-command hooksPath bypass.
 - Full build/typecheck/lint/suite remain in PR CI. Shared `.githooks` and hook config stay untouched.
 

@@ -28,11 +28,14 @@ Allowing daemon and channels to migrate the same SQLite introduces a race disgui
 
 ## Publication choice
 
-Git Data API publication avoids changing shared hooks on the live host. The remote snapshot's tree must equal local HEAD, and the local commit id is recorded for provenance. Remote commit ids differ; local signatures/history are not retained. Explicit updates append only to a fetched/integrated parent, recheck it and use `force: false`.
-
-The alternative was a lightweight pre-push mode. This PR leaves the shared hook untouched and makes the separate publisher a documented, tested path. Full validation remains in PR CI.
-
-[GitHub trees](https://docs.github.com/en/rest/git/trees#create-a-tree), [commits](https://docs.github.com/en/rest/git/commits#create-a-commit) and [refs](https://docs.github.com/en/rest/git/refs#create-a-reference) define the underlying object operations.
+Git Data API publication avoids changing shared hooks on the live host. The
+initial snapshot publisher proposed here was superseded by the canonical
+`ravi pr publish` workflow now on dev. That command verifies exact local/remote
+commit and tree SHA, preserves ancestry and reconciles the ready PR and CI
+follow. Keeping a second snapshot uploader would reintroduce weaker integrity
+and duplicate publication policy, so this change uses the existing `cli/pr`
+contract. Full validation remains in PR CI; focused local validation stays
+explicit and isolated.
 
 ## Confirmed bypass evidence
 
