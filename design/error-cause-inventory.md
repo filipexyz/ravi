@@ -1661,10 +1661,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/credentials-store.ts | 87 | fixed | binding retained / no recognized error surface | src/runtime/credentials-store.ts:5fa4671927e8c37f289ded1a |
 | runtime-chat | src/runtime/daemon-restart-resume.ts | 272 | fixed | binding retained / no recognized error surface | src/runtime/daemon-restart-resume.ts:5bd341dd1bb44fd731706f3f |
 | runtime-chat | src/runtime/daemon-restart-resume.ts | 279 | fixed | binding retained / no recognized error surface | src/runtime/daemon-restart-resume.ts:5aa3f4c09d77703124f07b8f |
-| runtime-chat | src/runtime/delivery-queue.ts | 746 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:98b688efb0b84bff6adf0e68 |
-| runtime-chat | src/runtime/delivery-queue.ts | 765 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:a717aade523ae78f6d2748d7 |
-| runtime-chat | src/runtime/delivery-queue.ts | 963 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:bb2022bcefeb349c6e90cfe8 |
-| runtime-chat | src/runtime/delivery-queue.ts | 982 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:0df1261d59f9e3c16d31eff6 |
+| runtime-chat | src/runtime/delivery-queue.ts | 748 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:98b688efb0b84bff6adf0e68 |
+| runtime-chat | src/runtime/delivery-queue.ts | 767 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:a717aade523ae78f6d2748d7 |
+| runtime-chat | src/runtime/delivery-queue.ts | 965 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:bb2022bcefeb349c6e90cfe8 |
+| runtime-chat | src/runtime/delivery-queue.ts | 984 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:0df1261d59f9e3c16d31eff6 |
 | runtime-chat | src/runtime/goal-control-host.ts | 100 | fixed | binding retained / no recognized error surface | src/runtime/goal-control-host.ts:419567cd65986152a9638268 |
 | runtime-chat | src/runtime/grok-provider.ts | 464 | triaged-follow-up | rejection-without-binding | src/runtime/grok-provider.ts:3b6220acecff5afe5c4c61f6 |
 | runtime-chat | src/runtime/grok-provider.ts | 486 | triaged-follow-up | rejection-without-binding | src/runtime/grok-provider.ts:3b6220acecff5afe5c4c61f6 |
