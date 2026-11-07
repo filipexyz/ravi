@@ -30,19 +30,22 @@ export function getDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  db = openStateDatabase(nextDbPath);
-  dbPath = nextDbPath;
-
-  // WAL mode for concurrent read/write access (CLI + daemon)
-  configureStateJournalMode(db);
-  db.exec("PRAGMA busy_timeout = 5000");
-
+  const opened = openStateDatabase(nextDbPath);
   try {
-    initializeStateSchema(db, "chat", () => initializeChatSchema(db!));
+    // WAL mode for concurrent read/write access (CLI + daemon)
+    configureStateJournalMode(opened);
+    opened.exec("PRAGMA busy_timeout = 5000");
+    initializeStateSchema(opened, "chat", () => initializeChatSchema(opened));
   } catch (error) {
-    close();
+    try {
+      opened.close();
+    } catch {
+      // no-cause: Cleanup must not replace the setup error rethrown below; the handle was never cached.
+    }
     throw error;
   }
+  db = opened;
+  dbPath = nextDbPath;
   return db;
 }
 

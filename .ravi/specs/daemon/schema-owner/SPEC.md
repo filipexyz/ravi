@@ -32,6 +32,7 @@ normative: true
 - Daemon ownership MUST remain held through shutdown and final database writes. Process exit releases it; the runtime MUST NOT release it early to allow a successor to boot.
 - Every component initializer MUST serialize its complete inspect/invalidate/migrate/ready sequence under the database's kernel lock. Successful readiness MUST only be published after the callback completes; a failed callback MUST NOT publish readiness.
 - Journal-mode changes MUST use the same exclusion before schema initialization. A PRAGMA outside the callback is still a competing writer; consumer connections MUST NOT reconfigure it.
+- An opener that fails during journal setup or schema initialization MUST NOT leave a cached handle that lets a later call skip the failed work. Cleanup MUST preserve the original initialization error.
 - This exclusion MUST NOT add a SQL transaction around migrations. Existing explicit transactions and foreign-key mode changes retain their semantics.
 - Symlink aliases MUST share ownership. Hardlinked databases MUST be refused; a path sidecar cannot represent every hardlink alias safely.
 - Lock sidecars MUST remain at stable paths/inodes. Neither normal release nor crash recovery may unlink them. Descriptors MUST be close-on-exec.

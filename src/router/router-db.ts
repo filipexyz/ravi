@@ -1428,30 +1428,37 @@ function getDb(): Database {
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
-  // WAL mode for concurrent read/write access (CLI + daemon).
-  configureStateJournalMode(db);
-  // Wait up to 5s for locks to clear instead of failing immediately.
-  db.exec("PRAGMA busy_timeout = 5000");
-  // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
-  // WAL mode (only the WAL is fsynced per commit; the DB file is fsynced at
-  // checkpoint). This is the single biggest knob to mitigate disk-pressure
-  // induced lock spirals.
-  db.exec("PRAGMA synchronous = NORMAL");
-  // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
-  db.exec("PRAGMA cache_size = -64000");
-  // Temp tables & sort scratch stay off the process heap. MEMORY + a multi-GB
-  // DB can OOM SQLite/process memory even when the host disk still has free
-  // space (SQLITE_NOMEM / "out of memory").
-  db.exec("PRAGMA temp_store = DEFAULT");
-  // 256MB memory-mapped read window. Hot queries become page-cache hits.
-  db.exec("PRAGMA mmap_size = 268435456");
-
-  // Enable foreign keys before schema creation
-  db.exec("PRAGMA foreign_keys = ON");
   try {
+    // WAL mode for concurrent read/write access (CLI + daemon).
+    configureStateJournalMode(db);
+    // Wait up to 5s for locks to clear instead of failing immediately.
+    db.exec("PRAGMA busy_timeout = 5000");
+    // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
+    // WAL mode (only the WAL is fsynced per commit; the DB file is fsynced at
+    // checkpoint). This is the single biggest knob to mitigate disk-pressure
+    // induced lock spirals.
+    db.exec("PRAGMA synchronous = NORMAL");
+    // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
+    db.exec("PRAGMA cache_size = -64000");
+    // Temp tables & sort scratch stay off the process heap. MEMORY + a multi-GB
+    // DB can OOM SQLite/process memory even when the host disk still has free
+    // space (SQLITE_NOMEM / "out of memory").
+    db.exec("PRAGMA temp_store = DEFAULT");
+    // 256MB memory-mapped read window. Hot queries become page-cache hits.
+    db.exec("PRAGMA mmap_size = 268435456");
+
+    // Enable foreign keys before schema creation
+    db.exec("PRAGMA foreign_keys = ON");
     initializeStateSchema(db, "router", () => initializeRouterSchema(db, nextDbPath));
   } catch (error) {
-    closeRouterDb();
+    routerDbState.db = null;
+    routerDbState.stmts = null;
+    routerDbState.dbPath = null;
+    try {
+      db.close();
+    } catch {
+      // no-cause: Cleanup must not replace the setup error rethrown below; the cache was already cleared.
+    }
     throw error;
   }
   return db;
