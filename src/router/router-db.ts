@@ -1,4 +1,4 @@
-import { initializeStateSchema } from "../db/schema-owner.js";
+import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
 import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { migrateDecisions } from "../decisions/schema.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
@@ -1429,7 +1429,7 @@ function getDb(): Database {
   routerDbState.dbPath = nextDbPath;
 
   // WAL mode for concurrent read/write access (CLI + daemon).
-  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
+  configureStateJournalMode(db);
   // Wait up to 5s for locks to clear instead of failing immediately.
   db.exec("PRAGMA busy_timeout = 5000");
   // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in

@@ -620,6 +620,7 @@ export async function startDaemon() {
     hostCliGateway = null;
   }
 
+  await bot.consumerReady;
   markDaemonSchemaReady();
   log.info("Daemon ready");
 

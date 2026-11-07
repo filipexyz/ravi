@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { initializeStateSchema } from "../db/schema-owner.js";
+import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
 import { assertDatabaseTargetAllowed, isSchemaConsumer, openStateDatabase } from "../db/state-boundary.js";
 import { mkdirSync, chmodSync } from "node:fs";
 import { join } from "node:path";
@@ -44,8 +44,8 @@ export class BridgeStore {
     this.db = openStateDatabase(path, { create: true, strict: true });
     if (!isSchemaConsumer()) {
       if (path !== ":memory:") chmodSync(path, 0o600);
-      this.db.exec("PRAGMA journal_mode=WAL");
     }
+    configureStateJournalMode(this.db);
     this.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
     try {
       initializeStateSchema(this.db, "bridge", () => this.initializeSchema());

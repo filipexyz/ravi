@@ -1,11 +1,14 @@
 import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
-import { acquireSchemaFileLock, SchemaLockBusyError } from "./schema-lock.js";
+import { acquireSchemaFileLock, schemaDatabaseLockPath, SchemaLockBusyError } from "./schema-lock.js";
+import { assertDatabaseTargetAllowed, canonicalStatePath, isSchemaConsumer } from "./state-boundary.js";
+import { runtimeStateDatabasePaths } from "./state-paths.js";
 
 export type DaemonSchemaPhase = "waiting" | "owned" | "ready";
 type Receipt = { protocol: 1; pid: number; phase: DaemonSchemaPhase; observedAt: number };
 let ownerRoot: string | undefined;
+let ownerPaths: string[] | undefined;
 
 function receiptPath(stateDir: string, pid: number): string {
   return join(stateDir, "runtime-processes", `schema-owner-${pid}.json`);
@@ -26,30 +29,47 @@ function writePhase(root: string, phase: DaemonSchemaPhase): void {
  * process exit releases daemon ownership, after its final possible DB write.
  */
 export function acquireDaemonSchemaOwnership(stateDir = getRaviStateDir()): void {
-  mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-  const root = realpathSync(stateDir);
+  if (isSchemaConsumer()) throw new Error("Channel consumers cannot acquire daemon schema ownership");
+  const root = canonicalStatePath(stateDir);
+  const paths = runtimeStateDatabasePaths({ ...process.env, RAVI_STATE_DIR: root }).map((path) =>
+    canonicalStatePath(path),
+  );
+  // Provenance before any coordination file/directory write. A lock is not an
+  // authorization bypass for a source checkout or a consumer process.
+  for (const path of paths) assertDatabaseTargetAllowed(path);
   if (ownerRoot) {
-    if (ownerRoot !== root) throw new Error("Daemon state root changed after schema ownership acquisition");
+    if (ownerRoot !== root || JSON.stringify(ownerPaths) !== JSON.stringify(paths)) {
+      throw new Error("Daemon state paths changed after schema ownership acquisition");
+    }
     return;
   }
-  const lockPath = join(root, "daemon-schema-owner.lock");
+  const lockPaths = [...new Set([join(root, "daemon-schema-owner.lock"), ...paths.map(schemaDatabaseLockPath)])].sort();
+  const acquired: Array<{ release(): void }> = [];
+  const deadline = performance.now() + 60_000;
   try {
-    acquireSchemaFileLock(lockPath, 0);
+    for (const lockPath of lockPaths) {
+      try {
+        acquired.push(acquireSchemaFileLock(lockPath, 0));
+      } catch (cause) {
+        if (!(cause instanceof SchemaLockBusyError)) throw cause;
+        // A waiting receipt proves this runtime reached the kernel lock gate.
+        writePhase(root, "waiting");
+        acquired.push(acquireSchemaFileLock(lockPath, Math.max(0, deadline - performance.now())));
+      }
+    }
   } catch (cause) {
-    if (!(cause instanceof SchemaLockBusyError)) throw cause;
-    // Publish standby only after proving this runtime can open the lock and
-    // invoke the kernel primitive. The supervisor stops the predecessor before
-    // expecting owned/ready. Waiting is not service readiness.
-    writePhase(root, "waiting");
-    acquireSchemaFileLock(lockPath, 60_000);
+    for (const lock of acquired.reverse()) lock.release();
+    throw cause;
   }
   ownerRoot = root;
+  ownerPaths = paths;
   writePhase(root, "owned");
 }
 
 export function markDaemonSchemaReady(): void {
   if (!ownerRoot || ownerRoot !== realpathSync(getRaviStateDir()))
     throw new Error("Daemon does not own this state root");
+  acquireDaemonSchemaOwnership();
   writePhase(ownerRoot, "ready");
 }
 

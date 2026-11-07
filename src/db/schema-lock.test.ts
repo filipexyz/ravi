@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readDaemonSchemaPhase } from "./daemon-schema-owner.js";
 import { acquireSchemaFileLock, withSchemaMigrationLock } from "./schema-lock.js";
+import { STATE_SCHEMA_VERSION } from "./schema-owner.js";
 
 const fixture = join(import.meta.dir, "fixtures/schema-lock-worker.ts");
 const roots: string[] = [];
@@ -29,11 +30,15 @@ function temporaryRoot(): string {
   return root;
 }
 
-function worker(root: string, mode: string, name: string, resource?: string) {
+function worker(root: string, mode: string, name: string, resource?: string, credentialsDbPath?: string) {
   const startedAt = Date.now();
   const child = spawn([process.execPath, "--no-env-file", fixture, mode, root, name, ...(resource ? [resource] : [])], {
     cwd: root,
-    env: { RAVI_STATE_DIR: root, TZ: "UTC" },
+    env: {
+      RAVI_STATE_DIR: root,
+      TZ: "UTC",
+      ...(credentialsDbPath ? { RAVI_CREDENTIALS_DB_PATH: credentialsDbPath } : {}),
+    },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -81,6 +86,148 @@ afterEach(async () => {
 });
 
 describe("schema locks with independent processes", () => {
+  it("serializes real initializeStateSchema callbacks and publishes readiness only after migration", async () => {
+    const root = temporaryRoot();
+    const path = join(root, "state-schema.db");
+    const prepared = new Database(path);
+    prepared.exec("CREATE TABLE state_schema_versions (component TEXT PRIMARY KEY, version TEXT NOT NULL)");
+    prepared.query("INSERT INTO state_schema_versions VALUES (?, ?)").run("race-component", STATE_SCHEMA_VERSION);
+    prepared.close();
+    const first = worker(root, "state-schema", "first", path);
+    await marker(root, "first", "entered");
+    const reader = new Database(path, { readonly: true });
+    try {
+      expect(reader.query("SELECT * FROM state_schema_versions WHERE component = 'race-component'").get()).toBe(null);
+      const second = worker(root, "state-schema-contender", "second", path);
+      await marker(root, "second", "blocked");
+      expect(existsSync(join(root, "second.entered"))).toBe(false);
+      expect(existsSync(join(root, "second.published-ready"))).toBe(false);
+      expect(reader.query("SELECT * FROM state_schema_versions WHERE component = 'race-component'").get()).toBe(null);
+      release(root, "first");
+      await Promise.all([finished(first), finished(second)]);
+      expect(reader.query("SELECT * FROM state_schema_versions WHERE component = 'race-component'").get()).toEqual({
+        component: "race-component",
+        version: STATE_SCHEMA_VERSION,
+      });
+      expect(reader.query("SELECT owner FROM migrated ORDER BY owner").all()).toEqual([
+        { owner: "first" },
+        { owner: "second" },
+      ]);
+      expect(readFileSync(join(root, "events.log"), "utf8")).toBe(
+        "enter:first\nexit:first\nenter:second\nexit:second\n",
+      );
+    } finally {
+      reader.close();
+    }
+  });
+
+  it("invalidates prior success after a concurrent partial failure and releases the lock for repair", async () => {
+    const root = temporaryRoot();
+    const path = join(root, "failed-state-schema.db");
+    const first = worker(root, "state-schema", "first", path);
+    await marker(root, "first", "entered");
+    const second = worker(root, "state-schema-fail", "second", path);
+    await marker(root, "second", "blocked");
+    expect(existsSync(join(root, "second.entered"))).toBe(false);
+    release(root, "first");
+    await finished(first);
+    expect(existsSync(join(root, "first.published-ready"))).toBe(true);
+    await marker(root, "second", "partial");
+    const reader = new Database(path, { readonly: true });
+    try {
+      expect(reader.query("SELECT owner FROM migrated").all()).toEqual([{ owner: "first" }]);
+      expect(reader.query("SELECT * FROM partial_migration").all()).toEqual([{ value: "unfinished" }]);
+      expect(reader.query("SELECT * FROM state_schema_versions WHERE component = 'race-component'").get()).toBe(null);
+      const blocked = worker(root, "try", "blocked", `${path}.schema.lock`);
+      await marker(root, "blocked", "busy");
+      await finished(blocked);
+      release(root, "second", "fail-go");
+      await finished(second);
+      expect(JSON.parse(readFileSync(join(root, "second.failure-preserved"), "utf8"))).toEqual({
+        message: "partial schema migration failed",
+        cause: "fixture migration root cause",
+      });
+      expect(existsSync(join(root, "second.published-ready"))).toBe(false);
+      expect(reader.query("SELECT * FROM state_schema_versions WHERE component = 'race-component'").get()).toBe(null);
+      const repair = worker(root, "state-schema-repair", "repair", path);
+      await finished(repair);
+      expect(reader.query("SELECT * FROM state_schema_versions WHERE component = 'race-component'").get()).toEqual({
+        component: "race-component",
+        version: STATE_SCHEMA_VERSION,
+      });
+      expect(reader.query("SELECT name FROM sqlite_master WHERE name = 'partial_migration'").get()).toBe(null);
+      expect(reader.query("SELECT owner FROM migrated ORDER BY owner").all()).toEqual([
+        { owner: "first" },
+        { owner: "repair" },
+      ]);
+      expect(readFileSync(join(root, "events.log"), "utf8")).toBe(
+        "enter:first\nexit:first\nenter:second\nfailed:second\nenter:repair\nexit:repair\n",
+      );
+    } finally {
+      reader.close();
+    }
+  });
+
+  it("runs the real credential migration concurrently without losing scopes or audit references", async () => {
+    const root = temporaryRoot();
+    const path = join(root, "credentials.db");
+    const legacy = new Database(path);
+    legacy.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE credential_connections (
+        id TEXT PRIMARY KEY, provider TEXT NOT NULL, connection TEXT NOT NULL, label TEXT,
+        backend TEXT NOT NULL CHECK(backend IN ('keychain','vault')), secret_ref TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('active','disabled')),
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(provider,connection)
+      );
+      CREATE TABLE credential_connection_scopes (
+        id TEXT PRIMARY KEY, connection_id TEXT NOT NULL REFERENCES credential_connections(id) ON DELETE CASCADE,
+        scope TEXT NOT NULL, UNIQUE(connection_id,scope)
+      );
+      CREATE TABLE credential_audit_events (
+        id TEXT PRIMARY KEY, connection_id TEXT REFERENCES credential_connections(id) ON DELETE SET NULL,
+        provider TEXT NOT NULL, connection TEXT NOT NULL, action TEXT NOT NULL, actor_context_id TEXT,
+        agent_id TEXT, decision TEXT NOT NULL, approval_required INTEGER NOT NULL, approval_status TEXT,
+        result_status TEXT, error_code TEXT, created_at INTEGER NOT NULL
+      );
+      INSERT INTO credential_connections VALUES ('slack:old','slack','old','Existing','keychain','keychain:ravi/old','active',1,2);
+      INSERT INTO credential_connections VALUES ('example:vault','example','vault',NULL,'vault','vault:secret/path#key','disabled',3,4);
+      INSERT INTO credential_connection_scopes VALUES ('scope-old','slack:old','chat:write');
+      INSERT INTO credential_audit_events VALUES ('audit-old','slack:old','slack','old','read',NULL,NULL,'allow',0,NULL,'ok',NULL,5);
+    `);
+    legacy.close();
+    const first = worker(root, "credentials", "first", path);
+    const second = worker(root, "credentials", "second", path);
+    await Promise.all([marker(root, "first", "barrier"), marker(root, "second", "barrier")]);
+    writeFileSync(join(root, "credentials.go"), "go");
+    await Promise.all([finished(first), finished(second)]);
+    const checked = new Database(path, { readonly: true });
+    try {
+      expect(
+        checked.query("SELECT id, backend, created_at, updated_at FROM credential_connections ORDER BY id").all(),
+      ).toEqual([
+        { id: "example:vault", backend: "vault", created_at: 3, updated_at: 4 },
+        { id: "slack:old", backend: "keychain", created_at: 1, updated_at: 2 },
+      ]);
+      expect(checked.query("SELECT * FROM credential_connection_scopes").all()).toEqual([
+        { id: "scope-old", connection_id: "slack:old", scope: "chat:write" },
+      ]);
+      expect(checked.query("SELECT connection_id FROM credential_audit_events WHERE id = 'audit-old'").get()).toEqual({
+        connection_id: "slack:old",
+      });
+      expect(checked.query("PRAGMA foreign_key_check").all()).toEqual([]);
+      expect(checked.query("SELECT version FROM state_schema_versions WHERE component = 'credentials'").get()).toEqual({
+        version: STATE_SCHEMA_VERSION,
+      });
+      expect(
+        (checked.query("SELECT sql FROM sqlite_master WHERE name = 'credential_connections'").get() as { sql: string })
+          .sql,
+      ).toContain("'file'");
+    } finally {
+      checked.close();
+    }
+  });
+
   it("serializes two real migrations including their inspection and own BEGIN/COMMIT", async () => {
     const root = temporaryRoot();
     const path = join(root, "shared.db");
@@ -258,6 +405,66 @@ describe("schema locks with independent processes", () => {
     expect(readDaemonSchemaPhase(successor, root)).toBe("ready");
     release(root, "successor");
     await finished(successor);
+  });
+
+  it("excludes daemons with distinct roots that share the credentials database override", async () => {
+    const firstRoot = temporaryRoot();
+    const secondRoot = temporaryRoot();
+    const sharedRoot = temporaryRoot();
+    const sharedDb = join(sharedRoot, "credentials.db");
+    const first = worker(firstRoot, "daemon", "first", undefined, sharedDb);
+    await marker(firstRoot, "first", "owned");
+    const second = worker(secondRoot, "daemon", "second", undefined, sharedDb);
+    await waitFor(() => readDaemonSchemaPhase(second, secondRoot) === "waiting", "shared credentials owner wait");
+    expect(existsSync(join(secondRoot, "second.db"))).toBe(false);
+    expect(existsSync(join(secondRoot, "second.owned"))).toBe(false);
+    expect(existsSync(sharedDb)).toBe(false);
+    expect(existsSync(`${sharedDb}.schema.lock`)).toBe(true);
+    release(firstRoot, "first", "ready-go");
+    await marker(firstRoot, "first", "ready");
+    release(firstRoot, "first");
+    await finished(first);
+    await marker(secondRoot, "second", "owned");
+    expect(readDaemonSchemaPhase(second, secondRoot)).toBe("owned");
+    release(secondRoot, "second", "ready-go");
+    await marker(secondRoot, "second", "ready");
+    release(secondRoot, "second");
+    await finished(second);
+  });
+
+  it("gates CLI env imports before later state access and locks the root selected by the managed .env", async () => {
+    const launcherRoot = temporaryRoot();
+    const selectedRoot = temporaryRoot();
+    const credentialsRoot = temporaryRoot();
+    const credentialsPath = join(credentialsRoot, "credentials.db");
+    writeFileSync(
+      join(launcherRoot, ".env"),
+      `RAVI_STATE_DIR="${selectedRoot}"\nRAVI_CREDENTIALS_DB_PATH="${credentialsPath}"\n`,
+    );
+    const first = worker(selectedRoot, "daemon", "first", undefined, credentialsPath);
+    await marker(selectedRoot, "first", "owned");
+    const cli = worker(launcherRoot, "cli-env", "cli");
+    await waitFor(() => readDaemonSchemaPhase(cli, selectedRoot) === "waiting", "CLI env waiting before graph import");
+    expect(existsSync(join(launcherRoot, "cli.after-env"))).toBe(false);
+    expect(existsSync(join(launcherRoot, "daemon-schema-owner.lock"))).toBe(false);
+    expect(existsSync(join(selectedRoot, "cli.db"))).toBe(false);
+    release(selectedRoot, "first", "ready-go");
+    await marker(selectedRoot, "first", "ready");
+    release(selectedRoot, "first");
+    await finished(first);
+    await marker(launcherRoot, "cli", "after-env");
+    await marker(launcherRoot, "cli", "owned");
+    expect(readFileSync(join(launcherRoot, "cli.after-env"), "utf8")).toBe(selectedRoot);
+    expect(readDaemonSchemaPhase(cli, selectedRoot)).toBe("owned");
+    expect(existsSync(join(selectedRoot, "cli.db"))).toBe(true);
+    expect(existsSync(join(launcherRoot, "cli.db"))).toBe(false);
+    const probe = worker(credentialsRoot, "try", "probe", `${credentialsPath}.schema.lock`);
+    await marker(credentialsRoot, "probe", "busy");
+    await finished(probe);
+    release(launcherRoot, "cli", "ready-go");
+    await marker(launcherRoot, "cli", "ready");
+    release(launcherRoot, "cli");
+    await finished(cli);
   });
 
   it("rejects stale PID receipts and missing process start identity", () => {

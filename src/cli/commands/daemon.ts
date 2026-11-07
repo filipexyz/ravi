@@ -389,7 +389,7 @@ function startDaemonPm2Args(bundlePath: string, options: { force?: boolean; bunP
     bunPath: options.bunPath ?? "bun",
     stdinWrapperPath: ensurePm2InertStdinWrapper(bundlePath),
   });
-  // A second supervised instance has to exist before the running one is stopped.
+  // A supervised standby has to exist before the running owner is stopped.
   // PM2 refuses that unless the start is forced; the old pm id is deleted later.
   if (options.force) args.splice(1, 0, "--force");
   return args;
@@ -602,7 +602,7 @@ export class DaemonCommands {
         printJson(payload);
       } else {
         console.log(
-          `Daemon restart handed off. The running daemon stays up until a supervised successor is online. Log: ${logPath}`,
+          `Daemon restart handed off. The running daemon stays up until a supervised replacement is waiting to take over. Log: ${logPath}`,
         );
       }
       return payload;

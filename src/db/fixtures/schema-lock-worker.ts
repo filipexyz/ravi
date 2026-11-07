@@ -49,6 +49,69 @@ if (mode === "hold" || mode === "try" || mode === "inherit") {
   }
 } else if (mode === "idle") {
   waitFor(marker("release"));
+} else if (
+  mode === "state-schema" ||
+  mode === "state-schema-contender" ||
+  mode === "state-schema-fail" ||
+  mode === "state-schema-repair"
+) {
+  if (!resource) throw new Error("Missing database path");
+  const { initializeStateSchema } = await import("../schema-owner.js");
+  const db = new Database(resource);
+  const rootCause = new Error("fixture migration root cause");
+  const failure = new Error("partial schema migration failed", { cause: rootCause });
+  try {
+    if (mode === "state-schema-contender" || mode === "state-schema-fail") {
+      try {
+        acquireSchemaFileLock(`${resource}.schema.lock`, 120).release();
+        throw new Error("Contender unexpectedly acquired the occupied schema lock");
+      } catch (cause) {
+        if (!(cause instanceof SchemaLockBusyError)) throw cause;
+        signal("blocked");
+      }
+    }
+    initializeStateSchema(db, "race-component", () => {
+      record("enter");
+      signal("entered");
+      if (mode === "state-schema") waitFor(marker("release"));
+      if (mode === "state-schema-fail") {
+        db.exec("CREATE TABLE partial_migration (value TEXT)");
+        db.exec("INSERT INTO partial_migration VALUES ('unfinished')");
+        signal("partial");
+        waitFor(marker("fail-go"));
+        throw failure;
+      }
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        if (mode === "state-schema-repair") db.exec("DROP TABLE partial_migration");
+        db.exec("CREATE TABLE IF NOT EXISTS migrated (owner TEXT PRIMARY KEY)");
+        db.query("INSERT INTO migrated VALUES (?)").run(name);
+        db.exec("COMMIT");
+      } catch (cause) {
+        db.exec("ROLLBACK");
+        throw cause;
+      }
+      record("exit");
+    });
+    signal("published-ready");
+  } catch (cause) {
+    if (mode !== "state-schema-fail" || cause !== failure || cause.cause !== rootCause) throw cause;
+    record("failed");
+    signal("failure-preserved", JSON.stringify({ message: cause.message, cause: rootCause.message }));
+  } finally {
+    db.close();
+  }
+} else if (mode === "credentials") {
+  if (!resource) throw new Error("Missing database path");
+  const { closeCredentialsDb, ensureCredentialTables } = await import("../../credentials/store.js");
+  signal("barrier");
+  waitFor(join(root, "credentials.go"));
+  try {
+    ensureCredentialTables({ dbPath: resource });
+    signal("migrated");
+  } finally {
+    closeCredentialsDb();
+  }
 } else if (mode === "migrate" || mode === "migrate-contender") {
   if (!resource) throw new Error("Missing database path");
   const db = new Database(resource);
@@ -112,10 +175,16 @@ if (mode === "hold" || mode === "try" || mode === "inherit") {
   } finally {
     db.close();
   }
-} else if (mode === "daemon") {
-  acquireDaemonSchemaOwnership(root);
+} else if (mode === "daemon" || mode === "cli-env") {
+  if (mode === "cli-env") {
+    process.argv = [process.execPath, import.meta.path, "daemon", "run"];
+    await import("../../cli/env.js");
+    signal("after-env", process.env.RAVI_STATE_DIR);
+  } else {
+    acquireDaemonSchemaOwnership(root);
+  }
   // This represents the first possible state mutation by a successor.
-  const db = new Database(join(root, `${name}.db`));
+  const db = new Database(join(process.env.RAVI_STATE_DIR ?? root, `${name}.db`));
   db.exec("CREATE TABLE started (pid INTEGER)");
   db.query("INSERT INTO started VALUES (?)").run(process.pid);
   db.close();

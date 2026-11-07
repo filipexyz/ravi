@@ -1,8 +1,9 @@
-import { dlopen, FFIType, read } from "bun:ffi";
+import { dlopen, FFIType, read, type Pointer } from "bun:ffi";
 import type { Database } from "bun:sqlite";
 import { closeSync, constants, fstatSync, mkdirSync, openSync, realpathSync, statSync } from "node:fs";
 import { constants as osConstants } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { canonicalStatePath } from "./state-boundary.js";
 
 const LOCK_EX = 2;
 const LOCK_NB = 4;
@@ -49,7 +50,11 @@ export function acquireSchemaFileLock(path: string, timeoutMs = 5_000): { releas
     if (library.symbols.fcntl(fd, 2, 1) !== 0) throw new Error("Could not set schema lock close-on-exec");
     const deadline = performance.now() + timeoutMs;
     while (library.symbols.flock(fd, LOCK_EX | LOCK_NB) !== 0) {
-      const errnoPointer = library.symbols[process.platform === "darwin" ? "__error" : "__errno_location"]();
+      // The platform-selected symbol has the pointer ABI declared above; TS
+      // otherwise widens the computed symbol key to include flock/fcntl.
+      const errnoPointer = library.symbols[
+        process.platform === "darwin" ? "__error" : "__errno_location"
+      ]() as Pointer | null;
       if (!errnoPointer) throw new Error("Could not read schema lock errno");
       const errno = read.i32(errnoPointer);
       if (errno !== osConstants.errno.EAGAIN && errno !== osConstants.errno.EINTR) {
@@ -90,12 +95,20 @@ function releaseHandle(key: string, entry: { fd: number; references: number }): 
 export function withSchemaMigrationLock<T>(db: Database, migrate: () => T): T {
   const filename = db.filename;
   if (!filename || filename === ":memory:") return migrate();
-  const path = realpathSync(resolve(filename));
-  if (statSync(path).nlink !== 1) throw new Error("Schema migration refuses a hardlinked database");
-  const lock = acquireSchemaFileLock(`${path}.schema.lock`);
+  const lock = acquireSchemaFileLock(schemaDatabaseLockPath(filename));
   try {
     return migrate();
   } finally {
     lock.release();
   }
+}
+
+export function schemaDatabaseLockPath(filename: string): string {
+  const path = canonicalStatePath(filename);
+  try {
+    if (statSync(path).nlink !== 1) throw new Error("Schema migration refuses a hardlinked database");
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+  }
+  return `${path}.schema.lock`;
 }
