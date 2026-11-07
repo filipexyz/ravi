@@ -96365,10 +96365,6 @@ public enum RaviSchemas {
         "description": "Require this full local commit SHA (default: capture HEAD)",
         "type": "string"
       },
-      "replySession": {
-        "description": "Required only for an operator terminal without a session",
-        "type": "string"
-      },
       "repo": {
         "description": "Required github.com destination; must match origin",
         "type": "string"

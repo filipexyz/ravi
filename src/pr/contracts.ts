@@ -6,6 +6,8 @@ export const SHA = /^[a-f0-9]{40}$/;
 export const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 export const LIMITS = { commits: 100, objects: 5000, bytes: 50 * 1024 * 1024, blobBytes: 8 * 1024 * 1024 };
 export const PUBLICATION_TIMEOUT_MS = 180_000;
+export const PUBLICATION_CONTEXT_REQUIRED_MESSAGE =
+  "pr publish requires an authenticated session context; run through the gateway/agent.";
 const sha = z.string().regex(SHA);
 const repo = z.string().max(200).regex(REPO);
 const branch = z

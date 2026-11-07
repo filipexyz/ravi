@@ -38,10 +38,24 @@ PR reconciliation and follow are internal helpers, not separate public commands.
   Combining the flags is usage error, exit 2. Failure/partial is exit 1;
   complete publication is exit 0. `--json` preserves the native error envelope.
 - Read the caller worktree and body file, never silently the gateway cwd.
-  Session publication follows in that session; a local operator outside a
-  session must select an accessible chat session with `--reply-session`.
+  Publication, including preview, MUST run through the gateway/agent with
+  a resolved authenticated runtime context bound to an agent and session.
+  Session/source identity MUST come from that record, not ambient aliases.
+  CI follows the publishing session's durable origin.
+- **Breaking change:** bare local operator publication and `--reply-session`
+  are removed. A reply destination is not authentication. CLI/SDK consumers
+  MUST remove this argument and publish from an authorized Ravi session.
+  Missing authenticated session authority MUST fail before body/worktree,
+  GitHub, health or journal IO, with `PERMISSION_DENIED` (exit 1) and the
+  actionable message: `pr publish requires an authenticated session context;
+  run through the gateway/agent.` Host ownership, a socket, environment
+  aliases, a credential file or a bootstrap admin key MUST NOT substitute
+  for the authenticated session boundary. No bare-operator login/exchange
+  is implemented; see WHY for the future prerequisite, not an available API.
 - Declare `@CommandAccess(kind:mutate, resource:pr, action:publish, risk:high,
-  requiresConfirmation:true)` and concrete `@Returns`; no `@CliOnly`.
+  requiresConfirmation:true, localOperator:false)` and concrete `@Returns`;
+  no `@CliOnly`. The access note MUST survive local-operator refusal so the
+  caller sees the required execution path instead of a journal failure.
   Authorization runs before filesystem/network reads and before effects.
   `--execute` grants neither capability nor review approval. No auto-grants.
 
@@ -107,8 +121,9 @@ executor, public context ID, session, phase, object IDs and final PR/follow IDs;
 exclude credentials, context keys, file contents, PR body and raw subprocess
 output. The journal is evidence, never the authority for remote state.
 
-Ready only makes a PR eligible for review. Independent approval on the current
-head, resolved review conversations and all required checks remain mandatory.
+Ready only makes a PR eligible for review. Record independent review against
+the current SHA in the PR and respect the repository's actual required checks.
+Review Gate is retired; publication MUST NOT introduce a review check/ruleset.
 This command cannot approve, resolve discussions, merge or alter rulesets.
 New PR descriptions disclose Git Data API transport and that this command did
 not run git push/pre-push; the author supplies honest local/CI validation.

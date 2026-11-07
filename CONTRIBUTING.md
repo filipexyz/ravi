@@ -97,17 +97,26 @@ in the PR description.
 Finish publication from the publishing Ravi session and committed worktree:
 
 ```bash
-bun scripts/publish-pr.ts --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --execute --json
 ```
 
-The finalizer creates a **ready** PR and registers its CI follow with the same
+The command uploads and verifies the exact Git objects, creates a **ready** PR and registers its CI follow with the same
 primitive as the `gh` command observer. A raw API `POST /pulls` is not the final
 step. If interrupted or failed after PR creation, repeat the command: it repairs
 the existing PR/follow, including a legacy draft, without duplicating either.
-Ready does not waive the independent current-head approval required by Review
-Gate. This script does not upload Git objects or bypass a hook.
+Record independent review against the current SHA in the PR and satisfy the
+repository's actual required checks. Review Gate is retired. This command does
+not invoke git push/pre-push; disclose that and the checks left to CI.
 A thread publisher hands CI to its durable parent; never claim persistent
 follow-up while closing the only recipient.
+
+**Breaking change:** bare operator publication and `--reply-session` are removed.
+Both preview and execute require an authenticated session through the
+gateway/agent. Remove the option from callers and publish in an authorized
+Ravi session. A terminal without one fails with `PERMISSION_DENIED` and
+`pr publish requires an authenticated session context; run through the gateway/agent.`
+There is no human-login-to-runtime-context exchange for the bare terminal today.
+Do not bootstrap an admin key, bypass the journal or infer authority from the host.
 
 ## Adding or changing a CLI command
 
