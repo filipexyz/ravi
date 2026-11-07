@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertDatabaseTargetAllowed, openStateDatabase, type DatabaseBoundaryOptions } from "../db/state-boundary.js";
+import { buildManagedRuntimeRebindPlan } from "../managed-runtime-rebind.js";
 
 const dirs: string[] = [];
 function fixture() {
@@ -41,6 +42,25 @@ function daemon(options: ReturnType<typeof fixture>): DatabaseBoundaryOptions {
       { pid: 1234, name: "ravi", pm2_env: { pm_exec_path: options.argv[1], args: ["daemon", "run"] } },
     ],
   };
+}
+function channelsFromLauncher(options: ReturnType<typeof fixture>) {
+  const target = { bundlePath: options.argv[1], cwd: join(options.homeDir, "release"), version: "test" };
+  const start = buildManagedRuntimeRebindPlan(
+    [{ name: "ravi-channels", status: "online", pid: 1234, createdAt: null }],
+    target,
+  ).find((step) => step.action === "start");
+  if (!start) throw new Error("Channel launcher did not produce a start command");
+  const args = start.args.slice(start.args.indexOf("--") + 1);
+  const entry = {
+    pid: 1234,
+    name: "ravi-channels",
+    pm2_env: { pm_exec_path: start.args[1], args },
+  };
+  return {
+    ...options,
+    argv: [process.execPath, ...args],
+    registeredProcesses: () => [entry],
+  } satisfies DatabaseBoundaryOptions;
 }
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -214,13 +234,7 @@ it("admits a registered installed channels runner only as an existing-state cons
   const root = join(options.homeDir, ".ravi");
   mkdirSync(root);
   const path = join(root, "ravi.db");
-  const channels = {
-    ...options,
-    argv: ["bun", options.argv[1], "channels", "run"],
-    registeredProcesses: () => [
-      { pid: 1234, name: "ravi-channels", pm2_env: { pm_exec_path: options.argv[1], args: ["channels", "run"] } },
-    ],
-  };
+  const channels = channelsFromLauncher(options);
   expect(() => openStateDatabase(path, undefined, channels)).toThrow("start the installed daemon first");
   expect(existsSync(path)).toBe(false);
   const seed = new Database(path);
@@ -229,6 +243,33 @@ it("admits a registered installed channels runner only as an existing-state cons
   const db = openStateDatabase(path, undefined, channels);
   expect(db.query("SELECT name FROM sqlite_master WHERE name='sentinel'").get()).toBeTruthy();
   db.close();
+});
+
+it("rejects mismatched identity and arguments for the canonical Bun channels launcher", () => {
+  const options = fixture();
+  const path = join(options.homeDir, ".ravi", "ravi.db");
+  const channels = channelsFromLauncher(options);
+  const entry = channels.registeredProcesses()[0];
+  for (const invalid of [
+    { ...entry, pid: 999 },
+    { ...entry, name: "ravi" },
+    { ...entry, pm2_env: { ...entry.pm2_env, pm_exec_path: join(options.homeDir, "other-bun") } },
+    { ...entry, pm2_env: { ...entry.pm2_env, args: [join(options.homeDir, "other.js"), "channels", "run"] } },
+    { ...entry, pm2_env: { ...entry.pm2_env, args: [options.argv[1], "daemon", "run"] } },
+    { ...entry, pm2_env: { ...entry.pm2_env, args: [options.argv[1], "channels", "start"] } },
+    { ...entry, pm2_env: { ...entry.pm2_env, args: [...entry.pm2_env.args, "--other"] } },
+  ]) {
+    expect(() => assertDatabaseTargetAllowed(path, { ...channels, registeredProcesses: () => [invalid] })).toThrow(
+      "Refusing the real Ravi state",
+    );
+  }
+  for (const argv of [
+    [process.execPath, join(options.homeDir, "other.js"), "channels", "run"],
+    [process.execPath, options.argv[1], "daemon", "run"],
+    [...channels.argv, "--other"],
+  ]) {
+    expect(() => assertDatabaseTargetAllowed(path, { ...channels, argv })).toThrow("Refusing the real Ravi state");
+  }
 });
 
 it("bridge and publication stores cannot reopen real state after source fixture cleanup", () => {

@@ -106,6 +106,7 @@ function runtimeRole(options: DatabaseBoundaryOptions): RuntimeRole | null {
   const bundle = canonicalStatePath(join(root, "dist", "bundle", "index.js"));
   const role = argv[2];
   if (
+    argv.length !== 4 ||
     !argv[1] ||
     canonicalStatePath(argv[1]) !== bundle ||
     (role !== "daemon" && role !== "channels") ||
@@ -120,7 +121,18 @@ function runtimeRole(options: DatabaseBoundaryOptions): RuntimeRole | null {
     if (entry.pid !== pid || entry.name !== (role === "daemon" ? "ravi" : "ravi-channels")) return false;
     const execPath = entry.pm2_env?.pm_exec_path;
     const args = entry.pm2_env?.args ?? [];
-    return Boolean(execPath && canonicalStatePath(execPath) === bundle && args[0] === role && args[1] === "run");
+    if (!execPath) return false;
+    if (role === "daemon")
+      return canonicalStatePath(execPath) === bundle && args.length === 2 && args[0] === role && args[1] === "run";
+    // The channels launcher registers Bun as the executable and passes the bundle
+    // as its first argument. Match the running interpreter as well as the bundle.
+    return (
+      canonicalStatePath(execPath) === canonicalStatePath(process.execPath) &&
+      args.length === 3 &&
+      canonicalStatePath(args[0]) === bundle &&
+      args[1] === role &&
+      args[2] === "run"
+    );
   });
   if (match && !injectable) verifiedRuntime = { pid, role };
   return match ? role : null;

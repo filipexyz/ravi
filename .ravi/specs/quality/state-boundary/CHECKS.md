@@ -18,6 +18,7 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 
 - Fake-home cleanup -> missing state -> `getSessionByName` fails before the guard and passes after it, without touching any real data. PR #768's fixture restoration remains integrated.
 - A subprocess representing the installed daemon opens fixture real state with no new env/confirmation flag when its actual PID/entrypoint match the fixture PM2 registry. Missing/mismatching identity refuses actionably.
+- The canonical managed-runtime launcher generates the admitted channel PM2 registration (`bun <bundle> channels run`). A mismatched PID, name, interpreter, bundle, role, command or additional arguments MUST refuse real-state access.
 - CLI, tests, source/build code and linked worktrees refuse the same path even with inherited PM2 env and daemon-looking argv. Explicit isolated state remains usable.
 - Refusal occurs before SQLite creates a file or initializes schema. Existing sentinel data/schema survive a refused destructive initializer.
 - Symlink aliases, dangling file links, hardlinks and the legacy DB path cannot evade the boundary.
