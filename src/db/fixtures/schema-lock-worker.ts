@@ -95,7 +95,8 @@ if (mode === "hold" || mode === "try" || mode === "inherit") {
     });
     signal("published-ready");
   } catch (cause) {
-    if (mode !== "state-schema-fail" || cause !== failure || cause.cause !== rootCause) throw cause;
+    if (!(cause instanceof Error) || mode !== "state-schema-fail" || cause !== failure || cause.cause !== rootCause)
+      throw cause;
     record("failed");
     signal("failure-preserved", JSON.stringify({ message: cause.message, cause: rootCause.message }));
   } finally {
