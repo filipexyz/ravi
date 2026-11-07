@@ -5,14 +5,34 @@ kind: feature
 domain: quality
 capability: ci-gates
 feature: review-merge
-status: active
-normative: true
+status: archived
+normative: false
 applies_to:
   - src/ci/review-gate.cjs
   - src/ci/review-gate.test.ts
   - .github/workflows/review-gate.yml
   - .github/review-gate-ruleset.json
 ---
+
+## RETIRED — 2026-11-04 (decisão do operador)
+
+Este gate **não está em vigor**. O workflow `.github/workflows/review-gate.yml` foi removido de `dev` e o ruleset que o tornava obrigatório já havia sido deletado em 2026-10-31. Nada neste spec deve ser tratado como requisito de merge.
+
+Regras válidas hoje:
+- Nenhum check de review é obrigatório. Em `dev` o único status obrigatório é `Quality Gate`.
+- Revisão independente continua sendo **disciplina escrita no corpo do PR**, não um check que bloqueia.
+- NÃO reintroduzir este gate, o workflow, o ruleset ou um "machine user" aprovador sem pedido explícito do operador. Reativar por conta própria já falhou e é considerado defeito.
+- O código (`src/ci/review-gate.cjs`, testes, `.github/review-gate-ruleset.json`) fica no repositório apenas como material inerte, para o dia em que o operador quiser retomar.
+
+O restante deste documento descreve o desenho original, mantido para memória. Nenhuma linha abaixo é normativa enquanto este status for `archived`.
+
+### Confirmação pós-merge — 2026-11-04 18:16 BRT
+
+- `#805` mergeado em `dev` como squash `c7cf7ce` (`c7cf7ce60a3d961d79f0ce104003a849a4b12911`).
+- `.github/workflows/review-gate.yml` não existe mais em `dev`: a listagem de workflows do repositório traz apenas `CI`, `PR Description`, `Release`, `SDK Release`, `Deploy Site` e `Version And Publish`.
+- Nenhum check `Review Gate` / `Review Gate Tests` volta a aparecer em PR nova; o estado anterior era `disabled_manually`, agora o workflow não existe.
+- Verificado por leitura direta da árvore de `dev` e da API de Actions em 04/11/2026 18:20 BRT.
+
 
 # Review Merge Gate
 
@@ -21,8 +41,6 @@ applies_to:
 - `Review Gate` and `Review Gate Tests` MUST be required checks on `dev`, bound to the GitHub Actions integration (15368). The additive ruleset MUST have no bypass actors.
 - The platform MUST require a PR, one independent approval, stale approval dismissal on push, approval of the last push by another identity, and resolution of all conversations. Missing checks MUST block merging.
 - The evaluator MUST query GitHub's API, paginate every thread, review and timeline page, and verify head SHA, explicit counts, nodes and pagination. HTTP/network/auth/GraphQL errors, nulls, partial results and inconsistent snapshots MUST fail closed. An explicit complete zero-thread result is valid; absence of data is not.
-- `timelineItems.totalCount` MAY exceed the number of visible nodes even without an `itemTypes` filter. Only this connection MUST accept that difference when pagination reaches `hasNextPage=false`, all node ids are nonempty and unique, and the count stays stable across pages. The audit MUST record the reported count, fetched count, difference and completeness evidence. Reviews and review threads MUST still match their counts exactly.
-- A count below the fetched node count, null/duplicate ids, an empty nonterminal page, a missing/repeated next cursor, count changes or the pagination limit MUST block. The final evidence re-read MUST compare both nodes and counts, including a timeline count change with unchanged visible nodes.
 - Every unresolved review thread MUST block, including outdated threads. Neither a green build, a dismissed review nor a severity label waives an open thread.
 - A successful evaluation MUST have a latest effective `APPROVED` review by a non-author human identity with current write/maintain/admin access, whose review commit equals the event's exact head SHA. Bots, the PR author and reader approvals MUST NOT qualify.
 - A push MUST invalidate the old approval and the attestation of previously resolved findings. A fresh independent approval on the new head is required even when GitHub retains the thread's resolved bit.

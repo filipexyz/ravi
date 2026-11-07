@@ -5,6 +5,7 @@ import type { PermissionGrantMetadata } from "./grant-metadata.js";
 export type ApprovalRequestType = "plan" | "spec" | "permission";
 export type ApprovalRequestStatus = "pending" | "decided" | "expired";
 export type ApprovalDecisionValue = "approved" | "rejected";
+export type ApprovalGrantOutcome = "applied" | "failed";
 
 export interface ApprovalRequestRecord {
   readonly id: string;
@@ -29,6 +30,8 @@ export interface ApprovalRequestRecord {
   /** Set when the decision came from a grant card. */
   readonly grantIntent?: string | null;
   readonly grantScope?: string | null;
+  /** Actual grant application result; a human approval alone does not prove it succeeded. */
+  readonly grantOutcome?: ApprovalGrantOutcome;
   readonly decidedBy: string | null;
   readonly reason: string | null;
   readonly createdAt: number;
@@ -112,6 +115,7 @@ interface ApprovalRequestRow {
   grant_json: string | null;
   grant_intent: string | null;
   grant_scope: string | null;
+  grant_outcome: string | null;
 }
 
 export function createApprovalRequest(input: CreateApprovalRequestInput): ApprovalRequestRecord {
@@ -242,6 +246,20 @@ export function claimApprovalDecision(input: ClaimApprovalDecisionInput): Approv
   return getApprovalRequest(input.id);
 }
 
+/** Persist only the trusted executor's terminal result, never provider errors or message text. */
+export function recordApprovalGrantOutcome(id: string, outcome: ApprovalGrantOutcome): ApprovalRequestRecord | null {
+  if (outcome !== "applied" && outcome !== "failed") throw new Error("Invalid approval grant outcome.");
+  ensureApprovalRequestTable();
+  const result = getDb()
+    .prepare(
+      `UPDATE approval_requests SET grant_outcome = ?
+     WHERE id = ? AND status = 'decided' AND decision = 'approved'
+       AND grant_json IS NOT NULL AND grant_outcome IS NULL`,
+    )
+    .run(outcome, id);
+  return result.changes === 1 ? getApprovalRequest(id) : null;
+}
+
 export function expireApprovalRequest(id: string, now: number): ApprovalRequestRecord | null {
   ensureApprovalRequestTable();
   getDb()
@@ -359,6 +377,7 @@ function ensureApprovalRequestTable(): void {
     "grant_json",
     "grant_intent",
     "grant_scope",
+    "grant_outcome",
   ]) {
     if (!approvalColumns.has(column)) {
       db.exec(`ALTER TABLE approval_requests ADD COLUMN ${column} TEXT`);
@@ -409,6 +428,7 @@ function rowToRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
     ...(grant ? { grant } : {}),
     ...(row.grant_intent ? { grantIntent: row.grant_intent } : {}),
     ...(row.grant_scope ? { grantScope: row.grant_scope } : {}),
+    ...(row.grant_outcome === "applied" || row.grant_outcome === "failed" ? { grantOutcome: row.grant_outcome } : {}),
     decidedBy: row.decided_by,
     reason: row.reason,
     createdAt: row.created_at,

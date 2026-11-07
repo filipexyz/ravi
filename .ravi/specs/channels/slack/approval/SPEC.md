@@ -93,6 +93,14 @@ grant fails at once instead of holding the turn.
   `chat.update`, removing the buttons and naming who decided. A request
   without recorded deliveries (legacy public card) keeps the `chat.update`
   of its single message. On timeout, DM cards MUST be updated.
+- Credential-backed finalization MUST run through the host delivery boundary,
+  not the requesting agent's inherited tool context. The delivery request MUST
+  carry only approval/delivery ids; the host MUST derive the account, target,
+  and message from the terminal approval and its recorded delivery.
+- A human approval and a successfully applied permission grant are distinct
+  facts. The executor MUST persist `applied` or `failed` before enqueueing grant
+  card finalization. Final DM cards MUST preserve the actual grant scope or the
+  grant failure; a missing grant outcome MUST NOT be rendered as success.
 - Every click that decides nothing MUST be answered privately to the
   clicker through its `response_url`: missing permission (card kept),
   expired, already decided by someone else (naming who), or unknown request

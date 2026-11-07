@@ -10,6 +10,17 @@ ravi context info <context-id> --json
 
 Use `lastUsedAt ?? createdAt` as the operational last-seen timestamp.
 
+For a long-turn authentication failure, compare the rejected context's
+`expiresAt` with the command timestamp and the turn terminal timestamp. Touching
+a context only updates `lastUsedAt`. An active host-owned turn renews before
+expiry after authority revalidation; a completed turn is revoked immediately.
+An expired bearer returns `CONTEXT_EXPIRED` (401), including on open command
+routes; a valid bearer lacking a capability returns `PERMISSION_DENIED` (403).
+Do not widen grants or reset the session to treat credential expiry.
+Narrowed relays (`metadata.relayNarrowing=true`), derived children and bridge
+delegations retain their original bounded lifetime; the active-turn lease does
+not renew them. For these contexts, the next turn must issue fresh authority.
+
 ## Verify Agent Identity Dispatch
 
 1. Send multiple turns to the same Ravi session.

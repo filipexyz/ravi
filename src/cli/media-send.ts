@@ -156,7 +156,10 @@ export async function sendMediaWithOmniCli(
   const target = resolveMediaSendTarget(args.target);
 
   if (target.channel?.toLowerCase() === "slack") {
-    const delivery = await (dependencies.sendSlackMedia ?? sendSlackMedia)({
+    const deliver =
+      dependencies.sendSlackMedia ??
+      ((input: SlackMediaSendInput) => sendSlackMedia(input, { authority: { kind: "local-operator" } }));
+    const delivery = await deliver({
       accountId: target.accountId,
       chatId: target.chatId,
       filePath: absPath,

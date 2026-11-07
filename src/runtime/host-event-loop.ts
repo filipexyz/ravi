@@ -1538,13 +1538,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTurnInputMutated = false;
     streaming.internalAbortReason = input.reason;
     streaming.interrupted = true;
-    signalTurnComplete();
-    clearTraceTurnState();
     streaming.done = true;
     streaming.currentChannelBackend = undefined;
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
+    signalTurnComplete();
+    clearTraceTurnState();
     void closeRuntimeSession();
   };
 
@@ -1940,12 +1940,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.internalAbortReason = FATAL_TOOL_FAILURE_REASON;
     clearActiveToolState();
     markOwnedLiveIdle("fatal tool failure");
-    signalTurnComplete();
-    clearTraceTurnState();
     streaming.done = true;
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
+    signalTurnComplete();
+    clearTraceTurnState();
     void closeRuntimeSession();
   };
   const signalTurnComplete = () => {
@@ -2899,12 +2899,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
         clearActiveToolState();
         markOwnedLiveIdle("provider turn inactive");
-        signalTurnComplete();
-        clearTraceTurnState();
         streaming.done = true;
         if (!streaming.abortController.signal.aborted) {
           streaming.abortController.abort();
         }
+        signalTurnComplete();
+        clearTraceTurnState();
         void closeRuntimeSession();
         resolve({ done: true, value: undefined as never });
       }, PROVIDER_TURN_INACTIVITY_CHECK_MS);
@@ -4271,10 +4271,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               durableBinding: currentTurnReplaySafety.durableBinding,
             });
           }
-          signalTurnComplete();
-          clearTraceTurnState();
           streaming.done = true;
           streaming.currentChannelBackend = undefined;
+          if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
+          signalTurnComplete();
+          clearTraceTurnState();
           break;
         }
 
@@ -4342,9 +4343,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             streaming.currentTurnToolStarted = false;
             resetTurnToolContinuationLedger(turnToolContinuation);
             streaming.currentTurnInputMutated = false;
+            streaming.done = true;
+            if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
             signalTurnComplete();
             clearTraceTurnState();
-            streaming.done = true;
             break;
           }
           log.warn("Skipping runtime credential retry because no replay-safe turn messages are available", {
@@ -4690,6 +4692,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.turnActive = false;
     streaming.compacting = false;
 
+    // Cascade authority revocation before terminal cleanup releases the lease.
+    if (!streaming.abortController.signal.aborted) {
+      streaming.abortController.abort();
+    }
+
     // Unblock generator if it is waiting (between turns or waiting for turn complete)
     if (streaming.pushMessage) {
       streaming.pushMessage(null);
@@ -4700,10 +4707,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.onTurnComplete = null;
     }
 
-    // Abort subprocess if still alive
-    if (!streaming.abortController.signal.aborted) {
-      streaming.abortController.abort();
-    }
     await closeRuntimeSession();
 
     try {

@@ -1,5 +1,10 @@
 # Credentials Checks
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/credentials/file-backend.test.ts src/credentials/intake.test.ts src/credentials/backends.test.ts`
+- Verify the file backend keeps plaintext only in private broker-owned files,
+  refuses unsafe permissions and paths, and migrates metadata without losing
+  existing scopes, audit records or Keychain/Vault references.
+
 ## Spec Checks
 
 ```bash

@@ -2,6 +2,7 @@ import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from "no
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
+  addRaviEnvKey,
   RAVI_ENV_ALLOWLIST,
   RaviEnvFileError,
   getRaviEnvFilePath,
@@ -147,6 +148,13 @@ describe("ravi-env-file", () => {
     expect(unset.present).toBe(false);
     expect(process.env.CODEX_HOME).toBeUndefined();
     expect(readFileSync(getRaviEnvFilePath(), "utf8")).not.toContain("CODEX_HOME=");
+  });
+
+  it("rejects an inherited empty target in add-only without creating an env file", () => {
+    const env = { RAVI_STATE_DIR: process.env.RAVI_STATE_DIR, CODEX_HOME: "" };
+    expect(() => addRaviEnvKey("CODEX_HOME", "/tmp/new", env)).toThrow("ENV_KEY_EXISTS");
+    expect(existsSync(getRaviEnvFilePath(env))).toBe(false);
+    expect(env.CODEX_HOME).toBe("");
   });
 
   it("preserves comments and other assignments when updating one key", () => {

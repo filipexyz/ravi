@@ -1,5 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
+import { runWithContext } from "../cli/context.js";
+import * as slackTextSend from "../channels/slack/text-send.js";
+import * as credentialBackends from "../credentials/backends.js";
 import { withoutRaviRuntimeContextEnv } from "../test/ravi-state.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -15,6 +18,8 @@ import {
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
+  requestApproval,
+  finalizeStoredSlackApprovalDelivery,
   DEFAULT_APPROVAL_TIMEOUT_MS,
   emitApprovalResponseOnce,
   setApprovalServiceDependenciesForTest,
@@ -30,7 +35,7 @@ import {
   SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS,
   SLACK_PERMISSION_GRANT_ACTION_SCOPE,
 } from "./slack-blocks.js";
-import { attachApprovalRequestMessageId, createApprovalRequest } from "./store.js";
+import { attachApprovalRequestMessageId, createApprovalRequest, getApprovalRequest } from "./store.js";
 import { sameGrantTuple } from "./grant-metadata.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../permissions/contact-chat-grants.js";
 import { getContact } from "../contacts.js";
@@ -66,6 +71,7 @@ let respondedSlack: ApprovalRespondSlackInput[] = [];
 let externalOrder: string[] = [];
 let stateDir: string | null = null;
 let nowMs = APPROVAL_TEST_NOW_MS;
+let serviceDependencies: Partial<ApprovalServiceDependencies>;
 const createdContextIds = new Set<string>();
 
 const OWNER_PHONE = APPROVAL_TEST_WA_OWNER_PHONE;
@@ -191,7 +197,7 @@ describe("approval service", () => {
     setPermissionAuditPublisherForTest(async (topic, data) => {
       auditEvents.push({ topic, data });
     });
-    setApprovalServiceDependenciesForTest({
+    serviceDependencies = {
       now: () => nowMs,
       requestReply: (async <T>(topic: string, data: Record<string, unknown>) => {
         externalOrder.push("outbound.deliver");
@@ -220,7 +226,8 @@ describe("approval service", () => {
           })();
         }) satisfies ApprovalServiceDependencies["nats"]["subscribe"],
       },
-    });
+    };
+    setApprovalServiceDependenciesForTest(serviceDependencies);
   });
 
   afterEach(async () => {
@@ -233,6 +240,46 @@ describe("approval service", () => {
     createdContextIds.clear();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("default Slack finalizer sends only durable ids to the gateway without borrowing the caller's authority", async () => {
+    seedSlackOwner();
+    subscribeEvents = [slackClick({ userId: OWNER_SLACK_USER, messageTs: "msg_1" })];
+    const dependencies = { ...serviceDependencies };
+    delete dependencies.finalizeSlackApproval;
+    setApprovalServiceDependenciesForTest(dependencies);
+    dbCreateAgent({ id: "approval-denied-agent", cwd: stateDir! });
+    const context = dbCreateContext({
+      contextId: "ctx_approval_denied",
+      contextKey: "rctx_approval_denied",
+      kind: "turn-runtime",
+      agentId: "approval-denied-agent",
+      capabilities: [],
+      createdAt: Date.now(),
+    });
+    createdContextIds.add(context.contextId);
+    const secretRead = spyOn(credentialBackends, "readSecret").mockRejectedValue(new Error("Unexpected secret read"));
+    try {
+      const result = await runWithContext({ context, agentId: context.agentId, transport: "tool" }, () =>
+        requestApproval({ channel: "slack", accountId: "main", chatId: "C123" }, "Fixture plan approval", {
+          type: "plan",
+          timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+        }),
+      );
+      expect(result.approved).toBe(true);
+      expect(secretRead).not.toHaveBeenCalled();
+      expect(dbGetContext(context.contextId)?.capabilities).toEqual([]);
+      const finalizations = deliveredRequests.filter((request) => request.topic === "ravi.outbound.approval.finalize");
+      expect(finalizations).toEqual([
+        {
+          topic: "ravi.outbound.approval.finalize",
+          data: { requestId: extractDeliveredRequestId(), messageId: "msg_1" },
+        },
+      ]);
+      expect(deliveredRequests.filter((request) => request.topic === "ravi.outbound.deliver")).toHaveLength(1);
+    } finally {
+      secretRead.mockRestore();
+    }
   });
 
   it("keeps the approval timeout inside the lease of tools that wait on it", () => {
@@ -1713,6 +1760,53 @@ describe("approval service", () => {
 
       expect(result).toMatchObject({ allowed: false, approved: false });
       expect(respondedSlack[respondedSlack.length - 1]?.payload.text ?? "").toContain("grant failed");
+    });
+
+    it("persists a failed grant before DM finalization and renders that failure from durable state", async () => {
+      seedSlackOwner();
+      const requester = seedRequester();
+      const chat = seedGrantChat();
+      dbCreateTagDefinition({ slug: "permission-use-tool-bash", label: "Bash fans", kind: "user", source: "manual" });
+      requestReplyResult = {
+        messageId: "dm_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "dm", chatId: "D_OWNER", messageId: "dm_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          channelId: "D_OWNER",
+          messageTs: "dm_1",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+      ];
+      const context = seedDeniedContext({ contextId: "ctx_grant_dm_fails", contactId: requester.id, chatId: chat.id });
+      const result = await authorizeRuntimeContext({
+        context,
+        permission: "use",
+        objectType: "tool",
+        objectId: "Bash",
+        timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+      });
+      expect(result).toMatchObject({ allowed: false, approved: false });
+      const requestId = extractDeliveredRequestId();
+      expect(getApprovalRequest(requestId)).toMatchObject({ decision: "approved", grantOutcome: "failed" });
+      expect(finalizedSlack[0]).toMatchObject({ requestId, chatId: "D_OWNER", messageId: "dm_1" });
+      const update = spyOn(slackTextSend, "updateSlackText").mockResolvedValue({
+        transport: "slack-native",
+        provider: "slack",
+        success: true,
+        status: "updated",
+        messageId: "dm_1",
+        raw: {},
+      });
+      try {
+        await finalizeStoredSlackApprovalDelivery({ requestId, messageId: "dm_1" });
+        expect(update.mock.calls[0]?.[0].text).toContain("grant failed");
+        expect(update.mock.calls[0]?.[0].text).not.toContain("Granted ");
+        expect(JSON.stringify(update.mock.calls[0]?.[0].blocks)).not.toContain('"type":"actions"');
+      } finally {
+        update.mockRestore();
+      }
     });
 
     it("keeps one card per agent when two agents serve the same contact", () => {

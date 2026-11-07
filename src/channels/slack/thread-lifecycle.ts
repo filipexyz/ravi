@@ -673,7 +673,7 @@ export async function reportSlackThreadProgress(
       payload: {
         prompt: buildSlackThreadParentNotice(record, "reporta progresso.", "Progresso", text),
         source: buildSlackThreadParentSource(record, record.providerThreadId),
-        deliveryBarrier: "after_tool",
+        deliveryBarrier: "after_response",
         deliveryBarrierSource: "default",
         _slackThreadLifecycle: {
           eventId: messageId,
