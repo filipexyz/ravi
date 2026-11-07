@@ -2182,6 +2182,7 @@ function streamingSession(
   runtimeSession: RuntimeSessionHandle,
 ): RuntimeHostStreamingSession {
   return {
+    sessionKey: resolveSession(metadata.binding.sessionId)!.sessionKey,
     agentId: metadata.binding.agentId,
     queryHandle: runtimeSession,
     starting: false,

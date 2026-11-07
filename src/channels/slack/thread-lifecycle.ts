@@ -5,6 +5,7 @@ import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
+import { prepareThreadAttentionNotice } from "./thread-attention-admission.js";
 import { publishChannelOutboundJobDurably } from "../outbound-publish-outbox.js";
 import { buildChannelChatActionJob, type ChannelOutboundJob } from "../outbound-stream.js";
 import {
@@ -318,6 +319,7 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
           callerContextId: observedTurnCallerContextId(record.childSessionKey, health.turnId),
           payload: {
             prompt: buildSlackThreadParentNotice(record, "precisa de atenção.", "Estado", description),
+            _agentId: parent.agentId,
             source: buildSlackThreadParentSource(record, record.providerThreadId),
             deliveryBarrier: "after_tool",
             deliveryBarrierSource: "default",
@@ -334,7 +336,10 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
           },
           options: { messageId },
         },
-        dependencies.publishPrompt,
+        async (sessionName, payload, options) => {
+          const frozen = prepareThreadAttentionNotice(requestId, claimId!, sessionName, payload, now);
+          await dependencies.publishPrompt(sessionName, frozen, options);
+        },
       );
       finishThreadTurnNotice(requestId, claimId, true, now);
     } catch (error) {

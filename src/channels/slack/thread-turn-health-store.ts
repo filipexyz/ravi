@@ -79,11 +79,17 @@ export function claimThreadTurnNotice(requestId: string, turnId: string, now: nu
         .prepare(`
     UPDATE slack_thread_turn_health SET claim_id = ?, claim_expires_at = ?
     WHERE request_id = ? AND turn_id = ? AND state = 'attention'
-      AND notified_turn_id IS NOT turn_id
+      AND (notified_turn_id IS NOT turn_id OR (
+        notified_at <= ? AND EXISTS (
+          SELECT 1 FROM slack_thread_attention_notices n
+          WHERE n.request_id = slack_thread_turn_health.request_id
+            AND n.turn_id = slack_thread_turn_health.turn_id AND n.admission_status = 'pending'
+        )
+      ))
       AND (claim_id IS NULL OR claim_expires_at <= ?)
       AND EXISTS (SELECT 1 FROM slack_thread_lifecycle l WHERE l.request_id = ? AND l.status = 'open')
   `)
-        .run(claimId, now + 60_000, requestId, turnId, now, requestId).changes > 0,
+        .run(claimId, now + 60_000, requestId, turnId, now - 30_000, now, requestId).changes > 0,
     { label: "thread-turn-health-claim" },
   );
   return claimed ? claimId : null;

@@ -2,6 +2,7 @@ import { getDb } from "../../router/router-db.js";
 import { getRuntimeBootEpoch, listRuntimeTurnAttempts } from "../../runtime/crash-recovery-store.js";
 import { getRuntimeLiveState, type RuntimeLiveState } from "../../runtime/live-state.js";
 import { resolveToolInactivityTimeoutMs } from "../../runtime/tool-liveness.js";
+import { getRuntimeTurnProgress, RUNTIME_TURN_PROGRESS_INTERVAL_MS } from "../../runtime/turn-progress.js";
 import { getLatestSessionTurn } from "../../session-trace/session-trace-db.js";
 import type { SlackThreadLifecycleRecord } from "./thread-lifecycle-store.js";
 import type { ThreadTurnHealth, ThreadTurnReason, ThreadTurnState } from "./thread-turn-health-store.js";
@@ -41,10 +42,16 @@ export function observeThreadTurn(
     FROM session_events WHERE turn_id = ?
   `)
     .get(turn.turnId) as { last_signal: number | null; final_reply: number };
-  const live = record.childSessionName ? readLive(record.childSessionName) : null;
+  const attempt = listRuntimeTurnAttempts({ turnId: turn.turnId, sessionKey: turn.sessionKey, limit: 1 })[0];
+  // An owned attempt has the same evidence on every reconciler. A process-local
+  // signal is useful only for turns without a durable owner, never as a bypass
+  // around the current attempt's shared ownership fence.
+  const live = !attempt && record.childSessionName ? readLive(record.childSessionName) : null;
+  const sampledProgressAt = attempt ? getRuntimeTurnProgress(attempt) : null;
   lastSignalAt = Math.max(
     turn.startedAt,
     evidence.last_signal ?? 0,
+    sampledProgressAt ?? 0,
     live?.turnId === turn.turnId ? (live.lastSignalAt ?? 0) : 0,
   );
 
@@ -58,7 +65,6 @@ export function observeThreadTurn(
     }
   }
 
-  const attempt = listRuntimeTurnAttempts({ turnId: turn.turnId, limit: 1 })[0];
   if (attempt?.status === "running") {
     const boot = getRuntimeBootEpoch(attempt.bootEpoch);
     if (attempt.leaseExpiresAt <= now || !boot || boot.status !== "active" || boot.leaseExpiresAt <= now) {
@@ -89,5 +95,11 @@ export function observeThreadTurn(
     }
     quietAfterMs = Math.max(quietAfterMs, resolveToolInactivityTimeoutMs(tool.name ?? undefined, input));
   }
-  return now - lastSignalAt >= quietAfterMs ? result("attention", "no_signal") : result("running");
+  // A sample may trail the final provider event by less than one interval.
+  // Allow that uncertainty instead of reporting quiet before the full budget.
+  const quietSince = Math.max(
+    lastSignalAt,
+    sampledProgressAt === null ? 0 : sampledProgressAt + RUNTIME_TURN_PROGRESS_INTERVAL_MS,
+  );
+  return now - quietSince >= quietAfterMs ? result("attention", "no_signal") : result("running");
 }
