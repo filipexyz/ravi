@@ -62,6 +62,8 @@ The canonical failure value is a `ContractError` and its envelope:
   "error": {
     "code": "STABLE_MACHINE_CODE",
     "message": "Human-readable explanation",
+    "cause": "Original failure reason after diagnostic normalization",
+    "context": { "operation": "<group> <operation>", "code": "PROVIDER_OR_OS_CODE" },
     "retryable": false,
     "suggestedAction": "Concrete next action"
   }
@@ -71,6 +73,14 @@ The canonical failure value is a `ContractError` and its envelope:
 - `op` MUST identify the real operation path.
 - The envelope MAY add bounded structured details such as `suggestions`,
   `acceptedFlags`, `acceptedPositionals`, `dryRun` and `plan`.
+- Permission-profile discovery retains `acceptedValues` and `inspectCommands`
+  through the local envelope and remote usage-error relay. The remote projection
+  admits at most 512 validated profile identifiers, each at most 128 characters;
+  if more valid choices exist, `acceptedValuesTruncated: true` MUST survive later
+  relays. The listing command remains the complete discovery path. Inspection
+  commands are an allowlist of `ravi skills show permissions` and
+  `ravi tags list --kind system --source permissions --json`, not arbitrary shell
+  text. Malformed/credential-bearing choices and other commands are excluded.
 - The envelope is transport-independent. The process carries the exit code in
   the OS status; tools carry `exitCode` and `outcome` beside the content; the
   gateway adds `exitCode` and `outcome` to the JSON body.
@@ -86,24 +96,111 @@ The canonical failure value is a `ContractError` and its envelope:
   are normalized at the shared transport boundary as `COMMAND_FAILED`, exit
   `1`. JSON CLI, tools and gateway MUST receive one canonical envelope whose
   `message` keeps the sanitized expected/daemon cause (or the generic headline
-  only when that cause is empty or unsafe). Text CLI keeps the same concise
+  only when that cause is empty). Text CLI keeps the same concise
   message. A throw-site `suggestedAction` (for example
   `--allow-runtime-mismatch`) MUST reach the envelope. This fallback is not a
   substitute for a domain-specific code or `USAGE_ERROR` when the handler can
   classify the failure more precisely.
+- `ContractError` is the shared user-failure constructor. It requires an
+  explicit diagnostic `cause` and typed `context`; there is no message-only
+  overload. `contractFail` requires its `diagnostic` argument. A caught
+  exception MUST supply the actual throwable to the diagnostic projection;
+  an expected refusal without a throwable MUST state the concrete failed
+  precondition and its operation/origin.
 - An unexpected exception is normalized as `UNHANDLED_ERROR`, exit `1`, with
-  the real operation path and a safe generic message. Process CLI, exported
-  tools, gateway and audit MUST NOT expose the raw exception, provider detail
-  or stack. The gateway MAY retain HTTP `500` for this internal-fault class,
-  but its body remains the canonical contract envelope.
-- The gateway MUST retain an unexpected handler's cause and stack in its local
-  diagnostic log, together with the command identity. Diagnostics MUST redact
-  credential tokens and MUST NOT copy the request body, runtime context key or
-  arbitrary exception properties. Public envelopes and audit MUST NOT contain the exception or stack. Gateway failures MUST carry the operation, a stable code, an actionable message and a server-generated requestId. Repeated diagnostics MUST be rate-limited and remain traceable to the first request.
+  the real operation, a stable headline and its original failure reason.
+  Internal throws retain the original throwable and nested cause chain.
+  Integration wrappers may attach typed context and known credential values
+  for later redaction; they MUST NOT replace the throwable with a sanitized
+  string before the output boundary.
+- Diagnostic ingress is an allowlist: only normalized `code`, `message`,
+  `cause`, and typed `context` may cross from an exception/provider object.
+  Context admits `status`, `provider`, `model`, `operation`, typed `actor`
+  (`type`, `id`), `file`, `syscall`, and provider/OS `code`. Headers, cookies,
+  query objects, bodies, arbitrary properties and stack are excluded by
+  default. Provider payload normalization may extract declared reason/code
+  fields; it MUST NOT serialize the rest of the payload, including body/PII
+  already embedded in an SDK error message. Domain-owned envelope details
+  such as validation issues and dry-run plans retain their separate typed
+  projections; they do not widen the diagnostic allowlist.
+- Allowed text is still untrusted. The single versioned redactor in
+  `packages/ravi-os-sdk/src/diagnostic-redactor.ts` runs at diagnostic egress:
+  tool/CLI/gateway envelopes, remote relay, logs, trace events/artifacts and
+  the TypeScript SDK envelope. Its finite patterns cover URL/DSN userinfo,
+  URL queries/fragments, sensitive query assignments (`key`, `token`, `sig`,
+  `secret`, `password`), bearer/API-key credentials, cookies, password tails,
+  key-shaped strings and long high-entropy encoded values. Structured or
+  opaque embedded payloads are projected or replaced with a field marker.
+  Markers such as `[redacted:url-query]` identify the removed field; the
+  remaining diagnostic reason and original stable code MUST stay readable.
+  A new unrecognized credential encoding requires a corpus row and a shared
+  redactor update, not a claim that a finite pattern set detects every secret.
+- CLI text, exported tools, gateway, remote relay and client error envelopes
+  MUST retain normalized cause/context. Human text prints these after the
+  headline. Permission denial retains its supplied operation and typed actor.
+  An HTTP status, including 422 or 500, MUST NOT replace the failure reason.
+- Logger output is an egress sink, including local/debug output. Raw stacks,
+  headers, bodies and arbitrary exception properties MUST NOT be logged or
+  persisted in diagnostic trace rows/artifacts. Correlation by request ID,
+  bounded context and rate limiting remain available; private logs are not a
+  substitute for the caller-visible reason. Audit remains a separate,
+  content-minimized projection.
+  SQLite retry instrumentation keeps its explicit typed fields (`sqliteCode`,
+  `sqliteErrno`, `willRetry`, `attempt`, `statementsAgeMs`, `rssMb`, `heapUsedMb`,
+  `heapTotalMb`, `externalMb`) alongside normalized `operation`. Invalid types,
+  non-finite/negative metrics, arbitrary metadata and database paths are excluded;
+  diagnostic projection MUST NOT discard these operational facts.
+  Domain conflict diffs remain bounded, redacted text in the separate control
+  projection so callers can choose how to resolve a Library update conflict.
+  Resolution controls retain validated scopes/identifiers/hashes and nonnegative
+  retry/schema/import counters. A version conflict exposes only the current row
+  ID/version and instructs the caller to re-read it; it MUST NOT copy row values
+  or body into the failure. Organization guidance projects only its redacted name.
+  Theme validation keeps `contrast: {ok, failed}` with at most 32 failed pairs.
+  Each pair has two redacted strings bounded to 160 characters, a finite
+  nonnegative ratio and minimum; arbitrary nested properties are excluded.
+  SDK drift, publication verification, proposal status, candidate machines and
+  watch setup keep their declared bounded control shapes. Environment metadata
+  exposes permitted key names, never values. Raw provider reason objects remain
+  excluded; the local daemon classification `admin_context_exists` is an enum.
+  The command/wrapper audit is recorded in `design/error-control-inventory.md`.
+  Failure trace payloads retain typed lifecycle controls (intake reason/stage,
+  agent ID, recovery/abort classification, retry counters and boolean state).
+  A payload containing only those controls uses the event's error as its cause;
+  nested provider events contribute normalized diagnostics, never raw payloads.
+- TypeScript shares the versioned redactor. Swift and Dart preserve the same
+  typed diagnostic envelope received from the server; their shape/decoding
+  contract is not evidence of an identical native redaction implementation.
 - A return-shape violation is `RETURN_SHAPE_ERROR`, exit `1`, outcome `failed`
   and MAY retain HTTP `500`. A non-success binary response is normalized to a
   safe stable code before it reaches SDK callers or audit; provider response
   bodies are not forwarded as contract details.
+
+## Mechanical regression gate
+
+`scripts/error-cause-scan.ts` scans the non-test `src` AST and blocks unannotated
+catch clauses without bindings, rejection callbacks without bindings, and
+unused catch bindings when the block emits a recognized failure surface.
+It also rejects logging a caught binding while constructing an unrelated failure,
+and manufacturing a recognized failure envelope outside the shared constructor.
+Intentional non-error fallbacks require `// no-cause: <concrete reason>`.
+
+Existing debt is enumerated in `scripts/error-cause-baseline.json` against the
+frozen baseline. Entries/counts can only decrease; new entries, increased
+counts, and debt reintroduced after removal fail CI. The scan generates
+`design/error-cause-inventory.md` with directory counts and site states
+(`no-cause`, `fixed`, `triaged-follow-up`). Do not maintain a parallel handwritten
+follow-up list. A `fixed` static site means the configured AST rules pass; it
+does not establish end-to-end propagation through dynamic or aliased code.
+
+`src/cli/error-egress-corpus.test.ts` supplies that complementary behavioral
+proof for 13 corpus rows across nine required sinks: process CLI envelope,
+exported tool, gateway response, remote relay, gateway log, trace event, trace
+blob, TypeScript SDK envelope, and the Slack `chat.postMessage` payload captured
+by a mock. Each row asserts exact expected cause/code and absence of every
+sentinel at every sink. The harness rejects a missing required sink. This is
+finite corpus coverage, not a claim that every application failure boundary or
+live chat transport has been exercised.
 
 ## Transport equivalence
 
@@ -135,10 +232,13 @@ details and policy outcome:
   remote contract body only when `success`, `op`, `exitCode`, `outcome` and the
   error shape are coherent; partial, mismatched or legacy failures are
   normalized to the same safe envelope. Invalid gateway configuration is a
-  usage error (`REMOTE_GATEWAY_INVALID`, exit `2`). Remote failures MUST NOT
-  print raw URLs, credentials, provider responses or exception text.
+  usage error (`REMOTE_GATEWAY_INVALID`, exit `2`). Remote failure diagnostics
+  use the same ingress allowlist and egress redactor; safe provider/OS reason
+  text and actionable path components survive the relay.
 - Remote details MUST be projected through a local allowlist instead of copied
-  blindly. `suggestions` may preserve only bounded stable identifiers. A
+  blindly. `cause` and diagnostic `context` are explicit members of that
+  projection and use the shared egress redactor, separately from dry-run plans.
+  `suggestions` may preserve only bounded stable identifiers. A
   remote `plan` may preserve typed booleans/numbers and identifier/ref/enum
   strings that match restricted grammars; free text, paths, URLs,
   token-shaped values, commands and arbitrary objects are discarded. Flags
@@ -157,7 +257,14 @@ details and policy outcome:
   Text mode then prints `Next: <suggestedAction>` when no issue carries it.
   HTTP `status` and structured `issues`
   (`path`, `code`, sanitized `message`) from 400/422 validation failures MUST
-  be projected so CLI text and `--json` stay actionable. This privacy
+  be projected so CLI text and `--json` stay actionable. Unknown-field issues
+  MUST retain bounded identifier-shaped field names (for example `json` or
+  `subjects`), never their submitted values; unsafe names remain redacted.
+  A field name matching the shared secret-key classifier MUST be redacted even
+  when it fits the identifier grammar (for example `password-hunter2`).
+  When no issue is available, usage errors MUST preserve safe bounded public
+  message and next-action copy using the shared contract sanitizer, without
+  depending on a domain-specific prefix or a duplicated error catalog. This privacy
   projection is the permitted exception to byte-for-byte detail parity;
   semantic fields and taxonomy still remain equivalent.
 

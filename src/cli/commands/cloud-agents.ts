@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Cloud agents from the CLI: `ravi cloud key|agents|runs|schedules`. A Library
  * agent runs on Anthropic's managed agents with the organization's own key;
@@ -195,14 +196,17 @@ async function requireDeployedAgent(
   const found = matchCloudAgent(agents, ref);
   if (found) return found;
   contractFail(op, "CLOUD_AGENT_NOT_FOUND", `No cloud agent '${ref.slice(0, 80)}' in project ${project}.`, {
-    asJson,
-    details: {
-      suggestedAction: `Deploy it first: ravi cloud agents deploy ${ref.slice(0, 80)} --project ${project} --execute`,
-      suggestions: suggestSimilar(
-        ref,
-        agents.map((agent) => agent.library.slug || agent.name),
-      ),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: `Deploy it first: ravi cloud agents deploy ${ref.slice(0, 80)} --project ${project} --execute`,
+        suggestions: suggestSimilar(
+          ref,
+          agents.map((agent) => agent.library.slug || agent.name),
+        ),
+      },
     },
+    diagnostic: errorDiagnostic(`No cloud agent '${ref.slice(0, 80)}' in project ${project}.`, { operation: op }),
   });
 }
 
@@ -383,9 +387,14 @@ export class CloudKeyCommands {
     const d = defaultsOf(this.deps);
     if (d.inAgentRuntime()) {
       contractFail(op, "CLOUD_AGENT_CANNOT_SET_KEY", "Agents do not set the organization's cloud agents key.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_POLICY,
-        details: { suggestedAction: "Ask an owner or admin to run: ravi cloud key set --stdin --execute < <key-file>" },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_POLICY,
+          details: {
+            suggestedAction: "Ask an owner or admin to run: ravi cloud key set --stdin --execute < <key-file>",
+          },
+        },
+        diagnostic: errorDiagnostic("Agents do not set the organization's cloud agents key.", { operation: op }),
       });
     }
     if (stdin !== true) {
@@ -912,8 +921,11 @@ export class CloudRunsCommands {
               "CLOUD_THREAD_CARD_FAILED",
               `Could not post the run card in this chat: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}`,
               {
-                asJson,
-                details: { suggestedAction: "Start it without --bind-thread, or from inside a Slack thread." },
+                ...{
+                  asJson,
+                  details: { suggestedAction: "Start it without --bind-thread, or from inside a Slack thread." },
+                },
+                diagnostic: errorDiagnostic(error, { operation: op }),
               },
             );
           }
@@ -1289,9 +1301,12 @@ export class CloudRunsCommands {
         : copy.suggestedAction;
     // Text output prints only the message, so it carries the next step too.
     contractFail(op, "ACTOR_UNKNOWN", `${copy.message} Next: ${suggestedAction}.`, {
-      asJson,
-      exitCode: CONTRACT_EXIT_POLICY,
-      details: { ...turnRefusalDetails(refusal.reason), suggestedAction },
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_POLICY,
+        details: { ...turnRefusalDetails(refusal.reason), suggestedAction },
+      },
+      diagnostic: errorDiagnostic(`${copy.message} Next: ${suggestedAction}.`, { operation: op }),
     });
   }
 
@@ -1309,21 +1324,27 @@ export class CloudRunsCommands {
     const approval = current.approvals.find((entry) => entry.id === approvalId);
     if (!approval) {
       contractFail(op, "CLOUD_APPROVAL_NOT_FOUND", `Run ${current.id} has no approval ${approvalId.slice(0, 80)}.`, {
-        asJson,
-        details: {
-          suggestedAction: `Read the run's approvals with: ravi cloud runs show ${current.id} --json`,
-          suggestions: suggestSimilar(
-            approvalId,
-            current.approvals.map((entry) => entry.id),
-          ),
+        ...{
+          asJson,
+          details: {
+            suggestedAction: `Read the run's approvals with: ravi cloud runs show ${current.id} --json`,
+            suggestions: suggestSimilar(
+              approvalId,
+              current.approvals.map((entry) => entry.id),
+            ),
+          },
         },
+        diagnostic: errorDiagnostic(reason, { operation: op }),
       });
     }
     if (approval.status !== "pending") {
       contractFail(op, "CLOUD_APPROVAL_NOT_PENDING", `Approval ${approval.id} is already ${approval.status}.`, {
-        asJson,
-        exitCode: CONTRACT_EXIT_ERROR,
-        details: { suggestedAction: `Read the run with: ravi cloud runs show ${current.id}` },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_ERROR,
+          details: { suggestedAction: `Read the run with: ravi cloud runs show ${current.id}` },
+        },
+        diagnostic: errorDiagnostic(reason, { operation: op }),
       });
     }
     if (!execute) {
@@ -1400,22 +1421,30 @@ export class CloudRunsCommands {
             "CLOUD_QUESTION_NOT_FOUND",
             `Run ${current.id} has no question ${questionRef.slice(0, 80)}.`,
             {
-              asJson,
-              details: {
-                suggestedAction: `Read the run's questions with: ravi cloud runs show ${current.id} --json`,
-                suggestions: suggestSimilar(
-                  questionRef,
-                  questions.map((entry) => entry.id),
-                ),
+              ...{
+                asJson,
+                details: {
+                  suggestedAction: `Read the run's questions with: ravi cloud runs show ${current.id} --json`,
+                  suggestions: suggestSimilar(
+                    questionRef,
+                    questions.map((entry) => entry.id),
+                  ),
+                },
               },
+              diagnostic: errorDiagnostic(`Run ${current.id} has no question ${questionRef.slice(0, 80)}.`, {
+                operation: op,
+              }),
             },
           );
         }
         if (question.status !== "pending") {
           contractFail(op, "CLOUD_QUESTION_NOT_PENDING", `Question ${question.id} is already ${question.status}.`, {
-            asJson,
-            exitCode: CONTRACT_EXIT_ERROR,
-            details: { suggestedAction: `Read the run with: ravi cloud runs show ${current.id}` },
+            ...{
+              asJson,
+              exitCode: CONTRACT_EXIT_ERROR,
+              details: { suggestedAction: `Read the run with: ravi cloud runs show ${current.id}` },
+            },
+            diagnostic: errorDiagnostic(`Question ${question.id} is already ${question.status}.`, { operation: op }),
           });
         }
         if (execute !== true) {
@@ -1491,10 +1520,13 @@ export class CloudRunsCommands {
             let relative: string;
             try {
               relative = safeRelativePath(output.name);
-            } catch {
+            } catch (caughtError) {
               contractFail(op, "CLOUD_OUTPUT_NAME_CONFLICT", `Output ${output.id} has an unsafe file name.`, {
-                asJson,
-                details: { suggestedAction: `Download it in the Console: ravi cloud runs show ${run.id}` },
+                ...{
+                  asJson,
+                  details: { suggestedAction: `Download it in the Console: ravi cloud runs show ${run.id}` },
+                },
+                diagnostic: errorDiagnostic(caughtError, { operation: op }),
               });
             }
             return { output, relative, key: relative.toLowerCase(), path: join(folder, relative) };
@@ -1511,16 +1543,29 @@ export class CloudRunsCommands {
               "CLOUD_OUTPUT_NAME_CONFLICT",
               `Two outputs of run ${run.id} would be written to ${clash.relative.slice(0, 200)}.`,
               {
-                asJson,
-                details: { suggestedAction: `Download them one by one in the Console: ravi cloud runs show ${run.id}` },
+                ...{
+                  asJson,
+                  details: {
+                    suggestedAction: `Download them one by one in the Console: ravi cloud runs show ${run.id}`,
+                  },
+                },
+                diagnostic: errorDiagnostic(
+                  `Two outputs of run ${run.id} would be written to ${clash.relative.slice(0, 200)}.`,
+                  { operation: op },
+                ),
               },
             );
           }
           const existing = targets.find((target) => existsSync(target.path));
           if (existing) {
             contractFail(op, "CLOUD_OUTPUT_EXISTS", `${existing.relative.slice(0, 200)} already exists in ${folder}.`, {
-              asJson,
-              details: { suggestedAction: "Download into an empty folder: --download <new-dir>" },
+              ...{
+                asJson,
+                details: { suggestedAction: "Download into an empty folder: --download <new-dir>" },
+              },
+              diagnostic: errorDiagnostic(`${existing.relative.slice(0, 200)} already exists in ${folder}.`, {
+                operation: op,
+              }),
             });
           }
           for (const target of targets) {
@@ -1537,11 +1582,14 @@ export class CloudRunsCommands {
                 "CLOUD_OUTPUT_EXISTS",
                 `${target.relative.slice(0, 200)} cannot be written in ${folder}: something is already there.`,
                 {
-                  asJson,
-                  details: {
-                    suggestedAction: "Download into an empty folder: --download <new-dir>",
-                    written: downloaded.map((entry) => entry.path),
+                  ...{
+                    asJson,
+                    details: {
+                      suggestedAction: "Download into an empty folder: --download <new-dir>",
+                      written: downloaded.map((entry) => entry.path),
+                    },
                   },
+                  diagnostic: errorDiagnostic(error, { operation: op }),
                 },
               );
             }
@@ -1818,8 +1866,11 @@ export class CloudSchedulesCommands {
         const current = (await session.client.listSchedules(projectRef)).find((schedule) => schedule.id === id);
         if (!current) {
           contractFail(op, "CLOUD_SCHEDULE_NOT_FOUND", `No cloud schedule ${id.slice(0, 80)} in ${projectRef}.`, {
-            asJson,
-            details: { suggestedAction: `List them with: ravi cloud schedules list --project ${projectRef}` },
+            ...{
+              asJson,
+              details: { suggestedAction: `List them with: ravi cloud schedules list --project ${projectRef}` },
+            },
+            diagnostic: errorDiagnostic(`No cloud schedule ${id.slice(0, 80)} in ${projectRef}.`, { operation: op }),
           });
         }
         const enabledAfter = body.enabled ?? current.enabled;

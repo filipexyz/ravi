@@ -221,3 +221,9 @@ The existing thread reconciler also drains decision effects. Exact origin bindin
 - With `completed_at`, interrupted/aborted turns become `interrupted`; failures/timeouts become `attention/failed`. A complete turn is `idle` for terminal `output_state=final|silent` or a canonical-turn-correlated final response/delivery. Otherwise, after a 60-second delivery grace, it is `attention/no_reply`.
 - Persist one notification receipt per physical turn, claim publication atomically, and use a stable transport message id. Repeated ticks, restart, or a reason change on the same turn MUST NOT produce another successful parent notice. Failed publication retries that same id. Recheck close/new-turn before publishing through the existing `session.return` path.
 - This observation MUST NOT abort, replay, synthesize a terminal event, close work, or infer PR/task completion. Reconcile bounded fair batches of 100 threads per tick; `checkedAt` makes observation age explicit.
+
+## Durable subscribers at close
+
+- Closing MUST refuse atomically with `THREAD_TRIGGERS_PENDING` when a trigger addresses the child by name or key in `replySession` and the shared activation verdict is `active` (including `enabled`). The refusal MUST list offending trigger ids and explain `ravi triggers set <id> replySession <parent-session>`.
+- Refusal MUST leave lifecycle status, close sequence, parent return and card untouched. The same guard applies after child pruning. Disabled, invalid-filter, blocked-topic and unbound-agent triggers MUST NOT block close.
+- Repointing is explicit for arbitrary triggers; close MUST NOT silently change their recipients. After handoff, close MAY proceed. The remote CLI MUST retain actionable ids without forwarding arbitrary remote text.

@@ -60,7 +60,8 @@ import {
   createSlackNativeRuntimesFromEnv,
   slackClientMessageId,
 } from "./socket-mode.js";
-import { SlackApiError } from "./client.js";
+import { SlackApiError, type SlackWebApiClient } from "./client.js";
+import { postSlackMarkdown } from "./markdown-delivery.js";
 import { buildSlackThreadCard } from "./thread-card.js";
 import {
   acceptSlackInboundEnvelope,
@@ -74,7 +75,7 @@ import {
   getSlackThreadLifecycle,
   markSlackThreadRootDelivered,
 } from "./thread-lifecycle-store.js";
-import type { SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
+import type { SlackNormalizedMessage, SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
 
 class FakeSlackWebSocket extends EventEmitter {
   readyState = 0;
@@ -1293,6 +1294,12 @@ describe("Slack Socket Mode routing", () => {
     });
 
     expect(resolveSecret.mock.calls.map((call) => call[0].connection)).toEqual(["hana-secret", "rbbt-secret"]);
+    expect(resolveSecret).toHaveBeenCalledWith({
+      provider: "slack",
+      connection: "hana-secret",
+      action: "socket_mode.connect",
+      authority: { kind: "internal-service", service: "slack-channel-runtime" },
+    });
     expect(runtimes.map((runtime) => runtime.accountId)).toEqual(["hana-slack", "ravi-rbbt-slack"]);
     expect(runtimes.map((runtime) => runtime.connection)).toEqual(["hana-secret", "rbbt-secret"]);
   });
@@ -5540,3 +5547,130 @@ describe("Slack inbound envelope write retry", () => {
     }
   }, 15_000);
 });
+
+describe("Slack inbound content fidelity roundtrip", () => {
+  const fullText = "<@ULOCAL1>, teste com 5, numerado.\n\n1. Alfa\n2. Beta\n3. Gama\n4. Delta\n5. Epsilon";
+
+  it("preserves a bot's full response through real Markdown egress and message normalization", async () => {
+    const posts: Array<{ text: string; blocks?: readonly unknown[] }> = [];
+    const unusedMethod = async (): Promise<never> => {
+      throw new Error("Only chat.postMessage is expected for this inline response");
+    };
+    await postSlackMarkdown(
+      {
+        updateMessage: unusedMethod,
+        canvasesCreate: unusedMethod,
+        canvasesAccessSet: unusedMethod,
+        canvasesDelete: unusedMethod,
+        filesInfo: unusedMethod,
+        postMessage: async (payload) => {
+          posts.push(payload);
+          return {
+            channel: "CTEST1",
+            ts: "1730000000.000100",
+            messageId: "CTEST1:1730000000.000100",
+            raw: { ok: true },
+          };
+        },
+      },
+      { channel: "CTEST1", markdown: fullText, allowDocuments: false },
+    );
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.text).toBe("<@ULOCAL1>, teste com 5, numerado.");
+    expect(posts[0]?.blocks).toEqual([{ type: "markdown", text: fullText }]);
+
+    const message = await normalizeContentEnvelope(contentEnvelope(posts[0]!.text, posts[0]!.blocks ?? [], true));
+    expect(message?.senderKind).toBe("bot");
+    expect(message?.text).toBe(fullText);
+  });
+
+  it("accepts readable blocks when top-level fallback text is absent", async () => {
+    const message = await normalizeContentEnvelope(
+      contentEnvelope(undefined, [{ type: "markdown", text: fullText }], false),
+    );
+    expect(message?.senderKind).toBe("user");
+    expect(message?.text).toBe(fullText);
+  });
+});
+
+describe("Slack sensitive modal ingress ordering", () => {
+  it("consumes and erases a reserved credential envelope before the generic interaction pipeline", async () => {
+    const published: unknown[] = [];
+    const secret = "canary-only-modal-token-987654321";
+    const responseUrl = "https://hooks.slack.com/actions/TTEST/BTEST/response-canary";
+    const envelope: SlackSocketEnvelope = {
+      type: "interactive",
+      envelope_id: "credential-malformed-boundary",
+      payload: {
+        type: "view_submission",
+        view: { callback_id: "ravi_credential_intake:submit", state: { values: { secret } } },
+        response_url: responseUrl,
+      },
+    };
+    const service = new SlackSocketModeService({
+      accountId: "slack-intake-boundary",
+      appToken: "xapp-fixture",
+      botToken: "xoxb-fixture",
+      webClient: {} as SlackWebApiClient,
+      publishInteraction: async (...args) => {
+        published.push(args);
+      },
+      publishPrompt: async (...args) => {
+        published.push(args);
+      },
+      getRouterConfig: () => {
+        throw new Error("Sensitive modal must not enter routing");
+      },
+    });
+    const acks: unknown[] = [];
+    expect(
+      await service.handleEnvelope(envelope, (id, payload) => {
+        expect(JSON.stringify(envelope)).not.toContain(secret);
+        expect(JSON.stringify(envelope)).not.toContain(responseUrl);
+        acks.push({ id, payload });
+      }),
+    ).toBe("processed");
+    expect(published).toEqual([]);
+    expect(acks).toHaveLength(1);
+    expect(JSON.stringify(acks)).not.toContain(secret);
+    expect(JSON.stringify(acks)).not.toContain(responseUrl);
+  });
+});
+
+async function normalizeContentEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {
+  const service = new SlackSocketModeService({
+    accountId: "slack-content-test",
+    appToken: "xapp-fixture",
+    botToken: "xoxb-fixture",
+    webClient: {
+      authTest: async () => ({ ok: true, bot_id: "BLOCAL1", user_id: "ULOCAL1", team_id: "TLOCAL1" }),
+    } as unknown as SlackWebApiClient,
+  });
+  return (
+    service as unknown as {
+      normalizeEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null>;
+    }
+  ).normalizeEnvelope(envelope);
+}
+
+function contentEnvelope(text: string | undefined, blocks: readonly unknown[], bot: boolean): SlackSocketEnvelope {
+  return {
+    type: "events_api",
+    envelope_id: "content-fixture",
+    payload: {
+      team_id: "TLOCAL1",
+      authorizations: [{ team_id: "TLOCAL1", user_id: "ULOCAL1", is_bot: true }],
+      event: {
+        type: "message",
+        user: "UOTHER1",
+        channel: "CTEST1",
+        channel_type: "channel",
+        team: "TLOCAL1",
+        ts: "1730000000.000100",
+        ...(bot ? { subtype: "bot_message", bot_id: "BOTHER1" } : {}),
+        text,
+        blocks,
+      },
+    },
+  };
+}

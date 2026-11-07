@@ -10415,6 +10415,27 @@ export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void
   s.touchContext.run(lastUsedAt, contextId);
 }
 
+/** Renew only a still-live host-owned turn lease; never revive a stale credential. */
+export function dbRenewActiveContext(
+  contextId: string,
+  expectedExpiresAt: number | null | undefined,
+  ttlMs: number,
+  now = Date.now(),
+): ContextRecord | null {
+  if (!expectedExpiresAt || expectedExpiresAt <= now) return null;
+  const result = getDb()
+    .prepare(`
+    UPDATE contexts SET expires_at = ?
+    WHERE context_id = ? AND kind = 'turn-runtime' AND expires_at = ? AND expires_at > ?
+      AND (revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)
+        AND json_extract(metadata_json, '$.authorityMode') = 'agent-identity'
+        AND json_extract(metadata_json, '$.parentContextId') IS NULL
+        AND json_extract(metadata_json, '$.bridgeTurnId') IS NULL
+  `)
+    .run(now + ttlMs, contextId, expectedExpiresAt, now, now);
+  return result.changes > 0 ? dbGetContext(contextId) : null;
+}
+
 export function dbUpdateContextRuntimeState(
   contextId: string,
   input: {
@@ -10438,6 +10459,15 @@ export function dbUpdateContextRuntimeState(
     contextId,
   );
   return dbGetContext(contextId)!;
+}
+
+/** Update authority metadata without changing provenance or last-use timestamps. */
+export function dbUpdateContextMetadata(contextId: string, metadata: Record<string, unknown>): void {
+  const parsed = z.record(z.string(), z.unknown()).parse(metadata);
+  const result = getDb()
+    .prepare("UPDATE contexts SET metadata_json = ? WHERE context_id = ?")
+    .run(JSON.stringify(parsed), contextId);
+  if (result.changes === 0) throw new Error(`Context not found: ${contextId}`);
 }
 
 export interface RevokeContextOptions {
@@ -10504,37 +10534,36 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
   const cascadeFlagKey = "revokedViaCascade";
   const cascadeRootKey = "cascadeRootContextId";
 
-  executeWrite(
-    db,
-    (database) => {
-      for (const target of targets) {
-        // Skip if already revoked at the same or earlier timestamp (idempotency).
-        if (target.revokedAt && target.revokedAt <= revokedAt) {
-          // Still update metadata if a reason or cascade flag should be set.
-        }
-        const metadata: Record<string, unknown> = {
-          ...(target.metadata ?? {}),
-        };
-        if (reasonNote) {
-          metadata[reasonKey] = reasonNote;
-        }
-        if (target.contextId !== root.contextId) {
-          metadata[cascadeFlagKey] = true;
-          metadata[cascadeRootKey] = root.contextId;
-          const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
-          if (!chain.includes(root.contextId)) {
-            chain.push(root.contextId);
-          }
-          metadata[cascadeKey] = chain;
-        }
-
-        database
-          .prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`)
-          .run(revokedAt, JSON.stringify(metadata), target.contextId);
+  const applyRevocation = (database: Database) => {
+    for (const target of targets) {
+      // Skip if already revoked at the same or earlier timestamp (idempotency).
+      if (target.revokedAt && target.revokedAt <= revokedAt) {
+        // Still update metadata if a reason or cascade flag should be set.
       }
-    },
-    { label: "router:revokeContextCascade" },
-  );
+      const metadata: Record<string, unknown> = {
+        ...(target.metadata ?? {}),
+      };
+      if (reasonNote) {
+        metadata[reasonKey] = reasonNote;
+      }
+      if (target.contextId !== root.contextId) {
+        metadata[cascadeFlagKey] = true;
+        metadata[cascadeRootKey] = root.contextId;
+        const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
+        if (!chain.includes(root.contextId)) {
+          chain.push(root.contextId);
+        }
+        metadata[cascadeKey] = chain;
+      }
+
+      database
+        .prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`)
+        .run(revokedAt, JSON.stringify(metadata), target.contextId);
+    }
+  };
+  // Permission-profile updates compose this cascade with the definition write.
+  if (db.inTransaction) applyRevocation(db);
+  else executeWrite(db, applyRevocation, { label: "router:revokeContextCascade" });
 
   const finalRoot = dbGetContext(contextId)!;
   const cascaded: ContextRecord[] = [];

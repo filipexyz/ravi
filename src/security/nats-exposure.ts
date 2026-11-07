@@ -1,0 +1,544 @@
+/**
+ * NATS exposure probe
+ *
+ * The local nats-server (started by Omni) runs without auth or TLS. If it
+ * listens on a non-loopback interface, any client on the network can subscribe
+ * to `>` (every prompt, reply and event) or publish commands. This module
+ * answers "can somebody else reach our NATS?" without ever throwing:
+ *
+ * - local NATS_URL: try a TCP connection to every non-loopback address of this
+ *   host on the NATS port and read the server `INFO` line (auth/tls flags);
+ * - remote NATS_URL: flag plaintext (non `tls://`) connections unless the
+ *   server itself advertises `tls_required`.
+ *
+ * Everything with side effects (address listing, TCP probe, firewall query) is
+ * injectable so the decision logic is unit-tested with fakes only.
+ */
+
+import { execFile } from "node:child_process";
+import { lookup } from "node:dns/promises";
+import { closeSync, openSync } from "node:fs";
+import { createConnection, isIP } from "node:net";
+import { devNull, networkInterfaces } from "node:os";
+
+export const DEFAULT_NATS_URL = "nats://127.0.0.1:4222";
+const DEFAULT_NATS_PORT = 4222;
+const DEFAULT_PROBE_TIMEOUT_MS = 500;
+const DEFAULT_RESOLVE_TIMEOUT_MS = 1_000;
+const MAX_INFO_BYTES = 64 * 1024;
+
+export type NatsExposureStatus =
+  | "loopback_only"
+  | "exposed"
+  | "exposed_auth_required"
+  | "remote_plaintext"
+  | "remote"
+  | "unknown";
+
+export type HostFirewallState = "on" | "off" | "unknown";
+
+export interface NatsProbeResult {
+  /** True: accepted; false: refused; null: the probe could not establish reachability. */
+  reachable: boolean | null;
+  /** Parsed server INFO flags; null when no INFO line was read. */
+  authRequired: boolean | null;
+  tlsRequired: boolean | null;
+}
+
+export type NatsProbe = (host: string, port: number, timeoutMs: number) => Promise<NatsProbeResult>;
+
+export interface NatsExposureDeps {
+  listAddresses?: () => string[] | null;
+  probe?: NatsProbe;
+  readFirewallState?: () => Promise<HostFirewallState>;
+  /** Resolve a hostname to its addresses (default: dns lookup, all families). */
+  resolveHost?: (host: string) => Promise<string[]>;
+  timeoutMs?: number;
+}
+
+export interface NatsExposureReport {
+  status: NatsExposureStatus;
+  natsUrl: string;
+  host: string | null;
+  port: number | null;
+  /** Non-loopback addresses (or the remote host) that accepted a connection. */
+  reachableAddresses: string[];
+  authRequired: boolean | null;
+  tlsRequired: boolean | null;
+  firewall: HostFirewallState;
+  message: string;
+  remediation: string[];
+}
+
+const LOCAL_REMEDIATION = [
+  "bind nats-server to loopback: start it with `-a 127.0.0.1` (or `listen: 127.0.0.1:4222` in its config)",
+  "enable the host firewall (macOS: System Settings > Network > Firewall; Linux: ufw/nftables) and block inbound 4222",
+  "never expose or port-forward 4222: this NATS has no auth/TLS, so any client can read every message and publish commands",
+];
+
+const REMOTE_REMEDIATION = [
+  "use a `tls://` NATS_URL against a TLS-enabled nats-server with auth, or tunnel NATS over SSH/WireGuard",
+  "never expose 4222 in plaintext: anyone on the path can read every message and publish commands",
+];
+
+export function resolveNatsUrl(env: NodeJS.ProcessEnv = process.env): string {
+  return env.NATS_URL || DEFAULT_NATS_URL;
+}
+
+/**
+ * Strip any `user:pass@` / `token@` userinfo so the URL is safe to log. Works per
+ * unambiguous server, with or without a scheme. Invalid or ambiguous lists are
+ * withheld entirely so a delimiter in userinfo cannot expose a secret fragment.
+ */
+export function redactNatsUrl(natsUrl: string): string {
+  const servers = parseNatsUrls(natsUrl);
+  return servers.length > 0 ? servers.map((server) => server.redactedUrl).join(",") : "[redacted]";
+}
+
+/** true for localhost, 127.0.0.0/8 and ::1 (with or without brackets). */
+export function isLoopbackHost(host: string): boolean {
+  const normalized = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
+  if (isIP(normalized) === 6) {
+    // Interface enumeration includes zones on link-local IPv6; URL does not.
+    const canonical = new URL(`http://[${normalized.split("%")[0]}]`).hostname.slice(1, -1);
+    if (canonical === "::1") return true;
+    const mapped = canonical.match(/^::ffff:([\da-f]{1,4}):[\da-f]{1,4}$/);
+    return mapped !== null && Number.parseInt(mapped[1], 16) >>> 8 === 127;
+  }
+  return isIP(normalized) === 4 && normalized.startsWith("127.");
+}
+
+function isWildcardHost(host: string): boolean {
+  return host === "0.0.0.0" || host === "::";
+}
+
+interface ParsedNatsUrl {
+  scheme: string;
+  host: string;
+  port: number;
+  redactedUrl: string;
+}
+
+/**
+ * A comma followed by an explicit scheme cannot be part of valid userinfo:
+ * the scheme's slashes end the authority. Within each such group, a comma
+ * alongside @ is ambiguous (password/token versus a bare-server separator).
+ * Refuse the entire input instead of splitting and exposing/probing fragments.
+ * Authenticated lists must use explicit schemes; userinfo commas use %2C.
+ */
+function parseNatsUrls(natsUrl: string): ParsedNatsUrl[] {
+  // WHATWG strips TAB/LF/CR and leading controls. Reject them before either
+  // splitting or parsing so log sanitization and network targets cannot diverge.
+  for (const character of natsUrl) {
+    const code = character.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f) return [];
+  }
+  const groups = natsUrl.split(/,(?=\s*[a-z][\w+.-]*:\/\/)/i);
+  if (groups.some((group) => group.includes(",") && group.includes("@"))) return [];
+  const servers: ParsedNatsUrl[] = [];
+  for (const segment of groups.flatMap((group) => group.split(","))) {
+    const server = parseNatsServer(segment);
+    if (!server) return []; // Never certify a partial parse of an invalid list.
+    servers.push(server);
+  }
+  return servers;
+}
+
+function parseNatsServer(segment: string): ParsedNatsUrl | null {
+  const first = segment.trim();
+  if (!first) return null;
+  const schemePrefix = first.match(/^[a-z][\w+.-]*:\/\//i)?.[0] ?? "";
+  const withScheme = schemePrefix ? first : `nats://${first}`;
+  try {
+    const url = new URL(withScheme);
+    // Delimiters may have moved a credential suffix into path/query/fragment.
+    // Do not emit or probe an interpretation that cannot account for that @.
+    if (first.includes("@") && (url.pathname || url.search || url.hash || (!url.username && !url.password))) {
+      return null;
+    }
+    const host = url.hostname.replace(/^\[|\]$/g, "");
+    if (!host) return null;
+    const port = url.port ? Number(url.port) : DEFAULT_NATS_PORT;
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
+    let redactedUrl = segment;
+    if (url.username || url.password) {
+      url.username = "";
+      url.password = "";
+      const whitespace = segment.match(/^\s*/)?.[0] ?? "";
+      redactedUrl = `${whitespace}${schemePrefix}[redacted]@${url.href.slice(url.protocol.length + 2)}`;
+    }
+    return { scheme: url.protocol.replace(/:$/, "").toLowerCase(), host, port, redactedUrl };
+  } catch {
+    return null;
+  }
+}
+
+/** Non-internal IPv4 + IPv6 addresses of this host (link-local IPv6 carries its zone). */
+export function listHostAddresses(): string[] | null {
+  const addresses: string[] = [];
+  try {
+    for (const [name, entries] of Object.entries(networkInterfaces())) {
+      for (const entry of entries ?? []) {
+        if (entry.internal) continue;
+        if (isLoopbackHost(entry.address)) continue;
+        const linkLocal = entry.family === "IPv6" && entry.address.toLowerCase().startsWith("fe80:");
+        addresses.push(linkLocal ? `${entry.address}%${name}` : entry.address);
+      }
+    }
+  } catch {
+    return null;
+  }
+  return addresses;
+}
+
+/** Parse a NATS `INFO {...}` line. Returns null when it is not one. */
+export function parseNatsInfoLine(line: string): { authRequired: boolean; tlsRequired: boolean } | null {
+  const trimmed = line.trim();
+  if (!/^INFO\s/i.test(trimmed)) return null;
+  try {
+    const info = JSON.parse(trimmed.replace(/^INFO\s+/i, "")) as Record<string, unknown>;
+    return { authRequired: info.auth_required === true, tlsRequired: info.tls_required === true };
+  } catch {
+    return null;
+  }
+}
+
+/** Open a TCP socket, read the first line (INFO), close. Never throws. */
+export const defaultNatsProbe: NatsProbe = (host, port, timeoutMs) =>
+  new Promise<NatsProbeResult>((resolve) => {
+    let settled = false;
+    let connected = false;
+    let buffer = "";
+    let socket: ReturnType<typeof createConnection> | null = null;
+
+    const finish = (result: NatsProbeResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        socket?.destroy();
+      } catch {
+        // best-effort
+      }
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      finish({ reachable: connected ? true : null, authRequired: null, tlsRequired: null });
+    }, timeoutMs);
+    timer.unref?.();
+
+    try {
+      socket = createConnection({ host, port });
+      socket.setEncoding("utf8");
+      socket.on("connect", () => {
+        connected = true;
+      });
+      socket.on("data", (chunk: string) => {
+        buffer += chunk;
+        const end = buffer.indexOf("\r\n");
+        if (end === -1 && buffer.length < MAX_INFO_BYTES) return;
+        const info = parseNatsInfoLine(end === -1 ? buffer : buffer.slice(0, end));
+        finish({ reachable: true, authRequired: info?.authRequired ?? null, tlsRequired: info?.tlsRequired ?? null });
+      });
+      socket.on("error", (error: NodeJS.ErrnoException) =>
+        finish({
+          reachable: connected ? true : isConfirmedRefusal(error) ? false : null,
+          authRequired: null,
+          tlsRequired: null,
+        }),
+      );
+      socket.on("close", () => finish({ reachable: connected ? true : null, authRequired: null, tlsRequired: null }));
+    } catch {
+      finish({ reachable: null, authRequired: null, tlsRequired: null });
+    }
+  });
+
+function isConfirmedRefusal(error: NodeJS.ErrnoException): boolean {
+  if (error.code !== "ECONNREFUSED") return false;
+  // Bun can report ECONNREFUSED when socket allocation actually failed with
+  // EMFILE. A refusal is not evidence of isolation while descriptors are exhausted.
+  try {
+    const descriptor = openSync(devNull, "r");
+    closeSync(descriptor);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type ExecFileLike = (
+  file: string,
+  args: string[],
+  options: { timeout: number },
+  callback: (error: Error | null, stdout: string, stderr: string) => void,
+) => unknown;
+
+/**
+ * Best-effort host firewall state. macOS only (Application Firewall global
+ * state, readable without sudo); other platforms report `unknown`.
+ */
+export function readHostFirewallState(
+  deps: { platform?: NodeJS.Platform; execFile?: ExecFileLike } = {},
+): Promise<HostFirewallState> {
+  const platform = deps.platform ?? process.platform;
+  if (platform !== "darwin") return Promise.resolve("unknown");
+  const run = deps.execFile ?? (execFile as unknown as ExecFileLike);
+  return new Promise<HostFirewallState>((resolve) => {
+    try {
+      run(
+        "/usr/libexec/ApplicationFirewall/socketfilterfw",
+        ["--getglobalstate"],
+        { timeout: 2_000 },
+        (error, stdout) => {
+          if (error) return resolve("unknown");
+          resolve(parseFirewallGlobalState(String(stdout)));
+        },
+      );
+    } catch {
+      resolve("unknown");
+    }
+  });
+}
+
+export function parseFirewallGlobalState(output: string): HostFirewallState {
+  const state = output.match(/State\s*=\s*(\d+)/i);
+  if (state) return state[1] === "0" ? "off" : "on";
+  if (/disabled/i.test(output)) return "off";
+  if (/enabled/i.test(output)) return "on";
+  return "unknown";
+}
+
+async function safeFirewall(read: () => Promise<HostFirewallState>): Promise<HostFirewallState> {
+  try {
+    return await read();
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Resolve a hostname with a timeout; [] on failure. Never throws. */
+async function safeResolve(resolveHost: (host: string) => Promise<string[]>, host: string): Promise<string[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<string[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), DEFAULT_RESOLVE_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([resolveHost(host).catch(() => [] as string[]), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const defaultResolveHost = async (host: string): Promise<string[]> =>
+  (await lookup(host, { all: true })).map((entry) => entry.address);
+
+async function safeProbe(probe: NatsProbe, host: string, port: number, timeoutMs: number): Promise<NatsProbeResult> {
+  try {
+    return await probe(host, port, timeoutMs);
+  } catch {
+    return { reachable: null, authRequired: null, tlsRequired: null };
+  }
+}
+
+/** Probe whether the NATS server behind `natsUrl` is reachable from the network. Never throws. */
+export async function probeNatsExposure(
+  natsUrl: string = resolveNatsUrl(),
+  deps: NatsExposureDeps = {},
+): Promise<NatsExposureReport> {
+  const probe = deps.probe ?? defaultNatsProbe;
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
+  const firewallPromise = safeFirewall(deps.readFirewallState ?? (() => readHostFirewallState()));
+
+  const base = {
+    natsUrl: redactNatsUrl(natsUrl),
+    reachableAddresses: [] as string[],
+    authRequired: null as boolean | null,
+    tlsRequired: null as boolean | null,
+  };
+
+  const servers = parseNatsUrls(natsUrl);
+  if (servers.length === 0) {
+    return {
+      ...base,
+      status: "unknown",
+      host: null,
+      port: null,
+      firewall: await firewallPromise,
+      message: `could not parse NATS_URL ${JSON.stringify(redactNatsUrl(natsUrl))}; NATS exposure was not checked`,
+      remediation: LOCAL_REMEDIATION,
+    };
+  }
+
+  let hostAddresses: string[] | null = null;
+  try {
+    hostAddresses = (deps.listAddresses ?? listHostAddresses)();
+  } catch {
+    hostAddresses = null;
+  }
+  const nonLoopback = (hostAddresses ?? []).filter((address) => !isLoopbackHost(address));
+  const isOwnAddress = (address: string) =>
+    isLoopbackHost(address) || isWildcardHost(address) || nonLoopback.includes(address);
+  const resolveHost = deps.resolveHost ?? defaultResolveHost;
+  const isLocalServer = async (server: ParsedNatsUrl): Promise<boolean> => {
+    if (isOwnAddress(server.host)) return true;
+    if (isIP(server.host) !== 0) return false;
+    // A hostname (e.g. from /etc/hosts) is local only when every address it resolves to is ours.
+    const resolved = await safeResolve(resolveHost, server.host);
+    return resolved.length > 0 && resolved.every(isOwnAddress);
+  };
+
+  const classified = await Promise.all(servers.map(async (server) => ({ server, local: await isLocalServer(server) })));
+  const remoteServers = classified.filter((entry) => !entry.local).map((entry) => entry.server);
+  const localServers = classified.filter((entry) => entry.local).map((entry) => entry.server);
+  const localServer = localServers[0];
+
+  const remoteChecks = await Promise.all(
+    remoteServers.map(async (server) => {
+      const result = server.scheme === "tls" ? null : await safeProbe(probe, server.host, server.port, timeoutMs);
+      const encrypted = server.scheme === "tls" || result?.tlsRequired === true;
+      return { server, result, encrypted, where: `${server.host}:${server.port}` };
+    }),
+  );
+  const plaintext = remoteChecks.filter((check) => !check.encrypted);
+
+  if (plaintext.length > 0 || !localServer) {
+    const firewall = await firewallPromise;
+    const shown = plaintext[0] ?? remoteChecks[0];
+    const encrypted = plaintext.length === 0;
+    const where = (encrypted ? remoteChecks : plaintext).map((check) => check.where).join(", ");
+    return {
+      ...base,
+      host: shown.server.host,
+      port: shown.server.port,
+      reachableAddresses: remoteChecks.filter((check) => check.result?.reachable).map((check) => check.where),
+      authRequired: shown.result?.authRequired ?? null,
+      tlsRequired: shown.server.scheme === "tls" ? true : (shown.result?.tlsRequired ?? null),
+      firewall,
+      status: encrypted ? "remote" : "remote_plaintext",
+      message: encrypted
+        ? `NATS is remote (${where}) over TLS`
+        : `NATS is remote (${where}) over plaintext: prompts, replies and events cross the network unencrypted`,
+      remediation: encrypted ? [] : REMOTE_REMEDIATION,
+    };
+  }
+
+  const parsed = localServer;
+
+  if (hostAddresses === null) {
+    return {
+      ...base,
+      status: "unknown",
+      host: parsed.host,
+      port: parsed.port,
+      firewall: await firewallPromise,
+      message: "could not list host network interfaces; NATS exposure was not checked",
+      remediation: LOCAL_REMEDIATION,
+    };
+  }
+
+  const ports = [...new Set(localServers.map((server) => server.port))];
+  const results = await Promise.all(
+    ports.flatMap((port) =>
+      nonLoopback.map(async (address) => ({
+        address,
+        port,
+        result: await safeProbe(probe, address, port, timeoutMs),
+      })),
+    ),
+  );
+  const firewall = await firewallPromise;
+  const reachable = results.filter((entry) => entry.result.reachable === true);
+  const reachableAddresses = reachable.map((entry) => `${entry.address}:${entry.port}`);
+  const unknown = results.filter((entry) => entry.result.reachable === null);
+  const unauthenticated = reachable.some((entry) => entry.result.authRequired !== true);
+  const shown = reachable.find((entry) => entry.result.authRequired !== true) ?? unknown[0] ?? reachable[0];
+  const common = { ...base, host: parsed.host, port: shown?.port ?? parsed.port, reachableAddresses, firewall };
+  const portLabel = ports.length === 1 ? `port ${ports[0]}` : `ports ${ports.join(", ")}`;
+
+  if (!unauthenticated && unknown.length > 0) {
+    return {
+      ...common,
+      status: "unknown",
+      message: `could not determine NATS exposure on ${unknown.map((entry) => `${entry.address}:${entry.port}`).join(", ")}`,
+      remediation: LOCAL_REMEDIATION,
+    };
+  }
+
+  if (reachable.length === 0) {
+    return {
+      ...common,
+      status: "loopback_only",
+      message: `NATS ${portLabel} is not reachable on any non-loopback address`,
+      remediation: [],
+    };
+  }
+
+  const authRequired = !unauthenticated;
+  const tlsRequired = reachable.every((entry) => entry.result.tlsRequired === true);
+  if (!unauthenticated) {
+    return {
+      ...common,
+      authRequired,
+      tlsRequired,
+      status: "exposed_auth_required",
+      message: `NATS ${portLabel} is reachable from the network (${reachableAddresses.join(", ")}) but requires auth`,
+      remediation: LOCAL_REMEDIATION,
+    };
+  }
+
+  return {
+    ...common,
+    authRequired,
+    tlsRequired,
+    status: "exposed",
+    message:
+      `NATS ${portLabel} accepts unauthenticated connections from the network ` +
+      `(${reachableAddresses.join(", ")}): anyone who can reach it can read every message and publish commands`,
+    remediation: LOCAL_REMEDIATION,
+  };
+}
+
+export const REQUIRE_PRIVATE_NATS_ENV = "RAVI_REQUIRE_PRIVATE_NATS";
+
+export function isPrivateNatsRequired(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env[REQUIRE_PRIVATE_NATS_ENV] === "1";
+}
+
+/** Statuses that mean NATS traffic is readable/writable by others. */
+export function isRiskyNatsExposure(status: NatsExposureStatus): boolean {
+  return status === "exposed" || status === "remote_plaintext";
+}
+
+export type NatsExposureBootAction = "none" | "warn" | "refuse";
+
+/**
+ * Daemon boot decision. `refuse` only when RAVI_REQUIRE_PRIVATE_NATS=1; with
+ * that flag an `unknown` result also refuses (fail closed).
+ */
+export function decideNatsExposureBootAction(
+  report: Pick<NatsExposureReport, "status">,
+  options: { requirePrivate: boolean },
+): NatsExposureBootAction {
+  const risky = isRiskyNatsExposure(report.status);
+  if (options.requirePrivate && (risky || report.status === "unknown")) return "refuse";
+  return risky ? "warn" : "none";
+}
+
+/** Structured log payload for a boot warning/refusal. */
+export function natsExposureLogData(report: NatsExposureReport): Record<string, unknown> {
+  return {
+    status: report.status,
+    natsUrl: report.natsUrl,
+    reachableAddresses: report.reachableAddresses,
+    authRequired: report.authRequired,
+    tlsRequired: report.tlsRequired,
+    firewall: report.firewall,
+    remediation: report.remediation,
+  };
+}

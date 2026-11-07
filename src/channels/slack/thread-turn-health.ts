@@ -83,6 +83,7 @@ export function observeThreadTurn(
     try {
       input = tool.input ? JSON.parse(tool.input) : undefined;
     } catch {
+      // no-cause: Historical tool input without valid JSON cannot supply a timeout; retain the observation's default budget.
       input = undefined;
     }
     quietAfterMs = Math.max(quietAfterMs, resolveToolInactivityTimeoutMs(tool.name ?? undefined, input));

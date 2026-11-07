@@ -3,6 +3,7 @@
  */
 
 import "reflect-metadata";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -261,6 +262,14 @@ function resolveSlackOpsTarget(channelName: string | undefined, contract: SlackC
         : "Slack channel not resolved. Pass --channel <name> (local CLI) or run from a Slack-sourced context.",
       {
         asJson: contract.asJson,
+        diagnostic: errorDiagnostic(
+          "No enabled Slack channel config matches this request in the local Ravi config store.",
+          {
+            operation: contract.op,
+            provider: "slack",
+            code: "LOCAL_CHANNEL_CONFIG_NOT_FOUND",
+          },
+        ),
         details: {
           suggestedAction: "List channel configs with: ravi channels list --json",
           suggestions: requested ? suggestSimilar(requested, known) : known.slice(0, 3),
@@ -276,6 +285,11 @@ function resolveSlackOpsTarget(channelName: string | undefined, contract: SlackC
       `Slack credentials not configured for channel ${channel.name}. Set channel credentialConnection first.`,
       {
         asJson: contract.asJson,
+        diagnostic: errorDiagnostic("The local Slack channel config has no credential connection assigned.", {
+          operation: contract.op,
+          provider: "slack",
+          code: "LOCAL_CREDENTIAL_CONNECTION_UNASSIGNED",
+        }),
         details: {
           suggestedAction: `Set credentialConnection for channel ${channel.name} (see: ravi channels list --json)`,
         },
@@ -300,7 +314,19 @@ async function resolveSlackCredentialContext(
   contract: SlackContractContext,
 ): Promise<SlackCredentialConfig> {
   const { channel, channels } = target;
-  const config = await resolveSlackCredentialConfigFromEnv(process.env, { action, channel, channels });
+  let config: SlackCredentialConfig | null;
+  try {
+    config = await resolveSlackCredentialConfigFromEnv(process.env, {
+      action,
+      channel,
+      channels,
+      authority: { kind: "local-operator" },
+    });
+  } catch (error) {
+    throw Object.assign(new Error("Slack credential resolution failed.", { cause: error }), {
+      context: { operation: contract.op, provider: "slack" },
+    });
+  }
   if (!config) {
     contractFail(
       contract.op,
@@ -308,6 +334,14 @@ async function resolveSlackCredentialContext(
       `Slack credentials not configured for channel ${channel.name}. Set channel credentialConnection first.`,
       {
         asJson: contract.asJson,
+        diagnostic: errorDiagnostic(
+          "The Slack credential broker returned no credentials for the configured connection.",
+          {
+            operation: contract.op,
+            provider: "slack",
+            code: "SLACK_CREDENTIAL_CONNECTION_UNAVAILABLE",
+          },
+        ),
         details: {
           suggestedAction: `Set credentialConnection for channel ${channel.name} (see: ravi channels list --json)`,
         },
@@ -888,6 +922,11 @@ function failSlackArtifactNotFound(
   if (!contract) fail(`Artifact not found: ${artifactId}`);
   contractFail(contract.op, "ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactId}`, {
     asJson: contract.asJson,
+    diagnostic: errorDiagnostic("The requested Slack Canvas artifact does not exist in the local artifact ledger.", {
+      operation: contract.op,
+      provider: "ravi",
+      code: "LOCAL_ARTIFACT_NOT_FOUND",
+    }),
     details: {
       suggestedAction: "List local artifacts with: ravi artifacts list --json",
       suggestions: readOnlyCandidates
@@ -1336,7 +1375,14 @@ export class SlackCommands {
       op: "slack permissions-list",
       asJson,
     });
-    const raw = await client.authTest();
+    let raw: Awaited<ReturnType<SlackWebApiClient["authTest"]>>;
+    try {
+      raw = await client.authTest();
+    } catch (error) {
+      throw Object.assign(new Error("Slack API auth.test failed.", { cause: error }), {
+        context: { operation: "slack permissions-list", provider: "slack" },
+      });
+    }
     const scopes = raw.scopes ?? [];
     const payload = {
       ok: true,
@@ -2251,6 +2297,11 @@ export class SlackCommands {
     if (!message) {
       contractFail(op, "MESSAGE_NOT_FOUND", `Slack message not found: ${channel} ${ts}`, {
         asJson,
+        diagnostic: errorDiagnostic("Slack returned no message for the requested channel and timestamp.", {
+          operation: op,
+          provider: "slack",
+          code: "SLACK_MESSAGE_NOT_FOUND",
+        }),
         details: {
           suggestedAction: `Check the timestamp with: ravi slack channels-history ${channel} --json`,
         },
@@ -2876,6 +2927,11 @@ export class SlackCommands {
     if (!canvasId) {
       contractFail(op, "CANVAS_NOT_FOUND", `Could not resolve Slack channel canvas id for ${channel}`, {
         asJson,
+        diagnostic: errorDiagnostic("Slack conversation lookup and canvas creation returned no canvas id.", {
+          operation: op,
+          provider: "slack",
+          code: "SLACK_CANVAS_ID_MISSING",
+        }),
         details: {
           suggestedAction: `Inspect the channel canvas tabs with: ravi slack channels-info ${channel} --json`,
         },
@@ -3398,6 +3454,11 @@ export class SlackCommands {
         `Could not resolve Slack channel canvas id for ${input.channelId}`,
         {
           asJson: contract.asJson,
+          diagnostic: errorDiagnostic("Slack conversation lookup and canvas creation returned no canvas id.", {
+            operation: contract.op,
+            provider: "slack",
+            code: "SLACK_CANVAS_ID_MISSING",
+          }),
           details: {
             suggestedAction: `Inspect the channel canvas tabs with: ravi slack channels-info ${input.channelId} --json`,
           },

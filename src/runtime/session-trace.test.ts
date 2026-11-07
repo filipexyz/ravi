@@ -970,55 +970,55 @@ describe("runtime session trace instrumentation", () => {
   });
 
   for (const providerId of ["codex", "pi"] as const) {
-    it(`${providerId} yields after a WhatsApp tool, answers queued chats in order and resumes unfinished work`, async () => {
+    it(`${providerId} finishes the source DM before a notification from the default chat and later input`, async () => {
       updateSessionName(SESSION_KEY, SESSION_NAME);
-      const whatsappChat = dbUpsertChat({
-        channel: "whatsapp",
-        instanceId: "whatsapp-main",
-        platformChatId: "wa-busy@s.whatsapp.net",
-        chatType: "dm",
-        title: "WhatsApp busy turn",
-      });
-      const slackChat = dbUpsertChat({
+      const sourceChat = dbUpsertChat({
         channel: "slack",
         instanceId: "slack-main",
-        platformChatId: "D123",
+        platformChatId: "D_SOURCE",
         chatType: "dm",
-        title: "Slack queued turn",
+        title: "Source DM",
       });
-      attachChatToSession({ sessionKey: SESSION_KEY, chatId: whatsappChat.id, setOutputTarget: true });
-      attachChatToSession({ sessionKey: SESSION_KEY, chatId: slackChat.id, setOutputTarget: false });
+      const defaultChat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "slack-main",
+        platformChatId: "D_DEFAULT",
+        chatType: "dm",
+        title: "Default DM",
+      });
+      attachChatToSession({ sessionKey: SESSION_KEY, chatId: sourceChat.id, setOutputTarget: false });
+      attachChatToSession({ sessionKey: SESSION_KEY, chatId: defaultChat.id, setOutputTarget: true });
 
-      const whatsappSource: RuntimeMessageTarget = {
-        channel: "whatsapp",
-        accountId: "whatsapp-main",
-        instanceId: "whatsapp-main",
-        chatId: whatsappChat.platformChatId,
-        canonicalChatId: whatsappChat.id,
-        sourceMessageId: "wamid-active",
-      };
-      const slackSource: RuntimeMessageTarget = {
+      const inboundSource: RuntimeMessageTarget = {
         channel: "slack",
         accountId: "slack-main",
         instanceId: "slack-main",
-        chatId: slackChat.platformChatId,
-        canonicalChatId: slackChat.id,
+        chatId: sourceChat.platformChatId,
+        canonicalChatId: sourceChat.id,
+        sourceMessageId: "100.001",
+      };
+      const defaultSource: RuntimeMessageTarget = {
+        channel: "slack",
+        accountId: "slack-main",
+        instanceId: "slack-main",
+        chatId: defaultChat.platformChatId,
+        canonicalChatId: defaultChat.id,
         sourceMessageId: "slack-during-tool",
       };
-      const laterWhatsappSource: RuntimeMessageTarget = {
-        ...whatsappSource,
-        sourceMessageId: "wamid-later",
+      const laterSource: RuntimeMessageTarget = {
+        ...inboundSource,
+        sourceMessageId: "100.003",
       };
-      const activeWhatsapp = createQueuedRuntimeUserMessage({
-        prompt: "long WhatsApp turn",
-        source: whatsappSource,
+      const activeInbound = createQueuedRuntimeUserMessage({
+        prompt: "original DM request",
+        source: inboundSource,
         deliveryBarrier: "after_tool",
       });
       const streaming = makeStreamingSession({
         agentMode: "active",
-        currentSource: whatsappSource,
+        currentSource: inboundSource,
         currentEffort: "xhigh",
-        pendingMessages: [activeWhatsapp],
+        pendingMessages: [activeInbound],
         turnActive: false,
       });
       const provider: SessionRuntimeProvider = {
@@ -1029,7 +1029,7 @@ describe("runtime session trace instrumentation", () => {
       const { runtimeRequest } = await buildRuntimeStartRequest({
         runId: "run-cross-surface-tool-order",
         sessionName: SESSION_NAME,
-        prompt: { prompt: "long WhatsApp turn", source: whatsappSource },
+        prompt: { prompt: "original DM request", source: inboundSource },
         session: makeSession(),
         agent: makeAgent({ provider: providerId }),
         runtimeProviderId: providerId,
@@ -1045,7 +1045,7 @@ describe("runtime session trace instrumentation", () => {
         },
         storedRuntimeSessionParams: undefined,
         canResumeStoredSession: false,
-        resolvedSource: whatsappSource,
+        resolvedSource: inboundSource,
         streamingSession: streaming,
         stashedMessages: new Map(),
         defaultRuntimeProviderId: providerId,
@@ -1083,41 +1083,29 @@ describe("runtime session trace instrumentation", () => {
           await readProviderTurn();
           yield {
             type: "tool.started",
-            toolUse: { id: "tool-long-whatsapp", name: "Bash", input: { cmd: "true" } },
+            toolUse: { id: "tool-source-dm", name: "Bash", input: { cmd: "true" } },
           } satisfies RuntimeEvent;
 
           toolStatesWhenQueued.push(streaming.toolRunning);
           await dispatcher.handlePromptImmediate(SESSION_NAME, {
-            prompt: "Slack while WhatsApp is busy",
-            source: slackSource,
-            context: {
-              channelId: "slack",
-              channelName: "Slack",
-              accountId: slackSource.accountId,
-              instanceId: slackSource.instanceId,
-              chatId: slackSource.chatId,
-              canonicalChatId: slackSource.canonicalChatId,
-              messageId: slackSource.sourceMessageId!,
-              senderId: "U123",
-              isGroup: false,
-              timestamp: Date.now(),
-            },
+            prompt: "[System] Inform: a different thread finished",
+            source: defaultSource,
             _agentId: AGENT_ID,
             deliveryBarrier: "after_tool",
             deliveryBarrierSource: "default",
           });
           await dispatcher.handlePromptImmediate(SESSION_NAME, {
-            prompt: "later WhatsApp direction",
-            source: laterWhatsappSource,
+            prompt: "later DM direction",
+            source: laterSource,
             context: {
-              channelId: "whatsapp",
-              channelName: "WhatsApp",
-              accountId: laterWhatsappSource.accountId,
-              instanceId: laterWhatsappSource.instanceId,
-              chatId: laterWhatsappSource.chatId,
-              canonicalChatId: laterWhatsappSource.canonicalChatId,
-              messageId: laterWhatsappSource.sourceMessageId!,
-              senderId: "5511999999999",
+              channelId: "slack",
+              channelName: "Slack",
+              accountId: laterSource.accountId,
+              instanceId: laterSource.instanceId,
+              chatId: laterSource.chatId,
+              canonicalChatId: laterSource.canonicalChatId,
+              messageId: laterSource.sourceMessageId!,
+              senderId: "U_SOURCE",
               isGroup: false,
               timestamp: Date.now() + 1,
             },
@@ -1127,16 +1115,21 @@ describe("runtime session trace instrumentation", () => {
           });
           yield {
             type: "tool.completed",
-            toolUseId: "tool-long-whatsapp",
+            toolUseId: "tool-source-dm",
             toolName: "Bash",
             content: "ok",
           } satisfies RuntimeEvent;
-          expect(interruptCalls).toBe(1);
-          expect(streaming.currentSource?.canonicalChatId).toBe(whatsappChat.id);
-          yield { type: "turn.interrupted" } satisfies RuntimeEvent;
+          expect(interruptCalls).toBe(0);
+          expect(streaming.currentSource?.canonicalChatId).toBe(sourceChat.id);
+          yield { type: "assistant.message", text: "Original DM response" } satisfies RuntimeEvent;
+          yield {
+            type: "turn.complete",
+            providerSessionId: "provider-after-original",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          } satisfies RuntimeEvent;
 
           await readProviderTurn();
-          yield { type: "assistant.message", text: "Slack response" } satisfies RuntimeEvent;
+          yield { type: "assistant.message", text: "@@SILENT@@" } satisfies RuntimeEvent;
           yield {
             type: "turn.complete",
             providerSessionId: "provider-after-slack",
@@ -1144,18 +1137,10 @@ describe("runtime session trace instrumentation", () => {
           } satisfies RuntimeEvent;
 
           await readProviderTurn();
-          yield { type: "assistant.message", text: "later WhatsApp response" } satisfies RuntimeEvent;
+          yield { type: "assistant.message", text: "later DM response" } satisfies RuntimeEvent;
           yield {
             type: "turn.complete",
-            providerSessionId: "provider-after-later-whatsapp",
-            usage: { inputTokens: 1, outputTokens: 1 },
-          } satisfies RuntimeEvent;
-
-          await readProviderTurn();
-          yield { type: "assistant.message", text: "resumed WhatsApp response" } satisfies RuntimeEvent;
-          yield {
-            type: "turn.complete",
-            providerSessionId: "provider-after-resume",
+            providerSessionId: "provider-after-later-dm",
             usage: { inputTokens: 1, outputTokens: 1 },
           } satisfies RuntimeEvent;
         })(),
@@ -1192,36 +1177,31 @@ describe("runtime session trace instrumentation", () => {
 
       expect(toolStatesWhenQueued).toEqual([true]);
       expect(toolBarrierReleaseCalls).toBe(1);
-      expect(interruptCalls).toBe(1);
+      expect(interruptCalls).toBe(0);
       expect(
         listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "dispatch.queued_busy"),
       ).toHaveLength(2);
       expect(providerTurns).toEqual([
         {
-          prompt: "long WhatsApp turn",
-          sourceChatId: whatsappChat.id,
-          replyChatId: whatsappChat.id,
+          prompt: "original DM request",
+          sourceChatId: sourceChat.id,
+          replyChatId: sourceChat.id,
         },
         {
           prompt:
             "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
             "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
-            "Slack while WhatsApp is busy",
-          sourceChatId: slackChat.id,
-          replyChatId: slackChat.id,
+            "[System] Inform: a different thread finished",
+          sourceChatId: defaultChat.id,
+          replyChatId: defaultChat.id,
         },
         {
           prompt:
-            "[session surface] This turn came from a WhatsApp chat. A normal reply returns there.\n" +
+            "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
             "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
-            "later WhatsApp direction",
-          sourceChatId: whatsappChat.id,
-          replyChatId: whatsappChat.id,
-        },
-        {
-          prompt: expect.stringContaining("Resume the unfinished request"),
-          sourceChatId: whatsappChat.id,
-          replyChatId: whatsappChat.id,
+            "later DM direction",
+          sourceChatId: sourceChat.id,
+          replyChatId: sourceChat.id,
         },
       ]);
       expect(
@@ -1230,11 +1210,9 @@ describe("runtime session trace instrumentation", () => {
           targetChatId: response.target?.canonicalChatId,
         })),
       ).toEqual([
-        { response: "Slack response", targetChatId: slackChat.id },
-        { response: "later WhatsApp response", targetChatId: whatsappChat.id },
-        { response: "resumed WhatsApp response", targetChatId: whatsappChat.id },
+        { response: "Original DM response", targetChatId: sourceChat.id },
+        { response: "later DM response", targetChatId: sourceChat.id },
       ]);
-      expect(providerTurns[3]?.prompt).toContain("long WhatsApp turn");
       expect(streaming.pendingMessages).toEqual([]);
     });
   }
@@ -5822,7 +5800,12 @@ describe("runtime session trace instrumentation", () => {
           type: "turn.failed",
           error: "model unavailable",
           recoverable: false,
-          rawEvent: { type: "error", message: "provider down" },
+          rawEvent: {
+            type: "error",
+            message: "provider down; cookie=PRIVATE_COOKIE; PRIVATE_TAIL",
+            body: { transcript: "PRIVATE_BODY" },
+            stack: "PRIVATE_STACK",
+          },
         },
       ]),
     );
@@ -5832,8 +5815,10 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.error).toBe("model unavailable");
     expect(terminal?.payloadJson).toMatchObject({
       recoverable: false,
-      rawEvent: { type: "error", message: "provider down" },
+      cause: "model unavailable\nCaused by: provider down; cookie=[redacted:cookie]",
     });
+    expect(terminal?.payloadJson).not.toHaveProperty("rawEvent");
+    expect(JSON.stringify(terminal?.payloadJson)).not.toContain("PRIVATE_");
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
   });
 

@@ -1923,7 +1923,7 @@ export const projectFixturesSeedReturnSchema = z
   })
   .passthrough();
 
-const managedRuntimeMemberReturnSchema = z
+export const managedRuntimeMemberReturnSchema = z
   .object({
     name: z.string(),
     managed: z.boolean(),
@@ -1932,12 +1932,19 @@ const managedRuntimeMemberReturnSchema = z
     pid: z.number().nullable(),
     bundlePath: z.string().nullable(),
     cwd: z.string().nullable(),
-    version: z.string().nullable(),
+    runningVersion: z.string().nullable(),
+    diskVersion: z.string().nullable(),
+    startedAt: z.number().nullable(),
+    stale: z.boolean(),
+    codeStale: z.boolean(),
+    envStale: z.boolean(),
+    identityVerified: z.boolean(),
+    warnings: z.array(z.string()),
     matchesCli: z.boolean().nullable(),
   })
   .strict();
 
-const managedRuntimeIdentityReturnSchema = z
+export const managedRuntimeIdentityReturnSchema = z
   .object({
     alignment: z.enum(["aligned", "drifted", "unknown", "not_running"]),
     cli: z
@@ -1959,6 +1966,7 @@ export const daemonStatusReturnSchema = z
     ravi: looseObjectSchema,
     infrastructure: looseObjectSchema,
     runtime: managedRuntimeIdentityReturnSchema,
+    warnings: z.array(z.string()),
     processes: z.array(looseObjectSchema),
   })
   .passthrough();
@@ -2065,6 +2073,7 @@ export const runtimeEnvMutationReturnSchema = runtimeEnvEntryReturnSchema
   .extend({
     action: z.enum(["set", "unset"]),
     daemonReloadRequired: z.boolean(),
+    warnings: z.array(z.string()).optional(),
   })
   .strict();
 

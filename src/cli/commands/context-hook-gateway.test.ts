@@ -137,8 +137,8 @@ describe("Codex hook through the host gateway", () => {
     }, 20_000);
   }
 
-  // The context group is open: an unknown, expired or revoked key reaches command access with no capabilities.
-  for (const kind of ["denied", "ungranted", "expired", "revoked", "unknown"]) {
+  // Only live credentials reach command access, even though the context group is open.
+  for (const kind of ["denied", "ungranted"]) {
     it(`names the denied capability instead of a gateway HTTP status (${kind})`, async () => {
       const output = await callHook(JSON.stringify({ tool_input: { command: "pwd" } }), {
         contextKey: contexts[kind]?.contextKey ?? "rctx_hook_unknown",
@@ -146,9 +146,32 @@ describe("Codex hook through the host gateway", () => {
       expectDeny(output);
       const reason = output.hookSpecificOutput.permissionDecisionReason as string;
       expect(reason).toContain("Ravi denied tool use in this turn (missing capability: read:context:codex-bash-hook)");
-      expect(reason).toContain("no linked contact");
-      expect(reason).toContain("never granted this permission");
-      expect(reason).not.toContain("HTTP 403");
+      expect(reason).toContain("PERMISSION_DENIED");
+      expect(reason).toContain("cause=Permission denied:");
+      expect(reason).toContain("HTTP 403");
+    }, 20_000);
+  }
+
+  for (const [kind, code, cause] of [
+    ["expired", "CONTEXT_EXPIRED", "The runtime context credential has expired."],
+    ["revoked", "AUTH_REQUIRED", "context has been revoked"],
+    ["unknown", "AUTH_REQUIRED", "unknown context key"],
+  ] as const) {
+    it(`reports rejected context authority before capability access (${kind})`, async () => {
+      const output = await callHook(JSON.stringify({ tool_input: { command: "pwd" } }), {
+        contextKey: contexts[kind]?.contextKey ?? "rctx_hook_unknown",
+      });
+      expectDeny(output);
+      const reason = output.hookSpecificOutput.permissionDecisionReason as string;
+      expect(reason).toContain("Ravi refused this turn's context.");
+      expect(reason).toContain(`code=${code}`);
+      expect(reason).toContain("operation=context codex-bash-hook");
+      expect(reason).toContain("HTTP 401");
+      expect(reason).toContain(`cause=${cause}`);
+      expect(reason).toContain("Stop retrying and report the refusal.");
+      expect(reason).not.toContain("missing capability");
+      expect(reason).not.toContain("PERMISSION_DENIED");
+      expect(reason).not.toContain("rctx_");
     }, 20_000);
   }
 
@@ -178,6 +201,43 @@ describe("Codex hook through the host gateway", () => {
       }
     }, 20_000);
   }
+
+  it("carries the exact denied operation and provider reason with credential values redacted", async () => {
+    const server = serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        Response.json(
+          {
+            success: false,
+            op: "context codex-bash-hook",
+            exitCode: 1,
+            outcome: "denied",
+            error: {
+              code: "PERMISSION_DENIED",
+              message:
+                "Policy provider fixture denied agent:worker: executable ffmpeg is blocked; api_key=fixture-token",
+              retryable: false,
+            },
+          },
+          { status: 403 },
+        ),
+    });
+    try {
+      const output = await callHook(JSON.stringify({ tool_input: { command: "ffmpeg --version" } }), {
+        gatewayUrl: server.url.href,
+      });
+      expectDeny(output);
+      const reason = output.hookSpecificOutput.permissionDecisionReason;
+      expect(reason).toContain("executable ffmpeg is blocked");
+      expect(reason).toContain("agent:worker");
+      expect(reason).toContain("HTTP 403");
+      expect(reason).toContain("api_key=[redacted:api_key]");
+      expect(reason).not.toContain("fixture-token");
+    } finally {
+      await server.stop(true);
+    }
+  }, 20_000);
 
   it("does not read daemon stdin when a gateway caller omits the payload", async () => {
     const result = await dispatchRemote({

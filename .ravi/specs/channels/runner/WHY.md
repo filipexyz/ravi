@@ -19,3 +19,16 @@ This separation avoids three failure classes:
 
 The first implementation can be one channel runner process hosting Slack. The long-term design still needs instance-level locks so a future process-per-instance model does not change semantics.
 
+
+## Installed files are not running code
+
+Replacing a package in place leaves the existing daemon or runner executing
+its previously loaded bundle and environment. Reading package.json through
+its unchanged path can therefore falsely label an old process as aligned.
+A boot observation plus current file evidence separates these facts.
+Unknown legacy identity is explicit because the loaded version cannot be
+reconstructed reliably after the original bundle has been overwritten.
+
+Restart is an operator decision: detecting stale code must not unexpectedly
+interrupt channel intake. Independent restart commands report any sibling
+left behind instead of silently treating a successful restart as alignment.

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Contract helpers for `ravi cloud key|agents|runs|schedules` and
  * `ravi tasks dispatch --cloud`: the error envelope for Console cloud agents
@@ -183,11 +184,14 @@ export function cloudAgentsErrorToContract(
       sanitizePublicContractMessage(error.message) ?? copy.message,
       copy.exitCode,
       {
-        retryable: copy.retryable ?? false,
-        suggestedAction: copy.suggestedAction,
-        ...(error.status !== undefined ? { status: error.status } : {}),
-        ...(error.issues ? { issues: error.issues } : (consoleIssues(error) ?? {})),
-        ...(typeof error.details?.runId === "string" ? { runId: error.details.runId.slice(0, 80) } : {}),
+        ...errorDiagnostic(error, { operation: op }),
+        ...{
+          retryable: copy.retryable ?? false,
+          suggestedAction: copy.suggestedAction,
+          ...(error.status !== undefined ? { status: error.status } : {}),
+          ...(error.issues ? { issues: error.issues } : (consoleIssues(error) ?? {})),
+          ...(typeof error.details?.runId === "string" ? { runId: error.details.runId.slice(0, 80) } : {}),
+        },
       },
     );
   }
@@ -197,7 +201,7 @@ export function cloudAgentsErrorToContract(
       options.notFoundCode,
       sanitizePublicContractMessage(error.message) ?? "Not found.",
       CONTRACT_EXIT_ERROR,
-      { suggestedAction: notFoundAction(options.notFoundCode) },
+      { ...errorDiagnostic(error, { operation: op }), ...{ suggestedAction: notFoundAction(options.notFoundCode) } },
     );
   }
   return cloudErrorToContractError(op, error);
@@ -237,7 +241,10 @@ export async function withCloudAgentsContract<T>(
   } catch (error) {
     if (error instanceof ContractError) throw error;
     if (error instanceof LibraryCommandError) {
-      contractFail(op, error.code, error.message, { asJson, exitCode: error.exitCode, details: error.details });
+      contractFail(op, error.code, error.message, {
+        ...{ asJson, exitCode: error.exitCode, details: error.details },
+        diagnostic: errorDiagnostic(error, { operation: op }),
+      });
     }
     if (isCloudAuthError(error)) {
       const contract = cloudAgentsErrorToContract(op, error, options);
@@ -261,17 +268,23 @@ export async function requireCloudAgentsSession(
 export function requireCloudProject(op: string, session: CloudAgentsSession, asJson?: boolean): string {
   if (session.project) return session.project;
   contractFail(op, "CLOUD_PROJECT_REQUIRED", "No Console project resolved for this command.", {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: { suggestedAction: "Pass --project <project-slug> (list them with: ravi projects list)" },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: "Pass --project <project-slug> (list them with: ravi projects list)" },
+    },
+    diagnostic: errorDiagnostic("No Console project resolved for this command.", { operation: op }),
   });
 }
 
 export function usageError(op: string, message: string, asJson: boolean | undefined, suggestedAction?: string): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    ...(suggestedAction ? { details: { suggestedAction } } : {}),
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      ...(suggestedAction ? { details: { suggestedAction } } : {}),
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 

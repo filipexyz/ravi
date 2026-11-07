@@ -109,7 +109,9 @@ describe("local watch runner", () => {
       }),
     });
     try {
+      expect(h.runner.isRunning()).toBe(false);
       await h.runner.start();
+      expect(h.runner.isRunning()).toBe(true);
       await h.runner.tick(); // baseline
       await h.runner.tick();
 
@@ -120,6 +122,7 @@ describe("local watch runner", () => {
       expect(subjects).toEqual(["ravi.watch.github.pull_request.closed", "ravi.watch.github.pull_request.merged"]);
     } finally {
       await h.runner.stop();
+      expect(h.runner.isRunning()).toBe(false);
       h.cleanup();
     }
   });

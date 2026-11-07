@@ -29,9 +29,9 @@ describe("Omni CLI auth failure classification", () => {
     expect(isOmniCliAuthFailure('{"error":"instance not found"}')).toBe(false);
   });
 
-  it("maps MediaSendAuthError to OMNI_AUTH_FAILED without leaking provider text", () => {
+  it("maps MediaSendAuthError to OMNI_AUTH_FAILED with stable catalog copy", () => {
     const mapped = mapMediaSendFailure(new MediaSendAuthError());
-    expect(mapped).toEqual({
+    expect(mapped).toMatchObject({
       code: OMNI_AUTH_FAILED_CODE,
       message: "Omni rejected the API key used to send media.",
       retryable: false,
@@ -40,6 +40,18 @@ describe("Omni CLI auth failure classification", () => {
     expect(mapped.suggestedAction).toContain("servers.list.<active>.apiKey");
     expect(mapped.suggestedAction).toContain("OMNI_API_KEY");
     expect(mapped.suggestedAction).not.toMatch(/sk-|omni_sk_/);
+  });
+
+  it("preserves_omni_auth_provider_cause_and_code_beneath_catalog_error", () => {
+    const original = Object.assign(new Error("The instance rejected this expired credential."), {
+      code: "EXPIRED_API_KEY",
+      status: 401,
+    });
+    const mapped = mapMediaSendFailure(new MediaSendAuthError(original));
+    expect(mapped.code).toBe(OMNI_AUTH_FAILED_CODE);
+    expect(mapped.cause).toBe(original.message);
+    expect(mapped.context.code).toBe(original.code);
+    expect(mapped.context.status).toBe(original.status);
   });
 
   it("exposes a local catalog copy for isolated remote media-send codes", () => {
@@ -54,12 +66,26 @@ describe("Omni CLI auth failure classification", () => {
     expect(localMediaSendCatalogCopy("COMMAND_FAILED")).toBeUndefined();
   });
 
-  it("keeps generic delivery errors as MEDIA_SEND_FAILED", () => {
-    const mapped = mapMediaSendFailure(new Error("PRIVATE_MESSAGE_8K2R sk-abcdefghijklmnop"));
+  it("preserves_media_provider_exact_cause_and_code_without_secrets", () => {
+    const original = Object.assign(new Error("Upload rejected: unsupported image encoding."), {
+      code: "UNSUPPORTED_ENCODING",
+      status: 415,
+    });
+    const mapped = mapMediaSendFailure(original);
+    expect(mapped.cause).toBe(original.message);
+    expect(mapped.context.code).toBe(original.code);
+    expect(mapped.context.status).toBe(original.status);
+  });
+
+  it("preserves_media_provider_cause_without_its_credential", () => {
+    const mapped = mapMediaSendFailure(
+      new Error("Omni upload rejected: unsupported media format; api_key=sk-abcdefghijklmnop"),
+    );
     expect(mapped.code).toBe(MEDIA_SEND_FAILED_CODE);
     expect(mapped.retryable).toBe(true);
     expect(mapped.message).toBe("Media delivery failed.");
-    expect(JSON.stringify(mapped)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(mapped.cause).toContain("Omni upload rejected: unsupported media format");
+    expect(mapped.context).toMatchObject({ operation: "media send", provider: "omni" });
     expect(JSON.stringify(mapped)).not.toContain("sk-abcdefghijklmnop");
   });
 });

@@ -4,7 +4,8 @@
 
 - `channels show <unknown-name> --json` MUST exit 1 with the
   `CHANNEL_NOT_FOUND` envelope and up to three `suggestions` from local
-  channel config names.
+  channel config names, with a cause naming the local config store and
+  `context.code: LOCAL_CHANNEL_CONFIG_NOT_FOUND`.
 - `channels set <unknown-name> <key> <value>` MUST exit 1 with
   `CHANNEL_NOT_FOUND` and MUST NOT create or modify any config row.
 - `channels create <name> --credential-connection <unknown>` and
@@ -22,3 +23,8 @@
   ops + the infra dispensa) in its `## Contrato Do CLI` section.
 - `bun test src/cli/commands/channels.test.ts` SHOULD pass after any change to
   this contract surface, with zero new failures vs the 13-test baseline.
+
+- Slack local config absence, unassigned credential connection, and empty broker
+  result MUST have distinct diagnostic causes/codes. A broker exception or
+  `auth.test` exception MUST preserve its original throwable through the CLI
+  unexpected-error projection while embedded credentials are redacted.

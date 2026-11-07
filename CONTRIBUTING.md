@@ -85,6 +85,30 @@ not inherit the pushing checkout's `GIT_DIR`, index or worktree paths.
 
 Never bypass the hooks with `--no-verify`.
 
+### Sanctioned publication on the production host
+
+The production host must not run the full build/suite required by pre-push.
+For that host's explicitly sanctioned Git Data API path, keep pre-commit active,
+run focused tests, upload the Git objects and branch via the API, and verify
+the remote tree and commit SHA against the local commit. Do not use `git push`
+with disabled hooks. Record the literal upload commands and checks left to CI
+in the PR description.
+
+Finish publication from the publishing Ravi session and committed worktree:
+
+```bash
+bun scripts/publish-pr.ts --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
+```
+
+The finalizer creates a **ready** PR and registers its CI follow with the same
+primitive as the `gh` command observer. A raw API `POST /pulls` is not the final
+step. If interrupted or failed after PR creation, repeat the command: it repairs
+the existing PR/follow, including a legacy draft, without duplicating either.
+Ready does not waive the independent current-head approval required by Review
+Gate. This script does not upload Git objects or bypass a hook.
+A thread publisher hands CI to its durable parent; never claim persistent
+follow-up while closing the only recipient.
+
 ## Adding or changing a CLI command
 
 Each command group is a class in `src/cli/commands/`, described with decorators from `src/cli/decorators.ts`. The decorated registry is the single source for the CLI, the exported tools, the HTTP gateway, OpenAPI and the generated SDKs.

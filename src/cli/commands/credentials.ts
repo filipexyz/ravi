@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import {
@@ -28,7 +29,7 @@ const publicCredentialConnectionSchema = z
     provider: z.string(),
     connection: z.string(),
     label: z.string().nullable(),
-    backend: z.enum(["keychain", "vault"]),
+    backend: z.enum(["file", "keychain", "vault"]),
     secretRef: z.string(),
     scopes: z.array(z.string()),
     status: z.enum(["active", "disabled"]),
@@ -113,8 +114,8 @@ function collectCsv(value: string | undefined): string[] {
 }
 
 function backendValue(value: string | undefined): CredentialBackend {
-  if (value === "keychain" || value === "vault") return value;
-  throw new Error("--backend must be keychain or vault");
+  if (value === "file" || value === "keychain" || value === "vault") return value;
+  throw new Error("--backend must be file, keychain or vault");
 }
 
 function statusValue(value: string | undefined): CredentialConnectionStatus | undefined {
@@ -134,12 +135,15 @@ function failCredentialConnectionNotFound(op: string, provider: string, connecti
     record.id,
   ]);
   contractFail(op, "CREDENTIAL_CONNECTION_NOT_FOUND", `Connection not found: ${provider}:${connection}`, {
-    asJson,
-    details: {
-      suggestedAction:
-        "Check provider/connection ids (see suggestions; list with: ravi credentials connections list --json)",
-      suggestions: suggestSimilar(`${provider}:${connection}`, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "Check provider/connection ids (see suggestions; list with: ravi credentials connections list --json)",
+        suggestions: suggestSimilar(`${provider}:${connection}`, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Connection not found: ${provider}:${connection}`, { operation: op }),
   });
 }
 
@@ -254,7 +258,8 @@ export class CredentialConnectionsCommands {
   async add(
     @Option({ flags: "--provider <id>", description: "Provider id, e.g. slack" }) provider?: string,
     @Option({ flags: "--connection <id>", description: "Connection id, e.g. main" }) connection?: string,
-    @Option({ flags: "--backend <backend>", description: "Secret backend: keychain or vault" }) backend?: string,
+    @Option({ flags: "--backend <backend>", description: "Secret backend: file (0600), keychain or vault" })
+    backend?: string,
     @Option({ flags: "--label <text>", description: "Human label" }) label?: string,
     @Option({ flags: "--scope <scope>", description: "Scopes, comma-separated" }) scopes?: string,
     @Option({ flags: "--secret-stdin", description: "Read secret value from stdin and write it to backend" })
@@ -498,6 +503,7 @@ export class CredentialBrokerCommands {
       connection,
       action,
       dryRun: Boolean(dryRun),
+      authority: { kind: "local-operator" },
     });
     if (asJson) {
       printJson(payload);

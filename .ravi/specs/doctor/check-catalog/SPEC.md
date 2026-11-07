@@ -53,6 +53,40 @@ Each check MUST declare:
 
 Checks MUST NOT mutate state.
 
+## NATS Exposure And State Directory
+
+- `runtime.nats_exposure` MUST report network exposure using bounded probes and
+  redact credentials from every NATS URL in its output.
+- Failed interface enumeration MUST remain `unknown`, distinct from a successful
+  enumeration with no external interfaces. Enforced private NATS startup MUST
+  refuse the unknown result instead of treating it as loopback-only.
+- Operational probe failures (including EMFILE), exceptions, and inconclusive
+  timeouts MUST remain `unknown`; only an actual connection refusal establishes
+  non-reachability. Known unauthenticated exposure takes precedence over unknown;
+  otherwise any inconclusive local endpoint MUST prevent a private verdict.
+- Server lists MUST inspect every distinct local port on every non-loopback
+  host address before reporting loopback-only. IPv4-mapped loopback URLs MUST
+  remain local after URL normalization to hexadecimal IPv6 notation.
+- URL userinfo MUST be removed before reports or logs are serialized, including
+  passwords with spaces. Malformed URLs MUST use conservative redaction rather
+  than falling back to the raw credential-bearing input.
+- A raw comma in a credential-bearing group MUST NOT be split into server
+  fragments. Ambiguous or invalid lists MUST be fully redacted and reported as
+  `unknown`, without resolving or probing fragments. Authenticated lists SHOULD
+  use an explicit scheme per server; literal commas in userinfo MUST use `%2C`.
+  Unauthenticated bare-server lists and fully qualified lists remain supported.
+  One invalid entry MUST invalidate the whole list rather than certify a subset.
+- Redaction and exposure classification MUST consume the same per-server parse,
+  including scheme detection and canonicalization. Raw C0 controls and DEL MUST
+  invalidate the entire input before splitting or WHATWG normalization. They
+  MUST NOT reach URL/report/log output or DNS/TCP probes.
+- An input containing `@` whose interpretation includes a path, query, fragment
+  or no parsed userinfo MUST be withheld as ambiguous. Delimiters inside actual
+  userinfo SHOULD be percent-encoded; diagnostic code MUST NOT expose a suffix
+  merely because a URL parser interpreted it as a non-credential component.
+- `substrate.state-dir-permissions` MUST inspect ownership and POSIX permissions
+  without changing them. State-directory hardening belongs to startup/setup.
+
 ## Apps, Specs, And Skills
 
 Initial checks:

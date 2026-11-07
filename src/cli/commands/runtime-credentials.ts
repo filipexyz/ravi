@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -172,12 +173,15 @@ function failRuntimeCredentialNotFound(op: string, credentialId: string, asJson?
     credential.label,
   ]);
   contractFail(op, "CREDENTIAL_NOT_FOUND", `Runtime credential not found: ${credentialId}`, {
-    asJson,
-    details: {
-      suggestedAction:
-        "Check the credential id (see suggestions; list with: ravi runtime credentials list --all --json)",
-      suggestions: suggestSimilar(credentialId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "Check the credential id (see suggestions; list with: ravi runtime credentials list --all --json)",
+        suggestions: suggestSimilar(credentialId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Runtime credential not found: ${credentialId}`, { operation: op }),
   });
 }
 

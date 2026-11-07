@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Sticker Commands - typed sticker catalog and WhatsApp sticker sending
  */
@@ -37,11 +38,14 @@ function printJson(payload: unknown): void {
 function failStickerNotFound(op: string, id: string, asJson?: boolean): never {
   const candidates = listStickers().flatMap((sticker) => [sticker.id, sticker.label]);
   contractFail(op, "STICKER_NOT_FOUND", `Sticker not found: ${id}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the sticker id (list with: ravi stickers list --json)",
-      suggestions: suggestSimilar(id, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the sticker id (list with: ravi stickers list --json)",
+        suggestions: suggestSimilar(id, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Sticker not found: ${id}`, { operation: op }),
   });
 }
 
@@ -437,11 +441,14 @@ export class StickerCommands {
     }
     if (!existsSync(sticker.media.path)) {
       contractFail("stickers send", "STICKER_MEDIA_NOT_FOUND", "Sticker media file is unavailable.", {
-        asJson,
-        details: {
-          mediaPathPresent: true,
-          suggestedAction: "Re-add the sticker media and retry the command",
+        ...{
+          asJson,
+          details: {
+            mediaPathPresent: true,
+            suggestedAction: "Re-add the sticker media and retry the command",
+          },
         },
+        diagnostic: errorDiagnostic("Sticker media file is unavailable.", { operation: "stickers send" }),
       });
     }
 

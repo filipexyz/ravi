@@ -37,3 +37,30 @@ mutate counterparts in the stores that remain authoritative across runs. It
 does not rewrite historical runtime contexts. A broad or prefix read wildcard
 is expanded only across the finite versioned inventory of operations it already
 authorized, producing exact mutate grants instead of a broader mutate wildcard.
+
+## Preserve diagnosis without exporting arbitrary exceptions
+
+The masking audit found that media/transcription failures lost their provider
+reason before reaching the user. Replacing that suppression with unrestricted
+exception serialization exposed signed URLs, cookies, password tails and SDK
+messages containing body/PII. Preserving diagnosis requires two distinct
+controls: an ingress allowlist decides which fields may cross, and the shared
+egress redactor protects values inside those fields.
+
+Keeping the original throwable internally avoids losing evidence across
+wrappers. Requiring cause/context at the user-failure constructor prevents new
+headline-only envelope calls. Applying the same finite redactor at the output
+boundaries prevents a relay, debug log or trace artifact from bypassing the
+protection; a local stack dump is still an output and is excluded.
+
+The AST ratchet freezes existing syntactic masking debt without requiring a
+rewrite of every throw/catch. Its generated inventory makes remaining debt
+public and its shrinking baseline prevents regression. Static binding usage
+cannot prove semantic propagation through arbitrary dynamic code, so the
+13-row/nine-sink corpus separately checks original cause/code preservation and
+secret absence. Mocked Slack delivery and the TypeScript SDK are explicit
+sinks; native SDK shape tests do not prove identical redaction algorithms.
+
+The pattern set is finite and reviewable. Novel credential encodings require
+new corpus evidence and a shared redactor change. See the generated
+`design/error-cause-inventory.md` for current totals and remaining sites.

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { DEFAULT_DELIVERY_BARRIER, type DeliveryBarrier } from "../delivery-barriers.js";
 import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
@@ -12,6 +13,8 @@ import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchProm
 import { combineSessionSurfacePromptContents, resolveRuntimePromptText } from "./session-surface-hint.js";
 import type { RuntimePromptMessage } from "./types.js";
 import { isSameRuntimeTurnSurface, runtimeTurnSurfaceKey } from "./turn-surface.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
+import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 
 const log = logger.child("runtime:delivery-queue");
 
@@ -104,7 +107,6 @@ export function hasIsolatedRuntimeTurnEnvelope(
 export interface RuntimeInterruptSuccessorPreparation {
   message: RuntimeUserMessage;
   coalescedMessages: RuntimeUserMessage[];
-  continuation?: RuntimeUserMessage;
 }
 
 /**
@@ -131,9 +133,11 @@ export function prepareRuntimeInterruptSuccessor(
     )?.launchPrompt?.source ??
     (session.suppressChatEmit ? undefined : session.currentReplyTarget);
   const nextSource = successors[0]?.launchPrompt?.source;
-  const yielding = !isSameRuntimeTurnSurface(activeSource, nextSource);
-  // Source-less/CLI turns must not acquire a chat destination through a yield.
-  if (yielding && (!activeSource || !nextSource || session.suppressChatEmit)) return null;
+  // An unfinished request must finish on its bound chat before another surface
+  // enters the shared transcript. Switching turns early lets the provider answer
+  // the old request under the next chat's reply target. Keep FIFO at this boundary;
+  // later same-surface input must not jump past a different queued surface.
+  if (!isSameRuntimeTurnSurface(activeSource, nextSource)) return null;
   const nextSurfaceIndex = successors.findIndex(
     (message) => !isSameRuntimeTurnSurface(nextSource, message.launchPrompt?.source),
   );
@@ -152,12 +156,13 @@ export function prepareRuntimeInterruptSuccessor(
   // Preserve FIFO across different actors and authority envelopes. A burst of
   // compatible channel messages at the front of the releasable lane can share
   // one physical provider turn, with the newest envelope owning that turn.
-  const firstEligible = eligible[0];
+  const prioritized = prioritizeHumanRuntimeMessages(eligible);
+  const firstEligible = prioritized[0];
   if (!firstEligible) return null;
   const compatibilityKey = channelSteeringCompatibilityKey(firstEligible);
   const cohort = [firstEligible];
   if (compatibilityKey) {
-    for (const candidate of eligible.slice(1)) {
+    for (const candidate of prioritized.slice(1)) {
       if (channelSteeringCompatibilityKey(candidate) !== compatibilityKey) break;
       cohort.push(candidate);
     }
@@ -171,48 +176,15 @@ export function prepareRuntimeInterruptSuccessor(
   const active = session.pendingMessages.filter(
     (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
   );
-  if (yielding && active.length === 0) return null;
   const remaining = session.pendingMessages.filter(
     (message) => !cohortSet.has(message) && (!message.pendingId || !activePendingIds.has(message.pendingId)),
   );
-  const continuation = yielding ? createYieldContinuation(session, active, activeSource ?? undefined) : undefined;
-  session.pendingMessages = [...active, merged, ...remaining, ...(continuation ? [continuation] : [])];
+  session.pendingMessages = [...active, merged, ...remaining];
 
   return {
     message: merged,
     coalescedMessages: cohort.filter((message) => message !== interrupting),
-    ...(continuation ? { continuation } : {}),
   };
-}
-
-function createYieldContinuation(
-  session: RuntimeHostStreamingSession,
-  active: RuntimeUserMessage[],
-  source: RuntimeLaunchPrompt["source"],
-): RuntimeUserMessage {
-  const original = active[active.length - 1]?.launchPrompt;
-  const request = active.map((message) => message.yieldedRequest ?? message.message.content).join("\n\n");
-  const continuation = createQueuedRuntimeUserMessage({
-    ...original,
-    ...session.currentTurnAuthority,
-    source,
-    prompt: [
-      "[System] Resume the unfinished request below after yielding to another chat or thread.",
-      "Continue from the existing conversation and tool results. Do not repeat completed actions.",
-      "If a command was interrupted, verify its outcome before retrying it.",
-      "",
-      request,
-    ].join("\n"),
-    _runtimePrompt: undefined,
-    _modelBrokerTurnId: undefined,
-    _resumeStashedMessages: undefined,
-    _daemonRestartResume: undefined,
-    commands: undefined,
-    deliveryBarrier: "after_response",
-    deliveryBarrierSource: "inferred",
-  });
-  continuation.yieldedRequest = request;
-  return continuation;
 }
 
 function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): RuntimeLaunchPrompt {
@@ -396,7 +368,7 @@ export function getDeliverableRuntimeMessages(
   }
 
   const activeTaskByExemption = new Map<string, boolean>();
-  const deliverable = session.pendingMessages.filter((message) =>
+  const releasable = session.pendingMessages.filter((message) =>
     canReleaseRuntimeDeliveryBarrier(
       sessionName,
       session,
@@ -411,6 +383,9 @@ export function getDeliverableRuntimeMessages(
       })(),
     ),
   );
+  const deliverable = prioritizeHumanRuntimeMessages(releasable);
+  const reports = getCompatibleProgressReports(deliverable);
+  if (reports.length > 1) return reports;
   // These envelopes bind authority to one logical turn. Never let adjacent
   // messages borrow their channel binding or validated internal origin.
   const firstIsolatedTurnIndex = deliverable.findIndex(
@@ -459,6 +434,92 @@ export function getDeliverableRuntimeMessages(
     (message, index) => index > 0 && runtimeTurnActorKey(message.launchPrompt) !== firstActor,
   );
   return nextActorIndex < 0 ? surfaceBounded : surfaceBounded.slice(0, nextActorIndex);
+}
+
+/**
+ * Choose work before bounding its envelope. Only known background atoms may
+ * be bypassed: unknown senders retain FIFO and ambiguous deliveries retain
+ * reconciliation ownership. This never changes a message's authority or lane.
+ */
+function prioritizeHumanRuntimeMessages(messages: RuntimeUserMessage[]): RuntimeUserMessage[] {
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index]!;
+    if (message.replay || message.yieldedRequest) break;
+    const provenance = classifyTurnProvenance({ prompt: message.launchPrompt });
+    if (provenance.origin === "human") {
+      // Leave the real pending queue intact: terminal accounting removes only
+      // the ids actually yielded, even when the selected atom was not first.
+      return index === 0 ? messages : messages.slice(index);
+    }
+    if (!provenance.background) break;
+  }
+  return messages;
+}
+
+const MAX_PROGRESS_BATCH_MESSAGES = 16;
+const MAX_PROGRESS_BATCH_BYTES = 32 * 1024;
+
+function progressReportEnvelope(message: RuntimeUserMessage): object | null {
+  const prompt = message.launchPrompt;
+  const lifecycle = prompt?._slackThreadLifecycle;
+  const origin = resolveRuntimeTurnOrigin(prompt?._turnOrigin);
+  if (
+    !prompt ||
+    lifecycle?.eventType !== "thread.report" ||
+    !lifecycle.requestId ||
+    !lifecycle.childSessionKey ||
+    !lifecycle.parentSessionKey ||
+    origin?.producer !== "channel" ||
+    origin.action !== "session.return" ||
+    (message.replay ? !message.clientMessageId : Boolean(message.clientMessageId)) ||
+    message.yieldedRequest ||
+    message.taskBarrierTaskId ||
+    prompt._channelBackend ||
+    prompt._bridgeTurnId ||
+    prompt._decisionDeliveryId ||
+    prompt._taskAssignmentId ||
+    prompt._observation ||
+    prompt._cron ||
+    prompt._trigger ||
+    prompt._heartbeat ||
+    prompt._sessionFollowup ||
+    (message.commands?.length ?? 0) > 0 ||
+    (prompt.commands?.length ?? 0) > 0
+  )
+    return null;
+
+  // Ignore only presentation text and the unique report id. Everything else,
+  // including callerContextId, actor, target, approval route, model and thread,
+  // must be identical. Different delegations never borrow each other's grants.
+  const { prompt: _text, _runtimePrompt, _slackThreadLifecycle, ...envelope } = prompt;
+  const { eventId: _eventId, ...thread } = lifecycle;
+  return {
+    envelope,
+    thread,
+    barrier: message.deliveryBarrier,
+    taskBarrierTaskId: message.taskBarrierTaskId,
+    // Recovery replays exactly the already handed-off cohort, never a new
+    // report that happened to arrive under the same authority afterward.
+    replayDeliveryId: message.replay ? message.clientMessageId : null,
+  };
+}
+
+function getCompatibleProgressReports(messages: RuntimeUserMessage[]): RuntimeUserMessage[] {
+  const first = messages[0];
+  if (!first) return [];
+  const envelope = progressReportEnvelope(first);
+  if (!envelope) return [];
+  const batch = [first];
+  let bytes = Buffer.byteLength(first.message.content);
+  for (const message of messages.slice(1, MAX_PROGRESS_BATCH_MESSAGES)) {
+    const next = progressReportEnvelope(message);
+    bytes += Buffer.byteLength(message.message.content) + 2;
+    if (!next || bytes > MAX_PROGRESS_BATCH_BYTES || !isDeepStrictEqual(envelope, next)) break;
+    batch.push(message);
+  }
+  // Originals stay queued until the terminal acknowledgement. No latest-wins
+  // overwrite, semantic summary or event-id substitution can lose a blocker.
+  return batch;
 }
 
 /**
@@ -593,6 +654,8 @@ export interface RuntimeMessageGeneratorOptions {
   session: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   beforeTurnStart?: (input: { deliverableMessages: RuntimeUserMessage[]; combinedPrompt: string }) => void;
+  /** Release the host-owned authority when the physical turn settles or cannot start. */
+  afterTurnEnd?: () => void;
   transformTurnPrompt?: (input: {
     sessionName: string;
     deliverableMessages: RuntimeUserMessage[];
@@ -628,6 +691,7 @@ export async function* createRuntimeMessageGenerator({
   session,
   stashedMessages,
   beforeTurnStart,
+  afterTurnEnd,
   transformTurnPrompt,
   traceTurnStart,
 }: RuntimeMessageGeneratorOptions): AsyncGenerator<RuntimePromptMessage> {
@@ -681,10 +745,21 @@ export async function* createRuntimeMessageGenerator({
       sessionName,
       count: deliverable.length,
       queued: session.pendingMessages.length,
+      bypassed: session.pendingMessages.indexOf(deliverable[0]!),
+      pendingIds: [...yieldedIds],
     });
 
+    let turnEnded = false;
+    const endTurn = () => {
+      if (turnEnded) return;
+      turnEnded = true;
+      afterTurnEnd?.();
+    };
     const turnCompleted = new Promise<void>((resolve) => {
-      session.onTurnComplete = resolve;
+      session.onTurnComplete = () => {
+        endTurn();
+        resolve();
+      };
     });
     session.turnActive = true;
     session.currentTurnToolStarted = false;
@@ -743,6 +818,7 @@ export async function* createRuntimeMessageGenerator({
         }
       }
     } catch (error) {
+      endTurn();
       settlePromptTransform(sessionName, promptTransform, "release", "turn preparation failed");
       session.durableTurnPreparationFailed = true;
       session.turnActive = false;
@@ -763,22 +839,25 @@ export async function* createRuntimeMessageGenerator({
     }
 
     settlePromptTransform(sessionName, promptTransform, "commit");
-    yield {
-      type: "user" as const,
-      message: { role: "user" as const, content: promptContent },
-      session_id: "",
-      parent_tool_use_id: null,
-      clientMessageId,
-      replay,
-      terminalReplayAllowed,
-      runtimeOptions: {
-        model: session.currentModel,
-        effort: session.currentEffort,
-        thinking: session.currentThinking,
-      },
-    };
-
-    await turnCompleted;
+    try {
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: promptContent },
+        session_id: "",
+        parent_tool_use_id: null,
+        clientMessageId,
+        replay,
+        terminalReplayAllowed,
+        runtimeOptions: {
+          model: session.currentModel,
+          effort: session.currentEffort,
+          thinking: session.currentThinking,
+        },
+      };
+      await turnCompleted;
+    } finally {
+      endTurn();
+    }
 
     if (session.interrupted && session.currentTurnSuperseded) {
       const queuedBefore = session.pendingMessages.length;

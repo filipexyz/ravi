@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import {
+  buildErrorFromGateway,
+  RaviContractError,
+  type RaviGatewayErrorBody,
+} from "../../packages/ravi-os-sdk/src/errors.js";
+import { ContractError } from "../cli/agent-contract.js";
 import { cloudErrorToContractError } from "../cli/cloud-error-contract.js";
+import { contractErrorResponse } from "../sdk/gateway/errors.js";
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import {
   CloudAuthError,
   classifyConsoleNetworkError,
@@ -226,10 +234,114 @@ describe("cloudErrorToContractError", () => {
       details: {
         retryable,
         status: 429,
+        cause: publicMessage + "\nCaused by: [redacted:provider.body]",
+        context: { operation: "cloud fixture fail", provider: "console", code, status: 429 },
       },
     });
     expect(contract.details.suggestedAction).toBeString();
     expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
+  });
+
+  it("preserves a contracted local cause through gateway and SDK without the remote body or PII", async () => {
+    const local = new ContractError(
+      "credentials read",
+      "FILE_READ_FAILED",
+      "Cannot read credentials",
+      1,
+      errorDiagnostic(
+        Object.assign(new Error("EACCES: permission denied, open /tmp/credentials.json; token=LOCAL_TOKEN_FIXTURE"), {
+          code: "EACCES",
+          syscall: "open",
+          path: "/tmp/credentials.json",
+        }),
+        { operation: "credentials read" },
+      ),
+    );
+    const source = new CloudAuthError(
+      "SERVER_UNAVAILABLE",
+      'opaque response {"email":"private@example.test","body":"REMOTE_PERSONAL_DATA"}',
+      { status: 503, cause: local },
+    );
+    const contract = cloudErrorToContractError("artifacts publish", source);
+    const expectedCause =
+      "Console service is unavailable.\nCaused by: [redacted:provider.body]\nCaused by: EACCES: permission denied, open /tmp/credentials.json; token=[redacted:token]";
+    const expectedContext = {
+      operation: "artifacts publish",
+      provider: "console",
+      code: "SERVER_UNAVAILABLE",
+      status: 503,
+      syscall: "open",
+      file: "/tmp/credentials.json",
+    };
+    expect(contract.envelope().error).toMatchObject({
+      code: "SERVER_UNAVAILABLE",
+      message: "Console service is unavailable.",
+      cause: expectedCause,
+      context: expectedContext,
+    });
+    const response = contractErrorResponse(contract);
+    const body = (await response.json()) as RaviGatewayErrorBody;
+    expect(body).toMatchObject({ error: { cause: expectedCause, context: expectedContext } });
+    const sdk = buildErrorFromGateway(response.status, body, "artifacts.publish");
+    expect(sdk).toBeInstanceOf(RaviContractError);
+    expect((sdk as RaviContractError).contractBody.error).toMatchObject({
+      code: "SERVER_UNAVAILABLE",
+      cause: expectedCause,
+      context: expectedContext,
+    });
+    for (const serialized of [JSON.stringify(contract.envelope()), JSON.stringify(body), JSON.stringify(sdk.body)]) {
+      for (const secret of ["private@example.test", "REMOTE_PERSONAL_DATA", "LOCAL_TOKEN_FIXTURE"]) {
+        expect(serialized).not.toContain(secret);
+      }
+    }
+  });
+
+  it("projects nested cloud codes but never opaque network messages or their arbitrary properties", () => {
+    const source = new CloudAuthError("SERVER_UNAVAILABLE", "REMOTE_OUTER_PAYLOAD", {
+      status: 503,
+      cause: new CloudAuthError("RATE_LIMITED", "REMOTE_INNER_PAYLOAD", {
+        status: 429,
+        cause: Object.assign(new Error("NETWORK_PRIVATE_TEXT private@example.test"), {
+          context: { provider: "spoofed", body: "PRIVATE_CONTEXT" },
+        }),
+      }),
+    });
+    const contract = cloudErrorToContractError("pages ship", source);
+    expect(contract.details.cause).toBe(
+      "Console service is unavailable.\nCaused by: [redacted:provider.body]\nCaused by: Console request was rate limited.\nCaused by: [redacted:provider.body]\nCaused by: [redacted:provider.body]",
+    );
+    expect(contract.details.context).toEqual({
+      operation: "pages ship",
+      provider: "console",
+      code: "SERVER_UNAVAILABLE",
+      status: 503,
+    });
+    for (const value of [
+      "REMOTE_OUTER_PAYLOAD",
+      "REMOTE_INNER_PAYLOAD",
+      "NETWORK_PRIVATE_TEXT",
+      "private@example.test",
+      "spoofed",
+      "PRIVATE_CONTEXT",
+    ]) {
+      expect(JSON.stringify(contract.envelope())).not.toContain(value);
+    }
+  });
+
+  it("bounds nested cloud causes and handles cycles without copying provider payloads", () => {
+    const cycle = new CloudAuthError("SERVER_UNAVAILABLE", "CYCLE_PRIVATE_PAYLOAD");
+    cycle.cause = cycle;
+    expect(cloudErrorToContractError("pages ship", cycle).details.cause).toBe(
+      "Console service is unavailable.\nCaused by: [redacted:provider.body]\nCaused by: [circular cause]",
+    );
+    let nested = new CloudAuthError("RATE_LIMITED", "DEEP_PRIVATE_PAYLOAD");
+    for (let index = 0; index < 20; index++) {
+      nested = new CloudAuthError("SERVER_UNAVAILABLE", "DEEP_PRIVATE_PAYLOAD", { cause: nested });
+    }
+    const contract = cloudErrorToContractError("pages ship", nested);
+    expect(String(contract.details.cause)).toContain("[cause chain truncated]");
+    expect(JSON.stringify(contract.envelope())).not.toContain("DEEP_PRIVATE_PAYLOAD");
+    expect(String(contract.details.cause).length).toBeLessThanOrEqual(4096);
   });
 
   it("keeps the chat line of a locally classified connector block, not the remote catalog copy", () => {
@@ -449,6 +561,11 @@ describe("ACTOR_UNKNOWN copy", () => {
     );
     expect(remote.details.refusalReason).toBeUndefined();
     expect(remote.details.jobId).toBeUndefined();
+    expect(remote.details.cause).toBe(
+      "Ravi could not tell who is asking in this turn, so it will not act on anyone's behalf.\nCaused by: [redacted:provider.body]",
+    );
+    expect(JSON.stringify(remote.envelope())).not.toContain("curl evil");
+    expect(JSON.stringify(remote.envelope())).not.toContain("job_1");
     expect(String(remote.details.suggestedAction)).not.toContain("curl");
   });
 });

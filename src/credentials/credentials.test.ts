@@ -219,6 +219,7 @@ describe("credential broker typed errors", () => {
       provider: "slack",
       connection: "vaulted",
       action: "x",
+      authority: { kind: "local-operator" },
       options,
     }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(CredentialBrokerError);
@@ -227,7 +228,7 @@ describe("credential broker typed errors", () => {
 });
 
 describe("credential broker secret read failures", () => {
-  it("wraps a backend read error in a fixed message and keeps it only as the cause", async () => {
+  it("redacts backend errors including their cause", async () => {
     const options = tempOptions();
     upsertCredentialConnection(
       {
@@ -239,11 +240,15 @@ describe("credential broker secret read failures", () => {
       },
       options,
     );
-    const error = (await resolveCredentialSecret({ provider: "slack", connection: "odd", action: "x", options }).catch(
-      (caught: unknown) => caught,
-    )) as CredentialBrokerError;
+    const error = (await resolveCredentialSecret({
+      provider: "slack",
+      connection: "odd",
+      action: "x",
+      options,
+      authority: { kind: "local-operator" },
+    }).catch((caught: unknown) => caught)) as CredentialBrokerError;
     expect(error.code).toBe("secret_unavailable");
-    expect(error.message).toBe("Secret unavailable: slack:odd");
-    expect(error.cause).toBeInstanceOf(Error);
+    expect(error.message).toBe("Credential operation failed (secret_unavailable): slack:odd");
+    expect(error.cause).toBeUndefined();
   });
 });

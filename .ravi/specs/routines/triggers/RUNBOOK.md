@@ -111,3 +111,7 @@ ravi tasks automations show <id>
 - Do not re-enable an `invalid_filter` trigger and expect it to fire; `enable` warns that it still will not.
 - Do not write filters directly into the database; that skips validation.
 - Do not clear the filter on a wildcard-topic `--shell` trigger just to make it fire again.
+
+## Publication from a thread
+
+After publishing a PR, verify it is ready and inspect `ravi triggers list --json` for its `gh-follow:<repo>#<number>`. `gh pr create`, `gh pr ready` and `gh pr edit` express follow intent; a read-only `gh pr view` does not. Git Data API publication alone creates no follow. Ensure/register one with a durable parent `--reply-session` and verify `enabled`, `runtimeState`, `replySession` and `fireCount` before closing. Generated follows reconcile old thread owners and frozen thread sources during reuse and maintenance.

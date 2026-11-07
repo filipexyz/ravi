@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Session Commands - manage agent sessions
  */
@@ -449,6 +450,8 @@ const slackThreadSummarySchema = z
     childSessionName: z.string().nullable(),
     childSessionMissing: z.boolean(),
     openDecisionCount: z.number(),
+    pendingAnswerCount: z.number(),
+    uncertainAnswerCount: z.number(),
     slackThreadTs: z.string().nullable(),
     link: z.string().nullable(),
     runtime: z
@@ -2066,19 +2069,25 @@ function formatWaitTimeoutError(sessionName: string): string {
 
 function failSessionUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: { suggestedAction },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
 function failSessionRelay(op: string, error: unknown, asJson?: boolean): never {
   if (error instanceof ContractError) throw error;
   contractFail(op, "SESSION_RELAY_FAILED", publicRuntimeFailureDetail(error), {
-    asJson,
-    details: {
-      suggestedAction: "Confirm the daemon and NATS runtime are available, then retry",
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Confirm the daemon and NATS runtime are available, then retry",
+      },
     },
+    diagnostic: errorDiagnostic(error, { operation: op }),
   });
 }
 
@@ -2907,14 +2916,17 @@ function assertSlackThreadChildSession(action: "thread.report" | "thread.close",
 
 /** Keep a typed thread refusal; anything else stays a plain command failure. */
 function rethrowSlackThreadError(error: unknown): never {
-  if (error instanceof CliExpectedError) throw error;
+  if (error instanceof CliExpectedError || error instanceof ContractError) throw error;
   fail(error instanceof Error ? error.message : String(error));
 }
 
-function failSessionNotFound(op: string, ref: string, asJson?: boolean): never {
-  contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${ref}`, {
-    asJson,
-    details: { suggestedAction: "List visible sessions with: ravi sessions list --json" },
+function failSessionNotFound(op: string, _ref: string, asJson?: boolean): never {
+  contractFail(op, "SESSION_NOT_FOUND", "Session not found, or not visible to this context.", {
+    ...{
+      asJson,
+      details: { suggestedAction: "List visible sessions with: ravi sessions list --json" },
+    },
+    diagnostic: errorDiagnostic("Session not found, or not visible to this context.", { operation: op }),
   });
 }
 
@@ -6217,18 +6229,24 @@ export class SessionCommands {
 
     if (completionState.kind === "failed" || completionState.kind === "interrupted") {
       contractFail("sessions send", "SESSION_RUNTIME_FAILED", publicRuntimeFailureDetail(completionState.error), {
-        asJson: options.asJson,
-        details: {
-          suggestedAction: "Inspect the target session runtime and retry",
+        ...{
+          asJson: options.asJson,
+          details: {
+            suggestedAction: "Inspect the target session runtime and retry",
+          },
         },
+        diagnostic: errorDiagnostic(publicRuntimeFailureDetail(completionState.error), { operation: "sessions send" }),
       });
     }
     if (completionState.kind === "timeout") {
       contractFail("sessions send", "SESSION_WAIT_TIMEOUT", formatWaitTimeoutError(sessionName), {
-        asJson: options.asJson,
-        details: {
-          suggestedAction: "Retry when the target session is running, or omit --wait",
+        ...{
+          asJson: options.asJson,
+          details: {
+            suggestedAction: "Retry when the target session is running, or omit --wait",
+          },
         },
+        diagnostic: errorDiagnostic(formatWaitTimeoutError(sessionName), { operation: "sessions send" }),
       });
     }
 
@@ -6878,11 +6896,17 @@ export class SessionCommands {
         const health = thread.turnHealth ? `; ${thread.turnHealth.reason ?? thread.turnHealth.state}` : "";
         const missing = thread.childSessionMissing ? " (session missing)" : "";
         const decisions = thread.openDecisionCount ? ` (${thread.openDecisionCount} decisions pending)` : "";
+        const answers = thread.pendingAnswerCount
+          ? ` (${thread.pendingAnswerCount} ${thread.pendingAnswerCount === 1 ? "resposta" : "respostas"} aguardando admissão)`
+          : "";
+        const uncertain = thread.uncertainAnswerCount
+          ? ` (${thread.uncertainAnswerCount} ${thread.uncertainAnswerCount === 1 ? "entrega incerta" : "entregas incertas"})`
+          : "";
         const runtime = [thread.runtime.provider, thread.runtime.model, thread.runtime.effort]
           .filter((value): value is string => Boolean(value))
           .join(" · ");
         console.log(
-          `  [${thread.status}${health}] ${name}${title}${pending}${missing}${decisions}${runtime ? ` (${runtime})` : ""}`,
+          `  [${thread.status}${health}] ${name}${title}${pending}${missing}${decisions}${answers}${uncertain}${runtime ? ` (${runtime})` : ""}`,
         );
       }
     }
@@ -7082,8 +7106,13 @@ export class SessionCommands {
         "MESSAGE_NOT_FOUND",
         `Message not found or is not an own message for session: ${ref}`,
         {
-          asJson,
-          details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+          ...{
+            asJson,
+            details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+          },
+          diagnostic: errorDiagnostic(`Message not found or is not an own message for session: ${ref}`, {
+            operation: "sessions delete-message",
+          }),
         },
       );
     }
@@ -7263,8 +7292,13 @@ export class SessionCommands {
         "MESSAGE_NOT_FOUND",
         `Message not found or is not an own message for session: ${ref}`,
         {
-          asJson,
-          details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+          ...{
+            asJson,
+            details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+          },
+          diagnostic: errorDiagnostic(`Message not found or is not an own message for session: ${ref}`, {
+            operation: "sessions edit-message",
+          }),
         },
       );
     }
@@ -7526,8 +7560,11 @@ function assertThreadHandoffAuthorized(mayCreate: boolean, asJson?: boolean): vo
     });
     if (!access.allowed) {
       contractFail("sessions send", "PERMISSION_DENIED", access.errorMessage, {
-        asJson,
-        details: { ...(access.denialDetails ?? {}) },
+        ...{
+          asJson,
+          details: { ...(access.denialDetails ?? {}) },
+        },
+        diagnostic: errorDiagnostic(access.errorMessage, { operation: "sessions send" }),
       });
     }
   }

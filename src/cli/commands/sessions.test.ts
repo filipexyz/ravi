@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ZodTypeAny } from "zod";
 import { CliExpectedError } from "../expected-error.js";
@@ -62,6 +63,7 @@ const agentChatActionCounts = new Map<string, { ownMessageCount: number; ownText
 let stickerCatalog: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
+let closeThreadError: Error | null = null;
 const closedSlackThreads: Array<{ session: Record<string, unknown>; returnResult?: string }> = [];
 const reportedSlackThreads: Array<{ session: Record<string, unknown>; message: string }> = [];
 const sentSlackThreadMessages: Array<{
@@ -79,6 +81,8 @@ const fakeSlackThreadSummary = {
   childSessionName: "dev-slack-t-1713000000000100",
   childSessionMissing: false,
   openDecisionCount: 0,
+  pendingAnswerCount: 0,
+  uncertainAnswerCount: 0,
   slackThreadTs: "1713000000.000100",
   link: null,
   runtime: {
@@ -286,6 +290,7 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
     parentReturnDelivered: false,
   }),
   closeSlackThread: async (session: Record<string, unknown>, returnResult?: string) => {
+    if (closeThreadError) throw closeThreadError;
     closedSlackThreads.push({ session, ...(returnResult ? { returnResult } : {}) });
     return {
       changed: true,
@@ -651,8 +656,12 @@ beforeEach(() => {
   publishedOutboundJobs.length = 0;
   createdSlackThreadLifecycles.length = 0;
   closedSlackThreads.length = 0;
+  closeThreadError = null;
   reportedSlackThreads.length = 0;
   sentSlackThreadMessages.length = 0;
+  fakeSlackThreadSummary.openDecisionCount = 0;
+  fakeSlackThreadSummary.pendingAnswerCount = 0;
+  fakeSlackThreadSummary.uncertainAnswerCount = 0;
   threadIdentityAssessment = { kind: "none" };
   displayNameUpdates = [];
   deletedSessionKeys = [];
@@ -2295,6 +2304,24 @@ describe("SessionCommands attach hints", () => {
     expect(createdSlackThreadLifecycles[0]).toMatchObject({ providerOverride: "codex", modelOverride: "gpt-6-astra" });
   });
 
+  it("preserves the active-trigger close refusal and actionable IDs", async () => {
+    const key = "parent:thread:1.2";
+    resolvedSession = { sessionKey: key, name: "child", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: key, sessionName: "child" };
+    closeThreadError = new ContractError(
+      "sessions close-thread",
+      "THREAD_TRIGGERS_PENDING",
+      "Thread still receives active triggers: abcd1234.",
+      1,
+      {
+        ...errorDiagnostic("Thread still receives active triggers: abcd1234.", { operation: "sessions close-thread" }),
+        ...{ triggerIds: ["abcd1234"], suggestedAction: "ravi triggers set abcd1234 replySession parent" },
+      },
+    );
+    await expect(new SessionCommands().closeThread("done", undefined, true)).rejects.toBe(closeThreadError);
+    expect(closedSlackThreads).toHaveLength(0);
+  });
+
   it("closes the current Slack child and opts into a parent return only with --return", async () => {
     const childKey = "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100";
     resolvedSession = {
@@ -2406,6 +2433,41 @@ describe("SessionCommands attach hints", () => {
     await expect(new SessionCommands().threadSend("vanished", "Hello", undefined, true)).rejects.toMatchObject({
       code: "THREAD_SESSION_MISSING",
     });
+  });
+
+  it.each([0, 1, 2])("renders %i pending answers in human and JSON thread listings", (count) => {
+    const rootKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: rootKey, sessionName: "dev-slack" };
+    fakeSlackThreadSummary.openDecisionCount = 1;
+    fakeSlackThreadSummary.pendingAnswerCount = count;
+    fakeSlackThreadSummary.uncertainAnswerCount = count;
+    const commands = new SessionCommands();
+    const human = captureLogs(() => commands.threads());
+    expect(human).toContain("(1 decisions pending)");
+    if (count) {
+      expect(human).toContain(`(${count} ${count === 1 ? "resposta" : "respostas"} aguardando admissão)`);
+      expect(human).toContain(`(${count} ${count === 1 ? "entrega incerta" : "entregas incertas"})`);
+    } else {
+      expect(human).not.toContain("aguardando admissão");
+      expect(human).not.toContain("incerta");
+    }
+    const json = JSON.parse(captureLogs(() => commands.threads(undefined, undefined, true)));
+    expect(json.threads[0]).toMatchObject({
+      openDecisionCount: 1,
+      pendingAnswerCount: count,
+      uncertainAnswerCount: count,
+    });
+  });
+
+  it("shows admission wait without an uncertainty cue while delivery is not uncertain", () => {
+    resolvedSession = { sessionKey: "parent", name: "parent", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: "parent", sessionName: "parent" };
+    fakeSlackThreadSummary.pendingAnswerCount = 1;
+    const human = captureLogs(() => new SessionCommands().threads());
+    expect(human).toContain("(1 resposta aguardando admissão)");
+    expect(human).not.toContain("decisions pending");
+    expect(human).not.toContain("incerta");
   });
 
   it("lists the threads a Slack session owns and sends one new instructions", async () => {
@@ -4203,7 +4265,7 @@ describe("SessionCommands recap", () => {
     scopeEnforced = true;
     canAccess = false;
     let thrown: unknown;
-    await captureLogsAsync(async () => {
+    const output = await captureLogsAsync(async () => {
       try {
         new SessionCommands().recap("main-dm-615153", undefined, true);
       } catch (error) {
@@ -4213,6 +4275,9 @@ describe("SessionCommands recap", () => {
     expect(thrown).toBeInstanceOf(ContractError);
     const contractError = thrown as InstanceType<typeof ContractError>;
     expect(contractError.envelope().error.code).toBe("SESSION_NOT_FOUND");
+    expect(contractError.envelope().error.cause).toBe("Session not found, or not visible to this context.");
+    expect(JSON.stringify(contractError.envelope())).not.toContain("main-dm-615153");
+    expect(output).not.toContain("main-dm-615153");
   });
 });
 

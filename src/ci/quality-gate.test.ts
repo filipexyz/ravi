@@ -639,9 +639,16 @@ describe("runCoverageGate", () => {
     const covered = runCoverageGate(["src/apps/router.ts", "src/apps/router.test.ts"]);
 
     expect(uncovered.ok).toBe(false);
-    expect(uncovered.triggeredPrefixes).toEqual(["src/apps/"]);
+    expect(uncovered.triggeredPrefixes).toEqual(["src/apps/", "src/apps/router.ts"]);
     expect(uncovered.errors[0]!.message).toContain("src/apps/router.test.ts");
     expect(covered.ok).toBe(true);
+  });
+
+  it("recognizes the YouTube credential boundary test without weakening router coverage", () => {
+    const youtubeTest = "src/apps/youtube/credential-authority.test.ts";
+    expect(runCoverageGate(["src/apps/youtube/client.ts", youtubeTest]).ok).toBe(true);
+    expect(runCoverageGate(["src/apps/youtube/client.ts"]).ok).toBe(false);
+    expect(runCoverageGate(["src/apps/router.ts", youtubeTest]).ok).toBe(false);
   });
 });
 

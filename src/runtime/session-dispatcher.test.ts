@@ -2947,7 +2947,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("yields to another surface without replacing the active reply target", async () => {
+  it("queues another surface without interrupting or replacing the active reply target", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
     try {
       getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
@@ -2977,6 +2977,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         turnActive: true,
         currentEffort: "xhigh",
         currentSource: activeSource,
+        currentReplyTarget: activeSource,
         pendingMessages: [activeMessage],
         currentTurnPendingIds: [activeMessage.pendingId!],
         queryHandle: {
@@ -3009,7 +3010,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       expect(activeSession.currentSource).toEqual(activeSource);
-      expect(activeSession.pendingMessages).toHaveLength(3);
+      expect(activeSession.currentReplyTarget).toEqual(activeSource);
+      expect(activeSession.pendingMessages).toHaveLength(2);
       expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_tool");
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
       expect(activeSession.pendingMessages[1]?.message.content).toBe(
@@ -3018,12 +3020,50 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
           "[Slack C123 mid:123.456] <@U123>: hello",
       );
       expect(activeSession.pendingMessages[1]?.launchPrompt?._sessionSurfaceHint).toBe(true);
-      expect(activeSession.pendingMessages[2]?.launchPrompt?.source).toEqual(activeSource);
-      expect(activeSession.pendingMessages[2]?.yieldedRequest).toBe("active work");
-      expect(activeSession.currentTurnYieldContinuationId).toBe(activeSession.pendingMessages[2]?.pendingId);
-      expect(activeSession.currentTurnSuperseded).toBe(true);
-      expect(activeSession.interrupted).toBe(true);
-      expect(interrupt).toHaveBeenCalledTimes(1);
+      expect(activeSession.currentTurnYieldContinuationId).toBeUndefined();
+      expect(activeSession.currentTurnSuperseded).not.toBe(true);
+      expect(activeSession.interrupted).not.toBe(true);
+      expect(interrupt).not.toHaveBeenCalled();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps a Slack DM active when another chat's thread return waits at the tool barrier", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-dm-isolation-");
+    try {
+      const sessionName = "dm-tool-release";
+      getOrCreateSession("agent:main:test:dm-tool-release", "main", stateDir, { name: sessionName });
+      const source = { channel: "slack", accountId: "slack-main", chatId: "D_SOURCE" };
+      const active = createQueuedRuntimeUserMessage({ prompt: "private DM request", source });
+      const notification = createQueuedRuntimeUserMessage({
+        prompt: "[System] Inform: another thread finished",
+        source: { ...source, chatId: "D_DEFAULT" },
+        deliveryBarrier: "after_tool",
+      });
+      const interrupt = mock(async () => {});
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: false,
+        currentSource: source,
+        currentReplyTarget: source,
+        currentTurnPendingIds: [active.pendingId!],
+        pendingMessages: [active, notification],
+        queryHandle: { provider: "pi", events: (async function* () {})(), interrupt },
+      });
+      dispatcher.streamingSessions.set(sessionName, activeSession);
+
+      await (
+        dispatcher as unknown as { releaseQueuedPromptsAfterTool(name: string): Promise<void> }
+      ).releaseQueuedPromptsAfterTool(sessionName);
+
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(activeSession.currentSource).toEqual(source);
+      expect(activeSession.currentReplyTarget).toEqual(source);
+      expect(activeSession.currentTurnSuperseded).not.toBe(true);
+      expect(activeSession.pendingMessages).toEqual([active, notification]);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

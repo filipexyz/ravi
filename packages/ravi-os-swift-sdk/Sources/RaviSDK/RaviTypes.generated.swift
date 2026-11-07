@@ -8393,14 +8393,18 @@ public struct ChannelsStatusReturn: Codable, Sendable {
   public var processName: String
   public var processes: [RaviJSON]
   public var runner: RaviJSON?
+  public var runtime: RaviJSON
+  public var warnings: [String]
 
-  public init(channels: RaviJSON, health: RaviJSON? = nil, pm2Available: Bool, processName: String, processes: [RaviJSON], runner: RaviJSON? = nil) {
+  public init(channels: RaviJSON, health: RaviJSON? = nil, pm2Available: Bool, processName: String, processes: [RaviJSON], runner: RaviJSON? = nil, runtime: RaviJSON, warnings: [String]) {
     self.channels = channels
     self.health = health
     self.pm2Available = pm2Available
     self.processName = processName
     self.processes = processes
     self.runner = runner
+    self.runtime = runtime
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -8410,6 +8414,8 @@ public struct ChannelsStatusReturn: Codable, Sendable {
     case processName = "processName"
     case processes = "processes"
     case runner = "runner"
+    case runtime = "runtime"
+    case warnings = "warnings"
   }
 }
 
@@ -13495,6 +13501,99 @@ public struct CredentialsPoliciesExplainReturn: Codable, Sendable {
   }
 }
 
+public struct CredentialsRequestOptions: Codable, Sendable {
+  public var backend: String?
+  public var execute: Bool?
+  public var label: String?
+  public var reason: String?
+  public var scopes: String?
+  public var user: String?
+
+  public init(backend: String? = nil, execute: Bool? = nil, label: String? = nil, reason: String? = nil, scopes: String? = nil, user: String? = nil) {
+    self.backend = backend
+    self.execute = execute
+    self.label = label
+    self.reason = reason
+    self.scopes = scopes
+    self.user = user
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case backend = "backend"
+    case execute = "execute"
+    case label = "label"
+    case reason = "reason"
+    case scopes = "scopes"
+    case user = "user"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.backend {
+      body["backend"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.label {
+      body["label"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.reason {
+      body["reason"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.scopes {
+      body["scopes"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.user {
+      body["user"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CredentialsRequestReturn: Codable, Sendable {
+  public var delivery: String
+  public var expiresAt: Double
+  public var requestId: String
+  public var target: String
+
+  public init(delivery: String, expiresAt: Double, requestId: String, target: String) {
+    self.delivery = delivery
+    self.expiresAt = expiresAt
+    self.requestId = requestId
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case delivery = "delivery"
+    case expiresAt = "expiresAt"
+    case requestId = "requestId"
+    case target = "target"
+  }
+}
+
+public struct CredentialsRequestStatusReturn: Codable, Sendable {
+  public var activation: String
+  public var receipt: String?
+  public var requestId: String
+  public var status: String
+  public var target: String
+
+  public init(activation: String, receipt: String? = nil, requestId: String, status: String, target: String) {
+    self.activation = activation
+    self.receipt = receipt
+    self.requestId = requestId
+    self.status = status
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case activation = "activation"
+    case receipt = "receipt"
+    case requestId = "requestId"
+    case status = "status"
+    case target = "target"
+  }
+}
+
 public struct CrmAccountReturn: Codable, Sendable {
   public var crm: [String: RaviJSON]
   public var target: String
@@ -15960,14 +16059,16 @@ public struct DaemonStatusReturn: Codable, Sendable {
   public var processes: [[String: RaviJSON]]
   public var ravi: [String: RaviJSON]
   public var runtime: RaviJSON
+  public var warnings: [String]
 
-  public init(infrastructure: [String: RaviJSON], pm2Available: Bool, processName: String, processes: [[String: RaviJSON]], ravi: [String: RaviJSON], runtime: RaviJSON) {
+  public init(infrastructure: [String: RaviJSON], pm2Available: Bool, processName: String, processes: [[String: RaviJSON]], ravi: [String: RaviJSON], runtime: RaviJSON, warnings: [String]) {
     self.infrastructure = infrastructure
     self.pm2Available = pm2Available
     self.processName = processName
     self.processes = processes
     self.ravi = ravi
     self.runtime = runtime
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15977,6 +16078,7 @@ public struct DaemonStatusReturn: Codable, Sendable {
     case processes = "processes"
     case ravi = "ravi"
     case runtime = "runtime"
+    case warnings = "warnings"
   }
 }
 
@@ -24478,6 +24580,108 @@ public struct PermissionsStatusReturn: Codable, Sendable {
   }
 }
 
+public struct PrPublishOptions: Codable, Sendable {
+  public var base: String?
+  public var bodyFile: String?
+  public var dryRun: Bool?
+  public var execute: Bool?
+  public var expectSha: String?
+  public var replySession: String?
+  public var repo: String?
+  public var title: String?
+
+  public init(base: String? = nil, bodyFile: String? = nil, dryRun: Bool? = nil, execute: Bool? = nil, expectSha: String? = nil, replySession: String? = nil, repo: String? = nil, title: String? = nil) {
+    self.base = base
+    self.bodyFile = bodyFile
+    self.dryRun = dryRun
+    self.execute = execute
+    self.expectSha = expectSha
+    self.replySession = replySession
+    self.repo = repo
+    self.title = title
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case base = "base"
+    case bodyFile = "bodyFile"
+    case dryRun = "dryRun"
+    case execute = "execute"
+    case expectSha = "expectSha"
+    case replySession = "replySession"
+    case repo = "repo"
+    case title = "title"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.base {
+      body["base"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.bodyFile {
+      body["bodyFile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.dryRun {
+      body["dryRun"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.expectSha {
+      body["expectSha"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.replySession {
+      body["replySession"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.repo {
+      body["repo"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.title {
+      body["title"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PrPublishReturn: Codable, Sendable {
+  public var attemptId: String
+  public var base: String
+  public var checks: RaviJSON
+  public var follow: RaviJSON
+  public var head: String
+  public var localSha: String
+  public var pr: RaviJSON
+  public var publicationId: String
+  public var remoteSha: String
+  public var repo: String
+  public var treeSha: String
+
+  public init(attemptId: String, base: String, checks: RaviJSON, follow: RaviJSON, head: String, localSha: String, pr: RaviJSON, publicationId: String, remoteSha: String, repo: String, treeSha: String) {
+    self.attemptId = attemptId
+    self.base = base
+    self.checks = checks
+    self.follow = follow
+    self.head = head
+    self.localSha = localSha
+    self.pr = pr
+    self.publicationId = publicationId
+    self.remoteSha = remoteSha
+    self.repo = repo
+    self.treeSha = treeSha
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case attemptId = "attemptId"
+    case base = "base"
+    case checks = "checks"
+    case follow = "follow"
+    case head = "head"
+    case localSha = "localSha"
+    case pr = "pr"
+    case publicationId = "publicationId"
+    case remoteSha = "remoteSha"
+    case repo = "repo"
+    case treeSha = "treeSha"
+  }
+}
+
 public struct ProjectsCreateOptions: Codable, Sendable {
   public var console: String?
   public var defaultPageSite: String?
@@ -26309,8 +26513,9 @@ public struct RuntimeEnvSetReturn: Codable, Sendable {
   public var redacted: Bool
   public var secret: Bool
   public var value: RaviJSON
+  public var warnings: [String]?
 
-  public init(action: String, daemonReloadRequired: Bool, key: String, origin: String, path: String, present: Bool, processPresent: Bool, redacted: Bool, secret: Bool, value: RaviJSON) {
+  public init(action: String, daemonReloadRequired: Bool, key: String, origin: String, path: String, present: Bool, processPresent: Bool, redacted: Bool, secret: Bool, value: RaviJSON, warnings: [String]? = nil) {
     self.action = action
     self.daemonReloadRequired = daemonReloadRequired
     self.key = key
@@ -26321,6 +26526,7 @@ public struct RuntimeEnvSetReturn: Codable, Sendable {
     self.redacted = redacted
     self.secret = secret
     self.value = value
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -26334,6 +26540,7 @@ public struct RuntimeEnvSetReturn: Codable, Sendable {
     case redacted = "redacted"
     case secret = "secret"
     case value = "value"
+    case warnings = "warnings"
   }
 }
 
@@ -26348,8 +26555,9 @@ public struct RuntimeEnvUnsetReturn: Codable, Sendable {
   public var redacted: Bool
   public var secret: Bool
   public var value: RaviJSON
+  public var warnings: [String]?
 
-  public init(action: String, daemonReloadRequired: Bool, key: String, origin: String, path: String, present: Bool, processPresent: Bool, redacted: Bool, secret: Bool, value: RaviJSON) {
+  public init(action: String, daemonReloadRequired: Bool, key: String, origin: String, path: String, present: Bool, processPresent: Bool, redacted: Bool, secret: Bool, value: RaviJSON, warnings: [String]? = nil) {
     self.action = action
     self.daemonReloadRequired = daemonReloadRequired
     self.key = key
@@ -26360,6 +26568,7 @@ public struct RuntimeEnvUnsetReturn: Codable, Sendable {
     self.redacted = redacted
     self.secret = secret
     self.value = value
+    self.warnings = warnings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -26373,6 +26582,7 @@ public struct RuntimeEnvUnsetReturn: Codable, Sendable {
     case redacted = "redacted"
     case secret = "secret"
     case value = "value"
+    case warnings = "warnings"
   }
 }
 

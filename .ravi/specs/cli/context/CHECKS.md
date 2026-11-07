@@ -28,3 +28,7 @@
   deprecated alias. Missing payloads MUST deny without reading daemon stdin;
   invalid credentials, transport failures and malformed gateway output MUST
   produce Codex deny JSON with exit `0`. Audit MUST redact `payload`.
+
+- `bun test src/cli/commands/context-hook-gateway.test.ts` checks original
+  permission provider reason, principal and operation survive the hook response
+  while credentials remain redacted and denied tools never run.

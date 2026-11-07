@@ -191,6 +191,10 @@ public final class RaviClient {
     PermissionsNamespace(transport: transport)
   }
 
+  public var pr: PrNamespace {
+    PrNamespace(transport: transport)
+  }
+
   public var projects: ProjectsNamespace {
     ProjectsNamespace(transport: transport)
   }
@@ -2649,6 +2653,20 @@ public struct CredentialsNamespace: Sendable {
   public var policies: CredentialsPoliciesNamespace {
     CredentialsPoliciesNamespace(transport: transport)
   }
+
+  public func request(_ target: String, _ options: CredentialsRequestOptions = .init()) async throws -> CredentialsRequestReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["target"] = try RaviJSON.fromEncodable(target)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials"], command: "request", body: requestBody, as: CredentialsRequestReturn.self)
+  }
+
+  public func requestStatus(_ target: String, _ requestId: String) async throws -> CredentialsRequestStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["target"] = try RaviJSON.fromEncodable(target)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    return try await transport.call(groupSegments: ["credentials"], command: "request-status", body: requestBody, as: CredentialsRequestStatusReturn.self)
+  }
 }
 
 public struct CredentialsConnectionsNamespace: Sendable {
@@ -4879,6 +4897,20 @@ public struct PermissionsNamespace: Sendable {
   public func status() async throws -> PermissionsStatusReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["permissions"], command: "status", body: requestBody, as: PermissionsStatusReturn.self)
+  }
+}
+
+public struct PrNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func publish(_ options: PrPublishOptions = .init()) async throws -> PrPublishReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pr"], command: "publish", body: requestBody, as: PrPublishReturn.self)
   }
 }
 

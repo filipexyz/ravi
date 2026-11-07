@@ -56,6 +56,7 @@ class RaviClient {
   ObserversNamespace get observers => ObserversNamespace(_transport);
   PagesNamespace get pages => PagesNamespace(_transport);
   PermissionsNamespace get permissions => PermissionsNamespace(_transport);
+  PrNamespace get pr => PrNamespace(_transport);
   ProjectsNamespace get projects => ProjectsNamespace(_transport);
   ProxNamespace get prox => ProxNamespace(_transport);
   ReactNamespace get react => ReactNamespace(_transport);
@@ -3570,6 +3571,30 @@ class CredentialsNamespace {
   CredentialsConnectionsNamespace get connections => CredentialsConnectionsNamespace(_transport);
 
   CredentialsPoliciesNamespace get policies => CredentialsPoliciesNamespace(_transport);
+
+  Future<CredentialsRequestReturn> request(String target, [CredentialsRequestOptions options = const CredentialsRequestOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["credentials"],
+      command: "request",
+      body: requestBody,
+      decode: credentialsRequestReturnFromJson,
+    );
+  }
+
+  Future<CredentialsRequestStatusReturn> requestStatus(String target, String requestId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    return _transport.callJson(
+      groupSegments: const ["credentials"],
+      command: "request-status",
+      body: requestBody,
+      decode: credentialsRequestStatusReturnFromJson,
+    );
+  }
 }
 
 class CredentialsConnectionsNamespace {
@@ -6861,6 +6886,23 @@ class PermissionsNamespace {
       command: "status",
       body: requestBody,
       decode: permissionsStatusReturnFromJson,
+    );
+  }
+}
+
+class PrNamespace {
+  const PrNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<PrPublishReturn> publish([PrPublishOptions options = const PrPublishOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pr"],
+      command: "publish",
+      body: requestBody,
+      decode: prPublishReturnFromJson,
     );
   }
 }

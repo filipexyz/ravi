@@ -33,3 +33,16 @@
   behavior and MUST NOT emit `INSTANCE_NOT_FOUND`.
 - `bun test src/cli/commands/routes.test.ts` SHOULD pass after any change to
   the instances/routes contract surface.
+- `bun test src/cli/commands/instances-pending.test.ts` MUST verify that a Slack
+  pending group retains its complete lowercase id in the listed and approved
+  pattern; raw ids, lowercase ids and the listed `group:` pattern select the
+  same entry. Approval must persist a route that the real resolver matches,
+  satisfy Slack's explicit-route predicate and report `verified: true` through
+  `routes explain`.
+- Two Slack ids sharing all digits MUST remain distinct during pending lookup.
+  An id without digits and a pending entry without `chatId` MUST still work.
+- Repeated explicit approval MUST be idempotent. Approval after a legacy
+  truncated route consumed the pending entry MUST create the full route
+  without silently renaming or removing the old numeric route.
+- WhatsApp numeric groups, group JIDs (including hyphens), prefixed groups and
+  formatted phone approvals MUST retain their normalization and review kind.

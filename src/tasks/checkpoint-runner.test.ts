@@ -26,12 +26,6 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-mock.module("../omni/session-stream.js", () => ({
-  publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
-    publishCalls.push({ sessionName, payload });
-  }),
-}));
-
 const {
   TaskCheckpointRunner,
   listTaskCheckpointSweepTasks,
@@ -57,7 +51,7 @@ beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-checkpoint-test-");
   emittedEvents.length = 0;
   publishCalls.length = 0;
-  // Other suites in the same process mock the stream differently; record through the hook.
+  // Inject the publisher without replacing session-stream exports used by later suites.
   setTaskSessionPromptPublisherForTests(async (sessionName, payload) => {
     publishCalls.push({ sessionName, payload });
   });
@@ -74,6 +68,11 @@ afterEach(async () => {
 });
 
 describe("task checkpoint runner backpressure", () => {
+  it("preserves session-stream exports for runtime prompt subscriptions", async () => {
+    const { RuntimePromptSubscription } = await import("../runtime/prompt-subscription.js");
+    expect(typeof RuntimePromptSubscription).toBe("function");
+  });
+
   it("does not publish a missed checkpoint reminder when runtime session pool is saturated", async () => {
     const created = createTask({
       title: "Checkpoint backpressure",

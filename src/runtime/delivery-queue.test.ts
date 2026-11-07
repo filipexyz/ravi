@@ -16,7 +16,7 @@ import {
 } from "./host-session.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeSessionHandle } from "./types.js";
 
 function makeRuntimeSession(): RuntimeSessionHandle {
@@ -50,7 +50,278 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
   };
 }
 
+describe("runtime turn authority cleanup", () => {
+  for (const boundary of ["complete", "preparation-failure", "return"] as const) {
+    it(`releases the physical turn exactly once on ${boundary}`, async () => {
+      const session = makeStreamingSession({ pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "work" })] });
+      let released = 0;
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "authority-cleanup",
+        session,
+        stashedMessages: new Map(),
+        afterTurnEnd: () => {
+          released++;
+        },
+        traceTurnStart: () => {
+          if (boundary === "preparation-failure") throw new Error("durable preparation failed");
+          return undefined;
+        },
+      });
+      if (boundary === "preparation-failure") {
+        await expect(generator.next()).rejects.toThrow("durable preparation failed");
+      } else {
+        await generator.next();
+        expect(released).toBe(0);
+        if (boundary === "complete") {
+          session.onTurnComplete?.();
+          expect(released).toBe(1);
+        }
+        session.done = true;
+        await generator.return(undefined);
+      }
+      expect(released).toBe(1);
+    });
+  }
+});
+
 describe("runtime delivery queue", () => {
+  for (const interrupted of [false, true]) {
+    it(`hands the next provider input to a human behind 64 reports (interrupt=${interrupted})`, async () => {
+      const active = createQueuedRuntimeUserMessage(progressPrompt("active report", 0));
+      const reports = Array.from({ length: 64 }, (_, index) =>
+        createQueuedRuntimeUserMessage(progressPrompt(`report ${index}: evidence-${index}`, index + 1)),
+      );
+      const questions = Array.from({ length: 4 }, (_, index) =>
+        createQueuedRuntimeUserMessage(channelPrompt(`human question ${index}`, `human-${index}`)),
+      );
+      const session = makeStreamingSession({ pendingMessages: [active] });
+      const handoffs: RuntimeUserMessage[][] = [];
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "queue-fixture",
+        session,
+        stashedMessages: new Map(),
+        beforeTurnStart: ({ deliverableMessages }) => {
+          handoffs.push(deliverableMessages);
+          session.currentSource = deliverableMessages[0]?.launchPrompt?.source;
+        },
+      });
+      await generator.next();
+      session.pendingMessages.push(...reports, ...questions);
+      if (interrupted) {
+        const successor = prepareRuntimeInterruptSuccessor("queue-fixture", session);
+        expect(successor?.message.message.content).toContain("human question 0");
+        expect(successor?.message.message.content).not.toContain("evidence-");
+        session.interrupted = true;
+        session.currentTurnSuperseded = true;
+      }
+      session.turnActive = false;
+      session.onTurnComplete?.();
+      const next = await generator.next();
+      expect(next.value?.message.content).toContain("human question 0");
+      expect(next.value?.message.content).not.toContain("evidence-");
+      expect(handoffs[1]?.every((message) => message.launchPrompt?._channelBackend)).toBe(true);
+      expect(session.pendingMessages.filter((message) => reports.includes(message))).toHaveLength(64);
+
+      // Drain real generator turns. Every report's full content and pending id
+      // must survive batching, and each original atom is acknowledged only once.
+      const delivered = [...handoffs[1]!];
+      let reportTurns = 0;
+      while (session.pendingMessages.length > (session.currentTurnPendingIds?.length ?? 0)) {
+        session.turnActive = false;
+        session.onTurnComplete?.();
+        const turn = await generator.next();
+        const batch = handoffs[handoffs.length - 1]!;
+        delivered.push(...batch);
+        if (batch.some((message) => reports.some((report) => report.pendingId === message.pendingId))) {
+          reportTurns++;
+          for (const message of batch) expect(turn.value?.message.content).toContain(message.message.content);
+        }
+      }
+      session.done = true;
+      session.turnActive = false;
+      session.onTurnComplete?.();
+      expect((await generator.next()).done).toBe(true);
+      expect(session.pendingMessages).toEqual([]);
+      for (const report of reports) {
+        expect(delivered.filter((message) => message.pendingId === report.pendingId)).toHaveLength(1);
+      }
+      for (let index = 0; index < 4; index++) {
+        expect(delivered.map((message) => message.message.content).join("\n")).toContain(`human question ${index}`);
+      }
+      expect(reportTurns).toBeLessThanOrEqual(4);
+    });
+  }
+
+  it("does not consolidate progress across authority, surface, completion or replay boundaries", () => {
+    const first = createQueuedRuntimeUserMessage(progressPrompt("first evidence", 1));
+    const compatible = createQueuedRuntimeUserMessage(progressPrompt("second evidence", 2));
+    expect(
+      getDeliverableRuntimeMessages(
+        "queue-fixture",
+        makeStreamingSession({
+          pendingMessages: [first, compatible],
+        }),
+      ),
+    ).toEqual([first, compatible]);
+    for (const boundary of ["caller", "surface", "complete", "replay", "principal"] as const) {
+      const other = createQueuedRuntimeUserMessage(progressPrompt("separate evidence", 3));
+      if (boundary === "caller") other.launchPrompt!._turnOrigin!.callerContextId = "different-context";
+      if (boundary === "surface") other.launchPrompt!.source!.threadId = "another-thread";
+      if (boundary === "complete") other.launchPrompt!._slackThreadLifecycle!.eventType = "thread.close";
+      if (boundary === "principal") other.launchPrompt!._turnOrigin!.principal.id = "other-agent";
+      if (boundary === "replay") {
+        other.replay = true;
+        other.clientMessageId = "existing-attempt";
+      }
+      expect(
+        getDeliverableRuntimeMessages(
+          "queue-fixture",
+          makeStreamingSession({
+            pendingMessages: [first, other, compatible],
+          }),
+        ),
+      ).toEqual([first]);
+    }
+  });
+
+  it("never promotes a human through ambiguous replay or a different active surface", () => {
+    const report = createQueuedRuntimeUserMessage(progressPrompt("pending reconciliation", 1));
+    report.replay = true;
+    report.clientMessageId = "existing-attempt";
+    const human = createQueuedRuntimeUserMessage(channelPrompt("next question", "human"));
+    expect(
+      getDeliverableRuntimeMessages(
+        "queue-fixture",
+        makeStreamingSession({
+          pendingMessages: [report, human],
+        }),
+      ),
+    ).toEqual([report]);
+    const session = makeStreamingSession({
+      turnActive: true,
+      currentSource: { ...report.launchPrompt!.source!, threadId: "another-thread" },
+      currentTurnPendingIds: [report.pendingId!],
+      pendingMessages: [report, human],
+    });
+    expect(prepareRuntimeInterruptSuccessor("queue-fixture", session)).toBeNull();
+  });
+
+  it("bounds progress by bytes without dropping a long blocker or acknowledging arrivals during a batch", async () => {
+    const first = createQueuedRuntimeUserMessage(progressPrompt("first evidence", 1));
+    const second = createQueuedRuntimeUserMessage(progressPrompt("second evidence", 2));
+    const blocker = createQueuedRuntimeUserMessage(progressPrompt(`BLOCKER: ${"x".repeat(33 * 1024)}`, 3));
+    const session = makeStreamingSession({ pendingMessages: [first, second, blocker] });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "queue-fixture",
+      session,
+      stashedMessages: new Map(),
+    });
+    const batch = await generator.next();
+    expect(batch.value?.message.content).toContain("first evidence");
+    expect(batch.value?.message.content).toContain("second evidence");
+    expect(batch.value?.message.content).not.toContain("BLOCKER:");
+    const arrival = createQueuedRuntimeUserMessage(progressPrompt("new decision during delivery", 4));
+    session.pendingMessages.push(arrival);
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    const next = await generator.next();
+    expect(next.value?.message.content).toContain(blocker.message.content);
+    expect(session.pendingMessages).toEqual([blocker, arrival]);
+    session.done = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    await generator.next();
+    expect(session.pendingMessages).toEqual([arrival]);
+  });
+
+  it("replays the complete original progress batch under its original delivery id", async () => {
+    const reports = [1, 2, 3].map((index) =>
+      createQueuedRuntimeUserMessage(progressPrompt(`evidence ${index}`, index)),
+    );
+    const session = makeStreamingSession({ pendingMessages: [...reports] });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "queue-fixture",
+      session,
+      stashedMessages: new Map(),
+    });
+    const original = (await generator.next()).value!;
+    for (const report of reports) report.replay = true;
+    const human = createQueuedRuntimeUserMessage(channelPrompt("arrived after ambiguous delivery", "later"));
+    session.pendingMessages.push(human);
+    session.interrupted = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    const retry = (await generator.next()).value!;
+    expect(retry.message.content).toBe(original.message.content);
+    expect(retry.clientMessageId).toBe(original.clientMessageId);
+    expect(retry.replay).toBe(true);
+    expect(session.currentTurnPendingIds).toEqual(reports.map((report) => report.pendingId!));
+    session.done = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    await generator.next();
+    expect(session.pendingMessages).toEqual([human]);
+  });
+
+  it("keeps a Slack DM turn ahead of a system return addressed to the default DM", () => {
+    const active = createQueuedRuntimeUserMessage(surfacePrompt("private DM request", "slack", "D_SOURCE"));
+    const notification = createQueuedRuntimeUserMessage({
+      ...surfacePrompt("[System] Inform: another thread finished", "slack", "D_DEFAULT"),
+      deliveryBarrier: "after_tool",
+    });
+    const session = makeStreamingSession({
+      turnActive: true,
+      currentSource: active.launchPrompt!.source,
+      currentReplyTarget: active.launchPrompt!.source,
+      currentTurnToolStarted: true,
+      toolRunning: false,
+      pendingMessages: [active, notification],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+    expect(session.pendingMessages).toEqual([active, notification]);
+    expect(session.currentSource).toEqual(active.launchPrompt!.source);
+    expect(session.currentReplyTarget).toEqual(active.launchPrompt!.source);
+  });
+
+  for (const boundary of ["source-less", "thread", "account"] as const) {
+    for (const barrier of ["after_tool", "immediate_interrupt"] as const) {
+      it(`does not cross a ${boundary} boundary for ${barrier} input`, () => {
+        const source = {
+          channel: "slack",
+          accountId: "slack-a",
+          instanceId: "instance-a",
+          chatId: "D_SOURCE",
+        };
+        const incomingSource =
+          boundary === "source-less"
+            ? undefined
+            : boundary === "thread"
+              ? { ...source, threadId: "thread-1" }
+              : { ...source, accountId: "slack-b", instanceId: "instance-b" };
+        const active = createQueuedRuntimeUserMessage({ prompt: "private request", source });
+        const incoming = createQueuedRuntimeUserMessage({
+          prompt: "[System] Inform: other work finished",
+          source: incomingSource,
+          deliveryBarrier: barrier,
+          _turnOrigin: buildSessionRelayTurnOrigin("inform"),
+        });
+        const session = makeStreamingSession({
+          turnActive: true,
+          currentSource: source,
+          currentReplyTarget: source,
+          currentTurnPendingIds: [active.pendingId!],
+          pendingMessages: [active, incoming],
+        });
+
+        expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+        expect(session.pendingMessages).toEqual([active, incoming]);
+        expect(session.currentReplyTarget).toEqual(source);
+      });
+    }
+  }
+
   it("keeps admitted cron runs separate and preserves their identity in continuations", () => {
     const first = createQueuedRuntimeUserMessage({ prompt: "first", _cron: true, _jobId: "job", _cronRunId: "run-1" });
     const second = createQueuedRuntimeUserMessage({
@@ -521,7 +792,7 @@ describe("runtime delivery queue", () => {
     ]);
   });
 
-  it("yields to the first queued thread without coalescing different threads", () => {
+  it("keeps different queued threads behind the active reply surface", () => {
     const active = createQueuedRuntimeUserMessage(channelPrompt("active", "turn-a"));
     const firstThread = createQueuedRuntimeUserMessage(channelPrompt("thread one", "turn-b", "user-a", "thread-1"));
     const secondThread = createQueuedRuntimeUserMessage(channelPrompt("thread two", "turn-c", "user-a", "thread-2"));
@@ -533,9 +804,8 @@ describe("runtime delivery queue", () => {
 
     const prepared = prepareRuntimeInterruptSuccessor("dev", session);
 
-    expect(prepared?.message).toBe(firstThread);
-    expect(prepared?.coalescedMessages).toEqual([]);
-    expect(session.pendingMessages).toEqual([active, firstThread, secondThread, prepared!.continuation!]);
+    expect(prepared).toBeNull();
+    expect(session.pendingMessages).toEqual([active, firstThread, secondThread]);
   });
 
   it("does not fold Ravi Commands into conversational steering", () => {
@@ -734,7 +1004,7 @@ describe("runtime delivery queue", () => {
     });
   }
 
-  it("yields to a different reply surface and queues a fresh continuation of the original work", () => {
+  it("keeps a different reply surface queued without creating a continuation", () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "slack", "chat-a"));
     const otherSurface = createQueuedRuntimeUserMessage(surfacePrompt("wait", "whatsapp", "chat-b"));
     const session = makeStreamingSession({
@@ -747,20 +1017,12 @@ describe("runtime delivery queue", () => {
     active.clientMessageId = "ravi:already-delivered";
     const prepared = prepareRuntimeInterruptSuccessor("dev", session);
 
-    expect(prepared?.message).toBe(otherSurface);
-    expect(prepared?.continuation).toMatchObject({
-      deliveryBarrier: "after_response",
-      yieldedRequest: "active",
-      launchPrompt: { source: active.launchPrompt!.source },
-    });
-    expect(prepared?.continuation?.message.content).toContain("Do not repeat completed actions");
-    expect(prepared?.continuation?.pendingId).not.toBe(active.pendingId);
-    expect(prepared?.continuation?.clientMessageId).toBeUndefined();
-    expect(prepared?.continuation?.replay).not.toBe(true);
-    expect(session.pendingMessages).toEqual([active, otherSurface, prepared!.continuation!]);
+    expect(prepared).toBeNull();
+    expect(session.pendingMessages).toEqual([active, otherSurface]);
+    expect(active.clientMessageId).toBe("ravi:already-delivered");
   });
 
-  it("keeps the yielded turn's authority, backend and model separate from the interrupting thread", () => {
+  it("keeps the active turn's authority, backend and model intact while another thread waits", () => {
     const original = {
       ...channelPrompt("original work", "turn-original", "original-actor", "thread-original"),
       _runtimeModel: "original-model",
@@ -777,22 +1039,21 @@ describe("runtime delivery queue", () => {
       pendingMessages: [active, incoming],
     });
 
-    const prepared = prepareRuntimeInterruptSuccessor("dev", session);
-    expect(prepared?.continuation?.launchPrompt).toMatchObject({
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+    expect(session.pendingMessages).toEqual([active, incoming]);
+    expect(active.launchPrompt).toMatchObject({
       source: original.source,
       context: original.context,
       _channelBackend: original._channelBackend,
       _runtimeModel: "original-model",
       taskBarrierTaskId: "original-task",
     });
-    expect(prepared?.continuation?.message.content).toContain("model-facing original work");
-    expect(prepared?.continuation?.message.content).not.toContain("new work");
-    expect(prepared?.continuation?.launchPrompt?._modelBrokerTurnId).toBeUndefined();
-    expect(prepared?.coalescedMessages).toEqual([]);
+    expect(active.message.content).toBe("model-facing original work");
+    expect(active.launchPrompt?._modelBrokerTurnId).toBe("consumed-model-broker-plan");
     expect(session.currentSource).toEqual(original.source);
   });
 
-  it("runs queued channels before resuming yielded work after a tool has already executed", async () => {
+  it("finishes the active channel turn before draining another channel after a tool", async () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("original WhatsApp work", "whatsapp", "wa"));
     const incoming = createQueuedRuntimeUserMessage(surfacePrompt("Slack request", "slack", "slack"));
     const session = makeStreamingSession({ pendingMessages: [active] });
@@ -801,35 +1062,23 @@ describe("runtime delivery queue", () => {
     session.currentSource = active.launchPrompt!.source;
     session.currentTurnToolStarted = true;
     session.pendingMessages.push(incoming);
-    const prepared = prepareRuntimeInterruptSuccessor("dev", session)!;
-    session.currentTurnSuperseded = true;
-    session.currentTurnYieldContinuationId = prepared.continuation!.pendingId;
-    session.interrupted = true;
-
-    const stash = new Map<string, RuntimeUserMessage[]>();
-    stashPendingRuntimeMessages("dev", session, stash);
-    expect(stash.get("dev")).toEqual([incoming, prepared.continuation!]);
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+    expect(getDeliverableRuntimeMessages("dev", session)).not.toContain(incoming);
+    expect(session.pendingMessages).toEqual([active, incoming]);
 
     session.turnActive = false;
     session.onTurnComplete?.();
     expect((await generator.next()).value?.message.content).toBe("Slack request");
     session.currentSource = incoming.launchPrompt!.source;
-    expect(session.currentTurnYieldContinuationId).toBeUndefined();
+    expect(session.pendingMessages).toEqual([incoming]);
     expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
-
-    session.turnActive = false;
-    session.onTurnComplete?.();
-    const resumed = (await generator.next()).value!;
-    expect(resumed.message.content).toContain("original WhatsApp work");
-    expect(resumed.clientMessageId).not.toBe(active.clientMessageId);
-    expect(resumed.replay).toBe(false);
 
     session.done = true;
     session.onTurnComplete?.();
     await generator.return(undefined);
   });
 
-  it("does not duplicate continuations while an interrupt is already in flight", () => {
+  it("does not mutate the queue while an interrupt is already in flight", () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "whatsapp", "wa"));
     const incoming = createQueuedRuntimeUserMessage(surfacePrompt("incoming", "slack", "slack"));
     const session = makeStreamingSession({
@@ -838,14 +1087,13 @@ describe("runtime delivery queue", () => {
       currentTurnPendingIds: [active.pendingId!],
       pendingMessages: [active, incoming],
     });
-    const prepared = prepareRuntimeInterruptSuccessor("dev", session)!;
     session.currentTurnSuperseded = true;
     session.interrupted = true;
     expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
-    expect(session.pendingMessages).toEqual([active, incoming, prepared.continuation!]);
+    expect(session.pendingMessages).toEqual([active, incoming]);
   });
 
-  it("bounds a repeated yield to the original request instead of nesting continuation prompts", () => {
+  it("keeps repeated cross-chat interrupt attempts from duplicating the original request", () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("original", "whatsapp", "wa"));
     const incoming = createQueuedRuntimeUserMessage(surfacePrompt("first", "slack", "slack"));
     const session = makeStreamingSession({
@@ -854,22 +1102,21 @@ describe("runtime delivery queue", () => {
       currentTurnPendingIds: [active.pendingId!],
       pendingMessages: [active, incoming],
     });
-    const first = prepareRuntimeInterruptSuccessor("dev", session)!.continuation!;
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
     const later = createQueuedRuntimeUserMessage(surfacePrompt("second", "slack", "slack"));
-    session.pendingMessages = [first, later];
-    session.currentTurnPendingIds = [first.pendingId!];
-    const second = prepareRuntimeInterruptSuccessor("dev", session)!.continuation!;
-    expect(second.message.content).toBe(first.message.content);
-    expect(second.pendingId).not.toBe(first.pendingId);
+    session.pendingMessages.push(later);
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+    expect(session.pendingMessages).toEqual([active, incoming, later]);
   });
 
   for (const state of [
-    { name: "short tool", toolRunning: true, toolAgeMs: 0, allowed: false },
-    { name: "long tool", toolRunning: true, toolAgeMs: 60_000, allowed: true },
-    { name: "pending result", toolResultDeliveryPending: true, allowed: false },
-    { name: "compaction", compacting: true, allowed: false },
+    { name: "thinking", toolRunning: false },
+    { name: "short tool", toolRunning: true, toolAgeMs: 0 },
+    { name: "long tool", toolRunning: true, toolAgeMs: 60_000 },
+    { name: "pending result", toolResultDeliveryPending: true },
+    { name: "compaction", compacting: true },
   ]) {
-    it(`respects the ${state.name} barrier before yielding across channels`, () => {
+    it(`serializes different reply surfaces while the active turn is ${state.name}`, () => {
       const active = createQueuedRuntimeUserMessage(surfacePrompt("original", "whatsapp", "wa"));
       const incoming = createQueuedRuntimeUserMessage(surfacePrompt("incoming", "slack", "slack"));
       const session = makeStreamingSession({
@@ -880,28 +1127,30 @@ describe("runtime delivery queue", () => {
         currentTurnPendingIds: [active.pendingId!],
         pendingMessages: [active, incoming],
       });
-      expect(prepareRuntimeInterruptSuccessor("dev", session) !== null).toBe(state.allowed);
-      if (!state.allowed) expect(session.pendingMessages).toEqual([active, incoming]);
+      expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+      expect(session.pendingMessages).toEqual([active, incoming]);
     });
   }
 
-  it("does not let a later same-surface interrupt bypass an earlier different surface", () => {
-    const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "slack", "chat-a"));
-    const otherSurface = createQueuedRuntimeUserMessage({
-      ...surfacePrompt("other surface first", "whatsapp", "chat-b"),
-      deliveryBarrier: "after_response",
-    });
-    const sameSurface = createQueuedRuntimeUserMessage(surfacePrompt("same surface later", "slack", "chat-a"));
-    const session = makeStreamingSession({
-      turnActive: true,
-      currentSource: active.launchPrompt?.source,
-      pendingMessages: [active, otherSurface, sameSurface],
-      currentTurnPendingIds: [active.pendingId!],
-    });
+  for (const barrier of ["after_tool", "after_response", "immediate_interrupt"] as const) {
+    it(`does not let a later same-surface interrupt bypass an earlier different surface (${barrier})`, () => {
+      const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "slack", "chat-a"));
+      const otherSurface = createQueuedRuntimeUserMessage({
+        ...surfacePrompt("other surface first", "whatsapp", "chat-b"),
+        deliveryBarrier: barrier,
+      });
+      const sameSurface = createQueuedRuntimeUserMessage(surfacePrompt("same surface later", "slack", "chat-a"));
+      const session = makeStreamingSession({
+        turnActive: true,
+        currentSource: active.launchPrompt?.source,
+        pendingMessages: [active, otherSurface, sameSurface],
+        currentTurnPendingIds: [active.pendingId!],
+      });
 
-    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
-    expect(session.pendingMessages).toEqual([active, otherSurface, sameSurface]);
-  });
+      expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+      expect(session.pendingMessages).toEqual([active, otherSurface, sameSurface]);
+    });
+  }
 
   it("marks only the active delivery as ambiguous when stashing inactivity recovery", () => {
     const active = createQueuedRuntimeUserMessage({ prompt: "active" });
@@ -1045,6 +1294,32 @@ describe("runtime delivery queue", () => {
     expect(getDeliverableRuntimeMessages("dev", session)).toEqual([externalAfter]);
   });
 });
+
+function progressPrompt(prompt: string, index: number) {
+  const source = channelPrompt("", "unused").source;
+  return {
+    prompt,
+    deliveryBarrier: "after_tool" as const,
+    source: {
+      ...source,
+      actorType: "system",
+      contactId: undefined,
+      normalizedSenderId: undefined,
+      sourceMessageId: "report-thread",
+      suppressPresence: true,
+    },
+    _turnOrigin: buildChannelTurnOrigin("session.return", { type: "agent", id: "worker" }, "producer-context"),
+    _slackThreadLifecycle: {
+      eventType: "thread.report",
+      eventId: `report-${index}`,
+      requestId: "request-a",
+      parentSessionKey: "parent",
+      childSessionKey: "child",
+      childSessionName: "child",
+      providerThreadId: "thread-a",
+    },
+  };
+}
 
 function channelPrompt(prompt: string, turnId: string, senderId = "user-a", threadId?: string) {
   return {

@@ -1,3 +1,5 @@
+import { errorDiagnostic, projectDiagnosticContext, type ErrorDiagnostic } from "../utils/error-diagnostic.js";
+import { safeDiagnosticField } from "../../packages/ravi-os-sdk/src/diagnostic-redactor.js";
 import { stripVTControlCharacters } from "node:util";
 import {
   CLOUD_AUTH_ERROR_CODES,
@@ -32,26 +34,83 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
     error.code === "DOMAIN_SETUP_REQUIRED" ? projectPageDomainSetups(error.details?.setups) : undefined;
   const turnLink = turnLinkErrorCopy(error);
   const turnRefusal = turnRefusalErrorCopy(error);
+  const message =
+    turnRefusal?.message ?? turnLink?.message ?? connectorTurn?.message ?? publicMessage(error.code, error.message);
   return new ContractError(
     op,
     error.code,
-    turnRefusal?.message ?? turnLink?.message ?? connectorTurn?.message ?? publicMessage(error.code, error.message),
+    message,
     error.code === "PAYLOAD_INVALID"
       ? CONTRACT_EXIT_USAGE
       : isConnectorPolicyCode(error.code) || connectorTurn?.policy
         ? CONTRACT_EXIT_POLICY
         : CONTRACT_EXIT_ERROR,
     {
-      retryable: isRetryableCloudAuthError(error),
-      ...(error.status !== undefined ? { status: error.status } : {}),
-      ...(issues ? { issues } : {}),
-      suggestedAction: suggestedAction(error.code),
-      ...(domainSetup ? { domainSetup } : {}),
-      ...(connectorTurn?.details ?? {}),
-      ...(turnLink?.details ?? {}),
-      ...(turnRefusal?.details ?? {}),
+      ...cloudFailureDiagnostic(op, error, message),
+      ...{
+        retryable: isRetryableCloudAuthError(error),
+        ...(error.status !== undefined ? { status: error.status } : {}),
+        ...(issues ? { issues } : {}),
+        suggestedAction: suggestedAction(error.code),
+        ...(domainSetup ? { domainSetup } : {}),
+        ...(connectorTurn?.details ?? {}),
+        ...(turnLink?.details ?? {}),
+        ...(turnRefusal?.details ?? {}),
+      },
     },
   );
+}
+
+/**
+ * CloudAuthError.message may contain a remote response body, even when the
+ * outer headline comes from our catalog. Only local projections and already
+ * contracted causes cross this boundary; untyped fetch/provider text has no
+ * provenance here and is represented by a marker, not copied into cause.
+ */
+function cloudFailureDiagnostic(op: string, error: CloudAuthError, message: string): ErrorDiagnostic {
+  const messages: string[] = [];
+  const seen = new Set<CloudAuthError>();
+  let current: unknown = error;
+  let inheritedContext = {};
+  while (current instanceof CloudAuthError) {
+    if (seen.has(current)) {
+      messages.push("[circular cause]");
+      current = undefined;
+      break;
+    }
+    if (seen.size >= 16) {
+      messages.push("[cause chain truncated]");
+      current = undefined;
+      break;
+    }
+    seen.add(current);
+    const local =
+      turnRefusalErrorCopy(current)?.message ??
+      turnLinkErrorCopy(current)?.message ??
+      connectorTurnCopy(current)?.message;
+    const projected = current === error ? message : (local ?? publicMessage(current.code, current.message));
+    messages.push(projected);
+    const projectedSource =
+      local !== undefined ||
+      current.code === "DOMAIN_SETUP_REQUIRED" ||
+      (current.code === "PAYLOAD_INVALID" && sanitizePayloadInvalidMessage(current.message) !== undefined);
+    if (!projectedSource && current.message !== projected) messages.push("[redacted:provider.body]");
+    current = safeDiagnosticField(current, "cause");
+  }
+  if (current instanceof ContractError) {
+    const contracted = current.envelope().error;
+    messages.push(typeof contracted.cause === "string" ? contracted.cause : contracted.message);
+    inheritedContext = projectDiagnosticContext(contracted.context);
+  } else if (current !== undefined && current !== null) {
+    messages.push("[redacted:provider.body]");
+  }
+  return errorDiagnostic(messages.join("\nCaused by: "), {
+    ...inheritedContext,
+    operation: op,
+    provider: "console",
+    code: error.code,
+    ...(error.status !== undefined ? { status: error.status } : {}),
+  });
 }
 
 /**

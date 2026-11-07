@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
@@ -1521,11 +1522,14 @@ function failMailAccountNotFound(op: string, accountId: string, asJson?: boolean
   // Accounts live in the cheap local DB, so real ids/names feed suggestions.
   const candidates = listMailAccounts({ limit: 100 }).flatMap((account) => [account.id, account.displayName]);
   contractFail(op, "ACCOUNT_NOT_FOUND", `Mail account not found: ${accountId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the account id (see suggestions; list with: ravi mail accounts list --json)",
-      suggestions: suggestSimilar(accountId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the account id (see suggestions; list with: ravi mail accounts list --json)",
+        suggestions: suggestSimilar(accountId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Mail account not found: ${accountId}`, { operation: op }),
   });
 }
 
@@ -1533,11 +1537,14 @@ function failMailMailboxNotFound(op: string, mailboxRef: string, asJson?: boolea
   // Mailboxes live in the cheap local DB, so addresses/ids feed suggestions.
   const candidates = listMailMailboxes({ limit: 100 }).flatMap((mailbox) => [mailbox.address, mailbox.id]);
   contractFail(op, "MAILBOX_NOT_FOUND", `Mail mailbox not found: ${mailboxRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the mailbox id/address (see suggestions; list with: ravi mail mailboxes list --json)",
-      suggestions: suggestSimilar(mailboxRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the mailbox id/address (see suggestions; list with: ravi mail mailboxes list --json)",
+        suggestions: suggestSimilar(mailboxRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Mail mailbox not found: ${mailboxRef}`, { operation: op }),
   });
 }
 
@@ -1545,24 +1552,33 @@ function failMailMessageNotFound(op: string, messageId: string, asJson?: boolean
   // Local message ids are opaque ULIDs; similarity suggestions would be noise,
   // so point at the listing command instead.
   contractFail(op, "MESSAGE_NOT_FOUND", `Mail message not found: ${messageId}`, {
-    asJson,
-    details: { suggestedAction: "Find the local message id with: ravi mail messages list --json" },
+    ...{
+      asJson,
+      details: { suggestedAction: "Find the local message id with: ravi mail messages list --json" },
+    },
+    diagnostic: errorDiagnostic(`Mail message not found: ${messageId}`, { operation: op }),
   });
 }
 
 function failMailOutboxNotFound(op: string, outboxId: string, asJson?: boolean): never {
   // Outbox row ids are opaque; point at the listing command instead of noisy suggestions.
   contractFail(op, "OUTBOX_NOT_FOUND", `Mail outbox row not found: ${outboxId}`, {
-    asJson,
-    details: { suggestedAction: "Find the outbox row id with: ravi mail outbox list --json" },
+    ...{
+      asJson,
+      details: { suggestedAction: "Find the outbox row id with: ravi mail outbox list --json" },
+    },
+    diagnostic: errorDiagnostic(`Mail outbox row not found: ${outboxId}`, { operation: op }),
   });
 }
 
 function failMailThreadNotFound(op: string, threadId: string, asJson?: boolean): never {
   // Thread ids are opaque and have no dedicated list command; messages carry threadId.
   contractFail(op, "THREAD_NOT_FOUND", `Mail thread not found: ${threadId}`, {
-    asJson,
-    details: { suggestedAction: "Find the threadId on a message with: ravi mail messages list --json" },
+    ...{
+      asJson,
+      details: { suggestedAction: "Find the threadId on a message with: ravi mail messages list --json" },
+    },
+    diagnostic: errorDiagnostic(`Mail thread not found: ${threadId}`, { operation: op }),
   });
 }
 
@@ -1649,8 +1665,11 @@ function resolveLocalSendMailboxForContract(op: string, ref: string | undefined,
   const mailbox = mailboxes.find((item) => item.isDefault) ?? mailboxes[0];
   if (!mailbox) {
     contractFail(op, "MAILBOX_NOT_FOUND", "No active local mailbox.", {
-      asJson,
-      details: { suggestedAction: "Create one with: ravi mail mailboxes create <address> --account <account>" },
+      ...{
+        asJson,
+        details: { suggestedAction: "Create one with: ravi mail mailboxes create <address> --account <account>" },
+      },
+      diagnostic: errorDiagnostic("No active local mailbox.", { operation: op }),
     });
   }
   return mailbox;

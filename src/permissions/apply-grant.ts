@@ -13,8 +13,10 @@
  */
 
 import { createHash } from "node:crypto";
+import { executeWrite } from "../db/write-retry.js";
 import { addContactTag, getContactById } from "../contacts.js";
 import { getDb } from "../router/router-db.js";
+import { revokeLiveRuntimeContextsForPermissionProfile } from "../runtime/context-registry.js";
 import { dbCreateTagDefinition, dbGetTagDefinition, dbUpdateTagDefinition, normalizeTagSlug } from "../tags/index.js";
 import { ensureAgentRuntimeCapability } from "./agent-default-capabilities-provider.js";
 import {
@@ -153,6 +155,15 @@ export interface UpsertPermissionProfileResult {
  * capability set. Admin profiles are built in: nothing is written for them.
  */
 export function upsertPermissionProfileDefinition(input: UpsertPermissionProfileInput): UpsertPermissionProfileResult {
+  const db = getDb();
+  // Publish the new definition and revoke its existing authority snapshots together.
+  // A failed revocation must not leave the reduced definition with old authority live.
+  return db.inTransaction
+    ? upsertPermissionProfileInTransaction(input)
+    : executeWrite(db, () => upsertPermissionProfileInTransaction(input), { label: "permissions:upsertProfile" });
+}
+
+function upsertPermissionProfileInTransaction(input: UpsertPermissionProfileInput): UpsertPermissionProfileResult {
   const tagSlug = normalizePermissionProfileSlug(input.profile);
   const capabilities = input.capabilities.map(normalizeGrantCapability);
   if (isAdminPermissionProfile(tagSlug)) {
@@ -193,6 +204,10 @@ export function upsertPermissionProfileDefinition(input: UpsertPermissionProfile
       metadata: mergePermissionTagMetadata(existing.metadata, capabilities),
       updatedBy: input.updatedBy ?? "permissions.apply-grant",
     });
+    const nextCapabilities = new Set(capabilities.map(formatCanonicalCapability));
+    if (current.some((capability) => !nextCapabilities.has(formatCanonicalCapability(capability)))) {
+      revokeLiveRuntimeContextsForPermissionProfile(tagSlug);
+    }
     return {
       status: "applied",
       tagSlug,

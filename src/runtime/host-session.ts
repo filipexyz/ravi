@@ -553,13 +553,15 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
     session.pushMessage = null;
   }
 
+  // Abort owns cascading authority cleanup; terminal settlement releases only
+  // this turn's key and removes its listener, so the signal must happen first.
+  if (!session.abortController.signal.aborted) {
+    session.abortController.abort();
+  }
+
   if (session.onTurnComplete) {
     session.onTurnComplete();
     session.onTurnComplete = null;
-  }
-
-  if (!session.abortController.signal.aborted) {
-    session.abortController.abort();
   }
 }
 

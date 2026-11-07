@@ -67,6 +67,31 @@ export function listDecisions(origin?: Pick<DecisionOrigin, "type" | "id">, open
   ).map(decisionFromRow);
 }
 
+export interface DecisionWaitSummary {
+  openDecisionCount: number;
+  pendingAnswerCount: number;
+  uncertainAnswerCount: number;
+}
+
+/** Read-only counts per origin; answer delivery means dispatcher admission, not completed work. */
+export function getDecisionWaitSummary(origin: Pick<DecisionOrigin, "type" | "id">): DecisionWaitSummary {
+  return getDb()
+    .query<DecisionWaitSummary, [string, string]>(`
+      SELECT
+        COUNT(CASE WHEN d.status='open' THEN 1 END) AS openDecisionCount,
+        COUNT(CASE WHEN EXISTS (
+          SELECT 1 FROM decision_deliveries x
+          WHERE x.decision_id=d.id AND x.kind='answer' AND x.status NOT IN ('delivered','superseded')
+        ) THEN 1 END) AS pendingAnswerCount,
+        COUNT(CASE WHEN EXISTS (
+          SELECT 1 FROM decision_deliveries x
+          WHERE x.decision_id=d.id AND x.kind='answer' AND x.status='uncertain'
+        ) THEN 1 END) AS uncertainAnswerCount
+      FROM decisions d WHERE d.origin_type=? AND d.origin_id=?
+    `)
+    .get(origin.type, origin.id)!;
+}
+
 export function validateDecisionAsk(input: DecisionAsk): DecisionAsk {
   const key = normalizeDecisionKey(input.key);
   const ask = input.ask?.trim();
