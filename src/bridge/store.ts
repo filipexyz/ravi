@@ -1,4 +1,6 @@
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, isSchemaConsumer, openStateDatabase } from "../db/state-boundary.js";
 import { mkdirSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -39,9 +41,21 @@ export interface TurnRow {
 export class BridgeStore {
   readonly db: Database;
   constructor(path: string) {
-    this.db = new Database(path, { create: true, strict: true });
-    if (path !== ":memory:") chmodSync(path, 0o600);
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+    this.db = openStateDatabase(path, { create: true, strict: true });
+    if (!isSchemaConsumer()) {
+      if (path !== ":memory:") chmodSync(path, 0o600);
+      this.db.exec("PRAGMA journal_mode=WAL");
+    }
+    this.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
+    try {
+      initializeStateSchema(this.db, "bridge", () => this.initializeSchema());
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
+  }
+  private initializeSchema(): void {
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS enrollments(id TEXT PRIMARY KEY, document TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY, enrollment_id TEXT NOT NULL, subject TEXT NOT NULL,
         project_id TEXT NOT NULL, agent_id TEXT NOT NULL, session_name TEXT UNIQUE NOT NULL, session_key TEXT UNIQUE NOT NULL,
@@ -135,13 +149,21 @@ export function conversationDto(row: ConversationRow): BridgeConversation {
   return { id: row.id, agentId: row.agent_id, title: row.title, version: row.version, updatedAt: row.updated_at };
 }
 let singleton: BridgeStore | undefined;
+let singletonPath: string | undefined;
 export function bridgeStateDir() {
   return join(getRaviStateDir(), "human-bridge");
 }
 export function getBridgeStore() {
+  const path = join(bridgeStateDir(), "bridge.db");
+  assertDatabaseTargetAllowed(path);
+  if (singleton && singletonPath !== path) {
+    singleton.close();
+    singleton = undefined;
+  }
   if (!singleton) {
-    mkdirSync(bridgeStateDir(), { recursive: true, mode: 0o700 });
-    singleton = new BridgeStore(join(bridgeStateDir(), "bridge.db"));
+    if (!isSchemaConsumer()) mkdirSync(bridgeStateDir(), { recursive: true, mode: 0o700 });
+    singleton = new BridgeStore(path);
+    singletonPath = path;
   }
   return singleton;
 }

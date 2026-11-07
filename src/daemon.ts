@@ -412,6 +412,7 @@ export async function startDaemon() {
   if (!recordManagedRuntimeBoot("ravi"))
     log.warn("Could not record process boot identity; runtime alignment will remain unverified");
   tightenStateDirAtBoot();
+  await (await import("./db/runtime-state.js")).initializeRuntimeState();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";

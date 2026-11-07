@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Database } from "bun:sqlite";
+import { initializeStateSchema } from "../db/schema-owner.js";
 import { getDb } from "../router/router-db.js";
 import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
@@ -851,7 +852,6 @@ export function channelOutboundPublishRetryDelayMs(attemptCount: number): number
   return Math.min(CHANNEL_OUTBOUND_PUBLISH_RETRY_BASE_MS * 2 ** exponent, CHANNEL_OUTBOUND_PUBLISH_RETRY_MAX_MS);
 }
 
-const initializedPublishDatabases = new WeakSet<Database>();
 const COPY_SUPPRESSION_TOMBSTONES_SQL = `
   INSERT OR IGNORE INTO channel_outbound_publish_suppressions
     (idempotency_key, request_fingerprint, job_id, session_name, channel_id,
@@ -865,17 +865,17 @@ const COPY_SUPPRESSION_TOMBSTONES_SQL = `
  * table-creation helper shares that transaction. Backfills compact tombstones
  * before suppressed payloads become eligible for pruning. Caches initialization
  * per database object only after commit, and rolls back a failed upgrade.
+ * Channels only validates the daemon's same-release marker and never upgrades.
  */
-function ensureChannelOutboundPublishOutboxSchema(): void {
-  const database = getDb();
-  if (initializedPublishDatabases.has(database)) return;
-  database.exec("BEGIN IMMEDIATE");
-  try {
-    const current = database
-      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'channel_outbound_publish_jobs'")
-      .get() as { sql: string } | undefined;
-    const createTable = (table: "channel_outbound_publish_jobs" | "channel_outbound_publish_jobs_next") => {
-      database.exec(`CREATE TABLE IF NOT EXISTS ${table} (
+export function ensureChannelOutboundPublishOutboxSchema(database: Database = getDb()): void {
+  initializeStateSchema(database, "channel-outbound-publish", () => {
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      const current = database
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'channel_outbound_publish_jobs'")
+        .get() as { sql: string } | undefined;
+      const createTable = (table: "channel_outbound_publish_jobs" | "channel_outbound_publish_jobs_next") => {
+        database.exec(`CREATE TABLE IF NOT EXISTS ${table} (
         idempotency_key TEXT PRIMARY KEY,
         request_fingerprint TEXT NOT NULL,
         job_id TEXT NOT NULL,
@@ -893,24 +893,24 @@ function ensureChannelOutboundPublishOutboxSchema(): void {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )`);
-    };
-    if (!current) {
-      createTable("channel_outbound_publish_jobs");
-    } else if (!current.sql.includes("'suppressed'")) {
-      const columns = new Set(
-        (database.prepare("PRAGMA table_info(channel_outbound_publish_jobs)").all() as Array<{ name: string }>).map(
-          (row) => row.name,
-        ),
-      );
-      const common =
-        "idempotency_key, request_fingerprint, job_id, session_name, channel_id, status, payload_json, attempt_count, next_attempt_at, last_error_message, last_error_at, published_at, created_at, updated_at";
-      createTable("channel_outbound_publish_jobs_next");
-      database.exec(`INSERT INTO channel_outbound_publish_jobs_next (${common}, superseded_by)
+      };
+      if (!current) {
+        createTable("channel_outbound_publish_jobs");
+      } else if (!current.sql.includes("'suppressed'")) {
+        const columns = new Set(
+          (database.prepare("PRAGMA table_info(channel_outbound_publish_jobs)").all() as Array<{ name: string }>).map(
+            (row) => row.name,
+          ),
+        );
+        const common =
+          "idempotency_key, request_fingerprint, job_id, session_name, channel_id, status, payload_json, attempt_count, next_attempt_at, last_error_message, last_error_at, published_at, created_at, updated_at";
+        createTable("channel_outbound_publish_jobs_next");
+        database.exec(`INSERT INTO channel_outbound_publish_jobs_next (${common}, superseded_by)
         SELECT ${common}, ${columns.has("superseded_by") ? "superseded_by" : "NULL"} FROM channel_outbound_publish_jobs`);
-      database.exec("DROP TABLE channel_outbound_publish_jobs");
-      database.exec("ALTER TABLE channel_outbound_publish_jobs_next RENAME TO channel_outbound_publish_jobs");
-    }
-    database.exec(`
+        database.exec("DROP TABLE channel_outbound_publish_jobs");
+        database.exec("ALTER TABLE channel_outbound_publish_jobs_next RENAME TO channel_outbound_publish_jobs");
+      }
+      database.exec(`
       CREATE TABLE IF NOT EXISTS channel_outbound_publish_suppressions (
         idempotency_key TEXT PRIMARY KEY,
         request_fingerprint TEXT NOT NULL,
@@ -930,15 +930,15 @@ function ensureChannelOutboundPublishOutboxSchema(): void {
       CREATE INDEX IF NOT EXISTS idx_channel_outbound_publish_jobs_error
         ON channel_outbound_publish_jobs(last_error_at);
     `);
-    // Upgrade any already-suppressed rows before their content becomes eligible
-    // for retention cleanup. Tombstones intentionally have no age-based prune.
-    database.exec(COPY_SUPPRESSION_TOMBSTONES_SQL);
-    database.exec("COMMIT");
-    initializedPublishDatabases.add(database);
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
+      // Upgrade any already-suppressed rows before their content becomes eligible
+      // for retention cleanup. Tombstones intentionally have no age-based prune.
+      database.exec(COPY_SUPPRESSION_TOMBSTONES_SQL);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  });
 }
 
 function selectChannelOutboundPublishRow(idempotencyKey: string): ChannelOutboundPublishRow | null {

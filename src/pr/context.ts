@@ -43,7 +43,7 @@ export function resolvePublicationContext(replySession?: string): GhWatchFollowC
   if (!target || (!current && !localOperatorCan("admin", "system", "*")))
     throw prError(
       "PUBLICATION_SESSION_REQUIRED",
-      "Run inside the publishing session, or as the local operator with --reply-session.",
+      "Publish through an authenticated gateway context in the publishing session; --reply-session alone does not authenticate a bare operator terminal.",
     );
   if (!canAccessSession(getScopeContext(), target))
     throw prError("SESSION_NOT_FOUND", "Publishing session is unavailable in this scope.");

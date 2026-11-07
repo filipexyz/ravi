@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { openStateDatabase } from "../db/state-boundary.js";
 import { getRaviDbPath } from "../router/router-db.js";
 import { prError, type PublicationPhase, type PublicationPlan, PUBLICATION_TIMEOUT_MS } from "./contracts.js";
 
@@ -14,6 +16,16 @@ export interface PublicationJournal {
   close(): void;
 }
 
+export function initializePublicationSchema(db: Database): void {
+  initializeStateSchema(db, "pr-publication", () => {
+    db.exec(`CREATE TABLE IF NOT EXISTS pr_publication_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, publication_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
+      phase TEXT NOT NULL, state TEXT NOT NULL, detail_json TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS pr_publication_events_lookup ON pr_publication_events(publication_id, id);
+      CREATE TABLE IF NOT EXISTS pr_publication_leases (resource TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL);`);
+  });
+}
+
 /** Lazily opened AFTER --execute. The existing runtime DB owns both audit and the local lease. */
 export function openPublicationJournal(
   plan: PublicationPlan,
@@ -22,7 +34,7 @@ export function openPublicationJournal(
 ): PublicationJournal {
   let db: Database;
   try {
-    db = database ?? new Database(getRaviDbPath(), { readwrite: true, create: false });
+    db = database ?? openStateDatabase(getRaviDbPath(), { readwrite: true, create: false });
     // A separate connection makes intent durable before network IO without changing the runtime connection.
     if (!database) db.exec("PRAGMA synchronous=FULL; PRAGMA busy_timeout=3000;");
   } catch {
@@ -35,11 +47,7 @@ export function openPublicationJournal(
   const attemptId = randomUUID();
   const key = `${plan.repo}:${plan.head}`;
   try {
-    db.exec(`CREATE TABLE IF NOT EXISTS pr_publication_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, publication_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
-      phase TEXT NOT NULL, state TEXT NOT NULL, detail_json TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS pr_publication_events_lookup ON pr_publication_events(publication_id, id);
-      CREATE TABLE IF NOT EXISTS pr_publication_leases (resource TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL);`);
+    initializePublicationSchema(db);
     const lock = db
       .query(`INSERT INTO pr_publication_leases(resource,owner,expires_at) VALUES (?,?,?)
       ON CONFLICT(resource) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at
