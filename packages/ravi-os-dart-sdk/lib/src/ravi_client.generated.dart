@@ -3571,6 +3571,30 @@ class CredentialsNamespace {
   CredentialsConnectionsNamespace get connections => CredentialsConnectionsNamespace(_transport);
 
   CredentialsPoliciesNamespace get policies => CredentialsPoliciesNamespace(_transport);
+
+  Future<CredentialsRequestReturn> request(String target, [CredentialsRequestOptions options = const CredentialsRequestOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["credentials"],
+      command: "request",
+      body: requestBody,
+      decode: credentialsRequestReturnFromJson,
+    );
+  }
+
+  Future<CredentialsRequestStatusReturn> requestStatus(String target, String requestId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    return _transport.callJson(
+      groupSegments: const ["credentials"],
+      command: "request-status",
+      body: requestBody,
+      decode: credentialsRequestStatusReturnFromJson,
+    );
+  }
 }
 
 class CredentialsConnectionsNamespace {

@@ -137,8 +137,8 @@ describe("Codex hook through the host gateway", () => {
     }, 20_000);
   }
 
-  // The context group is open: an unknown, expired or revoked key reaches command access with no capabilities.
-  for (const kind of ["denied", "ungranted", "expired", "revoked", "unknown"]) {
+  // Only live credentials reach command access, even though the context group is open.
+  for (const kind of ["denied", "ungranted"]) {
     it(`names the denied capability instead of a gateway HTTP status (${kind})`, async () => {
       const output = await callHook(JSON.stringify({ tool_input: { command: "pwd" } }), {
         contextKey: contexts[kind]?.contextKey ?? "rctx_hook_unknown",
@@ -149,6 +149,29 @@ describe("Codex hook through the host gateway", () => {
       expect(reason).toContain("PERMISSION_DENIED");
       expect(reason).toContain("cause=Permission denied:");
       expect(reason).toContain("HTTP 403");
+    }, 20_000);
+  }
+
+  for (const [kind, code, cause] of [
+    ["expired", "CONTEXT_EXPIRED", "The runtime context credential has expired."],
+    ["revoked", "AUTH_REQUIRED", "context has been revoked"],
+    ["unknown", "AUTH_REQUIRED", "unknown context key"],
+  ] as const) {
+    it(`reports rejected context authority before capability access (${kind})`, async () => {
+      const output = await callHook(JSON.stringify({ tool_input: { command: "pwd" } }), {
+        contextKey: contexts[kind]?.contextKey ?? "rctx_hook_unknown",
+      });
+      expectDeny(output);
+      const reason = output.hookSpecificOutput.permissionDecisionReason as string;
+      expect(reason).toContain("Ravi refused this turn's context.");
+      expect(reason).toContain(`code=${code}`);
+      expect(reason).toContain("operation=context codex-bash-hook");
+      expect(reason).toContain("HTTP 401");
+      expect(reason).toContain(`cause=${cause}`);
+      expect(reason).toContain("Stop retrying and report the refusal.");
+      expect(reason).not.toContain("missing capability");
+      expect(reason).not.toContain("PERMISSION_DENIED");
+      expect(reason).not.toContain("rctx_");
     }, 20_000);
   }
 

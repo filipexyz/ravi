@@ -7,6 +7,20 @@ import {
 } from "./credentials.js";
 
 describe("Slack credential config", () => {
+  it("does not expose malformed credential JSON in diagnostics", async () => {
+    const failure = await resolveSlackCredentialConfigFromEnv(
+      {},
+      {
+        channel: slackChannel({ name: "fixture-slack", credentialConnection: "fixture" }),
+        resolveSecret: async () => ({ secret: '{"botToken": "xoxb-never-log-fixture" malformed}' }),
+      },
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("Slack credential JSON secret is invalid.");
+    expect((failure as Error).cause).toBeUndefined();
+    expect(String(failure)).not.toContain("xoxb-never-log-fixture");
+  });
+
   it("parses JSON broker secrets", () => {
     expect(
       parseSlackSecretPayload(
@@ -73,6 +87,29 @@ describe("Slack credential config", () => {
       instanceId: "ravi-rbbt-slack",
       connection: "ravi-rbbt-slack",
       source: "broker",
+    });
+  });
+
+  it("forwards explicit host authority without inferring it for ordinary resolution", async () => {
+    const resolveSecret = mock(async () => ({
+      secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+    }));
+    const channel = slackChannel({ name: "test-slack", credentialConnection: "test-connection" });
+    const authority = { kind: "internal-service", service: "slack-channel-runtime" } as const;
+
+    await resolveSlackCredentialConfigFromEnv({}, { channel, resolveSecret, authority });
+    expect(resolveSecret).toHaveBeenLastCalledWith({
+      provider: "slack",
+      connection: "test-connection",
+      action: "socket_mode.connect",
+      authority,
+    });
+
+    await resolveSlackCredentialConfigFromEnv({}, { channel, resolveSecret, action: "users.info" });
+    expect(resolveSecret).toHaveBeenLastCalledWith({
+      provider: "slack",
+      connection: "test-connection",
+      action: "users.info",
     });
   });
 

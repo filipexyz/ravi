@@ -124,3 +124,5 @@ normative: false
 - A dropped app-server connection MUST retain its nested cause in a redacted diagnostic while preserving the safe transport message and provider metadata. Failed optional `thread/read` evidence MUST log a redacted cause and MUST NOT authorize replay or replace the original capacity failure.
 - Run the focused capacity host regressions: one capacity rejection then success; persistent capacity exhausts with session state intact; tools/output/input mutation fence retries; abort cancels waiting; queued successors retain order and authority.
 - Run `src/channels/runtime-events.test.ts` with the isolated runtime preload: exhausted capacity projects one OVERLOADED safe error without raw provider diagnostics.
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/delivery-queue.test.ts` verifies authority release on restored retry expiry and cancellation during preparation.

@@ -116,20 +116,30 @@ function sessionSlotAuthorityKinds(): string[] {
  *
  * Used by every path that hands the session's authority slot back: turn abort,
  * provider-policy recovery, prompt-too-long reset, context-window recovery and
- * explicit session resets. The lookup covers both the current `turn-runtime`
- * kind and the legacy `agent-runtime` kind, and is done per kind so the
- * `(session_key, kind)` index stays usable.
+ * explicit session resets. Cascading cleanup also owns still-live derived
+ * credentials whose turn root already completed; no history scan is needed.
+ * Ordinary launch reclamation (`cascade: false`) preserves their independent TTLs.
  */
 export function revokeAgentRuntimeContextsForSession(
   sessionKey: string,
   options: RevokeRuntimeContextOptions = {},
 ): RevokeContextResult[] {
   const now = Date.now();
-  const contexts = sessionSlotAuthorityKinds()
-    .flatMap((kind) => dbListContexts({ sessionKey, kind, includeInactive: false }))
-    .filter((ctx) => isContextLive(ctx, now));
+  const slotKinds = sessionSlotAuthorityKinds();
+  const contexts = dbListContexts({ sessionKey, includeInactive: false }).filter(
+    (context) =>
+      isContextLive(context, now) &&
+      (slotKinds.includes(context.kind) ||
+        (options.cascade !== false && typeof context.metadata?.parentContextId === "string")),
+  );
+  const liveContextIds = new Set(contexts.map((context) => context.contextId));
+  const roots = contexts.filter((context) => {
+    const parentContextId = context.metadata?.parentContextId;
+    return typeof parentContextId !== "string" || !liveContextIds.has(parentContextId);
+  });
 
-  return contexts.map((ctx) =>
+  const targets = options.cascade === false ? contexts : roots;
+  return targets.map((ctx) =>
     revokeRuntimeContext(ctx.contextId, {
       cascade: options.cascade,
       reason: options.reason ?? "session_context_reset",

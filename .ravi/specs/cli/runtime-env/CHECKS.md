@@ -17,3 +17,15 @@
   the secret used in the write MUST be absent from all output.
 - `bun test src/runtime/ravi-env-file.test.ts src/cli/commands/runtime-env.test.ts`
   SHOULD pass after any change to this surface.
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/ravi-env-file.adversarial.test.ts`
+  compares sibling bytes and runs the actual extracted daemon loader with synthetic
+  values; no daemon is started. Unsupported formats must remain byte-identical.
+- Separate-process races must preserve both distinct keys or report conflict;
+  same-key add-only has one winner. A controlled external edit must be preserved
+  and cause the first writer to refuse commit.
+- Symlink file/ancestor, hardlink, FIFO, writable directory/file, preexisting
+  temporary/lock and directory replacement probes must leave outside files and
+  modes unchanged. No real secrets or operator state may be used.
+- On macOS run fixtures under a canonical temporary root (`TMPDIR=/private/tmp`),
+  since the writer deliberately rejects `/var` and `/tmp` symlink aliases.

@@ -10392,6 +10392,27 @@ export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void
   s.touchContext.run(lastUsedAt, contextId);
 }
 
+/** Renew only a still-live host-owned turn lease; never revive a stale credential. */
+export function dbRenewActiveContext(
+  contextId: string,
+  expectedExpiresAt: number | null | undefined,
+  ttlMs: number,
+  now = Date.now(),
+): ContextRecord | null {
+  if (!expectedExpiresAt || expectedExpiresAt <= now) return null;
+  const result = getDb()
+    .prepare(`
+    UPDATE contexts SET expires_at = ?
+    WHERE context_id = ? AND kind = 'turn-runtime' AND expires_at = ? AND expires_at > ?
+      AND (revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)
+        AND json_extract(metadata_json, '$.authorityMode') = 'agent-identity'
+        AND json_extract(metadata_json, '$.parentContextId') IS NULL
+        AND json_extract(metadata_json, '$.bridgeTurnId') IS NULL
+  `)
+    .run(now + ttlMs, contextId, expectedExpiresAt, now, now);
+  return result.changes > 0 ? dbGetContext(contextId) : null;
+}
+
 export function dbUpdateContextRuntimeState(
   contextId: string,
   input: {

@@ -615,3 +615,5 @@ JSON output MUST redact secrets and include enough health data for automation.
 - Letting implicit process env override a managed credential slot.
 - Refreshing an external provider-native token without locking or without syncing fresher external state first.
 - Switching active provider as a side effect of refreshing or rotating a credential.
+
+- A restored capacity retry that expires or is cancelled during physical-turn preparation MUST release that turn's authority exactly once before yielding a successor or returning.
