@@ -375,6 +375,47 @@ describe("daemon restart session event delivery", () => {
     expect(marked.map((entry) => [entry.deliveryKind, entry.decisionReason])).toEqual([["resume", "pending_only"]]);
   });
 
+  it("resumes the durable capacity retry cohort without reopening its failed physical turn", async () => {
+    const { deps, published, marked } = restartEventHarness();
+    const metadata = {
+      live: true,
+      [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "pending_only",
+      crashRecoveryTerminalStatus: "failed",
+      crashRecoveryReplaySafety: {
+        replayable: false,
+        startedTool: false,
+        materializedOutput: false,
+        inputMutated: false,
+        durableBinding: "terminal",
+      },
+    };
+    const outcome = await deliverDaemonRestartSessionEvent(
+      {
+        ...RESTART_EVENT_BASE,
+        kind: "active",
+        snapshot: snapshotRecord({ runtimeProvider: "codex", pendingMessageCount: 2, metadata }),
+      },
+      deps,
+    );
+
+    expect(outcome).toMatchObject({ status: "delivered", deliveryKind: "resume", decision: { mode: "pending_only" } });
+    expect(published[0]?.payload._daemonRestartResume).toMatchObject({ pendingOnly: true, runtimeProvider: "codex" });
+    expect(published[0]?.payload._daemonRestartResume).not.toHaveProperty("noticeOnly");
+    expect(published[0]?.payload.prompt).toContain("somente as mensagens pendentes duráveis");
+    expect(published[0]?.payload.prompt).not.toContain("Continue de onde parou");
+    expect(marked.map((entry) => [entry.deliveryKind, entry.decisionReason])).toEqual([["resume", "pending_only"]]);
+
+    // A failed physical attempt without separately persisted retry work stays consumed.
+    expect(
+      resolveCrashRecoveryRestartResumeDecision({
+        metadata: { ...metadata, [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "skip" },
+        snapshotPresent: true,
+        snapshotEligible: true,
+        pendingMessageCount: 0,
+      }),
+    ).toEqual({ mode: "skip", publish: false, reason: "unsafe_snapshot" });
+  });
+
   it("skips a terminal task session without publishing or recording a delivery", async () => {
     const { deps, published, marked } = restartEventHarness({ terminalTask: true });
 

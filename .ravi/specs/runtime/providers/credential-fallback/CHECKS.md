@@ -116,3 +116,14 @@ normative: false
 3. Confirm the host retries once with the second credential.
 4. Confirm the trace contains two attempts and one final terminal turn.
 5. Confirm no secret literal appears in logs, events, or traces.
+
+## Transient Capacity Regression
+
+- Run `bun test src/runtime/provider-capacity-retry.test.ts` to verify exponential jitter, three-retry and elapsed budgets, Retry-After floor, and rejection of 400/auth/quota/free text.
+- Run the focused Codex provider and credential-classifier tests: verify structured native errors survive terminal and RPC paths; sparse/summary item lists cannot authorize replay; a full list with only the unchanged original user input can.
+- A dropped app-server connection MUST retain its nested cause in a redacted diagnostic while preserving the safe transport message and provider metadata. Failed optional `thread/read` evidence MUST log a redacted cause and MUST NOT authorize replay or replace the original capacity failure.
+- Run the focused capacity host regressions: one capacity rejection then success; persistent capacity exhausts with session state intact; tools/output/input mutation fence retries; abort cancels waiting; queued successors retain order and authority.
+- Run `src/channels/runtime-events.test.ts` with the isolated runtime preload: exhausted capacity projects one OVERLOADED safe error without raw provider diagnostics.
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/delivery-queue.test.ts` verifies authority release on restored retry expiry and cancellation during preparation.
+- The same delivery-queue suite verifies live and restored report cohorts with and without queued human successors, retaining retry budget and excluding fresh reports.

@@ -29776,6 +29776,78 @@ public typealias SessionsSetTtlReturn = [String: RaviJSON]
 
 public typealias SessionsSubscriptionsReturn = [String: RaviJSON]
 
+public struct SessionsThreadConfigureOptions: Codable, Sendable {
+  public var effort: String?
+  public var model: String?
+  public var provider: String?
+  public var session: String?
+  public var thinking: String?
+
+  public init(effort: String? = nil, model: String? = nil, provider: String? = nil, session: String? = nil, thinking: String? = nil) {
+    self.effort = effort
+    self.model = model
+    self.provider = provider
+    self.session = session
+    self.thinking = thinking
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case effort = "effort"
+    case model = "model"
+    case provider = "provider"
+    case session = "session"
+    case thinking = "thinking"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.effort {
+      body["effort"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.model {
+      body["model"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.provider {
+      body["provider"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.thinking {
+      body["thinking"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsThreadConfigureReturn: Codable, Sendable {
+  public var actionId: String
+  public var after: RaviJSON
+  public var appliesOn: String
+  public var before: RaviJSON
+  public var changed: Bool
+  public var status: String
+  public var thread: RaviJSON
+
+  public init(actionId: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, status: String, thread: RaviJSON) {
+    self.actionId = actionId
+    self.after = after
+    self.appliesOn = appliesOn
+    self.before = before
+    self.changed = changed
+    self.status = status
+    self.thread = thread
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "actionId"
+    case after = "after"
+    case appliesOn = "appliesOn"
+    case before = "before"
+    case changed = "changed"
+    case status = "status"
+    case thread = "thread"
+  }
+}
+
 public struct SessionsThreadSendOptions: Codable, Sendable {
   public var session: String?
 

@@ -65,6 +65,12 @@ materialized text.
 - Runtime response and delivery envelopes MUST carry `traceTurnId`, the physical
   `session_turns.turn_id`, independently of provider-native ids and channel request
   ids. Trace writers MUST persist it in `session_events.turn_id`.
+- Automatic media released from an accepted terminal manifest MUST retain that
+  terminal's captured physical `traceTurnId`, even if its notification retires
+  the owner or changes live trace state before media release.
+- The final-manifest media emitter MUST mark the release as `final_answer`.
+  Response/delivery traces MUST preserve factual media counts and this phase
+  without treating arbitrary uploads or commentary as a final answer.
 - Explicit silence (`@@SILENT@@`, heartbeat OK, or an explicit no-response utterance)
   MUST be recorded as `output_state = 'silent'` only with a completed turn and no
   final utterance. Silence MUST NOT synthesize completion. A tool started after

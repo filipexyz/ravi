@@ -1,11 +1,19 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { ChannelOutputSink } from "../backend.js";
+import type { ChannelOutputEnvelope, ChannelOutputSink } from "../backend.js";
 import type { ChannelOutboundJob } from "../outbound-stream.js";
+import {
+  ChannelOutboundPublishHandoffError,
+  channelOutboundPublishRequestFingerprint,
+  type ChannelOutboundActivePublishRecord,
+} from "../outbound-publish-outbox.js";
+import { CHANNEL_OUTPUT_HANDOFF_CAPABILITY, createChannelOutputHandoffIdentity } from "../output-handoff.js";
+import type { ChannelRuntimeEventSink } from "../runtime-events.js";
 import {
   createSlackNativeChannelDriver,
   renderSlackBackendOutput,
   renderSlackContent,
   renderSlackSafeError,
+  type SlackNativeChannelDriverOptions,
 } from "./driver.js";
 
 const binding = {
@@ -62,6 +70,17 @@ describe("renderSlackBackendOutput", () => {
 });
 
 describe("renderSlackSafeError", () => {
+  it("warns about completed work for replay-unsafe capacity without inviting a retry", () => {
+    const rendered = renderSlackSafeError({ code: "OVERLOADED", category: "capacity", retryable: false });
+    expect(rendered).toBe(
+      "The agent's model provider is overloaded right now. Your session and completed work are preserved; this turn was not repeated to avoid duplicate actions.",
+    );
+    expect(rendered).not.toContain("try again");
+    expect(renderSlackSafeError({ code: "OVERLOADED", category: "capacity", retryable: true })).toBe(
+      "The agent's model provider is overloaded right now. Please try again shortly.",
+    );
+  });
+
   it("renders a readable sentence per code", () => {
     expect(renderSlackSafeError({ code: "UNAVAILABLE", category: "availability", retryable: false })).toBe(
       "The agent is unavailable because of a problem with its model provider account. Please contact the operator.",
@@ -124,6 +143,7 @@ describe("createSlackNativeChannelDriver", () => {
     );
 
     let outputSink: ChannelOutputSink | undefined;
+    let runtimeEventSink: ChannelRuntimeEventSink | undefined;
     await driver.createRuntime({
       channel: {
         name: "slack-a",
@@ -135,11 +155,14 @@ describe("createSlackNativeChannelDriver", () => {
           outputSink = sink;
           return mock(() => {});
         }),
-        registerRuntimeEventSink: mock(() => mock(() => {})),
+        registerRuntimeEventSink: mock((_target, sink: ChannelRuntimeEventSink) => {
+          runtimeEventSink = sink;
+          return mock(() => {});
+        }),
       } as never,
     });
 
-    await outputSink!.emit({
+    const confirmation = await outputSink!.emit({
       protocol: "ravi.channel.backend",
       schemaVersion: 1,
       outputId: "output-md",
@@ -161,6 +184,7 @@ describe("createSlackNativeChannelDriver", () => {
       emittedAt: "2026-09-22T12:00:00.000Z",
     });
 
+    expect(confirmation).toBeUndefined();
     expect(published).toHaveLength(1);
     expect(published[0]?.request.origin.traceTurnId).toBe("turn-physical");
     expect(published[0]?.request.content).toEqual({
@@ -168,5 +192,182 @@ describe("createSlackNativeChannelDriver", () => {
       text: "**Ready.** See [runbook](https://example.com/runbook).",
       format: "markdown",
     });
+    expect(published[0]?.request.origin.automatic).toEqual({ kind: "channel_backend", binding });
+    expect(published[0]?.request.origin.automatic?.binding).not.toBe(binding);
+
+    await runtimeEventSink!.emit(
+      {
+        eventId: "commentary-a",
+        kind: "turn.assistant_message",
+        correlation: { binding },
+        payload: { phase: "commentary", content: [{ type: "text", text: "Working" }] },
+      } as never,
+      { channelKind: "slack", connectionId: "slack-a", conversationId: "C123~1713000000.000100" },
+    );
+    expect(published[1]?.request.origin).toMatchObject({
+      responsePhase: "commentary",
+      automatic: { kind: "channel_backend", binding },
+    });
+    await outputSink!.emit({
+      protocol: "ravi.channel.backend",
+      schemaVersion: 1,
+      outputId: "safe-error-a",
+      correlationId: "correlation-a",
+      binding,
+      target: { channelKind: "slack", connectionId: "slack-a", conversationId: "C123~1713000000.000100" },
+      kind: "safe_error",
+      error: { code: "INTERNAL", category: "internal", retryable: false },
+      emittedAt: "2026-09-22T12:00:00.000Z",
+    });
+    expect(published[2]?.request.origin).toMatchObject({
+      responsePhase: "safe_error",
+      automatic: { kind: "channel_backend", binding },
+    });
+  });
+
+  it("pins the actual prepared request and rejects a changed canonical identity before another save", async () => {
+    let canonicalId = "assistant-a";
+    let fingerprint = "";
+    const publishOutbound = mock(async (job: ChannelOutboundJob) => {
+      fingerprint = channelOutboundPublishRequestFingerprint(job);
+      throw new ChannelOutboundPublishHandoffError({
+        idempotencyKey: job.request.idempotencyKey,
+        requestFingerprint: fingerprint,
+        disposition: "finished_pre_save_missing",
+        operationFinished: true,
+        code: "SQLITE_BUSY",
+      });
+    });
+    const sink = await createOutputSink({ publishOutbound, resolveCanonicalMessageId: () => canonicalId });
+    await expect(sink.emit(terminalOutput)).rejects.toMatchObject({
+      evidence: {
+        disposition: "finished_pre_save_missing",
+        identity: createChannelOutputHandoffIdentity(terminalOutput),
+        idempotencyKey: terminalOutput.outputId,
+        operationFinished: true,
+        code: "SQLITE_BUSY",
+      },
+    });
+    expect(fingerprint).toHaveLength(64);
+    canonicalId = "assistant-b";
+    await expect(
+      sink.emit(terminalOutput, {
+        capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        expectedRequestFingerprint: fingerprint,
+      }),
+    ).rejects.toMatchObject({
+      evidence: {
+        disposition: "conflict",
+        code: "REQUEST_FINGERPRINT_CONFLICT",
+      },
+    });
+    expect(publishOutbound).toHaveBeenCalledTimes(1);
+  });
+
+  it("confirms durable deferred ownership without claiming provider delivery", async () => {
+    let job: ChannelOutboundJob | undefined;
+    const publishOutbound = mock(async (input: ChannelOutboundJob) => {
+      job = input;
+      return {
+        ok: false as const,
+        disposition: "deferred" as const,
+        record: publishRecord(input),
+        error: new Error("publication bookkeeping failed"),
+        nextAttemptAt: 2,
+        bookkeepingUncertain: true as const,
+      };
+    });
+    const sink = await createOutputSink({ publishOutbound });
+    const confirmation = await sink.emit(terminalOutput);
+    expect(confirmation).toEqual({
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1,
+      identity: createChannelOutputHandoffIdentity(terminalOutput),
+      idempotencyKey: terminalOutput.outputId,
+      requestFingerprint: channelOutboundPublishRequestFingerprint(job!),
+      durableSaveConfirmed: true,
+      disposition: "deferred",
+    });
+    expect(publishOutbound).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies coalesced publication as suppression", async () => {
+    const sink = await createOutputSink({
+      publishOutbound: async (job) => ({
+        ok: true,
+        disposition: "published",
+        record: { ...publishRecord(job), status: "published", supersededBy: "other-output" },
+        publishedNow: false,
+      }),
+    });
+    await expect(sink.emit(terminalOutput)).resolves.toMatchObject({
+      durableSaveConfirmed: true,
+      disposition: "suppressed",
+    });
   });
 });
+
+const terminalOutput: ChannelOutputEnvelope = {
+  protocol: "ravi.channel.backend",
+  schemaVersion: 1,
+  outputId: "output-handoff",
+  correlationId: "correlation-a",
+  binding,
+  target: { channelKind: "slack", connectionId: "slack-a", conversationId: "C123~1713000000.000100" },
+  kind: "assistant_message",
+  content: [{ type: "text", text: "Finished" }],
+  emittedAt: "2026-09-22T12:00:00.000Z",
+};
+
+function publishRecord(job: ChannelOutboundJob): ChannelOutboundActivePublishRecord {
+  return {
+    idempotencyKey: job.request.idempotencyKey,
+    requestFingerprint: channelOutboundPublishRequestFingerprint(job),
+    jobId: job.jobId,
+    sessionName: job.request.origin.sessionName,
+    channelId: job.request.channelId,
+    status: "pending",
+    job,
+    attemptCount: 1,
+    nextAttemptAt: 2,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+/** Captures only the registered sink; no connection or provider is started. */
+async function createOutputSink(
+  options: Pick<SlackNativeChannelDriverOptions, "publishOutbound" | "resolveCanonicalMessageId">,
+): Promise<ChannelOutputSink> {
+  let sink: ChannelOutputSink | undefined;
+  const driver = createSlackNativeChannelDriver(
+    {},
+    {
+      ...options,
+      resolveCanonicalMessageId: options.resolveCanonicalMessageId ?? (() => "assistant-a"),
+      createRuntime: async () =>
+        ({
+          id: "slack-a",
+          accountId: "slack-a",
+          instanceId: "slack-a",
+          connection: "connection-a",
+          delivery: {},
+          actions: {},
+          presence: {},
+          socketMode: {},
+        }) as never,
+      now: () => 1,
+    },
+  );
+  await driver.createRuntime({
+    channel: { name: "slack-a", provider: "slack" },
+    host: {
+      registerOutputSink: (_target: unknown, outputSink: ChannelOutputSink) => {
+        sink = outputSink;
+        return () => {};
+      },
+      registerRuntimeEventSink: () => () => {},
+    } as never,
+  });
+  return sink!;
+}

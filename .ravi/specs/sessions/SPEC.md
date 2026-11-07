@@ -103,6 +103,10 @@ Sessions do NOT own:
   current own session.
 - `modify session:<id>` authorizes session mutation beyond the current own
   session.
+- Slack parent/child lifecycle authority MAY authorize the narrow
+  `sessions thread-configure` operation defined in `channels/slack/threads`.
+  It MUST NOT become a generic `modify` or `access` grant; existing setters,
+  reset/delete/rename, and transcript/recap/trace authorization remain unchanged.
 - A chat attached to a session is not by itself permission to read or mutate
   that session.
 - Hidden sessions SHOULD appear missing on direct lookup.

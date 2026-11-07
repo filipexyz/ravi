@@ -16,6 +16,7 @@
   do not emit `tool.result_delivered` (Grok/Claude/Pi), `tool.completed` also
   arms the after-tool inactivity watch so a mid-utterance plus tool cannot
   hang without a terminal.
+- `bun test src/bot.runtime-guards.test.ts` verifies that a native Slack backend turn emits exactly one media response envelope targeted at its source thread without duplicating backend-owned text; this fixture does not prove Slack transport delivery. The fixture MUST persist a matching canonical human input and accepted ingress receipt rather than inventing an unbacked `_channelBackend` binding; the runtime's durable-origin validation remains enabled.
 - `turn.complete` persists provider state, tokens, trace terminal state, and assistant message.
 - `turn.interrupted` clears response text and keeps pending prompt queue.
 - `turn.failed` emits user-facing error unless suppressed by internal interrupt recovery.

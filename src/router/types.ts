@@ -219,6 +219,8 @@ export interface SessionEntry {
   name?: string;
   runtimeProvider?: RuntimeProviderId;
   runtimeProviderOverride?: RuntimeProviderId;
+  /** Monotonic explicit provider-configuration revision; native continuity writes leave it unchanged. */
+  runtimeProviderConfigRevision?: number;
   runtimeSessionParams?: Record<string, unknown>;
   runtimeSessionDisplayId?: string;
   providerSessionId?: string;

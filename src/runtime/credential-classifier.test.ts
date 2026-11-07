@@ -1,7 +1,26 @@
 import { describe, expect, it } from "bun:test";
-import { classifyRuntimeCredentialFailure, evaluateCredentialLimitPressure } from "./credential-classifier.js";
+import {
+  classifyRuntimeCredentialFailure,
+  evaluateCredentialLimitPressure,
+  isRuntimeProviderCapacityFailure,
+} from "./credential-classifier.js";
 
 describe("runtime credential classifier", () => {
+  it("requires structural evidence for overload and keeps quota/request failures separate", () => {
+    const classify = (input: Partial<Parameters<typeof classifyRuntimeCredentialFailure>[0]>) =>
+      classifyRuntimeCredentialFailure({ runtimeProvider: "codex", ...input });
+    expect(isRuntimeProviderCapacityFailure(classify({ providerCode: "serverOverloaded" }))).toBe(true);
+    expect(isRuntimeProviderCapacityFailure(classify({ providerType: "overloaded_error" }))).toBe(true);
+    expect(isRuntimeProviderCapacityFailure(classify({ providerCode: "rate_limit_exceeded" }))).toBe(true);
+    expect(isRuntimeProviderCapacityFailure(classify({ httpStatus: 429, providerCode: "insufficient_quota" }))).toBe(
+      false,
+    );
+    expect(isRuntimeProviderCapacityFailure(classify({ httpStatus: 400, message: "document says overloaded" }))).toBe(
+      false,
+    );
+    expect(classify({ message: "The tool output mentions overloaded" }).kind).toBe("unknown");
+    expect(classify({ providerCode: "usageLimitExceeded" }).kind).toBe("quota_exhausted");
+  });
   it("classifies rate limit pressure without leaking sensitive headers", () => {
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "codex",

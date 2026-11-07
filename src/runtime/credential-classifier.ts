@@ -38,6 +38,44 @@ const TOKEN_REMAINING_HEADERS = [
   "anthropic-ratelimit-output-tokens-remaining",
 ];
 
+const PROVIDER_CAPACITY_CODES = new Set([
+  "overloaded",
+  "overloaded_error",
+  "server_overloaded",
+  "serveroverloaded",
+  "model_capacity_exceeded",
+  "capacity_exceeded",
+  "flex_unavailable",
+  "flexunavailable",
+]);
+const TRANSIENT_RATE_LIMIT_CODES = new Set([
+  "rate_limit",
+  "rate_limit_error",
+  "rate_limit_exceeded",
+  "ratelimitexceeded",
+]);
+
+/** Only structural admission failures authorize provider-capacity retries. */
+export function isRuntimeProviderCapacityFailure(signal: RuntimeCredentialFailureSignal): boolean {
+  if (signal.kind !== "provider_overloaded" && signal.kind !== "rate_limited") return false;
+  if (
+    signal.httpStatus !== undefined &&
+    signal.httpStatus >= 400 &&
+    signal.httpStatus < 500 &&
+    signal.httpStatus !== 429
+  )
+    return false;
+  return (
+    signal.httpStatus === 429 ||
+    signal.httpStatus === 503 ||
+    signal.httpStatus === 529 ||
+    [signal.providerCode, signal.providerType].some((value) => {
+      const token = normalizeToken(value);
+      return token !== undefined && (PROVIDER_CAPACITY_CODES.has(token) || TRANSIENT_RATE_LIMIT_CODES.has(token));
+    })
+  );
+}
+
 export function classifyRuntimeCredentialFailure(
   input: RuntimeCredentialClassifierInput,
 ): RuntimeCredentialFailureSignal {
@@ -147,11 +185,13 @@ function classifyKind(input: {
   ) {
     return { kind: "billing_blocked", confidence: "high", scope: "account" };
   }
+  if (code === "insufficient_quota" || code === "quota_exhausted" || code === "usagelimitexceeded") {
+    return { kind: "quota_exhausted", confidence: "high", scope: "account" };
+  }
   if (
     input.status === 429 ||
-    code === "rate_limit_error" ||
-    type === "rate_limit_error" ||
-    code === "rate_limit" ||
+    (code !== undefined && TRANSIENT_RATE_LIMIT_CODES.has(code)) ||
+    (type !== undefined && TRANSIENT_RATE_LIMIT_CODES.has(type)) ||
     text.includes("out of extra usage")
   ) {
     if (text.includes("quota") || text.includes("monthly") || text.includes("exceeded your current quota")) {
@@ -165,7 +205,12 @@ function classifyKind(input: {
   if (input.status === 403 || code === "permission_error" || type === "permission_error") {
     return { kind: "permission_denied", confidence: "medium", scope: inferPermissionScope(text) };
   }
-  if (input.status === 529 || input.status === 503 || code === "overloaded" || text.includes("overloaded")) {
+  if (
+    input.status === 529 ||
+    input.status === 503 ||
+    (code !== undefined && PROVIDER_CAPACITY_CODES.has(code)) ||
+    (type !== undefined && PROVIDER_CAPACITY_CODES.has(type))
+  ) {
     return { kind: "provider_overloaded", confidence: "high", scope: "provider" };
   }
   if (input.status && input.status >= 500) {

@@ -25,3 +25,5 @@
 
 On the production host, obtain the coordinated test slot before focused checks.
 Leave the full build, root typecheck, and full suite to CI.
+
+- `bun test src/sdk/client-codegen/codegen.test.ts` verifies normalized optional arguments before a required options bag and preserves their raw wire keys at invocation.

@@ -1,6 +1,10 @@
 import { describe, expect, it, mock, spyOn } from "bun:test";
 import * as runtimeIdentity from "../runtime-process-identity.js";
-import { CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS, type ChannelOutboundPublishResult } from "./outbound-publish-outbox.js";
+import {
+  CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS,
+  type ChannelOutboundPublishResult,
+  channelOutboundPublishRequestFingerprint,
+} from "./outbound-publish-outbox.js";
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS,
@@ -164,9 +168,10 @@ describe("channel runner native delivery registry", () => {
       if (publishAttempt !== 1) return undefined;
       return {
         ok: false,
+        disposition: "deferred",
         record: {
           idempotencyKey: job.request.idempotencyKey,
-          requestFingerprint: "test-fingerprint",
+          requestFingerprint: channelOutboundPublishRequestFingerprint(job),
           jobId: job.jobId,
           sessionName: job.request.origin.sessionName,
           channelId: job.request.channelId,

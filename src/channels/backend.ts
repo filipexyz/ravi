@@ -15,6 +15,20 @@ import { getAgentCwd } from "../router/resolver.js";
 import { attachChatToSession, getOrCreateSession, getSession, updateSessionName } from "../router/sessions.js";
 import type { ChannelBackendPromptMetadata, MessageContext, MessageTarget } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
+import {
+  CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+  CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+  ChannelOutputEmissionContextSchema,
+  ChannelOutputHandoffConfirmationSchema,
+  ChannelOutputHandoffError,
+  channelOutputHandoffConfirmationMatches,
+  channelOutputHandoffEvidenceMatches,
+  createChannelOutputHandoffIdentity,
+  getChannelOutputHandoffEvidence,
+  type ChannelOutputEmissionContext,
+  type ChannelOutputHandoffConfirmation,
+  type ChannelOutputHandoffEvidence,
+} from "./output-handoff.js";
 
 export const CHANNEL_BACKEND_PROTOCOL = "ravi.channel.backend" as const;
 export const CHANNEL_BACKEND_SCHEMA_VERSION = 1 as const;
@@ -219,7 +233,17 @@ export type ChannelIngressResult = z.infer<typeof ChannelIngressResultSchema>;
 export type ChannelOutputEnvelope = z.infer<typeof ChannelOutputEnvelopeSchema>;
 
 export interface ChannelOutputSink {
-  emit(envelope: ChannelOutputEnvelope): Promise<void>;
+  /** Opts into the exact durable Slack contract; this grants no authority. */
+  readonly handoffCapability?: typeof CHANNEL_OUTPUT_HANDOFF_CAPABILITY;
+  emit(
+    envelope: ChannelOutputEnvelope,
+    context?: ChannelOutputEmissionContext,
+  ): Promise<void> | Promise<ChannelOutputHandoffConfirmation | undefined>;
+}
+
+export interface ChannelOutputSinkEmission {
+  readonly emitted: boolean;
+  readonly confirmation?: ChannelOutputHandoffConfirmation;
 }
 
 export class ChannelOutputSinkRegistry {
@@ -238,24 +262,123 @@ export class ChannelOutputSinkRegistry {
     };
   }
 
-  async emit(input: ChannelOutputEnvelope): Promise<void> {
-    const envelope = ChannelOutputEnvelopeSchema.parse(input);
-    const sink = this.sinks.get(sinkKey(envelope.target.channelKind, envelope.target.connectionId));
-    if (!sink) {
-      throw new Error(
-        `Channel output sink is unavailable for ${envelope.target.channelKind}/${envelope.target.connectionId}`,
-      );
+  async emit(
+    input: ChannelOutputEnvelope,
+    context?: ChannelOutputEmissionContext,
+  ): Promise<ChannelOutputHandoffConfirmation | undefined> {
+    const envelope = freezeOutputValue(ChannelOutputEnvelopeSchema.parse(input));
+    const result = await this.tryEmitWithHandoff(envelope, context);
+    if (!result.emitted) {
+      throw new ChannelOutputHandoffError({
+        capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+        identity: createChannelOutputHandoffIdentity(envelope),
+        disposition: "not_started",
+        operationFinished: true,
+        code: "SINK_UNAVAILABLE",
+      });
     }
-    await sink.emit(envelope);
+    return result.confirmation;
   }
 
-  async tryEmit(input: ChannelOutputEnvelope): Promise<boolean> {
-    const envelope = ChannelOutputEnvelopeSchema.parse(input);
-    const sink = this.sinks.get(sinkKey(envelope.target.channelKind, envelope.target.connectionId));
-    if (!sink) return false;
-    await sink.emit(envelope);
-    return true;
+  /** Keeps the boolean API: true means invoked, not durably saved or delivered. */
+  async tryEmit(input: ChannelOutputEnvelope, context?: ChannelOutputEmissionContext): Promise<boolean> {
+    return (await this.tryEmitWithHandoff(input, context)).emitted;
   }
+
+  /**
+   * Restrictions survive both entry points. An unsupported sink is refused
+   * before invocation; generic completion never becomes a durable confirmation.
+   */
+  async tryEmitWithHandoff(
+    input: ChannelOutputEnvelope,
+    context?: ChannelOutputEmissionContext,
+  ): Promise<ChannelOutputSinkEmission> {
+    const envelope = freezeOutputValue(ChannelOutputEnvelopeSchema.parse(input));
+    const restriction =
+      context === undefined ? undefined : Object.freeze(ChannelOutputEmissionContextSchema.parse(context));
+    const sink = this.sinks.get(sinkKey(envelope.target.channelKind, envelope.target.connectionId));
+    if (!sink) return { emitted: false };
+    const known = sink.handoffCapability === CHANNEL_OUTPUT_HANDOFF_CAPABILITY;
+    if (restriction && !known) {
+      throw new ChannelOutputHandoffError({
+        capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+        identity: createChannelOutputHandoffIdentity(envelope),
+        disposition: "not_started",
+        operationFinished: true,
+        code: "UNSUPPORTED_CAPABILITY",
+      });
+    }
+    let result: Awaited<ReturnType<ChannelOutputSink["emit"]>>;
+    try {
+      result = restriction === undefined ? await sink.emit(envelope) : await sink.emit(envelope, restriction);
+    } catch (error) {
+      const evidence = known ? matchingChannelOutputHandoffEvidence(error, envelope, restriction) : undefined;
+      if (evidence) throw new ChannelOutputHandoffError(evidence, { cause: error });
+      if (error instanceof Error && error.name === "ChannelOutputHandoffError") {
+        throw unclassifiedChannelOutputHandoff(envelope, "UNCLASSIFIED", error);
+      }
+      throw error;
+    }
+    if (result === undefined) return { emitted: true };
+    if (!known || !channelOutputHandoffConfirmationMatches(result, envelope, restriction?.expectedRequestFingerprint)) {
+      throw unclassifiedChannelOutputHandoff(envelope, "INVALID_CONFIRMATION");
+    }
+    return { emitted: true, confirmation: ChannelOutputHandoffConfirmationSchema.parse(result) };
+  }
+}
+
+/** Validates output identity without treating a pin conflict as proof of completion. */
+export function matchingChannelOutputHandoffEvidence(
+  error: unknown,
+  envelope: ChannelOutputEnvelope,
+  context?: ChannelOutputEmissionContext,
+): ChannelOutputHandoffEvidence | undefined {
+  const evidence = getChannelOutputHandoffEvidence(error);
+  if (!evidence || !channelOutputHandoffEvidenceMatches(evidence, envelope)) return undefined;
+  if (!channelOutputHandoffEvidenceMatches(evidence, envelope, context?.expectedRequestFingerprint)) {
+    // A changed fingerprint forbids replay but cannot certify an ongoing operation finished.
+    if (evidence.disposition === "unknown" && evidence.operationFinished === false) return evidence;
+    return {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+      identity: evidence.identity,
+      disposition: "conflict",
+      operationFinished: true,
+      code: "REQUEST_FINGERPRINT_CONFLICT",
+      ...("idempotencyKey" in evidence ? { idempotencyKey: evidence.idempotencyKey } : {}),
+      ...("requestFingerprint" in evidence ? { requestFingerprint: evidence.requestFingerprint } : {}),
+    };
+  }
+  return evidence;
+}
+
+function unclassifiedChannelOutputHandoff(
+  envelope: ChannelOutputEnvelope,
+  code: "UNCLASSIFIED" | "INVALID_CONFIRMATION" = "UNCLASSIFIED",
+  cause?: unknown,
+): ChannelOutputHandoffError {
+  return new ChannelOutputHandoffError(
+    {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+      identity: createChannelOutputHandoffIdentity(envelope),
+      disposition: "unknown",
+      operationFinished: true,
+      code,
+    },
+    { cause },
+  );
+}
+
+/** Freezes the parsed clone so a sink cannot change the identity being checked. */
+function freezeOutputValue<T>(value: T): T {
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value)) freezeOutputValue(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 export const channelOutputSinks = new ChannelOutputSinkRegistry();

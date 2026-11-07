@@ -310,8 +310,10 @@ function renderMethod(cmd: CommandRegistryEntry, indent: number, typeImports: Se
     return { ...arg, paramName };
   });
   for (const arg of args) {
-    const optional = arg.required ? "" : "?";
-    params.push(`${arg.paramName}${optional}: ${arg.type}`);
+    const followedByRequiredOptions = sig.options.length > 0 && !sig.optionsOptional;
+    const optional = !arg.required && !followedByRequiredOptions ? "?" : "";
+    const type = !arg.required && followedByRequiredOptions ? `${arg.type} | undefined` : arg.type;
+    params.push(`${arg.paramName}${optional}: ${type}`);
   }
   if (sig.options.length > 0) {
     const optBag = renderOptionsBag(sig, indent + 1);
@@ -353,13 +355,18 @@ function renderOptionsBag(sig: CommandSignature, indent: number): string {
   if (sig.options.length === 0) return "Record<string, never>";
   const pad = "  ".repeat(indent);
   const close = "  ".repeat(indent - 1);
-  const lines = ["{"];
-  for (const o of sig.options) {
-    const optional = o.required ? "" : "?";
-    lines.push(`${pad}${o.name}${optional}: ${o.type};`);
-  }
-  lines.push(`${close}}`);
-  return lines.join("\n");
+  const alternatives = sig.requiredAnyOfOptions ?? [undefined];
+  return alternatives
+    .map((requiredOption) => {
+      const lines = ["{"];
+      for (const o of sig.options) {
+        const optional = o.required || o.name === requiredOption ? "" : "?";
+        lines.push(`${pad}${o.name}${optional}: ${o.type};`);
+      }
+      lines.push(`${close}}`);
+      return lines.join("\n");
+    })
+    .join(" | ");
 }
 
 /* -------------------------------------------------------------------------- */

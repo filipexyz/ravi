@@ -19,22 +19,24 @@ The safer default is thread-first routing:
 
 This keeps the first Slack adapter useful for real work while preserving the Ravi principle that channels transport context and Ravi owns routing/session semantics.
 
-## Why Foreign Bots Are Explicitly Addressed
+## Why Foreign Bots Follow Normal Channel Policy
 
 Slack Connect and shared automation channels often contain messages authored by
-other bots. Ignoring every `bot_id` prevents useful agent-to-agent coordination,
-while admitting every bot message creates loops and lets ambient automation drive
-an agent. Ravi therefore discovers its own bot/user pair with `auth.test`, always
-filters self output, and admits a foreign bot only through an explicit mention or
-a chat-scoped alias at the beginning of the text.
+other bots. A bot-only mention or alias requirement silently drops ordinary
+messages that would reach the agent if a human sent them, including multiline
+context and thread replies. Foreign bots therefore follow the same route,
+channel, root, and thread policy as humans once the adapter verifies local
+identity, installation visibility, and message origin. Explicit addressing stays
+useful as a prompt signal; it does not decide bot admission. No separate
+message-addressing alias configuration is needed.
 
-Aliases live on the channel account rather than in process environment so two
-workspaces can use different names without sharing policy. Complete-word Unicode
-boundaries make the operator-visible rule match natural text without accepting
-partial names. Authentication discovery is coalesced and successful results are
-cached, but each request has a bounded timeout and failures get only a short
-backoff: this avoids a stuck Web API call or a transient Slack failure turning
-into a daemon-lifetime outage without creating an API storm.
+Admitting a message does not grant its author authority. Ravi still discovers
+its own bot/user pair with `auth.test`, always filters self output, applies
+normal route/channel restrictions, and deduplicates delivery. Authentication
+discovery is coalesced and successful results are cached, but each request has a
+bounded timeout and failures get only a short backoff: this avoids a stuck Web
+API call or a transient Slack failure turning into a daemon-lifetime outage
+without creating an API storm.
 
 Slack Connect also separates message origin from app visibility. `source_team`
 may name the workspace that authored a message while `authorizations[].team_id`
@@ -97,9 +99,60 @@ Hermes' Slack gateway shows the operational details that matter before real work
 - Socket Mode must have a singleton lock per app/workspace connection.
 - Old handlers must be closed before reconnecting to avoid duplicate delivery.
 - Slack should be handled as threads, mentions, files and workspace policy, not just plain text.
-- Bot filtering needs explicit modes.
+- Bot intake needs local-echo suppression and explicit identity/provenance checks.
 - File handling often needs Web API calls with bot-token authenticated downloads.
 - Long messages need chunking or post/edit fallback.
 - Commands in threads may need text normalization because Slack does not support native slash commands everywhere.
 
 Ravi should borrow these behaviors while keeping the ownership boundary different: Slack adapter delivers channel events; Ravi runtime owns sessions and agents.
+
+## Why Contain Output Instead of Bot Input
+
+Bot notices are real work. Dropping them or recording them without processing
+would recreate the reported inbound bug. Two deterministic peers can still
+amplify each other's ordinary replies, so the mitigation acts on automatic
+terminal projection after processing. Commentary is optional and cannot spend
+the final response's allowance. A complete frozen response shares one decision
+across text and media, preserving long content instead of introducing another
+truncation path.
+
+Slack supplies conversation identity, not reliable cross-bot causality. The
+aggregate channel scope trades some automatic acknowledgements during bursts
+for a bound on rapid logical reply admission. It recovers on new input without
+human intervention, but slow feedback and authorized explicit sends remain
+outside that guarantee. Tests retain these counterexamples so the mitigation
+cannot be mistaken for universal loop prevention.
+## Continuation lifetime and recovery provenance
+
+The first grouped-output implementation kept pending media inside one event-loop
+invocation. A test that yielded twice in that same invocation missed the real
+launcher boundary: replacing the streaming object lost generated members before
+the final manifest. Pending membership now belongs to the logical request in a
+process-local collection, partitioned by canonical database identity. Terminal
+cleanup removes collection ownership; a live terminal frame keeps its copy for
+freeze/release. This fixes ordinary in-process relaunch, not process-crash or
+core-NATS replay recovery.
+
+Session recovery already omitted the backend binding before this output guard
+existed. The guard made that omission a policy-coverage defect: a recovered bot
+answer could fall back to unrelated output during cooldown. Copying the binding
+alone still left a premature safe-error terminal. The replay-safe recovery branch
+therefore preserves the binding separately from authority and defers only its
+logical failure projection, keeping physical failure accounting and replay
+decisions intact. Positive bot, human and non-Slack controls are required alongside
+cooldown suppression; deleting terminal state or suppressing every recovered
+answer would not satisfy the contract.
+
+## Interrupted physical attempts and logical replies
+
+`INTERRUPTED-REPLAY-01` predates automatic Slack containment: a replay-safe Claude transport failure could record a physical interruption, replay the same accepted input and save a full final to history, while premature logical `interrupted` state rejected native output for both bots and humans. Avoiding only a cancelled manifest did not fix that state transition.
+
+Logical projection now follows the actual authorized stash/continuation result, with full backend-envelope equality and current ownership/cancellation checks. Physical trace and accounting remain terminal for the failed attempt. Existing fences still decide whether any input can replay. Internal physical handle closure does not establish an operator cancellation; explicit cancellation has its own positive witness. No terminal DB row is reopened and no automatic allowance is reset.
+
+This correction is validated with synthetic provider events and actual queue/generator, SQLite and native output/consumer paths. Controlled launcher/driver bridges do not establish full live dispatcher or provider-outage recovery, and do not attribute the historical Pi incident.
+
+## One terminal acceptance transaction
+
+`FREEZE-AFTER-TERMINAL-01` was introduced when automatic bot grouping added a separate manifest transaction after the existing terminal write and an awaited runtime notification. A competing SQLite writer could then prevent manifest persistence after the canonical final and terminal state were already committed. Registry cleanup also consumed the pending members. Readback retained text but did not retry delivery.
+
+Terminal state, sequence, any canonical assistant row and complete manifest therefore share the existing synchronous write transaction and its bounded lock retries. Preparation remains outside the transaction; local readiness and collector cleanup follow commit. The schema is initialized centrally rather than cached after potentially rolled-back DDL. This closes the partial terminal/manifest acceptance window without adding an outbox or claiming availability when the first write exhausts its retries. Later sink failure and process/core NATS media loss remain separate limits.

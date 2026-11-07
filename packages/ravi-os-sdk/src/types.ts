@@ -21140,6 +21140,102 @@ export type SessionsSubscriptionsInput = {
 /** Return shape for `sessions.subscriptions`. */
 export type SessionsSubscriptionsReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.thread-configure`. */
+export type SessionsThreadConfigureInput = ({
+  effort: string;
+  model?: string;
+  provider?: string;
+  session?: string;
+  thinking?: string;
+  thread: string;
+}) | ({
+  effort?: string;
+  model: string;
+  provider?: string;
+  session?: string;
+  thinking?: string;
+  thread: string;
+}) | ({
+  effort?: string;
+  model?: string;
+  provider: string;
+  session?: string;
+  thinking?: string;
+  thread: string;
+}) | ({
+  effort?: string;
+  model?: string;
+  provider?: string;
+  session?: string;
+  thinking: string;
+  thread: string;
+});
+
+/** Return shape for `sessions.thread-configure`. */
+export type SessionsThreadConfigureReturn = {
+  actionId: "thread.configure";
+  after: {
+    effort: string | null;
+    model: string | null;
+    provider: string | null;
+    thinking: string | null;
+  };
+  appliesOn: "next-turn";
+  before: {
+    effort: string | null;
+    model: string | null;
+    provider: string | null;
+    thinking: string | null;
+  };
+  changed: boolean;
+  status: "configured";
+  thread: {
+    childSessionKey: string | null;
+    childSessionMissing: boolean;
+    childSessionName: string | null;
+    closedAt: number | null;
+    createdAt: number;
+    link: string | null;
+    openDecisionCount: number;
+    parentReturn: {
+      pending: boolean;
+      requested: boolean;
+    };
+    pendingAnswerCount: number;
+    requestId: string;
+    runtime: {
+      effort: string;
+      effortSource: string;
+      model: string | null;
+      modelSource: string | null;
+      provider: string;
+      providerSource: string;
+      requested: {
+        effort: string | null;
+        model: string | null;
+        provider: string | null;
+        thinking: string | null;
+      };
+      thinking: string | null;
+      thinkingSource: string | null;
+    };
+    slackThreadTs: string | null;
+    source: "action" | "inbound";
+    status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
+    title: string | null;
+    turnHealth?: ({
+      checkedAt: number;
+      lastSignalAt: number | null;
+      reason: ("no_signal" | "no_reply" | "owner_lost" | "failed") | null;
+      since: number;
+      state: "idle" | "running" | "interrupted" | "attention" | "closed";
+      turnId: string | null;
+    }) | null;
+    uncertainAnswerCount: number;
+    updatedAt: number;
+  };
+};
+
 /** Input shape for `sessions.thread-send`. */
 export type SessionsThreadSendInput = {
   message: string;

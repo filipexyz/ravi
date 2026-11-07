@@ -34,7 +34,8 @@ export function observeThreadTurn(
     SELECT MAX(CASE WHEN event_type IN ('adapter.request','tool.start','tool.end','assistant.message',
       'runtime.status','response.emitted','delivery.delivered') THEN timestamp END) AS last_signal,
       MAX(CASE WHEN event_type IN ('response.emitted','delivery.delivered')
-        AND COALESCE(json_extract(payload_json, '$.textLen'), 0) > 0
+        AND (COALESCE(json_extract(payload_json, '$.textLen'), 0) > 0
+          OR COALESCE(json_extract(payload_json, '$.mediaCount'), 0) > 0)
         AND COALESCE(json_extract(payload_json, '$.hasError'), 0) = 0
         AND json_extract(payload_json, '$.responsePhase') = 'final_answer' THEN 1 ELSE 0 END) AS final_reply
     FROM session_events WHERE turn_id = ?

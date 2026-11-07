@@ -1,7 +1,20 @@
 import { dbGetChannelBackendRuntimeState, type ChannelConfig } from "../../router/router-db.js";
 import { logger } from "../../utils/logger.js";
 import type { ChannelOutputEnvelope, ChannelSafeError } from "../backend.js";
-import { publishChannelOutboundJobDurably, type ChannelOutboundPublishResult } from "../outbound-publish-outbox.js";
+import {
+  ChannelOutboundPublishHandoffError,
+  channelOutboundPublishRequestFingerprint,
+  publishChannelOutboundJobDurably,
+  type ChannelOutboundPublishResult,
+} from "../outbound-publish-outbox.js";
+import {
+  CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+  CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+  ChannelOutputEmissionContextSchema,
+  ChannelOutputHandoffConfirmationSchema,
+  ChannelOutputHandoffError,
+  createChannelOutputHandoffIdentity,
+} from "../output-handoff.js";
 import { buildChannelTextOutboundJob, type ChannelOutboundJob } from "../outbound-stream.js";
 import {
   NATIVE_CHANNEL_DRIVER_PROTOCOL,
@@ -18,6 +31,7 @@ import {
   type SlackNativeRuntime,
   type SlackSocketModeStatus,
 } from "./socket-mode.js";
+import { createChannelBackendAutomaticOutputOrigin } from "./automatic-output-origin.js";
 
 export interface SlackNativeChannelDriverOptions {
   readonly createRuntime?: (
@@ -31,6 +45,11 @@ export interface SlackNativeChannelDriverOptions {
 
 const log = logger.child("channels:slack:driver");
 
+/**
+ * Builds the Slack driver contract without starting a connection. Runtime
+ * creation resolves credentials and installs host sinks; outbound jobs use
+ * the durable publisher unless the caller supplies a replacement.
+ */
 export function createSlackNativeChannelDriver(
   env: NodeJS.ProcessEnv = process.env,
   options: SlackNativeChannelDriverOptions = {},
@@ -45,6 +64,12 @@ export function createSlackNativeChannelDriver(
 
   return {
     descriptor,
+    /**
+     * Resolves a native runtime for the configured channel and registers its
+     * terminal-output and commentary sinks. A missing runtime is a credentials
+     * contract error. The returned start/stop methods own the socket lifecycle;
+     * stop unregisters both sinks before awaiting socket shutdown.
+     */
     async createRuntime(context) {
       const channel: ChannelConfig = {
         name: context.channel.name,
@@ -70,15 +95,19 @@ export function createSlackNativeChannelDriver(
       const publishOutbound =
         options.publishOutbound ?? ((job: ChannelOutboundJob) => publishChannelOutboundJobDurably(job));
       const resolveCanonicalMessageId = options.resolveCanonicalMessageId ?? resolveRuntimeCanonicalMessageId;
-      const publishOutboundObserved = async (job: ChannelOutboundJob): Promise<void> => {
+      const publishOutboundObserved = async (
+        job: ChannelOutboundJob,
+      ): Promise<ChannelOutboundPublishResult | undefined> => {
         const result = await publishOutbound(job);
-        if (!result || result.ok) return;
+        if (!result) return undefined;
+        if (result.ok) return result;
         log.warn("Slack outbound publish deferred; durable retry remains pending", {
           jobId: result.record.jobId,
           attemptCount: result.record.attemptCount,
           nextAttemptAt: result.nextAttemptAt,
           error: result.error,
         });
+        return result;
       };
       const unregisterOutputSink = context.host.registerOutputSink(
         {
@@ -86,35 +115,113 @@ export function createSlackNativeChannelDriver(
           connectionId: native.accountId,
         },
         {
-          async emit(envelope) {
+          handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+          /**
+           * Publishes final text or a safe error with binding-derived automatic
+           * provenance and a stable output-id key. Assistant output requires
+           * a canonical message id or fails before publication. Resolution is
+           * a publication handoff, not a Slack delivery receipt. The concrete
+           * request is fingerprinted once and any restriction is checked before
+           * save. Only a validated outbox result supplies durable confirmation;
+           * an override returning void remains unclassified.
+           */
+          async emit(envelope, emissionContext) {
+            const identity = createChannelOutputHandoffIdentity(envelope);
+            const restriction =
+              emissionContext === undefined ? undefined : ChannelOutputEmissionContextSchema.parse(emissionContext);
             const target = decodeSlackBackendConversationId(envelope.target.conversationId);
             const canonicalMessageId =
               envelope.kind === "assistant_message" ? resolveCanonicalMessageId(envelope) : undefined;
             if (envelope.kind === "assistant_message" && !canonicalMessageId) {
               throw new NativeChannelDriverContractError("runtime_surface_mismatch");
             }
-            await publishOutboundObserved(
-              buildChannelTextOutboundJob({
-                requestId: `channel-output:${envelope.outputId}`,
-                sessionName: envelope.binding.sessionId,
-                emitId: envelope.outputId,
-                idempotencyKey: envelope.outputId,
-                target: {
-                  channel: descriptor.provider,
-                  accountId: native.accountId,
-                  instanceId: native.instanceId,
-                  chatId: target.channelId,
-                  ...(target.threadTs ? { threadId: target.threadTs } : {}),
-                  canonicalChatId: envelope.binding.chatId,
-                },
-                text: renderSlackBackendOutput(envelope),
-                format: "markdown",
-                responsePhase: envelope.kind === "assistant_message" ? "final_answer" : "safe_error",
-                traceTurnId: envelope.traceTurnId,
-                ...(canonicalMessageId ? { canonicalMessageId } : {}),
-                ...(options.now ? { now: options.now() } : {}),
-              }),
-            );
+            const job = buildChannelTextOutboundJob({
+              requestId: `channel-output:${envelope.outputId}`,
+              sessionName: envelope.binding.sessionId,
+              emitId: envelope.outputId,
+              idempotencyKey: envelope.outputId,
+              target: {
+                channel: descriptor.provider,
+                accountId: native.accountId,
+                instanceId: native.instanceId,
+                chatId: target.channelId,
+                ...(target.threadTs ? { threadId: target.threadTs } : {}),
+                canonicalChatId: envelope.binding.chatId,
+              },
+              text: renderSlackBackendOutput(envelope),
+              format: "markdown",
+              responsePhase: envelope.kind === "assistant_message" ? "final_answer" : "safe_error",
+              traceTurnId: envelope.traceTurnId,
+              automatic: createChannelBackendAutomaticOutputOrigin(envelope.binding),
+              ...(canonicalMessageId ? { canonicalMessageId } : {}),
+              ...(options.now ? { now: options.now() } : {}),
+            });
+            const requestFingerprint = channelOutboundPublishRequestFingerprint(job);
+            const prepared = {
+              capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+              schemaVersion: CHANNEL_OUTPUT_HANDOFF_SCHEMA_VERSION,
+              identity,
+              idempotencyKey: job.request.idempotencyKey,
+              requestFingerprint,
+            };
+            if (
+              restriction?.expectedRequestFingerprint !== undefined &&
+              restriction.expectedRequestFingerprint !== requestFingerprint
+            ) {
+              throw new ChannelOutputHandoffError({
+                ...prepared,
+                disposition: "conflict",
+                operationFinished: true,
+                code: "REQUEST_FINGERPRINT_CONFLICT",
+              });
+            }
+            let result: ChannelOutboundPublishResult | undefined;
+            try {
+              result = await publishOutboundObserved(job);
+            } catch (error) {
+              if (
+                error instanceof ChannelOutboundPublishHandoffError &&
+                error.evidence.idempotencyKey === prepared.idempotencyKey &&
+                error.evidence.requestFingerprint === requestFingerprint
+              ) {
+                // Only the outbox knows whether its synchronous save finished
+                // with verified absence. Generic exceptions cannot assert that.
+                throw new ChannelOutputHandoffError({
+                  ...prepared,
+                  ...error.evidence,
+                });
+              }
+              throw error;
+            }
+            if (result === undefined) return;
+            const record = result.record;
+            const validDisposition =
+              result.disposition === "published"
+                ? result.ok === true && record.status === "published"
+                : result.disposition === "suppressed"
+                  ? result.ok === true && record.status === "suppressed"
+                  : result.disposition === "deferred" && result.ok === false && record.status === "pending";
+            if (
+              !validDisposition ||
+              record.idempotencyKey !== prepared.idempotencyKey ||
+              record.requestFingerprint !== requestFingerprint ||
+              record.sessionName !== job.request.origin.sessionName ||
+              record.channelId !== job.request.channelId ||
+              (record.status !== "suppressed" &&
+                channelOutboundPublishRequestFingerprint(record.job) !== requestFingerprint)
+            ) {
+              throw new ChannelOutputHandoffError({
+                ...prepared,
+                disposition: "unknown",
+                operationFinished: true,
+                code: "INVALID_CONFIRMATION",
+              });
+            }
+            return ChannelOutputHandoffConfirmationSchema.parse({
+              ...prepared,
+              durableSaveConfirmed: true,
+              disposition: record.supersededBy ? "suppressed" : result.disposition,
+            });
           },
         },
       );
@@ -124,6 +231,12 @@ export function createSlackNativeChannelDriver(
           connectionId: native.accountId,
         },
         {
+          /**
+           * Projects commentary only, using the event id for publication
+           * identity and the binding for automatic-output policy. Commentary
+           * requires an external target; other runtime events are ignored.
+           * Publication completion does not establish provider delivery.
+           */
           async emit(event, externalTarget) {
             if (event.kind !== "turn.assistant_message" || event.payload.phase !== "commentary") return;
             if (!externalTarget) {
@@ -148,6 +261,7 @@ export function createSlackNativeChannelDriver(
                 format: "markdown",
                 responsePhase: "commentary",
                 traceTurnId: event.correlation.traceTurnId,
+                automatic: createChannelBackendAutomaticOutputOrigin(event.correlation.binding),
                 ...(options.now ? { now: options.now() } : {}),
               }),
             );
@@ -203,6 +317,9 @@ const SLACK_UNAVAILABLE_MESSAGE =
 const SLACK_INTERNAL_ERROR_MESSAGE = "The agent could not complete this request because of an internal error.";
 
 export function renderSlackSafeError(error: ChannelSafeError | undefined): string {
+  if (error?.code === "OVERLOADED" && error.category === "capacity" && !error.retryable) {
+    return "The agent's model provider is overloaded right now. Your session and completed work are preserved; this turn was not repeated to avoid duplicate actions.";
+  }
   if (error?.code === "UNAVAILABLE") {
     return error.retryable ? SLACK_UNAVAILABLE_RETRYABLE_MESSAGE : SLACK_UNAVAILABLE_MESSAGE;
   }

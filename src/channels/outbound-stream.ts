@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { ensureConnected, getNats } from "../nats.js";
-import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
+import type { ChannelAutomaticOutputOrigin, MessageTarget, ResponseMessage } from "../runtime/message-types.js";
 import { isSilentTokenText } from "../silent-token.js";
 import { logger } from "../utils/logger.js";
 import type { ChannelChatActionContent } from "./chat-actions.js";
@@ -48,6 +48,8 @@ export interface ChannelOutboundRequest {
     runtimePid?: number;
     responsePhase?: string;
     canonicalMessageId?: string;
+    automatic?: ChannelAutomaticOutputOrigin;
+    automaticTerminalResponseId?: string;
   };
   content:
     | {
@@ -89,6 +91,8 @@ export interface ChannelTextOutboundJobInput {
   format?: "markdown";
   responsePhase?: string;
   canonicalMessageId?: string;
+  automatic?: ChannelAutomaticOutputOrigin;
+  automaticTerminalResponseId?: string;
   metadata?: ResponseMessage["metadata"];
   now?: number;
 }
@@ -267,6 +271,13 @@ export async function publishChannelOutboundJob(job: ChannelOutboundJob): Promis
   throw lastError;
 }
 
+/**
+ * Builds, but does not publish, a text job; returns a reason when target, emit
+ * ID or text is missing, or the text is a silence-only marker. Slack Markdown
+ * travels unchanged and automatic origin metadata is copied for later checks.
+ * The wrapper key derives from session, emit and destination; it is distinct
+ * from the canonical automatic part identity validated by the consumer.
+ */
 export function buildChannelOutboundJobFromResponse(
   sessionName: string,
   response: ResponseMessage,
@@ -315,6 +326,10 @@ export function buildChannelOutboundJobFromResponse(
           runtimePid:
             typeof (response as { _pid?: unknown })._pid === "number" ? (response as { _pid: number })._pid : undefined,
           responsePhase: response.metadata?.item?.phase,
+          ...(response._automaticOutputOrigin ? { automatic: structuredClone(response._automaticOutputOrigin) } : {}),
+          ...(response._automaticTerminalResponseId
+            ? { automaticTerminalResponseId: response._automaticTerminalResponseId }
+            : {}),
         },
         content: {
           type: "text",
@@ -329,6 +344,12 @@ export function buildChannelOutboundJobFromResponse(
   };
 }
 
+/**
+ * Builds an unsent job, trimming required identifiers and rejecting blank text
+ * while retaining the original text bytes and target object. Copies automatic
+ * origin metadata but does not validate a terminal manifest or grant frozen
+ * target treatment/authority; those checks belong to the delivery boundary.
+ */
 export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput): ChannelOutboundJob {
   const requestId = input.requestId.trim();
   const sessionName = input.sessionName.trim();
@@ -362,6 +383,10 @@ export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput):
         ...(input.traceTurnId ? { traceTurnId: input.traceTurnId } : {}),
         ...(input.responsePhase ? { responsePhase: input.responsePhase } : {}),
         ...(canonicalMessageId ? { canonicalMessageId } : {}),
+        ...(input.automatic ? { automatic: structuredClone(input.automatic) } : {}),
+        ...(input.automaticTerminalResponseId
+          ? { automaticTerminalResponseId: input.automaticTerminalResponseId }
+          : {}),
       },
       content: {
         type: "text",

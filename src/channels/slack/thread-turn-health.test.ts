@@ -224,6 +224,83 @@ describe("thread turn health reconciliation", () => {
     expect(await tick()).toMatchObject({ state: "attention", reason: "failed" });
   });
 
+  it("accepts a correlated final media delivery after completion", async () => {
+    terminal("complete");
+    recordDeliveryTrace({
+      sessionName: childName,
+      response: { traceTurnId: turnId, response: "", metadata: { item: { phase: "final_answer" } } },
+      delivery: { status: "delivered", contentType: "media" },
+      timestamp: now,
+    });
+    expect(await tick()).toMatchObject({ state: "idle", reason: null });
+    expect(publishPrompt).not.toHaveBeenCalled();
+  });
+
+  for (const { name, status, phase, mediaCount, hasError, expected } of [
+    {
+      name: "commentary",
+      status: "complete",
+      phase: "commentary",
+      mediaCount: 1,
+      hasError: false,
+      expected: { state: "attention", reason: "no_reply" },
+    },
+    {
+      name: "unclassified media",
+      status: "complete",
+      phase: undefined,
+      mediaCount: 1,
+      hasError: false,
+      expected: { state: "attention", reason: "no_reply" },
+    },
+    {
+      name: "errored media",
+      status: "complete",
+      phase: "final_answer",
+      mediaCount: 1,
+      hasError: true,
+      expected: { state: "attention", reason: "no_reply" },
+    },
+    {
+      name: "empty media",
+      status: "complete",
+      phase: "final_answer",
+      mediaCount: 0,
+      hasError: false,
+      expected: { state: "attention", reason: "no_reply" },
+    },
+    {
+      name: "unfinished turn",
+      status: "running",
+      phase: "final_answer",
+      mediaCount: 1,
+      hasError: false,
+      expected: { state: "running", reason: null },
+    },
+    {
+      name: "failed turn",
+      status: "failed",
+      phase: "final_answer",
+      mediaCount: 1,
+      hasError: false,
+      expected: { state: "attention", reason: "failed" },
+    },
+    {
+      name: "interrupted turn",
+      status: "interrupted",
+      phase: "final_answer",
+      mediaCount: 1,
+      hasError: false,
+      expected: { state: "interrupted", reason: null },
+    },
+  ] as const) {
+    it(`does not treat ${name} as an answered final media reply`, async () => {
+      if (status !== "running") terminal(status);
+      event("response.emitted", now - 1000, { textLen: 0, mediaCount, responsePhase: phase, hasError });
+      expect(await tick()).toMatchObject(expected);
+    });
+  }
+
   it("lets close-thread during a tool take precedence over missing terminal", async () => {
     event("tool.start", now, { toolId: "open-tool" });
     expect(await tick()).toMatchObject({ state: "running" });
