@@ -108,12 +108,21 @@ ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --bod
 
 The command previews by default, preserves the exact local commit/tree and
 history, creates or reuses the ready PR and verifies the CI follow. It does not
-run local tests: record focused validation honestly before publishing. Repeat
+run local tests: record focused validation honestly before publishing. This command does
+not invoke git push/pre-push; disclose that and the checks left to CI. Repeat
 the command to reconcile a partial result. A thread publisher hands CI to its
 durable parent; never close the only recipient while its checks are pending.
 
 Independent review belongs in the PR description. Quality Gate is the required
 merge check; the retired Review Gate must not be reinstated by this workflow.
+
+**Breaking change:** bare operator publication and `--reply-session` are removed.
+Both preview and execute require an authenticated session through the
+gateway/agent. Remove the option from callers and publish in an authorized
+Ravi session. A terminal without one fails with `PERMISSION_DENIED` and
+`pr publish requires an authenticated session context; run through the gateway/agent.`
+There is no human-login-to-runtime-context exchange for the bare terminal today.
+Do not bootstrap an admin key, bypass the journal or infer authority from the host.
 
 ## Adding or changing a CLI command
 

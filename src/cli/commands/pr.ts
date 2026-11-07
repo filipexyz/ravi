@@ -3,14 +3,19 @@ import { readFile, stat } from "node:fs/promises";
 import { Command, CommandAccess, Group, Option, Returns, type CommandAccessOptions } from "../decorators.js";
 import { contractDryRun, ContractError } from "../agent-contract.js";
 import { enforceCliCommandAuthorization } from "../command-access.js";
-import { getContext } from "../context.js";
 import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
 import { buildAuditContextProvenance } from "../../permissions/audit-provenance.js";
-import { resultSchema, prError, PUBLICATION_TIMEOUT_MS, LIMITS } from "../../pr/contracts.js";
+import {
+  resultSchema,
+  prError,
+  PUBLICATION_TIMEOUT_MS,
+  PUBLICATION_CONTEXT_REQUIRED_MESSAGE,
+  LIMITS,
+} from "../../pr/contracts.js";
 import { githubClient, GithubError } from "../../pr/github.js";
 import { LocalGit, utf8 } from "../../pr/git.js";
 import { preparePublication, executePublication } from "../../pr/service.js";
-import { resolvePublicationContext } from "../../pr/context.js";
+import { requirePublicationRuntimeContext, resolvePublicationContext } from "../../pr/context.js";
 import { requireFollowRuntime } from "../../pr/follow-health.js";
 
 const access: CommandAccessOptions = {
@@ -19,16 +24,18 @@ const access: CommandAccessOptions = {
   action: "publish",
   risk: "high",
   requiresConfirmation: true,
-  localOperator: true,
-  input: ["repo", "base", "expectSha", "replySession"],
+  localOperator: false,
+  notes: PUBLICATION_CONTEXT_REQUIRED_MESSAGE,
+  input: ["repo", "base", "expectSha"],
   redactions: ["title", "bodyFile"],
 };
 const HELP = `
 USE
   Publish a committed work branch through Git Data API, then create/reuse its ready PR and CI follow.
-  Publication requires an authenticated gateway context and the installed daemon journal.
-  Run in the publishing Ravi session; a bare operator terminal is not a supported publication path.
-  --reply-session must match the publishing session; it does not authenticate the caller.
+  Requires an authenticated Ravi session through the gateway/agent, including preview.
+  CI follows the publishing session's durable origin.
+BREAKING CHANGE
+  Bare local operator publication and --reply-session are removed. A reply destination is not authentication.
 NÃO USE
   This is not commit, merge, approval, force-push, fork publication or a draft workflow.
 REGRAS HARD
@@ -46,11 +53,11 @@ EXAMPLES
   ravi pr publish --repo owner/repo --base dev --title "Fix parser" --body-file /tmp/pr.md --expect-sha <40-char-sha> --json --execute
   ravi pr publish --repo owner/repo --base dev --json --execute
 ON ERROR
+  PERMISSION_DENIED: ${PUBLICATION_CONTEXT_REQUIRED_MESSAGE}
   WORKTREE_DIRTY: commit changes. GIT_OBJECT_MISMATCH: inspect the object; never accept a substitute SHA.
   NON_FAST_FORWARD / REMOTE_REF_CHANGED: integrate remote changes or choose a new branch.
   PR_PUBLICATION_INCOMPLETE: inspect partial.phase and rerun with the same --expect-sha.
   FOLLOW_RUNTIME_UNAVAILABLE: update/start Ravi's runtime; no success without its active CI producer.
-  PUBLICATION_AUDIT_FAILED from a local terminal: use the authenticated gateway path; do not open real state locally.
 OUTPUT
   --json returns publication/attempt IDs, repo/head/base, SHAs, PR URL, watch/trigger IDs and CI snapshot.
   Exits: 0 complete; 1 failed/incomplete; 2 invalid usage; 3 preview/write brake (no mutations).
@@ -90,17 +97,12 @@ export class PrCommands {
     bodyFile?: string,
     @Option({ flags: "--expect-sha <sha>", description: "Require this full local commit SHA (default: capture HEAD)" })
     expectSha?: string,
-    @Option({
-      flags: "--reply-session <session>",
-      description: "CI publishing session; must match the authenticated session and does not grant authority",
-    })
-    replySession?: string,
     @Option({ flags: "--dry-run", description: "Preview only; also the default without --execute (exit 3)" })
     dryRun?: boolean,
     @Option({ flags: "--json", description: "Print one typed JSON result or error envelope" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Publish externally and reconcile CI follow" }) execute?: boolean,
   ) {
-    const context = getContext();
+    const context = requirePublicationRuntimeContext();
     let signal: AbortSignal | undefined;
     const authorize = () => {
       if (signal?.aborted)
@@ -113,7 +115,7 @@ export class PrCommands {
         scope: "open",
         access,
         source: context?.transport ?? "cli",
-        input: { repo, base, expectSha, replySession },
+        input: { repo, base, expectSha },
       });
       if (!decision.allowed)
         throw prError("PERMISSION_DENIED", "This context cannot publish the selected PR.", decision.denialDetails);
@@ -123,7 +125,7 @@ export class PrCommands {
       throw prError("USAGE_ERROR", "Provide --repo and --base; --dry-run and --execute are mutually exclusive.", {}, 2);
     if (context?.transport && !context.cwd)
       throw prError("CALLER_CWD_REQUIRED", "The gateway needs the caller worktree directory for publication.");
-    const publisher = this.dependencies.context(replySession);
+    const publisher = this.dependencies.context();
     const cwd = resolveCallerPath(getCallerCwd());
     let body: string | undefined;
     if (bodyFile) {
@@ -152,10 +154,10 @@ export class PrCommands {
       const result = await this.dependencies.execute(prepared, request, {
         authorize,
         provenance: {
-          actor: provenance?.actorPrincipal ?? (context?.agentId ? `agent:${context.agentId}` : "local-operator"),
-          executorAgentId: context?.agentId ?? null,
+          actor: provenance?.actorPrincipal ?? `agent:${context.agentId}`,
+          executorAgentId: context.agentId,
           sessionKey: publisher.sessionKey ?? null,
-          contextId: context?.contextId ?? null,
+          contextId: context.contextId,
         },
       });
       console.log(

@@ -419,7 +419,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/audit.ts | 112 | fixed | binding retained / no recognized error surface | src/cli/audit.ts:af01abebdab1195a6f2d8e21 |
 | cli | src/cli/cloud-agents-contract.ts | 241 | fixed | binding retained / no recognized error surface | src/cli/cloud-agents-contract.ts:c8dbf439594a6d405bc0f209 |
 | cli | src/cli/codex-hook-transport.ts | 75 | fixed | binding retained / no recognized error surface | src/cli/codex-hook-transport.ts:815eaacac7107596f024c4a0 |
-| cli | src/cli/command-access.ts | 339 | triaged-follow-up | catch-without-binding | src/cli/command-access.ts:5b7e49b64c2fd8e3ff6c70a5 |
+| cli | src/cli/command-access.ts | 351 | triaged-follow-up | catch-without-binding | src/cli/command-access.ts:5b7e49b64c2fd8e3ff6c70a5 |
 | cli | src/cli/commands/agenda.ts | 469 | fixed | binding retained / no recognized error surface | src/cli/commands/agenda.ts:80070e42e9e3ab05f92009cb |
 | cli | src/cli/commands/agenda.ts | 607 | fixed | binding retained / no recognized error surface | src/cli/commands/agenda.ts:d53c5654d696bcde56eb1e12 |
 | cli | src/cli/commands/agents-library.ts | 65 | triaged-follow-up | rejection-without-binding | src/cli/commands/agents-library.ts:165d62a4d87b9cfbbd546147 |
@@ -646,8 +646,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/pages.ts | 1531 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2403 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:362b802d766dcf83c4cb7620 |
 | cli | src/cli/commands/pages.ts | 2829 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa |
-| cli | src/cli/commands/pr.ts | 136 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/pr.ts:d5e03ff8271ee2697dc04e7f |
-| cli | src/cli/commands/pr.ts | 167 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:321ad057284dc26938438dc5 |
+| cli | src/cli/commands/pr.ts | 138 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/pr.ts:d5e03ff8271ee2697dc04e7f |
+| cli | src/cli/commands/pr.ts | 169 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:321ad057284dc26938438dc5 |
 | cli | src/cli/commands/projects.ts | 178 | fixed | binding retained / no recognized error surface | src/cli/commands/projects.ts:865c35ce0a8d92d905d8f4ee |
 | cli | src/cli/commands/prox-calls.ts | 569 | fixed | binding retained / no recognized error surface | src/cli/commands/prox-calls.ts:c74f0951b8fad167c123479a |
 | cli | src/cli/commands/prox-calls.ts | 1599 | triaged-follow-up | catch-without-binding | src/cli/commands/prox-calls.ts:fb030687fa118a84b786ec8c |
@@ -1575,8 +1575,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | pm2.ts | src/pm2.ts | 70 | fixed | binding retained / no recognized error surface | src/pm2.ts:4352afcdb59390b880f3b901 |
 | pm2.ts | src/pm2.ts | 122 | fixed | binding retained / no recognized error surface | src/pm2.ts:2ef6c550ff1b5370c2c3e2f1 |
 | policy | src/policy/reaction-actions.ts | 104 | triaged-follow-up | catch-without-binding | src/policy/reaction-actions.ts:53ffd706658bef6705b7af7c |
-| pr | src/pr/context.ts | 24 | fixed | binding retained / no recognized error surface | src/pr/context.ts:47a6ad6be72f95e3c0e7a4c0 |
-| pr | src/pr/context.ts | 86 | triaged-follow-up | cause-not-forwarded-at-surface | src/pr/context.ts:5818b3b034774e3a5eff6a0b |
+| pr | src/pr/context.ts | 47 | fixed | binding retained / no recognized error surface | src/pr/context.ts:47a6ad6be72f95e3c0e7a4c0 |
+| pr | src/pr/context.ts | 100 | triaged-follow-up | cause-not-forwarded-at-surface | src/pr/context.ts:5818b3b034774e3a5eff6a0b |
 | pr | src/pr/follow-health.ts | 38 | triaged-follow-up | catch-without-binding | src/pr/follow-health.ts:606cfe08538ef71c95d4c760 |
 | pr | src/pr/follow-health.ts | 42 | triaged-follow-up | catch-without-binding | src/pr/follow-health.ts:31bfbd62945bd07c70bda352 |
 | pr | src/pr/follow-health.ts | 62 | triaged-follow-up | catch-without-binding | src/pr/follow-health.ts:8c744db238738a1ee22c2bd5 |

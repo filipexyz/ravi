@@ -95348,10 +95348,6 @@ export const PrPublishInputSchema = {
       "description": "Require this full local commit SHA (default: capture HEAD)",
       "type": "string"
     },
-    "replySession": {
-      "description": "CI publishing session; must match the authenticated session and does not grant authority",
-      "type": "string"
-    },
     "repo": {
       "description": "Required github.com destination; must match origin",
       "type": "string"

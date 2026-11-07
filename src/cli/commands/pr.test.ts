@@ -5,6 +5,8 @@ import { PrCommands } from "./pr.js";
 import { buildRegistry } from "../registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../context.js";
 import { ContractError } from "../agent-contract.js";
+import { enforceCliCommandAuthorization } from "../command-access.js";
+import { PUBLICATION_CONTEXT_REQUIRED_MESSAGE } from "../../pr/contracts.js";
 import { executePublication } from "../../pr/service.js";
 import { publicationFixture } from "../../pr/test-fixture.js";
 import {
@@ -67,7 +69,7 @@ async function invoke(execute = false, dryRun = false, allowed = true) {
   writeFileSync(bodyPath, "Validation: focused tests.\n");
   // A path relative to the caller worktree, which differs from the daemon cwd.
   return runWithContext(context(allowed), () =>
-    command().publish("o/r", "dev", "Fix publication", "../body.md", f.sha(), undefined, dryRun, true, execute),
+    command().publish("o/r", "dev", "Fix publication", "../body.md", f.sha(), dryRun, true, execute),
   );
 }
 
@@ -76,8 +78,82 @@ describe("pr publish CLI contract", () => {
     const entry = buildRegistry([PrCommands]).commands[0]!;
     expect(entry.cliOnly).not.toBe(true);
     expect(entry.returns).toBeDefined();
-    expect(entry.access).toMatchObject({ kind: "mutate", resource: "pr", action: "publish", risk: "high" });
-    expect(entry.options.find((opt) => opt.name === "execute")?.index).toBe(8);
+    expect(entry.access).toMatchObject({
+      kind: "mutate",
+      resource: "pr",
+      action: "publish",
+      risk: "high",
+      localOperator: false,
+    });
+    expect(entry.options.find((opt) => opt.name === "execute")?.index).toBe(7);
+    expect(entry.options.some((opt) => opt.name === "replySession")).toBe(false);
+  });
+  it("denies the bare operator at command admission with actionable session guidance", () => {
+    const entry = buildRegistry([PrCommands]).commands[0]!;
+    const result = runWithContext({}, () =>
+      enforceCliCommandAuthorization({
+        group: "pr",
+        command: "publish",
+        scope: "open",
+        access: entry.access,
+        source: "cli",
+        input: { repo: "o/r", base: "dev", execute: true },
+      }),
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain(PUBLICATION_CONTEXT_REQUIRED_MESSAGE);
+    expect(f.calls).toHaveLength(0);
+  });
+  it("refuses unauthenticated or sessionless execution before body, GitHub, health or journal IO", async () => {
+    let effects = 0;
+    const unexpected = () => {
+      effects++;
+      throw new Error("unexpected IO");
+    };
+    const guarded = new PrCommands({
+      context: unexpected,
+      github: unexpected,
+      health: unexpected,
+      execute: unexpected,
+    });
+    const authenticated = context();
+    const invalid: ToolContext[] = [
+      {},
+      { transport: "gateway" },
+      { transport: "tool", agentId: "test", sessionKey: "agent:test:publisher" },
+      { ...authenticated, transport: undefined, contextOrigin: "default-credential" },
+      { ...authenticated, context: { ...authenticated.context!, sessionKey: undefined, sessionName: undefined } },
+    ];
+    process.env.RAVI_AGENT_ID = "test";
+    process.env.RAVI_SESSION_KEY = "agent:test:publisher";
+    for (const candidate of invalid) {
+      for (const execute of [false, true]) {
+        await expect(
+          runWithContext(candidate, () =>
+            guarded.publish("o/r", "dev", "Test", "/does-not-exist/body.md", undefined, false, true, execute),
+          ),
+        ).rejects.toMatchObject({
+          code: "PERMISSION_DENIED",
+          exitCode: 1,
+          message: PUBLICATION_CONTEXT_REQUIRED_MESSAGE,
+        });
+      }
+    }
+    expect(effects).toBe(0);
+    expect(f.calls).toHaveLength(0);
+    expect(f.db.query("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(0);
+    expect(f.triggers).toHaveLength(0);
+  });
+  it("refuses expired and revoked session contexts before publication IO", async () => {
+    for (const ended of [{ expiresAt: 1 }, { revokedAt: 1 }]) {
+      const authenticated = context();
+      await expect(
+        runWithContext({ ...authenticated, context: { ...authenticated.context!, ...ended } }, () =>
+          command().publish("o/r", "dev", "Test", "/does-not-exist/body.md", undefined, false, true, true),
+        ),
+      ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    }
+    expect(f.calls).toHaveLength(0);
   });
   it("defaults to a typed exit-3 preview with no HTTP writes, journal, PR or follow", async () => {
     for (const dryRun of [false, true]) {
@@ -110,5 +186,15 @@ describe("pr publish CLI contract", () => {
     expect(schema.safeParse(result).success).toBe(true);
     expect(result).toMatchObject({ localSha: f.sha(), pr: { ready: true }, follow: { replySession: "publisher" } });
     expect(f.triggers).toHaveLength(1);
+    const event = f.db.query("SELECT detail_json FROM pr_publication_events ORDER BY id LIMIT 1").get() as {
+      detail_json: string;
+    };
+    expect(JSON.parse(event.detail_json)).toMatchObject({
+      contextId: "ctx_pr_test",
+      actor: "agent:test",
+      executorAgentId: "test",
+      sessionKey: "agent:test:publisher",
+    });
+    expect(event.detail_json).not.toContain("rctx_");
   });
 });

@@ -2,10 +2,33 @@ import { Database } from "bun:sqlite";
 import { ContractError } from "../cli/agent-contract.js";
 import { getContext } from "../cli/context.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
-import { localOperatorCan } from "../permissions/provider-runtime.js";
 import { getRaviDbPath } from "../router/router-db.js";
 import { resolveGhFollowContext, type GhWatchFollowContext } from "../hooks/gh-watch.js";
-import { prError } from "./contracts.js";
+import { prError, PUBLICATION_CONTEXT_REQUIRED_MESSAGE } from "./contracts.js";
+
+/** Only the authenticated runtime boundary supplies identity; never reconstruct it from the host. */
+export function requirePublicationRuntimeContext() {
+  const context = getContext({ localOnly: true });
+  const record = context?.context;
+  if (
+    (context?.transport !== "gateway" && context?.transport !== "tool") ||
+    !record?.contextId ||
+    !record.agentId ||
+    (!record.sessionKey && !record.sessionName)
+  )
+    throw prError("PERMISSION_DENIED", PUBLICATION_CONTEXT_REQUIRED_MESSAGE, {
+      suggestedAction: "Run pr publish in an authorized Ravi session through the gateway/agent.",
+    });
+  return {
+    ...context,
+    context: record,
+    contextId: record.contextId,
+    agentId: record.agentId,
+    sessionKey: record.sessionKey,
+    sessionName: record.sessionName,
+    source: record.source,
+  };
+}
 
 /** Validate live ownership without bootstrapping or migrating state during preview. */
 export function resolvePublicationFollowContext(context: GhWatchFollowContext): GhWatchFollowContext {
@@ -34,17 +57,9 @@ export function resolvePublicationFollowContext(context: GhWatchFollowContext): 
 }
 
 /** Read-only even in a fresh installation: preview must not bootstrap the runtime database. */
-export function resolvePublicationContext(replySession?: string): GhWatchFollowContext {
-  const context = getContext();
-  const current = context?.sessionKey ?? context?.sessionName;
-  if (current && replySession && replySession !== current && replySession !== context?.sessionName)
-    throw prError("USAGE_ERROR", "A session publication follows in its own session; omit --reply-session.", {}, 2);
-  const target = current ?? replySession;
-  if (!target || (!current && !localOperatorCan("admin", "system", "*")))
-    throw prError(
-      "PUBLICATION_SESSION_REQUIRED",
-      "Publish through an authenticated gateway context in the publishing session; --reply-session alone does not authenticate a bare operator terminal.",
-    );
+export function resolvePublicationContext(): GhWatchFollowContext {
+  const context = requirePublicationRuntimeContext();
+  const target = (context.sessionKey ?? context.sessionName)!;
   if (!canAccessSession(getScopeContext(), target))
     throw prError("SESSION_NOT_FOUND", "Publishing session is unavailable in this scope.");
   let database: Database | undefined;
@@ -63,17 +78,16 @@ export function resolvePublicationContext(replySession?: string): GhWatchFollowC
       last_thread_id: string | null;
     } | null;
     if (!row) throw prError("SESSION_NOT_FOUND", "Publishing session is unavailable in this scope.");
-    const source =
-      current && context?.source
-        ? context.source
-        : row.last_channel && row.last_account_id && row.last_to
-          ? {
-              channel: row.last_channel,
-              accountId: row.last_account_id,
-              chatId: row.last_to,
-              ...(row.last_thread_id ? { threadId: row.last_thread_id } : {}),
-            }
-          : undefined;
+    const source = context.source
+      ? context.source
+      : row.last_channel && row.last_account_id && row.last_to
+        ? {
+            channel: row.last_channel,
+            accountId: row.last_account_id,
+            chatId: row.last_to,
+            ...(row.last_thread_id ? { threadId: row.last_thread_id } : {}),
+          }
+        : undefined;
     if (!source)
       throw prError("PUBLICATION_SESSION_REQUIRED", "The publishing session has no chat destination for CI follow.");
     return {

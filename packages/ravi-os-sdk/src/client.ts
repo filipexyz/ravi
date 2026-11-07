@@ -6511,7 +6511,6 @@ export class RaviClient {
       dryRun?: boolean;
       execute?: boolean;
       expectSha?: string;
-      replySession?: string;
       repo?: string;
       title?: string;
     }): Promise<PrPublishReturn> => {
