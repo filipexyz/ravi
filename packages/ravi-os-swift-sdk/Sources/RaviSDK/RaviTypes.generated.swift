@@ -24586,17 +24586,15 @@ public struct PrPublishOptions: Codable, Sendable {
   public var dryRun: Bool?
   public var execute: Bool?
   public var expectSha: String?
-  public var replySession: String?
   public var repo: String?
   public var title: String?
 
-  public init(base: String? = nil, bodyFile: String? = nil, dryRun: Bool? = nil, execute: Bool? = nil, expectSha: String? = nil, replySession: String? = nil, repo: String? = nil, title: String? = nil) {
+  public init(base: String? = nil, bodyFile: String? = nil, dryRun: Bool? = nil, execute: Bool? = nil, expectSha: String? = nil, repo: String? = nil, title: String? = nil) {
     self.base = base
     self.bodyFile = bodyFile
     self.dryRun = dryRun
     self.execute = execute
     self.expectSha = expectSha
-    self.replySession = replySession
     self.repo = repo
     self.title = title
   }
@@ -24607,7 +24605,6 @@ public struct PrPublishOptions: Codable, Sendable {
     case dryRun = "dryRun"
     case execute = "execute"
     case expectSha = "expectSha"
-    case replySession = "replySession"
     case repo = "repo"
     case title = "title"
   }
@@ -24627,9 +24624,6 @@ public struct PrPublishOptions: Codable, Sendable {
     }
     if let value = self.expectSha {
       body["expectSha"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.replySession {
-      body["replySession"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.repo {
       body["repo"] = try RaviJSON.fromEncodable(value)

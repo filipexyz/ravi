@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "ebc380c9741aed6f"
+    "version": "957ca2d6b4adf2a7"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -106861,10 +106861,6 @@
                   },
                   "expectSha": {
                     "description": "Require this full local commit SHA (default: capture HEAD)",
-                    "type": "string"
-                  },
-                  "replySession": {
-                    "description": "Required only for an operator terminal without a session",
                     "type": "string"
                   },
                   "repo": {

@@ -18038,7 +18038,6 @@ export type PrPublishInput = {
   dryRun?: boolean;
   execute?: boolean;
   expectSha?: string;
-  replySession?: string;
   repo?: string;
   title?: string;
 };

@@ -1,5 +1,14 @@
 # Verified PR publication / CHECKS
 
+- `bun test src/cli/commands/pr.test.ts src/pr/context.test.ts src/cli/command-access.test.ts`
+  proves bare operator admission is denied with the authenticated-session
+  message, even with `--execute`; direct unauthenticated, default-credential,
+  ambient identity and sessionless calls stop before body/GitHub/health/journal
+  IO. Expired/revoked contexts fail, authenticated preview/execution succeed,
+  journal provenance contains the public context ID and no key, and the
+  registered options no longer expose `replySession`.
+- `bun test src/cli/commands/pr-process.test.ts` verifies the real process
+  refusal/message and exit code, and rejection of removed `--reply-session`.
 - `bun test src/pr/ src/cli/commands/pr.test.ts` verifies real temporary Git
   databases on both ends, binary/path/mode fidelity, deletions, merges and
   identity offsets; preview, authority, caller cwd, leases and interrupted

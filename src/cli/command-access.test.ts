@@ -386,6 +386,19 @@ describe("CLI command access enforcement", () => {
     expect(result.attempted).toEqual([]);
   });
 
+  it("includes the command's recovery note when denying local operator fallback", () => {
+    const note = "Requires an authenticated session; run through the gateway/agent.";
+    const result = enforceCliCommandAccess({
+      group: "demo",
+      command: "create",
+      source: "cli",
+      access: { ...ACCESS, localOperator: false, notes: note },
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain(note);
+    expect(result.attempted).toEqual([]);
+  });
+
   it("authorizes runtime contexts through semantic command capabilities first", () => {
     const record = context([{ permission: "mutate", objectType: "demo.items", objectId: "create" }]);
     const result = runWithContext({ agentId: "dev", context: record }, () =>
