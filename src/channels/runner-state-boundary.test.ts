@@ -137,7 +137,7 @@ describe("programmatic channel runner state boundary", () => {
 
   it("keeps externally invoked native sinks in consumer scope without demoting their caller", async () => {
     const lease = createNativeChannelDriverHostLease({
-      channel: { name: "runner-boundary", provider: "example" },
+      channel: { name: "runner-boundary", provider: "example", createdAt: 1, updatedAt: 1 },
       provider: "example",
     });
     const roles: boolean[] = [];
