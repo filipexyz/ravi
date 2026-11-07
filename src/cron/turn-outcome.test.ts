@@ -23,6 +23,19 @@ describe("parseRuntimeSessionName", () => {
 });
 
 describe("parseCronTurnOutcome", () => {
+  it("settles permanent intake drops while leaving retryable dispatch refusals pending", () => {
+    const event = {
+      topic: "ravi.session.main.runtime",
+      data: {
+        type: "dispatch.dropped",
+        reason: "intake_failed:no_agent",
+        _turnProvenance: { ...cronProvenance("job"), cronRunId: "run" },
+      },
+    };
+    expect(parseCronTurnOutcome(event)).toMatchObject({ kind: "failed", jobId: "job", runId: "run" });
+    expect(parseCronTurnOutcome({ ...event, data: { ...event.data, reason: "capacity" } })).toBeNull();
+  });
+
   it("ignores non-terminal runtime events", () => {
     for (const type of ["assistant.message", "tool.start", "status", "silent", "text.delta"]) {
       expect(parseCronTurnOutcome({ topic: "ravi.session.main.runtime", data: { type } })).toBeNull();

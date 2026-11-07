@@ -6,9 +6,13 @@ import {
   ContractError,
   CONTRACT_EXIT_ERROR,
   contractFailureOutcome,
+  sanitizePublicContractMessage,
   type ContractErrorEnvelope,
   type ContractFailureOutcome,
 } from "../../cli/agent-contract.js";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { logGatewayFailure } from "./diagnostics.js";
+import { gatewayRequestContext } from "./request-context.js";
 
 export interface JsonIssue {
   path: (string | number)[];
@@ -16,14 +20,8 @@ export interface JsonIssue {
   message: string;
 }
 
-export interface ErrorBody {
-  error: string;
-  message?: string;
-  issues?: JsonIssue[];
-  [key: string]: unknown;
-}
-
 export interface GatewayContractErrorBody extends ContractErrorEnvelope {
+  error: ContractErrorEnvelope["error"] & { requestId: string; diagnosticRequestId?: string };
   /** CLI-compatible exit taxonomy, retained for non-CLI consumers. */
   exitCode: number;
   outcome: ContractFailureOutcome | "denied";
@@ -36,8 +34,72 @@ export function json(status: number, body: unknown): Response {
 }
 
 export function errorResponse(status: number, error: string, extras: Record<string, unknown> = {}): Response {
-  const body: ErrorBody = { error, ...extras };
-  return json(status, body);
+  const catalog: Record<string, [string, string, string]> = {
+    NotFound: ["ROUTE_NOT_FOUND", "Gateway route not found.", "Check the operation in /api/v1/_meta/registry"],
+    MethodNotAllowed: [
+      "METHOD_NOT_ALLOWED",
+      "HTTP method is not supported for this route.",
+      "Use POST for commands and GET for metadata or streams",
+    ],
+    ValidationError: ["VALIDATION_ERROR", "Request input is invalid.", "Correct the fields listed in issues"],
+    PermissionDenied: [
+      "PERMISSION_DENIED",
+      "Gateway access denied.",
+      "Request the required permission before retrying",
+    ],
+    ConsoleAuthorityRequired: [
+      "CONSOLE_AUTHORITY_REQUIRED",
+      "This command requires signed authority on the dedicated Console listener.",
+      "Use the dedicated Console listener with a valid signed delegation",
+    ],
+    Unauthorized: [
+      "AUTH_REQUIRED",
+      "Gateway authentication failed.",
+      "Refresh the runtime context credential before retrying",
+    ],
+    ContextExpired: [
+      "CONTEXT_EXPIRED",
+      "The runtime context credential has expired.",
+      "Have the runtime renew or reissue the context credential before retrying; no permission grant is required",
+    ],
+    PayloadTooLarge: [
+      "PAYLOAD_TOO_LARGE",
+      "Request body exceeds the gateway size limit.",
+      "Reduce the request body size before retrying",
+    ],
+    BadRequest: ["BAD_REQUEST", "Request body is invalid.", "Send a flat JSON object with valid command fields"],
+    InternalError: [
+      "UNHANDLED_ERROR",
+      "Gateway processing failed.",
+      "Report this requestId to the operator; do not automatically retry the command",
+    ],
+  };
+  const [code, message, suggestedAction] = catalog[error] ?? [
+    "GATEWAY_ERROR",
+    `Gateway rejected the request (HTTP ${status}).`,
+    "Report this requestId to the operator",
+  ];
+  // Transport reasons can contain caller values. Only explicit public message/issue fields cross.
+  const publicMessage =
+    status < 500 && typeof extras.message === "string" ? sanitizePublicContractMessage(extras.message) : undefined;
+  return contractErrorResponse(
+    new ContractError(
+      gatewayRequestContext().op,
+      code,
+      publicMessage ?? message,
+      [400, 405, 413, 422].includes(status) ? 2 : 1,
+      {
+        suggestedAction,
+        ...errorDiagnostic(extras.reason ?? extras.message ?? message, {
+          operation: gatewayRequestContext().op,
+          status,
+        }),
+        ...(Array.isArray(extras.issues) ? { issues: extras.issues } : {}),
+        ...(typeof extras.limitBytes === "number" ? { limitBytes: extras.limitBytes } : {}),
+      },
+    ),
+    status,
+  );
 }
 
 export function notFound(path: string): Response {
@@ -76,23 +138,64 @@ export function contractErrorResponse(
 ): Response {
   const status =
     statusOverride ??
-    (error.code === "PERMISSION_DENIED" ? 403 : error.exitCode === 2 ? 400 : error.exitCode === 3 ? 409 : 422);
+    (error.code === "PERMISSION_DENIED"
+      ? 403
+      : error.code === "VALIDATION_ERROR"
+        ? 422
+        : error.exitCode === 2
+          ? 400
+          : error.exitCode === 3
+            ? 409
+            : 422);
+  const { requestId, diagnosticRequestId } = gatewayRequestContext();
+  const envelope = error.envelope();
+  const safeMessage = sanitizePublicContractMessage(envelope.error.message);
+  const legacyGeneric =
+    /^(?:Remote command failed\.?|Command could not be completed\.?|Command failed unexpectedly\.?)$/.test(
+      safeMessage ?? "",
+    );
+  const safeAction = sanitizePublicContractMessage(envelope.error.suggestedAction);
   const body: GatewayContractErrorBody = {
-    ...error.envelope(),
+    ...envelope,
+    error: {
+      ...envelope.error,
+      message:
+        error.code === "UNHANDLED_ERROR"
+          ? `${error.op} failed internally. Report the requestId to the operator before retrying.`
+          : ((!legacyGeneric ? safeMessage : undefined) ??
+            `${error.op} failed (${error.code}). Report this requestId to the operator.`),
+      suggestedAction:
+        error.code === "UNHANDLED_ERROR"
+          ? "Report the operation and requestId to the operator; do not automatically retry the command"
+          : ((safeAction && !/^Inspect redacted (?:remote|runtime) logs/.test(safeAction) ? safeAction : undefined) ??
+            `Check '${error.op} --help' and correct the input before retrying`),
+      requestId,
+      ...(diagnosticRequestId ? { diagnosticRequestId } : {}),
+    },
     exitCode: error.exitCode,
     outcome: outcomeOverride ?? contractFailureOutcome(error),
   };
-  return json(status, body);
+  const response = json(status, body);
+  response.headers.set("x-request-id", requestId);
+  return response;
 }
 
 export function returnShapeError(op: string, issues: JsonIssue[]): Response {
-  return contractErrorResponse(
-    new ContractError(op, "RETURN_SHAPE_ERROR", "Command returned an invalid response shape.", CONTRACT_EXIT_ERROR, {
-      suggestedAction: "Report the invalid SDK return contract to the command owner",
-      issues,
-    }),
-    500,
+  const error = new ContractError(
+    op,
+    "RETURN_SHAPE_ERROR",
+    "Command returned an invalid response shape.",
+    CONTRACT_EXIT_ERROR,
+    {
+      ...errorDiagnostic("Command returned an invalid response shape.", { operation: op }),
+      ...{
+        suggestedAction: "Report the invalid SDK return contract to the command owner",
+        issues,
+      },
+    },
   );
+  logGatewayFailure(error, error.code);
+  return contractErrorResponse(error, 500);
 }
 
 export function badRequest(message: string): Response {

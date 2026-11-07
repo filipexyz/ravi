@@ -35479,6 +35479,19 @@ public enum RaviSchemas {
           "channels": {
             "additionalProperties": false,
             "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cpu": {
                 "anyOf": [
                   {
@@ -35489,8 +35502,44 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
               "managed": {
                 "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "memoryBytes": {
                 "anyOf": [
@@ -35515,6 +35564,9 @@ public enum RaviSchemas {
               "name": {
                 "type": "string"
               },
+              "online": {
+                "type": "boolean"
+              },
               "pid": {
                 "anyOf": [
                   {
@@ -35538,8 +35590,37 @@ public enum RaviSchemas {
               "running": {
                 "type": "boolean"
               },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "status": {
                 "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -35551,7 +35632,19 @@ public enum RaviSchemas {
               "pmId",
               "cpu",
               "memoryBytes",
-              "memoryMb"
+              "memoryMb",
+              "online",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
             ],
             "type": "object"
           },
@@ -35859,12 +35952,330 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "alignment": {
+                "enum": [
+                  "aligned",
+                  "drifted",
+                  "unknown",
+                  "not_running"
+                ],
+                "type": "string"
+              },
+              "channels": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              },
+              "cli": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "version": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "bundlePath",
+                  "cwd",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "daemon": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "alignment",
+              "cli",
+              "daemon",
+              "channels"
+            ],
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "pm2Available",
           "processName",
           "channels",
+          "runtime",
+          "warnings",
           "processes"
         ],
         "type": "object"
@@ -36183,6 +36594,19 @@ public enum RaviSchemas {
           "channels": {
             "additionalProperties": false,
             "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cpu": {
                 "anyOf": [
                   {
@@ -36193,8 +36617,44 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
               "managed": {
                 "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "memoryBytes": {
                 "anyOf": [
@@ -36219,6 +36679,9 @@ public enum RaviSchemas {
               "name": {
                 "type": "string"
               },
+              "online": {
+                "type": "boolean"
+              },
               "pid": {
                 "anyOf": [
                   {
@@ -36242,8 +36705,37 @@ public enum RaviSchemas {
               "running": {
                 "type": "boolean"
               },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "status": {
                 "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -36255,7 +36747,19 @@ public enum RaviSchemas {
               "pmId",
               "cpu",
               "memoryBytes",
-              "memoryMb"
+              "memoryMb",
+              "online",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
             ],
             "type": "object"
           },
@@ -36563,12 +37067,330 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "alignment": {
+                "enum": [
+                  "aligned",
+                  "drifted",
+                  "unknown",
+                  "not_running"
+                ],
+                "type": "string"
+              },
+              "channels": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              },
+              "cli": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "version": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "bundlePath",
+                  "cwd",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "daemon": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "alignment",
+              "cli",
+              "daemon",
+              "channels"
+            ],
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "pm2Available",
           "processName",
           "channels",
+          "runtime",
+          "warnings",
           "processes"
         ],
         "type": "object"
@@ -36616,6 +37438,19 @@ public enum RaviSchemas {
       "channels": {
         "additionalProperties": false,
         "properties": {
+          "bundlePath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "codeStale": {
+            "type": "boolean"
+          },
           "cpu": {
             "anyOf": [
               {
@@ -36626,8 +37461,44 @@ public enum RaviSchemas {
               }
             ]
           },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diskVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "envStale": {
+            "type": "boolean"
+          },
+          "identityVerified": {
+            "type": "boolean"
+          },
           "managed": {
             "type": "boolean"
+          },
+          "matchesCli": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "memoryBytes": {
             "anyOf": [
@@ -36652,6 +37523,9 @@ public enum RaviSchemas {
           "name": {
             "type": "string"
           },
+          "online": {
+            "type": "boolean"
+          },
           "pid": {
             "anyOf": [
               {
@@ -36675,8 +37549,37 @@ public enum RaviSchemas {
           "running": {
             "type": "boolean"
           },
+          "runningVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -36688,7 +37591,19 @@ public enum RaviSchemas {
           "pmId",
           "cpu",
           "memoryBytes",
-          "memoryMb"
+          "memoryMb",
+          "online",
+          "bundlePath",
+          "cwd",
+          "runningVersion",
+          "diskVersion",
+          "startedAt",
+          "stale",
+          "codeStale",
+          "envStale",
+          "identityVerified",
+          "warnings",
+          "matchesCli"
         ],
         "type": "object"
       },
@@ -36996,12 +37911,330 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "runtime": {
+        "additionalProperties": false,
+        "properties": {
+          "alignment": {
+            "enum": [
+              "aligned",
+              "drifted",
+              "unknown",
+              "not_running"
+            ],
+            "type": "string"
+          },
+          "channels": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "online",
+              "status",
+              "pid",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
+            ],
+            "type": "object"
+          },
+          "cli": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "bundlePath",
+              "cwd",
+              "version"
+            ],
+            "type": "object"
+          },
+          "daemon": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "online",
+              "status",
+              "pid",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "alignment",
+          "cli",
+          "daemon",
+          "channels"
+        ],
+        "type": "object"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       }
     },
     "required": [
       "pm2Available",
       "processName",
       "channels",
+      "runtime",
+      "warnings",
       "processes"
     ],
     "type": "object"
@@ -37066,6 +38299,19 @@ public enum RaviSchemas {
           "channels": {
             "additionalProperties": false,
             "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cpu": {
                 "anyOf": [
                   {
@@ -37076,8 +38322,44 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
+              },
               "managed": {
                 "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "memoryBytes": {
                 "anyOf": [
@@ -37102,6 +38384,9 @@ public enum RaviSchemas {
               "name": {
                 "type": "string"
               },
+              "online": {
+                "type": "boolean"
+              },
               "pid": {
                 "anyOf": [
                   {
@@ -37125,8 +38410,37 @@ public enum RaviSchemas {
               "running": {
                 "type": "boolean"
               },
+              "runningVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "status": {
                 "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -37138,7 +38452,19 @@ public enum RaviSchemas {
               "pmId",
               "cpu",
               "memoryBytes",
-              "memoryMb"
+              "memoryMb",
+              "online",
+              "bundlePath",
+              "cwd",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
+              "matchesCli"
             ],
             "type": "object"
           },
@@ -37446,12 +38772,330 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "alignment": {
+                "enum": [
+                  "aligned",
+                  "drifted",
+                  "unknown",
+                  "not_running"
+                ],
+                "type": "string"
+              },
+              "channels": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              },
+              "cli": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "version": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "bundlePath",
+                  "cwd",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "daemon": {
+                "additionalProperties": false,
+                "properties": {
+                  "bundlePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "codeStale": {
+                    "type": "boolean"
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diskVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "envStale": {
+                    "type": "boolean"
+                  },
+                  "identityVerified": {
+                    "type": "boolean"
+                  },
+                  "managed": {
+                    "type": "boolean"
+                  },
+                  "matchesCli": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "online": {
+                    "type": "boolean"
+                  },
+                  "pid": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runningVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "managed",
+                  "online",
+                  "status",
+                  "pid",
+                  "bundlePath",
+                  "cwd",
+                  "runningVersion",
+                  "diskVersion",
+                  "startedAt",
+                  "stale",
+                  "codeStale",
+                  "envStale",
+                  "identityVerified",
+                  "warnings",
+                  "matchesCli"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "alignment",
+              "cli",
+              "daemon",
+              "channels"
+            ],
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "pm2Available",
           "processName",
           "channels",
+          "runtime",
+          "warnings",
           "processes"
         ],
         "type": "object"
@@ -56896,6 +58540,52 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ContextBridgeToolHookInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "payload": {
+        "description": "Hook input",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let ContextBridgeToolHookReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "hookSpecificOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "hookEventName": {
+            "const": "PreToolUse",
+            "type": "string"
+          },
+          "permissionDecision": {
+            "enum": [
+              "deny"
+            ],
+            "type": "string"
+          },
+          "permissionDecisionReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hookEventName",
+          "permissionDecision",
+          "permissionDecisionReason"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
   public static let ContextCapabilitiesInputSchema = #"""
   {
     "additionalProperties": false,
@@ -61771,6 +63461,7 @@ public enum RaviSchemas {
             "properties": {
               "backend": {
                 "enum": [
+                  "file",
                   "keychain",
                   "vault"
                 ],
@@ -61873,6 +63564,7 @@ public enum RaviSchemas {
             "properties": {
               "backend": {
                 "enum": [
+                  "file",
                   "keychain",
                   "vault"
                 ],
@@ -61992,6 +63684,7 @@ public enum RaviSchemas {
           "properties": {
             "backend": {
               "enum": [
+                "file",
                 "keychain",
                 "vault"
               ],
@@ -62141,6 +63834,7 @@ public enum RaviSchemas {
         "properties": {
           "backend": {
             "enum": [
+              "file",
               "keychain",
               "vault"
             ],
@@ -62273,6 +63967,127 @@ public enum RaviSchemas {
       "action",
       "requiredCapabilities",
       "approval"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsRequestInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "backend": {
+        "default": "file",
+        "description": "Connection secret backend: file (default), keychain or vault",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Send the private invitation; otherwise dry-run (exit 3)",
+        "type": "boolean"
+      },
+      "label": {
+        "description": "Human-readable credential label",
+        "type": "string"
+      },
+      "reason": {
+        "description": "Why the credential is needed (never include a secret)",
+        "type": "string"
+      },
+      "scopes": {
+        "description": "Provider scopes, informational; does not grant Ravi permissions",
+        "type": "string"
+      },
+      "target": {
+        "description": "env:<key>, connection:<provider>:<connection> or remote:<destination>:<KEY>",
+        "type": "string"
+      },
+      "user": {
+        "description": "Slack user who will provide the credential privately",
+        "type": "string"
+      }
+    },
+    "required": [
+      "target"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsRequestReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "delivery": {
+        "const": "ephemeral",
+        "type": "string"
+      },
+      "expiresAt": {
+        "type": "number"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "requestId",
+      "target",
+      "expiresAt",
+      "delivery"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsRequestStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "requestId": {
+        "description": "Opaque request ID returned by credentials request",
+        "type": "string"
+      },
+      "target": {
+        "description": "remote:<destination>:<KEY>",
+        "type": "string"
+      }
+    },
+    "required": [
+      "requestId",
+      "target"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsRequestStatusReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "activation": {
+        "const": "not_requested",
+        "type": "string"
+      },
+      "receipt": {
+        "type": "string"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "requestId",
+      "target",
+      "status",
+      "activation"
     ],
     "type": "object"
   }
@@ -66123,6 +67938,9 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cwd": {
                 "anyOf": [
                   {
@@ -66132,6 +67950,22 @@ public enum RaviSchemas {
                     "type": "null"
                   }
                 ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
               },
               "managed": {
                 "type": "boolean"
@@ -66162,10 +67996,7 @@ public enum RaviSchemas {
                   }
                 ]
               },
-              "status": {
-                "type": "string"
-              },
-              "version": {
+              "runningVersion": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -66174,6 +68005,28 @@ public enum RaviSchemas {
                     "type": "null"
                   }
                 ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -66184,7 +68037,14 @@ public enum RaviSchemas {
               "pid",
               "bundlePath",
               "cwd",
-              "version",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
               "matchesCli"
             ],
             "type": "object"
@@ -66243,6 +68103,9 @@ public enum RaviSchemas {
                   }
                 ]
               },
+              "codeStale": {
+                "type": "boolean"
+              },
               "cwd": {
                 "anyOf": [
                   {
@@ -66252,6 +68115,22 @@ public enum RaviSchemas {
                     "type": "null"
                   }
                 ]
+              },
+              "diskVersion": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envStale": {
+                "type": "boolean"
+              },
+              "identityVerified": {
+                "type": "boolean"
               },
               "managed": {
                 "type": "boolean"
@@ -66282,10 +68161,7 @@ public enum RaviSchemas {
                   }
                 ]
               },
-              "status": {
-                "type": "string"
-              },
-              "version": {
+              "runningVersion": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -66294,6 +68170,28 @@ public enum RaviSchemas {
                     "type": "null"
                   }
                 ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -66304,7 +68202,14 @@ public enum RaviSchemas {
               "pid",
               "bundlePath",
               "cwd",
-              "version",
+              "runningVersion",
+              "diskVersion",
+              "startedAt",
+              "stale",
+              "codeStale",
+              "envStale",
+              "identityVerified",
+              "warnings",
               "matchesCli"
             ],
             "type": "object"
@@ -66317,6 +68222,12 @@ public enum RaviSchemas {
           "channels"
         ],
         "type": "object"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       }
     },
     "required": [
@@ -66325,6 +68236,7 @@ public enum RaviSchemas {
       "ravi",
       "infrastructure",
       "runtime",
+      "warnings",
       "processes"
     ],
     "type": "object"
@@ -94425,6 +96337,183 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PrPublishInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "base": {
+        "description": "Required existing target branch",
+        "type": "string"
+      },
+      "bodyFile": {
+        "description": "UTF-8 PR description, relative to caller cwd; required for a new PR",
+        "type": "string"
+      },
+      "dryRun": {
+        "description": "Preview only; also the default without --execute (exit 3)",
+        "type": "boolean"
+      },
+      "execute": {
+        "description": "Publish externally and reconcile CI follow",
+        "type": "boolean"
+      },
+      "expectSha": {
+        "description": "Require this full local commit SHA (default: capture HEAD)",
+        "type": "string"
+      },
+      "replySession": {
+        "description": "Required only for an operator terminal without a session",
+        "type": "string"
+      },
+      "repo": {
+        "description": "Required github.com destination; must match origin",
+        "type": "string"
+      },
+      "title": {
+        "description": "Required for a new PR; existing PR text is preserved",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let PrPublishReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "attemptId": {
+        "type": "string"
+      },
+      "base": {
+        "maxLength": 255,
+        "minLength": 1,
+        "pattern": "^[^\\s\\x00-\\x1f~^:?*[\\\\]+$",
+        "type": "string"
+      },
+      "checks": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "success",
+              "failure"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "count"
+        ],
+        "type": "object"
+      },
+      "follow": {
+        "additionalProperties": false,
+        "properties": {
+          "ciWatchId": {
+            "type": "string"
+          },
+          "replySession": {
+            "type": "string"
+          },
+          "triggerId": {
+            "type": "string"
+          },
+          "verifiedAt": {
+            "type": "string"
+          },
+          "watchId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "watchId",
+          "ciWatchId",
+          "triggerId",
+          "replySession",
+          "verifiedAt"
+        ],
+        "type": "object"
+      },
+      "head": {
+        "maxLength": 255,
+        "minLength": 1,
+        "pattern": "^[^\\s\\x00-\\x1f~^:?*[\\\\]+$",
+        "type": "string"
+      },
+      "localSha": {
+        "pattern": "^[a-f0-9]{40}$",
+        "type": "string"
+      },
+      "pr": {
+        "additionalProperties": false,
+        "properties": {
+          "number": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "ready": {
+            "const": true,
+            "type": "boolean"
+          },
+          "reused": {
+            "type": "boolean"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "url",
+          "reused",
+          "ready"
+        ],
+        "type": "object"
+      },
+      "publicationId": {
+        "type": "string"
+      },
+      "remoteSha": {
+        "pattern": "^[a-f0-9]{40}$",
+        "type": "string"
+      },
+      "repo": {
+        "maxLength": 200,
+        "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$",
+        "type": "string"
+      },
+      "treeSha": {
+        "pattern": "^[a-f0-9]{40}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "publicationId",
+      "attemptId",
+      "repo",
+      "base",
+      "head",
+      "localSha",
+      "remoteSha",
+      "treeSha",
+      "pr",
+      "follow",
+      "checks"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ProjectsCreateInputSchema = #"""
   {
     "additionalProperties": false,
@@ -97098,6 +99187,14 @@ public enum RaviSchemas {
         "properties": {},
         "type": "object"
       },
+      "credentials": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
       "health": {
         "anyOf": [
           {
@@ -97109,12 +99206,69 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "providerHealth": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
       }
     },
-    "required": [
-      "credential",
-      "health"
-    ],
     "type": "object"
   }
   """#
@@ -97265,6 +99419,12 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       }
     },
     "required": [
@@ -97349,6 +99509,12 @@ public enum RaviSchemas {
             "type": "null"
           }
         ]
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       }
     },
     "required": [
@@ -98666,6 +100832,12 @@ public enum RaviSchemas {
                 "type": "null"
               }
             ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -101565,6 +103737,1544 @@ public enum RaviSchemas {
       "parentSession",
       "childSession",
       "slack"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsAgentsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsAgentsReturnSchema = #"""
+  {
+    "items": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "type": "array"
+  }
+  """#
+
+  public static let SessionsConversationsCancelInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "turnId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "projectId",
+      "requestId",
+      "turnId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsCancelReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "cancelRequested": {
+        "type": "boolean"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "running",
+          "awaiting_approval",
+          "completed",
+          "failed",
+          "cancelled",
+          "authorization_expired",
+          "interrupted_unknown"
+        ],
+        "type": "string"
+      },
+      "turnId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "turnId",
+      "cancelRequested",
+      "status"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "pattern": "^[a-zA-Z0-9_-]{1,80}$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agentId",
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsCreateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversation": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "title",
+          "version",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "conversation"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsDecideInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionDigest": {
+        "maxLength": 64,
+        "minLength": 64,
+        "type": "string"
+      },
+      "approvalId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "decision": {
+        "enum": [
+          "approve",
+          "reject"
+        ],
+        "type": "string"
+      },
+      "expectedVersion": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "actionDigest",
+      "approvalId",
+      "conversationId",
+      "createdAt",
+      "decision",
+      "expectedVersion",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsDecideReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approvalId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "approved",
+          "rejected"
+        ],
+        "type": "string"
+      },
+      "version": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "conversationId",
+      "approvalId",
+      "state",
+      "version"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsEventsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "cursor": {
+        "anyOf": [
+          {
+            "maxLength": 1500,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "cursor",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsEventsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "cursor": {
+        "type": "string"
+      },
+      "events": {
+        "items": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "role",
+                    "text",
+                    "turnId",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "message.accepted",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "role",
+                    "text",
+                    "turnId",
+                    "createdAt"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "message.finalized",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cancelRequested": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "queued",
+                        "running",
+                        "awaiting_approval",
+                        "completed",
+                        "failed",
+                        "cancelled",
+                        "authorization_expired",
+                        "interrupted_unknown"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "cancelRequested"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "turn.state",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "turnId",
+                    "status"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "turn.activity",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "cancel.requested",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "actionDigest": {
+                      "type": "string"
+                    },
+                    "capability": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "objectId": {
+                          "type": "string"
+                        },
+                        "objectType": {
+                          "type": "string"
+                        },
+                        "permission": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "permission",
+                        "objectType",
+                        "objectId"
+                      ],
+                      "type": "object"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "pending",
+                        "approved",
+                        "rejected",
+                        "expired",
+                        "invalidated"
+                      ],
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "turnId",
+                    "capability",
+                    "description",
+                    "actionDigest",
+                    "version",
+                    "expiresAt",
+                    "state"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "approval.opened",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "number"
+                },
+                "data": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "approved",
+                        "rejected",
+                        "expired",
+                        "invalidated"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "state"
+                  ],
+                  "type": "object"
+                },
+                "sequence": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "approval.state",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sequence",
+                "createdAt",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "events",
+      "cursor"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsHistoryInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "before": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "before",
+      "conversationId",
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsHistoryReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "hasOlder": {
+        "type": "boolean"
+      },
+      "messages": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "role": {
+              "enum": [
+                "user",
+                "assistant"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "turnId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "role",
+            "text",
+            "turnId",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "messages",
+      "hasOlder"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "limit": {
+        "description": "Page size (default 100, max 100)",
+        "maximum": 100,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "offset": {
+        "description": "Skip authorized conversations",
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsListReturnSchema = #"""
+  {
+    "items": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "title",
+        "version",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "type": "array"
+  }
+  """#
+
+  public static let SessionsConversationsOpenInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsOpenReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approvals": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "actionDigest": {
+              "type": "string"
+            },
+            "capability": {
+              "additionalProperties": false,
+              "properties": {
+                "objectId": {
+                  "type": "string"
+                },
+                "objectType": {
+                  "type": "string"
+                },
+                "permission": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "permission",
+                "objectType",
+                "objectId"
+              ],
+              "type": "object"
+            },
+            "description": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "number"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "expired",
+                "invalidated"
+              ],
+              "type": "string"
+            },
+            "turnId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "turnId",
+            "capability",
+            "description",
+            "actionDigest",
+            "version",
+            "expiresAt",
+            "state"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "conversation": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "title",
+          "version",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "cursor": {
+        "type": "string"
+      },
+      "hasOlder": {
+        "type": "boolean"
+      },
+      "messages": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "role": {
+              "enum": [
+                "user",
+                "assistant"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "turnId": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "role",
+            "text",
+            "turnId",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "turn": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "cancelRequested": {
+                "type": "boolean"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "awaiting_approval",
+                  "completed",
+                  "failed",
+                  "cancelled",
+                  "authorization_expired",
+                  "interrupted_unknown"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "cancelRequested"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "conversation",
+      "messages",
+      "hasOlder",
+      "cursor",
+      "turn",
+      "approvals"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsReceiptInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "targetRequestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "createdAt",
+      "projectId",
+      "requestId",
+      "targetRequestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsReceiptReturnSchema = #"""
+  {
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "conversation": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "version": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "agentId",
+              "title",
+              "version",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId",
+          "conversation"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "const": true,
+            "type": "boolean"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "messageId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "turnId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "accepted",
+          "conversationId",
+          "messageId",
+          "turnId",
+          "version"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "cancelRequested": {
+            "type": "boolean"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "awaiting_approval",
+              "completed",
+              "failed",
+              "cancelled",
+              "authorization_expired",
+              "interrupted_unknown"
+            ],
+            "type": "string"
+          },
+          "turnId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId",
+          "turnId",
+          "cancelRequested",
+          "status"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "approvalId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "conversationId",
+          "approvalId",
+          "state",
+          "version"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+  """#
+
+  public static let SessionsConversationsRenewInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "projectId",
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsRenewReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "renewed": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "renewed",
+      "conversationId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "createdAt": {
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991,
+        "type": "integer"
+      },
+      "expectedVersion": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "projectId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "requestId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "text": {
+        "maxLength": 16384,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversationId",
+      "createdAt",
+      "expectedVersion",
+      "projectId",
+      "requestId",
+      "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsConversationsSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "accepted": {
+        "const": true,
+        "type": "boolean"
+      },
+      "conversationId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "messageId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "turnId": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "version": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "accepted",
+      "conversationId",
+      "messageId",
+      "turnId",
+      "version"
     ],
     "type": "object"
   }
@@ -106490,6 +110200,9 @@ public enum RaviSchemas {
             ],
             "type": "object"
           },
+          "pendingAnswerCount": {
+            "type": "number"
+          },
           "requestId": {
             "type": "string"
           },
@@ -106652,6 +110365,9 @@ public enum RaviSchemas {
               }
             ]
           },
+          "uncertainAnswerCount": {
+            "type": "number"
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -106665,6 +110381,8 @@ public enum RaviSchemas {
           "childSessionName",
           "childSessionMissing",
           "openDecisionCount",
+          "pendingAnswerCount",
+          "uncertainAnswerCount",
           "slackThreadTs",
           "link",
           "runtime",
@@ -106796,6 +110514,9 @@ public enum RaviSchemas {
                 "pending"
               ],
               "type": "object"
+            },
+            "pendingAnswerCount": {
+              "type": "number"
             },
             "requestId": {
               "type": "string"
@@ -106959,6 +110680,9 @@ public enum RaviSchemas {
                 }
               ]
             },
+            "uncertainAnswerCount": {
+              "type": "number"
+            },
             "updatedAt": {
               "type": "number"
             }
@@ -106972,6 +110696,8 @@ public enum RaviSchemas {
             "childSessionName",
             "childSessionMissing",
             "openDecisionCount",
+            "pendingAnswerCount",
+            "uncertainAnswerCount",
             "slackThreadTs",
             "link",
             "runtime",
@@ -125691,6 +129417,10 @@ public enum RaviSchemas {
       },
       "effort": {
         "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "description": "Stable creation key; retries reuse the task and its Thread",
         "type": "string"
       },
       "input": {

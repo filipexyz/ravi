@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { authorizeBridgeAction } from "../bridge/native.js";
 import { nats as runtimeNats } from "../nats.js";
 import { isChatOnlyAgent, isToolOrExecCapability } from "../permissions/agent-default-capabilities-provider.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
@@ -45,6 +46,7 @@ import {
   listApprovalDeliveries,
   listPendingApprovalRequestsForChat,
   recordApprovalDeliveries,
+  recordApprovalGrantOutcome,
   setApprovalCardScope,
   type ApprovalDeliveryKind,
   type ApprovalRequestRecord,
@@ -56,6 +58,7 @@ const log = logger.child("approval:service");
 export { DEFAULT_APPROVAL_TIMEOUT_MS };
 
 export interface ApprovalFinalizeSlackInput {
+  readonly requestId: string;
   readonly accountId: string;
   readonly chatId: string;
   readonly messageId: string;
@@ -82,13 +85,13 @@ const defaultApprovalServiceDependencies: ApprovalServiceDependencies = {
   requestReply: runtimeRequestReply,
   now: Date.now,
   finalizeSlackApproval: async (input) => {
-    await updateSlackText({
-      accountId: input.accountId,
-      chatId: input.chatId,
-      messageId: input.messageId,
-      text: input.text,
-      blocks: input.blocks,
-    });
+    // The waiter inherits the requesting agent's ALS. Send only durable ids to
+    // the host gateway; rendering and credential use happen in its own context.
+    await approvalServiceDependencies.requestReply(
+      "ravi.outbound.approval.finalize",
+      { requestId: input.requestId, messageId: input.messageId },
+      DEFAULT_APPROVAL_DELIVERY_TIMEOUT_MS,
+    );
   },
   respondSlackInteraction: async (input) => {
     await respondToSlackInteraction(input);
@@ -521,6 +524,8 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     return denyRuntimeContext(opts, reason, "runtime_context_not_live");
   }
 
+  if (context.metadata?.bridgeTurnId !== undefined) return authorizeBridgeAction(opts);
+
   if (isChatOnlyAgent(context.agentId) && isToolOrExecCapability({ permission, objectType })) {
     const reason = `Permission denied: agent:${context.agentId ?? "unknown"} is chat-only and cannot use ${permission} ${objectType}:${objectId}`;
     return denyRuntimeContext(opts, reason, "runtime_chat_only_ceiling");
@@ -731,6 +736,7 @@ function denyRuntimeContext(
   blockType: string,
 ): ContextAuthorizationResult {
   const { context, permission, objectType, objectId } = opts;
+
   const provenance = buildAuditContextProvenance({ context });
   recordAndEmitPermissionDenial({
     subjectType: "agent",
@@ -897,6 +903,17 @@ async function waitForApprovalResponse(
             return { detail: "grant failed", failed: true };
           });
 
+          const grantFailed =
+            claimed.grant && claimed.decision === "approved"
+              ? !grantOutcome || grantOutcome.failed === true
+              : grantOutcome?.failed === true;
+          if (claimed.grant && claimed.decision === "approved") {
+            const outcome = grantFailed ? "failed" : "applied";
+            if (!recordApprovalGrantOutcome(claimed.id, outcome)) {
+              finish({ approved: false, reason: "The permission grant result could not be recorded." });
+              return;
+            }
+          }
           await finalizeApprovalMessage(
             claimed,
             claimed.decision ?? evaluation.decision,
@@ -907,7 +924,7 @@ async function waitForApprovalResponse(
           });
           // A grant click that could not write the grant does not let the
           // blocked call through: the next denial opens a fresh card.
-          if (grantOutcome?.failed) {
+          if (grantFailed) {
             finish({ approved: false, reason: "The permission grant could not be applied." });
             return;
           }
@@ -1081,6 +1098,7 @@ async function finalizeApprovalMessage(
   const deliveries = listApprovalDeliveries(request.id);
   if (deliveries.length === 0) {
     await approvalServiceDependencies.finalizeSlackApproval({
+      requestId: request.id,
       accountId: request.accountId,
       chatId: request.chatId,
       messageId: request.messageId,
@@ -1096,6 +1114,7 @@ async function finalizeApprovalMessage(
     if (delivery.kind === "dm") {
       updates.push(
         approvalServiceDependencies.finalizeSlackApproval({
+          requestId: request.id,
           accountId: request.accountId,
           chatId: delivery.chatId,
           messageId: delivery.messageId,
@@ -1120,6 +1139,62 @@ async function finalizeApprovalMessage(
       log.warn("Failed to update a private Slack approval card", { requestId: request.id, error: result.reason });
     }
   }
+}
+
+/** Host delivery boundary: the request and its persisted delivery own all output. */
+export async function finalizeStoredSlackApprovalDelivery(input: {
+  requestId: string;
+  messageId: string;
+}): Promise<void> {
+  const request = getApprovalRequest(input.requestId);
+  if (!request || !isSlackChannel(request.channel) || request.status === "pending") {
+    throw new Error("Slack approval is not ready for finalization.");
+  }
+  const outcome = request.status === "expired" ? "expired" : request.decision;
+  if (!outcome) throw new Error("Slack approval has no final decision.");
+  const deliveries = listApprovalDeliveries(request.id);
+  const matching = deliveries.filter((delivery) => delivery.kind === "dm" && delivery.messageId === input.messageId);
+  const chatId =
+    deliveries.length > 0
+      ? matching.length === 1
+        ? matching[0].chatId
+        : undefined
+      : request.messageId === input.messageId
+        ? request.chatId
+        : undefined;
+  if (!chatId) throw new Error("Slack approval delivery was not found.");
+  let detail: string | undefined;
+  const grant = readPermissionGrantMetadata(request);
+  if (outcome === "approved" && grant) {
+    if (!request.grantOutcome) throw new Error("Slack approval grant result is not ready.");
+    if (request.grantOutcome === "failed") {
+      detail = "grant failed";
+    } else {
+      const scope = request.grantScope as PermissionGrantScopeValue | undefined;
+      const target = scope ? ` in ${describeGrantScope(scope)}` : " (agent ceiling)";
+      detail =
+        request.grantIntent === "full-access"
+          ? `Full access${target}`
+          : `Granted ${formatCanonicalCapability(grant.capability)}${target}`;
+    }
+  }
+  const message = buildSlackApprovalFinalMessage({
+    type: request.type,
+    outcome,
+    reason: request.reason ?? undefined,
+    decidedBy: outcome === "expired" ? undefined : (request.decidedBy ?? undefined),
+    ...(detail ? { detail } : {}),
+  });
+  await updateSlackText(
+    {
+      accountId: request.accountId,
+      chatId,
+      messageId: input.messageId,
+      text: message.text,
+      blocks: message.blocks,
+    },
+    { authority: { kind: "internal-service", service: "approval-delivery" } },
+  );
 }
 
 async function waitForPollAnswer(

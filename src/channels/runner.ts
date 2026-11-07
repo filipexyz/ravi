@@ -1,3 +1,4 @@
+import { recordManagedRuntimeBoot } from "../runtime-process-identity.js";
 import { closeAllRaviDbs } from "../db/close-all.js";
 import { closeNats, connectNats, getNats } from "../nats.js";
 import { configStore } from "../config-store.js";
@@ -405,6 +406,8 @@ export function resolveChannelRunnerLogLevel(env: NodeJS.ProcessEnv = process.en
 
 export async function runChannelRunnerFromEnv(): Promise<void> {
   logger.setLevel(resolveChannelRunnerLogLevel());
+  if (!recordManagedRuntimeBoot("ravi-channels"))
+    log.warn("Could not record process boot identity; runtime alignment will remain unverified");
   const runner = await startChannelRunner({
     consumeOutbound: process.env.RAVI_CHANNELS_CONSUME_OUTBOUND !== "0",
   });

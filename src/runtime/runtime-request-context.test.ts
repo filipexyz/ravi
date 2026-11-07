@@ -1,7 +1,14 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { authorizeContextCapabilities } from "../permissions/context-capabilities-provider.js";
+import { canWithCapabilityContext } from "../permissions/capability-context.js";
+import { recordBridgeRuntimeEvent } from "../bridge/native.js";
+import { bridgeContextCapabilities, bridgeContextLive } from "../bridge/authority.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
+import { upsertPermissionProfileDefinition } from "../permissions/apply-grant.js";
 import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
-import { dbCreateCronJob } from "../cron/cron-db.js";
+import { dbCreateCronJob, dbUpdateCronJob } from "../cron/cron-db.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -54,6 +61,93 @@ describe("runtime request context authority", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("refuses alternate providers before resolving a bridge turn or touching provider credentials", () => {
+    for (const provider of ["pi", "claude", "grok"] as const) {
+      expect(() =>
+        buildRuntimeRequestContext({
+          dbSessionKey: "agent:provider-agent:console:00000000-0000-4000-8000-000000000001",
+          sessionName: "console-00000000-0000-4000-8000-000000000001",
+          sessionCwd: agent.cwd,
+          agent,
+          prompt: { prompt: "private", _bridgeTurnId: "turn-test" },
+          runtimeProviderId: provider,
+          model: "test-model",
+          runtimeResolution,
+        }),
+      ).toThrow("isolated Codex provider");
+    }
+    expect(() =>
+      refreshRuntimeRequestContextForTurn({
+        runtimeContext: {} as any,
+        toolContext: {},
+        dbSessionKey: "agent:provider-agent:console:00000000-0000-4000-8000-000000000001",
+        sessionName: "private",
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: { prompt: "next", _bridgeTurnId: "next-turn" },
+        runtimeProviderId: "pi",
+        model: "test",
+        runtimeResolution,
+      }),
+    ).toThrow("isolated Codex provider");
+    expect(existsSync(join(stateDir!, "human-bridge"))).toBe(false);
+  });
+
+  it("ordinary authorization and runtime events never open bridge state", () => {
+    const context = {
+      kind: "turn-runtime",
+      capabilities: [{ permission: "read", objectType: "test", objectId: "own" }],
+    };
+    expect(bridgeContextCapabilities(context)).toEqual(context.capabilities);
+    expect(bridgeContextLive(undefined)).toBe(true);
+    expect(canWithCapabilityContext(context, "read", "test", "own")).toBe(true);
+    expect(canWithCapabilityContext(context, "read", "test", "foreign")).toBe(false);
+    expect(
+      authorizeContextCapabilities({
+        permission: "read",
+        objectType: "test",
+        objectId: "own",
+        capabilities: context.capabilities,
+      }).decision,
+    ).toBe("allow");
+    recordBridgeRuntimeEvent("ravi.session.console-main.runtime", { type: "turn.complete" });
+    recordBridgeRuntimeEvent("ravi.session.console-00000000-0000-4000-8000-000000000001.runtime", {
+      type: "turn.complete",
+    });
+    expect(existsSync(join(stateDir!, "human-bridge"))).toBe(false);
+  });
+
+  it("keeps ordinary sessions whose agent is named console on their existing authority path", () => {
+    const consoleAgent = { id: "console", cwd: "/tmp/console-agent" };
+    dbCreateAgent(consoleAgent);
+    const key = "agent:console:main";
+    getOrCreateSession(key, consoleAgent.id, consoleAgent.cwd, { name: "console-main" });
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: key,
+      sessionName: "console-main",
+      sessionCwd: consoleAgent.cwd,
+      agent: consoleAgent,
+      prompt: { prompt: "ordinary Console integration" },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+    expect(runtimeContext.metadata?.authorityMode).toBe("agent-identity");
+    expect(runtimeContext.metadata?.bridgeTurnId).toBeUndefined();
+    expect(() =>
+      buildRuntimeRequestContext({
+        dbSessionKey: "agent:console:console:00000000-0000-4000-8000-000000000001",
+        sessionName: "private-bridge",
+        sessionCwd: consoleAgent.cwd,
+        agent: consoleAgent,
+        prompt: { prompt: "missing delegation" },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+      }),
+    ).toThrow("fresh human delegation");
   });
 
   it("uses agent identity authority by default when the env var is unset", () => {
@@ -1966,6 +2060,98 @@ describe("runtime request context chat-scoped user overlay", () => {
     dbEnsureContactChatGrant({ contactId, profileSlug: "permission-image", scopeType, scopeId });
   }
 
+  function relayFor(caller: ReturnType<typeof contextFor>) {
+    const relaySessionName = `relay-${caller.contextId}`;
+    const relaySessionKey = `agent:${agent.id}:relay:${caller.contextId}`;
+    getOrCreateSession(relaySessionKey, agent.id, agent.cwd, { name: relaySessionName });
+    return buildRuntimeRequestContext({
+      dbSessionKey: relaySessionKey,
+      sessionName: relaySessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: {
+        prompt: "[System] Inform: complete the queued request",
+        _turnOrigin: buildSessionRelayTurnOrigin("inform", {
+          agentId: agent.id,
+          sessionKey: caller.sessionKey,
+          sessionName: caller.sessionName,
+          contextId: caller.contextId,
+        }),
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    }).runtimeContext;
+  }
+
+  it("keeps rotated callers usable for queued relays until their permission profile is reduced", () => {
+    const chat = groupChat("120363400000000012@g.us");
+    const plainChat = groupChat("120363400000000013@g.us");
+    const ana = createContact({ phone: "5511900000012", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const caller = contextFor(ana.id, chat);
+    const plainCaller = contextFor(ana.id, plainChat);
+
+    contextFor(ana.id, chat);
+    contextFor(ana.id, plainChat);
+    expect(resolveRuntimeContext(caller.contextKey)).toBeNull();
+    expect(resolveRuntimeContext(plainCaller.contextKey)).toBeNull();
+    const before = relayFor(caller);
+    expect(canWithCapabilities(before.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(before.metadata?.relayCallerContactId).toBe(ana.id);
+
+    upsertPermissionProfileDefinition({ profile: "image", capabilities: [], explicitCapabilities: true });
+
+    const queued = relayFor(caller);
+    expect(queued.capabilities).toEqual([]);
+    expect(queued.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+    expect(typeof dbGetContext(caller.contextId)?.metadata?.permissionProfileRevokedAt).toBe("number");
+
+    const chained = relayFor(queued);
+    expect(chained.capabilities).toEqual([]);
+    expect(chained.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+
+    const plain = relayFor(plainCaller);
+    expect(plain.metadata?.relayNarrowing).toBeUndefined();
+    expect(canWithCapabilities(plain.capabilities, "execute", "executable", "curl")).toBe(true);
+    expect(dbGetContext(plainCaller.contextId)?.metadata?.permissionProfileRevokedAt).toBeUndefined();
+  });
+
+  it("revokes existing relay chains from a rotated profile holder and prevents their queued reuse", () => {
+    const chat = groupChat("120363400000000014@g.us");
+    const ana = createContact({ phone: "5511900000014", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const caller = contextFor(ana.id, chat);
+    contextFor(ana.id, chat);
+    const relay = relayFor(caller);
+    const chained = relayFor(relay);
+    expect(resolveRuntimeContext(caller.contextKey)).toBeNull();
+    for (const context of [relay, chained]) {
+      expect(resolveRuntimeContext(context.contextKey)?.contextId).toBe(context.contextId);
+      expect(canWithCapabilities(context.capabilities, "mutate", "image", "generate")).toBe(true);
+      expect(context.metadata?.relayCallerContactId).toBe(ana.id);
+    }
+    const snapshots = [caller, relay, chained].map((context) => dbGetContext(context.contextId)!);
+    expect(snapshots[0]!.sessionName).toBeDefined();
+    expect(snapshots[0]!.source).toBeDefined();
+
+    upsertPermissionProfileDefinition({ profile: "image", capabilities: [], explicitCapabilities: true });
+
+    for (const snapshot of snapshots) {
+      const stored = dbGetContext(snapshot.contextId)!;
+      expect(stored.sessionName).toBe(snapshot.sessionName);
+      expect(stored.source).toEqual(snapshot.source);
+      expect(stored.lastUsedAt).toBe(snapshot.lastUsedAt);
+    }
+    for (const context of [relay, chained]) {
+      expect(resolveRuntimeContext(context.contextKey)).toBeNull();
+      expect(typeof dbGetContext(context.contextId)?.metadata?.permissionProfileRevokedAt).toBe("number");
+      const queued = relayFor(context);
+      expect(queued.capabilities).toEqual([]);
+      expect(queued.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+    }
+  });
+
   it("intersects a chat-scoped contact grant with the executor agent ceiling", () => {
     const chat = groupChat("120363400000000001@g.us");
     const ana = createContact({ phone: "5511900000001", name: "Ana" });
@@ -2003,7 +2189,17 @@ describe("runtime request context chat-scoped user overlay", () => {
       creatorChat: chat.id,
     });
     const cronContext = () => {
-      const prompt: RuntimeLaunchPrompt = { ...promptInChat(ana.id, chat), _cron: true, _jobId: job.id };
+      const prompt: RuntimeLaunchPrompt = {
+        ...promptInChat(ana.id, chat),
+        _cron: true,
+        _jobId: job.id,
+        _cronAuthority: {
+          jobId: job.id,
+          ownerPrincipal: `contact:${ana.id}`,
+          ownerIsOperator: false,
+          creatorChat: chat.id,
+        },
+      };
       const overlaySessionKey = `agent:provider-agent:cron:${job.id}`;
       getOrCreateSession(overlaySessionKey, agent.id, agent.cwd, { name: `cron-${job.id}` });
       return buildRuntimeRequestContext({
@@ -2019,6 +2215,8 @@ describe("runtime request context chat-scoped user overlay", () => {
       }).runtimeContext;
     };
 
+    // The queued prompt retains the contact overlay after the live row changes.
+    dbUpdateCronJob(job.id, { ownerPrincipal: "operator", creatorChat: undefined });
     const granted = cronContext();
     expect(granted.metadata?.actorPrincipal).toBe(`automation:cron:${job.id}`);
     expect(canWithCapabilities(granted.capabilities, "mutate", "image", "generate")).toBe(true);

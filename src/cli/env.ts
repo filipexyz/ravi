@@ -5,10 +5,15 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { getRaviStateDir } from "../utils/paths.js";
 import { markRaviEnvFileSourced } from "../runtime/ravi-env-file-origin.js";
 
-const envFile = join(homedir(), ".ravi", ".env");
+import { captureRuntimeBootObservation } from "../runtime-process-identity.js";
+
+captureRuntimeBootObservation();
+
+const envFile = join(getRaviStateDir(), ".env");
+const isChannelRunner = process.argv[2] === "channels" && process.argv[3] === "run";
 
 if (existsSync(envFile)) {
   const content = readFileSync(envFile, "utf-8");
@@ -27,8 +32,9 @@ if (existsSync(envFile)) {
       value = value.slice(1, -1);
     }
 
-    // Don't override existing env vars
-    if (!process.env[key]) {
+    // A runner restart must reload the managed file over PM2/updater inheritance.
+    // Ordinary CLI invocations keep the caller's environment precedence.
+    if (isChannelRunner || !process.env[key]) {
       process.env[key] = value;
       markRaviEnvFileSourced(process.env, key, value, envFile);
     }

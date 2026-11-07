@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
@@ -56,11 +57,14 @@ function resolveContactRef(target: string): string {
 /** Suggestions come ONLY from the rule registry already loaded by the caller. */
 function failTagRuleNotFound(op: string, ruleId: string, candidates: string[], asJson?: boolean): never {
   contractFail(op, "TAG_RULE_NOT_FOUND", `Rule not found: ${ruleId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the rule id (see suggestions for similar rules, or run 'ravi tag-rules list')",
-      suggestions: suggestSimilar(ruleId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the rule id (see suggestions for similar rules, or run 'ravi tag-rules list')",
+        suggestions: suggestSimilar(ruleId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Rule not found: ${ruleId}`, { operation: op }),
   });
 }
 
@@ -77,10 +81,13 @@ function rethrowTagRuleTargetError(op: string, contactRef: string, err: unknown,
   const message = err instanceof Error ? err.message : String(err);
   if (/^contact not found:/i.test(message)) {
     contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
-      asJson,
-      details: {
-        suggestedAction: "Check the target contact id with 'ravi contacts list' (contact visibility is scoped)",
+      ...{
+        asJson,
+        details: {
+          suggestedAction: "Check the target contact id with 'ravi contacts list' (contact visibility is scoped)",
+        },
       },
+      diagnostic: errorDiagnostic(err, { operation: op }),
     });
   }
   fail(message);
@@ -210,12 +217,17 @@ export class TagRulesCommands {
         "TAG_RULE_VALIDATION_FAILED",
         `Tag-rule validation failed with ${loaded.errors.length} error(s).`,
         {
-          asJson,
-          details: {
-            ruleCount: loaded.rules.length,
-            errors: summarizeTagRuleValidationErrors(loaded.errors),
-            suggestedAction: "Correct the named rule files, then run: ravi tag-rules validate --json",
+          ...{
+            asJson,
+            details: {
+              ruleCount: loaded.rules.length,
+              errors: summarizeTagRuleValidationErrors(loaded.errors),
+              suggestedAction: "Correct the named rule files, then run: ravi tag-rules validate --json",
+            },
           },
+          diagnostic: errorDiagnostic(`Tag-rule validation failed with ${loaded.errors.length} error(s).`, {
+            operation: "tag-rules validate",
+          }),
         },
       );
     }

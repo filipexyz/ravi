@@ -1,3 +1,4 @@
+import type { CronRunAuthority } from "../cron/authority.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
@@ -194,6 +195,8 @@ export type RuntimeTurnOriginMetadata =
 
 /** Prompt message structure */
 export interface PromptMessage {
+  /** Trusted bridge producer reference; all authority is reloaded from its durable receipt. */
+  _bridgeTurnId?: string;
   prompt: string;
   /** Ravi Commands that produced this prompt, when a user invoked #command. */
   commands?: RaviCommandPromptMetadata[];
@@ -231,6 +234,10 @@ export interface PromptMessage {
   _cron?: boolean;
   /** Cron job id when `_cron` is true. */
   _jobId?: string;
+  /** Durable identity of this admitted cron execution, distinct from its job. */
+  _cronRunId?: string;
+  /** Ownership fixed by the runner before dispatch, never rebuilt from a live job. */
+  _cronAuthority?: CronRunAuthority;
   /** Trigger runner prompt marker. */
   _trigger?: boolean;
   /** Trigger id when `_trigger` is true. */
@@ -245,6 +252,10 @@ export interface PromptMessage {
   _thread?: ThreadHandoffPromptMetadata;
   /** Durable decision-answer admission; validated against the stored envelope. */
   _decisionDeliveryId?: string;
+  /** Durable task dispatch admission, keyed by the execution assignment. */
+  _taskAssignmentId?: string;
+  /** Frozen assignment session identity, rechecked at runtime launch. */
+  _taskSessionKey?: string;
   /** Canonical waiting session, rechecked after asynchronous dispatch preflight. */
   _decisionSessionKey?: string;
   /**
@@ -277,6 +288,17 @@ export interface PromptMessage {
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */
   _turnOrigin?: RuntimeTurnOriginMetadata;
+  /** Trusted Slack lifecycle provenance, used to batch lossless progress reports. */
+  _slackThreadLifecycle?: {
+    eventId?: string;
+    eventType: string;
+    requestId: string;
+    parentSessionKey: string;
+    childSessionKey: string;
+    childSessionName?: string;
+    providerThreadId?: string;
+    [key: string]: unknown;
+  };
   /**
    * Channel bootstrap that must not occupy a runtime pool slot until a later
    * interactive turn. The dispatcher stashes the inform and prepends it.

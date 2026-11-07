@@ -107,7 +107,7 @@ instead of inventing local suggestions that would require extra remote calls.
 | The same owner in a `dm:` compartment whose session other people's chats share (`dmScope: main`, a route by session name, another person's chat attached), or whose session is unknown | blocked `CONNECTOR_GROUP_BLOCKED` (`speakerIsOwner`, `sharedSession`) |
 | `contact:<id>` linked to another Console user, not linked, `missing_contact`, or `unknown` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `agent:<id>` (relay from another agent), `automation:session:*` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
-| `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only when the job's `owner_principal` is NULL (legacy), `operator`, or a contact linked to the active Console user and org: speaker `automation`, routine `cron`; otherwise, or when the job is missing, blocked |
+| `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only with a valid admission snapshot eligible for operator authority, whose captured owner is `operator` (including normalized legacy NULL) or an existing, unblocked contact still linked to the active Console user and org: speaker `automation`, routine `cron`; missing snapshots and revoked owners block. Live ownership transfers never reclassify the run (see `cron`) |
 | `automation:heartbeat` | allowed: speaker `automation`, routine `heartbeat` |
 | `automation:trigger:*`, `automation:job:*`, `automation:observer:*`, `session-followup`, `daemon-restart`, any other principal | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | Compartment `chat:<id>` (group) for a contact turn, the owner included | blocked `CONNECTOR_GROUP_BLOCKED` |

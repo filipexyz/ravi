@@ -103,6 +103,9 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
   `https://app.slack.com` links always open the browser. It MUST be sourced
   at the channel root, never inside the thread.
 
+- A programmatic thread requested by a human turn MUST use interactive admission via `_interactiveStart`. This fact MUST come from the persisted initiating context's canonical turn provenance, never its requester display name. Cron, observer and agent turns MUST retain background admission; bootstrap actor authority and turn origin MUST remain unchanged.
+- `sessions create-thread --provider <provider> --model <model>` MUST validate the effective pair before creating lifecycle or outbound records. Known incompatible models MUST fail with `THREAD_MODEL_PROVIDER_MISMATCH` and an explicit provider hint. Bare Codex model selectors on Pi MUST be refused; explicit Pi `provider/model` selectors remain available.
+
 ## Route Semantics
 
 `route.session` means "root/base session" for Slack channel roots.
@@ -128,7 +131,7 @@ channel-root parent.
 ## Session Actions
 
 ```bash
-ravi sessions create-thread "<initial message>" [--model <model>]
+ravi sessions create-thread "<initial message>" [--provider <provider>] [--model <model>]
 ravi sessions close-thread [--return "<result>"]
 ravi sessions report "<progress>"
 ravi sessions threads [--all] [--json]
@@ -137,7 +140,7 @@ ravi sessions thread-send <thread> "<instructions>"
 
 - Both commands infer the current session and Slack surface from tool context.
 - `create-thread` is available only when an executable Slack surface exists.
-- `close-thread` is available only inside an open Slack thread child session.
+- `close-thread` is available inside an open Slack thread child session or through the authorized explicit orphan-close path below.
 - `--return` opts into the parent completion event; omission is intentionally
   silent.
 - `report` is available only inside a Slack thread child session.
@@ -201,3 +204,16 @@ Managed threads consume `decisions`. `ravi decisions ask --thread <child> --key 
 Every open question and every answer not yet admitted MUST prevent close atomically with `THREAD_DECISIONS_PENDING`. No silent discard or force-close is provided. Root cards prioritize the oldest question as `Aguardando decisão`; text fallback includes that question and state. `openDecisionCount` is part of the thread summary. Full questions appear inside the thread via durable outbound intent. The pending cue disappears after answer, with delivery feedback separate from work completion. A human-authored root is untouched.
 
 The existing thread reconciler also drains decision effects. Exact origin binding and durable consumer receipts protect retries; uncertain admission requires local operator resolution as specified in `decisions`.
+
+## Closing after runtime pruning
+
+- The durable lifecycle/card MUST remain closable after the child session is pruned. `close-thread --session` resolves its exact child name, key or lifecycle request id without recreating runtime state.
+- An orphan close MUST require modify authority over the child or its recorded parent. Missing, ambiguous and unauthorized references MUST be cloaked as `SESSION_NOT_FOUND`; public copy MUST distinguish this condition from an execution failure without revealing private names.
+- Closing an orphan uses the same card update, pending-decision guard, close sequence, parent-return delivery and idempotency as a live child.
+- Existing orphan cards are reconciled by this same close command; no deployment-time destructive cleanup or recreation is authorized by this fix.
+
+## Durable subscribers at close
+
+- Closing MUST refuse atomically with `THREAD_TRIGGERS_PENDING` when a trigger addresses the child by name or key in `replySession` and the shared activation verdict is `active` (including `enabled`). The refusal MUST list offending trigger ids and explain `ravi triggers set <id> replySession <parent-session>`.
+- Refusal MUST leave lifecycle status, close sequence, parent return and card untouched. The same guard applies after child pruning. Disabled, invalid-filter, blocked-topic and unbound-agent triggers MUST NOT block close.
+- Repointing is explicit for arbitrary triggers; close MUST NOT silently change their recipients. After handoff, close MAY proceed. The remote CLI MUST retain actionable ids without forwarding arbitrary remote text.

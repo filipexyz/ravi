@@ -140,6 +140,56 @@ describe("runtime context registry", () => {
     expect(resolveRuntimeContext(otherSession.contextKey, { touch: false })).not.toBeNull();
   });
 
+  it("does not let a child inject a Console bridge binding", () => {
+    const parent = createRuntimeContext({ kind: "turn-runtime", agentId: TEST_AGENT_ID, capabilities: [] });
+    const child = issueRuntimeContext({
+      parent,
+      cliName: "test",
+      capabilities: [],
+      metadata: { bridgeTurnId: "forged", bridgeConversationId: "forged" },
+    });
+    expect(child.metadata?.bridgeTurnId).toBeUndefined();
+    expect(child.metadata?.bridgeConversationId).toBeUndefined();
+  });
+
+  it("reclaims every session authority slot without cascading to ordinary CLI children", () => {
+    const sessionKey = "agent:test-context-agent:narrow-reclaim";
+    createTestSession(sessionKey);
+    const parent = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: TEST_AGENT_ID,
+      sessionKey,
+      capabilities: [],
+    });
+    const nestedSlot = issueRuntimeContext({
+      parent,
+      kind: LEGACY_AGENT_RUNTIME_CONTEXT_KIND,
+      cliName: "nested-slot",
+      capabilities: [],
+    });
+    const cliChild = issueRuntimeContext({ parent, cliName: "ordinary-cli", capabilities: [] });
+
+    const result = revokeAgentRuntimeContextsForSession(sessionKey, { cascade: false });
+
+    expect(result.map((entry) => entry.context.contextId).sort()).toEqual(
+      [parent.contextId, nestedSlot.contextId].sort(),
+    );
+    expect(resolveRuntimeContext(parent.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(nestedSlot.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(cliChild.contextKey, { touch: false })).not.toBeNull();
+    expect(result.every((entry) => entry.cascaded.length === 0)).toBe(true);
+  });
+  it("local agent permission edits do not revoke Console-managed authority", () => {
+    const managed = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [],
+      metadata: { bridgeTurnId: "test-binding" },
+    });
+    revokeLiveRuntimeContextsForAgent(TEST_AGENT_ID);
+    expect(dbGetContext(managed.contextId)).not.toBeNull();
+    expect(dbGetContext(managed.contextId)?.revokedAt).toBeUndefined();
+  });
   it("revokes every live authority snapshot when agent permissions change", () => {
     const agentRuntime = createRuntimeContext({
       kind: "agent-runtime",

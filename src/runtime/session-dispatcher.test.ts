@@ -1,3 +1,5 @@
+import { classifyRuntimeSessionStartLane } from "./session-pool.js";
+import { RuntimeStartCapacityError } from "./start-admission.js";
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { getRecentHistory } from "../db.js";
 import { configStore } from "../config-store.js";
@@ -543,6 +545,7 @@ describe("RuntimeSessionDispatcher debounce", () => {
 
     let pendingResolved = false;
     const pendingStart: PendingRuntimeSessionStart = {
+      reject: () => {},
       sessionName: "queued",
       prompt: { prompt: "queued" },
       resolve: () => {
@@ -1550,13 +1553,14 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
   it("keeps new cold starts behind already queued runtime session starts", () => {
     const dispatcher = createDispatcher(2);
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "queued",
       prompt: { prompt: "queued" },
       resolve: () => {},
     });
 
-    dispatcher.streamingSessions.set("first", createActiveSession());
-    dispatcher.streamingSessions.set("active", createActiveSession());
+    dispatcher.streamingSessions.set("first", createActiveSession({ turnActive: true }));
+    dispatcher.streamingSessions.set("active", createActiveSession({ turnActive: true }));
     expect(dispatcher.canAcceptRuntimePrompt("new-cold-start")).toBe(false);
 
     expect(dispatcher.canAcceptRuntimePrompt("active")).toBe(true);
@@ -2951,7 +2955,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("yields to another surface without replacing the active reply target", async () => {
+  it("queues another surface without interrupting or replacing the active reply target", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
     try {
       getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
@@ -2981,6 +2985,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         turnActive: true,
         currentEffort: "xhigh",
         currentSource: activeSource,
+        currentReplyTarget: activeSource,
         pendingMessages: [activeMessage],
         currentTurnPendingIds: [activeMessage.pendingId!],
         queryHandle: {
@@ -3013,7 +3018,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       expect(activeSession.currentSource).toEqual(activeSource);
-      expect(activeSession.pendingMessages).toHaveLength(3);
+      expect(activeSession.currentReplyTarget).toEqual(activeSource);
+      expect(activeSession.pendingMessages).toHaveLength(2);
       expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_tool");
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
       expect(activeSession.pendingMessages[1]?.message.content).toBe(
@@ -3022,12 +3028,50 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
           "[Slack C123 mid:123.456] <@U123>: hello",
       );
       expect(activeSession.pendingMessages[1]?.launchPrompt?._sessionSurfaceHint).toBe(true);
-      expect(activeSession.pendingMessages[2]?.launchPrompt?.source).toEqual(activeSource);
-      expect(activeSession.pendingMessages[2]?.yieldedRequest).toBe("active work");
-      expect(activeSession.currentTurnYieldContinuationId).toBe(activeSession.pendingMessages[2]?.pendingId);
-      expect(activeSession.currentTurnSuperseded).toBe(true);
-      expect(activeSession.interrupted).toBe(true);
-      expect(interrupt).toHaveBeenCalledTimes(1);
+      expect(activeSession.currentTurnYieldContinuationId).toBeUndefined();
+      expect(activeSession.currentTurnSuperseded).not.toBe(true);
+      expect(activeSession.interrupted).not.toBe(true);
+      expect(interrupt).not.toHaveBeenCalled();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps a Slack DM active when another chat's thread return waits at the tool barrier", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-dm-isolation-");
+    try {
+      const sessionName = "dm-tool-release";
+      getOrCreateSession("agent:main:test:dm-tool-release", "main", stateDir, { name: sessionName });
+      const source = { channel: "slack", accountId: "slack-main", chatId: "D_SOURCE" };
+      const active = createQueuedRuntimeUserMessage({ prompt: "private DM request", source });
+      const notification = createQueuedRuntimeUserMessage({
+        prompt: "[System] Inform: another thread finished",
+        source: { ...source, chatId: "D_DEFAULT" },
+        deliveryBarrier: "after_tool",
+      });
+      const interrupt = mock(async () => {});
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: false,
+        currentSource: source,
+        currentReplyTarget: source,
+        currentTurnPendingIds: [active.pendingId!],
+        pendingMessages: [active, notification],
+        queryHandle: { provider: "pi", events: (async function* () {})(), interrupt },
+      });
+      dispatcher.streamingSessions.set(sessionName, activeSession);
+
+      await (
+        dispatcher as unknown as { releaseQueuedPromptsAfterTool(name: string): Promise<void> }
+      ).releaseQueuedPromptsAfterTool(sessionName);
+
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(activeSession.currentSource).toEqual(source);
+      expect(activeSession.currentReplyTarget).toEqual(source);
+      expect(activeSession.currentTurnSuperseded).not.toBe(true);
+      expect(activeSession.pendingMessages).toEqual([active, notification]);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -3270,82 +3314,32 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("keeps pending pool starts separate from actual cold starts and traces the canonical session key", async () => {
-    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-pending-start-");
+  it("refuses saturated starts immediately with canonical identity and occupant telemetry", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-admission-");
     try {
-      getOrCreateSession("agent:dev:test:pending-start", "dev", stateDir, { name: "pending-start-by-name" });
+      getOrCreateSession("agent:dev:test:admission", "dev", stateDir, { name: "admission" });
       const dispatcher = createDispatcher(1);
-      dispatcher.streamingSessions.set("active", createActiveSession());
-
-      const firstStart = dispatcher.handlePromptImmediate("pending-start-by-name", {
-        prompt: "first",
-        source: {
-          channel: "whatsapp",
-          accountId: "main",
-          chatId: "group:123",
-          sourceMessageId: "m1",
-          actorType: "contact",
-        },
-        context: {
-          channelId: "whatsapp",
-          channelName: "WhatsApp",
-          accountId: "main",
-          chatId: "group:123",
-          messageId: "m1",
-          senderId: "u1",
-          isGroup: true,
-          timestamp: Date.now(),
-          actorType: "contact",
-        },
+      dispatcher.streamingSessions.set("active", createActiveSession({ turnActive: true }));
+      await expect(dispatcher.handlePromptImmediate("admission", { prompt: "first" })).rejects.toBeInstanceOf(
+        RuntimeStartCapacityError,
+      );
+      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(dispatcher.startingSessions.size).toBe(0);
+      expect(dispatcher.pendingStartSessions.size).toBe(0);
+      const trace = querySessionTrace({ sessionKey: "agent:dev:test:admission", only: "dispatch" });
+      const rejected = trace.events.find((event) => event.eventType === "dispatch.start_rejected");
+      expect(rejected?.sessionKey).toBe("agent:dev:test:admission");
+      expect(rejected?.payloadJson).toMatchObject({
+        lane: "interactive",
+        reason: "concurrency_limit",
+        active: 1,
+        reserved: 0,
+        queuePosition: null,
+        retryable: true,
+        largestConsumer: { agentId: "dev", slots: 1 },
+        occupants: [{ sessionName: "active", state: "running" }],
       });
-
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      expect(dispatcher.pendingStarts).toHaveLength(1);
-      expect(dispatcher.pendingStartSessions.has("pending-start-by-name")).toBe(true);
-      expect(dispatcher.startingSessions.has("pending-start-by-name")).toBe(false);
-
-      await dispatcher.handlePromptImmediate("pending-start-by-name", {
-        prompt: "second",
-        source: {
-          channel: "whatsapp",
-          accountId: "main",
-          chatId: "group:123",
-          sourceMessageId: "m2",
-          actorType: "contact",
-        },
-        context: {
-          channelId: "whatsapp",
-          channelName: "WhatsApp",
-          accountId: "main",
-          chatId: "group:123",
-          messageId: "m2",
-          senderId: "u1",
-          isGroup: true,
-          timestamp: Date.now(),
-          actorType: "contact",
-        },
-      });
-
-      expect(dispatcher.stashedMessages.get("pending-start-by-name")).toHaveLength(1);
-
-      const trace = querySessionTrace({
-        sessionKey: "agent:dev:test:pending-start",
-        sessionName: "pending-start-by-name",
-        only: "dispatch",
-      });
-      const queued = trace.events.filter((event) => event.eventType === "dispatch.queued_busy");
-      expect(queued.map((event) => event.sessionKey)).toEqual([
-        "agent:dev:test:pending-start",
-        "agent:dev:test:pending-start",
-      ]);
-      expect(queued.map((event) => (event.payloadJson as { reason?: string } | null)?.reason)).toEqual([
-        "concurrency_limit",
-        "pending_start_backpressure",
-      ]);
-
       dispatcher.shutdownAll();
-      await firstStart;
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -3353,8 +3347,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
   it("reserves pool capacity for interactive starts over background task starts", () => {
     const dispatcher = createDispatcher(3, 1);
-    dispatcher.streamingSessions.set("task-one-work", createActiveSession());
-    dispatcher.streamingSessions.set("task-two-work", createActiveSession());
+    dispatcher.streamingSessions.set("task-one-work", createActiveSession({ turnActive: true }));
+    dispatcher.streamingSessions.set("task-two-work", createActiveSession({ turnActive: true }));
 
     expect(dispatcher.canAcceptRuntimePrompt("task-three-work")).toBe(false);
     expect(dispatcher.canAcceptRuntimePrompt("main:group:123")).toBe(true);
@@ -3369,6 +3363,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       let pendingResolved = false;
       let secondPendingResolved = false;
       dispatcher.pendingStarts.push({
+        reject: () => {},
         sessionName: "queued-after-abort",
         prompt: { prompt: "queued" },
         resolve: () => {
@@ -3376,6 +3371,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         },
       });
       dispatcher.pendingStarts.push({
+        reject: () => {},
         sessionName: "second-queued-after-abort",
         prompt: { prompt: "second queued" },
         resolve: () => {
@@ -3648,6 +3644,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const dispatcher = createDispatcher(1);
       let pendingResolved = false;
       dispatcher.pendingStarts.push({
+        reject: () => {},
         sessionName: "queued-after-model-change",
         prompt: { prompt: "queued" },
         resolve: () => {
@@ -3835,6 +3832,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       }),
     );
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "queued-after-task-release",
       prompt: { prompt: "queued" },
       resolve: () => {
@@ -3948,6 +3946,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const dispatcher = createDispatcher(1);
       let pendingResolved = false;
       dispatcher.pendingStarts.push({
+        reject: () => {},
         sessionName: "queued-after-inline-model-change",
         prompt: { prompt: "queued" },
         resolve: () => {
@@ -3974,6 +3973,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     try {
       getOrCreateSession("agent:dev:test:defer-bootstrap", "dev", stateDir, { name: "demo-group" });
       const dispatcher = createDispatcher(1);
+      const launches: Array<{ sessionName: string; prompt: RuntimeLaunchPrompt; lane: string }> = [];
+      spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+        launches.push({ sessionName: name, prompt, lane: classifyRuntimeSessionStartLane(name, prompt) });
+      });
       const bootstrap = dispatcher.handlePromptImmediate("demo-group", {
         prompt: "[System] Inform: group created",
         _deferRuntimeStart: true,
@@ -3990,7 +3993,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(launches).toHaveLength(0);
       expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(true);
       expect(dispatcher.streamingSessions.size).toBe(0);
 
@@ -4007,12 +4010,12 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
-      expect(dispatcher.pendingStarts).toHaveLength(1);
-      expect(dispatcher.pendingStarts[0]?.lane).toBe("interactive");
-      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("[System] Inform: group created");
-      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("hello from the group");
-      expect(dispatcher.pendingStarts[0]?.prompt._turnOrigin).toBeUndefined();
-      expect(dispatcher.pendingStarts[0]?.prompt._deferRuntimeStart).toBeUndefined();
+      expect(launches).toHaveLength(1);
+      expect(launches[0]?.lane).toBe("interactive");
+      expect(launches[0]?.prompt.prompt).toContain("[System] Inform: group created");
+      expect(launches[0]?.prompt.prompt).toContain("hello from the group");
+      expect(launches[0]?.prompt._turnOrigin).toBeUndefined();
+      expect(launches[0]?.prompt._deferRuntimeStart).toBeUndefined();
 
       dispatcher.shutdownAll();
       await Promise.all([bootstrap, humanStart]);
@@ -4032,6 +4035,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       getOrCreateSession("knowledge-cli", "dev", stateDir, { name: "knowledge-cli" });
       getOrCreateSession("agent:dev:test:knowledge-heartbeat", "dev", stateDir, { name: "knowledge-heartbeat" });
       const dispatcher = createDispatcher(1);
+      const launches: Array<{ sessionName: string; prompt: RuntimeLaunchPrompt; lane: string }> = [];
+      spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+        launches.push({ sessionName: name, prompt, lane: classifyRuntimeSessionStartLane(name, prompt) });
+      });
       dispatcher.streamingSessions.set("busy", createActiveSession());
       const cli = dispatcher.handlePromptImmediate("knowledge-cli", {
         prompt: "what did the client say?",
@@ -4043,8 +4050,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
       await new Promise((resolve) => setTimeout(resolve, 20));
 
-      expect(dispatcher.pendingStarts).toHaveLength(2);
-      const byName = new Map(dispatcher.pendingStarts.map((start) => [start.sessionName, start.prompt]));
+      expect(launches).toHaveLength(2);
+      const byName = new Map(launches.map((start) => [start.sessionName, start.prompt]));
       const cliPrompt = byName.get("knowledge-cli")!;
       expect(cliPrompt.prompt).toBe("what did the client say?");
       expect(cliPrompt._knowledgePreamble).toBe(true);
@@ -4072,6 +4079,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     try {
       getOrCreateSession("agent:dev:test:skip-turn-cold", "dev", stateDir, { name: "skip-turn-group" });
       const dispatcher = createDispatcher(1);
+      const launches: Array<{ sessionName: string; prompt: RuntimeLaunchPrompt; lane: string }> = [];
+      spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+        launches.push({ sessionName: name, prompt, lane: classifyRuntimeSessionStartLane(name, prompt) });
+      });
       const source = {
         channel: "whatsapp",
         accountId: "demo",
@@ -4085,7 +4096,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         _skipTurn: true,
       });
 
-      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(launches).toHaveLength(0);
       expect(dispatcher.streamingSessions.size).toBe(0);
       expect(dispatcher.startReservations.size).toBe(0);
 
@@ -4109,8 +4120,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(dispatcher.heldSkipTurnMessages.has("skip-turn-group")).toBe(false);
-      expect(dispatcher.pendingStarts).toHaveLength(1);
-      const started = dispatcher.pendingStarts[0]!.prompt;
+      expect(launches).toHaveLength(1);
+      const started = launches[0]!.prompt;
       expect(started.prompt).toContain("[System] Inform: group created");
       expect(started.prompt).toEndWith("\nLuis: qual o orçamento?");
       expect(started.prompt).not.toContain("10k");
@@ -4139,6 +4150,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     try {
       getOrCreateSession("agent:dev:test:group-intro", "dev", stateDir, { name: "demo-group" });
       const dispatcher = createDispatcher(2, 1);
+      const launches: Array<{ sessionName: string; prompt: RuntimeLaunchPrompt; lane: string }> = [];
+      spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+        launches.push({ sessionName: name, prompt, lane: classifyRuntimeSessionStartLane(name, prompt) });
+      });
       dispatcher.streamingSessions.set("busy-background", createActiveSession());
       dispatcher.streamingSessions.set("busy-interactive", createActiveSession());
 
@@ -4159,11 +4174,11 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
-      expect(dispatcher.pendingStarts).toHaveLength(1);
-      expect(dispatcher.pendingStarts[0]?.sessionName).toBe("demo-group");
-      expect(dispatcher.pendingStarts[0]?.lane).toBe("interactive");
-      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("Se apresente brevemente");
-      expect(dispatcher.pendingStarts[0]?.prompt._deferRuntimeStart).toBeUndefined();
+      expect(launches).toHaveLength(1);
+      expect(launches[0]?.sessionName).toBe("demo-group");
+      expect(launches[0]?.lane).toBe("interactive");
+      expect(launches[0]?.prompt.prompt).toContain("Se apresente brevemente");
+      expect(launches[0]?.prompt._deferRuntimeStart).toBeUndefined();
       expect(dispatcher.streamingSessions.has("demo-group")).toBe(false);
 
       dispatcher.shutdownAll();
@@ -4173,9 +4188,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("reserves an interactive slot for a group intro while a background bootstrap stays queued", async () => {
+  it("reserves an interactive slot for a group intro while a background bootstrap is refused", async () => {
     const dispatcher = createDispatcher(2, 1);
-    dispatcher.streamingSessions.set("busy-background", createActiveSession());
+    dispatcher.streamingSessions.set("busy-background", createActiveSession({ turnActive: true }));
     const reserve = (
       dispatcher as unknown as {
         reserveRuntimeSessionStart: (sessionName: string, prompt: RuntimeLaunchPrompt) => Promise<boolean>;
@@ -4197,9 +4212,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual(["background-bootstrap"]);
-    expect(dispatcher.pendingStarts[0]?.lane).toBe("background");
+    await expect(background).rejects.toBeInstanceOf(RuntimeStartCapacityError);
+    expect(dispatcher.pendingStarts).toHaveLength(0);
 
     const introReserved = await reserve("demo-group", {
       prompt: "[System] Inform: Se apresente brevemente.",
@@ -4216,10 +4230,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     expect(introReserved).toBe(true);
     expect(dispatcher.startReservations.has("demo-group")).toBe(true);
     expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
-    expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual(["background-bootstrap"]);
+    expect(dispatcher.pendingStarts).toHaveLength(0);
 
     dispatcher.shutdownAll();
-    await background;
   });
 
   it("promotes a background pending start to interactive when a human inbound arrives", async () => {
@@ -4228,6 +4241,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     dispatcher.streamingSessions.set("task-two-work", createActiveSession());
     let resolved = false;
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "demo-group",
       prompt: { prompt: "bootstrap", _cron: true },
       lane: "background",
@@ -4309,6 +4323,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     let observerResolved = false;
     let humanResolved = false;
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "obs:abc123:proactive-followup",
       prompt: {
         prompt: "follow up",
@@ -4329,6 +4344,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       },
     });
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "cron-background",
       prompt: { prompt: "cron tick", _cron: true },
       lane: "background",
@@ -4336,6 +4352,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       resolve: () => {},
     });
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "demo-group",
       prompt: {
         prompt: "hello from the group",
@@ -4397,53 +4414,17 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     expect(dispatcher.pendingStarts).toHaveLength(0);
   });
 
-  it("emits a user-facing timeout when an interactive start stays queued", async () => {
-    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-start-timeout-");
+  it("never waits for the queue watchdog when all slots are serving", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-immediate-refusal-");
     try {
-      getOrCreateSession("agent:dev:test:start-timeout", "dev", stateDir, { name: "start-timeout" });
-      const runtimeEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
-      const dispatcher = new RuntimeSessionDispatcher({
-        instanceId: "test",
-        maxConcurrentSessions: 1,
-        interactiveReservedSessions: 0,
-        pendingStartTimeoutMs: 25,
-        safeEmit: async (topic, data) => {
-          runtimeEmits.push({ topic, data: data as Record<string, unknown> });
-        },
-        notifyRuntimeRecoveryExhausted: async () => {},
-        getConfigModel: () => "test-model",
-        crashRecovery: crashRecoveryStub,
-      });
-      dispatcher.streamingSessions.set("busy", createActiveSession());
-      const responseEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
-      const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
-        responseEmits.push({ topic, data: data as Record<string, unknown> });
-      });
-
-      const queued = dispatcher.handlePromptImmediate("start-timeout", {
-        prompt: "hello from the group",
-        source: {
-          channel: "whatsapp",
-          accountId: "demo",
-          chatId: "group:test-group-1",
-          actorType: "contact",
-        },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      expect(runtimeEmits.some((entry) => (entry.data as { type?: string }).type === "session.timeout")).toBe(true);
-      expect(
-        responseEmits.some(
-          (entry) =>
-            entry.topic === "ravi.session.start-timeout.response" &&
-            String(entry.data.response ?? "").includes("queued too long"),
-        ),
-      ).toBe(true);
+      getOrCreateSession("agent:dev:test:no-wait", "dev", stateDir, { name: "no-wait" });
+      const dispatcher = createDispatcher(1, 0, crashRecoveryStub, { pendingStartTimeoutMs: 60_000 });
+      dispatcher.streamingSessions.set("busy", createActiveSession({ turnActive: true }));
+      await expect(dispatcher.handlePromptImmediate("no-wait", { prompt: "preserve me" })).rejects.toBeInstanceOf(
+        RuntimeStartCapacityError,
+      );
       expect(dispatcher.pendingStarts).toHaveLength(0);
-
-      emitSpy.mockRestore();
       dispatcher.shutdownAll();
-      await queued;
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

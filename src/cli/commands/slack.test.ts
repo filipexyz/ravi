@@ -40,6 +40,8 @@ let conversationsListResult: Record<string, unknown> = { ok: true, channels: [] 
 let conversationsHistoryResult: Record<string, unknown> = { ok: true, messages: [] };
 let filesListResult: Record<string, unknown> = { ok: true, files: [] };
 let credentialsAvailable = true;
+let credentialResolutionError: unknown;
+let authTestError: unknown;
 let credentialConnectionConfigured = true;
 let devSlackChannelConfigured = true;
 let clientConstructionCount = 0;
@@ -121,6 +123,7 @@ mock.module("../../channels/slack/credentials.js", () => ({
       ...(options?.action ? { action: options.action } : {}),
       ...(options?.channel?.name ? { channel: options.channel.name } : {}),
     });
+    if (credentialResolutionError !== undefined) throw credentialResolutionError;
     if (!credentialsAvailable || !options?.channel?.credentialConnection) return null;
     const name = options?.channel?.name ?? "ravi-slack";
     return {
@@ -143,6 +146,7 @@ mock.module("../../channels/slack/client.js", () => ({
     }
 
     async authTest() {
+      if (authTestError !== undefined) throw authTestError;
       return recordClientCall("authTest", {}, { ok: true, scopes: ["chat:write"] });
     }
     async conversationsList(args: Record<string, unknown>) {
@@ -314,6 +318,9 @@ mock.module("../../router/router-db.js", () => ({
   dbRevokeContextCascade: () => null,
   dbTouchContext: () => null,
   dbUpdateAgent: () => null,
+  dbUpdateContextMetadata: () => {
+    throw new Error("Context metadata writes are not expected in Slack command unit tests");
+  },
   dbUpdateContextRuntimeState: () => null,
   getDb: () => {
     throw new Error("router DB is not available in Slack command unit tests");
@@ -383,7 +390,7 @@ const {
   slackViewMutationItem,
   validateSlackCanvasAccessLevelTargets,
 } = slackModule;
-const { ContractError } = await import("../agent-contract.js");
+const { ContractError, unexpectedErrorToContractError } = await import("../agent-contract.js");
 const { redactCommandAccessInput } = await import("../command-access.js");
 
 type ContractErrorInstance = InstanceType<typeof ContractError>;
@@ -436,6 +443,8 @@ beforeEach(() => {
   conversationsHistoryResult = { ok: true, messages: [] };
   filesListResult = { ok: true, files: [] };
   credentialsAvailable = true;
+  credentialResolutionError = undefined;
+  authTestError = undefined;
   credentialConnectionConfigured = true;
   devSlackChannelConfigured = true;
   schemaInitializingArtifactCalls.length = 0;
@@ -1252,6 +1261,11 @@ describe("slack agent-first contract", () => {
     );
 
     expect(error.details.suggestions).toContain("ravi-slack");
+    expect(error.details.cause).toContain("local Ravi config store");
+    expect(error.details.context).toMatchObject({
+      provider: "slack",
+      code: "LOCAL_CHANNEL_CONFIG_NOT_FOUND",
+    });
     expect(clientCalls).toHaveLength(0);
   });
 
@@ -1278,12 +1292,13 @@ describe("slack agent-first contract", () => {
     credentialConnectionConfigured = false;
     const commands = new SlackCommands();
 
-    await expectContractError(
+    const error = await expectContractError(
       () => commands.messagesSend("C123", "message", "ravi-slack", undefined, undefined, true, undefined),
       "CREDENTIALS_NOT_CONFIGURED",
       1,
     );
-
+    expect(error.details.cause).toContain("no credential connection assigned");
+    expect(error.details.context).toMatchObject({ code: "LOCAL_CREDENTIAL_CONNECTION_UNASSIGNED" });
     expect(credentialResolutionCalls).toEqual([]);
     expect(clientConstructionCount).toBe(0);
   });
@@ -1291,13 +1306,44 @@ describe("slack agent-first contract", () => {
   it("missing credentials exit 1 with CREDENTIALS_NOT_CONFIGURED", async () => {
     credentialsAvailable = false;
     const commands = new SlackCommands();
-    await expectContractError(
+    const error = await expectContractError(
       () => commands.channelsList("ravi-slack", undefined, undefined, undefined, undefined, undefined, true),
       "CREDENTIALS_NOT_CONFIGURED",
       1,
     );
+    expect(error.details.cause).toContain("broker returned no credentials");
+    expect(error.details.context).toMatchObject({ code: "SLACK_CREDENTIAL_CONNECTION_UNAVAILABLE" });
     expect(clientCalls).toHaveLength(0);
   });
+
+  for (const boundary of ["credential", "permissions"] as const) {
+    it(`preserves_slack_${boundary}_failure_cause_and_redacts_credential`, async () => {
+      const original = Object.assign(
+        new Error("Slack provider rejected auth.test: missing_scope; api_key=sk-abcdefghijklmnop"),
+        { code: "missing_scope", status: 403 },
+      );
+      if (boundary === "credential") credentialResolutionError = original;
+      else authTestError = original;
+      let caught: unknown;
+      try {
+        await silenced(() => new SlackCommands().permissionsList("ravi-slack", true));
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).cause).toBe(original);
+      const envelope = unexpectedErrorToContractError("slack permissions-list", caught).envelope();
+      expect(envelope.error.code).toBe("UNHANDLED_ERROR");
+      expect(envelope.error.cause).toContain("Slack provider rejected auth.test: missing_scope");
+      expect(envelope.error.context).toMatchObject({
+        operation: "slack permissions-list",
+        provider: "slack",
+        code: "missing_scope",
+        status: 403,
+      });
+      expect(JSON.stringify(envelope)).not.toContain("sk-abcdefghijklmnop");
+    });
+  }
 
   it("canvas-artifact-status on an unknown artifact exits 1 with ARTIFACT_NOT_FOUND and local suggestions", async () => {
     const commands = new SlackCommands();

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 // `ravi knowledge remember` and `forget` (contract §13.2).
 //
 // remember: on the terminal the item is active at once. On the operator's
@@ -120,10 +121,13 @@ export function confirmKnowledgeDraft(input: { id: string; turn: KnowledgeTurn }
       "A draft is confirmed only from the operator's terminal.",
       CONTRACT_EXIT_POLICY,
       {
-        retryable: false,
-        issues: [
-          "Only the operator confirms a draft, from their terminal: tell them to run `ravi knowledge remember --confirm <id>` there.",
-        ],
+        ...errorDiagnostic("A draft is confirmed only from the operator's terminal.", { operation: op }),
+        ...{
+          retryable: false,
+          issues: [
+            "Only the operator confirms a draft, from their terminal: tell them to run `ravi knowledge remember --confirm <id>` there.",
+          ],
+        },
       },
     );
   }
@@ -258,12 +262,18 @@ function sha256(text: string): string {
 }
 
 function usage(op: string, message: string): ContractError {
-  return new ContractError(op, "USAGE_ERROR", message, CONTRACT_EXIT_USAGE, { retryable: false, issues: [message] });
+  return new ContractError(op, "USAGE_ERROR", message, CONTRACT_EXIT_USAGE, {
+    ...errorDiagnostic(message, { operation: op }),
+    ...{ retryable: false, issues: [message] },
+  });
 }
 
 function notFound(op: string): ContractError {
   return new ContractError(op, "KNOWLEDGE_NOT_FOUND", "Knowledge item was not found.", CONTRACT_EXIT_ERROR, {
-    retryable: false,
-    issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_NOT_FOUND as string],
+    ...errorDiagnostic("Knowledge item was not found.", { operation: op }),
+    ...{
+      retryable: false,
+      issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_NOT_FOUND as string],
+    },
   });
 }

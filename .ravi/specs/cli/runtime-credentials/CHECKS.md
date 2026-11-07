@@ -21,3 +21,8 @@
   release.
 - The test suite `bun test src/cli/commands/runtime-credentials.test.ts`
   SHOULD pass after any change to this contract surface.
+
+## Status response variants
+
+- `bun test src/cli/commands/runtime-credentials.test.ts` validates empty/nonempty status listings and a selected credential with health; incomplete objects MUST fail.
+- Generated TypeScript, Dart and Swift status responses MUST expose credential/health and listing fields as named properties, never degrade the whole result to an untyped JSON alias. `sdk client check`, `sdk dart check`, `sdk swift check` MUST show no drift.

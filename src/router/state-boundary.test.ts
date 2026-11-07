@@ -230,3 +230,34 @@ it("admits a registered installed channels runner only as an existing-state cons
   expect(db.query("SELECT name FROM sqlite_master WHERE name='sentinel'").get()).toBeTruthy();
   db.close();
 });
+
+it("bridge and publication stores cannot reopen real state after source fixture cleanup", () => {
+  const options = fixture();
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--eval",
+      `
+    import { mock } from 'bun:test';
+    import * as os from 'node:os';
+    const home = process.env.RAVI_BOUNDARY_TEST_HOME;
+    mock.module('node:os', () => ({ ...os, homedir: () => home, default: { ...os, homedir: () => home } }));
+    delete process.env.RAVI_STATE_DIR;
+    const { getBridgeStore } = await import('./src/bridge/store.ts');
+    const { openPublicationJournal } = await import('./src/pr/journal.ts');
+    for (const open of [() => getBridgeStore(), () => openPublicationJournal({}, {})]) {
+      try { open(); throw new Error('UNSAFE_OPEN'); }
+      catch (error) { if (!['REAL_STATE_ACCESS_REFUSED', 'PUBLICATION_AUDIT_FAILED'].includes(error.code)) throw error; }
+    }
+  `,
+    ],
+    {
+      cwd: resolve(import.meta.dir, "../.."),
+      env: { ...process.env, RAVI_BOUNDARY_TEST_HOME: options.homeDir },
+      encoding: "utf8",
+      timeout: 15000,
+    },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  expect(existsSync(join(options.homeDir, ".ravi"))).toBe(false);
+});

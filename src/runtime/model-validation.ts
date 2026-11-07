@@ -1,3 +1,6 @@
+import { modelProviderMismatch } from "./model-catalog.js";
+import type { RuntimeProviderId } from "./types.js";
+
 export interface RuntimeModelValidationResult {
   ok: boolean;
   error?: string;
@@ -39,6 +42,11 @@ export function validateRuntimeModelSelector(providerId: string, model: string):
   if (/\s/.test(value)) {
     return { ok: false, error: `Invalid model: '${model}' cannot contain whitespace` };
   }
+
+  const mismatch = ["claude", "codex", "pi", "grok"].includes(providerId)
+    ? modelProviderMismatch(providerId as RuntimeProviderId, value)
+    : null;
+  if (mismatch) return { ok: false, error: mismatch };
 
   if (providerId !== "pi") {
     return { ok: true };

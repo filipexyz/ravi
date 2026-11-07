@@ -227,6 +227,7 @@ export interface RuntimeHostStreamingSession {
    * Native Pi steer must not keep a long-lived turn on a revoked/expired key.
    */
   currentRuntimeContextKey?: string;
+  currentBridgeTurnId?: string;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
   /** Timer that evicts an idle provider process from the runtime pool. */
@@ -552,13 +553,15 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
     session.pushMessage = null;
   }
 
+  // Abort owns cascading authority cleanup; terminal settlement releases only
+  // this turn's key and removes its listener, so the signal must happen first.
+  if (!session.abortController.signal.aborted) {
+    session.abortController.abort();
+  }
+
   if (session.onTurnComplete) {
     session.onTurnComplete();
     session.onTurnComplete = null;
-  }
-
-  if (!session.abortController.signal.aborted) {
-    session.abortController.abort();
   }
 }
 

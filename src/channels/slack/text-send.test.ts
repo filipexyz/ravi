@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type { ChannelConfig } from "../../router/router-db.js";
 import {
   lookupSlackUserEmail,
@@ -27,6 +27,25 @@ describe("sendSlackText", () => {
     expect(resolveSlackNativeChannel(channels, "HANA-SLACK")?.name).toBe("hana-slack");
     expect(resolveSlackNativeChannel(channels, "hana-slack-credentials")?.name).toBe("hana-slack");
     expect(resolveSlackNativeChannel(channels, "missing")).toBeUndefined();
+  });
+
+  it("stops before transport when broker authorization is denied", async () => {
+    const fetchImpl = mock(async () => Response.json({ ok: true })) as unknown as typeof fetch;
+    const resolveSecret = mock(async () => {
+      throw new Error("Credential authorization denied");
+    });
+    await expect(
+      sendSlackText(
+        { accountId: "hana-slack", chatId: "C123", text: "hello" },
+        { channels: { hana: slackChannel() }, resolveSecret, fetchImpl },
+      ),
+    ).rejects.toThrow("Credential authorization denied");
+    expect(resolveSecret).toHaveBeenCalledWith({
+      provider: "slack",
+      connection: "hana-slack-credentials",
+      action: "chat.postMessage",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("posts chat.postMessage for a native Slack account", async () => {

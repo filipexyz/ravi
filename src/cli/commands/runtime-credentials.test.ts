@@ -62,6 +62,35 @@ describe("RuntimeCredentialsCommands", () => {
     previousStateDir = undefined;
   });
 
+  it("validates both status return shapes at the command boundary", async () => {
+    const { getReturnsMetadata } = await import("../decorators.js");
+    const runtimeCredentialsStatusReturnSchema = getReturnsMetadata(RuntimeCredentialsCommands).get("status")!;
+    const commands = new RuntimeCredentialsCommands();
+    const empty = captureConsole(() => commands.status(undefined, true)).result;
+    expect(runtimeCredentialsStatusReturnSchema.safeParse(empty).success).toBe(true);
+    const { createRuntimeCredential } = await import("../../runtime/credential-store.js");
+    const credential = createRuntimeCredential({
+      runtimeProvider: "codex",
+      label: "Status fixture",
+      sourceKind: "env",
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "TEST_API_KEY",
+          secretRef: "env:TEST_API_KEY",
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+    const detail = captureConsole(() => commands.status(credential.id, true)).result;
+    expect(runtimeCredentialsStatusReturnSchema.safeParse(detail).success).toBe(true);
+    const listing = captureConsole(() => commands.status(undefined, true)).result;
+    expect(runtimeCredentialsStatusReturnSchema.safeParse(listing).success).toBe(true);
+    expect(runtimeCredentialsStatusReturnSchema.safeParse({}).success).toBe(false);
+    expect(runtimeCredentialsStatusReturnSchema.safeParse({ total: 0 }).success).toBe(false);
+  });
   it("adds and lists credential pools as redacted JSON", () => {
     const commands = new RuntimeCredentialsCommands();
     const added = captureConsole(() =>

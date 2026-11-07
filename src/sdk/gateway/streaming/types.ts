@@ -1,5 +1,6 @@
 import type { ScopeContext } from "../../../permissions/scope.js";
 import type { ContextRecord } from "../../../router/router-db.js";
+import type { ConsoleInvocation } from "../console-context.js";
 
 export interface StreamScope {
   permission: string;
@@ -97,6 +98,8 @@ export interface StreamChannelMeta {
 
 export interface StreamChannel {
   name: string;
+  /** Console-only views reject ordinary runtime keys, including local administrators. */
+  consoleHandler?: (request: Request, url: URL, invocation: ConsoleInvocation) => Response;
   /** Declarative metadata driving SDK codegen. */
   meta: StreamChannelMeta;
   match(segments: string[], url: URL): StreamChannelMatch | null;

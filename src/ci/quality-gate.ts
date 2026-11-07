@@ -24,6 +24,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
     "src/db/schema-owner.test.ts",
+    "src/channels/presence-consumer.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
     "src/channels/outbound-consumer.test.ts",
@@ -42,6 +43,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/text-send.test.ts",
     // Slack Web API client: `ok: false` answers become structured SLACK_<ERROR> errors.
     "src/channels/slack/client.test.ts",
+    // Private credential modals: exact destination, replay receipts and payload isolation.
+    "src/channels/slack/credential-intake.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
@@ -75,6 +78,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/route-sticky-attach.test.ts",
     // Route CRUD persistence: pattern normalize, dmScope updates, soft-delete.
     "src/router/router-db.routes.test.ts",
+    // Context authority metadata preserves provenance; revocations compose with caller transactions.
+    "src/router/router-db.contexts.test.ts",
     // Channel compaction notices stay off unless announceCompaction is true.
     "src/router/router-db.announce-compaction.test.ts",
     // Daemon restart ledger records resume vs notice, only for published events.
@@ -177,6 +182,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   ],
   "src/hooks/": [
     "src/hooks/gh-watch.test.ts",
+    "src/hooks/gh-pr-publish.test.ts",
     "src/hooks/gh-follow-sweep.test.ts",
     // Promoção de comando longo para job: a reescrita que evita prender o turno.
     "src/hooks/jobs-promote.test.ts",
@@ -185,6 +191,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/hooks/tool-safety.test.ts",
     // Ravi Page links: browser, WebFetch and shell fetches go to `ravi pages read`.
     "src/hooks/pages-link-guard.test.ts",
+  ],
+  "src/pr/": [
+    "src/pr/service.test.ts",
+    "src/pr/journal.test.ts",
+    "src/pr/context.test.ts",
+    "src/pr/follow-health.test.ts",
+    "src/cli/commands/pr.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": [
@@ -209,7 +222,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // A revoked context held in memory no longer authorizes host tools.
     "src/runtime/context-liveness.test.ts",
   ],
-  "src/apps/": ["src/apps/router.test.ts"],
+  "src/apps/": [
+    "src/apps/router.test.ts",
+    "src/apps/youtube/client.test.ts",
+    "src/apps/youtube/credential-authority.test.ts",
+  ],
+  "src/apps/router.ts": ["src/apps/router.test.ts"],
+  "src/apps/youtube/": ["src/apps/youtube/client.test.ts", "src/apps/youtube/credential-authority.test.ts"],
   "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
 };
 

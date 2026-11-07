@@ -9,6 +9,7 @@ describe("classifyTurnProvenance", () => {
         prompt: "audit",
         _cron: true,
         _jobId: "job-1",
+        _cronRunId: "run-1",
         source: {
           channel: "slack",
           accountId: "main",
@@ -24,6 +25,7 @@ describe("classifyTurnProvenance", () => {
       background: true,
       automationOriginated: true,
       automationId: "cron:job-1",
+      cronRunId: "run-1",
       reason: "prompt._cron",
     });
   });

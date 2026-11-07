@@ -33,6 +33,7 @@ export interface CronTurnOutcome {
   sessionName: string;
   provenance: CronTurnProvenanceMatch;
   jobId?: string;
+  runId?: string;
   error?: string;
   reason?: string;
 }
@@ -71,15 +72,16 @@ function extractRuntimeError(data: Record<string, unknown>): string | undefined 
   return undefined;
 }
 
-function resolveProvenance(data: Record<string, unknown>): Pick<CronTurnOutcome, "provenance" | "jobId"> {
+function resolveProvenance(data: Record<string, unknown>): Pick<CronTurnOutcome, "provenance" | "jobId" | "runId"> {
   const provenance = data._turnProvenance;
   if (!provenance || typeof provenance !== "object") return { provenance: "none" };
 
-  const record = provenance as { origin?: unknown; automationId?: unknown };
+  const record = provenance as { origin?: unknown; automationId?: unknown; cronRunId?: unknown };
+  const runId = cleanString(record.cronRunId);
   const automationId = cleanString(record.automationId);
   if (automationId?.startsWith(CRON_AUTOMATION_ID_PREFIX)) {
     const jobId = cleanString(automationId.slice(CRON_AUTOMATION_ID_PREFIX.length));
-    return jobId ? { provenance: "cron", jobId } : { provenance: "cron" };
+    return jobId ? { provenance: "cron", jobId, ...(runId ? { runId } : {}) } : { provenance: "cron" };
   }
   if (record.origin === "cron") return { provenance: "cron" };
   return { provenance: "other" };
@@ -92,7 +94,12 @@ function resolveProvenance(data: Record<string, unknown>): Pick<CronTurnOutcome,
 export function parseCronTurnOutcome(event: { topic: string; data: unknown }): CronTurnOutcome | null {
   if (!event.data || typeof event.data !== "object") return null;
   const data = event.data as Record<string, unknown>;
-  const kind = typeof data.type === "string" ? TERMINAL_KINDS[data.type] : undefined;
+  const kind =
+    data.type === "dispatch.dropped" && typeof data.reason === "string" && data.reason.startsWith("intake_failed:")
+      ? "failed"
+      : typeof data.type === "string"
+        ? TERMINAL_KINDS[data.type]
+        : undefined;
   if (!kind) return null;
 
   const sessionName = parseRuntimeSessionName(event.topic);

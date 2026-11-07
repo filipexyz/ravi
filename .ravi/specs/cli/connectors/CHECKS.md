@@ -301,3 +301,8 @@
   `/connectors/consent/<token>` page) and `expiresAt` of a consent answer,
   and the chat lines of the not-linked and connection-required answers with
   exit 3.
+
+- `bun test src/link/connector-turn.test.ts src/cron/runner.test.ts` MUST show
+  that changing cron ownership or linking its contact to the operator after
+  admission cannot promote a running turn, while blocking/removing its captured
+  owner refuses subsequent protected calls.

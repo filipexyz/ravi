@@ -36,11 +36,14 @@ export function getCodexHooksPath(configDir = getGlobalCodexConfigDir()): string
   return join(configDir, "hooks.json");
 }
 
-export function ensureCodexBashHookConfig(configDir = getGlobalCodexConfigDir()): CodexHookEnsureResult {
+export function ensureCodexBashHookConfig(
+  configDir = getGlobalCodexConfigDir(),
+  humanBridge = false,
+): CodexHookEnsureResult {
   const hooksPath = getCodexHooksPath(configDir);
   mkdirSync(configDir, { recursive: true });
 
-  const nextConfig = upsertRaviCodexBashHook(readCodexHooksConfig(hooksPath));
+  const nextConfig = upsertRaviCodexBashHook(readCodexHooksConfig(hooksPath), humanBridge);
   const nextJson = JSON.stringify(nextConfig, null, 2) + "\n";
   const currentJson = existsSync(hooksPath) ? readFileSync(hooksPath, "utf8") : null;
   const changed = currentJson !== nextJson;
@@ -162,15 +165,16 @@ export function inspectParsedCodexHookConfig(value: unknown, hooksPath: string):
   };
 }
 
-export function upsertRaviCodexBashHook(config: Record<string, unknown>): Record<string, unknown> {
+export function upsertRaviCodexBashHook(config: Record<string, unknown>, humanBridge = false): Record<string, unknown> {
   const hooks = asRecord(config.hooks) ?? {};
   const preToolUse = Array.isArray(hooks.PreToolUse) ? [...hooks.PreToolUse] : [];
   const raviGroup = {
-    matcher: RAVI_CODEX_BASH_HOOK_MATCHER,
+    matcher: humanBridge ? ".*" : RAVI_CODEX_BASH_HOOK_MATCHER,
     hooks: [
       {
         type: "command",
-        command: buildRaviCodexHookCommand(),
+        command: humanBridge ? buildBridgeCodexHookCommand() : buildRaviCodexHookCommand(),
+        ...(humanBridge ? { timeout: 600 } : {}),
         statusMessage: RAVI_CODEX_BASH_HOOK_STATUS,
       },
     ],
@@ -231,6 +235,14 @@ export function buildRaviCodexHookCommand(): string {
   }
 
   return ["ravi", "context", RAVI_CODEX_BASH_HOOK_COMMAND].map(shellEscape).join(" ");
+}
+
+function buildBridgeCodexHookCommand(): string {
+  const raviBin = process.env.RAVI_BIN?.trim();
+  const entry = raviBin
+    ? join(dirname(dirname(raviBin)), "dist/bundle/bridge-hook.js")
+    : join(dirname(process.argv[1]!), "bridge-hook.js");
+  return [process.execPath, entry].map(shellEscape).join(" ");
 }
 
 function readCodexHooksConfig(path: string): Record<string, unknown> {

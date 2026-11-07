@@ -140,6 +140,7 @@ Other profiles MAY exist from plugin, workspace, or user catalogs. They MUST NOT
 
 - Profile manifests MUST be declarative process contracts, not imperative runtime code.
 - Profile validation MUST reject broken templates, invalid artifact definitions, invalid runtime defaults, and unresolved required inputs.
+- An unknown profile id MUST fail with `TASK_PROFILE_NOT_FOUND` (exit 1 / HTTP 422) before task creation. Its error MUST NOT enumerate other catalog entries; catalog discovery retains its own command authorization.
 - `preset` MUST remain a scaffold helper. Runtime behavior MUST come from the resolved profile manifest.
 - Built-in profiles MUST be covered by tests that assert their ids and critical dispatch behavior.
 - The profile catalog MUST be inspectable through `ravi tasks profiles list|show|preview|validate`.

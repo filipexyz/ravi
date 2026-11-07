@@ -45,6 +45,7 @@ import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import { reportRuntimePromptIntakeFailure } from "./intake-failure.js";
 import { isSessionRelayTurn } from "./turn-origin.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -52,6 +53,7 @@ export interface PendingRuntimeSessionStart {
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
   resolve: () => void;
+  reject: (error: Error) => void;
   cancelled?: boolean;
   queuedAt?: number;
   lane?: RuntimeSessionStartLane;
@@ -411,6 +413,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       storedRuntimeSessionParams,
       storedProviderSessionId,
       canResumeStoredSession,
+      resumeDecision,
       resolvedSource,
       approvalSource,
       streamingSession,
@@ -520,7 +523,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
     await safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "turn.failed",
+      ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
       provider: runtimeProviderId,
+      _turnProvenance: classifyTurnProvenance({ prompt }),
       error: errorMessage,
       recoverable: false,
       ...(resolvedSource ? { _source: resolvedSource } : {}),

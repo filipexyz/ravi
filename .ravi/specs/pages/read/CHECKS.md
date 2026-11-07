@@ -27,3 +27,11 @@
   usage errors before any Console call.
 - A tampered file (sha256 mismatch), an unsafe path, a non-empty target
   directory and an existing zip file are refused.
+- `bun test src/pages/read.test.ts src/pages/read-download.test.ts` verifies a
+  restricted writer cannot plant provider settings through a manifest; denial
+  happens before file fetches or partial writes, even if a safe file comes first.
+- Nested settings, case variants and output symlinks retain the settings guard.
+  Ordinary assets and filenames containing trailing spaces retain their bytes
+  and names. An already host-authorized writer can write settings.
+- A ZIP may contain settings as inert members, but its own destination cannot
+  overwrite provider settings without the required host authority.

@@ -66,6 +66,7 @@ function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
     );
     if (!Number.isInteger(managerPid) || managerPid <= 1 || process.ppid !== managerPid) return [];
   } catch {
+    // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
     return [];
   }
   // Query the process manager, not inherited pm_id/name environment variables.
@@ -76,6 +77,7 @@ function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
     const rows: unknown = JSON.parse(result.stdout);
     return Array.isArray(rows) ? rows : [];
   } catch {
+    // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
     return [];
   }
 }

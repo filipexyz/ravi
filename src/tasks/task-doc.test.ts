@@ -66,6 +66,7 @@ blocker_reason: "PR dependency"
     const taskDir = getCanonicalTaskDir("task-preserve-progress-note");
     const task: TaskRecord = {
       id: "task-preserve-progress-note",
+      threadId: "thread-task-preserve-progress-note",
       title: "Preserve progress note",
       instructions: "Keep the descriptive note while appending sections.",
       status: "in_progress",
@@ -117,6 +118,7 @@ blocker_reason: null
     const taskDir = getCanonicalTaskDir("task-runtime-only");
     const task: TaskRecord = {
       id: "task-runtime-only",
+      threadId: "thread-task-runtime-only",
       title: "Runtime only",
       instructions: "No TASK.md here",
       status: "open",

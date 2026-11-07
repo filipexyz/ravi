@@ -178,6 +178,22 @@ describe("agent model preset resolution", () => {
 });
 
 describe("modelProviderMismatch", () => {
+  test("refuses cross-runtime selectors before thread creation and accepts explicit Pi providers", () => {
+    expect(modelProviderMismatch("pi", "gpt-6-astra")).toContain("--provider codex");
+    expect(modelProviderMismatch("pi", "gpt-5.4")).toContain("--provider codex");
+    expect(modelProviderMismatch("pi", "gemini-2.5-pro")).toContain("provider/model");
+    expect(modelProviderMismatch("pi", "grok-4")).toContain("provider/model");
+    expect(modelProviderMismatch("pi", "google/gemini-2.5-pro")).toBeNull();
+    expect(modelProviderMismatch("grok", "openai/gpt-5.4")).toContain("does not belong");
+    expect(modelProviderMismatch("claude", "openai/gpt-5.4")).toContain("does not belong");
+    expect(modelProviderMismatch("pi", "deepseek/deepseek-flash")).toBeNull();
+    expect(modelProviderMismatch("pi", "openai/gpt-5.4")).toBeNull();
+    expect(modelProviderMismatch("pi", "my-custom-model")).toBeNull();
+    expect(modelProviderMismatch("codex", "gpt-6-astra")).toBeNull();
+    expect(modelProviderMismatch("codex", "deepseek/deepseek-flash")).toContain("does not belong");
+    expect(modelProviderMismatch("grok", "gpt-6-astra")).toContain("does not belong");
+  });
+
   test("accepts a model that belongs to the provider", () => {
     expect(modelProviderMismatch("claude", "sonnet")).toBeNull();
     expect(modelProviderMismatch("claude", "claude-sonnet-4-5")).toBeNull();

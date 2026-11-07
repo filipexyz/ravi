@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Agent-first contract tests for the `connectors` CLI domain (Manual v2):
  * write brake (exit 3) on the destructive `revoke` — with the pre-existing
@@ -333,7 +334,10 @@ describe("connectors list contract", () => {
   });
 
   it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {
-    const boom = new ContractError("connectors list", "SOME_CONTRACT_CODE", "boom", 1, {});
+    const boom = new ContractError("connectors list", "SOME_CONTRACT_CODE", "boom", 1, {
+      ...errorDiagnostic("boom", { operation: "connectors list" }),
+      ...{},
+    });
     listError = boom;
     const commands = new ConnectorsCommands();
 

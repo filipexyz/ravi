@@ -1,4 +1,5 @@
 import type { ContextCapability } from "../router/router-db.js";
+import { bridgeCapabilityAllowed, bridgeContextCapabilities } from "../bridge/authority.js";
 import { AGENT_IDENTITY_AUTHORITY_MODE } from "./agent-identity-permissions-provider.js";
 export { canWithCapabilities, matchPattern, objectIdMatches } from "./capability-snapshot.js";
 import { canWithCapabilities } from "./capability-snapshot.js";
@@ -16,7 +17,10 @@ export function canWithCapabilityContext(
   objectType: string,
   objectId: string,
 ): boolean {
-  return canWithCapabilities(context.capabilities, permission, objectType, objectId);
+  return (
+    bridgeCapabilityAllowed(context.metadata, permission, objectType, objectId) &&
+    canWithCapabilities(bridgeContextCapabilities(context), permission, objectType, objectId)
+  );
 }
 
 export function isDelegatedAuthorityContext(context: Pick<CapabilityContextLike, "kind" | "metadata">): boolean {

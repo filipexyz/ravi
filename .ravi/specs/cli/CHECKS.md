@@ -1,5 +1,7 @@
 # Global CLI Contract / CHECKS
 
+- Gateway regression tests preserve throw-site required-flag guidance, fall back from malformed body request IDs to safe headers, classify HTTP 405/413 as usage errors, and suppress repeated diagnostics even with debug logging enabled.
+
 These are acceptance obligations, not a record of green results. The current
 pull-request (PR) head is unverified until continuous integration (CI)
 completes successfully; an older green run does not satisfy this file. Terms
@@ -7,11 +9,63 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 
 ## Required checks
 
+- Remote profile-discovery regressions preserve more than one database page of
+  choices through a real local error envelope, bound the relay to 512 validated
+  identifiers, preserve truncation across multiple relays, and reject malformed
+  values and commands outside the two declared inspection operations. Existing
+  issue-less validation and complete usage-error redaction assertions stay intact.
+
+- Logger and unchanged `session-goals` tests verify SQLite capacity retries keep
+  `sqliteCode`, `sqliteErrno`, `willRetry`, operation and memory instrumentation.
+  Logger negatives reject malformed typed metadata, secrets and throwing getters.
+  Library conflict tests retain the actionable diff while removing URL query secrets.
+- Typed resolution controls preserve version/scopes/retry/import guidance without
+  copying row content, arbitrary nested provider properties or malformed values.
+  CLI `[options]` remains readable; malformed/opaque payload containers stay redacted.
+- The existing `themes publish` validation test stays unchanged and retains
+  contrast feedback. More than 32 contrast pairs are truncated; invalid ratios,
+  extra properties and credential-bearing pair labels do not bypass projection.
+- Runtime intake/trace tests preserve typed lifecycle controls and the event's
+  failure cause, with raw provider body, stack and cookie sentinels absent.
+- Diagnostic limits include the truncation marker and any path anonymization;
+  repeated projections MUST preserve normalized text. Core, relay (explicit
+  cause and denial fallback), and SDK regressions exercise the 4096-character
+  boundary after credential redaction.
+- `bun test src/cli/remote-gateway.test.ts src/cli/redaction.test.ts` covers
+  issue-less permission-profile HTTP 400 errors and safe next-action copy,
+  preserves field paths, and rejects secret/provider dumps and unsafe names.
+- `bun test src/sdk/gateway/dispatcher.test.ts` checks unknown `json` and
+  `subjects` fields from gateway dispatch through remote CLI projection; field
+  values and unsafe field names MUST remain absent from responses and audits.
+- Unknown identifier-shaped keys classified as secret keys (including
+  `password-hunter2`) MUST be hidden in flat and nested gateway validation
+  issues and remote CLI errors. Ordinary names such as `json`, `subjects`,
+  `secretary` and `passwordless` MUST remain visible.
+
 - `bun test src/sdk/gateway/dispatcher.test.ts` verifies that a missing task
-  decision table produces a private HTTP 500 plus a local cause/stack, and that
-  restoring the schema DDL in a fixture recovers show and dry-run dispatch.
-- Unexpected-error diagnostics exclude sentinel context/bearer tokens and
-  arbitrary exception payloads while preserving the diagnostic cause.
+  decision table produces HTTP 500 with caller-visible normalized cause and
+  bounded diagnostic logging without a stack, and that restoring the schema
+  DDL in a fixture recovers show and dry-run dispatch.
+- Unexpected-error diagnostics apply the ingress field allowlist and shared
+  egress redactor. Sentinel credentials, arbitrary properties, headers,
+  cookies, query/body payloads and stacks are absent even in local/debug logs.
+- The user-failure constructor rejects missing cause/context, and its type
+  contract has no message-only overload. Catch paths preserve the actual
+  throwable; expected refusals provide their concrete precondition/origin.
+- The AST gate rejects new unannotated bindingless catches/rejection handlers
+  and unused bindings at recognized error surfaces. Tests prove that a new
+  violation fails, removing it passes, and baseline entries/counts cannot grow
+  or be reintroduced after removal. Generated inventory freshness is checked.
+- The table-driven corpus has 13 rows and nine required sinks: CLI, tool,
+  gateway, relay, gateway log, trace event, trace blob, TypeScript SDK and
+  mocked Slack `chat.postMessage`. Every row checks all sinks for exact
+  expected cause/code and absence of each sentinel. Missing a sink fails the
+  harness. The vectors include query key, signed URL, cookie, Authorization,
+  a real APIError with body/PII, password tail, escaped-quote password tail,
+  DSN, token-bearing path, arbitrary properties, high-entropy base64, Omni
+  media failure and an exact original-cause positive.
+- Swift/Dart tests verify diagnostic envelope typing/decoding; the nine-sink
+  corpus exercises TypeScript SDK redaction, not native redactor equivalence.
 
 - Every migrated JSON failure has one canonical envelope and the correct
   operation path.
@@ -26,7 +80,7 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   same stable code for the same failure.
 - A denied operation produces one `PERMISSION_DENIED` envelope, exit `1` and
   outcome `denied` on every transport. Remote context/transport failures are
-  canonical and redact raw endpoint/provider details.
+  canonical and redact credentials while preserving provider/OS cause.
 - Remote dispatch is authorized by the target gateway, accepts only a complete
   coherent contract body for the expected `op`, preserves exit `1/2/3`, and
   fails closed on invalid gateway configuration with exit `2`.
@@ -39,21 +93,21 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   canonical flag/positional shapes, HTTP `status`, sanitized validation
   `issues`, and explicitly projected typed plan metadata; sentinel free text,
   paths, URLs, tokens and arbitrary nested objects MUST be absent from the
-  resulting envelope. 400/422 gateway validation failures MUST keep `status`
+  plan projection. Diagnostic cause/context preserve actionable paths. 400/422 gateway validation failures MUST keep `status`
   and `issues` visible in both CLI text and `--json`. Isolated `media send`
   catalog codes (`MEDIA_SEND_FAILED`, `OMNI_AUTH_FAILED`, `FILE_NOT_FOUND`)
   MUST keep the code and use the local catalog message / `suggestedAction`;
-  generic `COMMAND_FAILED` stays `Remote command failed.`
+  generic `COMMAND_FAILED` preserves the sanitized source message.
 - Non-success binary responses and return-shape failures produce canonical,
   redacted gateway envelopes and matching `failed`/`denied` audit outcomes.
 - A handler using the compatibility `fail()` helper produces one parseable
   `COMMAND_FAILED` envelope in JSON CLI, tool and gateway calls. The envelope
   `message` MUST preserve the sanitized expected cause; the generic headline is
-  only used when the cause is empty or unsafe. A throw-site `suggestedAction`
+  only used when the cause is empty. A throw-site `suggestedAction`
   MUST survive the envelope. An unexpected raw exception produces one redacted
   `UNHANDLED_ERROR` envelope, exit `1`, and the same operation/error code in
   audit. Gateway HTTP status may remain `500`, but its response body must not
-  expose the raw exception.
+  expose credentials, stacks or arbitrary exception properties.
 - Every implementation with persistent mutation, outbound effect, paid
   generation, provider mutation or triggered execution uses
   `@CommandAccess({ kind: "mutate" })`.
@@ -111,6 +165,10 @@ Run these as independent groups so a failure identifies its contract layer.
 ### Envelope, exit taxonomy and transport parity
 
 ```bash
+bun test src/cli/error-egress-corpus.test.ts
+bun test src/utils/error-diagnostic.test.ts
+bun test scripts/error-cause-scan.test.ts
+bun scripts/error-cause-scan.ts
 bun test src/cli/commands/usage-exit.smoke.test.ts
 bun test src/cli/agent-contract.test.ts
 bun test src/cli/transport-contract.test.ts
@@ -188,3 +246,11 @@ Do not mark this spec `active`, update the ledger as passed, or approve the PR
 until the focused groups and the four validation steps (build, typecheck, test
 and quality gate) are green for the exact current head. Compare failures by
 test identity and platform evidence, not only totals.
+
+- `bun test src/utils/error-diagnostic.test.ts` proves idempotent finite-pattern
+  redaction, safe path/cause-chain preservation, and allowlisted metadata.
+- `bun test src/cli/transport-contract.test.ts` proves an OS exception reaches
+  exported tool content and the gateway with its original cause.
+- `bun test src/cli/remote-gateway.test.ts src/sdk/gateway/error-contract.test.ts`
+  proves cause/context survive the daemon-to-CLI relay and permission reasons
+  retain actor/operation while real credential values are redacted.

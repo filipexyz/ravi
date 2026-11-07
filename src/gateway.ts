@@ -70,6 +70,7 @@ import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
+import { finalizeStoredSlackApprovalDelivery } from "./approval/service.js";
 import { sendSlackPrivateCards, sendSlackText } from "./channels/slack/text-send.js";
 import { SessionResponseQueue } from "./gateway-response-order.js";
 
@@ -419,6 +420,7 @@ export class Gateway {
     this.subscribeToRuntimeEvents();
     this.subscribeToDeliveryObservations();
     this.subscribeToDirectSend();
+    this.subscribeToApprovalFinalization();
     this.subscribeToReactions();
     this.subscribeToMessageDelete();
     this.subscribeToMessageEdit();
@@ -1070,6 +1072,7 @@ export class Gateway {
       // dropped); no further runtime event will arrive to end it.
       type === "dispatch.restart_suppressed" ||
       type === "dispatch.dropped" ||
+      type === "dispatch.start_rejected" ||
       (!type &&
         (nativeEvent === "turn.complete" ||
           nativeEvent === "turn.completed" ||
@@ -1087,7 +1090,13 @@ export class Gateway {
   }
 
   private isPresenceStartEvent(type: string | undefined, nativeEvent?: string): boolean {
-    if (type === "prompt.published" || type === "turn.started" || type === "thread.started") return true;
+    if (
+      type === "prompt.received" ||
+      type === "prompt.published" ||
+      type === "turn.started" ||
+      type === "thread.started"
+    )
+      return true;
     if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
     return false;
   }
@@ -1437,14 +1446,17 @@ export class Gateway {
 
     try {
       if (channel === "slack") {
-        const delivered = await sendSlackMedia({
-          accountId: target.accountId,
-          chatId: target.chatId,
-          threadId: target.threadId,
-          filePath: media.filePath,
-          filename: media.filename,
-          caption: media.caption,
-        });
+        const delivered = await sendSlackMedia(
+          {
+            accountId: target.accountId,
+            chatId: target.chatId,
+            threadId: target.threadId,
+            filePath: media.filePath,
+            filename: media.filename,
+            caption: media.caption,
+          },
+          { authority: { kind: "internal-service", service: "slack-delivery" } },
+        );
         this.recordOutboundContactInteraction(sessionName, target);
         this.schedulePostDeliveryPresenceRenewal(sessionName, target);
         await emitDelivery({
@@ -1833,6 +1845,36 @@ export class Gateway {
     );
   }
 
+  private subscribeToApprovalFinalization(): void {
+    this.subscribe(
+      "approvalFinalization",
+      ["ravi.outbound.approval.finalize"],
+      async (event) => {
+        await this.handleApprovalFinalizationEvent(event.data as Record<string, unknown>);
+      },
+      { queue: "ravi-gateway" },
+    );
+  }
+
+  private async handleApprovalFinalizationEvent(data: Record<string, unknown>): Promise<void> {
+    // This internal operation cannot choose an account, target or message body.
+    // A terminal approval and its durable delivery are its complete authority.
+    let response: Record<string, unknown>;
+    try {
+      if (typeof data.requestId !== "string" || typeof data.messageId !== "string") {
+        throw new Error("Invalid approval finalization request.");
+      }
+      await finalizeStoredSlackApprovalDelivery({ requestId: data.requestId, messageId: data.messageId });
+      response = { success: true };
+    } catch {
+      // no-cause: Approval delivery errors may contain provider credentials; emit only the fixed failure notice.
+      response = { success: false, error: "Slack approval finalization failed." };
+    }
+    if (typeof data.replyTopic === "string" && /^ravi\._reply\.[A-Za-z0-9-]+$/.test(data.replyTopic)) {
+      await this.emitEvent(data.replyTopic, response);
+    }
+  }
+
   private async handleDirectSendEvent(data: DirectSendRequest): Promise<void> {
     // Knowledge egress guard for packet conversations, text and poll alike.
     const guarded = guardedSessionForChat(data.channel, data.to);
@@ -1963,14 +2005,17 @@ export class Gateway {
 
     if (data.privateTo) {
       try {
-        const result = await sendSlackPrivateCards({
-          accountId: resolved.accountId,
-          chatId: data.to,
-          text,
-          userIds: data.privateTo,
-          blocks: data.blocks ?? [],
-          ...(data.threadId ? { threadId: data.threadId } : {}),
-        });
+        const result = await sendSlackPrivateCards(
+          {
+            accountId: resolved.accountId,
+            chatId: data.to,
+            text,
+            userIds: data.privateTo,
+            blocks: data.blocks ?? [],
+            ...(data.threadId ? { threadId: data.threadId } : {}),
+          },
+          { authority: { kind: "internal-service", service: "slack-delivery" } },
+        );
         log.info("Native private cards delivered", {
           accountId: resolved.accountId,
           delivered: result.deliveries.length,
@@ -2000,14 +2045,17 @@ export class Gateway {
     }
 
     try {
-      const delivered = await sendSlackText({
-        accountId: resolved.accountId,
-        chatId: data.to,
-        text,
-        ...(data.threadId ? { threadId: data.threadId } : {}),
-        ...(data.blocks ? { blocks: data.blocks } : {}),
-        ...(knowledgeGuarded ? { unfurlLinks: false } : {}),
-      });
+      const delivered = await sendSlackText(
+        {
+          accountId: resolved.accountId,
+          chatId: data.to,
+          text,
+          ...(data.threadId ? { threadId: data.threadId } : {}),
+          ...(data.blocks ? { blocks: data.blocks } : {}),
+          ...(knowledgeGuarded ? { unfurlLinks: false } : {}),
+        },
+        { authority: { kind: "internal-service", service: "slack-delivery" } },
+      );
       log.info("Native direct send delivered", {
         accountId: resolved.accountId,
         provider: resolved.provider,
@@ -2335,13 +2383,16 @@ export class Gateway {
       const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
       if (resolved.kind === "native") {
         if (resolved.provider !== "slack" || !resolved.credentialConfigured) return;
-        await sendSlackMedia({
-          accountId: data.accountId,
-          chatId: data.chatId,
-          filePath: data.filePath,
-          filename: data.filename,
-          ...(data.caption ? { caption: data.caption } : {}),
-        });
+        await sendSlackMedia(
+          {
+            accountId: data.accountId,
+            chatId: data.chatId,
+            filePath: data.filePath,
+            filename: data.filename,
+            ...(data.caption ? { caption: data.caption } : {}),
+          },
+          { authority: { kind: "internal-service", service: "slack-delivery" } },
+        );
         log.info("Native media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
         return;
       }

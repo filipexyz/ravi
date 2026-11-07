@@ -1514,13 +1514,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTurnInputMutated = false;
     streaming.internalAbortReason = input.reason;
     streaming.interrupted = true;
-    signalTurnComplete();
-    clearTraceTurnState();
     streaming.done = true;
     streaming.currentChannelBackend = undefined;
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
+    signalTurnComplete();
+    clearTraceTurnState();
     void closeRuntimeSession();
   };
 
@@ -1914,12 +1914,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.internalAbortReason = FATAL_TOOL_FAILURE_REASON;
     clearActiveToolState();
     markRuntimeLiveIdle(sessionName, "fatal tool failure");
-    signalTurnComplete();
-    clearTraceTurnState();
     streaming.done = true;
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
+    signalTurnComplete();
+    clearTraceTurnState();
     void closeRuntimeSession();
   };
   const signalTurnComplete = () => {
@@ -1955,6 +1955,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     const augmented = {
       ...event,
+      ...(streaming.currentBridgeTurnId ? { _bridgeTurnId: streaming.currentBridgeTurnId } : {}),
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       ...(!streaming.suppressChatEmit && !isObserverRuntimeSessionName(sessionName) && streaming.currentReplyTarget
         ? { _replyTarget: streaming.currentReplyTarget }
@@ -2766,12 +2767,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
         clearActiveToolState();
         markRuntimeLiveIdle(sessionName, "provider turn inactive");
-        signalTurnComplete();
-        clearTraceTurnState();
         streaming.done = true;
         if (!streaming.abortController.signal.aborted) {
           streaming.abortController.abort();
         }
+        signalTurnComplete();
+        clearTraceTurnState();
         void closeRuntimeSession();
         resolve({ done: true, value: undefined as never });
       }, PROVIDER_TURN_INACTIVITY_CHECK_MS);
@@ -3376,6 +3377,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 ? { utterances: [messageText] }
                 : classifyVisibleAssistantUtterances(messageText, priorAssistantContents, {
                     alreadyDeliveredThisTurn: deliveredVisibleThisTurn,
+                    structuredTurn: Boolean(streaming.currentBridgeTurnId),
                   });
               const visibleUtterances = visibility.utterances;
               if (!commentaryResponse && visibleUtterances.length === 0) {
@@ -4064,10 +4066,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               durableBinding: currentTurnReplaySafety.durableBinding,
             });
           }
-          signalTurnComplete();
-          clearTraceTurnState();
           streaming.done = true;
           streaming.currentChannelBackend = undefined;
+          if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
+          signalTurnComplete();
+          clearTraceTurnState();
           break;
         }
 
@@ -4125,9 +4128,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             streaming.currentTurnToolStarted = false;
             resetTurnToolContinuationLedger(turnToolContinuation);
             streaming.currentTurnInputMutated = false;
+            streaming.done = true;
+            if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
             signalTurnComplete();
             clearTraceTurnState();
-            streaming.done = true;
             break;
           }
           log.warn("Skipping runtime credential retry because no replay-safe turn messages are available", {
@@ -4160,7 +4164,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (sessionRecoveryFailure && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
           await projectRuntimeEventToChannel(event);
-          const history = getRecentHistory(sessionName, 48);
+          const history = getRecentHistory(sessionName, 48).filter(
+            (message) => message.id > (session.historyResetAfterId ?? 0),
+          );
           // The restated request is this turn's own input, not the newest history
           // row, which may be another sender's queued message.
           const ownPendingIds = new Set(streaming.currentTurnPendingIds ?? []);
@@ -4176,7 +4182,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           const queuedSuccessors = streaming.pendingMessages
             .filter((message) => !message.pendingId || !ownPendingIds.has(message.pendingId))
             .map((message) => ({ ...message }));
-          const resetApplied = resetSession(session.sessionKey);
+          const resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
           session.runtimeProvider = undefined;
@@ -4441,6 +4447,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.turnActive = false;
     streaming.compacting = false;
 
+    // Cascade authority revocation before terminal cleanup releases the lease.
+    if (!streaming.abortController.signal.aborted) {
+      streaming.abortController.abort();
+    }
+
     // Unblock generator if it is waiting (between turns or waiting for turn complete)
     if (streaming.pushMessage) {
       streaming.pushMessage(null);
@@ -4451,10 +4462,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.onTurnComplete = null;
     }
 
-    // Abort subprocess if still alive
-    if (!streaming.abortController.signal.aborted) {
-      streaming.abortController.abort();
-    }
     await closeRuntimeSession();
 
     const stillOwnsRuntimeSlot = streamingSessions.get(sessionName) === streaming;

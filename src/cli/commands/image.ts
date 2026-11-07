@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Image Commands — provider-agnostic image generation.
  */
@@ -56,12 +57,18 @@ function failImageProviderNotConfigured(asJson?: boolean): never {
     "IMAGE_PROVIDER_NOT_CONFIGURED",
     "No image provider configured. Pass --provider openai|gemini or set image_provider on the agent/instance/default settings.",
     {
-      asJson,
-      details: {
-        suggestedAction:
-          "Pass --provider openai|gemini or configure image_provider on the agent, instance or global settings",
-        acceptedValues: ["openai", "gemini"],
+      ...{
+        asJson,
+        details: {
+          suggestedAction:
+            "Pass --provider openai|gemini or configure image_provider on the agent, instance or global settings",
+          acceptedValues: ["openai", "gemini"],
+        },
       },
+      diagnostic: errorDiagnostic(
+        "No image provider configured. Pass --provider openai|gemini or set image_provider on the agent/instance/default settings.",
+        { operation: "image generate" },
+      ),
     },
   );
 }

@@ -27,3 +27,7 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - Full build/typecheck/lint/suite remain in PR CI. Shared `.githooks` and hook config stay untouched.
 
 - Schema-owner regression: channels-before-daemon creates no DB and never connects to NATS; old release markers refuse; complete daemon initialization then channels opening all stores preserves sqlite_master, schema_version and markers exactly while normal queries succeed. Failed initialization cannot leave a ready marker.
+
+- The daemon-to-channel schema snapshot includes nested `human-bridge/bridge.db` and the PR publication tables in `ravi.db`; neither consumer path creates tables or changes markers.
+- Source/worktree opens through BridgeStore and the PR publication journal refuse the fake production path before file creation or directory preparation.
+- Interleaved isolated initializers of the same component both complete successfully and publish one ready marker; the concurrent chat-writer test remains green.

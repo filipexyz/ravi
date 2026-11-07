@@ -221,10 +221,10 @@ afterEach(async () => {
 });
 
 describe("task profile catalog", () => {
-  it("fails closed for unknown profile ids instead of falling back to default", () => {
-    expect(() => resolveTaskProfile("missing-profile")).toThrow(
-      "Unknown task profile: missing-profile. Available profiles:",
-    );
+  it("fails closed for unknown profile ids instead of falling back to default", async () => {
+    await createIsolatedRaviState("ravi-task-profiles-missing-");
+    process.chdir(makeTempDir("ravi-task-profiles-missing-workspace-"));
+    expect(() => resolveTaskProfile("missing-profile")).toThrow("Missing task profile: missing-profile.");
   });
 
   it("caches task profile catalog lookups within the process", async () => {
@@ -238,6 +238,21 @@ describe("task profile catalog", () => {
     resolveTaskProfile("default");
 
     expect(discoverPluginsCalls).toBe(1);
+  });
+
+  it("resolves a workspace profile only from its process cwd ancestry", async () => {
+    await createIsolatedRaviState("ravi-task-profiles-cwd-state-");
+    const root = makeTempDir("ravi-task-profiles-cwd-");
+    const profileWorkspace = join(root, "profile-workspace");
+    const siblingWorkspace = join(root, "sibling-workspace");
+    mkdirSync(join(profileWorkspace, "nested"), { recursive: true });
+    mkdirSync(siblingWorkspace);
+    writeTaskProfile(join(profileWorkspace, ".ravi", "task-profiles"), "workspace-only");
+
+    process.chdir(join(profileWorkspace, "nested"));
+    expect(resolveTaskProfile("workspace-only").sourceKind).toBe("workspace");
+    process.chdir(siblingWorkspace);
+    expect(() => resolveTaskProfile("workspace-only")).toThrow("Missing task profile: workspace-only.");
   });
 
   it("invalidates the cached catalog after scaffolding a profile", async () => {

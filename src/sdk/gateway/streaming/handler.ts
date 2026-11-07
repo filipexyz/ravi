@@ -1,10 +1,11 @@
 import { emitCliAuditEvent } from "../../../cli/audit.js";
+import { currentConsoleInvocation } from "../console-context.js";
 import { buildAuditContextProvenance } from "../../../permissions/audit-provenance.js";
 import { flushPermissionAuditEvents, recordAndEmitPermissionDenial } from "../../../permissions/denials.js";
 import { canWithCapabilityContext } from "../../../permissions/provider-runtime.js";
 import { publish } from "../../../nats.js";
 import type { ContextRecord } from "../../../router/router-db.js";
-import { methodNotAllowed, notFound, permissionDenied, unauthorized } from "../errors.js";
+import { errorResponse, methodNotAllowed, notFound, permissionDenied, unauthorized } from "../errors.js";
 import { parseBearer, resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "../auth.js";
 import { resolveRuntimeContext } from "../../../runtime/context-registry.js";
 import { API_PREFIX } from "../route-table.js";
@@ -36,6 +37,11 @@ export async function handleStreamingRequest(
   if (url.pathname !== streamPrefix && !url.pathname.startsWith(`${streamPrefix}/`)) {
     return null;
   }
+  const invocation = currentConsoleInvocation();
+  const matched = matchStreamChannel(url, options.streaming?.channels ?? defaultStreamChannels);
+  if (invocation)
+    return matched?.channel.consoleHandler?.(request, url, invocation) ?? permissionDenied("Console view required");
+  if (matched?.channel.consoleHandler) return permissionDenied("Console delegation required");
 
   if (request.method !== "GET") {
     return methodNotAllowed(request.method, url.pathname);
@@ -43,11 +49,12 @@ export async function handleStreamingRequest(
 
   const resolved = resolveAuth(request, options.auth);
   if (!resolved.authenticated || !resolved.contextRecord) {
-    return unauthorized(options.authFailureMessage(resolved.reason));
+    return resolved.reason === "expired"
+      ? errorResponse(401, "ContextExpired")
+      : unauthorized(options.authFailureMessage(resolved.reason));
   }
   const contextRecord = resolved.contextRecord;
 
-  const matched = matchStreamChannel(url, options.streaming?.channels ?? defaultStreamChannels);
   if (!matched) {
     return notFound(url.pathname);
   }

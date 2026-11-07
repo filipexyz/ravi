@@ -1,3 +1,4 @@
+import { authorizeBridgeCommand } from "../bridge/command.js";
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
@@ -475,6 +476,9 @@ async function authorizeRuntimeCommandExecution(
     });
     return { approved: false, reason: "Runtime command approval request did not include a command." };
   }
+
+  if (options.context.metadata?.bridgeTurnId !== undefined)
+    return authorizeBridgeCommand(options.context, command, request.eventData, request.beforeExternalApproval);
 
   const eventData = request.eventData;
   const buildBashContext = () => ({

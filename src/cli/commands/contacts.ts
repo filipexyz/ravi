@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Contacts Commands - Contact management CLI (v2 with identities)
  */
@@ -425,11 +426,14 @@ function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string
 function failContactNotFound(op: string, contactRef: string, asJson?: boolean): never {
   const candidates = filterVisibleContacts(getAllContacts()).flatMap((contact) => [contact.id, contact.name ?? ""]);
   contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the contact id/identity (see suggestions for similar visible contacts)",
-      suggestions: suggestSimilar(contactRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the contact id/identity (see suggestions for similar visible contacts)",
+        suggestions: suggestSimilar(contactRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Contact not found: ${contactRef}`, { operation: op }),
   });
 }
 
@@ -1793,10 +1797,16 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!channel) {
-      contractFail("contacts link-agent", "USAGE_ERROR", "--channel is required", { asJson, exitCode: 2 });
+      contractFail("contacts link-agent", "USAGE_ERROR", "--channel is required", {
+        ...{ asJson, exitCode: 2 },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
+      });
     }
     if (!platformUserId) {
-      contractFail("contacts link-agent", "USAGE_ERROR", "--id is required", { asJson, exitCode: 2 });
+      contractFail("contacts link-agent", "USAGE_ERROR", "--id is required", {
+        ...{ asJson, exitCode: 2 },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
+      });
     }
     const scopeCtx = getScopeContext();
     const targetAgent = dbGetAgent(agentId);
@@ -1806,8 +1816,11 @@ export class ContactsCommands {
     if (!targetVisible) {
       const candidates = filterVisibleAgents(scopeCtx, dbListAgents()).flatMap((agent) => [agent.id, agent.name]);
       contractFail("contacts link-agent", "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
-        asJson,
-        details: { suggestions: suggestSimilar(agentId, candidates, 3) },
+        ...{
+          asJson,
+          details: { suggestions: suggestSimilar(agentId, candidates, 3) },
+        },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
       });
     }
 

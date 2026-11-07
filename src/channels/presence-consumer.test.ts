@@ -1,5 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
-import { processChannelPresenceRequest, subjectForChannelPresence } from "./presence-consumer.js";
+import {
+  ChannelPresenceConsumer,
+  processChannelPresenceRequest,
+  subjectForChannelPresence,
+} from "./presence-consumer.js";
 import type { NativePresenceDelivery } from "./native/types.js";
 
 describe("channel presence consumer", () => {
@@ -278,6 +282,63 @@ describe("channel presence consumer", () => {
       reason: "runtime-turn.started",
       target: expect.objectContaining({ sourceMessageId: "inbound-2" }),
     });
+  });
+
+  it("isolates slow presence delivery by session and preserves start/stop order", async () => {
+    let releaseSlow!: () => void;
+    let fastStarted!: () => void;
+    const slow = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const fast = new Promise<void>((resolve) => {
+      fastStarted = resolve;
+    });
+    const calls: string[] = [];
+    const consumer = new ChannelPresenceConsumer({
+      deliveries: [
+        {
+          channelId: "slack",
+          supports: () => true,
+          sendPresence: async ({ sessionName, active }) => {
+            calls.push(`${sessionName}:${active}`);
+            if (sessionName === "slow" && active) await slow;
+            if (sessionName === "fast") fastStarted();
+            return { provider: "slack", status: active ? "active" : "inactive" };
+          },
+        },
+      ],
+    });
+    const requests = [
+      ["slow", true],
+      ["slow", false],
+      ["fast", true],
+    ] as const;
+    const messages = (async function* () {
+      for (const [sessionName, active] of requests)
+        yield {
+          subject: "ravi.channel.presence.slack",
+          data: new TextEncoder().encode(
+            JSON.stringify({
+              sessionName,
+              active,
+              channelId: "slack",
+              timestamp: Date.now(),
+              target: { channel: "slack", accountId: "test", chatId: sessionName },
+            }),
+          ),
+        };
+    })();
+    const internals = consumer as unknown as { running: boolean; runLoop(input: typeof messages): Promise<void> };
+    internals.running = true;
+    try {
+      await internals.runLoop(messages);
+      await fast;
+      expect(calls).toEqual(["slow:true", "fast:true"]);
+    } finally {
+      releaseSlow();
+      await consumer.stop();
+    }
+    expect(calls).toEqual(["slow:true", "fast:true", "slow:false"]);
   });
 
   it("normalizes native presence subjects", () => {

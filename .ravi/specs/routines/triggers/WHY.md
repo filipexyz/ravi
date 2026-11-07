@@ -39,3 +39,9 @@ Filters are the deterministic pre-agent gate. On a wildcard topic such as `ravi.
 - **Auto-disable invalid triggers on load.** The daemon would mutate operator state. After a restart, `enabled: false` is indistinguishable from a deliberate disable, and recovery would take two steps (fix, then enable) that can race with CLI edits.
 - **Refuse to start the runner.** One bad row would take down every trigger, including the valid ones.
 - **Drop only the clause that does not parse.** That silently changes the meaning of the filter and can widen matching, which is the failure this spec forbids.
+
+## Parent-owned PR follows
+
+PR CI normally finishes after its publishing thread. Choosing the parent at registration removes that lifetime race, including a delayed PR-number lookup. Maintenance also repairs existing follows: a creation guard alone leaves durable stale pointers behind. The saved lifecycle, not the latest observer, identifies the authorized parent and root reply fallback. Close-time retargeting of all triggers would silently change user-owned subscriptions, so the lifecycle refuses those until explicitly handed off.
+
+API publication uses the same rule. Its preflight rejects missing or ambiguous lineage before creating a PR; registration checks again after GitHub I/O. Degrading to the child would recreate the orphan, and manufacturing a lifecycle from a Slack source would guess its owner. Older publication tests expected a fictional child recipient without any lifecycle; they now seed isolated lifecycle state and assert the parent destination. A runner regression publishes through the API boundary, closes and prunes the child both during and after publication, and verifies the next CI event still reaches the parent.

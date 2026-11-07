@@ -28,7 +28,7 @@ The installed daemon owns real state by process identity, with no new launcher f
 
 ## Boot and upgrades
 
-The daemon is the only schema owner. Start it first; it initializes the router, contacts, chat, credentials, console scope, insights, knowledge and Devin stores before serving. Each store records the exact package version after successful initialization. Then start channels from that same installed release.
+The daemon is the only schema owner. Start it first; it initializes the router, contacts, chat, credentials, console scope, insights, knowledge, Devin, human-bridge and PR publication stores before serving. Each store records the exact package version after successful initialization. Then start channels from that same installed release.
 
 For upgrades, stop the old channel runner before the daemon applies a new release's migrations, and start the new runner after daemon initialization. An already-running consumer is not a schema-migration coordinator.
 

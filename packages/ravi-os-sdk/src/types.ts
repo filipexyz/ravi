@@ -6465,15 +6465,27 @@ export type ChannelsRestartReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6534,6 +6546,51 @@ export type ChannelsRestartReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -6600,15 +6657,27 @@ export type ChannelsStartReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6669,6 +6738,51 @@ export type ChannelsStartReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -6683,15 +6797,27 @@ export type ChannelsStatusInput = Record<string, never>;
 /** Return shape for `channels.status`. */
 export type ChannelsStatusReturn = {
   channels: {
+    bundlePath: string | null;
+    codeStale: boolean;
     cpu: number | null;
+    cwd: string | null;
+    diskVersion: string | null;
+    envStale: boolean;
+    identityVerified: boolean;
     managed: boolean;
+    matchesCli: boolean | null;
     memoryBytes: number | null;
     memoryMb: number | null;
     name: string;
+    online: boolean;
     pid: number | null;
     pmId: number | null;
     running: boolean;
+    runningVersion: string | null;
+    stale: boolean;
+    startedAt: number | null;
     status: string;
+    warnings: string[];
   };
   health?: {
     checkedAt: number;
@@ -6752,6 +6878,51 @@ export type ChannelsStatusReturn = {
     schemaVersion: 1;
     startedAt: number | null;
   }) | null;
+  runtime: {
+    alignment: "aligned" | "drifted" | "unknown" | "not_running";
+    channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
+      managed: boolean;
+      matchesCli: boolean | null;
+      name: string;
+      online: boolean;
+      pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
+      status: string;
+      warnings: string[];
+    };
+    cli: {
+      bundlePath: string | null;
+      cwd: string | null;
+      version: string | null;
+    };
+    daemon: {
+      bundlePath: string | null;
+      codeStale: boolean;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
+      managed: boolean;
+      matchesCli: boolean | null;
+      name: string;
+      online: boolean;
+      pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
+      status: string;
+      warnings: string[];
+    };
+  };
+  warnings: string[];
 };
 
 /** Input shape for `channels.stop`. */
@@ -6770,15 +6941,27 @@ export type ChannelsStopReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6839,6 +7022,51 @@ export type ChannelsStopReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -10465,6 +10693,20 @@ export type ContextAuthorizeReturn = {
   reason: string | null;
 };
 
+/** Input shape for `context.bridge-tool-hook`. */
+export type ContextBridgeToolHookInput = {
+  payload?: string;
+};
+
+/** Return shape for `context.bridge-tool-hook`. */
+export type ContextBridgeToolHookReturn = {
+  hookSpecificOutput?: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "deny";
+    permissionDecisionReason: string;
+  };
+};
+
 /** Input shape for `context.capabilities`. */
 export type ContextCapabilitiesInput = Record<string, never>;
 
@@ -11289,7 +11531,7 @@ export type CredentialsConnectionsDisableInput = {
 /** Return shape for `credentials.connections.disable`. */
 export type CredentialsConnectionsDisableReturn = {
   connection: ({
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -11311,7 +11553,7 @@ export type CredentialsConnectionsEnableInput = {
 /** Return shape for `credentials.connections.enable`. */
 export type CredentialsConnectionsEnableReturn = {
   connection: ({
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -11337,7 +11579,7 @@ export type CredentialsConnectionsListInput = {
 /** Return shape for `credentials.connections.list`. */
 export type CredentialsConnectionsListReturn = {
   items: Array<{
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -11369,7 +11611,7 @@ export type CredentialsConnectionsShowInput = {
 /** Return shape for `credentials.connections.show`. */
 export type CredentialsConnectionsShowReturn = {
   connection: {
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -11399,6 +11641,40 @@ export type CredentialsPoliciesExplainReturn = {
   connection: string;
   provider: string;
   requiredCapabilities: string[];
+};
+
+/** Input shape for `credentials.request`. */
+export type CredentialsRequestInput = {
+  backend?: string;
+  execute?: boolean;
+  label?: string;
+  reason?: string;
+  scopes?: string;
+  target: string;
+  user?: string;
+};
+
+/** Return shape for `credentials.request`. */
+export type CredentialsRequestReturn = {
+  delivery: "ephemeral";
+  expiresAt: number;
+  requestId: string;
+  target: string;
+};
+
+/** Input shape for `credentials.request-status`. */
+export type CredentialsRequestStatusInput = {
+  requestId: string;
+  target: string;
+};
+
+/** Return shape for `credentials.request-status`. */
+export type CredentialsRequestStatusReturn = {
+  activation: "not_requested";
+  receipt?: string;
+  requestId: string;
+  status: string;
+  target: string;
 };
 
 /** Input shape for `crm.account`. */
@@ -12460,14 +12736,21 @@ export type DaemonStatusReturn = {
     alignment: "aligned" | "drifted" | "unknown" | "not_running";
     channels: {
       bundlePath: string | null;
+      codeStale: boolean;
       cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
       matchesCli: boolean | null;
       name: string;
       online: boolean;
       pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
-      version: string | null;
+      warnings: string[];
     };
     cli: {
       bundlePath: string | null;
@@ -12476,16 +12759,24 @@ export type DaemonStatusReturn = {
     };
     daemon: {
       bundlePath: string | null;
+      codeStale: boolean;
       cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
       matchesCli: boolean | null;
       name: string;
       online: boolean;
       pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
-      version: string | null;
+      warnings: string[];
     };
   };
+  warnings: string[];
   [k: string]: unknown;
 };
 
@@ -17739,6 +18030,47 @@ export type PermissionsStatusReturn = {
   status: "provider-runtime";
 };
 
+/** Input shape for `pr.publish`. */
+export type PrPublishInput = {
+  base?: string;
+  bodyFile?: string;
+  dryRun?: boolean;
+  execute?: boolean;
+  expectSha?: string;
+  replySession?: string;
+  repo?: string;
+  title?: string;
+};
+
+/** Return shape for `pr.publish`. */
+export type PrPublishReturn = {
+  attemptId: string;
+  base: string;
+  checks: {
+    count: number;
+    state: "pending" | "success" | "failure";
+  };
+  follow: {
+    ciWatchId: string;
+    replySession: string;
+    triggerId: string;
+    verifiedAt: string;
+    watchId: string;
+  };
+  head: string;
+  localSha: string;
+  pr: {
+    number: number;
+    ready: true;
+    reused: boolean;
+    url: string;
+  };
+  publicationId: string;
+  remoteSha: string;
+  repo: string;
+  treeSha: string;
+};
+
 /** Input shape for `projects.create`. */
 export type ProjectsCreateInput = {
   console?: string;
@@ -18441,8 +18773,21 @@ export type RuntimeCredentialsStatusInput = {
 
 /** Return shape for `runtime.credentials.status`. */
 export type RuntimeCredentialsStatusReturn = {
-  credential: Record<string, unknown>;
-  health: (Record<string, unknown>) | null;
+  credential?: Record<string, unknown>;
+  credentials?: Array<Record<string, unknown>>;
+  health?: (Record<string, unknown>) | null;
+  pagination?: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  providerHealth?: Array<Record<string, unknown>>;
+  total?: number;
   [k: string]: unknown;
 };
 
@@ -18482,6 +18827,7 @@ export type RuntimeEnvSetReturn = {
   redacted: boolean;
   secret: boolean;
   value: string | null;
+  warnings?: string[];
 };
 
 /** Input shape for `runtime.env.unset`. */
@@ -18501,6 +18847,7 @@ export type RuntimeEnvUnsetReturn = {
   redacted: boolean;
   secret: boolean;
   value: string | null;
+  warnings?: string[];
 };
 
 /** Input shape for `runtime.presets.create`. */
@@ -18783,6 +19130,7 @@ export type RuntimeProvidersClaudeConfigureReturn = {
     redacted: boolean;
     secret: boolean;
     value: string | null;
+    warnings?: string[];
   };
 };
 
@@ -19446,6 +19794,319 @@ export type SessionsCloseThreadReturn = {
     threadTs: string | null;
   };
   status: "closed";
+};
+
+/** Input shape for `sessions.conversations.agents`. */
+export type SessionsConversationsAgentsInput = {
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.agents`. */
+export type SessionsConversationsAgentsReturn = Array<{
+  id: string;
+  name: string;
+}>;
+
+/** Input shape for `sessions.conversations.cancel`. */
+export type SessionsConversationsCancelInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+  turnId: string;
+};
+
+/** Return shape for `sessions.conversations.cancel`. */
+export type SessionsConversationsCancelReturn = {
+  cancelRequested: boolean;
+  conversationId: string;
+  status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  turnId: string;
+};
+
+/** Input shape for `sessions.conversations.create`. */
+export type SessionsConversationsCreateInput = {
+  agentId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.create`. */
+export type SessionsConversationsCreateReturn = {
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  conversationId: string;
+};
+
+/** Input shape for `sessions.conversations.decide`. */
+export type SessionsConversationsDecideInput = {
+  actionDigest: string;
+  approvalId: string;
+  conversationId: string;
+  createdAt: number;
+  decision: "approve" | "reject";
+  expectedVersion: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.decide`. */
+export type SessionsConversationsDecideReturn = {
+  approvalId: string;
+  conversationId: string;
+  state: "approved" | "rejected";
+  version: number;
+};
+
+/** Input shape for `sessions.conversations.events`. */
+export type SessionsConversationsEventsInput = {
+  conversationId: string;
+  createdAt: number;
+  cursor: string | null;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.events`. */
+export type SessionsConversationsEventsReturn = {
+  cursor: string;
+  events: Array<({
+    createdAt: number;
+    data: {
+      createdAt: number;
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "message.accepted";
+  }) | ({
+    createdAt: number;
+    data: {
+      createdAt: number;
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "message.finalized";
+  }) | ({
+    createdAt: number;
+    data: {
+      cancelRequested: boolean;
+      id: string;
+      status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+    };
+    sequence: number;
+    type: "turn.state";
+  }) | ({
+    createdAt: number;
+    data: {
+      status: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "turn.activity";
+  }) | ({
+    createdAt: number;
+    data: {
+      turnId: string;
+    };
+    sequence: number;
+    type: "cancel.requested";
+  }) | ({
+    createdAt: number;
+    data: {
+      actionDigest: string;
+      capability: {
+        objectId: string;
+        objectType: string;
+        permission: string;
+      };
+      description: string;
+      expiresAt: number;
+      id: string;
+      state: "pending" | "approved" | "rejected" | "expired" | "invalidated";
+      turnId: string;
+      version: number;
+    };
+    sequence: number;
+    type: "approval.opened";
+  }) | ({
+    createdAt: number;
+    data: {
+      id: string;
+      state: "approved" | "rejected" | "expired" | "invalidated";
+      version?: number;
+    };
+    sequence: number;
+    type: "approval.state";
+  })>;
+};
+
+/** Input shape for `sessions.conversations.history`. */
+export type SessionsConversationsHistoryInput = {
+  before: string | null;
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.history`. */
+export type SessionsConversationsHistoryReturn = {
+  hasOlder: boolean;
+  messages: Array<{
+    createdAt: number;
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    turnId: string;
+  }>;
+};
+
+/** Input shape for `sessions.conversations.list`. */
+export type SessionsConversationsListInput = {
+  createdAt: number;
+  limit?: number;
+  offset?: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.list`. */
+export type SessionsConversationsListReturn = Array<{
+  agentId: string;
+  id: string;
+  title: string;
+  updatedAt: number;
+  version: number;
+}>;
+
+/** Input shape for `sessions.conversations.open`. */
+export type SessionsConversationsOpenInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.open`. */
+export type SessionsConversationsOpenReturn = {
+  approvals: Array<{
+    actionDigest: string;
+    capability: {
+      objectId: string;
+      objectType: string;
+      permission: string;
+    };
+    description: string;
+    expiresAt: number;
+    id: string;
+    state: "pending" | "approved" | "rejected" | "expired" | "invalidated";
+    turnId: string;
+    version: number;
+  }>;
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  cursor: string;
+  hasOlder: boolean;
+  messages: Array<{
+    createdAt: number;
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    turnId: string;
+  }>;
+  turn: ({
+    cancelRequested: boolean;
+    id: string;
+    status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  }) | null;
+};
+
+/** Input shape for `sessions.conversations.receipt`. */
+export type SessionsConversationsReceiptInput = {
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+  targetRequestId: string;
+};
+
+/** Return shape for `sessions.conversations.receipt`. */
+export type SessionsConversationsReceiptReturn = ({
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  conversationId: string;
+}) | ({
+  accepted: true;
+  conversationId: string;
+  messageId: string;
+  turnId: string;
+  version: number;
+}) | ({
+  cancelRequested: boolean;
+  conversationId: string;
+  status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  turnId: string;
+}) | ({
+  approvalId: string;
+  conversationId: string;
+  state: "approved" | "rejected";
+  version: number;
+});
+
+/** Input shape for `sessions.conversations.renew`. */
+export type SessionsConversationsRenewInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.renew`. */
+export type SessionsConversationsRenewReturn = {
+  conversationId: string;
+  renewed: boolean;
+};
+
+/** Input shape for `sessions.conversations.send`. */
+export type SessionsConversationsSendInput = {
+  conversationId: string;
+  createdAt: number;
+  expectedVersion: number;
+  projectId: string;
+  requestId: string;
+  text: string;
+};
+
+/** Return shape for `sessions.conversations.send`. */
+export type SessionsConversationsSendReturn = {
+  accepted: true;
+  conversationId: string;
+  messageId: string;
+  turnId: string;
+  version: number;
 };
 
 /** Input shape for `sessions.create-thread`. */
@@ -20504,6 +21165,7 @@ export type SessionsThreadSendReturn = {
       pending: boolean;
       requested: boolean;
     };
+    pendingAnswerCount: number;
     requestId: string;
     runtime: {
       effort: string;
@@ -20525,6 +21187,7 @@ export type SessionsThreadSendReturn = {
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
     title: string | null;
+    uncertainAnswerCount: number;
     updatedAt: number;
   };
 };
@@ -20554,6 +21217,7 @@ export type SessionsThreadsReturn = {
       pending: boolean;
       requested: boolean;
     };
+    pendingAnswerCount: number;
     requestId: string;
     runtime: {
       effort: string;
@@ -20575,6 +21239,7 @@ export type SessionsThreadsReturn = {
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
     title: string | null;
+    uncertainAnswerCount: number;
     updatedAt: number;
   }>;
 };
@@ -24261,6 +24926,7 @@ export type TasksCreateInput = {
   checkpoint?: string;
   dependsOn?: string[];
   effort?: string;
+  idempotencyKey?: string;
   input?: string[];
   instructions?: string;
   model?: string;

@@ -100,6 +100,7 @@ describe("RuntimeProvidersCommands", () => {
 
   it("starts, authorizes, and completes a Codex device login", async () => {
     const commands = new RuntimeProvidersCodexLoginCommands({
+      env: { ...process.env, CODEX_HOME: join(process.env.RAVI_STATE_DIR!, "codex-test-profile") },
       spawn: () =>
         fakeProcess(`
 1. Open this link
@@ -117,6 +118,7 @@ describe("RuntimeProvidersCommands", () => {
     };
     expect(startPayload.login.verificationUrl).toBe("https://auth.openai.com/codex/device");
     expect(startPayload.login.userCode).toBe("ABCD-EFGH");
+    expect(startPayload.login.home).toBe(join(process.env.RAVI_STATE_DIR!, "codex-test-profile"));
 
     try {
       commands.complete(startPayload.login.id, "main", "codex-home", false, true);
@@ -140,6 +142,7 @@ describe("RuntimeProvidersCommands", () => {
 
   it("cancels a Grok login and maps not-found to the contract envelope", async () => {
     const commands = new RuntimeProvidersGrokLoginCommands({
+      env: { ...process.env, GROK_HOME: join(process.env.RAVI_STATE_DIR!, "grok-test-profile") },
       spawn: () => fakeProcess("Visit https://auth.x.ai/device and enter code: WXYZ-1234\n"),
       isPidAlive: () => true,
       killPid: () => {},

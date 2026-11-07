@@ -277,6 +277,27 @@ specifies them.
 
 The CLI SHOULD map server errors into stable local messages and exit codes.
 
+CloudAuthError message text is not a public diagnostic: it may contain the
+Console or auth provider's response body. The public message and cause MUST
+use the local catalog or the existing typed local projections (connector-turn
+copy, TurnRefusalError, link flow, sanitized PAYLOAD_INVALID and Pages domain
+setup). Discarded opaque text MUST be marked as [redacted:provider.body],
+without echoing body content, PII or arbitrary remote details.
+
+The diagnostic context MUST retain the operation, provider console, the cloud
+code and a valid HTTP status when supplied. A nested ContractError MAY retain
+its already normalized cause and allowlisted context. Nested CloudAuthErrors
+MUST be normalized through this same catalog boundary with a finite depth and
+cycle guard. Untyped network/fetch causes have no public provenance in this
+contract and MUST use the opaque marker; this projection does not claim to
+preserve their full internal cause chain.
+
+Only the local TurnRefusalError class authorizes refusalReason, jobId and
+ownerPrincipal controls. A remote ACTOR_UNKNOWN with lookalike details MUST
+keep the local catalog copy and MUST NOT introduce those controls or text
+through cause. PAYLOAD_INVALID path redaction MUST apply equally to message,
+cause and validation issues.
+
 Recognized auth/publish errors include:
 
 - `AUTH_REQUIRED`

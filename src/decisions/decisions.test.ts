@@ -1,16 +1,21 @@
+import { RuntimeStartCapacityError } from "../runtime/start-admission.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { renameSessionName } from "../router/sessions.js";
+import { renameSessionName, closeSessionStore } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { getDb, dbUpsertChat } from "../router/router-db.js";
+import { getDb, dbUpsertChat, closeRouterDb } from "../router/router-db.js";
 import { getOrCreateSession, getSession, deleteSession, updateSessionName } from "../router/index.js";
 import {
   createSlackThreadLifecycle,
   markSlackThreadRootDelivered,
   closeSlackThreadLifecycle,
 } from "../channels/slack/thread-lifecycle-store.js";
-import { finalizeSlackThreadCreation, summarizeSlackThread } from "../channels/slack/thread-lifecycle.js";
+import {
+  finalizeSlackThreadCreation,
+  listSlackThreadsForSession,
+  summarizeSlackThread,
+} from "../channels/slack/thread-lifecycle.js";
 import { getSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
 import { migrateDecisions } from "./schema.js";
 import {
@@ -21,7 +26,13 @@ import {
   visibleDecisions,
   validateDecisionMutation,
 } from "./service.js";
-import { getDecision, listDecisions, askDecisionRecord, answerDecisionRecord } from "./store.js";
+import {
+  getDecision,
+  listDecisions,
+  askDecisionRecord,
+  answerDecisionRecord,
+  getDecisionWaitSummary,
+} from "./store.js";
 import {
   admitDecisionAnswer as admit,
   decisionDeliveries,
@@ -308,6 +319,100 @@ describe("generic decisions and managed threads", () => {
     expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");
   });
 
+  it("keeps capacity refusal in the durable decision retry path without ambiguous admission", async () => {
+    const origin = await thread();
+    const { decision } = await askDecision(origin, { key: "capacity", ask: "Question" });
+    await answerDecision(decision.id, "Outcome");
+    const published: RuntimeLaunchPrompt[] = [];
+    await reconcileDecisionDeliveries(deps(published), decision.id);
+    const name = getSession(origin.sessionKey!)!.name!;
+    await expect(
+      admitDecisionAnswer(name, published[0]!, async () => {
+        throw new RuntimeStartCapacityError({
+          lane: "background",
+          reason: "concurrency_limit",
+          active: 1,
+          reserved: 0,
+          max: 1,
+          backgroundLimit: 1,
+          queuePosition: null,
+          occupants: [],
+          largestConsumer: null,
+        });
+      }),
+    ).rejects.toBeInstanceOf(RuntimeStartCapacityError);
+    expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")).toMatchObject({
+      status: "failed",
+      lastError: "RUNTIME_START_CAPACITY",
+    });
+    resetFailedDecisionDeliveries(decision.id);
+    await admitDecisionAnswer(name, published[0]!, async () => {});
+    expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");
+  });
+
+  it("republishes a capacity-refused answer within the transport dedup window and keeps uncertain publication idempotent", async () => {
+    const origin = await thread();
+    const { decision } = await askDecision(origin, { key: "transport-retry", ask: "Question" });
+    await answerDecision(decision.id, "Outcome");
+    const seen = new Set<string>();
+    const deliveries: RuntimeLaunchPrompt[] = [];
+    const messageIds: string[] = [];
+    let losePublishReceipt = false;
+    const transport: DecisionDeliveryDeps = {
+      ...deps([]),
+      publishPrompt: async (_name, payload, options) => {
+        const id = options!.messageId!;
+        messageIds.push(id);
+        if (!seen.has(id)) {
+          seen.add(id);
+          deliveries.push(payload as unknown as RuntimeLaunchPrompt);
+        }
+        if (losePublishReceipt) throw new Error("lost publication acknowledgement");
+      },
+    };
+    await reconcileDecisionDeliveries(transport, decision.id);
+    const name = getSession(origin.sessionKey!)!.name!;
+    await expect(
+      admitDecisionAnswer(name, deliveries[0]!, async () => {
+        throw new RuntimeStartCapacityError({
+          lane: "background",
+          reason: "concurrency_limit",
+          active: 1,
+          reserved: 0,
+          max: 1,
+          backgroundLimit: 1,
+          queuePosition: null,
+          occupants: [],
+          largestConsumer: null,
+        });
+      }),
+    ).rejects.toBeInstanceOf(RuntimeStartCapacityError);
+    resetFailedDecisionDeliveries(decision.id);
+    losePublishReceipt = true;
+    closeSessionStore();
+    closeRouterDb();
+    await reconcileDecisionDeliveries(transport, decision.id);
+    expect(deliveries).toHaveLength(2);
+    expect(messageIds[1]).not.toBe(messageIds[0]);
+    resetFailedDecisionDeliveries(decision.id);
+    losePublishReceipt = false;
+    closeSessionStore();
+    closeRouterDb();
+    await reconcileDecisionDeliveries(transport, decision.id);
+    expect(messageIds[2]).toBe(messageIds[1]);
+    expect(deliveries).toHaveLength(2);
+    expect(deliveries[1]).toEqual(deliveries[0]);
+    let executions = 0;
+    await admitDecisionAnswer(name, deliveries[1]!, async () => {
+      executions++;
+    });
+    await admitDecisionAnswer(name, deliveries[0]!, async () => {
+      executions++;
+    });
+    expect(executions).toBe(1);
+    expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");
+  });
+
   it("re-reads a frozen payload when another reconciler overtakes its batch", async () => {
     const origin = await thread();
     const first = (await askDecision(origin, { key: "a", ask: "First?" })).decision;
@@ -406,6 +511,11 @@ describe("generic decisions and managed threads", () => {
       }),
     ).rejects.toThrow("crashed");
     expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("uncertain");
+    expect(getDecisionWaitSummary(origin)).toEqual({
+      openDecisionCount: 0,
+      pendingAnswerCount: 1,
+      uncertainAnswerCount: 1,
+    });
     expect(() => resetFailedDecisionDeliveries(decision.id)).toThrow("uncertain");
     let repeat = false;
     await admitDecisionAnswer(getSession(origin.sessionKey!)!.name!, published[0]!, async () => {
@@ -428,6 +538,11 @@ describe("generic decisions and managed threads", () => {
     }
     resolveUncertainDecisionDelivery(decision.id, "received", "Trace fixture confirms runtime admission");
     expect(decisionDeliveries(decision.id).find((d) => d.kind === "answer")?.status).toBe("delivered");
+    expect(getDecisionWaitSummary(origin)).toEqual({
+      openDecisionCount: 0,
+      pendingAnswerCount: 0,
+      uncertainAnswerCount: 0,
+    });
     expect(repeat).toBe(false);
     expect(getDecision(decision.id)?.answer).toBe("Now");
   });
@@ -547,6 +662,105 @@ describe("generic decisions and managed threads", () => {
     expect(() => answerDecisionRecord(first.id, "Two", "other")).toThrow("immutable");
     expect(getDecision(second.id)?.status).toBe("open");
     expect(listDecisions(origin)).toHaveLength(2);
+  });
+});
+
+describe("decision wait summaries (isolated fixtures)", () => {
+  it("returns zeros without decisions and counts an open question once across question deliveries", async () => {
+    const origin = await thread();
+    expect(getDecisionWaitSummary(origin)).toEqual({
+      openDecisionCount: 0,
+      pendingAnswerCount: 0,
+      uncertainAnswerCount: 0,
+    });
+    const { decision } = askDecisionRecord(origin, { key: "window", ask: "When?" });
+    askDecisionRecord(origin, { key: "window", ask: "When exactly?" });
+    getDb().query("UPDATE decision_deliveries SET status='uncertain' WHERE decision_id=?").run(decision.id);
+    expect(getDecisionWaitSummary(origin)).toEqual({
+      openDecisionCount: 1,
+      pendingAnswerCount: 0,
+      uncertainAnswerCount: 0,
+    });
+    expect(() => closeSlackThreadLifecycle({ childSessionKey: origin.sessionKey! })).toThrow("open decision");
+  });
+
+  it.each([
+    ["pending", 1, 0],
+    ["publishing", 1, 0],
+    ["published", 1, 0],
+    ["accepting", 1, 0],
+    ["failed", 1, 0],
+    ["uncertain", 1, 1],
+    ["delivered", 0, 0],
+    ["superseded", 0, 0],
+  ] as const)("projects %s answers without writes or changing the close gate", async (status, pending, uncertain) => {
+    const origin = await thread();
+    const { decision } = askDecisionRecord(origin, { key: "window", ask: "When?" });
+    answerDecisionRecord(decision.id, "Now");
+    const db = getDb();
+    db.query("UPDATE decision_deliveries SET status=? WHERE decision_id=? AND kind='answer'").run(status, decision.id);
+    const before = db.query("SELECT total_changes() AS count").get();
+    const expected = { openDecisionCount: 0, pendingAnswerCount: pending, uncertainAnswerCount: uncertain };
+    expect(getDecisionWaitSummary(origin)).toEqual(expected);
+    expect(listSlackThreadsForSession(getSession("decision-parent")!).threads).toEqual([
+      expect.objectContaining({ requestId: origin.id, ...expected }),
+    ]);
+    expect(db.query("SELECT total_changes() AS count").get()).toEqual(before);
+    if (pending) {
+      expect(() => closeSlackThreadLifecycle({ childSessionKey: origin.sessionKey! })).toThrow("undelivered answer");
+      expect(getSlackThreadLifecycle(origin.id)?.status).toBe("open");
+      expect(db.query("SELECT total_changes() AS count").get()).toEqual(before);
+    } else {
+      expect(closeSlackThreadLifecycle({ childSessionKey: origin.sessionKey! }).changed).toBe(true);
+    }
+  });
+
+  it("counts distinct decisions and keeps a new question visible beside an older answer in transit", async () => {
+    const origin = await thread();
+    const { decision } = askDecisionRecord(origin, { key: "window", ask: "When?" });
+    answerDecisionRecord(decision.id, "Now");
+    getDb()
+      .query(`INSERT INTO decision_deliveries(id,decision_id,kind,revision,status,created_at)
+        SELECT id || ':extra',decision_id,kind,revision+1,'uncertain',created_at
+        FROM decision_deliveries WHERE decision_id=? AND kind='answer'`)
+      .run(decision.id);
+    askDecisionRecord(origin, { key: "window", ask: "And next time?" });
+    expect(getDecisionWaitSummary(origin)).toEqual({
+      openDecisionCount: 1,
+      pendingAnswerCount: 1,
+      uncertainAnswerCount: 1,
+    });
+    expect(summarizeSlackThread(getSlackThreadLifecycle(origin.id)!)).toMatchObject({
+      openDecisionCount: 1,
+      pendingAnswerCount: 1,
+      uncertainAnswerCount: 1,
+    });
+  });
+
+  it("isolates lifecycle origins across threads of the same agent, tasks and session-shaped ids", async () => {
+    const origin = await thread();
+    const sibling = await thread("2");
+    expect(getSession(origin.sessionKey!)?.agentId).toBe(getSession(sibling.sessionKey!)?.agentId);
+    askDecisionRecord(origin, { key: "window", ask: "When?" });
+    const { decision } = askDecisionRecord(sibling, { key: "window", ask: "When?" });
+    answerDecisionRecord(decision.id, "Now");
+    getDb().query("UPDATE decision_deliveries SET status='uncertain' WHERE decision_id=?").run(decision.id);
+    askDecisionRecord({ ...origin, type: "task" }, { key: "task", ask: "Unrelated task?" });
+    askDecisionRecord({ ...origin, id: origin.sessionKey! }, { key: "session", ask: "Unrelated origin?" });
+    const before = getDb().query("SELECT total_changes() AS count").get();
+    const listed = listSlackThreadsForSession(getSession("decision-parent")!).threads;
+    expect(listed).toHaveLength(2);
+    expect(listed.find((row) => row.requestId === origin.id)).toMatchObject({
+      openDecisionCount: 1,
+      pendingAnswerCount: 0,
+      uncertainAnswerCount: 0,
+    });
+    expect(listed.find((row) => row.requestId === sibling.id)).toMatchObject({
+      openDecisionCount: 0,
+      pendingAnswerCount: 1,
+      uncertainAnswerCount: 1,
+    });
+    expect(getDb().query("SELECT total_changes() AS count").get()).toEqual(before);
   });
 });
 

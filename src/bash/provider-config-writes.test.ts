@@ -86,6 +86,7 @@ describe("writes to runtime provider settings", () => {
     const ctx = { agentId, capabilities: caps("use:tool:Write", "execute:executable:echo") };
     expect(evaluateBashPermission("echo '{}' > .claude/settings.json", ctx).allowed).toBe(false);
     expect(evaluateBashPermission("echo ok > notes.txt", ctx).allowed).toBe(true);
+    expect(evaluateBashPermission("echo x#y > .codex/config.toml", ctx).allowed).toBe(false);
   });
 
   it("resolves a relative redirect against the shell's cwd, not the daemon's", () => {

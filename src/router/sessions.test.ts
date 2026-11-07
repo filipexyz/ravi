@@ -13,10 +13,12 @@ import {
   resetSession,
   setSessionEphemeral,
   updateSessionContext,
+  updateProviderSession,
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverride,
   updateSessionThreadId,
 } from "./sessions.js";
+import { getRecentHistory, saveMessage } from "../db.js";
 import type { MessageContext } from "../runtime/message-types.js";
 import { lowestTierReadInTurn, recordKnowledgeRead } from "../knowledge/store/turn-reads.js";
 import { upsertSessionTurn } from "../session-trace/session-trace-db.js";
@@ -76,6 +78,24 @@ describe("sessions store", () => {
 
     resetSession(session.sessionKey);
     expect(lowestTierReadInTurn(null, Date.now(), session.sessionKey)).toBeNull();
+  });
+
+  it("keeps a durable recovery boundary across explicit reset, provider updates and automatic recovery", () => {
+    const session = getOrCreateSession("agent:main:reset-boundary", "main", "/tmp/main", { name: "reset-boundary" });
+    saveMessage("reset-boundary", "user", "old decision");
+    const boundary = getRecentHistory("reset-boundary", 1)[0]!.id;
+    resetSession(session.sessionKey);
+    expect(getSession(session.sessionKey)?.historyResetAfterId).toBe(boundary);
+    saveMessage("reset-boundary", "user", "new decision");
+    updateProviderSession(session.sessionKey, "codex", "new-provider");
+    resetSession(session.sessionKey, { preserveHistoryContext: true });
+    expect(getSession(session.sessionKey)?.historyResetAfterId).toBe(boundary);
+    expect(
+      getRecentHistory("reset-boundary")
+        .filter((message) => message.id > boundary)
+        .map((message) => message.content),
+    ).toEqual(["new decision"]);
+    expect(getRecentHistory("reset-boundary")).toHaveLength(2);
   });
 
   it("persists effort overrides while preserving default fallback semantics", () => {

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
@@ -86,11 +87,14 @@ function printJson(payload: unknown): void {
 function failPipelineNotFound(op: string, pipelineRef: string, asJson?: boolean): never {
   const candidates = listCrmPipelines({ includeArchived: true }).flatMap((pipeline) => [pipeline.id, pipeline.name]);
   contractFail(op, "PIPELINE_NOT_FOUND", `CRM pipeline not found: ${pipelineRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the pipeline id/name (see suggestions for similar pipelines)",
-      suggestions: suggestSimilar(pipelineRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the pipeline id/name (see suggestions for similar pipelines)",
+        suggestions: suggestSimilar(pipelineRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`CRM pipeline not found: ${pipelineRef}`, { operation: op }),
   });
 }
 
@@ -100,29 +104,38 @@ function failOpportunityNotFound(op: string, opportunityId: string, asJson?: boo
     String(opportunity.title ?? ""),
   ]);
   contractFail(op, "OPPORTUNITY_NOT_FOUND", `CRM opportunity not found: ${opportunityId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the opportunity id (crm_opp_*) or title (see suggestions)",
-      suggestions: suggestSimilar(opportunityId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the opportunity id (crm_opp_*) or title (see suggestions)",
+        suggestions: suggestSimilar(opportunityId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`CRM opportunity not found: ${opportunityId}`, { operation: op }),
   });
 }
 
 function failCrmContactNotFound(op: string, contactRef: string, asJson?: boolean): never {
   contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the contact id or identity with: ravi crm contacts --json",
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the contact id or identity with: ravi crm contacts --json",
+      },
     },
+    diagnostic: errorDiagnostic(`Contact not found: ${contactRef}`, { operation: op }),
   });
 }
 
 function failCrmTaskNotFound(op: string, taskId: string, asJson?: boolean): never {
   contractFail(op, "CRM_TASK_NOT_FOUND", `CRM task not found: ${taskId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the CRM task id with: ravi crm task list --json",
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the CRM task id with: ravi crm task list --json",
+      },
     },
+    diagnostic: errorDiagnostic(`CRM task not found: ${taskId}`, { operation: op }),
   });
 }
 
@@ -1199,16 +1212,21 @@ export class CrmPipelineCommands {
         "PIPELINE_REVIEW_FAILED",
         `Pipeline review found ${report.highSeverityGaps} high-severity gap(s).`,
         {
-          asJson,
-          details: {
-            pipelineId: report.pipelineId,
-            totalGaps: report.totalGaps,
-            highSeverityGaps: report.highSeverityGaps,
-            gaps: report.fields
-              .filter((field) => field.present !== "present")
-              .map(({ group, field, present, suggestion }) => ({ group, field, present, suggestion })),
-            suggestedAction: `Complete the missing pipeline metadata, then run: ravi crm pipeline review ${report.pipelineId} --json`,
+          ...{
+            asJson,
+            details: {
+              pipelineId: report.pipelineId,
+              totalGaps: report.totalGaps,
+              highSeverityGaps: report.highSeverityGaps,
+              gaps: report.fields
+                .filter((field) => field.present !== "present")
+                .map(({ group, field, present, suggestion }) => ({ group, field, present, suggestion })),
+              suggestedAction: `Complete the missing pipeline metadata, then run: ravi crm pipeline review ${report.pipelineId} --json`,
+            },
           },
+          diagnostic: errorDiagnostic(`Pipeline review found ${report.highSeverityGaps} high-severity gap(s).`, {
+            operation: "crm pipeline review",
+          }),
         },
       );
     }
@@ -1282,13 +1300,18 @@ export class CrmPipelineCommands {
         "PIPELINE_VALIDATION_FAILED",
         `Pipeline metadata validation failed with ${result.errors.length} error(s).`,
         {
-          asJson,
-          details: {
-            pipelineId: pipeline.pipeline.id,
-            errors: result.errors,
-            warnings: result.warnings,
-            suggestedAction: `Correct the reported metadata fields, then run: ravi crm pipeline validate ${pipeline.pipeline.id} --json`,
+          ...{
+            asJson,
+            details: {
+              pipelineId: pipeline.pipeline.id,
+              errors: result.errors,
+              warnings: result.warnings,
+              suggestedAction: `Correct the reported metadata fields, then run: ravi crm pipeline validate ${pipeline.pipeline.id} --json`,
+            },
           },
+          diagnostic: errorDiagnostic(`Pipeline metadata validation failed with ${result.errors.length} error(s).`, {
+            operation: "crm pipeline validate",
+          }),
         },
       );
     }
@@ -2214,22 +2237,27 @@ export class CrmOpportunityCommands {
   ) {
     if (value !== undefined && value !== "-" && value !== "null" && !Number.isFinite(Number(value))) {
       contractFail("crm opportunity create", "USAGE_ERROR", `--value must be a number (got: ${value})`, {
-        asJson,
-        exitCode: 2,
-        details: {
-          suggestedAction: "Pass the opportunity value in integer cents, e.g. --value 500000",
-          acceptedFlags: [
-            "--account",
-            "--contact",
-            "--pipeline",
-            "--stage",
-            "--value",
-            "--currency",
-            "--owner",
-            "--json",
-            "--idempotency-key",
-          ],
+        ...{
+          asJson,
+          exitCode: 2,
+          details: {
+            suggestedAction: "Pass the opportunity value in integer cents, e.g. --value 500000",
+            acceptedFlags: [
+              "--account",
+              "--contact",
+              "--pipeline",
+              "--stage",
+              "--value",
+              "--currency",
+              "--owner",
+              "--json",
+              "--idempotency-key",
+            ],
+          },
         },
+        diagnostic: errorDiagnostic(`--value must be a number (got: ${value})`, {
+          operation: "crm opportunity create",
+        }),
       });
     }
     const createInput = {

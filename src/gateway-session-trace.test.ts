@@ -1031,35 +1031,38 @@ describe("Gateway session trace instrumentation", () => {
     ]);
   });
 
-  it("starts native Slack presence as soon as a sourced prompt is published", async () => {
-    const { sessionName } = seedSession();
-    const target = makeSlackTarget();
-    const gateway = makeGateway(
-      mock(async () => ({ messageId: "outbound-1" })),
-      {
-        renewActiveTarget: mock(async () => false),
-      },
-    );
+  it.each(["prompt.published", "prompt.received"])(
+    "starts native Slack presence on %s before execution",
+    async (type) => {
+      const { sessionName } = seedSession();
+      const target = makeSlackTarget();
+      const gateway = makeGateway(
+        mock(async () => ({ messageId: "outbound-1" })),
+        {
+          renewActiveTarget: mock(async () => false),
+        },
+      );
 
-    await handleRuntimePresence(gateway, sessionName, {
-      type: "prompt.published",
-      _source: target,
-    });
+      await handleRuntimePresence(gateway, sessionName, {
+        type,
+        _source: target,
+      });
 
-    expect(emitted).toContainEqual([
-      "ravi.channel.presence.slack",
-      expect.objectContaining({
-        sessionName,
-        active: true,
-        reason: "runtime-prompt.published",
-        target: expect.objectContaining({
-          channel: "slack",
-          chatId: "C123",
-          sourceMessageId: "1783268187.075159",
+      expect(emitted).toContainEqual([
+        "ravi.channel.presence.slack",
+        expect.objectContaining({
+          sessionName,
+          active: true,
+          reason: `runtime-${type}`,
+          target: expect.objectContaining({
+            channel: "slack",
+            chatId: "C123",
+            sourceMessageId: "1783268187.075159",
+          }),
         }),
-      }),
-    ]);
-  });
+      ]);
+    },
+  );
 
   it("starts the next native Slack prompt on the new inbound message even when an outbound anchor is remembered", async () => {
     const { sessionName } = seedSession();
@@ -1343,7 +1346,7 @@ describe("Gateway session trace instrumentation", () => {
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
-  it.each(["dispatch.restart_suppressed", "dispatch.dropped"])(
+  it.each(["dispatch.restart_suppressed", "dispatch.dropped", "dispatch.start_rejected"])(
     "stops presence when the dispatcher abandons the turn (%s)",
     async (type) => {
       const { sessionName } = seedSession();

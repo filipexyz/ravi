@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { pagesLinkGuardReason } from "../../hooks/pages-link-guard.js";
 import { readFileSync } from "node:fs";
@@ -177,11 +178,14 @@ function failContextNotFound(op: string, contextId: string, asJson?: boolean): n
     .slice(0, 40)
     .map((context) => context.contextId);
   contractFail(op, "CONTEXT_NOT_FOUND", `Context not found: ${contextId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the context id (see suggestions; list with: ravi context list --all --json)",
-      suggestions: suggestSimilar(contextId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the context id (see suggestions; list with: ravi context list --all --json)",
+        suggestions: suggestSimilar(contextId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Context not found: ${contextId}`, { operation: op }),
   });
 }
 
@@ -203,11 +207,14 @@ function failCredentialEntryNotFound(
   const entries = file ? serializeCredentialsFile(file) : [];
   const candidates = entries.flatMap((entry) => [entry.contextId, entry.label]);
   contractFail(op, "CREDENTIAL_NOT_FOUND", `No credential entry for ${maskContextKey(contextKey)} in ${path}`, {
-    asJson,
-    details: {
-      suggestedAction: "Inspect stored entries with: ravi context credentials list --json",
-      suggestions: suggestSimilar(contextKey, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Inspect stored entries with: ravi context credentials list --json",
+        suggestions: suggestSimilar(contextKey, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`No credential entry for ${maskContextKey(contextKey)} in ${path}`, { operation: op }),
   });
 }
 
@@ -649,6 +656,51 @@ export class ContextCommands {
     payloadJson?: string,
   ) {
     const output = await this.handleCodexBashHook(undefined, payloadJson);
+    console.log(JSON.stringify(output));
+    return output;
+  }
+  @Command({
+    name: "bridge-tool-hook",
+    description: "Authorize one Console bridge command, including an owner decision when eligible",
+    remoteTimeoutMs: 600_000,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "context",
+    action: "bridge-tool-hook",
+    risk: "high",
+    redactions: ["payload"],
+    localOperator: false,
+  })
+  async bridgeToolHook(
+    @Option({ flags: "--json", description: "Machine output" }) _json = false,
+    @Option({ flags: "--payload <json>", description: "Hook input" }) payloadJson?: string,
+  ) {
+    let output: Record<string, unknown>;
+    try {
+      const context = this.requireResolvedContext({ touch: false, readOnly: true });
+      if (typeof context.metadata?.bridgeTurnId !== "string") throw new Error("A live bridge turn is required");
+      const payload = parseCodexHookPayload(payloadJson),
+        input = asRecord(payload.tool_input);
+      const command = typeof input?.command === "string" ? input.command : "";
+      if (!["Bash", "shell"].includes(String(payload.tool_name)) || !command)
+        throw new Error("Unsupported bridge tool");
+      const { createRuntimeHostServices } = await import("../../runtime/host-services.js");
+      const services = createRuntimeHostServices({
+        context,
+        agentId: context.agentId!,
+        sessionName: context.sessionName!,
+        toolContext: {},
+      });
+      const decision = await services.authorizeCommandExecution({
+        command,
+        input: input ?? {},
+        eventData: { command, toolUseId: payload.tool_use_id ?? null },
+      });
+      output = decision.approved ? {} : buildPreToolUseDenyResult(decision.reason ?? "Action denied");
+    } catch (error) {
+      output = buildPreToolUseDenyResult(`Bridge command authority is unavailable: ${errorDiagnostic(error).cause}`);
+    }
     console.log(JSON.stringify(output));
     return output;
   }
@@ -1251,6 +1303,7 @@ export class ContextCredentialsCommands {
 }
 
 declareCommandReturns(ContextCommands, {
+  bridgeToolHook: contextCodexBashHookReturnSchema,
   authorize: contextAuthorizeReturnSchema,
   capabilities: contextCapabilitiesReturnSchema,
   check: contextCheckReturnSchema,
@@ -1358,12 +1411,15 @@ function parseDurationMs(input: string | undefined): number | undefined {
 function failContextIssueError(error: unknown, asJson?: boolean): never {
   if (isRuntimeContextError(error)) {
     contractFail("context issue", error.code, error.message, {
-      asJson,
-      exitCode: error.exitCode,
-      details: {
-        suggestedAction: error.suggestedAction,
-        ...error.details,
+      ...{
+        asJson,
+        exitCode: error.exitCode,
+        details: {
+          suggestedAction: error.suggestedAction,
+          ...error.details,
+        },
       },
+      diagnostic: errorDiagnostic(error, { operation: "context issue" }),
     });
   }
   throw error;
@@ -1371,9 +1427,12 @@ function failContextIssueError(error: unknown, asJson?: boolean): never {
 
 function failContextIssueUsage(message: string, suggestedAction: string, asJson?: boolean): never {
   contractFail("context issue", "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: { suggestedAction },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction },
+    },
+    diagnostic: errorDiagnostic(message, { operation: "context issue" }),
   });
 }
 
@@ -1412,11 +1471,14 @@ function parseDelegatedIdentity(
   if (!dbGetAgent(agentId)) {
     const candidates = dbListAgents().flatMap((agent) => [agent.id, agent.name]);
     contractFail("context issue", "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
-      asJson,
-      details: {
-        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-        suggestions: suggestSimilar(agentId, candidates),
+      ...{
+        asJson,
+        details: {
+          suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+          suggestions: suggestSimilar(agentId, candidates),
+        },
       },
+      diagnostic: errorDiagnostic(`Agent not found: ${agentId}`, { operation: "context issue" }),
     });
   }
   // Ownership comes from the session registry, not from the key's shape: a

@@ -400,6 +400,7 @@ export interface RuntimePlugin {
 }
 
 export interface RuntimePrepareSessionRequest {
+  humanBridge?: boolean;
   agentId: string;
   cwd: string;
   plugins?: RuntimePlugin[];

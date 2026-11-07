@@ -36,6 +36,9 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 - CI MUST validate changed specs with `ravi specs get <spec_id> --mode full --json` and `ravi specs get <spec_id> --mode checks --json`.
 - CI MUST fail on spec id/path/kind mismatch, invalid frontmatter, missing required companion, or empty/non-verifiable CHECKS for changed specs.
 - Runtime/consumer changes MUST include or trigger focused tests.
+- Tests sharing a Bun process MUST preserve the complete export surface of shared
+  modules. Use scoped publisher injection with per-test cleanup when available;
+  `mock.restore()` alone MUST NOT be treated as restoration of `mock.module()`.
 - The session-dispatcher state-isolation regression MUST run in its own process
   with a disposable outer state directory and a test-only SQLite preload that
   rejects production state paths before opening them. Even a caught rejection

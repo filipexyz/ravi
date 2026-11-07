@@ -1,5 +1,6 @@
 import { initializeStateSchema } from "./db/schema-owner.js";
 import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "./db/state-boundary.js";
+import { isBridgeSessionRef } from "./bridge/isolation.js";
 import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -68,8 +69,8 @@ function initializeChatSchema(db: Database): void {
   // Migration: add sdk_session_id column if missing (existing DBs)
   try {
     db.exec("ALTER TABLE messages ADD COLUMN sdk_session_id TEXT");
-  } catch {
-    // column already exists
+  } catch (error) {
+    if (!(error instanceof Error) || !/duplicate column name/i.test(error.message)) throw error;
   }
   for (const column of [
     "agent_id",
@@ -85,8 +86,8 @@ function initializeChatSchema(db: Database): void {
   ]) {
     try {
       db.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`);
-    } catch {
-      // column already exists
+    } catch (error) {
+      if (!(error instanceof Error) || !/duplicate column name/i.test(error.message)) throw error;
     }
   }
 
@@ -131,7 +132,8 @@ export interface SaveMessageMetadata {
 
 /**
  * Persist one history row. Returns false when the row was an exact same-turn
- * replay (same session, turn, role, class and content) and nothing was written;
+ * replay (same session, turn, role, class and content), or belongs to the private
+ * bridge journal, and nothing was written;
  * a new utterance that merely resembles an older one is always written.
  */
 export function saveMessage(
@@ -141,6 +143,9 @@ export function saveMessage(
   providerSessionId?: string | null,
   metadata: SaveMessageMetadata = {},
 ): boolean {
+  // The human journal is authoritative; never copy private conversations into
+  // the ordinary chat/knowledge store, whose readers lack Console delegation.
+  if (isBridgeSessionRef(sessionId)) return false;
   const database = getDb();
   const turnId = metadata.turnId?.trim() || null;
   const utteranceClass = role === "assistant" ? (metadata.utteranceClass ?? "final") : null;

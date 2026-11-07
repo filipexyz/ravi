@@ -155,6 +155,26 @@ describe("gh follow maintenance", () => {
     expect(writes).toEqual([[]]);
   });
 
+  it("retains a resolved PR when follow ownership cannot be registered yet", async () => {
+    const writes: PendingGhFollow[][] = [];
+    const result = await runMaintenance({
+      readPending: () => [pending()],
+      writePending: (entries) => {
+        writes.push(entries);
+      },
+      listTriggers: () => [],
+      listWatches: () => [],
+      resolvePrNumber: () => 7,
+      ensureFollow: async () => {
+        throw new Error("durable parent missing");
+      },
+      now: () => 1000,
+    });
+    expect(result.pendingResolved).toBe(0);
+    expect(result.errors).toBe(1);
+    expect(writes).toEqual([]);
+  });
+
   it("keeps a pending that cannot be resolved yet", async () => {
     const writes: PendingGhFollow[][] = [];
     const result = await runMaintenance({
@@ -255,7 +275,7 @@ describe("gh follow maintenance", () => {
         return true;
       },
       updateTrigger: (id, patch) => {
-        updates.push([id, patch.filter]);
+        updates.push([id, patch.filter!]);
       },
       listPrStates: () =>
         new Map([

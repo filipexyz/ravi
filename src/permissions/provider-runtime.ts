@@ -1,3 +1,4 @@
+import { authorizeContextCapabilities } from "./context-capabilities-provider.js";
 import { randomUUID } from "node:crypto";
 import type { ContextCapability } from "../router/router-db.js";
 import { getContext } from "../cli/context.js";
@@ -42,6 +43,8 @@ export function authorizePermission(
   request: PermissionProviderRequest,
   options: AuthorizePermissionOptions = {},
 ): PermissionProviderDecision {
+  // Managed bridge contexts enforce the verified Console decision, not a second provider policy chain.
+  if (request.context?.metadata?.bridgeTurnId !== undefined) return authorizeContextCapabilities(request);
   const startedAt = Date.now();
   const runtimeRequest = withRequestId(request);
   return evaluateProviderChain(runtimeRequest, options.providers ?? getConfiguredPermissionProviders(), startedAt);
@@ -59,6 +62,7 @@ export function findApprovalRequirement(
   requests: PermissionProviderRequest[],
   options: AuthorizePermissionOptions = {},
 ): PermissionProviderDecision | null {
+  requests = requests.filter((request) => request.context?.metadata?.bridgeTurnId === undefined);
   const providers = (options.providers ?? getConfiguredPermissionProviders()).filter(
     (provider) => provider.mayRequireApproval === true,
   );

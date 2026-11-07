@@ -8,9 +8,10 @@ const initialized = new WeakMap<Database, Set<string>>();
 
 export class StateSchemaNotReadyError extends Error {
   readonly code = "STATE_SCHEMA_NOT_READY";
-  constructor(component: string) {
+  constructor(component: string, options?: ErrorOptions) {
     super(
       `STATE_SCHEMA_NOT_READY: ${component} is not initialized for this release. Start the installed daemon first, then start ravi-channels with the same release. The channel runner will not migrate state.`,
+      options,
     );
   }
 }
@@ -21,8 +22,8 @@ export function assertStateSchemaReady(db: Database, component: string): void {
       version: string;
     } | null;
     if (row?.version === STATE_SCHEMA_VERSION) return;
-  } catch {
-    // Missing marker/table means the owner has not completed initialization.
+  } catch (error) {
+    throw new StateSchemaNotReadyError(component, { cause: error });
   }
   throw new StateSchemaNotReadyError(component);
 }
@@ -42,10 +43,8 @@ export function initializeStateSchema(
     db.exec("CREATE TABLE IF NOT EXISTS state_schema_versions (component TEXT PRIMARY KEY, version TEXT NOT NULL)");
     db.query("DELETE FROM state_schema_versions WHERE component = ?").run(component);
     initialize();
-    db.query("INSERT INTO state_schema_versions (component, version) VALUES (?, ?)").run(
-      component,
-      STATE_SCHEMA_VERSION,
-    );
+    db.query(`INSERT INTO state_schema_versions (component, version) VALUES (?, ?)
+      ON CONFLICT(component) DO UPDATE SET version = excluded.version`).run(component, STATE_SCHEMA_VERSION);
   }
   const components = initialized.get(db) ?? new Set<string>();
   components.add(component);

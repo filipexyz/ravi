@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "nod
 import { dirname, join, resolve } from "node:path";
 import { deflateRawSync } from "node:zlib";
 
+import { assertCallerFileAccess } from "../cli/caller-cwd.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 
 /**
@@ -49,6 +50,7 @@ export async function downloadPageFiles(input: {
   now?: Date;
 }): Promise<PageReadDownload> {
   const target = resolve(input.out);
+  assertCallerFileAccess(target, "write");
   assertWritableTarget(target, input.kind);
   const seen = new Set<string>();
   for (const file of input.files) {
@@ -57,6 +59,7 @@ export async function downloadPageFiles(input: {
       throw new CloudAuthError("SERVER_UNAVAILABLE", `Console listed ${path.slice(0, 200)} twice.`);
     }
     seen.add(path);
+    if (input.kind === "directory") assertCallerFileAccess(join(target, path), "write");
   }
 
   const fetchFile = input.fetch ?? ((url: string) => fetch(url));
@@ -79,6 +82,12 @@ export async function downloadPageFiles(input: {
   });
 
   const entries = input.files.map((file, index) => ({ path: safeRelativePath(file.path), data: bytes[index] }));
+  // Downloads await remote I/O: recheck every destination before any write.
+  // Archive members stay inert; only the ZIP itself is a filesystem write.
+  assertCallerFileAccess(target, "write");
+  if (input.kind === "directory") {
+    for (const entry of entries) assertCallerFileAccess(join(target, entry.path), "write");
+  }
   if (input.kind === "zip") {
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, buildZip(entries, input.now ?? new Date()));

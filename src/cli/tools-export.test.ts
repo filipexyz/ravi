@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { AppsCommands } from "./commands/apps.js";
@@ -53,13 +54,13 @@ class ContractToolCommands {
   @Command({ name: "boom", description: "Throw an unexpected internal error" })
   @CommandAccess({ kind: "read", resource: "contract", action: "boom", risk: "low" })
   boom() {
-    throw new Error("private provider detail");
+    throw new Error("HTTP 503: transcription service unavailable; token=fixture-token");
   }
 
   @Command({ name: "legacy", description: "Throw a legacy expected failure" })
   @CommandAccess({ kind: "read", resource: "contract", action: "legacy", risk: "low" })
   legacy() {
-    fail("PRIVATE_LEGACY_VALIDATION_8K2R");
+    fail("Audio format is invalid; api_key=fixture-token");
   }
 
   @Command({ name: "legacy-safe", description: "Throw a safe legacy expected failure" })
@@ -72,9 +73,12 @@ class ContractToolCommands {
   @CommandAccess({ kind: "read", resource: "contract", action: "emitted", risk: "low" })
   emitted() {
     contractFail("contract emitted", "USAGE_ERROR", "invalid tool input", {
-      asJson: true,
-      exitCode: 2,
-      details: { acceptedFlags: ["--json"] },
+      ...{
+        asJson: true,
+        exitCode: 2,
+        details: { acceptedFlags: ["--json"] },
+      },
+      diagnostic: errorDiagnostic("invalid tool input", { operation: "contract emitted" }),
     });
   }
 
@@ -82,7 +86,10 @@ class ContractToolCommands {
   @CommandAccess({ kind: "read", resource: "contract", action: "silent", risk: "low" })
   silent() {
     throw new ContractError("contract silent", "WRITE_REQUIRES_EXECUTE", "confirmation required", 3, {
-      dryRun: true,
+      ...errorDiagnostic("confirmation required", { operation: "contract silent" }),
+      ...{
+        dryRun: true,
+      },
     });
   }
 
@@ -295,12 +302,18 @@ describe("tools export contract errors", () => {
 
     expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
     const text = result.content[0]?.text ?? "{}";
-    expect(text).not.toContain("private provider detail");
+    expect(JSON.parse(text).error.cause).toBe("HTTP 503: transcription service unavailable; token=[redacted:token]");
+    expect(text).not.toContain("fixture-token");
     expect(JSON.parse(text)).toMatchObject({
       success: false,
       op: "contract boom",
-      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+      error: {
+        code: "UNHANDLED_ERROR",
+        message: "contract boom failed internally. Report the operation to the operator before retrying.",
+        retryable: false,
+      },
     });
+    expect(text).not.toContain("requestId");
   });
 
   it("converts a legacy expected failure into one canonical envelope", async () => {
@@ -316,9 +329,9 @@ describe("tools export contract errors", () => {
     expect(JSON.parse(text)).toMatchObject({
       success: false,
       op: "contract legacy",
-      error: { code: "COMMAND_FAILED", message: "Command could not be completed." },
+      error: { code: "COMMAND_FAILED", message: "Audio format is invalid; api_key=[redacted:api_key]" },
     });
-    expect(text).not.toContain("PRIVATE_LEGACY_VALIDATION_8K2R");
+    expect(text).not.toContain("Audio format is invalid; api_key=fixture-token");
   });
 
   it("preserves a safe legacy expected failure message in the canonical envelope", async () => {

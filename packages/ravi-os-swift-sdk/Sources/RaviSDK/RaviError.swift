@@ -30,17 +30,103 @@ public enum RaviContractOutcome: String, Decodable, Sendable, Equatable {
   case failed
 }
 
+public struct RaviDiagnosticActor: Decodable, Sendable, Equatable {
+  public let type: String
+  public let id: String
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: RaviErrorCodingKey.self)
+    let type = try container.decode(String.self, forKey: RaviErrorCodingKey("type"))
+    let id = try container.decode(String.self, forKey: RaviErrorCodingKey("id"))
+    guard matchesContractPattern(type, pattern: #"^[a-z][a-z0-9_-]{0,31}$"#),
+      matchesContractPattern(id, pattern: #"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"#),
+      isDiagnosticIdentifier(id)
+    else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid diagnostic actor"))
+    }
+    self.type = type
+    self.id = id
+  }
+}
+
+public struct RaviDiagnosticContext: Decodable, Sendable, Equatable {
+  public let status: Int?
+  public let provider: String?
+  public let model: String?
+  public let operation: String?
+  public let actor: RaviDiagnosticActor?
+  public let file: String?
+  public let syscall: String?
+  public let code: String?
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: RaviErrorCodingKey.self)
+    let status = try? container.decode(Int.self, forKey: RaviErrorCodingKey("status"))
+    self.status = status.flatMap { (100...599).contains($0) ? $0 : nil }
+    func text(_ field: String) -> String? {
+      (try? container.decode(String.self, forKey: RaviErrorCodingKey(field))).map(sanitizeContractString)
+    }
+    func identifier(_ field: String) -> String? {
+      guard let value = try? container.decode(String.self, forKey: RaviErrorCodingKey(field)),
+        matchesContractPattern(value, pattern: #"^[A-Za-z0-9_][A-Za-z0-9_.:/ -]{0,159}$"#),
+        isDiagnosticIdentifier(value) else { return nil }
+      return value
+    }
+    self.provider = identifier("provider")
+    self.model = identifier("model")
+    self.operation = identifier("operation")
+    self.file = text("file").flatMap { $0.count <= 4096 ? $0 : nil }
+    self.syscall = identifier("syscall")
+    self.code = identifier("code")
+    self.actor = try? container.decode(RaviDiagnosticActor.self, forKey: RaviErrorCodingKey("actor"))
+  }
+
+  fileprivate var json: RaviJSON {
+    var fields: [String: RaviJSON] = [:]
+    for (key, value) in [
+      "provider": provider, "model": model, "operation": operation,
+      "file": file, "syscall": syscall, "code": code,
+    ] {
+      if let value { fields[key] = .string(value) }
+    }
+    if let status { fields["status"] = .number(Double(status)) }
+    if let actor { fields["actor"] = .object(["type": .string(actor.type), "id": .string(actor.id)]) }
+    return .object(fields)
+  }
+}
+
+private func isDiagnosticIdentifier(_ value: String) -> Bool {
+  !value.contains("://") && sanitizeContractString(value) == value
+    && value.range(of: #"(?i)(?:rctx_|sk-|gsk_|gh[pousr]_|github_pat_|xox[baprs]-|xapp-)"#,
+      options: .regularExpression) == nil
+}
+
+private func safeContractCode(_ value: String) -> String {
+  matchesContractPattern(value, pattern: #"[A-Za-z][A-Za-z0-9_]{0,95}"#) && isDiagnosticIdentifier(value)
+    ? value : "REMOTE_ERROR"
+}
+
+private func safeContractOperation(_ value: String) -> String {
+  value.count <= 160
+    && matchesContractPattern(value, pattern: #"[A-Za-z][A-Za-z0-9_-]*(?:[ .][A-Za-z][A-Za-z0-9_-]*)*"#)
+    && isDiagnosticIdentifier(value) ? value : "gateway"
+}
+
 public struct RaviContractErrorPayload: Decodable, Sendable, Equatable {
   public let code: String
   public let message: String
   public let retryable: Bool
+  public let cause: String?
+  public let context: RaviDiagnosticContext?
   public let details: [String: RaviJSON]
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: RaviErrorCodingKey.self)
-    self.code = try container.decode(String.self, forKey: RaviErrorCodingKey("code"))
+    self.code = safeContractCode(try container.decode(String.self, forKey: RaviErrorCodingKey("code")))
     self.message = try container.decode(String.self, forKey: RaviErrorCodingKey("message"))
     self.retryable = try container.decode(Bool.self, forKey: RaviErrorCodingKey("retryable"))
+    self.cause = (try? container.decode(String.self, forKey: RaviErrorCodingKey("cause"))).map(sanitizeContractString)
+    self.context = try? container.decode(RaviDiagnosticContext.self, forKey: RaviErrorCodingKey("context"))
 
     let allowedDetails: Set<String> = [
       "suggestedAction", "suggestions", "acceptedFlags", "acceptedPositionals",
@@ -53,6 +139,8 @@ public struct RaviContractErrorPayload: Decodable, Sendable, Equatable {
         details[key.stringValue] = projected
       }
     }
+    if let cause { details["cause"] = .string(cause) }
+    if let context { details["context"] = context.json }
     self.details = details
   }
 }
@@ -67,7 +155,7 @@ public struct RaviContractErrorBody: Decodable, Sendable, Equatable {
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: RaviErrorCodingKey.self)
     self.success = try container.decode(Bool.self, forKey: RaviErrorCodingKey("success"))
-    self.op = try container.decode(String.self, forKey: RaviErrorCodingKey("op"))
+    self.op = safeContractOperation(try container.decode(String.self, forKey: RaviErrorCodingKey("op")))
     self.error = try container.decode(RaviContractErrorPayload.self, forKey: RaviErrorCodingKey("error"))
     self.exitCode = try container.decode(Int.self, forKey: RaviErrorCodingKey("exitCode"))
     self.outcome = try container.decode(RaviContractOutcome.self, forKey: RaviErrorCodingKey("outcome"))

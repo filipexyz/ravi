@@ -85,6 +85,27 @@ channels.inbound_contact_unresolved
 
 ## False Positive Guards
 
+- `bun test src/security/nats-url-controls.test.ts` MUST cover real TAB/LF/CR in
+  schemes (including `nats:\n//`), userinfo and list boundaries, plus NUL/DEL and
+  credentials demoted into path/query/fragment. URL, report and log MUST withhold
+  the full input, with `unknown/refuse` and no DNS/TCP calls for those cases.
+- `bun test src/security/nats-url-redaction.test.ts` MUST cover passwords ending
+  in a comma, passwords with a comma and suffix, and numeric prefixes that could
+  be mistaken for ports. URL, complete report and log payload MUST all withhold
+  the input; no DNS/TCP probe may receive its fragments. Legitimate explicit-URL
+  lists, unauthenticated bare lists and `%2C` userinfo MUST remain supported.
+- `bun test src/security/nats-exposure-review.test.ts` MUST cover real TCP-probe
+  EMFILE in a subprocess with a low descriptor limit, injected probe failures,
+  space-containing userinfo in redaction/report/log output, the second local
+  server port, and the complete IPv4-mapped loopback URL after normalization.
+- The descriptor-exhaustion fixture MUST NOT run in the test runner or affect
+  production processes; its subprocess MUST have a bounded lifetime.
+- `bun test src/security/nats-exposure.test.ts` MUST distinguish thrown/null
+  enumeration failures from a successful empty list and refuse private startup
+  for the failures.
+- `bun test src/cli/commands/doctor.test.ts` MUST cover NATS exposure and state
+  directory findings with injected dependencies and preserve read-only behavior.
+
 - Verb heuristics MUST NOT be the only evidence for an `error` permission
   finding.
 - Legacy process names MUST be normalized before runtime failures are emitted.

@@ -105,6 +105,23 @@ CLI/build/test/worktree execution must select an isolated `RAVI_STATE_DIR` on th
 
 If a legitimate runtime is refused after rollout, restore the previous known-good installed package and existing launchers, recover service, then inspect package location/process registration. No environment setup order or DB rollback is introduced. See `.ravi/specs/quality/state-boundary/RUNBOOK.md`.
 
+### Sanctioned publication on the production host
+
+The production host must not run the full build/suite required by pre-push.
+For that host's explicitly sanctioned Git Data API path, keep pre-commit active,
+run focused tests, upload the Git objects and branch via the API, and verify
+the remote tree and commit SHA against the local commit. Do not use `git push`
+with disabled hooks. Record the literal upload commands and checks left to CI
+in the PR description.
+
+After upload, create or update the ready PR from the publishing Ravi session and
+register its CI follow. Verify the live watcher and its reply session before
+claiming persistent follow-up. A thread publisher hands CI to its durable
+parent; never close the only recipient while its checks are pending.
+
+Independent review belongs in the PR description. Quality Gate is the required
+merge check; the retired Review Gate must not be reinstated by this workflow.
+
 ## Adding or changing a CLI command
 
 Each command group is a class in `src/cli/commands/`, described with decorators from `src/cli/decorators.ts`. The decorated registry is the single source for the CLI, the exported tools, the HTTP gateway, OpenAPI and the generated SDKs.

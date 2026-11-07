@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ZodTypeAny } from "zod";
 import { CliExpectedError } from "../expected-error.js";
@@ -27,6 +28,7 @@ const revokedRuntimeContextCalls: Array<{ sessionKey: string; reason?: string }>
 const providerRequestCalls: Array<{ topic: string; data: Record<string, unknown>; timeoutMs: number }> = [];
 let providerRequestResponse: Record<string, unknown> = { success: true };
 let listedSessions: Array<Record<string, unknown>> = [];
+let orphanThread: Record<string, unknown> | null = null;
 let resolvedSession: Record<string, unknown> | null = null;
 let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
 let listedContexts: Array<Record<string, unknown>> = [];
@@ -61,6 +63,7 @@ const agentChatActionCounts = new Map<string, { ownMessageCount: number; ownText
 let stickerCatalog: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
+let closeThreadError: Error | null = null;
 const closedSlackThreads: Array<{ session: Record<string, unknown>; returnResult?: string }> = [];
 const reportedSlackThreads: Array<{ session: Record<string, unknown>; message: string }> = [];
 const sentSlackThreadMessages: Array<{
@@ -78,6 +81,8 @@ const fakeSlackThreadSummary = {
   childSessionName: "dev-slack-t-1713000000000100",
   childSessionMissing: false,
   openDecisionCount: 0,
+  pendingAnswerCount: 0,
+  uncertainAnswerCount: 0,
   slackThreadTs: "1713000000.000100",
   link: null,
   runtime: {
@@ -107,6 +112,7 @@ const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 let toolContext: Record<string, unknown> | undefined;
 let threadIdentityAssessment: Record<string, unknown> = { kind: "none" };
 let scopeEnforced = false;
+let sessionModifyAllowed = true;
 let canAccess = true;
 let sessionGoal: Record<string, unknown> | null = null;
 
@@ -218,6 +224,7 @@ mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
     };
   },
   findSlackThreadLifecycleByChildSession: () => null,
+  findSlackThreadLifecycleByChildRef: () => orphanThread,
 }));
 
 mock.module("../../router/thread-identity.js", () => ({
@@ -277,7 +284,13 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
     const [root, thread] = platformChatId.split("#");
     return root && thread ? { platformChatId: root, providerThreadId: thread } : null;
   },
+  closeSlackThreadRecord: async (record: Record<string, unknown>) => ({
+    record: { ...record, status: "closed", closeSequence: 1, parentReturnRequested: false },
+    changed: true,
+    parentReturnDelivered: false,
+  }),
   closeSlackThread: async (session: Record<string, unknown>, returnResult?: string) => {
+    if (closeThreadError) throw closeThreadError;
     closedSlackThreads.push({ session, ...(returnResult ? { returnResult } : {}) });
     return {
       changed: true,
@@ -496,7 +509,7 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => (scopeEnforced ? { agentId: "dev" } : undefined),
   isScopeEnforced: () => scopeEnforced,
   canAccessSession: () => canAccess,
-  canModifySession: () => true,
+  canModifySession: () => sessionModifyAllowed,
   canAccessResource: () => true,
   canAccessContact: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
@@ -624,6 +637,7 @@ async function captureLogsAsync(run: () => Promise<unknown>): Promise<string> {
 beforeEach(() => {
   toolContext = undefined;
   scopeEnforced = false;
+  sessionModifyAllowed = true;
   canAccess = true;
   sessionGoal = null;
   chatHistory = [];
@@ -642,8 +656,12 @@ beforeEach(() => {
   publishedOutboundJobs.length = 0;
   createdSlackThreadLifecycles.length = 0;
   closedSlackThreads.length = 0;
+  closeThreadError = null;
   reportedSlackThreads.length = 0;
   sentSlackThreadMessages.length = 0;
+  fakeSlackThreadSummary.openDecisionCount = 0;
+  fakeSlackThreadSummary.pendingAnswerCount = 0;
+  fakeSlackThreadSummary.uncertainAnswerCount = 0;
   threadIdentityAssessment = { kind: "none" };
   displayNameUpdates = [];
   deletedSessionKeys = [];
@@ -668,6 +686,7 @@ describe("SessionCommands wait mode", () => {
     claudeEvents = [];
     responseEvents = [];
     publishedPrompts.length = 0;
+    orphanThread = null;
     resolvedSession = null;
     sessionDerivedSource = undefined;
     listedContexts = [];
@@ -1380,6 +1399,18 @@ describe("SessionCommands list --json", () => {
     ];
   });
 
+  it("omits private bridge sessions even when ordinary scope enforcement is bypassed", () => {
+    listedSessions.push({
+      ...listedSessions[0]!,
+      sessionKey: "agent:main:console:00000000-0000-4000-8000-000000000001",
+      name: "legacy-alias",
+    });
+    scopeEnforced = false;
+    const payload = JSON.parse(captureLogs(() => new SessionCommands().list(undefined, false, true)));
+    expect(payload.total).toBe(1);
+    expect(payload.sessions[0].sessionKey).toBe("agent:main:main");
+  });
+
   it("prints structured session entities", () => {
     const payload = JSON.parse(
       captureLogs(() => {
@@ -1909,6 +1940,34 @@ describe("SessionCommands attach hints", () => {
     );
   });
 
+  it("closes an orphan through its durable record without recreating a session", async () => {
+    orphanThread = {
+      requestId: "slack-thread:orphan",
+      parentSessionKey: "parent",
+      parentSessionName: "parent",
+      childSessionKey: "parent:thread:1",
+      childSessionName: "orphan",
+      platformChatId: "C123",
+      providerThreadId: "1",
+    };
+    resolvedSession = null;
+    const result = await new SessionCommands().closeThread(undefined, "orphan", true);
+    expect(result).toMatchObject({
+      closed: true,
+      childSession: { sessionName: "orphan", sessionKey: "parent:thread:1" },
+    });
+    expect(resolvedSession).toBeNull();
+    scopeEnforced = true;
+    sessionModifyAllowed = false;
+    await expect(new SessionCommands().closeThread(undefined, "orphan", true)).rejects.toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+    orphanThread = null;
+    await expect(new SessionCommands().closeThread(undefined, "missing", true)).rejects.toMatchObject({
+      code: "SESSION_NOT_FOUND",
+    });
+  });
+
   it("queues Slack thread creation with the selected child model", async () => {
     const sessionKey = "agent:dev:slack:ravi-slack:C123";
     resolvedSession = {
@@ -2144,7 +2203,11 @@ describe("SessionCommands attach hints", () => {
     expect(publishedOutboundJobs).toHaveLength(0);
   });
 
-  it("checks the model against the runtime the child will actually start on", async () => {
+  it.each([
+    ["claude", "gpt-5.6", /does not belong to the claude runtime/],
+    ["pi", "gpt-6-astra", /--provider codex/],
+    ["codex", "deepseek/deepseek-flash", /does not belong to the codex runtime/],
+  ] as const)("checks thread model against the inherited %s runtime", async (provider, model, error) => {
     const sessionKey = "agent:dev:slack:ravi-slack:C123";
     resolvedSession = {
       sessionKey,
@@ -2183,7 +2246,7 @@ describe("SessionCommands attach hints", () => {
     // Nothing pins the child here: its runtime comes from the agent, and that is
     // the provider the model has to be valid for.
     routerConfig = {
-      agents: { dev: { id: "dev", name: "dev", cwd: "/tmp/dev", provider: "claude" } },
+      agents: { dev: { id: "dev", name: "dev", cwd: "/tmp/dev", provider } },
       channels: {
         "ravi-slack": {
           name: "ravi-slack",
@@ -2199,16 +2262,64 @@ describe("SessionCommands attach hints", () => {
     await expect(
       new SessionCommands().createThread(
         "Investigate this branch",
-        "gpt-5.6",
+        model,
         undefined,
         undefined,
         undefined,
         undefined,
         true,
       ),
-    ).rejects.toThrow(/does not belong to the claude runtime/);
+    ).rejects.toThrow(error);
     expect(createdSlackThreadLifecycles).toHaveLength(0);
     expect(publishedOutboundJobs).toHaveLength(0);
+    routerConfig.agents.dev!.model = provider === "pi" ? "gpt-6-astra" : "deepseek/deepseek-flash";
+    await expect(
+      new SessionCommands().createThread("Investigate", undefined, undefined, undefined, undefined, undefined, true),
+    ).rejects.toMatchObject({ code: "THREAD_MODEL_INVALID" });
+    expect(createdSlackThreadLifecycles).toHaveLength(0);
+    expect(publishedOutboundJobs).toHaveLength(0);
+    resolvedSession!.runtimeProviderOverride = "pi";
+    await expect(
+      new SessionCommands().createThread(
+        "Investigate",
+        "gpt-6-astra",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toMatchObject({ code: "THREAD_MODEL_INVALID" });
+    expect(createdSlackThreadLifecycles).toHaveLength(0);
+    expect(publishedOutboundJobs).toHaveLength(0);
+    await new SessionCommands().createThread(
+      "Investigate",
+      "gpt-6-astra",
+      "codex",
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(createdSlackThreadLifecycles[0]).toMatchObject({ providerOverride: "codex", modelOverride: "gpt-6-astra" });
+  });
+
+  it("preserves the active-trigger close refusal and actionable IDs", async () => {
+    const key = "parent:thread:1.2";
+    resolvedSession = { sessionKey: key, name: "child", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: key, sessionName: "child" };
+    closeThreadError = new ContractError(
+      "sessions close-thread",
+      "THREAD_TRIGGERS_PENDING",
+      "Thread still receives active triggers: abcd1234.",
+      1,
+      {
+        ...errorDiagnostic("Thread still receives active triggers: abcd1234.", { operation: "sessions close-thread" }),
+        ...{ triggerIds: ["abcd1234"], suggestedAction: "ravi triggers set abcd1234 replySession parent" },
+      },
+    );
+    await expect(new SessionCommands().closeThread("done", undefined, true)).rejects.toBe(closeThreadError);
+    expect(closedSlackThreads).toHaveLength(0);
   });
 
   it("closes the current Slack child and opts into a parent return only with --return", async () => {
@@ -2322,6 +2433,41 @@ describe("SessionCommands attach hints", () => {
     await expect(new SessionCommands().threadSend("vanished", "Hello", undefined, true)).rejects.toMatchObject({
       code: "THREAD_SESSION_MISSING",
     });
+  });
+
+  it.each([0, 1, 2])("renders %i pending answers in human and JSON thread listings", (count) => {
+    const rootKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: rootKey, sessionName: "dev-slack" };
+    fakeSlackThreadSummary.openDecisionCount = 1;
+    fakeSlackThreadSummary.pendingAnswerCount = count;
+    fakeSlackThreadSummary.uncertainAnswerCount = count;
+    const commands = new SessionCommands();
+    const human = captureLogs(() => commands.threads());
+    expect(human).toContain("(1 decisions pending)");
+    if (count) {
+      expect(human).toContain(`(${count} ${count === 1 ? "resposta" : "respostas"} aguardando admissão)`);
+      expect(human).toContain(`(${count} ${count === 1 ? "entrega incerta" : "entregas incertas"})`);
+    } else {
+      expect(human).not.toContain("aguardando admissão");
+      expect(human).not.toContain("incerta");
+    }
+    const json = JSON.parse(captureLogs(() => commands.threads(undefined, undefined, true)));
+    expect(json.threads[0]).toMatchObject({
+      openDecisionCount: 1,
+      pendingAnswerCount: count,
+      uncertainAnswerCount: count,
+    });
+  });
+
+  it("shows admission wait without an uncertainty cue while delivery is not uncertain", () => {
+    resolvedSession = { sessionKey: "parent", name: "parent", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: "parent", sessionName: "parent" };
+    fakeSlackThreadSummary.pendingAnswerCount = 1;
+    const human = captureLogs(() => new SessionCommands().threads());
+    expect(human).toContain("(1 resposta aguardando admissão)");
+    expect(human).not.toContain("decisions pending");
+    expect(human).not.toContain("incerta");
   });
 
   it("lists the threads a Slack session owns and sends one new instructions", async () => {
@@ -2745,9 +2891,24 @@ describe("SessionCommands rename and display labels", () => {
 describe("SessionCommands set-model", () => {
   beforeEach(() => {
     listedSessions = [];
+    orphanThread = null;
     resolvedSession = null;
     routerConfig = { agents: {} };
     natsEmits.length = 0;
+  });
+
+  it("rejects an incompatible session model before persisting or notifying", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+    };
+    await expect(new SessionCommands().setModel("model-switch", "deepseek/deepseek-flash")).rejects.toThrow(
+      "does not belong",
+    );
+    expect(resolvedSession.modelOverride).toBeUndefined();
+    expect(natsEmits).toHaveLength(0);
   });
 
   it("notifies the live daemon with the effective model", async () => {
@@ -2953,9 +3114,24 @@ describe("SessionCommands set-model", () => {
 describe("SessionCommands set-provider", () => {
   beforeEach(() => {
     listedSessions = [];
+    orphanThread = null;
     resolvedSession = null;
     routerConfig = { agents: {} };
     natsEmits.length = 0;
+  });
+
+  it("rejects an incompatible session provider and accepts repair of legacy drift", () => {
+    resolvedSession = {
+      sessionKey: "agent:main:pair",
+      name: "pair",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+      modelOverride: "deepseek/deepseek-flash",
+    };
+    expect(() => new SessionCommands().setProvider("pair", "codex", true)).toThrow("does not belong");
+    expect(resolvedSession.runtimeProviderOverride).toBe("claude");
+    captureLogs(() => new SessionCommands().setProvider("pair", "pi", true));
+    expect(resolvedSession.runtimeProviderOverride).toBe("pi");
   });
 
   it("notes when the session provider differs from the agent default", () => {
@@ -2964,6 +3140,7 @@ describe("SessionCommands set-provider", () => {
       name: "wa-group",
       agentId: "ravi-console",
       runtimeProvider: "codex",
+      modelOverride: "gpt-6-astra",
     };
     routerConfig = {
       agents: {
@@ -3026,6 +3203,7 @@ describe("SessionCommands set-provider", () => {
       sessionKey: "agent:ravi-console:wa",
       name: "wa-group",
       agentId: "ravi-console",
+      modelOverride: "gpt-6-astra",
       runtimeProvider: "codex",
     };
     listedSessions = [
@@ -3064,6 +3242,7 @@ describe("SessionCommands set-provider", () => {
       sessionKey: "agent:ravi-console:wa",
       name: "wa-group",
       agentId: "ravi-console",
+      modelOverride: "gpt-6-astra",
     };
     routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
 
@@ -3082,6 +3261,7 @@ describe("SessionCommands set-provider", () => {
       sessionKey: "agent:ravi-console:wa",
       name: "wa-group",
       agentId: "ravi-console",
+      modelOverride: "gpt-6-astra",
       runtimeProvider: "pi",
     };
     routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
@@ -3145,6 +3325,7 @@ describe("SessionCommands set-provider", () => {
       sessionKey: "agent:ravi-console:wa",
       name: "wa-group",
       agentId: "ravi-console",
+      modelOverride: "gpt-6-astra",
     };
     routerConfig = { agents: { "ravi-console": { provider: "pi" } } };
 
@@ -3174,6 +3355,7 @@ describe("SessionCommands set-provider", () => {
 describe("SessionCommands set-effort", () => {
   beforeEach(() => {
     listedSessions = [];
+    orphanThread = null;
     resolvedSession = null;
     routerConfig = { agents: {} };
     natsEmits.length = 0;
@@ -3293,6 +3475,7 @@ describe("SessionCommands set-effort", () => {
 
 describe("SessionCommands info", () => {
   beforeEach(() => {
+    orphanThread = null;
     resolvedSession = null;
     sessionDerivedSource = undefined;
     listedContexts = [];
@@ -3480,6 +3663,22 @@ describe("SessionCommands read", () => {
       updatedAt: 2000,
     };
     sessionDerivedSource = undefined;
+  });
+
+  it("denies private bridge read, recap and trace despite ordinary access or admin bypass", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    resolvedSession = { ...resolvedSession!, sessionKey: `agent:main:console:${id}`, name: `console-${id}` };
+    for (const enforced of [false, true]) {
+      scopeEnforced = enforced;
+      canAccess = true;
+      const commands = new SessionCommands();
+      for (const ref of [`console-${id}`, `agent:main:console:${id}`, "legacy-alias"]) {
+        expect(() => commands.read(ref, "10", true)).toThrow("Session not found");
+        expect(() => commands.recap(ref)).toThrow("Session not found");
+        expect(() => commands.trace(ref)).toThrow("Session not found");
+      }
+    }
+    expect(chatHistoryReads).toBe(0);
   });
 
   it("reads durable session history across provider session changes before provider transcript", () => {
@@ -3695,6 +3894,27 @@ describe("SessionCommands read", () => {
 
     expect(payload.transcript.source).toBe("chat-db");
     expect(payload.count).toBe(1);
+  });
+
+  it("keeps an empty thread isolated from the parent chat and sibling sessions", () => {
+    resolvedSession = {
+      ...resolvedSession!,
+      sessionKey: "agent:main:main:thread:1713000000.000100",
+      name: "child-thread",
+      lastThreadId: "1713000000.000100",
+      lastTo: "C123",
+    };
+    chatHistoryByChat = [
+      { id: 1, session_id: "parent", role: "user", content: "parent only", chat_id: "C123", agent_id: "main" },
+    ];
+    messageMetadataRows = [{ messageId: "parent-message", chatId: "C123", transcription: "parent only" }];
+    const payload = JSON.parse(captureLogs(() => new SessionCommands().read("child-thread", "10", true)));
+    expect(payload.messages).toEqual([]);
+    expect(payload.totalMessages).toBe(0);
+    expect(payload.transcript).toMatchObject({ available: true, source: "chat-db", sessionName: "child-thread" });
+    chatHistory = [{ id: 2, session_id: "child-thread", role: "user", content: "child only" }];
+    const populated = JSON.parse(captureLogs(() => new SessionCommands().read("child-thread", "10", true)));
+    expect(populated.messages.map((row: { text: string }) => row.text)).toEqual(["child only"]);
   });
 
   it("falls back to same-chat durable history before message metadata", () => {
@@ -4010,6 +4230,7 @@ describe("SessionCommands recap", () => {
   });
 
   it("cloaks a missing session as SESSION_NOT_FOUND", async () => {
+    orphanThread = null;
     resolvedSession = null;
     let thrown: unknown;
     await captureLogsAsync(async () => {
@@ -4031,7 +4252,7 @@ describe("SessionCommands recap", () => {
     scopeEnforced = true;
     canAccess = false;
     let thrown: unknown;
-    await captureLogsAsync(async () => {
+    const output = await captureLogsAsync(async () => {
       try {
         new SessionCommands().recap("main-dm-615153", undefined, true);
       } catch (error) {
@@ -4041,6 +4262,9 @@ describe("SessionCommands recap", () => {
     expect(thrown).toBeInstanceOf(ContractError);
     const contractError = thrown as InstanceType<typeof ContractError>;
     expect(contractError.envelope().error.code).toBe("SESSION_NOT_FOUND");
+    expect(contractError.envelope().error.cause).toBe("Session not found, or not visible to this context.");
+    expect(JSON.stringify(contractError.envelope())).not.toContain("main-dm-615153");
+    expect(output).not.toContain("main-dm-615153");
   });
 });
 
@@ -4132,6 +4356,7 @@ describe("sessions agent-first contract", () => {
   });
 
   it("emits SESSION_NOT_FOUND envelope without suggestions (exit 1)", async () => {
+    orphanThread = null;
     resolvedSession = null;
     const commands = new SessionCommands();
     let thrown: unknown;

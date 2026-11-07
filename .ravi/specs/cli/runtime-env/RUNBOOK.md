@@ -5,8 +5,11 @@
 1. `ravi runtime env get CLAUDE_CODE_OAUTH_TOKEN --json` — expect
    `present` / `redacted`, never the token.
 2. Unknown key → `ENV_KEY_NOT_ALLOWED` plus `allowedKeys`.
-3. After a successful `set`, restart the daemon if the live process still
-   has the old env (`daemonReloadRequired: true`).
+3. After a successful `set` or `unset`, inspect `warnings`. A newer env file
+   leaves live processes stale even when disk and running versions are equal.
+   Reconcile the named processes explicitly: `ravi daemon restart -m
+   "reload runtime environment"`, then `ravi channels restart` when reported.
+   `daemonReloadRequired` refers to the write, not proof that siblings reloaded.
 4. If an envelope ever contains a token, rctx, or secret value, treat that
    as a security regression.
 

@@ -100,6 +100,13 @@ An explicit session abort (reset, delete, kill, `ravi.session.abort`) is not a d
 
 ## Reply Surface Identity
 
+A prompt from a different reply surface MUST NOT interrupt the active turn,
+even with `after_tool` or `immediate_interrupt`. This includes internal thread
+returns and prompts without a source. It MUST wait for terminal completion in
+FIFO order; a later same-surface prompt MUST NOT jump over it. Releasing a tool
+barrier MUST preserve this boundary. Explicit session abort is separate from
+prompt delivery and remains available.
+
 A source-less CLI resume uses its bound reply target as the active interrupt
 surface unless chat output is suppressed.
 
@@ -121,9 +128,13 @@ Each session owns its pending prompt queue. The queue MUST preserve the original
 
 The runtime MAY batch multiple deliverable prompt atoms into one provider turn. Batched prompt atoms MUST keep their original order inside the combined prompt.
 
-The runtime MAY let a higher-priority deliverable prompt atom bypass a blocked lower-priority atom. This is allowed only when the blocked atom's barrier is not currently releasable, such as an `after_task` reminder during an active task. Bypass decisions MUST be traceable.
+The runtime MAY let a higher-priority deliverable prompt atom bypass a blocked lower-priority atom, such as an `after_task` reminder during an active task. At a terminal turn boundary, an eligible human atom MUST also bypass preceding known background atoms, even if those atoms are releasable. The same selection applies within the active reply surface when preparing an interrupt. Unknown actors, replay ownership and the active cross-surface interrupt boundary MUST retain their existing ordering. Bypass decisions MUST be traceable.
 
-Within the same barrier lane, delivery SHOULD be FIFO.
+Within the same human/background priority and barrier lane, delivery SHOULD be FIFO. Priority comes from canonical turn provenance, never text prefixes or the reply target alone. Priority MUST NOT change the selected atom's authority, reply surface or barrier.
+
+Consecutive `thread.report` atoms MAY share one turn only with identical origin (including caller context), thread, reply surface, approval route, runtime selection and barrier. Other lifecycle events, commands, task/decision/channel admissions and differing authority MUST end the batch. Each batch MUST be bounded to 16 atoms and 32 KiB of combined content; an oversized single report MUST still be delivered intact. All original text and pending ids MUST survive until terminal accounting. A batch MUST NOT acknowledge arrivals that were not handed to the provider. An ambiguous retry MUST replay the entire original cohort with its original logical delivery id, never a subset or a fresh arrival. Semantic summarization and latest-wins replacement MUST NOT discard blockers, decisions or evidence.
+
+New Slack thread progress reports MUST default to `after_response`; older queued reports retain their barrier. Consolidation MUST work on those existing atoms without a queue rewrite or destructive reset.
 
 `after_response` and `after_task` prompt atoms MUST NOT request provider interruption while the session is generating text. They may wake an idle session after the current turn becomes terminal.
 
@@ -266,7 +277,9 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - A human channel message that interrupts an active turn is the next provider input; the superseded turn is not replayed ahead of it.
 - A provider interruption without a newer prompt reconciles the active prompt atom when the provider advertises support; otherwise it retries the atom only when generic replay remains durably safe.
 - Ambiguous recovery reuses one logical delivery id; intentional restarts create a new delivery id and preserve normal batching.
-- Equal-lane queued events are delivered FIFO.
+- Equal-priority, equal-lane queued events are delivered FIFO.
+- With at least 50 queued progress envelopes, the next provider input after a terminal or intentional same-surface interrupt MUST contain the eligible human question, with its own authority envelope.
+- A finite burst of compatible reports MUST drain in bounded lossless batches after human input; unrelated authority envelopes stay separate.
 - Trace explains whether a prompt was queued, released, batched, blocked, bypassed, or used to interrupt.
 - Tests cover active text generation, tool-running, unsafe tool-running, active task, idle session, daemon restart, and explicit immediate delivery.
 

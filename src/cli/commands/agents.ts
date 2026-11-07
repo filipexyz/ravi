@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Agents Commands - Agent management CLI
  */
@@ -49,11 +50,7 @@ import {
   resolveSession,
   type SessionTurnUsageSummary,
 } from "../../router/sessions.js";
-import {
-  createRuntimeProvider,
-  DEFAULT_RUNTIME_PROVIDER_ID,
-  listRegisteredRuntimeProviderIds,
-} from "../../runtime/provider-registry.js";
+import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
@@ -360,7 +357,8 @@ function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSumm
 }
 
 function validateAgentModelValue(providerId: string | undefined, model: string): void {
-  const result = validateRuntimeModelSelector(providerId ?? DEFAULT_RUNTIME_PROVIDER_ID, model);
+  const provider = providerId ?? resolveRequestedRuntimeProvider({ agent: {} }).value;
+  const result = validateRuntimeModelSelector(provider, model);
   if (!result.ok) {
     fail(result.error ?? `Invalid model: ${model}`);
   }
@@ -595,11 +593,14 @@ function parseTranscriptEntries(raw: string): {
 function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
   const candidates = filterVisibleAgents(getScopeContext(), getAllAgents()).flatMap((agent) => [agent.id, agent.name]);
   contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-      suggestions: suggestSimilar(agentId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+        suggestions: suggestSimilar(agentId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Agent not found: ${agentId}`, { operation: op }),
   });
 }
 
@@ -609,9 +610,12 @@ async function showLibraryAgentCommand(value: string, asJson?: boolean) {
   if (!ref) {
     const message = `Not a valid Library ref: ${value.slice(0, 120)}. Use org/<slug> or <project>/<slug> (a-z, 0-9 and -).`;
     contractFail("agents show", "LIBRARY_REF_INVALID", message, {
-      asJson,
-      exitCode: 2,
-      details: { suggestedAction: "Copy the ref from: ravi agents search <words> --json" },
+      ...{
+        asJson,
+        exitCode: 2,
+        details: { suggestedAction: "Copy the ref from: ravi agents search <words> --json" },
+      },
+      diagnostic: errorDiagnostic(message, { operation: "agents show" }),
     });
   }
   return withLibraryContract("agents show", asJson, async () => {
@@ -663,9 +667,14 @@ function setAgentLibraryDescription(agentId: string, value: string, asJson?: boo
       "USAGE_ERROR",
       `The description is longer than ${LIBRARY_AGENT_DESCRIPTION_MAX} characters.`,
       {
-        asJson,
-        exitCode: 2,
-        details: { suggestedAction: `Shorten it to at most ${LIBRARY_AGENT_DESCRIPTION_MAX} characters` },
+        ...{
+          asJson,
+          exitCode: 2,
+          details: { suggestedAction: `Shorten it to at most ${LIBRARY_AGENT_DESCRIPTION_MAX} characters` },
+        },
+        diagnostic: errorDiagnostic(`The description is longer than ${LIBRARY_AGENT_DESCRIPTION_MAX} characters.`, {
+          operation: "agents set",
+        }),
       },
     );
   }
@@ -1789,11 +1798,17 @@ SOURCES
           "MODEL_BROKER_UNAVAILABLE",
           "No registered runtime provider has verified principal isolation; the required broker selection was not persisted.",
           {
-            asJson,
-            details: {
-              suggestedAction:
-                "Keep the selection as a draft with --required false until a runtime adapter is verified",
+            ...{
+              asJson,
+              details: {
+                suggestedAction:
+                  "Keep the selection as a draft with --required false until a runtime adapter is verified",
+              },
             },
+            diagnostic: errorDiagnostic(
+              "No registered runtime provider has verified principal isolation; the required broker selection was not persisted.",
+              { operation: "agents model-broker" },
+            ),
           },
         );
       }

@@ -309,7 +309,7 @@ describe("auto-resume blocked tasks", () => {
   });
 
   describe("signal: dispatch", () => {
-    it("auto-resumes blocked task before re-dispatch", async () => {
+    it("auto-resumes blocked task while retaining its original assignment", async () => {
       const task = createBlockedTask("dispatch resume");
 
       await dispatchTask(task.id, {
@@ -324,11 +324,11 @@ describe("auto-resume blocked tasks", () => {
       expect(resumeEvents[0]!.message).toContain("dispatch");
 
       const dispatchEvents = events.filter((e) => e.type === "task.dispatched");
-      expect(dispatchEvents.length).toBeGreaterThanOrEqual(2);
+      expect(dispatchEvents).toHaveLength(1);
 
       const resumeIdx = events.indexOf(resumeEvents[0]!);
       const lastDispatchIdx = events.indexOf(dispatchEvents.at(-1)!);
-      expect(resumeIdx).toBeLessThan(lastDispatchIdx);
+      expect(resumeIdx).toBeGreaterThan(lastDispatchIdx);
     });
   });
 

@@ -29,6 +29,12 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Fixed SSH transport entry: it forwards bytes only and has no local operator
+# context. The daemon verifies each signed human request. No extra argv accepted.
+if [ "$#" -eq 2 ] && [ "$1" = "bridge" ] && [ "$2" = "serve-stdio" ]; then
+  exec bun "$PROJECT_DIR/dist/bundle/bridge-stdio.js"
+fi
+
 BUNDLE="$PROJECT_DIR/dist/bundle/index.js"
 # What `bun run build:cli` compiles. Present in a source checkout, absent from the
 # published package (see the `files` whitelist in package.json).

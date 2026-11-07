@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Video Commands — Analyze videos via subtitles or Gemini
  */
@@ -23,12 +24,15 @@ function parseStrategy(value: string | undefined, asJson?: boolean): VideoAnalyz
   if (!value) return "auto";
   if (value === "auto" || value === "subtitles" || value === "gemini") return value;
   contractFail("video analyze", "USAGE_ERROR", "Invalid video analysis strategy.", {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction: "Use --strategy auto, subtitles, or gemini",
-      acceptedValues: ["auto", "subtitles", "gemini"],
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: "Use --strategy auto, subtitles, or gemini",
+        acceptedValues: ["auto", "subtitles", "gemini"],
+      },
     },
+    diagnostic: errorDiagnostic("Invalid video analysis strategy.", { operation: "video analyze" }),
   });
 }
 

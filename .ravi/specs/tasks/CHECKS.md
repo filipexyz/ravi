@@ -1,5 +1,11 @@
 # Tasks Checks
 
+- `bun test src/tasks/worker-session-authorization.test.ts` MUST reject an
+  unauthorized same-agent worker by name and key, including with read access;
+  CLI/stream create leave no task, dispatch leaves no assignment or prompt,
+  and deferred work leaves no launch plan. Resolved default targets are checked
+  even in previews. Current sessions and explicit modify grants remain allowed.
+
 ## Runtime State Checks
 
 - Task creation MUST persist the resolved profile id, version, source,
@@ -33,5 +39,8 @@
 
 ## Commands
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/tasks/checkpoint-runner.test.ts src/tasks/observer.test.ts src/tasks/thread-core.test.ts` MUST pass in disposable state. Observer and checkpoint fixtures use their resettable publisher hooks rather than replacing `session-stream`; loading task admission in the same process MUST retain the stream's named exports, including `SESSION_STREAM`.
 - `bun test src/tasks/service.test.ts src/tasks/runtime-options.test.ts`
 - `bun test src/cli/commands/tasks.test.ts src/cli/commands/tasks-profiles.test.ts`
+
+- Run `bun test src/tasks/thread-core.test.ts src/runtime/prompt-subscription.test.ts` in isolated state to verify channel-free creation and assignment admission.

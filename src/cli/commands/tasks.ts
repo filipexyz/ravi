@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -1021,11 +1022,14 @@ function sleep(ms: number): Promise<void> {
 function failTaskNotFound(op: string, taskId: string, asJson?: boolean): never {
   const candidates = listTasks({ limit: 40 }).flatMap((task) => [task.id, task.title]);
   contractFail(op, "TASK_NOT_FOUND", `Task not found: ${taskId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the task id (see suggestions for similar tasks)",
-      suggestions: suggestSimilar(taskId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the task id (see suggestions for similar tasks)",
+        suggestions: suggestSimilar(taskId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Task not found: ${taskId}`, { operation: op }),
   });
 }
 
@@ -1129,6 +1133,11 @@ export class TaskCommands {
     effort?: string,
     @Option({ flags: "--thinking <level>", description: "Runtime thinking: off|normal|verbose" })
     thinking?: string,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description: "Stable creation key; retries reuse the task and its Thread",
+    })
+    idempotencyKey?: string,
   ) {
     if (!instructions?.trim()) {
       fail("--instructions is required");
@@ -1142,6 +1151,7 @@ export class TaskCommands {
       if (assigneeAgentId) requireTaskRuntimeAgent(assigneeAgentId);
       assertTaskTargetAuthorized({
         ...(assigneeAgentId ? { agentId: assigneeAgentId } : {}),
+        ...(sessionName?.trim() ? { workerSessionName: sessionName } : {}),
         ...(reportToSessionName?.trim() ? { reportToSessionName } : {}),
       });
     } catch (error) {
@@ -1160,12 +1170,8 @@ export class TaskCommands {
     const tagSlugs = parseTagSlugs(tagSlugsRaw);
     const runtimeOverride = parseRuntimeOverride(model, effort, thinking);
     const actor = getTaskActor();
-    if (!actor.sessionName && !reportToSessionName?.trim()) {
-      fail(
-        "Cannot infer task report target outside a Ravi session. Run with RAVI_CONTEXT_KEY or pass --report-to <session>.",
-      );
-    }
     const created = await createTask({
+      ...(idempotencyKey?.trim() ? { idempotencyKey: idempotencyKey.trim() } : {}),
       title: title.trim(),
       instructions: instructions.trim(),
       priority: requirePriority(priority),
@@ -1187,7 +1193,7 @@ export class TaskCommands {
 
     let task = created.task;
     let launchResult: Awaited<ReturnType<typeof queueOrDispatchTask>> | null = null;
-    if (assigneeAgentId) {
+    if (assigneeAgentId && task.status !== "done" && task.status !== "failed") {
       launchResult = await queueOrDispatchTask(created.task.id, {
         agentId: assigneeAgentId,
         sessionName: sessionName?.trim() || getDefaultTaskSessionNameForTask(created.task),
@@ -1921,6 +1927,7 @@ export class TaskCommands {
       requireTaskRuntimeAgent(normalizedAgentId);
       assertTaskTargetAuthorized({
         agentId: normalizedAgentId,
+        ...(sessionName?.trim() ? { workerSessionName: sessionName } : {}),
         ...(reportToSessionName?.trim() ? { reportToSessionName } : {}),
         ...(actorSessionName?.trim() ? { actorSessionName } : {}),
       });
@@ -1949,8 +1956,11 @@ export class TaskCommands {
         });
         if (!cloudAccess.allowed) {
           contractFail("tasks dispatch", "PERMISSION_DENIED", cloudAccess.errorMessage, {
-            asJson,
-            details: { ...(cloudAccess.denialDetails ?? {}) },
+            ...{
+              asJson,
+              details: { ...(cloudAccess.denialDetails ?? {}) },
+            },
+            diagnostic: errorDiagnostic(cloudAccess.errorMessage, { operation: "tasks dispatch" }),
           });
         }
       }
@@ -1959,7 +1969,13 @@ export class TaskCommands {
           "tasks dispatch",
           "USAGE_ERROR",
           "--session, --checkpoint, --report-events, --model, --effort and --thinking do not apply with --cloud",
-          { asJson, exitCode: 2 },
+          {
+            ...{ asJson, exitCode: 2 },
+            diagnostic: errorDiagnostic(
+              "--session, --checkpoint, --report-events, --model, --effort and --thinking do not apply with --cloud",
+              { operation: "tasks dispatch" },
+            ),
+          },
         );
       }
       // The result comes back as a [System] Inform to the reporting session, or the dispatching one.
@@ -1974,8 +1990,11 @@ export class TaskCommands {
           "REPORT_TARGET_NOT_FOUND",
           error instanceof Error ? error.message : String(error),
           {
-            asJson,
-            details: { suggestedAction: "Pass an existing session name, session key or chat id: ravi sessions list" },
+            ...{
+              asJson,
+              details: { suggestedAction: "Pass an existing session name, session key or chat id: ravi sessions list" },
+            },
+            diagnostic: errorDiagnostic(error, { operation: "tasks dispatch" }),
           },
         );
       }
@@ -1992,12 +2011,16 @@ export class TaskCommands {
     }
     if (budget !== undefined || project !== undefined) {
       contractFail("tasks dispatch", "USAGE_ERROR", "--budget and --project apply only with --cloud", {
-        asJson,
-        exitCode: 2,
+        ...{
+          asJson,
+          exitCode: 2,
+        },
+        diagnostic: errorDiagnostic("--budget and --project apply only with --cloud", { operation: "tasks dispatch" }),
       });
     }
 
     const resolvedSessionName = sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task);
+    assertTaskTargetAuthorized({ agentId: normalizedAgentId, workerSessionName: resolvedSessionName });
     if (execute !== true) {
       // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any dispatch.
       contractDryRun(
@@ -2354,8 +2377,13 @@ export class TaskCommands {
     const ownerType = owner?.trim() as TaskDecisionOwnerType | undefined;
     if (ownerType && !["human", "agent", "unassigned"].includes(ownerType)) {
       contractFail(op, "USAGE_ERROR", `Invalid --owner ${JSON.stringify(owner)}: use human, agent or unassigned.`, {
-        asJson,
-        exitCode: 2,
+        ...{
+          asJson,
+          exitCode: 2,
+        },
+        diagnostic: errorDiagnostic(`Invalid --owner ${JSON.stringify(owner)}: use human, agent or unassigned.`, {
+          operation: op,
+        }),
       });
     }
 

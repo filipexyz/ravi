@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -203,11 +204,14 @@ function serializeHook(hook: HookRecord) {
 function failHookNotFound(op: string, hookId: string, asJson?: boolean): never {
   const candidates = dbListHooks().flatMap((hook) => [hook.id, hook.name]);
   contractFail(op, "HOOK_NOT_FOUND", `Hook not found: ${hookId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the hook id (see suggestions; list with: ravi hooks list --json)",
-      suggestions: suggestSimilar(hookId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the hook id (see suggestions; list with: ravi hooks list --json)",
+        suggestions: suggestSimilar(hookId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Hook not found: ${hookId}`, { operation: op }),
   });
 }
 
@@ -226,7 +230,10 @@ function assertHookWithinCallerScope(
   if (!isScopeEnforced(scopeCtx)) return;
   const deny = (message: string): never =>
     contractFail(op, "PERMISSION_DENIED", `Permission denied: ${message}`, {
-      details: { suggestedAction: "Ask an operator to create this hook, or scope it to your own session" },
+      ...{
+        details: { suggestedAction: "Ask an operator to create this hook, or scope it to your own session" },
+      },
+      diagnostic: errorDiagnostic(`Permission denied: ${message}`, { operation: op }),
     });
   const scopeValue = hook.scopeValue;
   if (hook.scopeType === "global" || hook.scopeType === "workspace" || hook.scopeType === "task") {

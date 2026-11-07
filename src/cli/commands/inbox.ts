@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Inbox Commands - manage local inbox items and Console delivery compatibility.
  */
@@ -114,11 +115,14 @@ function failInboxItemNotFound(
   options: { asJson?: boolean; candidates: Array<string | null | undefined>; listCommand: string },
 ): never {
   contractFail(op, "INBOX_ITEM_NOT_FOUND", `Inbox item not found: ${ref}`, {
-    asJson: options.asJson,
-    details: {
-      suggestedAction: `Check the item ref (see suggestions; list with: ${options.listCommand})`,
-      suggestions: suggestSimilar(ref, options.candidates),
+    ...{
+      asJson: options.asJson,
+      details: {
+        suggestedAction: `Check the item ref (see suggestions; list with: ${options.listCommand})`,
+        suggestions: suggestSimilar(ref, options.candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Inbox item not found: ${ref}`, { operation: op }),
   });
 }
 

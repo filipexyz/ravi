@@ -13,6 +13,11 @@ import {
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
 import { startRuntimeSession } from "./session-launcher.js";
+import { dbCreateCronJob, dbGetCronJob } from "../cron/cron-db.js";
+import { admitCronRun, getCronRun } from "../cron/run-db.js";
+import { CronRunner } from "../cron/runner.js";
+import { listLocalInboxItems } from "../inbox/local-db.js";
+import { resolveRuntimeSessionIdentity } from "./session-resolver.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 const SESSION_KEY = "agent:main:main";
@@ -62,6 +67,123 @@ afterEach(async () => {
 });
 
 describe("runtime prompt intake failure", () => {
+  it("settles an admitted cron after runner recreation when its agent vanishes before launch", async () => {
+    const job = dbCreateCronJob({
+      name: "missing-agent-once",
+      agentId: "main",
+      message: "run once",
+      schedule: { type: "at", at: Date.now() },
+      deleteAfterRun: true,
+    });
+    admitCronRun("durable-missing-agent", job, "main", Date.now());
+    withoutAgents();
+    await startRuntimeSession({
+      sessionName: "main",
+      prompt: { prompt: job.message, _cron: true, _jobId: job.id, _cronRunId: "durable-missing-agent" },
+      configModel: "test-model",
+      instanceId: "test",
+      streamingSessions: new Map(),
+      stashedMessages: new Map(),
+      safeEmit: async (topic, data) => {
+        runtimeEvents.push({ topic, data });
+      },
+      drainPendingStarts: () => {},
+      crashRecovery: crashRecoveryStub,
+    });
+    const replacementRunner = new CronRunner();
+    for (const event of runtimeEvents) await replacementRunner.handleRuntimeEvent(event);
+    expect(getCronRun("durable-missing-agent")?.status).toBe("error");
+    expect(dbGetCronJob(job.id)).toMatchObject({ lastStatus: "error" });
+    expect(listLocalInboxItems({ sourceDomain: "cron" }).some((item) => item.sourceId === job.id)).toBe(true);
+  });
+
+  it("persists a cold-launch model failure with the original cron run identity", async () => {
+    const config = configStore.getConfig();
+    spyOn(configStore, "getConfig").mockReturnValue({
+      ...config,
+      defaultAgent: "main",
+      agents: { main: { id: "main", cwd: stateDir!, provider: "codex", model: "deepseek/deepseek-flash" } },
+    });
+    const job = dbCreateCronJob({
+      name: "invalid-model-once",
+      agentId: "main",
+      message: "run once",
+      schedule: { type: "at", at: Date.now() },
+      deleteAfterRun: true,
+    });
+    admitCronRun("durable-invalid-model", job, "main", Date.now());
+    const streamingSessions = new Map();
+    await startRuntimeSession({
+      sessionName: "main",
+      prompt: { prompt: job.message, _cron: true, _jobId: job.id, _cronRunId: "durable-invalid-model" },
+      configModel: "deepseek/deepseek-flash",
+      instanceId: "test",
+      streamingSessions,
+      stashedMessages: new Map(),
+      safeEmit: async (topic, data) => {
+        runtimeEvents.push({ topic, data });
+      },
+      drainPendingStarts: () => {},
+      crashRecovery: crashRecoveryStub,
+    });
+    expect(streamingSessions.size).toBe(0);
+    const failure = runtimeEvents.find((event) => event.data.type === "turn.failed");
+    expect(failure?.data.error).toContain("does not belong");
+    expect(failure?.data._turnProvenance).toMatchObject({ cronRunId: "durable-invalid-model" });
+    const replacementRunner = new CronRunner();
+    for (const event of runtimeEvents) await replacementRunner.handleRuntimeEvent(event);
+    expect(getCronRun("durable-invalid-model")?.status).toBe("error");
+    expect(dbGetCronJob(job.id)).toMatchObject({ lastStatus: "error" });
+  });
+
+  it("never substitutes the default agent for a task assignment", async () => {
+    const dispatcher = createDispatcher();
+    const prompt = {
+      prompt: "Assigned work",
+      _taskAssignmentId: "assignment",
+      _taskSessionKey: SESSION_KEY,
+      _agentId: "gone",
+    };
+    await expect(dispatcher.handlePrompt("main", prompt)).rejects.toThrow("agent is unavailable");
+    await expect(dispatcher.handlePromptImmediate("main", prompt)).rejects.toThrow("agent is unavailable");
+    expect(responses).toEqual([]);
+  });
+
+  it("bypasses debounce for durable task admission", async () => {
+    const config = configStore.getConfig();
+    spyOn(configStore, "getConfig").mockReturnValue({
+      ...config,
+      agents: { ...config.agents, main: { ...config.agents.main!, debounceMs: 1000 } },
+    });
+    const dispatcher = createDispatcher();
+    const immediate = spyOn(dispatcher, "handlePromptImmediate").mockResolvedValue();
+    const debounce = spyOn(dispatcher, "handlePromptWithDebounce");
+    const prompt = {
+      prompt: "Assigned work",
+      _taskAssignmentId: "assignment",
+      _taskSessionKey: SESSION_KEY,
+      _agentId: "main",
+    };
+    await dispatcher.handlePrompt("main", prompt);
+    expect(immediate).toHaveBeenCalledWith("main", prompt);
+    expect(debounce).not.toHaveBeenCalled();
+  });
+
+  it("rechecks task session identity and agent availability after dispatch preflight", () => {
+    const prompt = {
+      prompt: "Assigned work",
+      _taskAssignmentId: "assignment",
+      _taskSessionKey: SESSION_KEY,
+      _agentId: "main",
+    };
+    expect(() =>
+      resolveRuntimeSessionIdentity({ sessionName: "main", prompt: { ...prompt, _taskSessionKey: "replaced" } }),
+    ).toThrow("session changed");
+    expect(() => resolveRuntimeSessionIdentity({ sessionName: "missing", prompt })).toThrow("session changed");
+    withoutAgents();
+    expect(() => resolveRuntimeSessionIdentity({ sessionName: "main", prompt })).toThrow("agent is unavailable");
+  });
+
   it("acknowledges a prompt with no agent, records a durable trace, and notifies the chat user", async () => {
     withoutAgents();
     const dispatcher = createDispatcher();

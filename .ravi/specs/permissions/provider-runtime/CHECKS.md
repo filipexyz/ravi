@@ -37,6 +37,13 @@
 
 Quoting regressions (`bun test src/bash/`):
 
+- `X=a#b bash -c id` and `python3 -W ignore#x -c code` MUST be refused,
+  including through sudo. URL fragments and real word-start comments MUST
+  preserve command boundaries. `echo x#y > .codex/config.toml` MUST retain its
+  provider-settings write check.
+- Piped bare interpreters with trailing comments, descriptor duplication,
+  output/clobber/combined redirects or leading assignments MUST be refused;
+  a real file-script argument MUST retain the documented executable boundary.
 - Single-quoted substitution/backtick/process/heredoc text and escaped dollar
   or backtick in double quotes MUST pass in JSON and rg/grep arguments.
 - Active substitutions outside and inside double quotes MUST fail, including

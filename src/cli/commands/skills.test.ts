@@ -957,6 +957,59 @@ describe("skills install --source for a single on-disk skill (bug 2b7fcc09)", ()
       },
     ]);
     expect(JSON.stringify(error.envelope())).not.toContain("SENTINEL_MISSING_SKILL_SOURCE");
+    expect(error.details.cause).toBe("Local skill source not found: [redacted:credential]");
+    expect(error.details.context).toMatchObject({ operation: "skills install", code: "SKILL_SOURCE_NOT_FOUND" });
+    expect(remote?.details.cause).toBe(error.details.cause);
+    expect(JSON.stringify(remote)).not.toContain("SENTINEL_MISSING_SKILL_SOURCE");
+  });
+
+  it("keeps a missing source's nested cause while hiding its private path", async () => {
+    const source = "/private/SENTINEL_NESTED_SKILL_SOURCE";
+    const sourceError = new skillManager.SkillSourceError(
+      "SKILL_SOURCE_NOT_FOUND",
+      `Local skill source not found: ${source}`,
+      {
+        publicMessage: "Local skill source not found.",
+      },
+    );
+    sourceError.cause = Object.assign(new Error("parent directory unavailable"), {
+      code: "ENOENT",
+      syscall: "scandir",
+    });
+    const spy = spyOn(skillManager, "resolveSkillSource").mockImplementation(() => {
+      throw sourceError;
+    });
+    try {
+      const error = expectContractError(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            undefined,
+            source,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            undefined,
+          ),
+        ),
+      );
+      expect(error.details.cause).toBe(
+        "Local skill source not found: [redacted:credential]\nCaused by: parent directory unavailable",
+      );
+      expect(error.details.context).toMatchObject({
+        operation: "skills install",
+        code: "SKILL_SOURCE_NOT_FOUND",
+        syscall: "scandir",
+      });
+      const { remote } = await throughRemoteGateway(error);
+      expect(remote?.details.cause).toBe(error.details.cause);
+      expect(JSON.stringify(error.envelope())).not.toContain("SENTINEL_NESTED_SKILL_SOURCE");
+      expect(JSON.stringify(remote)).not.toContain("SENTINEL_NESTED_SKILL_SOURCE");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("maps an already-installed skill to SKILL_ALREADY_INSTALLED pointing at grant", async () => {

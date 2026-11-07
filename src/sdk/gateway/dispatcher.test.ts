@@ -1,20 +1,29 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { describe, expect, it, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 
 import { RaviAppError } from "../../apps/types.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { pickFields } from "../../cli/agent-contract.js";
+import { remoteGatewayErrorToContractError } from "../../cli/remote-gateway.js";
 import { AppsCommands } from "../../cli/commands/apps.js";
 import { TaskCommands } from "../../cli/commands/tasks.js";
+import { TaskProfileCommands } from "../../cli/commands/tasks-profiles.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { contractFail } from "../../cli/agent-contract.js";
 import { fail, getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
 import { getDb } from "../../router/router-db.js";
+import { getOrCreateSession } from "../../router/sessions.js";
 import { dbCreateTask } from "../../tasks/task-db.js";
+import { dbListTasks } from "../../tasks/task-db.js";
+import { invalidateTaskProfileCatalogCache } from "../../tasks/profiles.js";
+import systemProfiles from "../../tasks/profile-catalog/system-profiles.json" with { type: "json" };
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
 import { createHash } from "node:crypto";
@@ -123,6 +132,12 @@ class GatewayDemoCommands {
     void content;
   }
 
+  @Command({ name: "strict-input", description: "Validate a strict nested object" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "strict-input", risk: "low" })
+  strictInput(@Arg("input", { schema: z.object({ name: z.string() }).strict() }) input: { name: string }) {
+    void input;
+  }
+
   @Command({ name: "void", description: "Returns nothing" })
   @CommandAccess({ kind: "read", resource: "demo", action: "void", risk: "low" })
   voidNoop(): void {
@@ -164,19 +179,36 @@ class GatewayDemoCommands {
   @Command({ name: "cloud-auth-error", description: "Throws an authentication error" })
   @CommandAccess({ kind: "read", resource: "demo", action: "cloud-auth-error", risk: "low" })
   cloudAuthError() {
-    throw new CloudAuthError("AUTH_REQUIRED", "private provider authentication response", { status: 401 });
+    throw new CloudAuthError(
+      "AUTH_REQUIRED",
+      "Provider rejected expired authentication; token=PRIVATE_PROVIDER_TOKEN_798",
+      {
+        status: 401,
+        details: { body: "PRIVATE_PROVIDER_BODY_798" },
+      },
+    );
   }
 
   @Command({ name: "cloud-access-error", description: "Throws an access error" })
   @CommandAccess({ kind: "read", resource: "demo", action: "cloud-access-error", risk: "low" })
   cloudAccessError() {
-    throw new CloudAuthError("PROJECT_ACCESS_DENIED", "private provider access response", { status: 403 });
+    throw new CloudAuthError(
+      "PROJECT_ACCESS_DENIED",
+      "Provider denied the project scope; token=PRIVATE_PROVIDER_TOKEN_798",
+      {
+        status: 403,
+        details: { body: "PRIVATE_PROVIDER_BODY_798" },
+      },
+    );
   }
 
   @Command({ name: "cloud-rate-error", description: "Throws a rate limit error" })
   @CommandAccess({ kind: "read", resource: "demo", action: "cloud-rate-error", risk: "low" })
   cloudRateError() {
-    throw new CloudAuthError("RATE_LIMITED", "private provider rate limit response", { status: 429 });
+    throw new CloudAuthError("RATE_LIMITED", "Provider quota exhausted; token=PRIVATE_PROVIDER_TOKEN_798", {
+      status: 429,
+      details: { body: "PRIVATE_PROVIDER_BODY_798" },
+    });
   }
 
   @Command({ name: "cloud-invalid-status", description: "Throws an auth error with an invalid HTTP status" })
@@ -194,7 +226,7 @@ class GatewayDemoCommands {
   @Command({ name: "app-error", description: "Throws an app-domain expected error" })
   @CommandAccess({ kind: "read", resource: "demo", action: "app-error", risk: "low" })
   appError() {
-    throw new RaviAppError("not_found", "Missing app at private-path/app-secret", [
+    throw new RaviAppError("not_found", "App manifest missing from local configuration; token=APP_SECRET_798", [
       { kind: "manifest", detail: "private-path/app-secret" },
     ]);
   }
@@ -212,11 +244,14 @@ class GatewayDemoCommands {
     const code =
       numericExitCode === 2 ? "USAGE_ERROR" : numericExitCode === 3 ? "WRITE_REQUIRES_EXECUTE" : "DEMO_NOT_FOUND";
     contractFail("demo contract", code, "contract stopped execution", {
-      exitCode: numericExitCode,
-      details: {
-        retryable: false,
-        suggestedAction: "inspect the structured response",
+      ...{
+        exitCode: numericExitCode,
+        details: {
+          retryable: false,
+          suggestedAction: "inspect the structured response",
+        },
       },
+      diagnostic: errorDiagnostic("contract stopped execution", { operation: "demo contract" }),
     });
   }
 
@@ -469,9 +504,7 @@ describe("dispatch — body shape (flat-only)", () => {
     };
     expect(body.error.code).toBe("USAGE_ERROR");
     expect(body.error.issues).toHaveLength(2);
-    expect(body.error.issues.every((issue) => issue.path[0] === "<unknown>")).toBe(true);
-    expect(JSON.stringify(body)).not.toContain('"args"');
-    expect(JSON.stringify(body)).not.toContain('"options"');
+    expect(body.error.issues.map((issue) => issue.path)).toEqual([["args"], ["options"]]);
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]?.outcome).toBe("usage_error");
   });
@@ -505,9 +538,92 @@ describe("dispatch — body shape (flat-only)", () => {
     expect(audits.events).toHaveLength(1);
     expect(JSON.stringify(audits.events)).not.toContain(sentinel);
   });
+
+  it.each(["json", "subjects"])(
+    "names unknown field %s through remote CLI without echoing its value",
+    async (field) => {
+      const audits = captureAudits();
+      const secret = "PRIVATE_FIELD_VALUE_6JQ8";
+      const result = await dispatch(
+        findCmd("demo.echo"),
+        { name: "fixture", [field]: secret },
+        {},
+        { emitAudit: audits.emit },
+      );
+      const body = await result.response.text();
+      const error = remoteGatewayErrorToContractError("demo echo", {
+        status: result.response.status,
+        ok: result.response.ok,
+        contentType: result.response.headers.get("content-type"),
+        body,
+      });
+      expect(error).toMatchObject({
+        code: "USAGE_ERROR",
+        exitCode: 2,
+        message: `${field}: Unknown field for demo.echo.`,
+        details: { issues: [{ path: [field], code: "unrecognized_keys" }] },
+      });
+      expect(body).not.toContain(secret);
+      expect(JSON.stringify(audits.events)).not.toContain(secret);
+    },
+  );
+
+  it.each(["password-hunter2", "clientSecretValue", "api_key_fixture"])(
+    "redacts secret-bearing unknown key %s in gateway and remote CLI errors",
+    async (field) => {
+      const audits = captureAudits();
+      const result = await dispatch(
+        findCmd("demo.echo"),
+        { name: "fixture", [field]: true },
+        {},
+        { emitAudit: audits.emit },
+      );
+      const body = await result.response.text();
+      const error = remoteGatewayErrorToContractError("demo echo", {
+        status: result.response.status,
+        ok: result.response.ok,
+        contentType: result.response.headers.get("content-type"),
+        body,
+      });
+      expect(result.response.status).toBe(400);
+      expect(error).toMatchObject({
+        code: "USAGE_ERROR",
+        exitCode: 2,
+        message: "Unknown field for demo.echo.",
+        details: { issues: [{ path: ["<unknown>"], code: "unrecognized_keys" }] },
+      });
+      expect(body).not.toContain(field);
+      expect(JSON.stringify(error?.envelope())).not.toContain(field);
+      expect(JSON.stringify(audits.events)).not.toContain(field);
+    },
+  );
 });
 
 describe("dispatch — validation", () => {
+  it("keeps the path of nested unknown fields without echoing private keys or values", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.strict-input"),
+      { input: { name: "fixture", extra: "PRIVATE_VALUE_7K2", PRIVATE_KEY_8F4: true, "password-hunter2": true } },
+      {},
+      { emitAudit: audits.emit },
+    );
+    const body = await result.response.json();
+    expect(result.response.status).toBe(400);
+    expect(body).toMatchObject({
+      error: {
+        issues: [
+          { path: ["input", "extra"], code: "unrecognized_keys", message: "Unknown field." },
+          { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+          { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+        ],
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain("PRIVATE_");
+    expect(JSON.stringify(body)).not.toContain("password-hunter2");
+    expect(JSON.stringify(audits.events)).not.toContain("PRIVATE_");
+  });
+
   it("defaults negated flags to false and honors explicit true over the gateway", async () => {
     const audits = captureAudits();
 
@@ -633,6 +749,61 @@ describe("dispatch — validation", () => {
 });
 
 describe("dispatch — error path", () => {
+  it("distinguishes unknown profiles, missing inputs and denied previews without creating tasks", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-gateway-profile-errors-");
+    const previousCwd = process.cwd();
+    process.chdir(stateDir);
+    invalidateTaskProfileCatalogCache();
+    try {
+      getOrCreateSession("main", "main", stateDir, { name: "main" });
+      const profileId = "private-required-input-fixture";
+      const profileDir = join(stateDir, "task-profiles", profileId);
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(
+        join(profileDir, "profile.json"),
+        JSON.stringify({ ...systemProfiles[0], id: profileId, inputs: [{ key: "goal", required: true }] }),
+      );
+      const commands = buildRegistry([TaskCommands, TaskProfileCommands]);
+      const contextRecord = gatewayContext([executeGroup("tasks"), adminSystem()], "main");
+      const invoke = (name: string, profile: string, context = contextRecord) => {
+        const cmd = commands.commands.find((entry) => entry.fullName === name)!;
+        const input =
+          name === "tasks.create"
+            ? { title: "Profile failure fixture", instructions: "Fixture only", profile, reportTo: "main" }
+            : { profileId: profile, title: "Profile failure fixture" };
+        return dispatch(cmd, input, {}, { contextRecord: context, emitAudit: () => {} });
+      };
+
+      expect(dbListTasks()).toHaveLength(0);
+      for (const name of ["tasks.create", "tasks.profiles.preview"]) {
+        const missing = await invoke(name, "missing-profile");
+        expect(missing.response.status).toBe(422);
+        const missingBody = await missing.response.json();
+        expect(missingBody).toMatchObject({
+          exitCode: 1,
+          error: { code: "TASK_PROFILE_NOT_FOUND", message: "Missing task profile: missing-profile." },
+        });
+        expect(JSON.stringify(missingBody)).not.toContain(profileId);
+
+        const invalid = await invoke(name, profileId);
+        expect(invalid.response.status).toBe(400);
+        expect(await invalid.response.json()).toMatchObject({ exitCode: 2, error: { code: "USAGE_ERROR" } });
+      }
+
+      const denied = await invoke("tasks.profiles.preview", profileId, gatewayContext([]));
+      expect(denied.response.status).toBe(403);
+      const deniedBody = await denied.response.json();
+      expect(deniedBody).toMatchObject({ error: { code: "PERMISSION_DENIED" } });
+      expect(JSON.stringify(deniedBody)).not.toContain(profileId);
+      expect(dbListTasks()).toHaveLength(0);
+      expect(getDb().query("SELECT COUNT(*) AS count FROM task_assignments").get()).toEqual({ count: 0 });
+    } finally {
+      process.chdir(previousCwd);
+      invalidateTaskProfileCatalogCache();
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("recovers show and dry-run dispatch after restoring missing decision storage", async () => {
     const stateDir = await createIsolatedRaviState("ravi-gateway-task-schema-test-");
     const stdout = spyOn(process.stdout, "write").mockImplementation((() => true) as never);
@@ -683,7 +854,7 @@ describe("dispatch — error path", () => {
     }
   });
 
-  it("logs the original SQLite cause and stack while keeping the HTTP 500 private", async () => {
+  it("returns the original SQLite cause and excludes stacks from response and logs", async () => {
     const fixture = new Database(":memory:");
     const handler = spyOn(GatewayDemoCommands.prototype, "boom").mockImplementation(() => {
       fixture.query("SELECT * FROM task_decisions").all();
@@ -693,14 +864,23 @@ describe("dispatch — error path", () => {
     try {
       const result = await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: () => {} });
       expect(result.response.status).toBe(500);
-      const body = JSON.stringify(await result.response.json());
+      const envelope = await result.response.json();
+      expect(envelope).toMatchObject({
+        error: {
+          code: "UNHANDLED_ERROR",
+          cause: "no such table: task_decisions",
+          context: { operation: "demo boom" },
+        },
+      });
+      const body = JSON.stringify(envelope);
       expect(body).toContain("UNHANDLED_ERROR");
-      expect(body).not.toContain("task_decisions");
+      expect(body).toContain("no such table: task_decisions");
+      expect(body).not.toContain("dispatcher.test.ts");
       const diagnostic = stderr.mock.calls.map((call) => String(call[0])).join("");
       expect(diagnostic).toContain("no such table: task_decisions");
-      expect(diagnostic).toContain("command=demo.boom");
-      expect(diagnostic).toContain("stack=");
-      expect(diagnostic).toContain("dispatcher.test.ts");
+      expect(diagnostic).toContain("command=demo boom");
+      expect(diagnostic).not.toContain("stack=");
+      expect(diagnostic).not.toContain("dispatcher.test.ts");
     } finally {
       stderr.mockRestore();
       handler.mockRestore();
@@ -730,22 +910,31 @@ describe("dispatch — error path", () => {
   });
 
   it.each([
-    ["demo.cloud-auth-error", 401, "AUTH_REQUIRED"],
-    ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED"],
-    ["demo.cloud-rate-error", 429, "RATE_LIMITED"],
-  ] as const)("preserves CloudAuthError HTTP status for %s", async (command, status, code) => {
-    const result = await dispatch(findCmd(command), {}, {}, { contextRecord: demoContext });
+    ["demo.cloud-auth-error", 401, "AUTH_REQUIRED", "Console authentication is required."],
+    ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED", "Console project access was denied."],
+    ["demo.cloud-rate-error", 429, "RATE_LIMITED", "Console request was rate limited."],
+  ] as const)(
+    "preserves CloudAuthError HTTP status and normalized cause for %s",
+    async (command, status, code, reason) => {
+      const result = await dispatch(findCmd(command), {}, {}, { contextRecord: demoContext });
 
-    expect(result.response.status).toBe(status);
-    const body = await result.response.json();
-    expect(body).toMatchObject({
-      success: false,
-      exitCode: 1,
-      outcome: "failed",
-      error: { code },
-    });
-    expect(JSON.stringify(body)).not.toContain("private provider");
-  });
+      expect(result.response.status).toBe(status);
+      const body = await result.response.json();
+      expect(body).toMatchObject({
+        success: false,
+        exitCode: 1,
+        outcome: "failed",
+        error: {
+          code,
+          message: reason,
+          cause: `${reason}\nCaused by: [redacted:provider.body]`,
+          context: { operation: command.replaceAll(".", " "), code, provider: "console", status },
+        },
+      });
+      expect(JSON.stringify(body)).not.toContain("PRIVATE_PROVIDER_BODY_798");
+      expect(JSON.stringify(body)).not.toContain("PRIVATE_PROVIDER_TOKEN_798");
+    },
+  );
 
   it("falls back to the contract status for an invalid provider HTTP status", async () => {
     const result = await dispatch(findCmd("demo.cloud-invalid-status"), {}, {}, { contextRecord: demoContext });
@@ -824,10 +1013,16 @@ describe("dispatch — error path", () => {
       op: "demo app-error",
       exitCode: 1,
       outcome: "failed",
-      error: { code: "not_found", message: "Ravi app was not found." },
+      error: {
+        code: "not_found",
+        message: "Ravi app was not found.",
+        cause: "App manifest missing from local configuration; token=[redacted:token]",
+        context: { operation: "demo app-error", code: "not_found", status: 404 },
+      },
     });
     expect(JSON.stringify(body)).not.toContain("private-path");
     expect(JSON.stringify(body)).not.toContain("app-secret");
+    expect(JSON.stringify(body)).not.toContain("APP_SECRET_798");
     expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "not_found" });
   });
 
@@ -868,9 +1063,12 @@ describe("dispatch — error path", () => {
       success: false,
       op: "demo boom",
       exitCode: 1,
-      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+      error: {
+        code: "UNHANDLED_ERROR",
+        message: "demo boom failed internally. Report the requestId to the operator before retrying.",
+      },
     });
-    expect(JSON.stringify(body)).not.toContain("kaboom");
+    expect(body).toMatchObject({ error: { cause: "kaboom", context: { operation: "demo boom" } } });
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]).toMatchObject({ isError: true, errorCode: "UNHANDLED_ERROR", exitCode: 1 });
   });
@@ -896,7 +1094,15 @@ describe("dispatch — error path", () => {
         op: string;
         exitCode: number;
         outcome: string;
-        error: { code: string; message: string; retryable: boolean; suggestedAction: string };
+        error: {
+          code: string;
+          message: string;
+          cause: string;
+          context: { operation: string };
+          retryable: boolean;
+          suggestedAction: string;
+          requestId: string;
+        };
       };
       expect(body).toEqual({
         success: false,
@@ -906,8 +1112,11 @@ describe("dispatch — error path", () => {
         error: {
           code,
           message: "contract stopped execution",
+          cause: "contract stopped execution",
+          context: { operation: "demo contract" },
           retryable: false,
           suggestedAction: "inspect the structured response",
+          requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
         },
       });
       expect(audits.events).toHaveLength(1);

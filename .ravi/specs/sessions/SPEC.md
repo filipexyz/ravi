@@ -107,6 +107,8 @@ Sessions do NOT own:
   that session.
 - Hidden sessions SHOULD appear missing on direct lookup.
 
+- `sessions read` and `sessions recap` for a thread MUST return only that child's durable session history. An empty thread MUST remain empty; shared platform chat ids, message metadata and parent provider transcripts MUST NOT be used as silent fallback.
+
 ## Session Actions
 
 `ravi sessions actions --json` is the canonical conversational action surface for a runtime session.

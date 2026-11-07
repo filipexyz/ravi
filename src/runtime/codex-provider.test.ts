@@ -1367,6 +1367,7 @@ rl.on("line", (line) => {
     });
     const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
     expect(args).toContain("features.codex_hooks=true");
+    expect(args).not.toContain("features.hooks=true");
     expect(args).toContain("shell_environment_policy.inherit=all");
     expect(args).toContain("shell_environment_policy.ignore_default_excludes=true");
     expect(args).toContain(

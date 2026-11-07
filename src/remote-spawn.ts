@@ -8,15 +8,32 @@
  * The SDK normally spawns: `bun /path/to/node_modules/.../cli.js <args>`
  * We intercept this and run: `ssh user@vm claude <args>` instead,
  * stripping local paths and adapting args for the remote environment.
+ *
+ * Credentials and runtime context (CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY,
+ * RAVI_CONTEXT_KEY, RAVI_GATEWAY_URL) never appear in the ssh argv: argv is
+ * visible in local `ps` and becomes the remote shell's command line. Instead the
+ * remote command reads each value from stdin (`IFS= read -r`) before starting
+ * claude, and we write the values to the ssh stdin first.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions as ChildSpawnOptions } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import { logger } from "./utils/logger.js";
 
 const log = logger.child("remote-spawn");
+
+/** Runtime credential/context env vars handed to the remote claude via stdin (never via argv). */
+const FORWARDED_ENV_KEYS = [
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "RAVI_CONTEXT_KEY",
+  "RAVI_GATEWAY_URL",
+] as const;
+
+/** Spawn implementation (injectable for tests). */
+export type RemoteSpawnImpl = (command: string, args: string[], options: ChildSpawnOptions) => ChildProcess;
 
 /** Convert a VMID to an IP address (static scheme: 10.10.10.{vmid}) */
 export function vmIdToIp(vmId: string): string {
@@ -67,12 +84,33 @@ function filterArgs(args: string[]): string[] {
   return filtered;
 }
 
-/** Preserve the runtime credential and context when crossing the SSH shell. */
+/** Remote shell prefix plus the stdin payload it consumes. */
+export interface RemoteEnvSetup {
+  /** `IFS= read -r KEY && export KEY && ` per forwarded key (names only, never values). */
+  prefix: string;
+  /** One value per line, in prefix order; written to the ssh stdin before any SDK input. */
+  stdin: string;
+  /** Forwarded key names, for logging. */
+  keys: string[];
+}
+
+/**
+ * Preserve the runtime credential and context when crossing the SSH shell,
+ * without ever putting a value on the ssh command line.
+ *
+ * Key names come from a fixed allowlist and values are never interpolated into
+ * the remote command: for each key present the command starts with
+ * `IFS= read -r KEY && export KEY && `, and the caller writes the values, one
+ * per line, to the ssh stdin in the same order. POSIX shells read a pipe
+ * byte-by-byte for `read`, so they consume exactly one line each and the rest
+ * of stdin (the SDK's stream-json) reaches claude. A value containing a newline
+ * cannot be framed this way and is refused.
+ */
 export function buildRemoteEnvSetup(
   host: string,
   env: Record<string, string | undefined>,
   hostEnv: Record<string, string | undefined> = process.env,
-): string {
+): RemoteEnvSetup {
   const forwardedEnv = { ...env };
   forwardedEnv.RAVI_GATEWAY_URL = env.RAVI_GATEWAY_URL || hostEnv.RAVI_GATEWAY_URL;
   // A loopback SSH agent shares the daemon's network namespace, but not its
@@ -87,17 +125,22 @@ export function buildRemoteEnvSetup(
     }
   }
 
-  const forwardKeys = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "RAVI_CONTEXT_KEY", "RAVI_GATEWAY_URL"];
-  const exports = forwardKeys.flatMap((key) => {
+  const keys: string[] = [];
+  const values: string[] = [];
+  for (const key of FORWARDED_ENV_KEYS) {
     const value = forwardedEnv[key];
-    return value ? [`export ${key}='${value.replace(/'/g, "'\\''")}'`] : [];
-  });
-  if (exports.length === 0) return "";
-
-  // These must be real newlines. Literal \\n joins (or a trailing literal \\n)
-  // are parsed by the remote shell as part of the preceding credential value.
-  const content = exports.join("\n").replace(/'/g, "'\\''");
-  return `_e=$(mktemp) && printf '%s' '${content}' > "$_e" && ` + `chmod 600 "$_e" && . "$_e" && rm -f "$_e" && `;
+    if (!value) continue;
+    if (/[\r\n]/.test(value)) {
+      throw new Error(`Refusing remote spawn: ${key} contains a newline and cannot be passed over stdin`);
+    }
+    keys.push(key);
+    values.push(value);
+  }
+  return {
+    prefix: keys.map((key) => `IFS= read -r ${key} && export ${key} && `).join(""),
+    stdin: values.map((value) => `${value}\n`).join(""),
+    keys,
+  };
 }
 
 /**
@@ -105,8 +148,15 @@ export function buildRemoteEnvSetup(
  *
  * @param vmId - Proxmox VMID (e.g., "201") or direct IP/hostname
  * @param sshUser - SSH user (default: "root")
+ * @param spawnImpl - child_process.spawn replacement (tests)
+ * @param hostEnv - daemon environment used to derive RAVI_GATEWAY_URL (tests)
  */
-export function createRemoteSpawn(vmId: string, sshUser: string = "root"): (options: SpawnOptions) => SpawnedProcess {
+export function createRemoteSpawn(
+  vmId: string,
+  sshUser: string = "root",
+  spawnImpl: RemoteSpawnImpl = spawn,
+  hostEnv: Record<string, string | undefined> = process.env,
+): (options: SpawnOptions) => SpawnedProcess {
   const host = vmId.match(/^\d+$/) ? vmIdToIp(vmId) : vmId;
 
   return (options: SpawnOptions): SpawnedProcess => {
@@ -114,7 +164,8 @@ export function createRemoteSpawn(vmId: string, sshUser: string = "root"): (opti
 
     const claudeArgs = filterArgs(args);
 
-    const envSetup = buildRemoteEnvSetup(host, env);
+    // Credentials and context go over the ssh stdin, never argv (see buildRemoteEnvSetup).
+    const envSetup = buildRemoteEnvSetup(host, env, hostEnv);
 
     // Use home dir on VM — local macOS/Linux paths won't exist remotely
     const remoteCwd = cwd && !cwd.startsWith("/Users/") && !cwd.startsWith("/home/") ? cwd : undefined;
@@ -122,12 +173,13 @@ export function createRemoteSpawn(vmId: string, sshUser: string = "root"): (opti
 
     // Build remote command: claude <args>
     const quotedArgs = claudeArgs.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
-    const remoteCmd = `${cdPrefix}${envSetup}claude ${quotedArgs}`;
+    const remoteCmd = `${cdPrefix}${envSetup.prefix}claude ${quotedArgs}`;
 
     log.info("Spawning remote Claude process", {
       host,
       claudeArgs,
       remoteCwd: remoteCwd ?? "(home)",
+      credentialKeys: envSetup.keys,
     });
 
     // SSH config: accept-new for TOFU (trust on first use) — safer than StrictHostKeyChecking=no
@@ -163,10 +215,17 @@ export function createRemoteSpawn(vmId: string, sshUser: string = "root"): (opti
     if (env.SSH_AUTH_SOCK) sshChildEnv.SSH_AUTH_SOCK = env.SSH_AUTH_SOCK;
     else if (process.env.SSH_AUTH_SOCK) sshChildEnv.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
 
-    const child = spawn("ssh", sshArgs, {
+    const child = spawnImpl("ssh", sshArgs, {
       stdio: ["pipe", "pipe", "pipe"],
       env: sshChildEnv,
     });
+
+    child.stdin?.on("error", (err: Error) => {
+      log.warn("Remote stdin error", { host, error: err.message });
+    });
+
+    // Feed credentials before returning the child, so they precede every SDK write.
+    if (envSetup.stdin) child.stdin?.write(envSetup.stdin);
 
     // Log stderr — errors as warn, debug info as debug
     child.stderr?.on("data", (chunk: Buffer) => {

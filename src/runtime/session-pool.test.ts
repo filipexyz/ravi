@@ -5,6 +5,7 @@ import type { RuntimeHostStreamingSession } from "./host-session.js";
 import {
   DEFAULT_RUNTIME_INTERACTIVE_RESERVED_SLOTS,
   DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS,
+  DEFAULT_RUNTIME_PENDING_START_TIMEOUT_MS,
   DEFAULT_RUNTIME_SESSION_POOL_MAX,
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
@@ -159,9 +160,9 @@ describe("runtime session pool", () => {
     ).toBe("background");
   });
 
-  it("reuses idle TTL for pending-start timeout and keeps the 15m turn inactivity default", () => {
-    expect(resolveRuntimePendingStartTimeoutMs("")).toBe(DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS);
-    expect(resolveRuntimePendingStartTimeoutMs("0")).toBe(DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS);
+  it("separates the pending-start watchdog from idle TTL and keeps the 15m turn inactivity default", () => {
+    expect(resolveRuntimePendingStartTimeoutMs("")).toBe(DEFAULT_RUNTIME_PENDING_START_TIMEOUT_MS);
+    expect(resolveRuntimePendingStartTimeoutMs("0")).toBe(DEFAULT_RUNTIME_PENDING_START_TIMEOUT_MS);
     expect(resolveRuntimePendingStartTimeoutMs("45000")).toBe(45_000);
     expect(resolveRuntimeTurnInactivityMs("")).toBe(15 * 60 * 1000);
     expect(resolveRuntimeTurnInactivityMs("0")).toBe(15 * 60 * 1000);

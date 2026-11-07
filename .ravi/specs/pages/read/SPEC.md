@@ -68,6 +68,13 @@ nudges that send agents to the command.
    (an empty or new directory, or a new zip file) and download every listed
    file, checking its size and sha256. Paths that are absolute or contain `..`
    are refused. The presigned URLs MUST NOT appear in any output.
+   Directory downloads MUST authorize every final file destination through the
+   caller file-write/provider-settings boundary before any file fetch or write.
+   The boundary MUST be rechecked after downloading, before creating files.
+   Write access to the parent directory MUST NOT authorize provider settings
+   such as `.claude`, `.codex`, `.pi` or `.mcp.json` within it, including nested,
+   case-variant and symlink destinations. Manifest filenames MUST remain literal.
+   ZIP members are archive data; the ZIP destination itself MUST be authorized.
 9. Every answer MUST say what its text is (`content.representation` and
    `content.note`, also printed as a `Format:` line): Markdown is an extraction
    without styles, layout or images and points to `html` and `zip|files` for

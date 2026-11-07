@@ -104,3 +104,8 @@ Todo agente — inclusive recém-criado — MUST receber automaticamente um base
 - O controle protege catálogo e leitura pela interface Ravi e, no Pi, a invocação via tool no authorize path; não transforma instruções em permissões de efeito.
 - NÃO substitui permissions (REBAC de comandos) — as skills de sistema *seguem* a permissão, não a redefinem.
 - NÃO cobre versionamento/distribuição de skills entre instâncias.
+
+## Loaded Identity and Cold Start
+
+- Skill-load telemetry MUST use the canonical identity from structured CLI metadata or the requested command. A Markdown heading in raw or piped SKILL.md content MUST NOT become a skill id. Human CLI metadata requires its `Path:` field.
+- A legacy malformed loaded-skill record MAY fail the resume guard. That rejection MUST use the durable same-session fallback defined in `runtime/session-continuity/context-recovery`; it MUST NOT erase conversational decisions or widen skill permissions.

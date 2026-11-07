@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../context.js";
-import { attachChatToSession, getOrCreateSession, listSessionSubscriptions } from "../../router/sessions.js";
+import {
+  attachChatToSession,
+  getOrCreateSession,
+  getSession,
+  listSessionSubscriptions,
+} from "../../router/sessions.js";
 import { dbCreateAgent, dbGetAgent, dbSetSetting, dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { SessionCommands } from "./sessions.js";
@@ -88,22 +93,44 @@ describe("sessions attach/detach/subscriptions authorization", () => {
 });
 
 describe("sessions set-provider/set-model --propagate", () => {
-  it("needs the authority of agents set, and changes nothing without it", () => {
-    dbCreateAgent({ id: "crm", cwd: "/tmp/crm", model: "gpt-5" });
+  it.each([
+    ["set-provider", "claude"],
+    ["set-provider", "codex"],
+    ["set-model", "deepseek/deepseek-flash"],
+    ["set-model", "gpt-5-mini"],
+  ])("denies %s %s before compatibility validation or any configuration write", async (command, value) => {
+    dbCreateAgent({ id: "crm", cwd: "/tmp/crm", provider: "codex", model: "gpt-5" });
     const own = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    const sibling = getOrCreateSession("agent:crm:sibling", "crm", "/tmp/crm");
     const before = dbGetAgent("crm");
     const commands = new SessionCommands();
 
-    runWithContext(BOOTSTRAP, () => {
-      expect(() => commands.setProvider(own.sessionKey, "claude", true, true)).toThrow("--propagate");
-      expect(() => commands.setModel(own.sessionKey, "gpt-5-mini", true, true)).toThrow("--propagate");
-    });
+    await expect(
+      runWithContext(BOOTSTRAP, async () =>
+        command === "set-provider"
+          ? commands.setProvider(own.sessionKey, value, true, true)
+          : commands.setModel(own.sessionKey, value, true, true),
+      ),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED", message: expect.stringContaining("--propagate") });
     expect(dbGetAgent("crm")).toEqual(before);
-    expect(getOrCreateSession("agent:crm:main", "crm", "/tmp/crm").runtimeProviderOverride ?? null).toBeNull();
+    expect(getSession(own.sessionKey)).toEqual(own);
+    expect(getSession(sibling.sessionKey)).toEqual(sibling);
   });
 });
 
 describe("sessions set-provider", () => {
+  it("denies an incompatible provider switch before validation without --propagate", () => {
+    dbCreateAgent({ id: "crm", cwd: "/tmp/crm", provider: "codex", model: "gpt-5" });
+    const own = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    const before = dbGetAgent("crm");
+
+    expect(() =>
+      runWithContext(BOOTSTRAP, () => new SessionCommands().setProvider(own.sessionKey, "claude", true)),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED", message: expect.stringContaining("tool gate") }));
+    expect(dbGetAgent("crm")).toEqual(before);
+    expect(getSession(own.sessionKey)).toEqual(own);
+  });
+
   it("needs the authority of agents set to move an agent's session to another provider", () => {
     dbCreateAgent({ id: "crm", cwd: "/tmp/crm", provider: "claude" });
     const own = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");

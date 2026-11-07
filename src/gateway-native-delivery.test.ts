@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { configStore } from "./config-store.js";
+import {
+  claimApprovalDecision,
+  createApprovalRequest,
+  recordApprovalDeliveries,
+  expireApprovalRequest,
+  recordApprovalGrantOutcome,
+} from "./approval/store.js";
 import type { ChannelOutboundJob } from "./channels/outbound-stream.js";
 import type { SlackTextSendInput } from "./channels/slack/text-send.js";
 import * as slackTextSend from "./channels/slack/text-send.js";
@@ -1008,5 +1015,154 @@ describe("Gateway native channel account actions", () => {
     expect(emitted).toEqual([
       ["ravi.reply.sticker", { success: false, error: "Slack does not support Ravi stickers" }],
     ]);
+  });
+});
+
+describe("Gateway stored Slack approval finalization", () => {
+  const requestId = "approval-finalization-fixture";
+  function seedApproval(grant = false) {
+    const now = Date.now();
+    createApprovalRequest({
+      id: requestId,
+      type: "plan",
+      channel: "slack",
+      accountId: "stored-account",
+      chatId: "C_STORED",
+      messageId: "legacy_1",
+      ...(grant
+        ? {
+            grant: {
+              capability: { permission: "use", objectType: "tool", objectId: "Bash" },
+              targets: { agentId: "dev", chatId: "C_STORED", chatTags: [] },
+              adminUserIds: ["U_OWNER"],
+              allowed: ["exact"] as const,
+              scopes: ["contact"] as const,
+            },
+          }
+        : {}),
+      createdAt: now,
+      expiresAt: now + 60_000,
+    });
+    recordApprovalDeliveries(requestId, [
+      {
+        userId: "U_OWNER",
+        kind: "dm",
+        chatId: "D_STORED",
+        messageId: "dm_stored_1",
+        createdAt: now,
+      },
+    ]);
+    return now;
+  }
+  async function finalize(gateway: unknown, payload: Record<string, unknown>) {
+    await (
+      gateway as { handleApprovalFinalizationEvent(input: Record<string, unknown>): Promise<void> }
+    ).handleApprovalFinalizationEvent({ ...payload, replyTopic: "ravi._reply.approval-fixture" });
+  }
+
+  it("reconstructs terminal card content and destination from the stored approval, ignoring payload claims", async () => {
+    const now = seedApproval();
+    claimApprovalDecision({ id: requestId, decision: "approved", decidedBy: "U_OWNER", now });
+    const update = spyOn(slackTextSend, "updateSlackText").mockResolvedValue({
+      transport: "slack-native",
+      provider: "slack",
+      success: true,
+      status: "updated",
+      messageId: "dm_stored_1",
+      raw: {},
+    });
+    try {
+      const { gateway, emitted } = await createGateway();
+      await finalize(gateway, {
+        requestId,
+        messageId: "dm_stored_1",
+        accountId: "evil-account",
+        chatId: "C_OTHER",
+        text: "injected-text",
+        blocks: [{ type: "actions" }],
+      });
+      expect(update).toHaveBeenCalledTimes(1);
+      const [message, dependencies] = update.mock.calls[0]!;
+      expect(message).toMatchObject({ accountId: "stored-account", chatId: "D_STORED", messageId: "dm_stored_1" });
+      expect(message.text).toContain("Approved");
+      expect(JSON.stringify(message)).not.toContain("injected-text");
+      expect(JSON.stringify(message.blocks)).not.toContain('"type":"actions"');
+      expect(dependencies).toEqual({ authority: { kind: "internal-service", service: "approval-delivery" } });
+      expect(emitted).toEqual([["ravi._reply.approval-fixture", { success: true }]]);
+    } finally {
+      update.mockRestore();
+    }
+  });
+
+  it("does not send pending, unknown or forged delivery targets", async () => {
+    const now = seedApproval();
+    const update = spyOn(slackTextSend, "updateSlackText");
+    try {
+      const { gateway, emitted } = await createGateway();
+      await finalize(gateway, { requestId, messageId: "dm_stored_1" });
+      claimApprovalDecision({ id: requestId, decision: "approved", decidedBy: "U_OWNER", now });
+      await finalize(gateway, { requestId, messageId: "forged_message" });
+      await finalize(gateway, { requestId: "missing-request", messageId: "dm_stored_1" });
+      await finalize(gateway, { requestId, messageId: 17 });
+      expect(update).not.toHaveBeenCalled();
+      expect(emitted).toHaveLength(4);
+      for (const [, result] of emitted)
+        expect(result).toEqual({ success: false, error: "Slack approval finalization failed." });
+    } finally {
+      update.mockRestore();
+    }
+  });
+
+  it("waits for the executor result and preserves the granted capability and scope on the final DM", async () => {
+    const now = seedApproval(true);
+    claimApprovalDecision({
+      id: requestId,
+      decision: "approved",
+      decidedBy: "U_OWNER",
+      grantIntent: "exact",
+      grantScope: "contact",
+      now,
+    });
+    const update = spyOn(slackTextSend, "updateSlackText").mockResolvedValue({
+      transport: "slack-native",
+      provider: "slack",
+      success: true,
+      status: "updated",
+      messageId: "dm_stored_1",
+      raw: {},
+    });
+    try {
+      const { gateway, emitted } = await createGateway();
+      await finalize(gateway, { requestId, messageId: "dm_stored_1" });
+      expect(update).not.toHaveBeenCalled();
+      expect(emitted[0]?.[1]).toMatchObject({ success: false });
+      recordApprovalGrantOutcome(requestId, "applied");
+      await finalize(gateway, { requestId, messageId: "dm_stored_1" });
+      expect(update.mock.calls[0]?.[0].text).toContain("Granted use:tool:Bash");
+      expect(update.mock.calls[0]?.[0].text).toContain("contact");
+      expect(emitted[1]?.[1]).toEqual({ success: true });
+    } finally {
+      update.mockRestore();
+    }
+  });
+
+  it("renders a timed-out DM card from stored expiration", async () => {
+    const now = seedApproval();
+    expireApprovalRequest(requestId, now + 60_001);
+    const update = spyOn(slackTextSend, "updateSlackText").mockResolvedValue({
+      transport: "slack-native",
+      provider: "slack",
+      success: true,
+      status: "updated",
+      messageId: "dm_stored_1",
+      raw: {},
+    });
+    try {
+      const { gateway } = await createGateway();
+      await finalize(gateway, { requestId, messageId: "dm_stored_1" });
+      expect(update.mock.calls[0]?.[0].text).toContain("Expired");
+    } finally {
+      update.mockRestore();
+    }
   });
 });

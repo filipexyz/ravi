@@ -24,3 +24,16 @@ dedup cache or schema migration. Existing run history is preserved. A failed
 notification or a crash after the update can lose the prompt, but the disabled
 state, read-only ownership diagnostic and error log remain inspectable. A durable
 notification outbox is outside this bounded fix.
+
+## Ownership is an admission fact; revocation remains live
+
+A live owner lookup couples old instructions to new authority. A contact's
+queued prompt could become an operator request after `cron set message`, even
+though the new operator instructions had never entered that turn. Capture both
+instructions and ownership from the same row before the first asynchronous step.
+
+Disable/delete govern future scheduling, not cancellation. This also lets
+one-shots finish after the runner removes their row. Contact block/deletion is
+an identity revocation and denies subsequent owner-attributed calls. The snapshot
+is a ceiling, not an exemption from revocation. No migration may guess ownership
+for already queued legacy prompts: protected calls fail closed until a fresh run.

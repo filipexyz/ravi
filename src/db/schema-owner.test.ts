@@ -57,6 +57,25 @@ it("matching release serves normal queries while wrong release fails and failed 
   db.close();
 });
 
+it("interleaved initializers publish the same ready marker without a uniqueness failure", () => {
+  const state = fixture();
+  const path = join(state, "interleaved.db");
+  const first = new Database(path);
+  const second = new Database(path);
+  try {
+    initializeStateSchema(first, "chat", () => {
+      first.exec("CREATE TABLE IF NOT EXISTS messages (id TEXT)");
+      initializeStateSchema(second, "chat", () => second.exec("CREATE TABLE IF NOT EXISTS messages (id TEXT)"));
+    });
+    expect(() => assertStateSchemaReady(first, "chat")).not.toThrow();
+    expect(() => assertStateSchemaReady(second, "chat")).not.toThrow();
+    expect(first.query("SELECT count(*) AS count FROM state_schema_versions").get()).toEqual({ count: 1 });
+  } finally {
+    first.close();
+    second.close();
+  }
+});
+
 it("channels startup refuses missing state before connecting to NATS and creates no database", () => {
   const state = fixture();
   const result = run(
@@ -80,7 +99,8 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
   expect(prepared.status, prepared.stderr).toBe(0);
   const snapshot = () =>
     Object.fromEntries(
-      readdirSync(state)
+      readdirSync(state, { recursive: true })
+        .map((name) => name.toString())
         .filter((name) => name.endsWith(".db"))
         .map((name) => {
           const db = new Database(join(state, name), { readonly: true });

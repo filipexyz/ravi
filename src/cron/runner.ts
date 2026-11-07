@@ -5,6 +5,7 @@
  * Similar to heartbeat runner but for user-defined cron jobs.
  */
 
+import { randomUUID } from "node:crypto";
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
@@ -21,6 +22,8 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
+import { cronOwnerActsAsOperator } from "../link/connector-turn.js";
+import { CRON_RUN_AUTHORITY_ENV, type CronRunAuthority } from "./authority.js";
 import { cronOwnershipError } from "./ownership.js";
 import {
   dbGetDueJobs,
@@ -28,8 +31,6 @@ import {
   dbUpdateJobState,
   dbDeleteCronJob,
   dbGetCronJob,
-  dbMarkJobDispatched,
-  dbRecordJobOutcome,
   dbListCronJobs,
   dbDisableShellJobForOwner,
 } from "./cron-db.js";
@@ -44,14 +45,26 @@ import {
   type CronTurnOutcome,
 } from "./turn-outcome.js";
 import type { CronJob } from "./types.js";
+import { notifyCronFailure } from "./failure-notification.js";
+import {
+  admitCronRun,
+  getCronRun,
+  settleCronRun,
+  cronRunNotification,
+  pendingCronFailureReports,
+  markCronRunReported,
+} from "./run-db.js";
 
 const log = logger.child("cron:runner");
 const MAX_NOTIFY_OUTPUT_CHARS = 4000;
 
-/** Agent job dispatch whose turn has not reached a terminal runtime event yet. */
-interface PendingCronTurn {
-  sessionName: string;
-  dispatchedAt: number;
+function captureRunAuthority(job: CronJob): CronRunAuthority {
+  return {
+    jobId: job.id,
+    ownerPrincipal: job.ownerPrincipal ?? "operator",
+    ownerIsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null),
+    ...(job.creatorChat ? { creatorChat: job.creatorChat } : {}),
+  };
 }
 
 /**
@@ -61,8 +74,6 @@ export class CronRunner {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
   private processing = false;
-  /** Latest in-flight dispatch per agent job id. */
-  private pendingTurns = new Map<string, PendingCronTurn>();
   private runtimeEventStream: ReturnType<typeof nats.subscribe> | null = null;
 
   /**
@@ -85,6 +96,10 @@ export class CronRunner {
 
     // Subscribe to runtime terminal events so job state reflects turn outcomes
     this.subscribeToRuntimeEvents();
+    for (const run of pendingCronFailureReports()) {
+      if (await notifyCronFailure(cronRunNotification(run), run.error ?? "Agent turn failed"))
+        markCronRunReported(run.id);
+    }
 
     log.info("Cron runner started");
   }
@@ -111,7 +126,6 @@ export class CronRunner {
       }
       this.runtimeEventStream = null;
     }
-    this.pendingTurns.clear();
 
     log.info("Cron runner stopped");
   }
@@ -171,7 +185,7 @@ export class CronRunner {
 
       for (const job of dueJobs) {
         if (!this.running) break;
-        await this.executeJob(job);
+        await this.executeJob(job, true);
       }
     } finally {
       this.processing = false;
@@ -189,12 +203,13 @@ export class CronRunner {
    * turn that fails (e.g. provider rejects the model) surfaces as an error
    * instead of a healthy run.
    */
-  private async executeJob(job: CronJob): Promise<void> {
+  private async executeJob(job: CronJob, scheduled = false): Promise<void> {
     // Recheck immediately before execution (manual runs and ownership changes
     // since the timer was armed follow the same rule).
     const current = dbGetCronJob(job.id);
-    if (!current || !this.reconcileOwnership(current)) return;
+    if (!current || (scheduled && !current.enabled) || !this.reconcileOwnership(current)) return;
     job = current;
+    const authority = captureRunAuthority(job);
     const startTime = Date.now();
     log.info("Executing job", {
       jobId: job.id,
@@ -204,109 +219,75 @@ export class CronRunner {
     });
 
     if (job.executionType === "shell") {
-      await this.executeShellJob(job, startTime);
+      await this.executeShellJob(job, startTime, authority);
       return;
     }
 
+    const runId = randomUUID();
     try {
       const sessionName =
-        job.sessionTarget === "main" ? await this.executeMainJob(job) : await this.executeIsolatedJob(job);
-
-      // Calculate next run from the scheduled time (not now) to prevent drift
-      // For interval jobs, use the original nextRunAt as base
-      const nextRunAt = this.calculateFollowupRun(job, startTime);
-
-      dbMarkJobDispatched(job.id, { lastRunAt: startTime, nextRunAt });
-      this.pendingTurns.set(job.id, { sessionName, dispatchedAt: startTime });
+        job.sessionTarget === "main"
+          ? await this.executeMainJob(job, startTime, authority, runId)
+          : await this.executeIsolatedJob(job, startTime, authority, runId);
 
       log.info("Job dispatched", { jobId: job.id, jobName: job.name, sessionName });
 
-      // Delete one-shot jobs after successful dispatch
-      if (job.deleteAfterRun || job.schedule.type === "at") {
-        log.info("Deleting one-shot job", { jobId: job.id });
-        dbDeleteCronJob(job.id);
-        this.pendingTurns.delete(job.id);
-      }
+      // One-shots stay inspectable until their turn actually succeeds.
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
-      // Calculate next run even on error so job can retry
-      const nextRunAt = this.calculateFollowupRun(job, startTime);
-
-      dbUpdateJobState(job.id, {
-        lastRunAt: startTime,
-        lastStatus: "error",
-        lastError: errorMessage,
-        lastDurationMs: Date.now() - startTime,
-        nextRunAt,
-      });
-      this.pendingTurns.delete(job.id);
+      const run = getCronRun(runId);
+      if (run) {
+        await this.recordTurnOutcome({
+          kind: "failed",
+          sessionName: run.session_name,
+          provenance: "cron",
+          jobId: job.id,
+          runId,
+          error: errorMessage,
+        });
+      } else {
+        dbUpdateJobState(job.id, {
+          lastRunAt: startTime,
+          lastStatus: "error",
+          lastError: errorMessage,
+          lastDurationMs: Date.now() - startTime,
+          nextRunAt: this.calculateFollowupRun(job, startTime),
+        });
+        await notifyCronFailure(
+          { ...job, ownerPrincipal: authority.ownerPrincipal, lastRunAt: startTime, runId },
+          errorMessage,
+        );
+      }
 
       log.error("Job dispatch failed", { jobId: job.id, jobName: job.name, error: errorMessage });
     }
   }
 
-  /**
-   * Apply a runtime terminal event (`turn.complete` / `turn.failed` /
-   * `turn.interrupted`) to the cron job whose prompt caused the turn.
-   *
-   * Correlation prefers the canonical turn provenance (`cron:<jobId>`), which
-   * survives daemon restarts and works when another daemon ran the turn. Pre-turn
-   * failures (runtime launch, prompt dispatch) carry no provenance, so they are
-   * attributed to the dispatches still pending on that session.
-   *
-   * Public so the NATS subscription and tests share a single code path.
-   */
-  handleRuntimeEvent(event: { topic: string; data: unknown }): void {
+  /** Only durable per-run provenance can attribute a terminal event. */
+  async handleRuntimeEvent(event: { topic: string; data: unknown }): Promise<void> {
     const outcome = parseCronTurnOutcome(event);
-    if (!outcome) return;
-
-    if (outcome.provenance === "cron") {
-      if (!outcome.jobId) {
-        log.debug("Ignoring cron turn outcome without job id", { sessionName: outcome.sessionName });
-        return;
-      }
-      const pending = this.pendingTurns.get(outcome.jobId);
-      this.pendingTurns.delete(outcome.jobId);
-      this.recordTurnOutcome(outcome.jobId, outcome, pending);
-      return;
-    }
-
-    if (outcome.provenance === "none" && outcome.kind === "failed") {
-      for (const [jobId, pending] of this.pendingTurns) {
-        if (pending.sessionName !== outcome.sessionName) continue;
-        this.pendingTurns.delete(jobId);
-        this.recordTurnOutcome(jobId, outcome, pending);
-      }
-    }
+    if (outcome?.provenance === "cron" && outcome.jobId && outcome.runId) await this.recordTurnOutcome(outcome);
   }
 
-  private recordTurnOutcome(jobId: string, outcome: CronTurnOutcome, pending?: PendingCronTurn): void {
-    const job = dbGetCronJob(jobId);
-    if (!job) {
-      log.debug("Ignoring turn outcome for unknown cron job", { jobId, kind: outcome.kind });
-      return;
+  private async recordTurnOutcome(outcome: CronTurnOutcome): Promise<void> {
+    if (!outcome.runId) return;
+    const pending = getCronRun(outcome.runId);
+    if (!pending || pending.job_id !== outcome.jobId || pending.session_name !== outcome.sessionName) return;
+    const state = buildCronTurnOutcomeState(outcome, { dispatchedAt: pending.admitted_at });
+    const settled = settleCronRun(pending.id, outcome.sessionName, state);
+    if (!settled) return;
+    if (state.lastStatus === "error") {
+      if (await notifyCronFailure(cronRunNotification(settled), state.lastError ?? "Agent turn failed"))
+        markCronRunReported(settled.id);
     }
-    // Shell on-error notifications are published with the shell job id; their
-    // agent turn must not overwrite the shell command's recorded result.
-    if (job.executionType !== "agent") {
-      log.debug("Ignoring turn outcome for non-agent cron job", { jobId, kind: outcome.kind });
-      return;
-    }
-
-    const state = buildCronTurnOutcomeState(outcome, { dispatchedAt: pending?.dispatchedAt ?? job.lastRunAt });
-    dbRecordJobOutcome(jobId, state);
-
     log[state.lastStatus === "ok" ? "info" : "warn"]("Job turn finished", {
-      jobId,
-      jobName: job.name,
+      jobId: settled.job_id,
+      runId: settled.id,
       sessionName: outcome.sessionName,
       outcome: outcome.kind,
       status: state.lastStatus,
       durationMs: state.lastDurationMs,
-      error: state.lastError,
-      reason: outcome.reason,
-      correlatedBy: outcome.provenance === "cron" ? "provenance" : "pending-session",
     });
   }
 
@@ -333,7 +314,12 @@ export class CronRunner {
     return diskHint ? `${base} [disk-pressure] ${diskHint}` : base;
   }
 
-  private async notifyShellError(job: CronJob, result: ShellCronRunResult, errorMessage: string): Promise<void> {
+  private async notifyShellError(
+    job: CronJob,
+    result: ShellCronRunResult,
+    errorMessage: string,
+    authority: CronRunAuthority,
+  ): Promise<void> {
     if (!job.onError) return;
     const prefix = "notify-session:";
     if (!job.onError.startsWith(prefix)) {
@@ -374,11 +360,12 @@ export class CronRunner {
       deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
+      _cronAuthority: authority,
       _cronOnError: true,
     });
   }
 
-  private async executeShellJob(job: CronJob, startTime: number): Promise<void> {
+  private async executeShellJob(job: CronJob, startTime: number, authority: CronRunAuthority): Promise<void> {
     try {
       if (!job.shellCommand?.trim()) {
         throw new Error("Shell cron job is missing shellCommand");
@@ -388,7 +375,7 @@ export class CronRunner {
         envFile: job.shellEnvFile,
         // Wins over the env file: the command acts for this job (and its
         // owner), never as the operator's terminal.
-        env: spawnedAutomationEnv("cron", job.id),
+        env: { ...spawnedAutomationEnv("cron", job.id), [CRON_RUN_AUTHORITY_ENV]: JSON.stringify(authority) },
       });
 
       if (result.stdout.trim()) {
@@ -413,7 +400,7 @@ export class CronRunner {
 
       if (!ok && errorMessage) {
         try {
-          await this.notifyShellError(job, result, errorMessage);
+          await this.notifyShellError(job, result, errorMessage, authority);
         } catch (notifyError) {
           log.error("Failed to notify session about cron shell error", {
             jobId: job.id,
@@ -463,6 +450,7 @@ export class CronRunner {
               timedOut: false,
             },
             errorMessage,
+            authority,
           );
         } catch (notifyError) {
           log.error("Failed to notify session about cron shell exception", {
@@ -492,6 +480,7 @@ export class CronRunner {
         deliveryBarrierSource: "default",
         _cron: true,
         _jobId: job.id,
+        _cronAuthority: captureRunAuthority(job),
         _cronOnError: true,
       }).catch((error) => {
         log.error("Failed to publish cron ownership notice; job remains disabled", {
@@ -551,7 +540,12 @@ export class CronRunner {
    * If replySession is set, uses that session instead of agent main.
    * Returns the session name the prompt was published to.
    */
-  private async executeMainJob(job: CronJob): Promise<string> {
+  private async executeMainJob(
+    job: CronJob,
+    startTime: number,
+    authority: CronRunAuthority,
+    runId: string,
+  ): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
 
     let sessionName: string;
@@ -585,6 +579,7 @@ export class CronRunner {
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
+    this.trackAgentDispatch(job, sessionName, startTime, runId);
     await publishSessionPrompt(sessionName, {
       prompt,
       source: markCronSourceAsBackground(source),
@@ -592,6 +587,8 @@ export class CronRunner {
       deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
+      _cronAuthority: authority,
+      _cronRunId: runId,
     });
     return sessionName;
   }
@@ -600,7 +597,12 @@ export class CronRunner {
    * Execute a job in an isolated session.
    * Returns the session name the prompt was published to.
    */
-  private async executeIsolatedJob(job: CronJob): Promise<string> {
+  private async executeIsolatedJob(
+    job: CronJob,
+    startTime: number,
+    authority: CronRunAuthority,
+    runId: string,
+  ): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
     const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
@@ -643,6 +645,7 @@ export class CronRunner {
       source.accountId = job.accountId;
     }
 
+    this.trackAgentDispatch(job, sessionName, startTime, runId);
     await publishSessionPrompt(sessionName, {
       prompt,
       source: markCronSourceAsBackground(source),
@@ -650,8 +653,15 @@ export class CronRunner {
       deliveryBarrierSource: "default",
       _cron: true,
       _jobId: job.id,
+      _cronAuthority: authority,
+      _cronRunId: runId,
     });
     return sessionName;
+  }
+
+  private trackAgentDispatch(job: CronJob, sessionName: string, startTime: number, runId: string): void {
+    // Register before publish: a launch failure may arrive before its ack.
+    admitCronRun(runId, job, sessionName, startTime, this.calculateFollowupRun(job, startTime));
   }
 
   /**
@@ -736,7 +746,7 @@ export class CronRunner {
       for await (const event of stream) {
         if (!this.running) break;
         try {
-          this.handleRuntimeEvent(event);
+          await this.handleRuntimeEvent(event);
         } catch (err) {
           log.error("Failed to record cron turn outcome", { topic: event.topic, error: err });
         }

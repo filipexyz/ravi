@@ -320,6 +320,25 @@ describe("runtime provider contract", () => {
     });
   });
 
+  it("blocks unsupported bridge providers before their prepareSession can run", async () => {
+    const { prepareRuntimeProviderBootstrap } = await import("./runtime-provider-bootstrap.js");
+    for (const id of ["pi", "claude", "grok"]) {
+      let prepared = false;
+      await expect(
+        prepareRuntimeProviderBootstrap({
+          runtimeProvider: {
+            id,
+            prepareSession: () => {
+              prepared = true;
+            },
+          },
+          context: { metadata: { bridgeTurnId: "private-turn" } },
+        } as any),
+      ).rejects.toThrow("isolated Codex provider");
+      expect(prepared).toBe(false);
+    }
+  });
+
   it("keeps prepareSession constrained to env/startRequest adapter output", async () => {
     const originalHome = process.env.HOME;
     for (const { providerId, createProvider } of builtInProviders) {

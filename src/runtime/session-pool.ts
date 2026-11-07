@@ -11,6 +11,10 @@ export const RUNTIME_INTERACTIVE_RESERVED_SLOTS_ENV = "RAVI_RUNTIME_INTERACTIVE_
 export const DEFAULT_RUNTIME_INTERACTIVE_RESERVED_SLOTS = 4;
 export const RUNTIME_IDLE_SESSION_TTL_MS_ENV = "RAVI_RUNTIME_IDLE_SESSION_TTL_MS";
 export const DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS = 5 * 60 * 1000;
+export const RUNTIME_PENDING_START_TIMEOUT_MS_ENV = "RAVI_RUNTIME_PENDING_START_TIMEOUT_MS";
+// A defensive queue watchdog, not the lifetime of a cached idle session.
+// Admission is immediate; any remaining waiter must return to its durable transport promptly.
+export const DEFAULT_RUNTIME_PENDING_START_TIMEOUT_MS = 30_000;
 export const RUNTIME_TURN_INACTIVITY_MS_ENV = "RAVI_RUNTIME_TURN_INACTIVITY_MS";
 export const DEFAULT_RUNTIME_TURN_INACTIVITY_MS = 15 * 60 * 1000;
 export const RUNTIME_SESSION_RECLAIM_INTERVAL_MS = 60_000;
@@ -95,9 +99,9 @@ export function resolveRuntimeTurnInactivityMs(value = process.env[RUNTIME_TURN_
   return parsed;
 }
 
-export function resolveRuntimePendingStartTimeoutMs(value = process.env[RUNTIME_IDLE_SESSION_TTL_MS_ENV]): number {
-  const resolved = resolveRuntimeIdleSessionTtlMs(value);
-  return resolved > 0 ? resolved : DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS;
+export function resolveRuntimePendingStartTimeoutMs(value = process.env[RUNTIME_PENDING_START_TIMEOUT_MS_ENV]): number {
+  const parsed = Math.floor(Number(value));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_RUNTIME_PENDING_START_TIMEOUT_MS;
 }
 
 export function resolveRuntimeStreamingSession(

@@ -60,6 +60,7 @@ interface MetaCommand {
   description: string;
   scope: string;
   path: string;
+  access?: CommandRegistryEntry["access"];
   args: { name: string; required: boolean; variadic: boolean; description?: string; schema: Record<string, unknown> }[];
   options: { name: string; flags: string; description?: string; schema: Record<string, unknown> }[];
   returns?: Record<string, unknown>;
@@ -84,6 +85,7 @@ export function buildMetaPayload(table: RouteTable): RegistryMetaPayload {
       description: cmd.description,
       scope: cmd.scope,
       path: commandUrlPath(cmd),
+      ...(cmd.access ? { access: cmd.access } : {}),
       args: cmd.args.map((arg) => ({
         name: arg.name,
         required: arg.required,

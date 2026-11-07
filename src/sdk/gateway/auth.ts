@@ -18,7 +18,8 @@
  * module switched to live registry resolution.
  */
 
-import type { ContextRecord } from "../../router/router-db.js";
+import { dbGetContextByKey, type ContextRecord } from "../../router/router-db.js";
+import { currentConsoleInvocation, consoleInvocationLive } from "./console-context.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import { resolveRuntimeContext } from "../../runtime/context-registry.js";
 
@@ -48,6 +49,11 @@ export function parseBearer(headerValue: string | null): string | null {
 }
 
 export function resolveAuth(request: Request, config: GatewayAuthConfig = {}): ResolvedAuth {
+  const invocation = currentConsoleInvocation();
+  if (invocation)
+    return consoleInvocationLive(invocation)
+      ? { context: {}, authenticated: true, contextRecord: null, reason: null }
+      : unauthenticated("revoked");
   const headerValue = request.headers.get("authorization");
   if (!headerValue) {
     return unauthenticated("missing");
@@ -65,6 +71,15 @@ export function resolveAuth(request: Request, config: GatewayAuthConfig = {}): R
   const resolver = config.resolveContext ?? defaultResolver;
   const record = resolver(token);
   if (!record) {
+    // The registry is the only authority for accepting credentials. Inspect a
+    // rejected row solely to explain expiry/revocation; never authorize with it
+    // (for example a live-looking row can have invalid bridge authority).
+    if (!config.resolveContext) {
+      const rejected = dbGetContextByKey(token);
+      const now = Date.now();
+      if (rejected?.revokedAt && rejected.revokedAt <= now) return unauthenticated("revoked");
+      if (rejected?.expiresAt && rejected.expiresAt <= now) return unauthenticated("expired");
+    }
     return unauthenticated("unknown");
   }
 

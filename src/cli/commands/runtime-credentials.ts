@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -10,6 +11,7 @@ import {
   runtimeCredentialSelectReturnSchema,
   runtimeCredentialsListReturnSchema,
   runtimeCredentialStatusReturnSchema,
+  runtimeCredentialsStatusReturnSchema,
 } from "./operational-return-schemas.js";
 import {
   createRuntimeCredential,
@@ -171,12 +173,15 @@ function failRuntimeCredentialNotFound(op: string, credentialId: string, asJson?
     credential.label,
   ]);
   contractFail(op, "CREDENTIAL_NOT_FOUND", `Runtime credential not found: ${credentialId}`, {
-    asJson,
-    details: {
-      suggestedAction:
-        "Check the credential id (see suggestions; list with: ravi runtime credentials list --all --json)",
-      suggestions: suggestSimilar(credentialId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "Check the credential id (see suggestions; list with: ravi runtime credentials list --all --json)",
+        suggestions: suggestSimilar(credentialId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Runtime credential not found: ${credentialId}`, { operation: op }),
   });
 }
 
@@ -392,7 +397,7 @@ export class RuntimeCredentialsCommands {
 
   @Command({ name: "status", description: "Show credential health and provider health" })
   @CommandAccess({ kind: "read", resource: "runtime.credentials", action: "status", risk: "low" })
-  @Returns(runtimeCredentialStatusReturnSchema)
+  @Returns(runtimeCredentialsStatusReturnSchema)
   status(
     @Arg("id", { required: false, description: "Credential id" }) id?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,

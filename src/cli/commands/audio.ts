@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Audio Commands — Generate speech via ElevenLabs TTS
  */
@@ -159,13 +160,16 @@ export class AudioCommands {
     const resolvedText = fileText ?? inlineText;
     if (!resolvedText) {
       contractFail("audio generate", "USAGE_ERROR", "Provide text or --text-file.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Pass inline text or --text-file <relative .md/.txt path>",
-          acceptedFlags: ["--text-file", "--json"],
-          acceptedPositionals: ["[text]"],
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Pass inline text or --text-file <relative .md/.txt path>",
+            acceptedFlags: ["--text-file", "--json"],
+            acceptedPositionals: ["[text]"],
+          },
         },
+        diagnostic: errorDiagnostic("Provide text or --text-file.", { operation: "audio generate" }),
       });
     }
 

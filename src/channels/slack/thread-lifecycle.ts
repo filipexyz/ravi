@@ -1,5 +1,5 @@
-import { listDecisions } from "../../decisions/store.js";
-import { getDb } from "../../router/router-db.js";
+import { getDecisionWaitSummary, listDecisions } from "../../decisions/store.js";
+import { dbGetContext, getDb } from "../../router/router-db.js";
 import { randomUUID } from "node:crypto";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
@@ -83,6 +83,8 @@ export const SLACK_THREAD_ERROR_CODES = [
   "THREAD_PARENT_MISSING",
   "THREAD_PARENT_RETURN_PENDING",
   "THREAD_DECISIONS_PENDING",
+  "THREAD_TRIGGERS_PENDING",
+  "THREAD_MODEL_INVALID",
 ] as const;
 export type SlackThreadErrorCode = (typeof SLACK_THREAD_ERROR_CODES)[number];
 
@@ -320,6 +322,18 @@ export async function closeSlackThread(
   dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<CloseSlackThreadResult> {
   const existing = ensureSlackThreadLifecycleForSession(session);
+  return closeSlackThreadRecord(existing, returnResult, dependencies);
+}
+
+/** Close the durable work/card even when its runtime session was pruned. */
+export async function closeSlackThreadRecord(
+  existing: SlackThreadLifecycleRecord,
+  returnResult?: string,
+  dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
+): Promise<CloseSlackThreadResult> {
+  if (!existing.childSessionKey) {
+    throw slackThreadError("THREAD_NOT_STARTED", "The Slack thread has not started yet.");
+  }
   if (existing.parentReturnRequested && existing.parentNotifiedAt === undefined) {
     let delivered = false;
     try {
@@ -341,7 +355,8 @@ export async function closeSlackThread(
     }
   }
   const closed = closeSlackThreadLifecycle({
-    childSessionKey: session.sessionKey,
+    childSessionKey: existing.childSessionKey,
+    requestId: existing.requestId,
     returnResult,
     closeContextId: getContext({ localOnly: true })?.contextId,
   });
@@ -461,6 +476,8 @@ export interface SlackThreadSummary {
    */
   childSessionMissing: boolean;
   openDecisionCount: number;
+  pendingAnswerCount: number;
+  uncertainAnswerCount: number;
   slackThreadTs: string | null;
   link: string | null;
   runtime: SlackThreadRuntimeSummary;
@@ -521,7 +538,7 @@ export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackT
     childSessionKey: record.childSessionKey ?? null,
     childSessionName: record.childSessionName ?? null,
     childSessionMissing: isSlackThreadChildMissing(record),
-    openDecisionCount: listDecisions({ type: "thread", id: record.requestId }, true).length,
+    ...getDecisionWaitSummary({ type: "thread", id: record.requestId }),
     slackThreadTs: record.providerThreadId ?? null,
     link: slackThreadLink(record) ?? null,
     runtime: summarizeSlackThreadRuntime(record),
@@ -656,7 +673,7 @@ export async function reportSlackThreadProgress(
       payload: {
         prompt: buildSlackThreadParentNotice(record, "reporta progresso.", "Progresso", text),
         source: buildSlackThreadParentSource(record, record.providerThreadId),
-        deliveryBarrier: "after_tool",
+        deliveryBarrier: "after_response",
         deliveryBarrierSource: "default",
         _slackThreadLifecycle: {
           eventId: messageId,
@@ -919,12 +936,24 @@ function buildSlackThreadInitialPrompt(
   },
 ): Record<string, unknown> {
   const providerThreadId = record.providerThreadId!;
+  const initiatingProvenance = record.initiatorContextId
+    ? dbGetContext(record.initiatorContextId)?.metadata?.turnProvenance
+    : undefined;
+  const interactiveStart = Boolean(
+    initiatingProvenance &&
+      typeof initiatingProvenance === "object" &&
+      "origin" in initiatingProvenance &&
+      initiatingProvenance.origin === "human",
+  );
   return {
     prompt: `[System] Execute: [from: ${record.parentSessionName}] ${record.initialPrompt}`,
     source: buildSlackThreadChildSource(record, materialized.threadCanonicalChatId, materialized.agentId),
     context: buildSlackThreadMessageContext(record, materialized.threadCanonicalChatId, materialized.agentId),
     deliveryBarrier: "after_tool",
     deliveryBarrierSource: "default",
+    // Use the persisted initiating turn, not its display name or Slack target.
+    // This changes admission only; the child remains an agent bootstrap turn.
+    _interactiveStart: interactiveStart,
     _slackThreadLifecycle: {
       eventType: "thread.created",
       source: "ravi.chat_action",

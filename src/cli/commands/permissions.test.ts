@@ -1,10 +1,17 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 
-import { createContact, getContact } from "../../contacts.js";
-import { dbListContactChatGrants } from "../../permissions/contact-chat-grants.js";
+import { addContactTag, createContact, getContact } from "../../contacts.js";
+import { authorizeContextCapabilities } from "../../permissions/context-capabilities-provider.js";
+import { dbEnsureContactChatGrant, dbListContactChatGrants } from "../../permissions/contact-chat-grants.js";
 import { recordPermissionDenial } from "../../permissions/denials.js";
-import { readAgentRuntimePermissionsConfig } from "../../permissions/agent-default-capabilities-provider.js";
-import { dbCreateAgent, dbUpsertChat } from "../../router/router-db.js";
+import {
+  AGENT_RUNTIME_PERMISSION_PROFILES,
+  materializeAgentDefaultCapabilities,
+  readAgentRuntimePermissionsConfig,
+} from "../../permissions/agent-default-capabilities-provider.js";
+import { bootstrapCapabilitiesFor } from "../../permissions/runtime-bootstrap-provider.js";
+import { resolveContactChatOverlay } from "../../permissions/contact-policy-permissions-provider.js";
+import { dbCreateAgent, dbUpdateAgent, dbUpsertChat, getDb } from "../../router/router-db.js";
 import { createRuntimeContext, resolveRuntimeContext } from "../../runtime/context-registry.js";
 import { attachTagSlugsToAsset, dbCreateTagDefinition, dbGetTagDefinition } from "../../tags/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -271,10 +278,247 @@ describe("PermissionsCommands provider-runtime surface", () => {
     const missingCapabilities = allowNewProfile(chat.id);
     expect(missingCapabilities.code).toBe("USAGE_ERROR");
     expect(missingCapabilities.exitCode).toBe(2);
-    expect(missingCapabilities.message).toContain("No capabilities found for this profile");
+    expect(missingCapabilities.message).toContain("Unknown or empty permission profile: permission-brand-new");
+    for (const profile of AGENT_RUNTIME_PERMISSION_PROFILES) {
+      expect(missingCapabilities.message).toContain(profile);
+    }
+    expect(missingCapabilities.message).toContain("ravi skills show permissions");
+    expect(missingCapabilities.message).toContain("ravi tags list --kind system --source permissions --json");
     expect(dbGetTagDefinition("permission-brand-new")).toBeNull();
     expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
   });
+
+  for (const profile of AGENT_RUNTIME_PERMISSION_PROFILES) {
+    const behavior =
+      profile === "full-access" ? "previews and blocks unapproved apply of" : "plans, grants, reads and revokes";
+    it(`${behavior} built-in ${profile} for a human in a governed Slack chat`, () => {
+      const contact = createContact({ phone: "+15550000031", name: "Profile Grant User" });
+      const other = createContact({ phone: "+15550000032", name: "Other Chat Member" });
+      const chat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "test-slack",
+        platformChatId: "C_PROFILE_TEST",
+        chatType: "group",
+      });
+      const commands = new PermissionsCommands();
+      const subject = `contact:${contact.id}`;
+      const slug = `permission-${profile}`;
+      dbCreateAgent({ id: "profile-reference", cwd: "/tmp" });
+      dbUpdateAgent("profile-reference", { defaults: { runtimePermissions: { profile } } });
+      const runtimeCapabilities =
+        profile === "bootstrap"
+          ? bootstrapCapabilitiesFor("agent")
+          : materializeAgentDefaultCapabilities("profile-reference");
+      const expected = runtimeCapabilities.map(({ permission, objectType, objectId }) => ({
+        permission,
+        objectType,
+        objectId,
+      }));
+      const capabilityStrings = expected.map((cap) => `${cap.permission}:${cap.objectType}:${cap.objectId}`);
+
+      expect(dbGetTagDefinition(slug)).toBeNull();
+      const preview = commands.allow(
+        profile,
+        subject,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        true,
+        chat.id,
+      );
+      const revokePreview = commands.deny(slug, subject, chat.id, undefined, undefined, false, true);
+      expect(preview.capabilities).toEqual(expected);
+      expect(preview.confirmation.capabilities).toEqual(capabilityStrings);
+      expect(revokePreview.capabilities).toEqual(expected);
+      expect(revokePreview.tagSlug).toBe(preview.tagSlug);
+      expect(preview.dryRun).toBe(true);
+      expect(dbGetTagDefinition(slug)).toBeNull();
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+      if (profile === "full-access") {
+        expect(capabilityStrings).toContain("admin:system:*");
+        expect(capabilityStrings).toContain("execute:executable:*");
+        expect(capabilityStrings).toContain("use:skill:*");
+        expect(preview.hints).toContain(
+          "full-access requires verified operator approval. This command cannot consume an operator approval; --apply is blocked.",
+        );
+        expect(preview.nextCommand).toBeUndefined();
+        const denied = captureContractError(() =>
+          commands.allow(slug, subject, undefined, undefined, undefined, undefined, true, true, chat.id),
+        );
+        expect(denied.code).toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+        expect(denied.exitCode).toBe(3);
+        expect(dbGetTagDefinition(slug)).toBeNull();
+        expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+        dbEnsureContactChatGrant({ contactId: contact.id, profileSlug: slug, scopeType: "chat", scopeId: chat.id });
+        expect(commands.deny(profile, subject, chat.id, undefined, undefined, true, true).changedCount).toBe(1);
+        expect(
+          commands.list(subject, chat.id, undefined, undefined, profile, undefined, undefined, true).grants,
+        ).toEqual([]);
+        return;
+      } else if (profile === "bootstrap") {
+        expect(capabilityStrings).toContain("read:bases.views:query");
+        expect(capabilityStrings).not.toContain("admin:system:*");
+        expect(capabilityStrings).not.toContain("execute:group:*");
+      } else {
+        expect(expected).toEqual([]);
+      }
+
+      const applied = commands.allow(slug, subject, undefined, undefined, undefined, undefined, true, true, chat.id);
+      expect(applied.confirmation).toMatchObject({ dryRun: false, global: false, scopes: [`chat:${chat.id}`] });
+      expect(dbGetTagDefinition(slug)).toMatchObject({ kind: "system", source: "permissions" });
+      expect(dbListContactChatGrants({ contactId: contact.id })).toHaveLength(1);
+      const listed = commands.list(subject, chat.id, undefined, undefined, profile, undefined, undefined, true);
+      expect(listed.grants).toEqual([
+        expect.objectContaining({
+          contact: subject,
+          profile: slug,
+          scope: `chat:${chat.id}`,
+          capabilities: capabilityStrings,
+        }),
+      ]);
+      expect(resolveContactChatOverlay({ contactId: contact.id, chatId: chat.id })).toMatchObject({
+        active: true,
+        eligible: true,
+        capabilities: expected.map((cap) => expect.objectContaining(cap)),
+      });
+      expect(resolveContactChatOverlay({ contactId: other.id, chatId: chat.id })).toMatchObject({
+        active: true,
+        capabilities: [],
+      });
+      const replay = commands.allow(profile, subject, undefined, undefined, undefined, undefined, true, true, chat.id);
+      expect(replay.changedCount).toBe(0);
+      commands.deny(profile, subject, chat.id, undefined, undefined, true, true);
+      expect(
+        commands.list(subject, chat.id, undefined, undefined, undefined, undefined, undefined, true).grants,
+      ).toEqual([]);
+    });
+  }
+
+  for (const profile of ["full-access", "permission-full-access", "FULL ACCESS"]) {
+    it(`blocks ${profile} apply before profile, scoped grant or executor ceiling writes`, () => {
+      const contact = createContact({ phone: "+15550000038", name: "Unapproved Grant User" });
+      const chat = groupChat("unapproved-full-access");
+      dbCreateAgent({ id: "grant-target", cwd: "/tmp" });
+      dbCreateAgent({ id: "grant-executor", cwd: "/tmp" });
+      dbCreateTagDefinition({
+        slug: "permission-full-access",
+        label: "Existing profile",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["read:skills:show"] } },
+      });
+      const before = dbGetTagDefinition("permission-full-access");
+      const error = captureContractError(() =>
+        runWithContext({ agentId: "grant-executor" }, () =>
+          new PermissionsCommands().allow(
+            profile,
+            `contact:${contact.id},agent:grant-target`,
+            "grant-executor",
+            undefined,
+            "Changed label",
+            undefined,
+            true,
+            true,
+            chat.id,
+          ),
+        ),
+      );
+      expect(error.code).toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+      expect(error.exitCode).toBe(3);
+      expect(dbGetTagDefinition("permission-full-access")).toEqual(before);
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+      expect(getContact(contact.id)?.tags).not.toContain("permission-full-access");
+      expect(readAgentRuntimePermissionsConfig("grant-target")).toBeNull();
+      expect(readAgentRuntimePermissionsConfig("grant-executor")).toBeNull();
+    });
+  }
+
+  it("keeps unknown-profile diagnostics within the remote message budget with many stored profiles", () => {
+    for (let index = 0; index < 30; index++) {
+      dbCreateTagDefinition({
+        slug: `permission-workflow-${index}-${"long-name-".repeat(6)}`,
+        label: `Workflow ${index}`,
+        kind: "system",
+        source: "permissions",
+      });
+    }
+    const error = captureContractError(() => new PermissionsCommands().allow("unknown", "agent:main"));
+    expect(error.message.length).toBeLessThanOrEqual(1200);
+    expect(error.message).toContain("ravi skills show permissions");
+    expect(error.message).toContain("ravi tags list --kind system --source permissions --json");
+    expect(error.details.acceptedValues).toHaveLength(34);
+  });
+
+  it("discovers every stored profile across pages of newer non-profile permission tags", () => {
+    const profileSlugs = Array.from({ length: 505 }, (_, index) => `permission-archived-workflow-${index}`);
+    for (const slug of profileSlugs) {
+      dbCreateTagDefinition({ slug, label: slug, kind: "system", source: "permissions" });
+    }
+    for (let index = 0; index < 505; index++) {
+      const slug = `unrelated-permission-metadata-${index}`;
+      dbCreateTagDefinition({ slug, label: slug, kind: "system", source: "permissions" });
+    }
+
+    const error = captureContractError(() => new PermissionsCommands().allow("unknown", "agent:main"));
+    const acceptedValues = error.details.acceptedValues as string[];
+    expect(acceptedValues).toHaveLength(AGENT_RUNTIME_PERMISSION_PROFILES.length + profileSlugs.length);
+    expect(new Set(acceptedValues)).toEqual(new Set([...AGENT_RUNTIME_PERMISSION_PROFILES, ...profileSlugs]));
+    expect(error.message.length).toBeLessThanOrEqual(1200);
+    expect(error.message).toContain("ravi tags list --kind system --source permissions --json");
+  });
+
+  it("keeps explicit-only capabilities and discards chat-only leftovers like the runtime", () => {
+    const contact = createContact({ phone: "+15550000033", name: "Explicit Profile User" });
+    const chat = groupChat("profile-explicit-test");
+    const commands = new PermissionsCommands();
+    const subject = `contact:${contact.id}`;
+    commands.allow("explicit-only", subject, undefined, "read:skills:show", undefined, undefined, true, true, chat.id);
+    expect(
+      commands.list(subject, chat.id, undefined, undefined, undefined, undefined, undefined, true).grants[0]
+        ?.capabilities,
+    ).toEqual(["read:skills:show"]);
+    commands.allow("chat-only", subject, undefined, "admin:system:*", undefined, undefined, true, true, chat.id);
+    expect(
+      commands.list(subject, chat.id, undefined, undefined, "chat-only", undefined, undefined, true).grants[0]
+        ?.capabilities,
+    ).toEqual([]);
+  });
+
+  for (const definition of ["missing", "empty"]) {
+    it(`revokes a grant and its live context when the profile definition is ${definition}`, () => {
+      const contact = createContact({ phone: "+15550000034", name: "Revoked Profile User" });
+      const chat = groupChat("orphan-profile-test");
+      const profile = "permission-orphan";
+      if (definition === "empty") {
+        dbCreateTagDefinition({ slug: profile, label: "Orphan", kind: "system", source: "permissions" });
+      }
+      dbEnsureContactChatGrant({ contactId: contact.id, profileSlug: profile, scopeType: "chat", scopeId: chat.id });
+      const live = createRuntimeContext({
+        kind: "turn-runtime",
+        capabilities: [{ permission: "read", objectType: "skills", objectId: "show" }],
+        metadata: {
+          actorPrincipal: `contact:${contact.id}`,
+          actorAuthorizationMode: "user-overlay",
+          userOverlay: "active",
+          userOverlayGrants: [`${profile}@chat:${chat.id}`],
+        },
+      });
+      const result = new PermissionsCommands().deny(
+        profile,
+        `contact:${contact.id}`,
+        chat.id,
+        undefined,
+        undefined,
+        true,
+        true,
+      );
+      expect(result.changedCount).toBe(1);
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+      expect(resolveRuntimeContext(live.contextKey, { touch: false })).toBeNull();
+    });
+  }
 
   it("plans a chat-scoped contact grant without mutating provider-owned state", () => {
     const contact = createContact({ phone: "+15550000001", name: "Permission Test User" });
@@ -667,6 +911,129 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(resolveRuntimeContext(live.contextKey, { touch: false })).toBeNull();
   });
 
+  it("reduces a shared chat-only definition across every live scope and derived context", () => {
+    const first = createContact({ phone: "+15550000791", name: "First profile holder" });
+    const second = createContact({ phone: "+15550000792", name: "Other profile holder" });
+    const chatA = groupChat("profile-reduction-a");
+    const chatB = groupChat("profile-reduction-b");
+    const profile = "permission-chat-only";
+    const capability = { permission: "read", objectType: "skills", objectId: "show" };
+    dbCreateTagDefinition({
+      slug: profile,
+      label: "Chat only",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["read:skills:show"] } },
+    });
+    dbEnsureContactChatGrant({ contactId: first.id, profileSlug: profile, scopeType: "chat", scopeId: chatA.id });
+    dbEnsureContactChatGrant({ contactId: first.id, profileSlug: profile, scopeType: "chat", scopeId: chatB.id });
+    dbEnsureContactChatGrant({ contactId: second.id, profileSlug: profile, scopeType: "chat_tag", scopeId: "ops" });
+    addContactTag(second.id, profile);
+    const snapshot = (contactId: string, grant: string) =>
+      createRuntimeContext({
+        kind: "turn-runtime",
+        capabilities: [capability],
+        metadata: { actorPrincipal: `contact:${contactId}`, userOverlayGrants: [grant] },
+      });
+    const affected = [
+      snapshot(first.id, `${profile}@chat:${chatA.id}`),
+      snapshot(first.id, `${profile}@chat:${chatB.id}`),
+      snapshot(second.id, `${profile}@chat-tag:ops`),
+      snapshot(second.id, `${profile}@global`),
+    ];
+    const child = createRuntimeContext({
+      capabilities: [capability],
+      metadata: { parentContextId: affected[1]!.contextId },
+    });
+    const projected = createRuntimeContext({
+      capabilities: [capability],
+      metadata: { actorProjection: { sourceContextId: affected[2]!.contextId } },
+    });
+    const unaffected = snapshot(second.id, "permission-chat-only-extra@global");
+    const commands = new PermissionsCommands();
+
+    commands.allow(
+      "chat-only",
+      `contact:${first.id}`,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      true,
+      chatA.id,
+    );
+    for (const context of affected) expect(resolveRuntimeContext(context.contextKey, { touch: false })).not.toBeNull();
+    expect(dbGetTagDefinition(profile)?.metadata?.permissions).toEqual({ capabilities: ["read:skills:show"] });
+
+    commands.allow(
+      "chat-only",
+      `contact:${first.id}`,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      true,
+      chatA.id,
+    );
+    expect(dbGetTagDefinition(profile)?.metadata?.permissions).toEqual({ capabilities: [] });
+    expect(resolveContactChatOverlay({ contactId: first.id, chatId: chatB.id }).capabilities).toEqual([]);
+    for (const context of [...affected, child, projected]) {
+      const live = resolveRuntimeContext(context.contextKey, { touch: false });
+      expect({
+        live: Boolean(live),
+        allowed: live ? authorizeContextCapabilities({ ...capability, context: live }).allowed : false,
+      }).toEqual({ live: false, allowed: false });
+    }
+    expect(resolveRuntimeContext(unaffected.contextKey, { touch: false })).not.toBeNull();
+  });
+
+  it("rolls back the profile reduction and every revocation when a context write fails", () => {
+    const contact = createContact({ phone: "+15550000793", name: "Atomic profile holder" });
+    const chat = groupChat("profile-reduction-rollback");
+    dbCreateTagDefinition({
+      slug: "permission-chat-only",
+      label: "Chat only",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["read:skills:show"] } },
+    });
+    const root = createRuntimeContext({
+      capabilities: [{ permission: "read", objectType: "skills", objectId: "show" }],
+      metadata: {
+        actorPrincipal: `contact:${contact.id}`,
+        userOverlayGrants: [`permission-chat-only@chat:${chat.id}`],
+      },
+    });
+    const child = createRuntimeContext({
+      contextId: "ctx_profile_reduction_rollback",
+      metadata: { parentContextId: root.contextId },
+    });
+    getDb().exec(
+      "CREATE TEMP TRIGGER refuse_profile_context_revoke BEFORE UPDATE OF revoked_at ON contexts WHEN OLD.context_id = 'ctx_profile_reduction_rollback' BEGIN SELECT RAISE(ABORT, 'profile revocation write refused'); END",
+    );
+    expect(() =>
+      new PermissionsCommands().allow(
+        "chat-only",
+        `contact:${contact.id}`,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+        chat.id,
+      ),
+    ).toThrow("profile revocation write refused");
+    expect(dbGetTagDefinition("permission-chat-only")?.metadata?.permissions).toEqual({
+      capabilities: ["read:skills:show"],
+    });
+    expect(resolveRuntimeContext(root.contextKey, { touch: false })).not.toBeNull();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).not.toBeNull();
+    expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+  });
+
   it("lists contact grants for a chat with the effective contact caps", () => {
     const ana = createContact({ phone: "+15550000018", name: "List Ana" });
     const bruno = createContact({ phone: "+15550000019", name: "List Bruno" });
@@ -819,6 +1186,27 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(readAgentRuntimePermissionsConfig("overlay-agent")?.capabilities).toEqual([
       { permission: "mutate", objectType: "image", objectId: "generate" },
     ]);
+  });
+
+  it("blocks resolve --profile full-access before any provider write", () => {
+    dbCreateAgent({ id: "blocked-resolve-agent", cwd: "/tmp" });
+    const denial = recordPermissionDenial({
+      subjectType: "agent",
+      subjectId: "blocked-resolve-agent",
+      relation: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      agentId: "blocked-resolve-agent",
+    });
+    const commands = new PermissionsCommands();
+    const preview = commands.resolve(String(denial!.id), "full-access", undefined, false, true);
+    expect(preview.nextCommand).toBeUndefined();
+    const error = captureContractError(() =>
+      commands.resolve(String(denial!.id), "full-access", undefined, true, true),
+    );
+    expect(error).toMatchObject({ op: "permissions resolve", code: "FULL_ACCESS_APPROVAL_REQUIRED", exitCode: 3 });
+    expect(dbGetTagDefinition("permission-full-access")).toBeNull();
+    expect(readAgentRuntimePermissionsConfig("blocked-resolve-agent")).toBeNull();
   });
 
   it("resolves an agent-identity denial into an agent-owned recurring profile workflow", () => {

@@ -224,6 +224,8 @@ export interface SessionEntry {
   providerSessionId?: string;
   sdkSessionId?: string;
   sessionFile?: string;
+  /** Durable transcript boundary for an explicit conversation reset. */
+  historyResetAfterId?: number;
   updatedAt: number;
   createdAt: number;
 

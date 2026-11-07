@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { afterAll, describe, expect, it, mock } from "bun:test";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
@@ -210,7 +211,10 @@ describe("projects contract", () => {
   });
 
   it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {
-    const boom = new ContractError("projects list", "SOME_CONTRACT_CODE", "boom", 1, {});
+    const boom = new ContractError("projects list", "SOME_CONTRACT_CODE", "boom", 1, {
+      ...errorDiagnostic("boom", { operation: "projects list" }),
+      ...{},
+    });
     const command = new ProjectsCommands({
       client: makeClient(async () => []),
       readCredentials: () => {
