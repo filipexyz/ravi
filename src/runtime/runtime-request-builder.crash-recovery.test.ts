@@ -515,6 +515,7 @@ function emptyRuntimeSession(): RuntimeSessionHandle {
 
 function traceStreamingSession(): RuntimeHostStreamingSession {
   return {
+    sessionKey: TRACE_SESSION_KEY,
     agentId: TRACE_AGENT_ID,
     queryHandle: emptyRuntimeSession(),
     starting: false,

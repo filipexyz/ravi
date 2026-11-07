@@ -54,6 +54,7 @@ afterEach(async () => {
 function harness(name = "capacity-expiry", mode?: "sentinel") {
   const session = getOrCreateSession(`agent:main:${name}`, "main", "/tmp/capacity", { name });
   const streaming: RuntimeHostStreamingSession = {
+    sessionKey: session.sessionKey,
     agentId: "main",
     queryHandle: { provider: "codex", events: (async function* () {})(), interrupt: async () => {} },
     starting: false,

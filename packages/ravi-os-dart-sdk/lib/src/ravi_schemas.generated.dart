@@ -96366,7 +96366,7 @@ class RaviSchemas {
       "type": "string"
     },
     "replySession": {
-      "description": "Required only for an operator terminal without a session",
+      "description": "CI publishing session; must match the authenticated session and does not grant authority",
       "type": "string"
     },
     "repo": {

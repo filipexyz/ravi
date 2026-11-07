@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "ebc380c9741aed6f"
+    "version": "c601c9d870ef546e"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -106864,7 +106864,7 @@
                     "type": "string"
                   },
                   "replySession": {
-                    "description": "Required only for an operator terminal without a session",
+                    "description": "CI publishing session; must match the authenticated session and does not grant authority",
                     "type": "string"
                   },
                   "repo": {

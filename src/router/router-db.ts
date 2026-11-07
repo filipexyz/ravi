@@ -2008,6 +2008,30 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       claim_expires_at INTEGER
     );
 
+    -- Occurrence receipts outlive the mutable current-health row and transport dedup window.
+    CREATE TABLE IF NOT EXISTS slack_thread_attention_notices (
+      event_id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      parent_session_key TEXT NOT NULL,
+      child_session_key TEXT NOT NULL,
+      target_session_name TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      admission_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(admission_status IN ('pending','accepting','admitted','refused','uncertain')),
+      created_at INTEGER NOT NULL,
+      admitted_at INTEGER,
+      UNIQUE(request_id, turn_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS runtime_turn_progress (
+      attempt_id TEXT PRIMARY KEY,
+      turn_id TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      boot_epoch TEXT NOT NULL,
+      last_signal_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
       session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,

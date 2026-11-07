@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { recordSessionEvent, upsertSessionTurn } from "../../session-trace/session-trace-db.js";
+import { admitThreadAttention } from "./thread-attention-admission.js";
 import { classifyRuntimeSessionStartLane } from "../../runtime/session-pool.js";
 import { classifyTurnProvenance } from "../../runtime/turn-provenance.js";
 import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
@@ -21,6 +23,7 @@ import {
   sendSlackThreadMessage,
   slackThreadTitle,
   summarizeSlackThreadRuntime,
+  reconcileSlackThreadLifecycle,
 } from "./thread-lifecycle.js";
 import {
   claimSlackThreadCreation,
@@ -45,6 +48,58 @@ afterEach(async () => {
 });
 
 describe("Slack thread lifecycle", () => {
+  it("reconciles a published but unadmitted attention until its consumer accepts the frozen occurrence", async () => {
+    dbCreateAgent({ id: "ravi", cwd: "/tmp/ravi" });
+    const fixture = seedPendingCreation();
+    const deps = { publishPrompt: mock(async () => {}), publishEvent: mock(async () => {}) };
+    await finalizeSlackThreadCreation(fixture.requestId, deps);
+    const record = getSlackThreadLifecycle(fixture.requestId)!;
+    const child = getSession(record.childSessionKey!)!;
+    let now = Date.now();
+    const turnId = "pending-attention-turn";
+    const startedAt = now - 20 * 60_000;
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: child.agentId,
+      sessionKey: child.sessionKey,
+      sessionName: child.name,
+      capabilities: [],
+    });
+    upsertSessionTurn({
+      turnId,
+      sessionKey: record.childSessionKey!,
+      startedAt,
+      updatedAt: startedAt,
+      status: "running",
+    });
+    recordSessionEvent({
+      sessionKey: record.childSessionKey!,
+      turnId,
+      eventType: "adapter.request",
+      eventGroup: "runtime",
+      timestamp: startedAt,
+      payloadJson: { context_id: context.contextId },
+    });
+    const sent: RuntimeLaunchPrompt[] = [];
+    const publishPrompt = mock(async (_name: string, payload: Record<string, unknown>) => {
+      sent.push(payload as unknown as RuntimeLaunchPrompt);
+    });
+    const tick = () => reconcileSlackThreadLifecycle({ ...deps, publishPrompt, now: () => now });
+    expect((await tick()).failures).toBe(0);
+    await tick();
+    expect(sent).toHaveLength(1);
+    now += 30_000;
+    await tick();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    const handle = mock(async () => {});
+    await admitThreadAttention(record.parentSessionName, sent[1]!, handle);
+    now += 30_000;
+    await tick();
+    expect(sent).toHaveLength(2);
+    expect(handle).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["name", "key", "pruned"])(
     "refuses close with active subscribers addressed by %s, then closes after handoff",
     async (address) => {

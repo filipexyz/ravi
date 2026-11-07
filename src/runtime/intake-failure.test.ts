@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
-import { getOrCreateSession } from "../router/sessions.js";
+import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -18,6 +18,10 @@ import { admitCronRun, getCronRun } from "../cron/run-db.js";
 import { CronRunner } from "../cron/runner.js";
 import { listLocalInboxItems } from "../inbox/local-db.js";
 import { resolveRuntimeSessionIdentity } from "./session-resolver.js";
+import * as sessionResolver from "./session-resolver.js";
+import * as modelBroker from "./model-broker.js";
+import * as modelBrokerPlanning from "./model-broker-planning.js";
+import * as providerRegistry from "./provider-registry.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 const SESSION_KEY = "agent:main:main";
@@ -182,6 +186,137 @@ describe("runtime prompt intake failure", () => {
     expect(() => resolveRuntimeSessionIdentity({ sessionName: "missing", prompt })).toThrow("session changed");
     withoutAgents();
     expect(() => resolveRuntimeSessionIdentity({ sessionName: "main", prompt })).toThrow("agent is unavailable");
+  });
+
+  it("rechecks thread attention parent identity and executor after asynchronous preflight", () => {
+    const prompt = {
+      prompt: "Observed turn needs attention",
+      _agentId: "main",
+      _slackThreadLifecycle: {
+        eventType: "thread.attention",
+        eventId: "slack-thread-attention:fixture:turn",
+        requestId: "fixture",
+        parentSessionKey: SESSION_KEY,
+        childSessionKey: "child",
+        turnId: "turn",
+      },
+    };
+    expect(() =>
+      resolveRuntimeSessionIdentity({
+        sessionName: "main",
+        prompt: {
+          ...prompt,
+          _slackThreadLifecycle: { ...prompt._slackThreadLifecycle, parentSessionKey: "replaced" },
+        },
+      }),
+    ).toThrow("Thread attention session changed");
+    expect(() => resolveRuntimeSessionIdentity({ sessionName: "missing", prompt })).toThrow(
+      "Thread attention session changed",
+    );
+    expect(() =>
+      resolveRuntimeSessionIdentity({ sessionName: "main", prompt: { ...prompt, _agentId: "other" } }),
+    ).toThrow("Thread attention session changed");
+    withoutAgents();
+    expect(() => resolveRuntimeSessionIdentity({ sessionName: "main", prompt })).toThrow(
+      "Thread attention agent is unavailable",
+    );
+  });
+
+  it("abandons a claimed attention route when the parent changes during cold-launch broker preflight", async () => {
+    const selection = { brokerId: "attention-test", profileRef: "test", required: true };
+    const claim: modelBrokerPlanning.ClaimedRuntimeModelBrokerPlan = {
+      claimId: "attention-claim",
+      plan: {
+        brokerId: selection.brokerId,
+        runtimeId: "attention-runtime",
+        agentId: "main",
+        sessionKey: SESSION_KEY,
+        turnId: "attention-broker-turn",
+        selection,
+        lease: {
+          version: 1,
+          brokerId: selection.brokerId,
+          leaseId: "attention-lease",
+          attemptId: "attention-attempt",
+          turnId: "attention-broker-turn",
+          runtimeId: "attention-runtime",
+          runtimeProvider: "codex",
+          model: "test-model",
+          routeRevision: "test",
+          compatibilityRevision: "test",
+          expiresAt: Date.now() + 60_000,
+          transport: {
+            scheme: "local-http-forwarder-v1",
+            protocol: "openai-completions",
+            origin: "http://127.0.0.1:1",
+            path: "/v1/chat/completions",
+            publicHeaders: {},
+          },
+        },
+      },
+    };
+    let release!: () => void;
+    const preflight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    spyOn(modelBroker, "resolveRequiredRuntimeModelBrokerSelection").mockReturnValue(selection);
+    const claimRoute = spyOn(modelBrokerPlanning, "claimRuntimeModelBrokerPlan")
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce(claim);
+    const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+      await preflight;
+      return claim.plan;
+    });
+    const abandon = spyOn(modelBrokerPlanning, "abandonClaimedRuntimeModelBrokerPlan").mockResolvedValue();
+    const resolveRuntime = spyOn(sessionResolver, "resolveRuntimeSession");
+    const createProvider = spyOn(providerRegistry, "createRuntimeProvider").mockImplementation(() => {
+      throw new Error("Unexpected provider creation after attention parent replacement");
+    });
+    const previousRuntimeId = process.env.RAVI_RUNTIME_ID;
+    process.env.RAVI_RUNTIME_ID = claim.plan.runtimeId;
+    const streamingSessions = new Map();
+    const pending = startRuntimeSession({
+      sessionName: "main",
+      prompt: {
+        prompt: "Observed turn needs attention",
+        _agentId: "main",
+        _modelBrokerTurnId: claim.plan.turnId,
+        _slackThreadLifecycle: {
+          eventType: "thread.attention",
+          eventId: "slack-thread-attention:fixture:turn",
+          requestId: "fixture",
+          parentSessionKey: SESSION_KEY,
+          childSessionKey: "child",
+          turnId: "turn",
+        },
+      },
+      configModel: "test-model",
+      instanceId: "test",
+      streamingSessions,
+      stashedMessages: new Map(),
+      safeEmit: async () => {},
+      drainPendingStarts: () => {},
+      crashRecovery: crashRecoveryStub,
+    });
+    try {
+      expect(plan).toHaveBeenCalledTimes(1);
+      expect(claimRoute).toHaveBeenCalledTimes(1);
+      updateSessionName(SESSION_KEY, "previous-parent");
+      getOrCreateSession("attention-replacement", "main", stateDir!, { name: "main" });
+      release();
+      await expect(pending).rejects.toThrow("Thread attention session changed");
+      expect(claimRoute).toHaveBeenCalledTimes(2);
+      expect(abandon).toHaveBeenCalledTimes(1);
+      expect(abandon).toHaveBeenCalledWith(claim, "provider_resolution_failed");
+      expect(resolveRuntime).not.toHaveBeenCalled();
+      expect(createProvider).not.toHaveBeenCalled();
+      expect(streamingSessions.size).toBe(0);
+    } finally {
+      release();
+      await pending.catch(() => {});
+      if (previousRuntimeId === undefined) delete process.env.RAVI_RUNTIME_ID;
+      else process.env.RAVI_RUNTIME_ID = previousRuntimeId;
+    }
   });
 
   it("acknowledges a prompt with no agent, records a durable trace, and notifies the chat user", async () => {

@@ -5,6 +5,7 @@ import {
 } from "./start-admission.js";
 import { configStore } from "../config-store.js";
 import { DecisionDispatchRejectedError } from "../decisions/model.js";
+import { isThreadAttentionPrompt, assertThreadAttentionSession } from "./message-types.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { saveMessage } from "../db.js";
 import {
@@ -893,15 +894,17 @@ export class RuntimeSessionDispatcher {
   async handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
+    assertThreadAttentionSession(prompt, sessionEntry);
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent =
       routerConfig.agents[agentId] ??
-      (prompt._decisionDeliveryId || prompt._taskAssignmentId
+      (prompt._decisionDeliveryId || prompt._taskAssignmentId || isThreadAttentionPrompt(prompt)
         ? undefined
         : routerConfig.agents[routerConfig.defaultAgent]);
     if (!agent) {
       if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
       if (prompt._taskAssignmentId) throw new Error("Task assignment agent is unavailable");
+      if (isThreadAttentionPrompt(prompt)) throw new Error("Thread attention agent is unavailable");
       this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }
@@ -920,6 +923,7 @@ export class RuntimeSessionDispatcher {
     if (
       !prompt._decisionDeliveryId &&
       !prompt._taskAssignmentId &&
+      !isThreadAttentionPrompt(prompt) &&
       debounceMs &&
       debounceMs > 0 &&
       this.streamingSessions.has(sessionName)
@@ -978,6 +982,25 @@ export class RuntimeSessionDispatcher {
     }
   }
 
+  private assertThreadAttentionRuntime(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    live = this.streamingSessions.get(sessionName),
+  ): void {
+    if (!isThreadAttentionPrompt(prompt)) return;
+    assertThreadAttentionSession(prompt, getSessionByName(sessionName));
+    if (!prompt._agentId || !configStore.getConfig().agents[prompt._agentId]) {
+      throw new Error("Thread attention agent is unavailable");
+    }
+    if (live && !live.done) {
+      // Names are reusable; only the key captured when this handle launched
+      // proves that a queued/steered return reaches its intended parent.
+      assertThreadAttentionSession(prompt, live);
+    } else if (this.pendingStartSessions.has(sessionName) || this.startingSessions.has(sessionName)) {
+      throw new Error("Thread attention runtime identity is unavailable before admission");
+    }
+  }
+
   async handlePromptImmediate(
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
@@ -992,8 +1015,10 @@ export class RuntimeSessionDispatcher {
     let sessionEntry = sessionKeyOverride
       ? getSession(sessionKeyOverride)
       : (getSessionByName(sessionName) ?? getSession(sessionName));
+    assertThreadAttentionSession(prompt, sessionEntry);
     const canonicalSessionKey = sessionEntry?.sessionKey ?? sessionKeyOverride;
     let existing = this.streamingSessions.get(sessionName);
+    this.assertThreadAttentionRuntime(sessionName, prompt, existing);
     let daemonRestartMessages: RuntimeUserMessage[] | undefined;
     if (prompt._daemonRestartResume) {
       const needsColdStartStash =
@@ -1040,12 +1065,13 @@ export class RuntimeSessionDispatcher {
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent =
       routerConfig.agents[agentId] ??
-      (prompt._decisionDeliveryId || prompt._taskAssignmentId
+      (prompt._decisionDeliveryId || prompt._taskAssignmentId || isThreadAttentionPrompt(prompt)
         ? undefined
         : routerConfig.agents[routerConfig.defaultAgent]);
     if (!agent) {
       if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
       if (prompt._taskAssignmentId) throw new Error("Task assignment agent is unavailable");
+      if (isThreadAttentionPrompt(prompt)) throw new Error("Thread attention agent is unavailable");
       this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }
@@ -1072,6 +1098,11 @@ export class RuntimeSessionDispatcher {
       sessionEntry = canonicalSessionKey
         ? getSession(canonicalSessionKey)
         : (getSessionByName(sessionName) ?? getSession(sessionName));
+      if (isThreadAttentionPrompt(prompt)) {
+        sessionEntry = getSessionByName(sessionName);
+        assertThreadAttentionSession(prompt, sessionEntry);
+        this.assertThreadAttentionRuntime(sessionName, prompt);
+      }
       requestedProvider = resolveSelectedProvider();
     };
     const shouldDeferSavedProviderChange = (live: RuntimeHostStreamingSession): boolean => {
@@ -2885,6 +2916,7 @@ export class RuntimeSessionDispatcher {
     },
   ): Promise<void> {
     const { sessionEntry, agentId, daemonRestartMessages } = options;
+    this.assertThreadAttentionRuntime(sessionName, prompt, existing);
     log.info("Streaming: pushing message to existing session", { sessionName, reason: "live_session_queue" });
     if (sessionEntry) {
       updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
@@ -3080,6 +3112,7 @@ export class RuntimeSessionDispatcher {
     barrier: DeliveryBarrier,
     sessionKey = sessionName,
   ): Promise<"accepted" | "fallback"> {
+    this.assertThreadAttentionRuntime(sessionName, prompt, existing);
     if (!canUseNativeRuntimeSteer(existing, barrier, prompt)) {
       return "fallback";
     }

@@ -36,6 +36,7 @@ function makeRuntimeSession(): RuntimeSessionHandle {
 
 function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
   return {
+    sessionKey: "agent:main:seam-session",
     agentId: "main",
     queryHandle: makeRuntimeSession(),
     starting: false,

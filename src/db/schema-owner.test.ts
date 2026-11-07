@@ -154,6 +154,12 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
     getDb().query('SELECT trace_turn_id FROM channel_backend_runtime_state LIMIT 0').all();
     getDb().query('SELECT request_id FROM slack_thread_turn_health LIMIT 0').all();
     getDb().query('SELECT response_id FROM slack_automatic_terminal_manifests LIMIT 0').all();
+    getDb().query('SELECT event_id, admission_status FROM slack_thread_attention_notices LIMIT 0').all();
+    getDb().query('SELECT attempt_id, last_signal_at FROM runtime_turn_progress LIMIT 0').all();
+    const { getRuntimeTurnProgress } = await import('./src/runtime/turn-progress.ts');
+    if (getRuntimeTurnProgress({ attemptId: 'absent', turnId: 'absent', sessionKey: 'absent', bootEpoch: 'absent' }) !== null) {
+      throw new Error('NORMAL_PROGRESS_READ_FAILED');
+    }
     const { reserveSlackAutomaticOutput } = await import('./src/channels/slack/automatic-output-circuit.ts');
     const reservation = reserveSlackAutomaticOutput({
       idempotencyKey: 'schema-owner-output', requestFingerprint: 'schema-owner-fingerprint',
