@@ -448,13 +448,13 @@ export function getDeliverableRuntimeMessages(
 
 /**
  * Choose work before bounding its envelope. Only known background atoms may
- * be bypassed: unknown senders retain FIFO and ambiguous deliveries retain
- * reconciliation ownership. This never changes a message's authority or lane.
+ * be bypassed: unknown senders retain FIFO, and replay/capacity cohorts retain
+ * their current logical turn. This never changes a message's authority or lane.
  */
 function prioritizeHumanRuntimeMessages(messages: RuntimeUserMessage[]): RuntimeUserMessage[] {
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index]!;
-    if (message.replay || message.yieldedRequest) break;
+    if (message.replay || message.providerCapacityRetry !== undefined || message.yieldedRequest) break;
     const provenance = classifyTurnProvenance({ prompt: message.launchPrompt });
     if (provenance.origin === "human") {
       // Leave the real pending queue intact: terminal accounting removes only
@@ -473,6 +473,7 @@ function progressReportEnvelope(message: RuntimeUserMessage): object | null {
   const prompt = message.launchPrompt;
   const lifecycle = prompt?._slackThreadLifecycle;
   const origin = resolveRuntimeTurnOrigin(prompt?._turnOrigin);
+  const retainsAttemptInput = message.replay === true || message.providerCapacityRetry !== undefined;
   if (
     !prompt ||
     lifecycle?.eventType !== "thread.report" ||
@@ -481,7 +482,7 @@ function progressReportEnvelope(message: RuntimeUserMessage): object | null {
     !lifecycle.parentSessionKey ||
     origin?.producer !== "channel" ||
     origin.action !== "session.return" ||
-    (message.replay ? !message.clientMessageId : Boolean(message.clientMessageId)) ||
+    (retainsAttemptInput ? !message.clientMessageId : Boolean(message.clientMessageId)) ||
     message.yieldedRequest ||
     message.taskBarrierTaskId ||
     prompt._channelBackend ||
@@ -508,9 +509,10 @@ function progressReportEnvelope(message: RuntimeUserMessage): object | null {
     thread,
     barrier: message.deliveryBarrier,
     taskBarrierTaskId: message.taskBarrierTaskId,
-    // Recovery replays exactly the already handed-off cohort, never a new
-    // report that happened to arrive under the same authority afterward.
-    replayDeliveryId: message.replay ? message.clientMessageId : null,
+    // Recovery and capacity retries retain exactly the already handed-off
+    // cohort, never a new report arriving under the same authority afterward.
+    attemptDeliveryId: retainsAttemptInput ? message.clientMessageId : null,
+    capacityRetry: message.providerCapacityRetry ?? null,
   };
 }
 

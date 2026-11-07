@@ -126,3 +126,4 @@ normative: false
 - Run `src/channels/runtime-events.test.ts` with the isolated runtime preload: exhausted capacity projects one OVERLOADED safe error without raw provider diagnostics.
 
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/delivery-queue.test.ts` verifies authority release on restored retry expiry and cancellation during preparation.
+- The same delivery-queue suite verifies live and restored report cohorts with and without queued human successors, retaining retry budget and excluding fresh reports.

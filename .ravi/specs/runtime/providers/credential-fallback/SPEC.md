@@ -617,3 +617,4 @@ JSON output MUST redact secrets and include enough health data for automation.
 - Switching active provider as a side effect of refreshing or rotating a credential.
 
 - A restored capacity retry that expires or is cancelled during physical-turn preparation MUST release that turn's authority exactly once before yielding a successor or returning.
+- Capacity retries of consolidated thread reports MUST keep the complete original input cohort ahead of fresh input; a retry receives a new physical delivery id without admitting newly queued reports into that cohort.

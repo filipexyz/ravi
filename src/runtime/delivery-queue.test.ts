@@ -527,6 +527,84 @@ describe("runtime delivery queue", () => {
     expect(session.pendingMessages).toEqual([human]);
   });
 
+  for (const restored of [false, true]) {
+    for (const humanArrives of [false, true]) {
+      it(`retries the complete capacity-rejected report cohort before fresh input (restored=${restored}, human=${humanArrives})`, async () => {
+        let reports = [1, 2, 3].map((index) =>
+          createQueuedRuntimeUserMessage(progressPrompt(`retry evidence ${index}`, index)),
+        );
+        let session = makeStreamingSession({ pendingMessages: [...reports] });
+        let now = 8_000;
+        const waits: number[] = [];
+        const createGenerator = () =>
+          createRuntimeMessageGenerator({
+            sessionName: "queue-fixture",
+            session,
+            stashedMessages: new Map(),
+            capacityRetryRuntime: {
+              now: () => now,
+              wait: async (delayMs) => {
+                waits.push(delayMs);
+                now += delayMs;
+              },
+            },
+          });
+        let generator = createGenerator();
+        const original = (await generator.next()).value!;
+        for (const report of reports) {
+          report.providerCapacityRetry = {
+            startedAt: 1_000,
+            retries: 1,
+            ...(restored ? { notBefore: 13_000 } : {}),
+          };
+          report.replay = false;
+        }
+        const fresh = createQueuedRuntimeUserMessage(progressPrompt("new report after failure", 4));
+        const human = createQueuedRuntimeUserMessage(channelPrompt("human after failure", "later"));
+        session.pendingMessages.push(fresh, ...(humanArrives ? [human] : []));
+        if (restored) {
+          await generator.return(undefined);
+          // Restart snapshots carry scheduled retries as pending-only work,
+          // retaining the prior physical id and explicitly clearing replay.
+          session = makeStreamingSession({ pendingMessages: structuredClone(session.pendingMessages) });
+          reports = session.pendingMessages.slice(0, reports.length);
+          generator = createGenerator();
+        } else {
+          session.interrupted = true;
+          session.turnActive = false;
+          session.onTurnComplete?.();
+        }
+
+        const retry = (await generator.next()).value!;
+        expect(retry.message.content).toBe(original.message.content);
+        expect(retry.clientMessageId).not.toBe(original.clientMessageId);
+        expect(retry.replay).toBe(false);
+        expect(session.currentTurnPendingIds).toEqual(reports.map((report) => report.pendingId!));
+        expect(reports.map((report) => report.providerCapacityRetry)).toEqual(
+          reports.map(() => ({ startedAt: 1_000, retries: 1 })),
+        );
+        expect(waits).toEqual(restored ? [5_000] : []);
+
+        session.turnActive = false;
+        session.onTurnComplete?.();
+        const successor = (await generator.next()).value!;
+        expect(successor.message.content).toContain(humanArrives ? "human after failure" : "new report after failure");
+        expect(successor.message.content).not.toContain("retry evidence");
+        expect(
+          session.pendingMessages.some((message) => reports.some((report) => report.pendingId === message.pendingId)),
+        ).toBe(false);
+        expect(session.pendingMessages.every((message) => message.providerCapacityRetry === undefined)).toBe(true);
+        session.done = true;
+        session.turnActive = false;
+        session.onTurnComplete?.();
+        await generator.next();
+        expect(session.pendingMessages.map((message) => message.pendingId)).toEqual(
+          humanArrives ? [fresh.pendingId!] : [],
+        );
+      });
+    }
+  }
+
   it("keeps a Slack DM turn ahead of a system return addressed to the default DM", () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("private DM request", "slack", "D_SOURCE"));
     const notification = createQueuedRuntimeUserMessage({
