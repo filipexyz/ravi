@@ -465,7 +465,10 @@ describe("channel runtime event projection", () => {
     ]);
   });
 
-  it("projects exhausted model capacity as overload rather than an internal work failure", async () => {
+  it.each([
+    { name: "exhausted", message: PROVIDER_CAPACITY_EXHAUSTED_MESSAGE, retryable: true },
+    { name: "replay-unsafe", message: PROVIDER_CAPACITY_UNSAFE_MESSAGE, retryable: false },
+  ])("preserves $name capacity replay safety in channel projection", async ({ message, retryable }) => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];
     const outputs: ChannelOutputEnvelope[] = [];
@@ -478,7 +481,7 @@ describe("channel runtime event projection", () => {
       metadata,
       event: {
         type: "turn.failed",
-        error: PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+        error: message,
         recoverable: false,
         rawEvent: { code: "serverOverloaded", diagnostics: "private provider payload" },
       },
@@ -487,14 +490,9 @@ describe("channel runtime event projection", () => {
     expect(outputs).toHaveLength(1);
     expect(outputs[0]).toMatchObject({
       kind: "safe_error",
-      error: { code: "OVERLOADED", category: "capacity", retryable: true },
+      error: { code: "OVERLOADED", category: "capacity", retryable },
     });
     expect(JSON.stringify([outputs, events])).not.toContain("private provider payload");
-    expect(classifyChannelRuntimeFailure(PROVIDER_CAPACITY_UNSAFE_MESSAGE, false)).toEqual({
-      code: "OVERLOADED",
-      category: "capacity",
-      retryable: true,
-    });
   });
 
   it("classifies runtime failure text into channel-safe codes", () => {

@@ -124,63 +124,69 @@ export function createCapacityRetryExhaustionHandler(
         streamingSession.currentTraceTurnTerminalRecorded = true;
       }
     }
-    await abandonCapacityRetryCredential(streamingSession.currentRuntimeCredential, reason);
-    recordRuntimeTraceEvent({
-      sessionKey: session.sessionKey,
-      sessionName,
-      agentId: agent.id,
-      runId,
-      provider: runtimeProviderId,
-      model: streamingSession.currentModel,
-      eventType: "runtime.capacity_retry_exhausted",
-      eventGroup: "runtime",
-      status: "failed",
-      source,
-      error,
-      payloadJson: { reason, providerDelivered: false },
-    });
-    if (retryPrompt?._channelBackend) {
-      await projectChannelRuntimeEvent({
-        metadata: retryPrompt._channelBackend,
-        event: { type: "turn.failed", error, recoverable: false },
+    const expiredCredential = streamingSession.currentRuntimeCredential;
+    try {
+      recordRuntimeTraceEvent({
+        sessionKey: session.sessionKey,
+        sessionName,
+        agentId: agent.id,
+        runId,
+        provider: runtimeProviderId,
+        model: streamingSession.currentModel,
+        eventType: "runtime.capacity_retry_exhausted",
+        eventGroup: "runtime",
+        status: "failed",
+        source,
+        error,
+        payloadJson: { reason, providerDelivered: false },
       });
+      if (retryPrompt?._channelBackend) {
+        await projectChannelRuntimeEvent({
+          metadata: retryPrompt._channelBackend,
+          event: { type: "turn.failed", error, recoverable: false },
+        });
+      }
+      await safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "turn.failed",
+        provider: runtimeProviderId,
+        error,
+        failureKind: "provider_capacity_exhausted",
+        recoverable: false,
+        ...(retryPrompt?._bridgeTurnId ? { _bridgeTurnId: retryPrompt._bridgeTurnId } : {}),
+        _turnProvenance: classifyTurnProvenance({ prompt: retryPrompt }),
+        ...(source ? { _source: source } : {}),
+      });
+      // Early expiry runs before beforeTurnStart: currentReplyTarget and the
+      // suppression flags can still belong to the previous turn. Use this input.
+      if (
+        !retryPrompt ||
+        retryPrompt._channelBackend ||
+        retryPrompt._cliDestination ||
+        retryPrompt._observation ||
+        isObserverRuntimeSessionName(sessionName) ||
+        agent.mode === "sentinel"
+      ) {
+        return;
+      }
+      const { target } = resolveSessionOutputTargetPreserving({
+        sessionKey: session.sessionKey,
+        fallback: source,
+        previous: streamingSession.lastBoundReplyTarget ?? streamingSession.currentReplyTarget,
+      });
+      if (!target) return;
+      await safeEmit(`ravi.session.${sessionName}.response`, {
+        response: formatUserFacingTurnFailure(error),
+        target,
+        _emitId: Math.random().toString(36).slice(2, 8),
+        _instanceId: instanceId,
+        _pid: process.pid,
+        _v: 2,
+      });
+    } finally {
+      // Feedback failure must stop successor admission without suppressing
+      // the terminal capacity error already owed to this logical request.
+      await abandonCapacityRetryCredential(expiredCredential, reason);
     }
-    await safeEmit(`ravi.session.${sessionName}.runtime`, {
-      type: "turn.failed",
-      provider: runtimeProviderId,
-      error,
-      failureKind: "provider_capacity_exhausted",
-      recoverable: false,
-      ...(retryPrompt?._bridgeTurnId ? { _bridgeTurnId: retryPrompt._bridgeTurnId } : {}),
-      _turnProvenance: classifyTurnProvenance({ prompt: retryPrompt }),
-      ...(source ? { _source: source } : {}),
-    });
-    // Early expiry runs before beforeTurnStart: currentReplyTarget and the
-    // suppression flags can still belong to the previous turn. Use this input.
-    if (
-      !retryPrompt ||
-      retryPrompt._channelBackend ||
-      retryPrompt._cliDestination ||
-      retryPrompt._observation ||
-      isObserverRuntimeSessionName(sessionName) ||
-      agent.mode === "sentinel"
-    ) {
-      return;
-    }
-    const { target } = resolveSessionOutputTargetPreserving({
-      sessionKey: session.sessionKey,
-      fallback: source,
-      previous: streamingSession.lastBoundReplyTarget ?? streamingSession.currentReplyTarget,
-    });
-    if (!target) return;
-    await safeEmit(`ravi.session.${sessionName}.response`, {
-      response: formatUserFacingTurnFailure(error),
-      target,
-      _emitId: Math.random().toString(36).slice(2, 8),
-      _instanceId: instanceId,
-      _pid: process.pid,
-      _v: 2,
-    });
   };
 }
 

@@ -659,6 +659,7 @@ async function buildRuntimeStartRequestInternal(
         })
       : undefined;
   let recoveryPending = Boolean(recovery);
+  let recoveryPendingIds: Set<string> | undefined;
   recordRuntimeTraceEvent({
     sessionKey: dbSessionKey,
     sessionName,
@@ -1127,10 +1128,23 @@ async function buildRuntimeStartRequestInternal(
       stopActiveContextLease?.();
       stopActiveContextLease = undefined;
     },
-    transformTurnPrompt: ({ combinedPrompt }) => {
-      // Only the first physical turn needs the transcript. Keep the original
-      // queued message/authority/delivery id intact, and trace the actual input.
-      if (recoveryPending && recovery) {
+    transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
+      const retriesRecoveredCapacityRequest =
+        deliverableMessages.length > 0 &&
+        deliverableMessages.every(
+          (message) =>
+            message.providerCapacityRetry !== undefined &&
+            message.pendingId !== undefined &&
+            recoveryPendingIds?.has(message.pendingId),
+        );
+      // Capacity rejection did not consume the recovered context. Keep it on
+      // retries of that logical input, without adding it to a successor.
+      if (recovery && (recoveryPending || retriesRecoveredCapacityRequest)) {
+        if (recoveryPending) {
+          recoveryPendingIds = new Set(
+            deliverableMessages.flatMap((message) => (message.pendingId ? [message.pendingId] : [])),
+          );
+        }
         combinedPrompt = `${recovery.prompt}\n\n# Current Request\n${combinedPrompt}`;
         recoveryPending = false;
       }

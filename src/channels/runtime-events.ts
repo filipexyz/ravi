@@ -866,7 +866,10 @@ type ChannelRuntimeFailureClass = Pick<ChannelSafeError, "code" | "category" | "
 
 export function classifyChannelRuntimeFailure(errorText: string, recoverable: boolean): ChannelRuntimeFailureClass {
   const text = errorText.trim();
-  if (text === PROVIDER_CAPACITY_EXHAUSTED_MESSAGE || text === PROVIDER_CAPACITY_UNSAFE_MESSAGE) {
+  if (text === PROVIDER_CAPACITY_UNSAFE_MESSAGE) {
+    return { code: "OVERLOADED", category: "capacity", retryable: false };
+  }
+  if (text === PROVIDER_CAPACITY_EXHAUSTED_MESSAGE) {
     return { code: "OVERLOADED", category: "capacity", retryable: true };
   }
   if (isRuntimeCredentialResolutionFailure(text)) {

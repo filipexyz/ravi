@@ -4286,12 +4286,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               session.runtimeProvider = runtimeSession.provider;
             }
           }
-          const durablePreExecutionRejection =
-            event.preExecutionRejected === true &&
+          const terminalAttemptHasNoEffects =
             currentTurnReplaySafety.durableBinding === "terminal" &&
             !currentTurnReplaySafety.startedTool &&
             !currentTurnReplaySafety.materializedOutput &&
             !currentTurnReplaySafety.inputMutated;
+          const durablePreExecutionRejection = event.preExecutionRejected === true && terminalAttemptHasNoEffects;
           const safeToRetry =
             (currentTurnReplaySafety.replayable && currentTurnReplaySafety.durableBinding === "terminal") ||
             durablePreExecutionRejection;
@@ -4389,10 +4389,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               continue;
             }
           }
-          capacityTerminalReason ??=
-            capacityDecision.action === "exhausted"
-              ? PROVIDER_CAPACITY_EXHAUSTED_REASON
-              : "provider_capacity_retry_unsafe";
+          // Exhausting the budget cannot make a side-effecting or unbound
+          // attempt safe to repeat, including the final allowed attempt.
+          if (!terminalAttemptHasNoEffects) {
+            capacityTerminalReason = "provider_capacity_retry_unsafe";
+          } else {
+            capacityTerminalReason ??=
+              capacityDecision.action === "exhausted"
+                ? PROVIDER_CAPACITY_EXHAUSTED_REASON
+                : "provider_capacity_retry_unsafe";
+          }
           event = {
             ...event,
             error:

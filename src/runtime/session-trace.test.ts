@@ -6415,10 +6415,82 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.payloadJson).toMatchObject({ autoRecovered: false });
   });
 
+  it.each([{ capacity: true }, { capacity: false }])(
+    "retains cold-start recovery only for the same capacity request (capacity=$capacity)",
+    async ({ capacity }) => {
+      const historyText = "Decided: status endpoint only, no deployment.";
+      saveMessage(SESSION_NAME, "assistant", historyText);
+      const prompt = { prompt: "implement status", source };
+      const queued = createQueuedRuntimeUserMessage(prompt);
+      const successor = createQueuedRuntimeUserMessage({ prompt: "next request", source });
+      const streaming = makeStreamingSession({ pendingMessages: [queued] });
+      const { runtimeRequest } = await buildRuntimeStartRequest({
+        runId: "run-capacity-recovery",
+        sessionName: SESSION_NAME,
+        prompt,
+        session: makeSession(),
+        agent: makeAgent(),
+        runtimeProviderId: PROVIDER,
+        runtimeProvider: {
+          id: PROVIDER,
+          getCapabilities: () => capabilities,
+          startSession: () => makeRuntimeSession([]),
+        },
+        runtimeCapabilities: capabilities,
+        sessionCwd: stateDir!,
+        dbSessionKey: SESSION_KEY,
+        model: MODEL,
+        runtimeResolution: {
+          options: { model: MODEL },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        streamingSession: streaming,
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: PROVIDER,
+        crashRecovery,
+      });
+      try {
+        const first = await runtimeRequest.prompt.next();
+        expect(first.value!.message.content).toContain(historyText);
+        expect(first.value!.message.content).toContain("# Current Request\nimplement status");
+        if (capacity) queued.providerCapacityRetry = { startedAt: Date.now(), retries: 1 };
+        streaming.pendingMessages.push(successor);
+        streaming.interrupted = true;
+        streaming.turnActive = false;
+        streaming.onTurnComplete?.();
+        const retry = await runtimeRequest.prompt.next();
+        if (capacity) expect(retry.value!.message.content).toBe(first.value!.message.content);
+        else expect(retry.value!.message.content).not.toContain(historyText);
+        streaming.turnActive = false;
+        streaming.onTurnComplete?.();
+        // The same recovery snapshot must not leak into a queued successor,
+        // including a successor that independently needs a capacity retry.
+        if (capacity) {
+          const next = await runtimeRequest.prompt.next();
+          expect(next.value!.message.content).toBe("next request");
+          successor.providerCapacityRetry = { startedAt: Date.now(), retries: 1 };
+          streaming.interrupted = true;
+          streaming.turnActive = false;
+          streaming.onTurnComplete?.();
+          const nextRetry = await runtimeRequest.prompt.next();
+          expect(nextRetry.value!.message.content).toBe("next request");
+        }
+      } finally {
+        streaming.done = true;
+        streaming.onTurnComplete?.();
+        await runtimeRequest.prompt.return(undefined);
+      }
+    },
+  );
+
   async function runCapacityScenario(
     options: {
       failures?: number;
       beforeFailure?: RuntimeEvent[];
+      failureEffectAttempt?: number;
       status?: number;
       proof?: boolean;
       successes?: number;
@@ -6444,6 +6516,7 @@ describe("runtime session trace instrumentation", () => {
       sessionName: SESSION_NAME,
       session: streaming,
       stashedMessages: new Map(),
+      capacityRetryRuntime: { now: () => now },
       traceTurnStart: ({ combinedPrompt }) => {
         seedAdapterTrace(streaming, `capacity-turn-${attempts + 1}`, combinedPrompt);
         return undefined;
@@ -6456,8 +6529,10 @@ describe("runtime session trace instrumentation", () => {
         for await (const input of generator) {
           attempts++;
           inputs.push(String(input.message.content));
-          for (const event of options.beforeFailure ?? []) yield event;
-          if (options.inputMutated) streaming.currentTurnInputMutated = true;
+          if (options.failureEffectAttempt === undefined || attempts === options.failureEffectAttempt) {
+            for (const event of options.beforeFailure ?? []) yield event;
+            if (options.inputMutated) streaming.currentTurnInputMutated = true;
+          }
           if (attempts <= (options.failures ?? 1)) {
             yield {
               type: "turn.failed",
@@ -6530,6 +6605,42 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("capacity-turn-4")).toMatchObject({
       status: "failed",
       abortReason: "provider_capacity_exhausted",
+      providerSessionIdAfter: "capacity-thread",
+    });
+  });
+
+  it.each([
+    {
+      name: "tool execution",
+      events: [
+        { type: "tool.started", toolUse: { id: "last-attempt-tool", name: "Bash", input: {} } },
+      ] as RuntimeEvent[],
+      inputMutated: false,
+    },
+    {
+      name: "materialized output",
+      events: [
+        { type: "assistant.message", text: "last attempt delivered", metadata: { item: { phase: "commentary" } } },
+      ] as RuntimeEvent[],
+      inputMutated: false,
+    },
+    { name: "input mutation", events: [] as RuntimeEvent[], inputMutated: true },
+  ])("reports replay-unsafety after $name on the final capacity attempt", async ({ events, inputMutated }) => {
+    const result = await runCapacityScenario({
+      failures: 20,
+      beforeFailure: events,
+      inputMutated,
+      failureEffectAttempt: 4,
+    });
+    expect(result.attempts).toBe(4);
+    expect(result.waits).toEqual([500, 1_000, 2_000]);
+    const failures = result.emitted.filter((entry) => entry.data.type === "turn.failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.data.error).toBe(PROVIDER_CAPACITY_UNSAFE_MESSAGE);
+    expect(failures[0]?.data.failureKind).toBe("provider_capacity_retry_unsafe");
+    expect(getSessionTurn("capacity-turn-4")).toMatchObject({
+      status: "failed",
+      abortReason: "provider_capacity_retry_unsafe",
       providerSessionIdAfter: "capacity-thread",
     });
   });
