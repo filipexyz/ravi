@@ -31,6 +31,24 @@ afterEach(async () => {
 });
 
 describe("channel outbound publish outbox retention", () => {
+  it("channels refuses an unprepared publication schema without creating or rebuilding tables", () => {
+    const database = getDb();
+    const before = database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all();
+    const version = database.prepare("PRAGMA schema_version").get();
+    const argv = process.argv;
+    process.argv = [argv[0], argv[1], "channels", "run"];
+    try {
+      expect(() => getChannelOutboundPublishJob("absent")).toThrow("STATE_SCHEMA_NOT_READY: channel-outbound-publish");
+      expect(() => prunePublishedChannelOutboundPublishJobs(100, 100)).toThrow(
+        "STATE_SCHEMA_NOT_READY: channel-outbound-publish",
+      );
+    } finally {
+      process.argv = argv;
+    }
+    expect(database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all()).toEqual(before);
+    expect(database.prepare("PRAGMA schema_version").get()).toEqual(version);
+  });
+
   it("upgrades an existing publication table without losing pending or published rows", () => {
     const database = getDb();
     database.exec(`CREATE TABLE channel_outbound_publish_jobs (

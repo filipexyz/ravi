@@ -2215,13 +2215,6 @@
       "count": 1
     },
     {
-      "id": "src/db.ts:c6978c968e80ffb42dda9b1d",
-      "file": "src/db.ts",
-      "boundary": "db.ts",
-      "rule": "catch-without-binding",
-      "count": 2
-    },
-    {
       "id": "src/db/read-watchdog.ts:43c5de7e031c12444519e89b",
       "file": "src/db/read-watchdog.ts",
       "boundary": "db",
@@ -4301,13 +4294,6 @@
       "count": 1
     },
     {
-      "id": "src/router/router-db.ts:99b3e500a1e454bfa7a36c7f",
-      "file": "src/router/router-db.ts",
-      "boundary": "router",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/router/router-db.ts:9ede63713cc288420d24b976",
       "file": "src/router/router-db.ts",
       "boundary": "router",
@@ -5933,7 +5919,7 @@
     }
   ],
   "totals": {
-    "violations": 888,
+    "violations": 885,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5956,7 +5942,7 @@
       "src/cloud-agents": 30,
       "src/cloud-auth": 11,
       "src/console-scope": 5,
-      "src": 45,
+      "src": 43,
       "src/costs": 2,
       "src/crm": 1,
       "src/cron": 5,
@@ -5998,7 +5984,7 @@
       "src/pr": 14,
       "src/prox/calls": 5,
       "src/reference": 1,
-      "src/router": 25,
+      "src/router": 24,
       "src/runtime": 99,
       "src/sandbox": 3,
       "src/sdk/gateway": 9,

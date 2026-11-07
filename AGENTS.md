@@ -53,11 +53,11 @@ bun run test         # the CI suite, including SDK, OpenAPI, Swift and Dart drif
 bun test <path>      # one focused suite
 ```
 
-- Pre-commit runs Biome on staged files. Pre-push runs `bun run sdk:check` (on drift it regenerates and blocks until you commit), then build, typecheck and `bun run test`. Never use `--no-verify`.
-- On the production host's sanctioned Git Data API path, finish with `bun scripts/publish-pr.ts --repo filipexyz/ravi --base dev --title "..." --body-file <file>` in the publishing Ravi session. It creates a ready PR and registers the standard CI follow; repeat it to reconcile an existing PR/follow after a partial failure. Verify uploaded tree/SHA and record literal publication commands in the PR. See `CONTRIBUTING.md`.
+- Pre-commit runs Biome on staged files. Ordinary pre-push runs SDK/build/typecheck/full tests on development machines. On production hosts run focused checks in isolated state and use `ravi pr publish --repo filipexyz/ravi --base dev --title "..." --body-file <file>` (preview), then `--execute`; see CONTRIBUTING.md. Full validation remains mandatory in PR CI. Never disable hooks or use `--no-verify`.
+- After publishing through the Git Data API, create or update the ready PR from the publishing Ravi session and register its standard CI follow. Verify the uploaded tree/SHA and record the literal publication commands in the PR. Do not claim persistent follow-up before the watcher exists.
 - Changing a command's flags or return schema changes the generated SDKs and `openapi.json`/`docs/openapi.json`; `CONTRIBUTING.md` lists the regenerate commands.
 - `src/cli/execute-consumers.test.ts` checks exact command strings in `README.md`, `AGENTS.md`, skills and docs. When a command gains or loses its `--execute` brake, update that test and those files.
-- Try the CLI without touching a live install: `HOME=$(mktemp -d) ./bin/ravi <group> <command> --help`.
+- Try source commands with isolated `RAVI_STATE_DIR="$(mktemp -d)"`; avoid the auto-building wrapper on production hosts. Real-state schema initialization belongs only to the installed PM2 daemon by process identity; channels validates the same-release schema before serving and never migrates; CLI/build/tests/worktrees must select isolated state explicitly and cannot opt in to real state. No new launcher flag is needed. All new writable SQLite constructors must use `openStateDatabase` from `src/db/state-boundary.ts`.
 
 The daemon and the channel runner run the built bundle, so `src/` changes need a build and a restart. `ravi daemon restart` re-registers the daemon with the bundle of the CLI you invoke, so restart through `./bin/ravi` to run this checkout. CLI config writes (agents, instances, routes, triggers, cron) need no restart: they emit refresh events such as `ravi.config.changed`. Editing `~/.ravi/.env` needs explicit restarts of the processes that loaded it; status names stale processes and their reconcile commands.
 

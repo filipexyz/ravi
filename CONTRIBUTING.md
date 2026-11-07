@@ -35,7 +35,7 @@ bun src/cli/index.ts agents list    # the CLI straight from source, no bundle
 ./bin/ravi daemon dev               # rebuilds on every src/ change; apply with ravi daemon restart -m "<reason>"
 ```
 
-To try commands without touching a real install, give them a throwaway home: `HOME=$(mktemp -d) ./bin/ravi <group> <command> --help`.
+To try source commands safely, set an isolated state directory: `RAVI_STATE_DIR="$(mktemp -d)" bun src/cli/index.ts <group> <command> --help`. Do not invoke the auto-building wrapper on a production host.
 
 ## Build
 
@@ -83,7 +83,15 @@ The pre-push checks clear both runtime identity and Git's repository-local
 environment variables. Test fixtures that initialize their own repositories must
 not inherit the pushing checkout's `GIT_DIR`, index or worktree paths.
 
-Never bypass the hooks with `--no-verify`.
+Never bypass the hooks with `--no-verify`, per-command `git -c core.hooksPath=/dev/null push`, or shared hook settings. Per-command bypass is still bypass even when persistent config and hook files remain unchanged.
+
+### Real state and caller identity
+
+There is one real state directory, not a "production environment" opt-in. Only the installed runtime registered in PM2 may initialize/migrate real state. Identity is checked through the code location, actual process/parent PID and live registration; inherited env labels or argv alone are insufficient. No new launcher flag is required.
+
+CLI/build/test/worktree execution must select an isolated `RAVI_STATE_DIR` on the command. Missing state selection refuses before SQLite opens the real default; explicitly selecting real state does not authorize a worktree. Use the installed daemon gateway for real state. Fixture cleanup restores its enclosing state selection.
+
+If a legitimate runtime is refused after rollout, restore the previous known-good installed package and existing launchers, recover service, then inspect package location/process registration. No environment setup order or DB rollback is introduced. See `.ravi/specs/quality/state-boundary/RUNBOOK.md`.
 
 ### Sanctioned publication on the production host
 
@@ -94,20 +102,22 @@ the remote tree and commit SHA against the local commit. Do not use `git push`
 with disabled hooks. Record the literal upload commands and checks left to CI
 in the PR description.
 
-Finish publication from the publishing Ravi session and committed worktree:
+Publish from the Ravi session and committed worktree through the installed
+daemon gateway:
 
 ```bash
-bun scripts/publish-pr.ts --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --execute
 ```
 
-The finalizer creates a **ready** PR and registers its CI follow with the same
-primitive as the `gh` command observer. A raw API `POST /pulls` is not the final
-step. If interrupted or failed after PR creation, repeat the command: it repairs
-the existing PR/follow, including a legacy draft, without duplicating either.
-Ready does not waive the independent current-head approval required by Review
-Gate. This script does not upload Git objects or bypass a hook.
-A thread publisher hands CI to its durable parent; never claim persistent
-follow-up while closing the only recipient.
+The command previews by default, preserves the exact local commit/tree and
+history, creates or reuses the ready PR and verifies the CI follow. It does not
+run local tests: record focused validation honestly before publishing. Repeat
+the command to reconcile a partial result. A thread publisher hands CI to its
+durable parent; never close the only recipient while its checks are pending.
+
+Independent review belongs in the PR description. Quality Gate is the required
+merge check; the retired Review Gate must not be reinstated by this workflow.
 
 ## Adding or changing a CLI command
 
@@ -211,9 +221,11 @@ bun run check:docs          # lint:docs + docs:check-links (also: make docs-chec
 
 ## Pull requests
 
-- Keep each pull request to one change. Run `bun run test` and `make quality` before pushing; the pre-push hook runs the same build, typecheck and test steps.
+- Keep each pull request to one change. On development machines, run `bun run test` and `make quality` before pushing. On production hosts, use the focused publication path above and require the complete checks in PR CI.
 - Fill in every section of [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md): the objective, the problem, the solution, the practical impact, what does not change, how you validated it, the risks and how to roll it back. Follow-ups are optional. The "PR Description" check fails when a required section is missing, has less than 20 characters of content, or still contains template comments, `TODO`/`TBD` or an empty `-` bullet. Name the commands and tests you actually ran under Validation.
 - CI runs `bun run build`, `bun run typecheck`, `bun run test` and the Swift SDK tests, then a quality gate on the pull request diff:
   - **Specs:** every changed spec needs valid frontmatter and its `WHY.md`, `RUNBOOK.md` and `CHECKS.md`, and `CHECKS.md` needs verifiable list items.
   - **Coverage:** a change under `src/channels/`, `src/omni/`, `src/router/`, `src/runtime/`, `src/jobs/`, `src/watch/`, `src/hooks/`, `src/session-trace/`, `src/triggers/`, `src/approval/`, `src/apps/` or `src/devin/` must include one of that area's focused test files (listed in `src/ci/quality-gate.ts`) in the same diff. Diffs that only touch docs, Markdown or `.ravi/` are exempt.
 - Run the gate locally against `dev` with `git fetch origin dev && GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts`.
+
+The daemon is the sole owner of real-state schemas. It initializes runtime stores before serving; channels checks per-store, exact-release readiness before connecting to NATS and never migrates. Stop the old channels runner before a schema upgrade, initialize the daemon, then start channels from the same release. Starting channels first fails with `STATE_SCHEMA_NOT_READY`, without database creation or automatic repair.
