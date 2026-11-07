@@ -83,6 +83,7 @@ function boundedUtf8String(maxBytes: number, label: string, minBytes = 1) {
 }
 
 export const ChannelRuntimeCorrelationSchema = z.object({
+  traceTurnId: ChannelBackendOpaqueIdSchema.optional(),
   correlationId: ChannelBackendOpaqueIdSchema,
   causationId: ChannelBackendOpaqueIdSchema.optional(),
   ingressRequestId: ChannelBackendOpaqueIdSchema,
@@ -794,6 +795,7 @@ function recordedRuntimeEvent(
     occurredAt: new Date(input.occurredAt).toISOString(),
     sequence: persisted.runtime.lastSequence,
     correlation: {
+      ...(input.metadata.traceTurnId ? { traceTurnId: input.metadata.traceTurnId } : {}),
       correlationId: input.metadata.correlationId,
       causationId: input.metadata.ingressRequestId,
       ingressRequestId: input.metadata.ingressRequestId,
@@ -813,6 +815,7 @@ function recordFailedTurnBootstrap(input: RecordAndEmitInput): KnownChannelRunti
   let persisted: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>;
   try {
     persisted = dbRecordChannelBackendRuntimeEvent({
+      traceTurnId: input.metadata.traceTurnId,
       turnId: input.metadata.binding.turnId,
       state: "running",
       runtimeGenerationId: channelRuntimeGenerationId,
@@ -839,6 +842,7 @@ function prepareTerminalOutput(input: RecordAndEmitInput): ChannelOutputEnvelope
   )
     return undefined;
   return ChannelOutputEnvelopeSchema.parse({
+    traceTurnId: input.metadata.traceTurnId,
     protocol: CHANNEL_BACKEND_PROTOCOL,
     schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
     outputId: semanticEventId("output", input.metadata.binding.turnId, "terminal"),
@@ -924,6 +928,7 @@ async function recordAndEmit(
     if (settlementFailed) throw settlementError;
   };
   const recordInput = {
+    traceTurnId: input.metadata.traceTurnId,
     turnId: input.metadata.binding.turnId,
     state: input.state,
     assistantDelta: input.assistantDelta,
@@ -1034,6 +1039,7 @@ function parseChannelBackendMetadata(input: ChannelBackendPromptMetadata): Chann
   return {
     protocol: CHANNEL_BACKEND_PROTOCOL,
     schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+    ...(input.traceTurnId ? { traceTurnId: ChannelBackendOpaqueIdSchema.parse(input.traceTurnId) } : {}),
     ingressRequestId: ChannelBackendOpaqueIdSchema.parse(input.ingressRequestId),
     correlationId: ChannelBackendOpaqueIdSchema.parse(input.correlationId),
     binding: LocalChannelMessageBindingSchema.parse(input.binding),
@@ -1260,6 +1266,7 @@ function terminalEventFromReadback(
     sequence: runtime.lastSequence,
     correlation: {
       correlationId: receipt.initialRequestId,
+      ...(runtime.traceTurnId ? { traceTurnId: runtime.traceTurnId } : {}),
       causationId: receipt.initialRequestId,
       ingressRequestId: receipt.initialRequestId,
       binding,

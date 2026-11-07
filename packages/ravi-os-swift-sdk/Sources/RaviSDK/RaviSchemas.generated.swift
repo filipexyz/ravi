@@ -34790,6 +34790,10 @@ public enum RaviSchemas {
               "ingressRequestId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
                 "type": "string"
+              },
+              "traceTurnId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
               }
             },
             "required": [
@@ -110621,6 +110625,79 @@ public enum RaviSchemas {
               }
             ]
           },
+          "turnHealth": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "checkedAt": {
+                    "type": "number"
+                  },
+                  "lastSignalAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no_signal",
+                          "no_reply",
+                          "owner_lost",
+                          "failed"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "since": {
+                    "type": "number"
+                  },
+                  "state": {
+                    "enum": [
+                      "idle",
+                      "running",
+                      "interrupted",
+                      "attention",
+                      "closed"
+                    ],
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "state",
+                  "reason",
+                  "since",
+                  "lastSignalAt",
+                  "checkedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "uncertainAnswerCount": {
             "type": "number"
           },
@@ -110942,6 +111019,79 @@ public enum RaviSchemas {
               }
             ]
           },
+          "turnHealth": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "checkedAt": {
+                    "type": "number"
+                  },
+                  "lastSignalAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no_signal",
+                          "no_reply",
+                          "owner_lost",
+                          "failed"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "since": {
+                    "type": "number"
+                  },
+                  "state": {
+                    "enum": [
+                      "idle",
+                      "running",
+                      "interrupted",
+                      "attention",
+                      "closed"
+                    ],
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "state",
+                  "reason",
+                  "since",
+                  "lastSignalAt",
+                  "checkedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "uncertainAnswerCount": {
             "type": "number"
           },
@@ -111251,6 +111401,79 @@ public enum RaviSchemas {
               "anyOf": [
                 {
                   "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "turnHealth": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "checkedAt": {
+                      "type": "number"
+                    },
+                    "lastSignalAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "no_signal",
+                            "no_reply",
+                            "owner_lost",
+                            "failed"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "since": {
+                      "type": "number"
+                    },
+                    "state": {
+                      "enum": [
+                        "idle",
+                        "running",
+                        "interrupted",
+                        "attention",
+                        "closed"
+                      ],
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "turnId",
+                    "state",
+                    "reason",
+                    "since",
+                    "lastSignalAt",
+                    "checkedAt"
+                  ],
+                  "type": "object"
                 },
                 {
                   "type": "null"

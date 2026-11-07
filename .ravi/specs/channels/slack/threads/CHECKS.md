@@ -78,6 +78,18 @@ bun run build
 - `bun test src/channels/slack/thread-lifecycle.test.ts` closes a pruned child by its durable request id without recreating the session, is idempotent, and closes only the selected request when child keys collide.
 - `bun test src/cli/commands/sessions.test.ts` cloaks missing, ambiguous and unauthorized orphan references as SESSION_NOT_FOUND and requires modify authority before exposing or closing the card.
 
+## Turn attention
+
+- `bun test src/channels/slack/thread-turn-health.test.ts src/channels/slack/thread-lifecycle.test.ts` covers missing terminals, partial output before a tool, long legitimate tools/provider activity, expired ownership leases, human interruption, intentional silence, completed turns without final return, channel-only replies, and close during a tool.
+- Two ticks across a database reopen, concurrent ticks, and `no_signal` becoming `owner_lost` MUST publish one notice per turn. Publication failure MUST retry with the same message id; a new turn may produce a new notice.
+- An attention notice from a restricted child MUST preserve its exact caller context and keep the parent narrowed after ordinary context rotation. Missing, ambiguous, wrong-session, wrong-agent or wrong-kind authority MUST publish nothing and leave attention visible.
+- Listing MUST return the stored observation unchanged until reconciliation; the strict CLI return schema MUST accept old summaries and preserve the new additive `turnHealth`.
+- The runtime provider-activity test MUST prove that real activity updates the matching canonical turn's signal without emitting a public activity event.
+- A completed automatic media-only reply with a frozen final manifest MUST remain `idle` after the delivery grace. Media in commentary, errors, failed delivery or an unfinished turn MUST NOT satisfy final-reply evidence.
+- `src/runtime/session-trace.test.ts` MUST preserve a successor's live signal when an old provider emits activity after ownership changes, while retaining the current-owner control.
+
+## Durable subscribers at close
+
 - [ ] `bun test src/channels/slack/thread-lifecycle.test.ts` refuses close for active triggers addressed by name/key and after pruning; handoff permits closure without prior side effects.
 - [ ] Inactive activation verdicts and unrelated reply sessions do not block close.
 - [ ] `bun test src/cli/commands/sessions.test.ts src/cli/remote-gateway.test.ts` preserves the refusal code, ids and repoint guidance across CLI/gateway.

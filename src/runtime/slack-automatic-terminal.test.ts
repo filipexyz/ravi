@@ -20,6 +20,10 @@ import {
   updateSessionRuntimeProviderOverride,
 } from "../router/sessions.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
+import { recordResponseEmittedTrace } from "../session-trace/channel-trace.js";
+import { getSessionTurn } from "../session-trace/session-trace-db.js";
+import { observeThreadTurn, THREAD_REPLY_GRACE_MS } from "../channels/slack/thread-turn-health.js";
+import { registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   acceptResolvedChannelIngress,
@@ -236,6 +240,40 @@ async function fixture(
   return { metadata, session, streaming, responses, outputs, stashedMessages, run };
 }
 
+function seedFixtureTrace(f: Awaited<ReturnType<typeof fixture>>, turnId: string) {
+  const trace = recordAdapterRequestTrace({
+    sessionKey: f.session.sessionKey,
+    sessionName: f.session.name!,
+    agentId: "agent-a",
+    runId: "run-a",
+    turnId,
+    provider: "test-provider",
+    model: "test",
+    prompt: "Generate an image",
+    systemPrompt: "Fixture",
+    cwd: stateDir!,
+    resume: false,
+    fork: false,
+    source: f.streaming.currentSource,
+    deliveryBarrier: "after_tool",
+    hasHooks: false,
+    pluginNames: [],
+    mcpServerNames: [],
+    hasRemoteSpawn: false,
+    toolAccessMode: "restricted",
+    capabilitySummary: { ...capabilities },
+  });
+  if (!trace) throw new Error("Fixture trace was not recorded");
+  Object.assign(f.streaming, {
+    currentTraceTurnId: trace.turnId,
+    currentTraceTurnStartedAt: trace.startedAt,
+    currentTraceUserPromptSha256: trace.userPromptSha256,
+    currentTraceSystemPromptSha256: trace.systemPromptSha256,
+    currentTraceRequestBlobSha256: trace.requestBlobSha256,
+  });
+  return trace;
+}
+
 async function* imageEvents(id: string): AsyncGenerator<RuntimeEvent> {
   yield { type: "tool.started", toolUse: { id, name: "image_gen.imagegen", input: {} } };
   yield {
@@ -391,6 +429,77 @@ describe("native bot terminal grouping in the host", () => {
       });
     });
   }
+
+  for (const replaceOwner of [false, true]) {
+    it(`retains the accepted physical trace on automatic media after terminal notification (replaceOwner=${replaceOwner})`, async () => {
+      const owners = new Map<string, RuntimeHostStreamingSession>();
+      const f = await fixture("bot", undefined, () => {
+        if (!replaceOwner) return;
+        owners.set(f.session.name!, {
+          ...f.streaming,
+          currentTraceTurnId: "successor-physical-turn",
+          traceRunId: "successor-run",
+        });
+        // Accepted media still belongs to the old physical attempt even when
+        // notification retires its live trace before the independent release.
+        f.streaming.currentTraceTurnId = undefined;
+      });
+      const trace = seedFixtureTrace(f, "automatic-media-physical-turn");
+      owners.set(f.session.name!, f.streaming);
+      await f.run(
+        (async function* () {
+          yield* imageEvents("correlated-media");
+          yield final();
+          yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } };
+        })(),
+        { streamingSessions: owners },
+      );
+      // A replaced owner cannot start the text handoff, while already accepted
+      // media retains its independent release from the committed manifest.
+      expect(f.outputs).toHaveLength(replaceOwner ? 0 : 1);
+      if (!replaceOwner) expect(f.outputs[0]!.traceTurnId).toBe(trace.turnId);
+      expect(f.responses).toHaveLength(1);
+      expect(f.responses[0]!.traceTurnId).toBe(trace.turnId);
+      expect(dbGetChannelBackendRuntimeState(f.metadata.binding.turnId)?.traceTurnId).toBe(trace.turnId);
+      if (replaceOwner) expect(owners.get(f.session.name!)?.currentTraceTurnId).toBe("successor-physical-turn");
+    });
+  }
+
+  it("observes a completed media-only automatic reply as answered", async () => {
+    const f = await fixture();
+    const trace = seedFixtureTrace(f, "automatic-media-only-physical-turn");
+    const thread = registerInboundSlackThread({
+      requestId: "media-only-health",
+      parentSessionKey: "parent-media-health",
+      parentSessionName: "parent-media-health",
+      childSessionKey: f.session.sessionKey,
+      childSessionName: f.session.name!,
+      accountId: "local",
+      instanceId: "local",
+      platformChatId: "C123",
+      threadCanonicalChatId: f.metadata.binding.chatId,
+      providerThreadId: "1.000001",
+      seenAt: trace.startedAt,
+    });
+    await f.run(
+      (async function* () {
+        yield* imageEvents("media-only-health");
+        yield { type: "turn.complete", usage: { inputTokens: 0, outputTokens: 0 } };
+      })(),
+    );
+    expect(f.responses).toHaveLength(1);
+    expect(f.responses[0]!.response).toBe("");
+    expect(f.responses[0]!.content).toHaveLength(1);
+    const turn = getSessionTurn(trace.turnId)!;
+    expect(turn.status).toBe("complete");
+    expect(turn.outputState).toBeNull();
+    recordResponseEmittedTrace({ sessionName: f.session.name!, response: f.responses[0]! });
+    expect(observeThreadTurn(thread, turn.completedAt! + THREAD_REPLY_GRACE_MS + 1)).toMatchObject({
+      state: "idle",
+      reason: null,
+      turnId: trace.turnId,
+    });
+  });
 
   it("preserves terminal text and all media ordinals when one file disappears before freeze", async () => {
     const f = await fixture();

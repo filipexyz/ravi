@@ -29,6 +29,7 @@ describe("channel outbound jobs", () => {
       "ravi-channels",
       {
         response: "hello Slack",
+        traceTurnId: "turn-canonical",
         _emitId: "emit_1",
         metadata: {
           item: {
@@ -65,6 +66,7 @@ describe("channel outbound jobs", () => {
           sessionName: "ravi-channels",
           emitId: "emit_1",
           responsePhase: "commentary",
+          traceTurnId: "turn-canonical",
         },
         content: {
           type: "text",

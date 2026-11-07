@@ -109,7 +109,7 @@ import {
   resolveRuntimeIdleSessionTtlMs,
   resolveRuntimeTurnInactivityMs,
 } from "./session-pool.js";
-import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { markRuntimeLiveIdle, noteRuntimeTurnSignal, updateRuntimeLiveState } from "./live-state.js";
 import {
   formatUserFacingTurnFailure,
   isOpenToolsTurnFailure,
@@ -1177,7 +1177,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       startedAt: streaming.currentTraceTurnStartedAt,
       // A turn that kept commentary but never produced a final utterance is
       // `incomplete`, so readers never conclude no work happened.
-      outputState: turnOutputCounts.final > 0 ? "final" : turnOutputCounts.commentary > 0 ? "incomplete" : null,
+      outputState:
+        turnOutputCounts.final > 0
+          ? "final"
+          : terminal.status === "complete" && intentionalSilence
+            ? "silent"
+            : turnOutputCounts.commentary > 0
+              ? "incomplete"
+              : null,
       usage: reportedTerminalUsage,
       ...input,
       status: terminal.status,
@@ -1202,6 +1209,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTraceStatusRecorded = undefined;
     turnOutputCounts.final = 0;
     turnOutputCounts.commentary = 0;
+    intentionalSilence = false;
     reportedTerminalUsage = undefined;
   };
   const markCurrentTurnAttemptSafety = (input: { startedTool?: true; materializedOutput?: true }) => {
@@ -1222,6 +1230,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const deliveredVisibleThisTurn: string[] = [];
   // sessions/turn-output: utterances materialized by the current trace turn, per class.
   const turnOutputCounts = { final: 0, commentary: 0 };
+  let intentionalSilence = false;
   let reportedTerminalUsage: Extract<RuntimeEvent, { type: "turn.complete" }>["usage"] | undefined;
   const turnToolContinuation = createTurnToolContinuationLedger();
   /** Resolves or creates the pending reply for this logical binding, rejecting identity reuse after closure. */
@@ -1233,16 +1242,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
    * mediaReleased records that core NATS emit returned, not an upload receipt or
    * remote delivery; attachment payloads are not persisted here for crash replay.
    */
-  const releaseAutomaticSlackMedia = async (reply: AutomaticSlackReply, metadata?: RuntimeEventMetadata) => {
+  const releaseAutomaticSlackMedia = async (
+    reply: AutomaticSlackReply,
+    metadata?: RuntimeEventMetadata,
+    traceTurnId?: string,
+  ) => {
     const manifest = reply.manifest;
     if (!manifest || manifest.kind !== "final_answer" || reply.mediaReleased || reply.media.length === 0) return;
     // No attach/latest-source resolution: text and every attachment retain the
     // same authorized ingress destination and one immutable terminal manifest.
     await nats.emit(`ravi.session.${sessionName}.response`, {
+      traceTurnId,
       response: "",
       content: reply.media.map((media) => ({ type: "media", media })),
       target: manifest.target,
-      ...(metadata ? { metadata } : {}),
+      metadata: { ...metadata, item: { ...metadata?.item, phase: "final_answer" } },
       _automaticOutputOrigin: reply.origin,
       _automaticTerminalResponseId: manifest.responseId,
       _emitId: `${manifest.responseId}:media`,
@@ -2296,6 +2310,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       (!crashRecovery || crashRecovery.acceptingDeliveries);
     return {
       metadata,
+      traceTurnId,
       event: capturedEvent,
       responseText: text,
       occurredAt: terminal?.completedAt ?? Date.now(),
@@ -2321,6 +2336,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     capturedTerminal?: CapturedChannelTerminalProjection,
   ) => {
     if (!metadata || !mayProject()) return;
+    const projectionTraceTurnId = capturedTerminal ? capturedTerminal.traceTurnId : streaming.currentTraceTurnId;
     // The physical turn ends, but its queued continuation still owns this channel request.
     if (
       streaming.currentTurnYieldContinuationId &&
@@ -2352,7 +2368,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     try {
       automaticReply = automaticSlackReply(metadata);
       await projectChannelRuntimeEvent({
-        metadata,
+        metadata: { ...metadata, traceTurnId: projectionTraceTurnId },
         event: stripRuntimeRawEvent(event),
         // Initial running-state sinks can yield to another owner. The pure
         // guard is checked again inside each synchronous DB transaction attempt.
@@ -2416,7 +2432,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // Once this terminal froze successfully, neither may discard its media.
     if (automaticReply && terminalManifestReady && event.type === "turn.complete") {
       try {
-        await releaseAutomaticSlackMedia(automaticReply, event.metadata);
+        await releaseAutomaticSlackMedia(automaticReply, event.metadata, projectionTraceTurnId);
       } catch (error) {
         log.warn("Automatic Slack media release failed", {
           sessionName,
@@ -2991,7 +3007,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
 
-  const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
+  const emitResponse = async (
+    text: string,
+    metadata?: RuntimeEventMetadata,
+    traceTurnId = streaming.currentTraceTurnId,
+  ) => {
     const mediaParts = isCommentaryResponse(metadata) ? [] : pendingGeneratedMedia.splice(0);
     const channelBackendOwnsText = streaming.currentChannelBackend !== undefined;
     if (channelBackendOwnsText && mediaParts.length === 0) {
@@ -3043,6 +3063,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       channelBackendOwnsText,
     });
     await nats.emit(`ravi.session.${sessionName}.response`, {
+      traceTurnId,
       response: responseText,
       ...(content ? { content } : {}),
       target: resolvedTarget,
@@ -3285,6 +3306,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
+      if (ownsRuntimeSlot()) noteRuntimeTurnSignal(sessionName, streaming.currentTraceTurnId, streaming.lastActivity);
       // Update compaction before asynchronous projection so the after-tool
       // watch cannot expire while handling the compaction-start event itself.
       const wasCompacting = streaming.compacting;
@@ -3654,6 +3676,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "tool.started") {
+        intentionalSilence = false;
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = true;
         noteTurnToolStarted(turnToolContinuation, event.toolUse.id, event.toolUse.name);
@@ -3758,6 +3781,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               textLen: messageText.length,
             });
           } else if (!messageText) {
+            intentionalSilence = true;
             // The whole message was the silence marker after classification
             suppressProviderRawForCurrentTurn = true;
             log.info("Silent response (stripped)", { sessionName });
@@ -3823,6 +3847,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 provider: runtimeSession.provider,
               });
             } else if (heartbeatResponse) {
+              intentionalSilence = true;
               suppressProviderRawForCurrentTurn = true;
               recordAssistantState(false);
               log.info("Heartbeat OK", { sessionName });
@@ -3832,6 +3857,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 provider: runtimeSession.provider,
               });
             } else if (noResponseRequested) {
+              intentionalSilence = true;
               suppressProviderRawForCurrentTurn = true;
               recordAssistantState(false);
               log.info("Silent response (no response requested)", {
@@ -3891,6 +3917,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 noteTurnPostToolAssistant(turnToolContinuation, utterance.length);
                 recordAssistantState(true, utterance);
                 if (!commentaryResponse) {
+                  // Commentary does not replace an explicit silent outcome.
+                  intentionalSilence = false;
                   channelResponseText = appendAssistantResponse(channelResponseText, utterance);
                   deliveredVisibleThisTurn.push(utterance);
                 }
@@ -5245,6 +5273,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           error: publicRuntimeFailureDetail(operatorError),
           abortReason: capacityTerminalReason ?? null,
         });
+        const failedTraceTurnId = streaming.currentTraceTurnId;
         clearTraceTurnState();
 
         streaming.currentTurnToolStarted = false;
@@ -5292,7 +5321,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 previousExpiresAt: suppression.previousExpiresAt,
               });
             } else {
-              await emitResponse(formatUserFacingTurnFailure(event.error));
+              await emitResponse(formatUserFacingTurnFailure(event.error), undefined, failedTraceTurnId);
             }
           }
         }

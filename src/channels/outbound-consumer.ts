@@ -1412,6 +1412,7 @@ function deliveredPayload(
   startedAt: number,
 ): Record<string, unknown> {
   return {
+    traceTurnId: job.request.origin.traceTurnId,
     jobId: job.jobId,
     requestId: job.request.requestId,
     channelRunnerPid: process.pid,
@@ -1590,6 +1591,7 @@ async function emitDelivery(
     jobId: job.jobId,
     channelRunnerPid: process.pid,
     timestamp: Date.now(),
+    traceTurnId: job.request.origin.traceTurnId,
     ...delivery,
   };
 
