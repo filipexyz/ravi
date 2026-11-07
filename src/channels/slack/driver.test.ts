@@ -70,6 +70,17 @@ describe("renderSlackBackendOutput", () => {
 });
 
 describe("renderSlackSafeError", () => {
+  it("warns about completed work for replay-unsafe capacity without inviting a retry", () => {
+    const rendered = renderSlackSafeError({ code: "OVERLOADED", category: "capacity", retryable: false });
+    expect(rendered).toBe(
+      "The agent's model provider is overloaded right now. Your session and completed work are preserved; this turn was not repeated to avoid duplicate actions.",
+    );
+    expect(rendered).not.toContain("try again");
+    expect(renderSlackSafeError({ code: "OVERLOADED", category: "capacity", retryable: true })).toBe(
+      "The agent's model provider is overloaded right now. Please try again shortly.",
+    );
+  });
+
   it("renders a readable sentence per code", () => {
     expect(renderSlackSafeError({ code: "UNAVAILABLE", category: "availability", retryable: false })).toBe(
       "The agent is unavailable because of a problem with its model provider account. Please contact the operator.",

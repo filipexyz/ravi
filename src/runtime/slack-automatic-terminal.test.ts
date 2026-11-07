@@ -12,7 +12,14 @@ import {
   dbUpsertChatMessage,
   getDb,
 } from "../router/router-db.js";
-import { attachChatToSession, getOrCreateSession, resolveSession } from "../router/sessions.js";
+import {
+  attachChatToSession,
+  getOrCreateSession,
+  resolveSession,
+  updateRuntimeProviderState,
+  updateSessionRuntimeProviderOverride,
+} from "../router/sessions.js";
+import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   acceptResolvedChannelIngress,
@@ -36,7 +43,9 @@ import {
 import { renderSlackBackendOutput } from "../channels/slack/driver.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
-import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "./delivery-queue.js";
+import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { PROVIDER_CAPACITY_EXHAUSTED_MESSAGE, PROVIDER_CAPACITY_UNSAFE_MESSAGE } from "./provider-capacity-retry.js";
 import type { ChannelBackendPromptMetadata, ResponseMessage } from "./message-types.js";
 import type { RuntimeCapabilities, RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 
@@ -200,7 +209,10 @@ async function fixture(
     agentMode: "active",
   };
   const stashedMessages = new Map<string, RuntimeUserMessage[]>();
-  const run = async (events: AsyncIterable<RuntimeEvent>) => {
+  const run = async (
+    events: AsyncIterable<RuntimeEvent>,
+    overrides: Partial<Parameters<typeof runRuntimeEventLoop>[0]> = {},
+  ) => {
     const runtimeSession: RuntimeSessionHandle = { provider: "test-provider", events, async interrupt() {} };
     streaming.queryHandle = runtimeSession;
     await runRuntimeEventLoop({
@@ -218,6 +230,7 @@ async function fixture(
       stashedMessages,
       safeEmit: async () => {},
       drainPendingStarts() {},
+      ...overrides,
     });
   };
   return { metadata, session, streaming, responses, outputs, stashedMessages, run };
@@ -238,6 +251,147 @@ function final(text = "Complete answer"): RuntimeEvent {
 }
 
 describe("native bot terminal grouping in the host", () => {
+  for (const effects of [false, true]) {
+    it(`freezes the normalized capacity terminal only after retries and preserves next-provider state (effects=${effects})`, async () => {
+      const f = await fixture();
+      const context = resolveSlackAutomaticOutputContextFromBinding(f.metadata.binding)!;
+      const responseId = slackAutomaticTerminalResponseId(context.turnId, context.target);
+      const recovery = new RuntimeCrashRecoveryCoordinator({ instanceId: "capacity-manifest-test" });
+      recovery.start();
+      cleanups.push(() => recovery.stopGracefully());
+      f.streaming.toolEffectFence = "provider_event_only";
+      f.streaming.turnActive = false;
+      f.streaming.pendingMessages = [
+        createQueuedRuntimeUserMessage({
+          prompt: "Original capacity request",
+          _agentId: f.streaming.agentId,
+          _channelBackend: f.metadata,
+          source: f.streaming.currentSource,
+        }),
+      ];
+      let now = 1_000;
+      let attempts = 0;
+      const waits: number[] = [];
+      const inputs: string[] = [];
+      const generator = createRuntimeMessageGenerator({
+        sessionName: f.session.name!,
+        session: f.streaming,
+        stashedMessages: f.stashedMessages,
+        capacityRetryRuntime: { now: () => now },
+        traceTurnStart: ({ combinedPrompt, deliverableMessages }) => {
+          const trace = recordAdapterRequestTrace({
+            sessionKey: f.session.sessionKey,
+            sessionName: f.session.name!,
+            agentId: f.streaming.agentId!,
+            turnId: `capacity-manifest-${attempts + 1}`,
+            runId: "run-a",
+            provider: "test-provider",
+            model: "test",
+            prompt: combinedPrompt,
+            systemPrompt: "Fixture",
+            cwd: stateDir!,
+            resume: false,
+            fork: false,
+            source: f.streaming.currentSource,
+            deliveryBarrier: "after_response",
+            hasHooks: false,
+            pluginNames: [],
+            mcpServerNames: [],
+            hasRemoteSpawn: false,
+            toolAccessMode: "restricted",
+            capabilitySummary: { ...capabilities },
+          });
+          if (!trace) throw new Error("Missing capacity fixture trace");
+          const attempt = recovery.startTurnAttempt({
+            turnId: trace.turnId,
+            runId: "run-a",
+            sessionKey: f.session.sessionKey,
+            sessionName: f.session.name!,
+            agentId: f.streaming.agentId!,
+            provider: "test-provider",
+            model: "test",
+            startedAt: trace.startedAt,
+            requestBlobSha256: trace.requestBlobSha256,
+            userPromptSha256: trace.userPromptSha256,
+            systemPromptSha256: trace.systemPromptSha256,
+            originKind: "human",
+            source: f.streaming.currentSource,
+            deliveryBarrier: "after_response",
+            pendingIds: deliverableMessages.map((message) => message.pendingId!),
+          });
+          return { ...trace, crashRecoveryAttemptId: attempt.attemptId };
+        },
+      });
+      const failures: Record<string, unknown>[] = [];
+      await f.run(
+        (async function* () {
+          for await (const input of generator) {
+            attempts++;
+            inputs.push(String(input.message.content));
+            if (attempts === 4) {
+              if (effects) {
+                yield { type: "tool.started", toolUse: { id: "capacity-effect", name: "Bash", input: {} } };
+                yield { type: "tool.completed", toolUseId: "capacity-effect", toolName: "Bash", content: "Done" };
+              }
+              updateSessionRuntimeProviderOverride(f.session.sessionKey, "codex");
+              updateRuntimeProviderState(f.session.sessionKey, "codex", { providerSessionId: "successor-native" });
+            }
+            yield {
+              type: "turn.failed",
+              error: "Selected model is at capacity. Please try a different model.",
+              preExecutionRejected: true,
+              rawEvent: { status: 503 },
+              providerSessionId: "old-capacity-native",
+            };
+            if (!f.streaming.interrupted) break;
+          }
+        })(),
+        {
+          crashRecovery: recovery,
+          capacityRetryRuntime: {
+            now: () => now,
+            random: () => 0,
+            wait: async (delayMs) => {
+              waits.push(delayMs);
+              now += delayMs;
+              expect(getSlackAutomaticTerminalManifest(responseId)).toBeNull();
+              expect(f.outputs).toEqual([]);
+              expect(dbGetChannelBackendRuntimeState(f.metadata.binding.turnId)?.state).not.toBe("failed");
+            },
+          },
+          safeEmit: async (_topic, data) => {
+            if (data.type === "turn.failed") failures.push(data);
+          },
+        },
+      );
+      expect(attempts).toBe(4);
+      expect(waits).toEqual([500, 1_000, 2_000]);
+      expect(inputs).toEqual(Array(4).fill("Original capacity request"));
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        failureKind: effects ? "provider_capacity_retry_unsafe" : "provider_capacity_exhausted",
+        error: effects ? PROVIDER_CAPACITY_UNSAFE_MESSAGE : PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+      });
+      expect(f.outputs).toHaveLength(1);
+      expect(f.outputs[0]!.error).toMatchObject({ code: "OVERLOADED", retryable: !effects });
+      const text = renderSlackBackendOutput(f.outputs[0]!);
+      if (effects) {
+        expect(text).toContain("Your session and completed work are preserved");
+        expect(text).toContain("avoid duplicate actions");
+        expect(text).not.toContain("Please try again shortly");
+      }
+      const manifest = getSlackAutomaticTerminalManifest(responseId)!;
+      expect(manifest.kind).toBe("safe_error");
+      expect(assertSlackAutomaticTerminalPart(manifest, { type: "text", text })).toBe(`${responseId}:text`);
+      expect(dbGetChannelBackendRuntimeState(f.metadata.binding.turnId)?.state).toBe("failed");
+      expect(resolveSession(f.session.sessionKey)).toMatchObject({
+        runtimeProviderOverride: "codex",
+        runtimeProvider: "codex",
+        providerSessionId: "successor-native",
+      });
+    });
+  }
+
   it("preserves terminal text and all media ordinals when one file disappears before freeze", async () => {
     const f = await fixture();
     await f.run(

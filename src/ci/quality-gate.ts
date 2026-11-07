@@ -44,8 +44,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/text-send.test.ts",
     // Slack Web API client: `ok: false` answers become structured SLACK_<ERROR> errors.
     "src/channels/slack/client.test.ts",
+    // Private credential modals: exact destination, replay receipts and payload isolation.
+    "src/channels/slack/credential-intake.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
+    // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
+    "src/channels/slack/thread-runtime.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
     "src/channels/slack/markdown-layout.test.ts",
     "src/channels/slack/markdown-delivery.test.ts",
@@ -113,6 +117,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/runtime-selection.test.ts",
     // Agent default vs last-used runtime_provider rematerialize.
     "src/runtime/agent-session-runtime-sync.test.ts",
+    // A later thread runtime configuration survives the active provider's completion.
+    "src/runtime/thread-provider-config.test.ts",
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",

@@ -42,3 +42,21 @@ created.
 Session reset and runtime abort are explicit lifecycle boundaries for revoking
 live runtime contexts. Cleanup of historical `agent-runtime` records is an
 operator action, not a daemon side effect.
+
+The one-hour derived TTL is a credential boundary, not a maximum working-turn
+duration. Extending that default or renewing on bearer use would keep abandoned
+authority alive. The host instead owns a periodic lease during a physical turn:
+it rederives the same invocation against live policy, retains the issued
+capabilities, and renews only a credential that is still valid. Completion and
+abort revoke that lease immediately. Derived children retain their own expiry.
+
+If current authority no longer covers the issued snapshot, the lease is revoked
+instead of silently rewriting a running provider's permission set. Grants added
+mid-turn remain excluded until a new turn. Atomic expiry/revocation checks in
+storage prevent a delayed heartbeat from reviving or overwriting a dead lease.
+
+Narrowed relays are excluded from renewal. They inherit a historical caller
+snapshot that survives ordinary turn rotation, but not all individual contact
+grant revocations invalidate that relay lineage. Renewing it would extend stale
+authority indefinitely. Preserving its original lifetime is the conservative
+boundary until live relay authority can be revalidated completely.

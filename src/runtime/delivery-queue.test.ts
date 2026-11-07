@@ -17,8 +17,9 @@ import {
 } from "./host-session.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeSessionHandle } from "./types.js";
+import { PROVIDER_CAPACITY_EXHAUSTED_MESSAGE, PROVIDER_CAPACITY_EXHAUSTED_REASON } from "./provider-capacity-retry.js";
 
 function makeRuntimeSession(): RuntimeSessionHandle {
   return {
@@ -51,7 +52,600 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
   };
 }
 
+describe("runtime turn authority cleanup", () => {
+  for (const boundary of ["complete", "preparation-failure", "return"] as const) {
+    it(`releases the physical turn exactly once on ${boundary}`, async () => {
+      const session = makeStreamingSession({ pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "work" })] });
+      let released = 0;
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "authority-cleanup",
+        session,
+        stashedMessages: new Map(),
+        afterTurnEnd: () => {
+          released++;
+        },
+        traceTurnStart: () => {
+          if (boundary === "preparation-failure") throw new Error("durable preparation failed");
+          return undefined;
+        },
+      });
+      if (boundary === "preparation-failure") {
+        await expect(generator.next()).rejects.toThrow("durable preparation failed");
+      } else {
+        await generator.next();
+        expect(released).toBe(0);
+        if (boundary === "complete") {
+          session.onTurnComplete?.();
+          expect(released).toBe(1);
+        }
+        session.done = true;
+        await generator.return(undefined);
+      }
+      expect(released).toBe(1);
+    });
+  }
+});
+
 describe("runtime delivery queue", () => {
+  it("waits only the remaining restored capacity delay and preserves the cohort's spent budget", async () => {
+    const cohort = ["first", "second"].map((prompt) => {
+      const message = createQueuedRuntimeUserMessage({ prompt });
+      message.clientMessageId = "failed-physical-delivery";
+      message.replay = true;
+      message.providerCapacityRetry = { startedAt: 1_000, retries: 2, notBefore: 13_000 };
+      return message;
+    });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "independent successor" });
+    const session = makeStreamingSession({ pendingMessages: [...cohort, successor] });
+    let now = 8_000;
+    const waits: number[] = [];
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+      capacityRetryRuntime: {
+        now: () => now,
+        wait: async (delayMs) => {
+          waits.push(delayMs);
+          expect(session.currentTurnPendingIds).toEqual(cohort.map((message) => message.pendingId!));
+          expect(session.turnActive).toBe(true);
+          expect(shouldInterruptRuntimeForIncoming("dev", session, "immediate_interrupt").interrupt).toBe(true);
+          expect(session.pendingMessages).toEqual([...cohort, successor]);
+          expect(cohort[0]?.providerCapacityRetry?.notBefore).toBe(13_000);
+          now += delayMs;
+        },
+      },
+    });
+
+    const result = await generator.next();
+    expect(waits).toEqual([5_000]);
+    expect(result.value).toMatchObject({ message: { content: "first\n\nsecond" }, replay: false });
+    expect(result.value?.clientMessageId).not.toBe("failed-physical-delivery");
+    expect(cohort.map((message) => message.providerCapacityRetry)).toEqual([
+      { startedAt: 1_000, retries: 2 },
+      { startedAt: 1_000, retries: 2 },
+    ]);
+    expect(session.currentTurnPendingIds).toEqual(cohort.map((message) => message.pendingId!));
+    expect(successor.providerCapacityRetry).toBeUndefined();
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  for (const timing of ["before wait", "during wait", "during preparation"] as const) {
+    it(`expires a restored capacity retry ${timing} without delivering it or consuming its successor`, async () => {
+      const retry = createQueuedRuntimeUserMessage({ prompt: "expired work" });
+      retry.providerCapacityRetry = { startedAt: 1_000, retries: 3, notBefore: 13_000 };
+      const successor = createQueuedRuntimeUserMessage({ prompt: "fresh successor" });
+      const session = makeStreamingSession({
+        pendingMessages: [retry, successor],
+        currentTraceTurnId: "consumed-previous-trace",
+        currentCrashRecoveryAttemptId: "consumed-previous-attempt",
+        currentCrashRecoveryTerminal: {
+          status: "failed",
+          completedAt: 7_000,
+          startedTool: false,
+          materializedOutput: false,
+        },
+      });
+      let released = 0;
+      let now = timing === "before wait" ? 31_000 : 8_000;
+      const expired: Array<{ reason: string; error: string; deliverableMessages: RuntimeUserMessage[] }> = [];
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "dev",
+        session,
+        stashedMessages: new Map(),
+        afterTurnEnd: () => {
+          released++;
+        },
+        capacityRetryRuntime: {
+          now: () => now,
+          wait: async (delayMs) => {
+            now += timing === "during wait" ? 30_000 : delayMs;
+          },
+        },
+        transformTurnPrompt: ({ combinedPrompt }) => {
+          if (timing === "during preparation") now = 31_000;
+          return combinedPrompt;
+        },
+        onCapacityRetryExhausted: (input) => {
+          expired.push(input);
+          expect(session.pendingMessages).toEqual([successor]);
+          if (timing !== "during preparation") {
+            expect(session.turnActive).toBe(false);
+            expect(session.currentTurnPendingIds).toBeUndefined();
+            expect(session.currentCrashRecoveryAttemptId).toBeUndefined();
+            expect(session.currentTraceTurnId).toBeUndefined();
+          }
+        },
+      });
+
+      const result = await generator.next();
+      expect(result.value).toMatchObject({ message: { content: "fresh successor" } });
+      expect(released).toBe(timing === "during preparation" ? 1 : 0);
+      expect(expired).toHaveLength(1);
+      expect(expired[0]).toMatchObject({
+        reason: PROVIDER_CAPACITY_EXHAUSTED_REASON,
+        error: PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+        deliverableMessages: [retry],
+      });
+      expect(session.durableTurnPreparationFailed).toBe(false);
+      session.done = true;
+      session.onTurnComplete?.();
+      await generator.return(undefined);
+    });
+  }
+
+  it("does not replenish retries after a restored third retry is handed off", async () => {
+    const retry = createQueuedRuntimeUserMessage({ prompt: "last permitted attempt" });
+    retry.providerCapacityRetry = { startedAt: 1_000, retries: 3, notBefore: 13_000 };
+    const session = makeStreamingSession({ pendingMessages: [retry] });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+      capacityRetryRuntime: {
+        now: () => 14_000,
+        wait: async () => {
+          throw new Error("must not wait again");
+        },
+      },
+    });
+    expect((await generator.next()).done).toBe(false);
+    expect(retry.providerCapacityRetry).toEqual({ startedAt: 1_000, retries: 3 });
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  for (const capacity of [true, false]) {
+    it(`checks the deadline after preparing a live retry only for capacity (capacity=${capacity})`, async () => {
+      const retry = createQueuedRuntimeUserMessage({ prompt: "retry work" });
+      retry.clientMessageId = "failed-live-delivery";
+      retry.replay = true;
+      if (capacity) retry.providerCapacityRetry = { startedAt: 1_000, retries: 1 };
+      const successor = createQueuedRuntimeUserMessage({ prompt: "fresh successor" });
+      const session = makeStreamingSession({ pendingMessages: [retry, successor] });
+      let now = 2_000;
+      let released = 0;
+      const expired: RuntimeUserMessage[][] = [];
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "dev",
+        session,
+        stashedMessages: new Map(),
+        capacityRetryRuntime: { now: () => now },
+        afterTurnEnd: () => {
+          released++;
+        },
+        traceTurnStart: async () => {
+          now = 31_000;
+          return undefined;
+        },
+        onCapacityRetryExhausted: ({ deliverableMessages, reason }) => {
+          expired.push(deliverableMessages);
+          expect(reason).toBe(PROVIDER_CAPACITY_EXHAUSTED_REASON);
+          expect(session.pendingMessages).toEqual([successor]);
+        },
+      });
+      const result = await generator.next();
+      expect(result.value?.message.content).toBe(capacity ? "fresh successor" : "retry work");
+      expect(expired).toEqual(capacity ? [[retry]] : []);
+      expect(released).toBe(capacity ? 1 : 0);
+      expect(successor.providerCapacityRetry).toBeUndefined();
+      session.done = true;
+      session.onTurnComplete?.();
+      await generator.return(undefined);
+    });
+  }
+
+  for (const cancellation of ["abort", "supersession"] as const) {
+    it(`cancels a restored capacity wait on ${cancellation} without delivering its old cohort`, async () => {
+      const retry = createQueuedRuntimeUserMessage({ prompt: "cancelled work" });
+      retry.providerCapacityRetry = { startedAt: 1_000, retries: 1, notBefore: 13_000 };
+      const successor = createQueuedRuntimeUserMessage({ prompt: "successor" });
+      const session = makeStreamingSession({ pendingMessages: [retry, successor] });
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "dev",
+        session,
+        stashedMessages: new Map(),
+        capacityRetryRuntime: {
+          now: () => 8_000,
+          wait: async (_delayMs, signal) => {
+            if (cancellation === "abort") session.abortController.abort();
+            else {
+              session.currentTurnSuperseded = true;
+              session.interrupted = true;
+            }
+            await new Promise<void>((resolve) => {
+              if (signal.aborted) resolve();
+              else signal.addEventListener("abort", () => resolve(), { once: true });
+            });
+          },
+        },
+      });
+
+      const result = await generator.next();
+      expect(session.pendingMessages).toEqual([successor]);
+      if (cancellation === "abort") expect(result.done).toBe(true);
+      else {
+        expect(result.value).toMatchObject({ message: { content: "successor" } });
+        expect(session.interrupted).toBe(false);
+      }
+      session.done = true;
+      session.onTurnComplete?.();
+      await generator.return(undefined);
+    });
+  }
+
+  it("fails closed on malformed persisted retry scheduling and leaves independent input queued", async () => {
+    const retry = createQueuedRuntimeUserMessage({ prompt: "malformed retry" });
+    retry.providerCapacityRetry = { startedAt: 1_000, retries: 0, notBefore: 13_000 };
+    const successor = createQueuedRuntimeUserMessage({ prompt: "successor" });
+    const session = makeStreamingSession({ pendingMessages: [retry, successor] });
+    const generator = createRuntimeMessageGenerator({ sessionName: "dev", session, stashedMessages: new Map() });
+    await expect(generator.next()).rejects.toThrow(PROVIDER_CAPACITY_EXHAUSTED_MESSAGE);
+    expect(session.pendingMessages).toEqual([successor]);
+    expect(session.turnActive).toBe(false);
+    expect(session.durableTurnPreparationFailed).not.toBe(true);
+  });
+
+  for (const timing of ["during wait", "during preparation"] as const) {
+    it(`settles the original channel request on restored retry cancellation ${timing} before continuing`, async () => {
+      const retry = createQueuedRuntimeUserMessage(channelPrompt("cancelled work", "cancelled-channel-turn"));
+      retry.providerCapacityRetry = { startedAt: 1_000, retries: 1, notBefore: 13_000 };
+      const successor = createQueuedRuntimeUserMessage(channelPrompt("successor", "successor-channel-turn"));
+      const session = makeStreamingSession({ pendingMessages: [retry, successor] });
+      let settled = false;
+      let released = 0;
+      let now = 8_000;
+      const cancelled: RuntimeUserMessage[][] = [];
+      const cancel = () => {
+        session.currentTurnSuperseded = true;
+        session.interrupted = true;
+      };
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "dev",
+        session,
+        stashedMessages: new Map(),
+        capacityRetryRuntime: {
+          now: () => now,
+          wait: async (delayMs) => {
+            now += delayMs;
+            if (timing === "during wait") cancel();
+          },
+        },
+        beforeTurnStart: ({ deliverableMessages }) => {
+          if (deliverableMessages[0]?.pendingId === successor.pendingId) expect(settled).toBe(true);
+        },
+        transformTurnPrompt: ({ combinedPrompt }) => {
+          if (timing === "during preparation") cancel();
+          return combinedPrompt;
+        },
+        afterTurnEnd: () => {
+          released++;
+        },
+        onCapacityRetryCancelled: async ({ deliverableMessages }) => {
+          expect(session.pendingMessages).toEqual([successor]);
+          cancelled.push(deliverableMessages);
+          await Promise.resolve();
+          settled = true;
+        },
+      });
+
+      const result = await generator.next();
+      expect(settled).toBe(true);
+      expect(released).toBe(timing === "during preparation" ? 1 : 0);
+      expect(cancelled).toHaveLength(1);
+      expect(cancelled[0]?.[0]?.launchPrompt?._channelBackend?.binding.turnId).toBe("cancelled-channel-turn");
+      expect(session.pendingMessages).toEqual([successor]);
+      if (timing === "during wait") expect(result.value?.message.content).toBe("successor");
+      else expect(result.done).toBe(true);
+      session.done = true;
+      session.onTurnComplete?.();
+      await generator.return(undefined);
+    });
+  }
+
+  it("never restores a discarded capacity cohort when cancellation reporting fails", async () => {
+    const retry = createQueuedRuntimeUserMessage(channelPrompt("cancelled work", "cancelled-channel-turn"));
+    retry.providerCapacityRetry = { startedAt: 1_000, retries: 1, notBefore: 13_000 };
+    const successor = createQueuedRuntimeUserMessage({ prompt: "successor" });
+    const session = makeStreamingSession({ pendingMessages: [retry, successor] });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+      capacityRetryRuntime: {
+        now: () => 8_000,
+        wait: async () => {
+          session.abortController.abort();
+        },
+      },
+      onCapacityRetryCancelled: () => {
+        throw new Error("channel ledger unavailable");
+      },
+    });
+    await expect(generator.next()).rejects.toThrow("channel ledger unavailable");
+    expect(session.pendingMessages).toEqual([successor]);
+    expect(session.durableTurnPreparationFailed).toBe(false);
+  });
+
+  for (const interrupted of [false, true]) {
+    it(`hands the next provider input to a human behind 64 reports (interrupt=${interrupted})`, async () => {
+      const active = createQueuedRuntimeUserMessage(progressPrompt("active report", 0));
+      const reports = Array.from({ length: 64 }, (_, index) =>
+        createQueuedRuntimeUserMessage(progressPrompt(`report ${index}: evidence-${index}`, index + 1)),
+      );
+      const questions = Array.from({ length: 4 }, (_, index) =>
+        createQueuedRuntimeUserMessage(channelPrompt(`human question ${index}`, `human-${index}`)),
+      );
+      const session = makeStreamingSession({ pendingMessages: [active] });
+      const handoffs: RuntimeUserMessage[][] = [];
+      const generator = createRuntimeMessageGenerator({
+        sessionName: "queue-fixture",
+        session,
+        stashedMessages: new Map(),
+        beforeTurnStart: ({ deliverableMessages }) => {
+          handoffs.push(deliverableMessages);
+          session.currentSource = deliverableMessages[0]?.launchPrompt?.source;
+        },
+      });
+      await generator.next();
+      session.pendingMessages.push(...reports, ...questions);
+      if (interrupted) {
+        const successor = prepareRuntimeInterruptSuccessor("queue-fixture", session);
+        expect(successor?.message.message.content).toContain("human question 0");
+        expect(successor?.message.message.content).not.toContain("evidence-");
+        session.interrupted = true;
+        session.currentTurnSuperseded = true;
+      }
+      session.turnActive = false;
+      session.onTurnComplete?.();
+      const next = await generator.next();
+      expect(next.value?.message.content).toContain("human question 0");
+      expect(next.value?.message.content).not.toContain("evidence-");
+      expect(handoffs[1]?.every((message) => message.launchPrompt?._channelBackend)).toBe(true);
+      expect(session.pendingMessages.filter((message) => reports.includes(message))).toHaveLength(64);
+
+      // Drain real generator turns. Every report's full content and pending id
+      // must survive batching, and each original atom is acknowledged only once.
+      const delivered = [...handoffs[1]!];
+      let reportTurns = 0;
+      while (session.pendingMessages.length > (session.currentTurnPendingIds?.length ?? 0)) {
+        session.turnActive = false;
+        session.onTurnComplete?.();
+        const turn = await generator.next();
+        const batch = handoffs[handoffs.length - 1]!;
+        delivered.push(...batch);
+        if (batch.some((message) => reports.some((report) => report.pendingId === message.pendingId))) {
+          reportTurns++;
+          for (const message of batch) expect(turn.value?.message.content).toContain(message.message.content);
+        }
+      }
+      session.done = true;
+      session.turnActive = false;
+      session.onTurnComplete?.();
+      expect((await generator.next()).done).toBe(true);
+      expect(session.pendingMessages).toEqual([]);
+      for (const report of reports) {
+        expect(delivered.filter((message) => message.pendingId === report.pendingId)).toHaveLength(1);
+      }
+      for (let index = 0; index < 4; index++) {
+        expect(delivered.map((message) => message.message.content).join("\n")).toContain(`human question ${index}`);
+      }
+      expect(reportTurns).toBeLessThanOrEqual(4);
+    });
+  }
+
+  it("does not consolidate progress across authority, surface, completion or replay boundaries", () => {
+    const first = createQueuedRuntimeUserMessage(progressPrompt("first evidence", 1));
+    const compatible = createQueuedRuntimeUserMessage(progressPrompt("second evidence", 2));
+    expect(
+      getDeliverableRuntimeMessages(
+        "queue-fixture",
+        makeStreamingSession({
+          pendingMessages: [first, compatible],
+        }),
+      ),
+    ).toEqual([first, compatible]);
+    for (const boundary of ["caller", "surface", "complete", "replay", "principal"] as const) {
+      const other = createQueuedRuntimeUserMessage(progressPrompt("separate evidence", 3));
+      if (boundary === "caller") other.launchPrompt!._turnOrigin!.callerContextId = "different-context";
+      if (boundary === "surface") other.launchPrompt!.source!.threadId = "another-thread";
+      if (boundary === "complete") other.launchPrompt!._slackThreadLifecycle!.eventType = "thread.close";
+      if (boundary === "principal") other.launchPrompt!._turnOrigin!.principal.id = "other-agent";
+      if (boundary === "replay") {
+        other.replay = true;
+        other.clientMessageId = "existing-attempt";
+      }
+      expect(
+        getDeliverableRuntimeMessages(
+          "queue-fixture",
+          makeStreamingSession({
+            pendingMessages: [first, other, compatible],
+          }),
+        ),
+      ).toEqual([first]);
+    }
+  });
+
+  it("never promotes a human through ambiguous replay or a different active surface", () => {
+    const report = createQueuedRuntimeUserMessage(progressPrompt("pending reconciliation", 1));
+    report.replay = true;
+    report.clientMessageId = "existing-attempt";
+    const human = createQueuedRuntimeUserMessage(channelPrompt("next question", "human"));
+    expect(
+      getDeliverableRuntimeMessages(
+        "queue-fixture",
+        makeStreamingSession({
+          pendingMessages: [report, human],
+        }),
+      ),
+    ).toEqual([report]);
+    const session = makeStreamingSession({
+      turnActive: true,
+      currentSource: { ...report.launchPrompt!.source!, threadId: "another-thread" },
+      currentTurnPendingIds: [report.pendingId!],
+      pendingMessages: [report, human],
+    });
+    expect(prepareRuntimeInterruptSuccessor("queue-fixture", session)).toBeNull();
+  });
+
+  it("bounds progress by bytes without dropping a long blocker or acknowledging arrivals during a batch", async () => {
+    const first = createQueuedRuntimeUserMessage(progressPrompt("first evidence", 1));
+    const second = createQueuedRuntimeUserMessage(progressPrompt("second evidence", 2));
+    const blocker = createQueuedRuntimeUserMessage(progressPrompt(`BLOCKER: ${"x".repeat(33 * 1024)}`, 3));
+    const session = makeStreamingSession({ pendingMessages: [first, second, blocker] });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "queue-fixture",
+      session,
+      stashedMessages: new Map(),
+    });
+    const batch = await generator.next();
+    expect(batch.value?.message.content).toContain("first evidence");
+    expect(batch.value?.message.content).toContain("second evidence");
+    expect(batch.value?.message.content).not.toContain("BLOCKER:");
+    const arrival = createQueuedRuntimeUserMessage(progressPrompt("new decision during delivery", 4));
+    session.pendingMessages.push(arrival);
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    const next = await generator.next();
+    expect(next.value?.message.content).toContain(blocker.message.content);
+    expect(session.pendingMessages).toEqual([blocker, arrival]);
+    session.done = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    await generator.next();
+    expect(session.pendingMessages).toEqual([arrival]);
+  });
+
+  it("replays the complete original progress batch under its original delivery id", async () => {
+    const reports = [1, 2, 3].map((index) =>
+      createQueuedRuntimeUserMessage(progressPrompt(`evidence ${index}`, index)),
+    );
+    const session = makeStreamingSession({ pendingMessages: [...reports] });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "queue-fixture",
+      session,
+      stashedMessages: new Map(),
+    });
+    const original = (await generator.next()).value!;
+    for (const report of reports) report.replay = true;
+    const human = createQueuedRuntimeUserMessage(channelPrompt("arrived after ambiguous delivery", "later"));
+    session.pendingMessages.push(human);
+    session.interrupted = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    const retry = (await generator.next()).value!;
+    expect(retry.message.content).toBe(original.message.content);
+    expect(retry.clientMessageId).toBe(original.clientMessageId);
+    expect(retry.replay).toBe(true);
+    expect(session.currentTurnPendingIds).toEqual(reports.map((report) => report.pendingId!));
+    session.done = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+    await generator.next();
+    expect(session.pendingMessages).toEqual([human]);
+  });
+
+  for (const restored of [false, true]) {
+    for (const humanArrives of [false, true]) {
+      it(`retries the complete capacity-rejected report cohort before fresh input (restored=${restored}, human=${humanArrives})`, async () => {
+        let reports = [1, 2, 3].map((index) =>
+          createQueuedRuntimeUserMessage(progressPrompt(`retry evidence ${index}`, index)),
+        );
+        let session = makeStreamingSession({ pendingMessages: [...reports] });
+        let now = 8_000;
+        const waits: number[] = [];
+        const createGenerator = () =>
+          createRuntimeMessageGenerator({
+            sessionName: "queue-fixture",
+            session,
+            stashedMessages: new Map(),
+            capacityRetryRuntime: {
+              now: () => now,
+              wait: async (delayMs) => {
+                waits.push(delayMs);
+                now += delayMs;
+              },
+            },
+          });
+        let generator = createGenerator();
+        const original = (await generator.next()).value!;
+        for (const report of reports) {
+          report.providerCapacityRetry = {
+            startedAt: 1_000,
+            retries: 1,
+            ...(restored ? { notBefore: 13_000 } : {}),
+          };
+          report.replay = false;
+        }
+        const fresh = createQueuedRuntimeUserMessage(progressPrompt("new report after failure", 4));
+        const human = createQueuedRuntimeUserMessage(channelPrompt("human after failure", "later"));
+        session.pendingMessages.push(fresh, ...(humanArrives ? [human] : []));
+        if (restored) {
+          await generator.return(undefined);
+          // Restart snapshots carry scheduled retries as pending-only work,
+          // retaining the prior physical id and explicitly clearing replay.
+          session = makeStreamingSession({ pendingMessages: structuredClone(session.pendingMessages) });
+          reports = session.pendingMessages.slice(0, reports.length);
+          generator = createGenerator();
+        } else {
+          session.interrupted = true;
+          session.turnActive = false;
+          session.onTurnComplete?.();
+        }
+
+        const retry = (await generator.next()).value!;
+        expect(retry.message.content).toBe(original.message.content);
+        expect(retry.clientMessageId).not.toBe(original.clientMessageId);
+        expect(retry.replay).toBe(false);
+        expect(session.currentTurnPendingIds).toEqual(reports.map((report) => report.pendingId!));
+        expect(reports.map((report) => report.providerCapacityRetry)).toEqual(
+          reports.map(() => ({ startedAt: 1_000, retries: 1 })),
+        );
+        expect(waits).toEqual(restored ? [5_000] : []);
+
+        session.turnActive = false;
+        session.onTurnComplete?.();
+        const successor = (await generator.next()).value!;
+        expect(successor.message.content).toContain(humanArrives ? "human after failure" : "new report after failure");
+        expect(successor.message.content).not.toContain("retry evidence");
+        expect(
+          session.pendingMessages.some((message) => reports.some((report) => report.pendingId === message.pendingId)),
+        ).toBe(false);
+        expect(session.pendingMessages.every((message) => message.providerCapacityRetry === undefined)).toBe(true);
+        session.done = true;
+        session.turnActive = false;
+        session.onTurnComplete?.();
+        await generator.next();
+        expect(session.pendingMessages.map((message) => message.pendingId)).toEqual(
+          humanArrives ? [fresh.pendingId!] : [],
+        );
+      });
+    }
+  }
+
   it("keeps a Slack DM turn ahead of a system return addressed to the default DM", () => {
     const active = createQueuedRuntimeUserMessage(surfacePrompt("private DM request", "slack", "D_SOURCE"));
     const notification = createQueuedRuntimeUserMessage({
@@ -1141,6 +1735,32 @@ describe("runtime delivery queue", () => {
     expect(getDeliverableRuntimeMessages("dev", session)).toEqual([externalAfter]);
   });
 });
+
+function progressPrompt(prompt: string, index: number) {
+  const source = channelPrompt("", "unused").source;
+  return {
+    prompt,
+    deliveryBarrier: "after_tool" as const,
+    source: {
+      ...source,
+      actorType: "system",
+      contactId: undefined,
+      normalizedSenderId: undefined,
+      sourceMessageId: "report-thread",
+      suppressPresence: true,
+    },
+    _turnOrigin: buildChannelTurnOrigin("session.return", { type: "agent", id: "worker" }, "producer-context"),
+    _slackThreadLifecycle: {
+      eventType: "thread.report",
+      eventId: `report-${index}`,
+      requestId: "request-a",
+      parentSessionKey: "parent",
+      childSessionKey: "child",
+      childSessionName: "child",
+      providerThreadId: "thread-a",
+    },
+  };
+}
 
 function channelPrompt(prompt: string, turnId: string, senderId = "user-a", threadId?: string) {
   return {

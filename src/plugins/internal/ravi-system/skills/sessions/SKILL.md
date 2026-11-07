@@ -279,6 +279,12 @@ ravi sessions create-thread "<mensagem inicial>" [--model <model>]
 ravi sessions threads [--all] --json
 ravi sessions thread-send <sessão-da-thread|request-id|thread-ts> "instruções"
 
+# No pai: configurar o próximo turno de uma filha pelo vínculo da thread
+ravi sessions thread-configure <sessão-da-thread|request-id|thread-ts> --effort ultra --json
+
+# No pai autorizado que possui a thread, para uma filha cujo provider efetivo já é codex
+ravi sessions thread-configure <sessão-da-thread> --model gpt-6-astra --effort ultra --json
+
 # Na thread: avisar a sessão do canal sem fechar, e fechar (com ou sem resultado)
 ravi sessions report "progresso, bloqueio ou decisão"
 ravi sessions close-thread [--return "resultado"]
@@ -287,6 +293,8 @@ ravi sessions close-thread [--return "resultado"]
 A raiz da thread aparece no canal como um card: a primeira linha da mensagem inicial é o título (escreva um título curto nela), o resto vira um resumo, e a mensagem inteira abre a thread quando não cabe no card. O card mostra quem pediu (quem escreveu o turno; nos turnos do operador, o contato dono) e o status, e muda sozinho com `report`, `close-thread` e quando `thread-send` reabre a thread.
 
 Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack thread "<título>" (<sessão-da-thread>) ...`. `thread-send` reabre uma thread fechada; a filha responde dentro da thread.
+
+`thread-configure` aceita `--provider`, `--model`, `--effort` e `--thinking`; pelo menos um é obrigatório. Um campo omitido é preservado e `clear` remove seu override. O resultado mostra `before`, `after` e `appliesOn: next-turn`: não interrompe o turno em execução nem reabre uma thread fechada. Confira `sessions actions --json` para descobrir `thread.configure`. A operação verifica o vínculo persistido com o pai e não concede acesso genérico para alterar ou ler outras sessões. Mudar o provider para fora do default continua exigindo a autoridade de `agents set`.
 
 `sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
 

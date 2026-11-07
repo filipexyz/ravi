@@ -5,10 +5,12 @@ import {
   dbCreateAgent,
   dbCreateContext,
   dbGetContext,
+  dbRenewActiveContext,
   dbRevokeContextCascade,
   dbUpdateContextMetadata,
   getDb,
 } from "./router-db.js";
+import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import { getOrCreateSession } from "./sessions.js";
 
 const AGENT_ID = "context-storage-test";
@@ -151,5 +153,43 @@ describe("context metadata and transactional revocation persistence", () => {
     }
     expect(dbGetContext(unrelated.contextId)).toEqual(unrelated);
     expect(getDb().inTransaction).toBe(false);
+  });
+
+  it("keeps authority unchanged when renewing, and revocation wins over a pending renewal", () => {
+    const now = Date.now();
+    const context = createContext("active-turn", {
+      expiresAt: now + 60_000,
+      metadata: { authorityMode: "agent-identity", actorPrincipal: "system:test" },
+    });
+    const renewed = dbRenewActiveContext(context.contextId, context.expiresAt, 60_000, now + 1_000)!;
+    expect(renewed).toEqual({ ...context, expiresAt: now + 61_000 });
+    expect(resolveRuntimeContext(context.contextKey, { touch: false })?.capabilities).toEqual(context.capabilities);
+    // An old heartbeat cannot overwrite a newer expiry, even before revocation.
+    expect(dbRenewActiveContext(context.contextId, context.expiresAt, 60_000, now + 2_000)).toBeNull();
+    expect(dbGetContext(context.contextId)?.expiresAt).toBe(renewed.expiresAt);
+
+    dbRevokeContextCascade(context.contextId, { reason: "permission_removed" });
+    expect(dbRenewActiveContext(context.contextId, renewed.expiresAt, 60_000, now + 2_000)).toBeNull();
+    expect(resolveRuntimeContext(context.contextKey, { touch: false })).toBeNull();
+    expect(dbGetContext(context.contextId)?.expiresAt).toBe(renewed.expiresAt);
+  });
+
+  it("cannot use active-turn renewal to revive expiry or extend derived or bridge authority", () => {
+    const now = Date.now();
+    const expired = createContext("expired-turn", {
+      expiresAt: now - 1,
+      metadata: { authorityMode: "agent-identity" },
+    });
+    expect(dbRenewActiveContext(expired.contextId, expired.expiresAt, 60_000, now)).toBeNull();
+    expect(resolveRuntimeContext(expired.contextKey, { touch: false })).toBeNull();
+    for (const [id, overrides] of [
+      ["cli-child", { kind: "cli-runtime", metadata: { authorityMode: "agent-identity" } }],
+      ["turn-child", { metadata: { authorityMode: "agent-identity", parentContextId: "parent" } }],
+      ["bridge-turn", { metadata: { authorityMode: "agent-identity", bridgeTurnId: "bridge" } }],
+    ] as const) {
+      const context = createContext(id, { expiresAt: now + 60_000, ...overrides });
+      expect(dbRenewActiveContext(context.contextId, context.expiresAt, 60_000, now + 1_000)).toBeNull();
+      expect(dbGetContext(context.contextId)).toEqual(context);
+    }
   });
 });

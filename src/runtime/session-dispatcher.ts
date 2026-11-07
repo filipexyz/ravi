@@ -77,6 +77,7 @@ import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import { FATAL_TOOL_FAILURE_REASON } from "./fatal-tool-failure.js";
 import { formatUserFacingTurnFailure } from "./public-failure.js";
+import { isScheduledProviderCapacityRetry } from "./provider-capacity-retry.js";
 import { isUserFacingPromptSource, reportRuntimePromptIntakeFailure } from "./intake-failure.js";
 import {
   startRuntimeSession,
@@ -340,26 +341,35 @@ export class RuntimeSessionDispatcher {
         continue;
       }
       const terminalTurnConsumed = session.currentCrashRecoveryTerminal !== undefined;
+      const scheduledCapacityMessages = getScheduledCapacityRestartMessages(session, this.options.crashRecovery);
       const pendingMessages = (
-        terminalTurnConsumed
+        scheduledCapacityMessages ??
+        (terminalTurnConsumed
           ? (session.currentTurnPendingIds?.length ?? 0) > 0
             ? getPendingRuntimeTurnSuccessors(session)
             : session.pendingMessages
-          : getCrashRecoveryReplayablePendingRuntimeMessages(session, this.options.crashRecovery)
+          : getCrashRecoveryReplayablePendingRuntimeMessages(session, this.options.crashRecovery))
       ).map(cloneRuntimeUserMessage);
       const durableReplaySafety = getRuntimeTurnReplaySafety(session, this.options.crashRecovery);
       // A provider-terminal physical turn has already been consumed even when
       // it produced no external output or tool side effect. Explicit retry
       // paths may still use the global replay helper for interrupted/failed
       // turns, but a daemon restart must never resurrect any terminal turn.
+      // A separately authorized capacity retry is pending-only work, not
+      // permission to continue the failed physical attempt.
       const replaySafety = terminalTurnConsumed
         ? { ...durableReplaySafety, replayable: false as const }
         : durableReplaySafety;
-      const restartResumeMode = replaySafety.replayable
-        ? "continue"
-        : pendingMessages.length > 0
-          ? "pending_only"
-          : "skip";
+      const hasScheduledCapacityRetry = pendingMessages.some(
+        (message) => message.providerCapacityRetry?.notBefore !== undefined,
+      );
+      const restartResumeMode = hasScheduledCapacityRetry
+        ? "pending_only"
+        : replaySafety.replayable
+          ? "continue"
+          : pendingMessages.length > 0
+            ? "pending_only"
+            : "skip";
       const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
@@ -440,6 +450,14 @@ export class RuntimeSessionDispatcher {
         metadata: snapshot.metadata,
         recordedAt: stoppedAt,
       });
+      const live = this.streamingSessions.get(snapshot.sessionName);
+      if (live) {
+        // Only a successful durable write authorizes the retiring runtime to
+        // leave the logical channel request open for the next daemon.
+        live.capacityRetrySnapshotSaved = snapshot.pendingMessages.some(
+          (message) => message.providerCapacityRetry?.notBefore !== undefined,
+        );
+      }
       recorded++;
     }
 
@@ -678,6 +696,7 @@ export class RuntimeSessionDispatcher {
       modelSource?: string | null;
       modelPresetId?: string | null;
       modelPresetVersion?: number | null;
+      deferRestart?: (streaming: RuntimeHostStreamingSession) => boolean;
     } = {},
   ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
     const resolved = resolveRuntimeStreamingSession(this.streamingSessions, {
@@ -707,6 +726,7 @@ export class RuntimeSessionDispatcher {
       const previousModel = streaming.currentModel;
       try {
         const switched = await applyDirectRuntimeModelSwitch(streaming.queryHandle, model);
+        if (this.streamingSessions.get(sessionName) !== streaming || streaming.done) return "missing";
         if (!switched) {
           throw new Error("Runtime handle rejected live model switch");
         }
@@ -732,6 +752,7 @@ export class RuntimeSessionDispatcher {
         streaming.currentModel = model;
         return "applied";
       } catch (error) {
+        if (this.streamingSessions.get(sessionName) !== streaming || streaming.done) return "missing";
         const message = error instanceof Error ? error.message : String(error);
         log.warn("Live model switch failed; restarting session on next turn", {
           sessionName,
@@ -762,6 +783,8 @@ export class RuntimeSessionDispatcher {
         });
       }
     }
+
+    if (options.deferRestart?.(streaming)) return "unchanged";
 
     const hasStashedMessages = streaming.pendingMessages.length > 0;
     if (hasStashedMessages) {
@@ -955,15 +978,22 @@ export class RuntimeSessionDispatcher {
     }
   }
 
-  async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+  async handlePromptImmediate(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    sessionKeyOverride?: string,
+  ): Promise<void> {
     const heldBeforeAdmission = this.heldSkipTurnMessages.get(sessionName);
     const bootstrapBeforeAdmission = this.deferredBootstraps.get(sessionName);
     if (!prompt._resumeStashedMessages) {
       this.runtimeRecoveryRestartAttempts.delete(sessionName);
     }
     const routerConfig = configStore.getConfig();
-    const sessionEntry = getSessionByName(sessionName) ?? getSession(sessionName);
-    const existing = this.streamingSessions.get(sessionName);
+    let sessionEntry = sessionKeyOverride
+      ? getSession(sessionKeyOverride)
+      : (getSessionByName(sessionName) ?? getSession(sessionName));
+    const canonicalSessionKey = sessionEntry?.sessionKey ?? sessionKeyOverride;
+    let existing = this.streamingSessions.get(sessionName);
     let daemonRestartMessages: RuntimeUserMessage[] | undefined;
     if (prompt._daemonRestartResume) {
       const needsColdStartStash =
@@ -1025,19 +1055,48 @@ export class RuntimeSessionDispatcher {
     prompt = withKnowledgePreamble(prompt, { agentId: agent.id, sessionName });
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    // Resolve next-turn provider before the live-queue shortcut so a persisted
-    // set-provider override can take provider_change. Last-used / agent-default
-    // mismatches must not block live_session_queue on their own.
-    let requestedProvider: RuntimeProviderId = resolveRequestedRuntimeProvider({
-      observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
-      sessionProviderOverride: sessionRuntimeProviderOverride,
-      lastUsedProvider: sessionEntry?.runtimeProvider,
-      restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
-      agent,
-    }).value;
+    let modelBrokerPlan: RuntimeModelBrokerPlan | undefined;
+    // A newer clear is intent too, even though its override is null. Unchanged
+    // last-used/default differences alone must not replace a live launch.
+    const resolveSelectedProvider = (): RuntimeProviderId =>
+      modelBrokerPlan?.lease.runtimeProvider ??
+      resolveRequestedRuntimeProvider({
+        observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
+        sessionProviderOverride: sessionEntry?.runtimeProviderOverride,
+        lastUsedProvider: sessionEntry?.runtimeProvider,
+        restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
+        agent,
+      }).value;
+    let requestedProvider = resolveSelectedProvider();
+    const refreshProviderSelection = () => {
+      sessionEntry = canonicalSessionKey
+        ? getSession(canonicalSessionKey)
+        : (getSessionByName(sessionName) ?? getSession(sessionName));
+      requestedProvider = resolveSelectedProvider();
+    };
+    const shouldDeferSavedProviderChange = (live: RuntimeHostStreamingSession): boolean => {
+      const barrier = getRuntimePromptDeliveryBarrier(prompt);
+      // Saved configuration changes the next provider turn. Preserve the exact
+      // successor atom behind its barrier while the current turn is generating.
+      return (
+        !live.done &&
+        live.agentId === agent.id &&
+        !modelBrokerPlan &&
+        !prompt._runtimeProviderId &&
+        (sessionEntry?.runtimeProviderConfigRevision ?? 0) !== (live.runtimeProviderConfigRevision ?? 0) &&
+        requestedProvider !== live.queryHandle.provider &&
+        live.turnActive &&
+        live.currentCrashRecoveryTerminal?.status !== "complete" &&
+        (barrier === "after_response" || barrier === "after_task")
+      );
+    };
     if (
       existing &&
-      shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, sessionRuntimeProviderOverride)
+      (shouldDeferSavedProviderChange(existing) ||
+        shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, sessionRuntimeProviderOverride, {
+          provider: requestedProvider,
+          revision: sessionEntry?.runtimeProviderConfigRevision ?? 0,
+        }))
     ) {
       await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
         sessionEntry: sessionEntry ?? undefined,
@@ -1046,7 +1105,6 @@ export class RuntimeSessionDispatcher {
       });
       return;
     }
-    let modelBrokerPlan: RuntimeModelBrokerPlan | undefined;
     const modelBrokerTurnId = prompt._modelBrokerTurnId ?? createSessionTraceTurnId();
     modelBrokerPlan = await planRuntimeModelBrokerRoute({
       agent,
@@ -1057,26 +1115,37 @@ export class RuntimeSessionDispatcher {
     if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
       prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
     }
-    if (modelBrokerPlan) {
-      requestedProvider = modelBrokerPlan.lease.runtimeProvider;
-    }
+    // Preflight can yield while explicit provider configuration changes.
+    // The broker lease and observation override retain their higher priority.
+    refreshProviderSelection();
+    existing = this.streamingSessions.get(sessionName);
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
-      if (existing.agentId !== agent.id || existing.queryHandle.provider !== requestedProvider) {
-        const restartReason = existing.agentId !== agent.id ? "agent_change" : "provider_change";
+      if (shouldDeferSavedProviderChange(existing)) {
+        await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
+          sessionEntry: sessionEntry ?? undefined,
+          agentId: sessionEntry?.agentId ?? agent.id,
+          daemonRestartMessages,
+        });
+        return;
+      }
+      const retireForRuntimeIdentityChange = (live: RuntimeHostStreamingSession): boolean => {
+        if (this.streamingSessions.get(sessionName) !== live || live.done) return false;
+        if (live.agentId === agent.id && live.queryHandle.provider === requestedProvider) return false;
+        const restartReason = live.agentId !== agent.id ? "agent_change" : "provider_change";
         log.info("Streaming: restarting session after runtime identity change", {
           sessionName,
           reason: restartReason,
-          activeAgentId: existing.agentId,
+          activeAgentId: live.agentId,
           requestedAgentId: agent.id,
-          activeProvider: existing.queryHandle.provider,
+          activeProvider: live.queryHandle.provider,
           requestedProvider,
-          queueSize: existing.pendingMessages.length,
+          queueSize: live.pendingMessages.length,
         });
 
-        if (existing.pendingMessages.length > 0) {
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
+        if (live.pendingMessages.length > 0) {
+          stashPendingRuntimeMessages(sessionName, live, this.stashedMessages, {
             crashRecovery: this.options.crashRecovery,
           });
         }
@@ -1084,34 +1153,38 @@ export class RuntimeSessionDispatcher {
         recordRuntimeTraceEvent({
           sessionKey: sessionEntry?.sessionKey ?? sessionName,
           sessionName,
-          agentId: existing.agentId,
-          runId: existing.traceRunId,
-          turnId: existing.currentTraceTurnId,
-          provider: existing.queryHandle.provider,
-          model: existing.currentModel,
+          agentId: live.agentId,
+          runId: live.traceRunId,
+          turnId: live.currentTraceTurnId,
+          provider: live.queryHandle.provider,
+          model: live.currentModel,
           eventType: "dispatch.restart_requested",
           eventGroup: "dispatch",
           status: "requested",
-          source: existing.currentSource,
+          source: live.currentSource,
           payloadJson: {
             reason: restartReason,
-            activeAgentId: existing.agentId,
+            activeAgentId: live.agentId,
             requestedAgentId: agent.id,
-            activeProvider: existing.queryHandle.provider,
+            activeProvider: live.queryHandle.provider,
             requestedProvider,
           },
         });
         recordStreamingTurnInterruptedTrace(
           this.options.crashRecovery,
           sessionName,
-          existing,
+          live,
           restartReason,
           sessionEntry?.sessionKey,
         );
-        shutdownRuntimeStreamingSession(existing, restartReason);
-        this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
-        retainReleasedSlot = true;
-      } else {
+        shutdownRuntimeStreamingSession(live, restartReason);
+        if (this.streamingSessions.get(sessionName) === live) {
+          this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+          retainReleasedSlot = true;
+        }
+        return true;
+      };
+      if (!retireForRuntimeIdentityChange(existing)) {
         const requestedRuntime = resolveRuntimeForPrompt({
           sessionName,
           prompt,
@@ -1173,9 +1246,33 @@ export class RuntimeSessionDispatcher {
             modelSource: requestedRuntime.sources.model,
             modelPresetId: requestedRuntime.modelPresetId ?? null,
             modelPresetVersion: requestedRuntime.modelPresetVersion ?? null,
+            deferRestart: (streaming) => {
+              refreshProviderSelection();
+              return shouldDeferSavedProviderChange(streaming);
+            },
           });
-          if (modelStatus === "restart-next-turn") {
+          refreshProviderSelection();
+          const afterModelChange = this.streamingSessions.get(sessionName);
+          if (modelStatus === "restart-next-turn" && !afterModelChange) {
             await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
+            return;
+          }
+          if (afterModelChange !== existing || afterModelChange?.done) {
+            // No history has been recorded yet. Re-admit on the replacement
+            // instead of retiring or pushing onto the completed handle.
+            await this.handlePromptImmediate(sessionName, prompt, canonicalSessionKey);
+            return;
+          }
+          if (shouldDeferSavedProviderChange(existing)) {
+            await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
+              sessionEntry: sessionEntry ?? undefined,
+              agentId: sessionEntry?.agentId ?? agent.id,
+              daemonRestartMessages,
+            });
+            return;
+          }
+          if (retireForRuntimeIdentityChange(existing)) {
+            await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
             return;
           }
         }
@@ -1207,15 +1304,38 @@ export class RuntimeSessionDispatcher {
           ? "fallback"
           : await this.tryNativeRuntimeSteer(sessionName, existing, prompt, barrier, sessionEntry?.sessionKey);
         if (nativeSteer === "accepted") {
-          updateRuntimeLiveState(sessionName, {
-            activity: "thinking",
-            summary: "runtime control accepted",
-            agentId: existing.agentId,
-            runId: existing.traceRunId,
-            provider: existing.queryHandle.provider,
-            model: existing.currentModel,
-            source: prompt.source ?? existing.currentSource,
-          });
+          if (this.streamingSessions.get(sessionName) === existing && !existing.done) {
+            updateRuntimeLiveState(sessionName, {
+              activity: "thinking",
+              summary: "runtime control accepted",
+              agentId: existing.agentId,
+              runId: existing.traceRunId,
+              provider: existing.queryHandle.provider,
+              model: existing.currentModel,
+              source: prompt.source ?? existing.currentSource,
+            });
+          }
+          return;
+        }
+
+        refreshProviderSelection();
+        existing = this.streamingSessions.get(sessionName);
+        if (
+          !existing ||
+          existing.done ||
+          (!shouldDeferSavedProviderChange(existing) && retireForRuntimeIdentityChange(existing))
+        ) {
+          if (existing?.done && this.streamingSessions.get(sessionName) === existing) {
+            this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+            retainReleasedSlot = true;
+          }
+          // The failed steer already recorded this user message. Carry its
+          // original atom into the replacement without recording it twice.
+          if (!prompt._resumeStashedMessages) {
+            stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+            prompt = { ...prompt, _resumeStashedMessages: true };
+          }
+          await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
           return;
         }
 
@@ -2882,6 +3002,26 @@ export class RuntimeSessionDispatcher {
 
     const decision = shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
     if (decision.interrupt) {
+      const currentIds = new Set(existing.currentTurnPendingIds ?? []);
+      const waitingForRestoredRetry = existing.pendingMessages.some(
+        (message) =>
+          message.pendingId &&
+          currentIds.has(message.pendingId) &&
+          message.providerCapacityRetry?.notBefore !== undefined,
+      );
+      if (waitingForRestoredRetry) {
+        const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
+        if (successor) {
+          await this.interruptForRuntimeSuccessor(
+            sessionName,
+            existing,
+            successor,
+            decision.reason,
+            prompt,
+            sessionEntry?.sessionKey ?? sessionName,
+          );
+        }
+      }
       return;
     }
     log.info("Streaming: queueing (busy)", {
@@ -3030,6 +3170,7 @@ export function shouldQueuePromptOnLiveSession(
   prompt: RuntimeLaunchPrompt,
   agentId: string,
   sessionProviderOverride?: RuntimeProviderId | null,
+  providerConfiguration?: { provider: RuntimeProviderId; revision: number },
 ): boolean {
   if (existing.done || existing.agentId !== agentId) {
     return false;
@@ -3046,6 +3187,13 @@ export function shouldQueuePromptOnLiveSession(
   }
   const explicitSessionProvider = sessionProviderOverride?.trim();
   if (explicitSessionProvider && existing.queryHandle.provider !== explicitSessionProvider) {
+    return false;
+  }
+  if (
+    providerConfiguration &&
+    providerConfiguration.revision !== (existing.runtimeProviderConfigRevision ?? 0) &&
+    providerConfiguration.provider !== existing.queryHandle.provider
+  ) {
     return false;
   }
   const barrier = getRuntimePromptDeliveryBarrier(prompt);
@@ -3436,6 +3584,84 @@ function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessag
   return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
 }
 
+/**
+ * A terminal physical turn is consumed. During a capacity wait the host may
+ * already have authorized a distinct next attempt for its exact input cohort.
+ * Persist that pending work without weakening the generic terminal fence.
+ */
+function getScheduledCapacityRestartMessages(
+  session: RuntimeHostStreamingSession,
+  crashRecovery?: RuntimeCrashRecoveryCoordinator,
+): RuntimeUserMessage[] | undefined {
+  const checkpoint = session.pendingCapacityRetry;
+  if (
+    session.done ||
+    session.pendingAbort ||
+    session.abortController.signal.aborted ||
+    session.internalAbortReason ||
+    session.currentTurnSuperseded
+  ) {
+    return undefined;
+  }
+  const safety = getRuntimeTurnReplaySafety(session, crashRecovery);
+  const ownIds = new Set(session.currentTurnPendingIds ?? []);
+  // A restored schedule is consumed synchronously at provider handoff. While
+  // it still exists on every current input atom, even async turn preparation
+  // has not delivered that cohort. Preserve it across a second restart too.
+  if (!session.currentCrashRecoveryTerminal && !checkpoint && ownIds.size > 0) {
+    const ownMessages = session.pendingMessages.filter((message) => message.pendingId && ownIds.has(message.pendingId));
+    if (
+      safety.durableBinding === "missing" ||
+      safety.startedTool ||
+      safety.materializedOutput ||
+      safety.inputMutated ||
+      ownMessages.length !== ownIds.size ||
+      !ownMessages.every((message) => isScheduledProviderCapacityRetry(message.providerCapacityRetry))
+    ) {
+      return undefined;
+    }
+    return session.pendingMessages.map((message) =>
+      message.pendingId && ownIds.has(message.pendingId) ? { ...message, replay: false } : message,
+    );
+  }
+  if (!checkpoint || session.currentCrashRecoveryTerminal?.status !== "failed") return undefined;
+  const scheduledState = { ...checkpoint.state, notBefore: checkpoint.notBefore };
+  if (
+    safety.durableBinding !== "terminal" ||
+    safety.startedTool ||
+    safety.materializedOutput ||
+    safety.inputMutated ||
+    !isScheduledProviderCapacityRetry(scheduledState)
+  ) {
+    return undefined;
+  }
+  const retryIds = new Set(checkpoint.pendingIds);
+  if (
+    ownIds.size === 0 ||
+    ownIds.size !== retryIds.size ||
+    checkpoint.pendingIds.length !== retryIds.size ||
+    [...ownIds].some((id) => !retryIds.has(id))
+  ) {
+    return undefined;
+  }
+  const ownMessages = session.pendingMessages.filter((message) => message.pendingId && retryIds.has(message.pendingId));
+  if (
+    ownMessages.length !== retryIds.size ||
+    ownMessages.some(
+      (message) =>
+        message.providerCapacityRetry?.startedAt !== checkpoint.state.startedAt ||
+        message.providerCapacityRetry?.retries !== checkpoint.state.retries,
+    )
+  ) {
+    return undefined;
+  }
+  return session.pendingMessages.map((message) =>
+    message.pendingId && retryIds.has(message.pendingId)
+      ? { ...message, replay: false, providerCapacityRetry: { ...scheduledState } }
+      : message,
+  );
+}
+
 /** Cancel suspended work before either abort path can stash it for a restart. */
 function cancelYieldedRuntimeWork(
   sessionName: string,
@@ -3586,9 +3812,14 @@ function recordStreamingTurnInterruptedTrace(
 ): void {
   const requestedCompletedAt = Date.now();
   const existingTerminal = session.currentCrashRecoveryTerminal;
-  // A failed/interrupted provider terminal is already durable. Its host still
-  // owns the pending trace and usage; retirement must not seal an empty trace.
-  if (existingTerminal?.status === "failed" || existingTerminal?.status === "interrupted") return;
+  // Accepted provider terminals belong to the host, which may still be awaiting
+  // accounting. Retirement must not seal their trace before usage and costs arrive.
+  if (
+    existingTerminal?.status === "complete" ||
+    existingTerminal?.status === "failed" ||
+    existingTerminal?.status === "interrupted"
+  )
+    return;
   if (!existingTerminal && !session.currentTraceTurnId && !session.currentCrashRecoveryAttemptId) {
     return;
   }
@@ -3661,7 +3892,7 @@ function recordStreamingTurnInterruptedTrace(
     model: session.currentModel,
     status: terminalStatus,
     eventType: runtimeTurnAttemptTerminalEventType(terminalStatus),
-    abortReason: terminalStatus === "complete" || !dispatcherWonTerminal ? null : reason,
+    abortReason: dispatcherWonTerminal ? reason : null,
     startedAt: session.currentTraceTurnStartedAt,
     completedAt: terminal.completedAt,
     payloadJson: {

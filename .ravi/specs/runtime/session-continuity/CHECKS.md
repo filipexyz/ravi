@@ -1,5 +1,48 @@
 # Runtime Session Continuity Checks
 
+- `bun test src/runtime/thread-provider-config.test.ts` MUST exercise an active
+  host event loop and its next-turn resolver: newer provider configuration wins
+  over late completion, while compatible native continuity/output/usage survive.
+- The same regression MUST dispatch the actual next prompt through
+  `RuntimeSessionDispatcher`, covering clear, explicit override, compatible
+  reuse, unchanged launch overrides and a configuration change across an await.
+- Queue a successor before clear while the old turn is active: complete that
+  turn, preserve the successor, and select the new provider without replaying
+  the completed prompt or starting the successor on the old handle.
+- Cover all three orderings: clear/successor/terminal, successor/clear/terminal,
+  and clear/terminal/successor. Deferred barriers keep the real durable attempt
+  running until its canonical terminal; immediate delivery retains its meaning.
+- Suspend old terminal accounting, consume its successor through a replacement's
+  real generator, then finish the old terminal: no second copy enters the stash.
+- Replace the slot across model-switch, terminal-feedback and recovery awaits:
+  old cleanup cannot remove/reset the replacement or overwrite its native/context
+  state; old-turn accounting remains recorded exactly once.
+- Exercise complete, generic non-recoverable failure, and interruption with
+  incompatible clear, compatible clear and unchanged configuration. The old
+  attempt keeps its terminal status and every successor is consumed once.
+- Run `after_task` through the real generator with an active task in disposable
+  storage: no successor input is yielded until task release, including after
+  failure/interruption. Keep replay-safe interrupted input ahead of successors,
+  preserve legitimate recovery paths, and never resurrect cancelled work.
+- Derive Codex's pending tool-result-delivery barrier from canonical
+  `tool.started` and `tool.completed` events, then request a real dispatcher
+  abort before a recoverable failure. No recovery branch may restart B;
+  a later explicit C delivers B and C once without replaying A. Keep controls
+  for suppressed, credential and context recovery without an explicit abort.
+- Pause canonical terminal emission with a real Codex tool-result abort pending,
+  then expire the real tool lease. Cancellation retains dormant B until a fresh
+  C admission; no inactivity notice or automatic restart may replace it. Cover
+  an unchanged lease, no-abort recovery, and replacement ownership across the
+  await without changing the accepted terminal's accounting.
+- Compose approved context recovery with native Slack output delivery: no
+  premature safe-error manifest, the recovered final is delivered when allowed,
+  and cooldown still suppresses it. Replace the runtime while broker feedback
+  awaits and verify the old recovery cannot reset or revoke the replacement.
+- Abort or replace the runtime while credential refresh awaits: the retired
+  handle cannot arm another retry. Reject an awaited failed-event emission
+  with cancellation pending: finalization retains the accepted terminal and
+  keeps B dormant, including its original envelope, until later admission.
+
 ## Prompt Atom Ledger
 
 - Inbound channel messages create one prompt atom before debounce or provider batching.

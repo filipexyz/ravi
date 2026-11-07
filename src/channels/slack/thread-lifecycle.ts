@@ -651,7 +651,7 @@ export async function reportSlackThreadProgress(
   dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<SlackThreadReportResult> {
   const text = message.trim();
-  if (!text) throw new Error("Report message is required");
+  if (!text) throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
   const record = ensureSlackThreadLifecycleForSession(session);
   if (!record.providerThreadId) {
     throw slackThreadError("THREAD_NOT_STARTED", `Slack thread has not started yet: ${record.requestId}`);
@@ -673,7 +673,7 @@ export async function reportSlackThreadProgress(
       payload: {
         prompt: buildSlackThreadParentNotice(record, "reporta progresso.", "Progresso", text),
         source: buildSlackThreadParentSource(record, record.providerThreadId),
-        deliveryBarrier: "after_tool",
+        deliveryBarrier: "after_response",
         deliveryBarrierSource: "default",
         _slackThreadLifecycle: {
           eventId: messageId,
@@ -708,7 +708,7 @@ export async function sendSlackThreadMessage(
   dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<SlackThreadSendResult> {
   const text = input.message.trim();
-  if (!text) throw new Error("Thread message is required");
+  if (!text) throw new CliExpectedError("Thread message is required", "USAGE_ERROR", 2);
   const parent = input.parentSession;
   if (slackThreadParentSessionKey(parent.sessionKey) !== parent.sessionKey) {
     throw slackThreadError(

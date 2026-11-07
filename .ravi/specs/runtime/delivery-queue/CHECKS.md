@@ -52,7 +52,12 @@
 ## Queue Integrity
 
 - Pending prompt atoms keep source, context, pending id, barrier, queue time, task barrier metadata, and launch metadata.
-- Same-lane prompt atoms are delivered FIFO.
+- Same-priority, same-lane prompt atoms are delivered FIFO.
+- `delivery-queue.test.ts` hands human input to the generator next after 64 progress reports, both after terminal completion and an intentional interrupt; all four questions survive.
+- The same test drains all 64 reports in four bounded batches, retaining each full message and pending id exactly once.
+- Different caller contexts, principals, reply surfaces, completion events and replay attempts end progress batching.
+- Oversized blockers remain intact; arrivals during a batch remain pending after that batch is acknowledged.
+- `thread-lifecycle.test.ts` verifies new progress defaults to `after_response`.
 - A leading compatible burst from the same human channel authority may be folded chronologically under the newest channel envelope.
 - Different actors, chats, threads, authority envelopes, commands, and replay attempts are never folded together; incompatible atoms in the same releasable lane retain FIFO order.
 - Bypassing a blocked prompt atom is traceable.

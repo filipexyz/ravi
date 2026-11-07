@@ -15,6 +15,8 @@ import {
 import { prepareSlackAutomaticTerminalManifest } from "../channels/slack/automatic-terminal-manifest.js";
 import { renderSlackBackendOutput } from "../channels/slack/driver.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
+import { executeWrite } from "../db/write-retry.js";
+import { getDb } from "../router/router-db.js";
 import { isCommentaryMetadata, isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
@@ -24,6 +26,7 @@ import {
   dbInsertCostEvent,
   deleteSession,
   getAnnounceCompaction,
+  getAgent,
   getSession,
   resetSession,
   updateProviderSession,
@@ -36,6 +39,7 @@ import { getSessionTraceBlob, getSessionTurn, listSessionEventsByTurn } from "..
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
+import { resolveEffectiveSessionRuntime } from "./runtime-selection.js";
 import { classifyVisibleAssistantUtterances } from "./assistant-transcript.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
@@ -52,6 +56,13 @@ import {
 } from "./inactivity-recovery-checkpoint.js";
 import { piContextSaturationUserNotice, readPiContextSaturationNotice } from "./pi-context-saturation.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
+import {
+  decideProviderCapacityRetry,
+  PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+  PROVIDER_CAPACITY_EXHAUSTED_REASON,
+  PROVIDER_CAPACITY_MAX_ELAPSED_MS,
+  PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+} from "./provider-capacity-retry.js";
 import { explainRuntimeCredentialProviderFailure } from "./credential-secret-shape.js";
 import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
 import {
@@ -619,14 +630,13 @@ async function recordRuntimeCredentialTurnFailure(input: {
   | undefined
 > {
   const credential = input.streaming.currentRuntimeCredential;
-  if (!credential) return undefined;
   const rawError = asRecord(input.rawEvent?.error);
   const headers = extractRuntimeFailureHeaders(input.rawEvent);
   const signal = classifyRuntimeCredentialFailure({
     runtimeProvider: input.provider,
-    upstreamProvider: credential.upstreamProvider,
+    upstreamProvider: credential?.upstreamProvider,
     model: input.model,
-    credentialId: credential.credentialId,
+    credentialId: credential?.credentialId,
     // Claude SDK frames carry the HTTP status as `api_error_status` (result) or
     // `error_status` (api_retry) and the provider code as a string `error`.
     httpStatus: firstNumber(
@@ -638,7 +648,12 @@ async function recordRuntimeCredentialTurnFailure(input: {
       rawError?.statusCode,
     ),
     providerCode: firstString(input.rawEvent?.code, input.rawEvent?.error, rawError?.code),
-    providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
+    providerType: firstString(
+      rawError?.type,
+      input.rawEvent?.providerType,
+      input.rawEvent?.type,
+      input.rawEvent?.subtype,
+    ),
     message: input.error,
     ...(headers ? { headers } : {}),
     requestId: firstString(
@@ -650,6 +665,7 @@ async function recordRuntimeCredentialTurnFailure(input: {
     source: "sdk-error",
   });
 
+  if (!credential) return { signal };
   try {
     if (credential.authMethod === "model-broker") {
       const modelBrokerFeedback = await reportModelBrokerFeedback(
@@ -979,6 +995,57 @@ export interface RunRuntimeEventLoopOptions {
   drainPendingStarts(): void;
   restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
   onToolBarrierReleased?(sessionName: string): void | Promise<void>;
+  /** Injectable scheduling dependencies for deterministic capacity-retry tests. */
+  capacityRetryRuntime?: {
+    now?: () => number;
+    random?: () => number;
+    wait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
+  };
+}
+
+/** Backoff belongs to the active turn and must yield promptly to abort or supersession. */
+async function waitForProviderCapacityRetry(
+  delayMs: number,
+  streaming: RuntimeHostStreamingSession,
+  wait?: (delayMs: number, signal: AbortSignal) => Promise<void>,
+): Promise<boolean> {
+  const cancelled = () =>
+    streaming.done ||
+    streaming.abortController.signal.aborted ||
+    streaming.currentTurnSuperseded === true ||
+    streaming.pendingAbort ||
+    Boolean(streaming.internalAbortReason);
+  if (cancelled()) return false;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  streaming.abortController.signal.addEventListener("abort", onAbort, { once: true });
+  const poll = setInterval(() => {
+    if (cancelled()) controller.abort();
+  }, 25);
+  try {
+    if (wait) {
+      await wait(delayMs, controller.signal);
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        const onCancel = () => {
+          clearTimeout(timer);
+          reject(new Error("Capacity backoff cancelled"));
+        };
+        const timer = setTimeout(() => {
+          controller.signal.removeEventListener("abort", onCancel);
+          resolve();
+        }, delayMs);
+        controller.signal.addEventListener("abort", onCancel, { once: true });
+      });
+    }
+    return !cancelled();
+  } catch (error) {
+    if (controller.signal.aborted) return false;
+    throw error;
+  } finally {
+    clearInterval(poll);
+    streaming.abortController.signal.removeEventListener("abort", onAbort);
+  }
 }
 
 /**
@@ -1008,6 +1075,20 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     restartStashedSession,
     onToolBarrierReleased,
   } = options;
+  const ownsRuntimeSlot = () => streamingSessions.get(sessionName) === streaming;
+  const updateOwnedLiveState = (input: Parameters<typeof updateRuntimeLiveState>[1]) => {
+    if (ownsRuntimeSlot()) updateRuntimeLiveState(sessionName, input);
+  };
+  const markOwnedLiveIdle = (summary: string) => {
+    if (ownsRuntimeSlot()) markRuntimeLiveIdle(sessionName, summary);
+  };
+  const stashOwnedPendingMessages = (options: Parameters<typeof stashPendingRuntimeMessages>[3]) =>
+    ownsRuntimeSlot() ? stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, options) : 0;
+  const stashOwnedCurrentTurnMessages = (options: Parameters<typeof stashCurrentTurnRuntimeMessages>[3]) =>
+    ownsRuntimeSlot() ? stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, options) : 0;
+  let lastPersistedProvider = session.runtimeProvider;
+  let lastPersistedOverride = session.runtimeProviderOverride;
+  let providerConfigurationRevision = session.runtimeProviderConfigRevision ?? 0;
   prewarmPricingCatalog();
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
@@ -1379,7 +1460,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         runtimeSession.skillVisibility,
       )
     : runtimeSession.skillVisibility;
-  updateRuntimeLiveState(sessionName, {
+  updateOwnedLiveState({
     activity: "thinking",
     summary: "runtime active",
     agentId: agent.id,
@@ -1445,6 +1526,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     name: string;
     timeoutMs: number;
   }): void => {
+    if (!ownsRuntimeSlot()) return;
+    // A terminal already accepted by the host is settling the explicit abort.
+    // A lease firing during its asynchronous emission must not replace that
+    // intent with inactivity recovery. Before a terminal, keep the watchdog.
+    if (streaming.pendingAbort && streaming.currentCrashRecoveryTerminal) return;
     const seconds = Math.round(input.timeoutMs / 1000);
     const subject = input.kind === "tool" ? `o tool \`${input.name}\`` : "o provider";
     const attempts = (inactivityRecoveryAttempts.get(sessionName) ?? 0) + 1;
@@ -1475,7 +1561,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       _runtimeProviderId: runtimeSession.provider,
     });
 
-    stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    stashOwnedPendingMessages({ crashRecovery });
     const queued = stashedMessages.get(sessionName) ?? [];
     const deduped = notice.clientMessageId
       ? queued.filter((message) => message.clientMessageId !== notice.clientMessageId)
@@ -1573,7 +1659,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
       },
     });
-    updateRuntimeLiveState(sessionName, {
+    updateOwnedLiveState({
       activity: "thinking",
       summary: "continuando apos inatividade",
       agentId: agent.id,
@@ -1588,13 +1674,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentTurnInputMutated = false;
     streaming.internalAbortReason = input.reason;
     streaming.interrupted = true;
-    signalTurnComplete();
-    clearTraceTurnState();
     streaming.done = true;
     streaming.currentChannelBackend = undefined;
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
+    signalTurnComplete();
+    clearTraceTurnState();
     void closeRuntimeSession();
   };
 
@@ -1733,7 +1819,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionDone: streaming.done,
         })
       ) {
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           ...buildSlowToolLivePatch(toolName, elapsedMs, streaming.pendingMessages.length),
           agentId: agent.id,
           runId,
@@ -1799,13 +1885,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
   const scheduleIdleSessionEviction = () => {
-    if (IDLE_SESSION_TTL_MS <= 0) {
+    if (!ownsRuntimeSlot() || IDLE_SESSION_TTL_MS <= 0) {
       return;
     }
     clearIdleSessionEvictionTimer();
     streaming.idleSessionEvictionTimer = setTimeout(() => {
       streaming.idleSessionEvictionTimer = undefined;
       if (
+        !ownsRuntimeSlot() ||
         streaming.done ||
         streaming.starting ||
         streaming.turnActive ||
@@ -1851,6 +1938,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
   const finishActiveToolBarrier = async () => {
     clearActiveToolState();
+    if (!ownsRuntimeSlot()) return;
 
     if (streaming.pendingAbort) {
       if (streaming.pendingMessages.length > 0) {
@@ -1858,7 +1946,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionName,
           count: streaming.pendingMessages.length,
         });
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+        stashOwnedPendingMessages({ crashRecovery });
       }
       log.info("Executing deferred abort after tool barrier released", {
         sessionName,
@@ -1907,12 +1995,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
   const terminateTurnAfterFatalTool = (failure: FatalToolFailure) => {
-    if (streaming.done || streaming.abortController.signal.aborted) {
+    if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) {
       return;
     }
 
     streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
-    const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    const stashedCount = stashOwnedPendingMessages({ crashRecovery });
     if (stashedCount > 0) {
       restartStashedReason = FATAL_TOOL_FAILURE_REASON;
     }
@@ -1987,13 +2075,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.turnActive = false;
     streaming.internalAbortReason = FATAL_TOOL_FAILURE_REASON;
     clearActiveToolState();
-    markRuntimeLiveIdle(sessionName, "fatal tool failure");
-    signalTurnComplete();
-    clearTraceTurnState();
+    markOwnedLiveIdle("fatal tool failure");
     streaming.done = true;
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
+    signalTurnComplete();
+    clearTraceTurnState();
     void closeRuntimeSession();
   };
   const signalTurnComplete = () => {
@@ -2002,6 +2090,66 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.onTurnComplete();
       streaming.onTurnComplete = null;
     }
+  };
+
+  // Cancellation is distinct from provider selection: recovery exits must
+  // settle an explicit abort without turning it into a new physical delivery.
+  const finishPendingTerminalAbort = (pendingAbortBeforeCleanup?: string): boolean => {
+    if (!ownsRuntimeSlot()) return false;
+    if (!streaming.pendingAbort && !pendingAbortBeforeCleanup) return false;
+    stashOwnedPendingMessages({ crashRecovery });
+    streaming.internalAbortReason = pendingAbortBeforeCleanup ?? streaming.internalAbortReason ?? "deferred_abort";
+    revokeAgentRuntimeContextsForSession(session.sessionKey, { reason: streaming.internalAbortReason });
+    restartStashedReason = undefined;
+    streaming.done = true;
+    streaming.pendingAbort = false;
+    markOwnedLiveIdle("turn interrupted");
+    return true;
+  };
+
+  // Run after terminal accounting and replay decisions, before waking the
+  // generator. Existing recovery branches retain their own restart path.
+  const finishPendingTerminalTransition = (
+    terminal: "complete" | "failed" | "interrupted",
+    pendingAbortBeforeCleanup?: string,
+  ): boolean => {
+    if (finishPendingTerminalAbort(pendingAbortBeforeCleanup)) return true;
+    if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) return false;
+    const configuredSession = getSession(session.sessionKey);
+    if (
+      !configuredSession ||
+      (configuredSession.runtimeProviderConfigRevision ?? 0) ===
+        (streaming.runtimeProviderConfigRevision ?? session.runtimeProviderConfigRevision ?? 0) ||
+      resolveEffectiveSessionRuntime({
+        session: configuredSession,
+        agent: getAgent(configuredSession.agentId) ?? agent,
+      }).provider.value === runtimeSession.provider
+    ) {
+      return false;
+    }
+    const successors = getPendingRuntimeTurnSuccessors(streaming);
+    if (successors.length === 0) return false;
+
+    // Unexpected interruption may replay A before B. Keep that existing safety
+    // decision and its envelope; a completed/failed A is never replayed here.
+    const pending =
+      terminal === "interrupted"
+        ? getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery)
+        : successors;
+    stashedMessages.set(
+      sessionName,
+      pending.map((message) => ({ ...message })),
+    );
+    restartStashedReason = "provider_change";
+    streaming.internalAbortReason = "provider_change";
+    streaming.done = true;
+    recordTraceEvent({
+      eventType: "dispatch.restart_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      payloadJson: { reason: "provider_change", queuedSuccessors: successors.length, terminal },
+    });
+    return true;
   };
 
   const emitLegacyProviderEvent = async (event: Record<string, unknown>) => {
@@ -2451,6 +2599,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
    * restart they would stay in this dead session object and be lost.
    */
   const recoverQueueBehindSettledTurn = () => {
+    if (!ownsRuntimeSlot()) return;
     const reason =
       streaming.internalAbortReason ??
       (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
@@ -2477,12 +2626,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const prepareUnterminatedTurnRecovery = () => {
+    if (!ownsRuntimeSlot()) return;
     if (streaming.durableTurnPreparationFailed) {
       if (!restartStashedReason) {
         // The prompt was never yielded to the provider. Preserve it even when
         // the failed attempt write made the coordinator reject new work;
         // shutdown snapshots still need the exact original envelope.
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+        stashOwnedPendingMessages({ crashRecovery });
       }
       if (restartStashedReason || !crashRecovery?.acceptingDeliveries) {
         return;
@@ -2531,7 +2681,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
     const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
-    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+    const stashedCount = stashOwnedCurrentTurnMessages({
       crashRecovery,
       reconcileCurrentTurn,
     });
@@ -2582,7 +2732,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     input: Parameters<typeof updateRuntimeLiveState>[1],
     skillVisibility?: RuntimeSkillVisibilitySnapshot,
   ) =>
-    updateRuntimeLiveState(sessionName, {
+    updateOwnedLiveState({
       ...input,
       ...(skillVisibility
         ? {
@@ -2628,6 +2778,42 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     };
   };
 
+  // Configuration can rematerialize the next provider while this handle still
+  // owns an active turn. Check under the write lock so a late completion or
+  // telemetry write cannot restore that handle's incompatible native state.
+  // The revision distinguishes an explicit clear (even of a null override) and
+  // ABA from an unchanged launch. Compatible providers can keep continuity.
+  const persistCurrentProviderState = (write: () => void): boolean => {
+    if (!ownsRuntimeSlot()) return false;
+    const saved = executeWrite(
+      getDb(),
+      () => {
+        const current = getSession(session.sessionKey);
+        if (!current) return null;
+        const unchanged =
+          (current.runtimeProviderConfigRevision ?? 0) === providerConfigurationRevision &&
+          current.runtimeProvider === lastPersistedProvider &&
+          current.runtimeProviderOverride === lastPersistedOverride;
+        if (
+          !unchanged &&
+          resolveEffectiveSessionRuntime({ session: current, agent: getAgent(current.agentId) ?? agent }).provider
+            .value !== runtimeSession.provider
+        ) {
+          return null;
+        }
+        write();
+        return current;
+      },
+      { label: "runtime_provider_state" },
+    );
+    if (saved) {
+      lastPersistedProvider = runtimeSession.provider;
+      lastPersistedOverride = saved.runtimeProviderOverride;
+      providerConfigurationRevision = saved.runtimeProviderConfigRevision ?? 0;
+    }
+    return saved !== null;
+  };
+
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
@@ -2646,20 +2832,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (!lastUsedMatchesCurrent) {
       return runtimeSessionParams;
     }
-    if (persistedSessionId) {
-      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-        runtimeSessionParams,
-        runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-      });
-    } else {
-      updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
-        runtimeSessionParams,
-      });
-    }
+    persistCurrentProviderState(() => {
+      if (persistedSessionId) {
+        updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+          runtimeSessionParams,
+          runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
+        });
+      } else {
+        updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
+          runtimeSessionParams,
+        });
+      }
+    });
     return runtimeSessionParams;
   };
 
   const persistPiContextSaturation = (usedTokens: number, limitTokens: number) => {
+    if (!ownsRuntimeSlot()) return;
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
       contextWindow: limitTokens,
@@ -2675,15 +2864,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const providerUnset = !session.runtimeProvider;
     const lastUsedMatchesCurrent = session.runtimeProvider === runtimeSession.provider;
     if (!lastUsedMatchesCurrent && !providerUnset) return;
-    if (persistedSessionId) {
-      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-        runtimeSessionParams,
-        runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-      });
-      return;
-    }
-    updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
-      runtimeSessionParams,
+    persistCurrentProviderState(() => {
+      if (persistedSessionId) {
+        updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+          runtimeSessionParams,
+          runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
+        });
+      } else {
+        updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, { runtimeSessionParams });
+      }
     });
   };
 
@@ -2961,7 +3150,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     let timedOut = false;
     const timeout = new Promise<IteratorResult<RuntimeEvent>>((resolve) => {
       interval = setInterval(() => {
-        if (timedOut || streaming.done || streaming.abortController.signal.aborted) return;
+        if (!ownsRuntimeSlot() || timedOut || streaming.done || streaming.abortController.signal.aborted) return;
         if (!streaming.turnActive || streaming.toolRunning || streaming.compacting) return;
 
         const idleMs = Date.now() - streaming.lastActivity;
@@ -2970,7 +3159,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         timedOut = true;
         const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
         const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
-        const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+        const stashedCount = stashOwnedPendingMessages({
           crashRecovery,
           reconcileCurrentTurn,
         });
@@ -2999,13 +3188,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.turnActive = false;
         streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
         clearActiveToolState();
-        markRuntimeLiveIdle(sessionName, "provider turn inactive");
-        signalTurnComplete();
-        clearTraceTurnState();
+        markOwnedLiveIdle("provider turn inactive");
         streaming.done = true;
         if (!streaming.abortController.signal.aborted) {
           streaming.abortController.abort();
         }
+        signalTurnComplete();
+        clearTraceTurnState();
         void closeRuntimeSession();
         resolve({ done: true, value: undefined as never });
       }, PROVIDER_TURN_INACTIVITY_CHECK_MS);
@@ -3301,7 +3490,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             metadata: event.metadata,
           });
         }
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "streaming",
           summary: truncateLiveSummary(event.text) || "streaming",
           agentId: agent.id,
@@ -3532,7 +3721,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           metadata: event.metadata,
           ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "thinking",
           summary: `${event.toolUse.name} running`,
           agentId: agent.id,
@@ -3717,7 +3906,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                     text: utterance,
                   });
                 }
-                updateRuntimeLiveState(sessionName, {
+                updateOwnedLiveState({
                   activity: "streaming",
                   summary: truncateLiveSummary(utterance) || "response",
                   agentId: agent.id,
@@ -3885,7 +4074,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
 
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: event.isError ? "blocked" : "thinking",
           summary: event.isError ? `${toolName} failed` : `${toolName} completed`,
           agentId: agent.id,
@@ -3985,7 +4174,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Visible assistant text is real progress. A silent, empty, or @@SILENT@@
         // completion — including a recovery that produced nothing — keeps the
         // consecutive inactivity budget so repeated silence reaches the cap.
-        if (inactivityRecoveryCompletionHasProgress(responseText)) {
+        if (ownsRuntimeSlot() && inactivityRecoveryCompletionHasProgress(responseText)) {
           resetInactivityRecoveryBudget(sessionName);
         }
         await recordRuntimeCredentialTurnSuccess(
@@ -4019,11 +4208,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           runtimeSessionDisplayId ??
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
-        if (persistedSessionId) {
-          updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-            runtimeSessionParams,
-            runtimeSessionDisplayId,
-          });
+        if (
+          persistedSessionId &&
+          persistCurrentProviderState(() => {
+            updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+              runtimeSessionParams,
+              runtimeSessionDisplayId,
+            });
+          })
+        ) {
           backfillProviderSessionId(sessionName, persistedSessionId);
           session.runtimeSessionParams = runtimeSessionParams;
           session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
@@ -4032,7 +4225,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
-        updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
+        // Totals belong to the completed turn; context is the current handle's snapshot.
+        updateTokens(
+          session.sessionKey,
+          inputTokens,
+          outputTokens,
+          ownsRuntimeSlot() ? inputTokens + cacheRead + cacheCreation : null,
+        );
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
@@ -4067,10 +4266,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             createdAt: Date.now(),
           });
         }
+        const providerSessionIdAfter = getSession(session.sessionKey)?.providerSessionId ?? null;
         recordTerminalTraceOnce({
           status: "complete",
           eventType: "turn.complete",
-          providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
+          providerSessionIdAfter,
           usage: event.usage,
           costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
@@ -4104,10 +4304,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           usage: event.usage,
           costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
-          providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
+          providerSessionIdAfter,
           promptTooLongReset: streaming._promptTooLong ?? false,
         });
         if (
+          ownsRuntimeSlot() &&
           shouldRefreshTaskSessionTtlOnTurnComplete({
             sessionName,
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
@@ -4119,7 +4320,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         // Auto-reset session when prompt is too long (compact failed)
-        if (streaming._promptTooLong) {
+        if (ownsRuntimeSlot() && streaming._promptTooLong) {
           log.warn("Auto-resetting session due to 'Prompt is too long'", {
             sessionName,
           });
@@ -4160,6 +4361,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
+        const pendingAbortBeforeCleanup = streaming.pendingAbort
+          ? (streaming.internalAbortReason ?? "deferred_abort")
+          : undefined;
         streaming.pendingAbort = false;
         streaming.currentTurnToolStarted = false;
         resetTurnToolContinuationLedger(turnToolContinuation);
@@ -4180,6 +4384,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           terminalSkillVisibility,
         );
 
+        if (finishPendingTerminalTransition("complete", pendingAbortBeforeCleanup)) {
+          signalTurnComplete();
+          break;
+        }
+
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
         scheduleIdleSessionEviction();
@@ -4187,7 +4396,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "goal.updated") {
-        syncRuntimeSessionGoal(session.sessionKey, event.goal);
+        if (ownsRuntimeSlot()) syncRuntimeSessionGoal(session.sessionKey, event.goal);
         await emitRuntimeEvent({ type: "goal.updated", goal: event.goal });
         continue;
       }
@@ -4305,7 +4514,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
         clearTraceTurnState();
-        markRuntimeLiveIdle(sessionName, "turn interrupted");
+        markOwnedLiveIdle("turn interrupted");
+        if (finishPendingTerminalTransition("interrupted")) {
+          signalTurnComplete();
+          break;
+        }
         signalTurnComplete();
         continue;
       }
@@ -4368,6 +4581,190 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           : undefined;
         const credentialFailureSignal = credentialFailureRecord?.signal;
         const failedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
+        const currentPendingIds = new Set(streaming.currentTurnPendingIds ?? []);
+        const ownMessages = streaming.pendingMessages.filter(
+          (message) => message.pendingId && currentPendingIds.has(message.pendingId),
+        );
+        // Coalescing inputs must never reset a budget already spent by one of them.
+        const capacityState = ownMessages
+          .map((message) => message.providerCapacityRetry)
+          .filter((state) => state !== undefined)
+          .reduce<(typeof ownMessages)[number]["providerCapacityRetry"]>(
+            (state, next) =>
+              state
+                ? {
+                    startedAt: Math.min(state.startedAt, next.startedAt),
+                    retries: Math.max(state.retries, next.retries),
+                  }
+                : next,
+            undefined,
+          );
+        const capacityDecision = suppressedRecoverable
+          ? { action: "not_capacity" as const }
+          : decideProviderCapacityRetry({
+              signal: credentialFailureSignal,
+              state: capacityState,
+              now: options.capacityRetryRuntime?.now?.(),
+              random: options.capacityRetryRuntime?.random,
+            });
+        let capacityTerminalReason: string | undefined;
+        if (capacityDecision.action !== "not_capacity") {
+          // A failed first turn still owns a valid provider thread. Persist its
+          // opaque state exactly as on success, without resetting prior context.
+          if (event.session || event.providerSessionId) {
+            refreshRuntimeSessionParamsFromDb();
+            const runtimeSessionParams = mergeRuntimeCredentialSessionMetadata(
+              mergeRuntimeSessionParams(event.session?.params ?? undefined),
+              streaming.currentRuntimeCredential,
+            );
+            const providerSessionId =
+              event.session?.displayId ??
+              event.providerSessionId ??
+              (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
+            if (
+              providerSessionId &&
+              persistCurrentProviderState(() => {
+                updateProviderSession(session.sessionKey, runtimeSession.provider, providerSessionId, {
+                  runtimeSessionParams,
+                  runtimeSessionDisplayId: providerSessionId,
+                });
+              })
+            ) {
+              backfillProviderSessionId(sessionName, providerSessionId);
+              session.runtimeSessionParams = runtimeSessionParams;
+              session.runtimeSessionDisplayId = providerSessionId;
+              session.providerSessionId = providerSessionId;
+              session.sdkSessionId = providerSessionId;
+              session.runtimeProvider = runtimeSession.provider;
+            }
+          }
+          const terminalAttemptHasNoEffects =
+            currentTurnReplaySafety.durableBinding === "terminal" &&
+            !currentTurnReplaySafety.startedTool &&
+            !currentTurnReplaySafety.materializedOutput &&
+            !currentTurnReplaySafety.inputMutated;
+          const durablePreExecutionRejection = event.preExecutionRejected === true && terminalAttemptHasNoEffects;
+          const safeToRetry =
+            (currentTurnReplaySafety.replayable && currentTurnReplaySafety.durableBinding === "terminal") ||
+            durablePreExecutionRejection;
+          // Broker feedback controls advancing an attempt; the host cannot
+          // reuse a terminal broker lease or choose a different model itself.
+          const brokerAllowsRetry =
+            streaming.currentRuntimeCredential?.authMethod !== "model-broker" ||
+            credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
+          if (
+            capacityDecision.action === "retry" &&
+            safeToRetry &&
+            ownMessages.length > 0 &&
+            brokerAllowsRetry &&
+            ownsRuntimeSlot()
+          ) {
+            for (const message of ownMessages) message.providerCapacityRetry = capacityDecision.state;
+            // The failed physical attempt stays terminal. Only this separately
+            // authorized next attempt may survive a restart during its wait.
+            streaming.pendingCapacityRetry = {
+              pendingIds: ownMessages.map((message) => message.pendingId!),
+              state: { ...capacityDecision.state },
+              notBefore: (options.capacityRetryRuntime?.now?.() ?? Date.now()) + capacityDecision.delayMs,
+            };
+            updateOwnedLiveState({
+              activity: "thinking",
+              summary: "model busy; retrying shortly",
+              agentId: agent.id,
+              runId,
+              provider: runtimeSession.provider,
+              model,
+              source: streaming.currentSource,
+            });
+            const continueRetry =
+              (await waitForProviderCapacityRetry(
+                capacityDecision.delayMs,
+                streaming,
+                options.capacityRetryRuntime?.wait,
+              )) && ownsRuntimeSlot();
+            const budgetExpired =
+              (options.capacityRetryRuntime?.now?.() ?? Date.now()) - capacityDecision.state.startedAt >=
+              PROVIDER_CAPACITY_MAX_ELAPSED_MS;
+            if (continueRetry && budgetExpired) {
+              streaming.pendingCapacityRetry = undefined;
+              capacityTerminalReason = PROVIDER_CAPACITY_EXHAUSTED_REASON;
+            } else {
+              if (!continueRetry) streaming.pendingCapacityRetry = undefined;
+              recordTerminalTraceOnce({
+                status: "failed",
+                eventType: "turn.failed",
+                abortReason: continueRetry ? "provider_capacity_retry" : "provider_capacity_retry_cancelled",
+                error: truncateLogDetail(event.error),
+                providerSessionIdAfter: session.providerSessionId ?? null,
+                payloadJson: {
+                  autoRecovered: continueRetry,
+                  capacityRetry: capacityDecision.state.retries,
+                  delayMs: capacityDecision.delayMs,
+                  preExecutionRejected: event.preExecutionRejected === true,
+                  providerSessionIdAfter: session.providerSessionId ?? null,
+                },
+              });
+              if (!continueRetry) {
+                if (
+                  streaming.internalAbortReason === "shutdown_all" &&
+                  streaming.capacityRetrySnapshotSaved &&
+                  !streaming.currentTurnSuperseded
+                ) {
+                  // The snapshot owns the pending logical retry now. Closing
+                  // its channel binding here would poison the resumed request.
+                  streaming.currentChannelBackend = undefined;
+                } else {
+                  await projectInterruptedRequest();
+                  await emitRuntimeEvent({
+                    type: "turn.interrupted",
+                    provider: runtimeSession.provider,
+                    reason: streaming.internalAbortReason ?? "provider_capacity_retry_cancelled",
+                    metadata: event.metadata,
+                  });
+                }
+              }
+              await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+              suppressProviderRawForCurrentTurn = false;
+              clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+              clearTraceTurnState();
+              responseText = "";
+              channelResponseText = "";
+              deliveredVisibleThisTurn.length = 0;
+              clearPendingGeneratedMedia();
+              clearActiveToolState();
+              streaming.turnActive = false;
+              // The existing generator retains this input on interruption and
+              // creates a new durable attempt before the provider consumes it.
+              streaming.interrupted = true;
+              if (!continueRetry && !streaming.currentTurnSuperseded) streaming.done = true;
+              signalTurnComplete();
+              continue;
+            }
+          }
+          // Exhausting the budget cannot make a side-effecting or unbound
+          // attempt safe to repeat, including the final allowed attempt.
+          if (!terminalAttemptHasNoEffects) {
+            capacityTerminalReason = "provider_capacity_retry_unsafe";
+          } else {
+            capacityTerminalReason ??=
+              capacityDecision.action === "exhausted"
+                ? PROVIDER_CAPACITY_EXHAUSTED_REASON
+                : "provider_capacity_retry_unsafe";
+          }
+          event = {
+            ...event,
+            error:
+              capacityTerminalReason === PROVIDER_CAPACITY_EXHAUSTED_REASON
+                ? PROVIDER_CAPACITY_EXHAUSTED_MESSAGE
+                : PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+            recoverable: false,
+            failureKind:
+              capacityTerminalReason === PROVIDER_CAPACITY_EXHAUSTED_REASON
+                ? "provider_capacity_exhausted"
+                : "provider_capacity_retry_unsafe",
+            rawEvent: { ...event.rawEvent, failureReason: capacityTerminalReason },
+          };
+        }
         log[suppressedRecoverable ? "info" : "warn"](
           suppressedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
           {
@@ -4429,13 +4826,34 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
-        streaming.pendingAbort = false;
+        const pendingAbortBeforeCleanup = streaming.pendingAbort
+          ? (streaming.internalAbortReason ?? "deferred_abort")
+          : undefined;
+        // Keep explicit cancellation latched until it is consumed, including
+        // if terminal projection/feedback throws before the normal tail.
         streaming.turnActive = false;
-        streaming.internalAbortReason = undefined;
+        streaming.internalAbortReason = pendingAbortBeforeCleanup;
+        const mayRecoverCurrentTurn = () =>
+          ownsRuntimeSlot() &&
+          !streaming.done &&
+          !streaming.abortController.signal.aborted &&
+          !pendingAbortBeforeCleanup &&
+          !streaming.pendingAbort;
 
         if (suppressedRecoverable) {
+          // Its interrupted terminal and usage were already recorded above.
+          // An explicit abort wins over the physical recovery restart.
+          if (finishPendingTerminalAbort(pendingAbortBeforeCleanup)) {
+            // Retiring the physical attempt must also settle the captured
+            // logical request before cleanup removes its projection identity.
+            await projectInterruptedRequest();
+            clearTraceTurnState();
+            streaming.currentChannelBackend = undefined;
+            signalTurnComplete();
+            break;
+          }
           const restartReason = recoveryReason ?? "recoverable_interrupt_failure";
-          markRuntimeLiveIdle(sessionName, "turn interrupted");
+          markOwnedLiveIdle("turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
             sessionName,
@@ -4497,19 +4915,26 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               durableBinding: currentTurnReplaySafety.durableBinding,
             });
           }
-          signalTurnComplete();
-          clearTraceTurnState();
           streaming.done = true;
           streaming.currentChannelBackend = undefined;
+          if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
+          signalTurnComplete();
+          clearTraceTurnState();
           break;
         }
 
         const modelBrokerRetryApproved =
           streaming.currentRuntimeCredential?.authMethod !== "model-broker" ||
           credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
-        if (credentialFailureSignal?.retryableByCredential && modelBrokerRetryApproved) {
+        if (
+          !capacityTerminalReason &&
+          credentialFailureSignal?.retryableByCredential &&
+          modelBrokerRetryApproved &&
+          streaming.currentRuntimeCredential?.credentialId &&
+          mayRecoverCurrentTurn()
+        ) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
-          const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+          const stashedCount = stashOwnedCurrentTurnMessages({
             crashRecovery,
           });
           if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
@@ -4546,6 +4971,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 });
               }
             }
+            // Refresh can yield to an explicit abort or a replacement handle.
+            // Do not arm a retry from the old ownership snapshot.
+            if (!mayRecoverCurrentTurn()) {
+              finishPendingTerminalAbort(pendingAbortBeforeCleanup);
+              clearTraceTurnState();
+              streaming.currentChannelBackend = undefined;
+              streaming.done = true;
+              signalTurnComplete();
+              break;
+            }
             restartStashedReason = restartReason;
             log.info("Closing runtime after retryable credential failure", {
               runId,
@@ -4558,9 +4993,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             streaming.currentTurnToolStarted = false;
             resetTurnToolContinuationLedger(turnToolContinuation);
             streaming.currentTurnInputMutated = false;
+            streaming.done = true;
+            if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
             signalTurnComplete();
             clearTraceTurnState();
-            streaming.done = true;
             break;
           }
           log.warn("Skipping runtime credential retry because no replay-safe turn messages are available", {
@@ -4574,7 +5010,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
         }
 
-        if (credentialFailureSignal?.retryableByCredential && !modelBrokerRetryApproved) {
+        if (!capacityTerminalReason && credentialFailureSignal?.retryableByCredential && !modelBrokerRetryApproved) {
           log.warn("Skipping model-broker failover without authoritative pre-effect advance", {
             runId,
             sessionName,
@@ -4590,7 +5026,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
         const sessionRecoveryHasStateToClear =
           sessionRecoveryFailure?.kind !== "provider_session_missing" || hasStoredProviderSessionId(session);
-        if (sessionRecoveryFailure && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable) {
+        const canRecoverSession = () =>
+          mayRecoverCurrentTurn() && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable;
+        if (sessionRecoveryFailure && canRecoverSession()) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
           // Recovery continues this same logical channel request. Record the
           // failed physical attempt below, but defer its channel terminal output
@@ -4710,7 +5148,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               currentTurnHadToolStarted,
             },
           });
-          updateRuntimeLiveState(sessionName, {
+          updateOwnedLiveState({
             activity: "thinking",
             summary: recoveryPlan.liveSummary,
             agentId: agent.id,
@@ -4758,8 +5196,20 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           log.warn("Runtime credential provider failure", { runId, sessionName, error: operatorError });
         }
         if (!loginStubFailure && capturedChannelTerminal) {
+          // Capacity classification happens after broker feedback. Keep the
+          // original request, timestamp and fences while projecting its final
+          // safe message; intermediate retries never prepare a terminal manifest.
+          const channelFailureEvent =
+            capacityTerminalReason && capturedChannelTerminal.event.type === "turn.failed"
+              ? {
+                  ...capturedChannelTerminal.event,
+                  error: event.error,
+                  recoverable: event.recoverable,
+                  failureKind: event.failureKind,
+                }
+              : capturedChannelTerminal.event;
           await projectRuntimeEventToChannel(
-            capturedChannelTerminal.event,
+            channelFailureEvent,
             undefined,
             capturedChannelTerminal?.metadata,
             capturedChannelTerminal?.ownsProjection,
@@ -4775,8 +5225,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         recordTerminalTraceOnce({
           status: "failed",
           eventType: "turn.failed",
-          abortReason: null,
+          abortReason: capacityTerminalReason ?? null,
           error: event.error,
+          providerSessionIdAfter: session.providerSessionId ?? session.sdkSessionId ?? null,
           payloadJson: {
             recoverable: event.recoverable ?? true,
             suppressedRecoverable,
@@ -4792,7 +5243,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           recoverable: event.recoverable ?? true,
           suppressedRecoverable,
           error: publicRuntimeFailureDetail(operatorError),
-          abortReason: null,
+          abortReason: capacityTerminalReason ?? null,
         });
         clearTraceTurnState();
 
@@ -4845,7 +5296,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             }
           }
         }
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "blocked",
           summary: truncateLiveSummary(publicRuntimeFailureDetail(operatorError)) || "turn failed",
           agentId: agent.id,
@@ -4855,6 +5306,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           source: streaming.currentSource,
         });
 
+        if (finishPendingTerminalTransition("failed", pendingAbortBeforeCleanup)) {
+          signalTurnComplete();
+          break;
+        }
         signalTurnComplete();
       }
     }
@@ -4866,6 +5321,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     log.info("Streaming session ended", { runId, sessionName });
 
     try {
+      // An awaited terminal sink can fail before its normal cancellation tail.
+      // Preserve the pending queue without arming recovery on that exit too.
+      finishPendingTerminalAbort();
       const terminalRecordedBeforeFinalization = Boolean(
         streaming.currentCrashRecoveryTerminal || streaming.currentTraceTurnTerminalRecorded,
       );
@@ -4909,6 +5367,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.turnActive = false;
     streaming.compacting = false;
 
+    // Cascade authority revocation before terminal cleanup releases the lease.
+    if (!streaming.abortController.signal.aborted) {
+      streaming.abortController.abort();
+    }
+
     // Unblock generator if it is waiting (between turns or waiting for turn complete)
     if (streaming.pushMessage) {
       streaming.pushMessage(null);
@@ -4919,16 +5382,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.onTurnComplete = null;
     }
 
-    // Abort subprocess if still alive
-    if (!streaming.abortController.signal.aborted) {
-      streaming.abortController.abort();
-    }
     await closeRuntimeSession();
 
-    const stillOwnsRuntimeSlot = streamingSessions.get(sessionName) === streaming;
-    if (stillOwnsRuntimeSlot) {
-      streamingSessions.delete(sessionName);
-    }
     try {
       const finalCredential = streaming.currentRuntimeCredential;
       if (
@@ -4954,7 +5409,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         error,
       });
     }
-    if (stillOwnsRuntimeSlot) {
+    // Feedback can yield to a replacement. Decide ownership only after every
+    // cleanup await, immediately before releasing the slot and its queued work.
+    if (ownsRuntimeSlot()) {
+      streamingSessions.delete(sessionName);
       try {
         if (restartStashedReason && restartStashedSession) {
           await restartStashedSession({

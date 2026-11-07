@@ -31,6 +31,7 @@ import {
   getSlackThreadLifecycle,
   markSlackThreadRootDelivered,
 } from "./thread-lifecycle-store.js";
+import { decodeLiteralLineBreaks } from "./thread-text.js";
 
 let stateDir: string | null = null;
 
@@ -597,6 +598,42 @@ describe("Slack thread orchestration", () => {
     };
   }
 
+  it.each(["", " \t\n ", "\\n", "\\r\\n"])(
+    "rejects decoded-empty message %j as USAGE_ERROR without lifecycle effects",
+    async (input) => {
+      const fixture = seedPendingCreation();
+      const dependencies = { ...capture().dependencies, publishOutbound: mock(async () => {}) };
+      await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+      const parent = getSession("ravi-parent")!;
+      const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+      await closeSlackThread(child, undefined, dependencies);
+      const before = getSlackThreadLifecycle(fixture.requestId);
+      dependencies.publishPrompt.mockClear();
+      dependencies.publishEvent.mockClear();
+      dependencies.publishOutbound.mockClear();
+
+      const message = decodeLiteralLineBreaks(input);
+      await expect(reportSlackThreadProgress(child, message, dependencies)).rejects.toMatchObject({
+        name: "CliExpectedError",
+        code: "USAGE_ERROR",
+        exitCode: 2,
+        message: "Report message is required",
+      });
+      await expect(
+        sendSlackThreadMessage({ parentSession: parent, ref: fixture.requestId, message }, dependencies),
+      ).rejects.toMatchObject({
+        name: "CliExpectedError",
+        code: "USAGE_ERROR",
+        exitCode: 2,
+        message: "Thread message is required",
+      });
+      expect(getSlackThreadLifecycle(fixture.requestId)).toEqual(before);
+      expect(dependencies.publishPrompt).not.toHaveBeenCalled();
+      expect(dependencies.publishEvent).not.toHaveBeenCalled();
+      expect(dependencies.publishOutbound).not.toHaveBeenCalled();
+    },
+  );
+
   it("names the thread by title, session and link when it returns or reports to the parent", async () => {
     const fixture = seedPendingCreation({ teamId: "T0123" });
     const { prompts, dependencies } = capture();
@@ -616,6 +653,7 @@ describe("Slack thread orchestration", () => {
         "Progresso: Found the failing commit",
       ].join("\n"),
       source: { chatId: "C123", actorType: "system" },
+      deliveryBarrier: "after_response",
       _slackThreadLifecycle: { eventType: "thread.report", eventId: report.messageId },
       _turnOrigin: { producer: "channel", action: "session.return" },
     });

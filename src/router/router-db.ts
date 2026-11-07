@@ -1595,6 +1595,7 @@ function getDb(): Database {
       sdk_session_id TEXT,
       runtime_provider TEXT,
       runtime_provider_override TEXT,
+      runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0,
       runtime_session_json TEXT,
       history_reset_after_id INTEGER,
       runtime_session_display_id TEXT,
@@ -3094,6 +3095,14 @@ function getDb(): Database {
   if (!sessionColumns.some((c) => c.name === "runtime_provider_override")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_provider_override TEXT");
     log.info("Added runtime_provider_override column to sessions table");
+  }
+  if (
+    addSessionColumnIfMissing(
+      "runtime_provider_config_revision",
+      "ALTER TABLE sessions ADD COLUMN runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0",
+    )
+  ) {
+    log.info("Added runtime_provider_config_revision column to sessions table");
   }
   if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");
@@ -10479,6 +10488,27 @@ export function dbListContexts(options: ListContextsOptions = {}): ContextRecord
 export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void {
   const s = getStatements();
   s.touchContext.run(lastUsedAt, contextId);
+}
+
+/** Renew only a still-live host-owned turn lease; never revive a stale credential. */
+export function dbRenewActiveContext(
+  contextId: string,
+  expectedExpiresAt: number | null | undefined,
+  ttlMs: number,
+  now = Date.now(),
+): ContextRecord | null {
+  if (!expectedExpiresAt || expectedExpiresAt <= now) return null;
+  const result = getDb()
+    .prepare(`
+    UPDATE contexts SET expires_at = ?
+    WHERE context_id = ? AND kind = 'turn-runtime' AND expires_at = ? AND expires_at > ?
+      AND (revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)
+        AND json_extract(metadata_json, '$.authorityMode') = 'agent-identity'
+        AND json_extract(metadata_json, '$.parentContextId') IS NULL
+        AND json_extract(metadata_json, '$.bridgeTurnId') IS NULL
+  `)
+    .run(now + ttlMs, contextId, expectedExpiresAt, now, now);
+  return result.changes > 0 ? dbGetContext(contextId) : null;
 }
 
 export function dbUpdateContextRuntimeState(

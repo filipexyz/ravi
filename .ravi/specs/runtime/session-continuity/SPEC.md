@@ -97,6 +97,59 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - After daemon restart, resume MUST select the last-used `session.runtimeProvider` or the restart-snapshot provider when no launch, observation, or session `set-provider` override is present. Agent and global defaults MUST NOT steal that resume onto a different provider.
 - Ravi MUST clear stored provider session ids only for an explicit provider change (launch override, observation override, or session `set-provider`). A mismatch caused only by agent/global default MUST preserve compatible stored state.
 - Ravi MUST NOT persist last-used `runtimeProvider=<new>` until a successful authenticated turn.
+- A live provider writer MUST preserve a newer explicitly materialized provider
+  selection. Checking this and writing native continuity MUST be atomic; late
+  completion/telemetry from the old provider MUST NOT undo that selection.
+  Ordinary unchanged-provider completion and compatible state updates remain
+  resumable, and output/usage from the old turn are still recorded.
+- Explicit provider configuration MUST advance a persisted configuration
+  revision, including repeated `clear` with an already-null override. Administrative
+  rematerialization MUST also invalidate an older launch snapshot. Native state
+  writes MUST NOT advance that revision. A handle captures the revision before
+  launch; after it changes, continuity is accepted only for a provider compatible
+  with the current selection, including agent/global defaults.
+- Reusing a live handle for a successor turn MUST honor a newer provider
+  configuration, including `clear`. The dispatcher MUST compare the effective
+  provider with the handle's launch revision before admitting work. Compatible
+  handles keep the fast queue; unchanged launch overrides remain valid even
+  when last-used/default values differ. Configuration changes across awaited
+  routing work MUST be rechecked before reusing the handle.
+- Pending successor prompts accepted before a provider change MUST be retained
+  and dispatched through the current provider selection after the active turn,
+  rather than consumed by an incompatible old handle.
+- A saved provider transition MUST honor `after_response` and `after_task`
+  while the current turn is still generating. An accepted canonical completion
+  ends generation even if asynchronous accounting is still pending; it MUST
+  retain its completed classification and accounting during a later handoff.
+- Successor handoff MUST recheck saved provider selection after `turn.complete`,
+  non-recovered `turn.failed`, and `turn.interrupted`, before waking the old
+  generator. A terminal failure or interruption MUST retain its own outcome.
+  Existing recovery decisions take precedence: eligible interrupted input keeps
+  its replay envelope ahead of successors; failed/completed or cancelled input
+  MUST NOT be revived. Handoff MUST preserve each successor's delivery barrier,
+  including an active task's `after_task` gate, and MUST NOT terminalize a logical
+  channel binding merely because its physical runtime changes.
+  An approved replay-safe session/context recovery MUST defer logical channel
+  failure projection until recovery is exhausted or rejected. Its physical
+  failed attempt still retains trace and accounting; a recovered final response
+  keeps the existing channel binding and delivery policy.
+- An explicit abort waiting for tool-result delivery MUST also settle if a
+  canonical terminal arrives first. Preserve that terminal's accounting, close
+  the handle, and retain independent queued work dormant for later admission;
+  a concurrent provider change MUST NOT resume it automatically.
+  This cancellation MUST take precedence over suppressed-interrupt, credential,
+  and session/context recovery restarts, including after asynchronous feedback
+  or projection. Without an explicit abort, those recovery policies remain in
+  effect. Suppressing a restart MUST NOT reclassify the accepted terminal.
+  Once a canonical terminal is accepted, inactivity callbacks MUST NOT replace
+  a pending explicit abort with recovery while terminal emission is awaiting.
+  Physical completion or an aborted signal does not consume that cancellation
+  intent; only the current owner may settle it and preserve successors dormant.
+- Only the current live-slot owner may mutate shared successor stash, remove
+  the live handle, reset session continuity, or publish its current-state
+  snapshots. Ownership MUST be checked at the mutation after every intervening
+  await. An old turn still records its output, terminal, costs and additive
+  usage, but MUST NOT overwrite a replacement's native state or context snapshot.
 - Login / not-logged-in stubs (for example `Not logged in · Please run /login`) MUST be classified as `turn.failed` / auth error. They MUST NOT be saved as assistant transcript rows and MUST NOT be emitted to a bound chat.
 - Ravi MUST NOT clear compatible provider state solely because a terminal callback is missing. When an adapter can reconcile an ambiguous delivery, Ravi MUST preserve session continuity and the stable logical delivery id through recovery.
 - A provider that supports fork MUST define how parent provider state maps into the child or rebased session.

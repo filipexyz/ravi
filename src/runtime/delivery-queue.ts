@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { DEFAULT_DELIVERY_BARRIER, type DeliveryBarrier } from "../delivery-barriers.js";
 import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
@@ -12,6 +13,14 @@ import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchProm
 import { combineSessionSurfacePromptContents, resolveRuntimePromptText } from "./session-surface-hint.js";
 import type { RuntimePromptMessage } from "./types.js";
 import { isSameRuntimeTurnSurface, runtimeTurnSurfaceKey } from "./turn-surface.js";
+import {
+  isScheduledProviderCapacityRetry,
+  PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+  PROVIDER_CAPACITY_EXHAUSTED_REASON,
+  PROVIDER_CAPACITY_MAX_ELAPSED_MS,
+} from "./provider-capacity-retry.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
+import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 
 const log = logger.child("runtime:delivery-queue");
 
@@ -153,12 +162,13 @@ export function prepareRuntimeInterruptSuccessor(
   // Preserve FIFO across different actors and authority envelopes. A burst of
   // compatible channel messages at the front of the releasable lane can share
   // one physical provider turn, with the newest envelope owning that turn.
-  const firstEligible = eligible[0];
+  const prioritized = prioritizeHumanRuntimeMessages(eligible);
+  const firstEligible = prioritized[0];
   if (!firstEligible) return null;
   const compatibilityKey = channelSteeringCompatibilityKey(firstEligible);
   const cohort = [firstEligible];
   if (compatibilityKey) {
-    for (const candidate of eligible.slice(1)) {
+    for (const candidate of prioritized.slice(1)) {
       if (channelSteeringCompatibilityKey(candidate) !== compatibilityKey) break;
       cohort.push(candidate);
     }
@@ -364,7 +374,7 @@ export function getDeliverableRuntimeMessages(
   }
 
   const activeTaskByExemption = new Map<string, boolean>();
-  const deliverable = session.pendingMessages.filter((message) =>
+  const releasable = session.pendingMessages.filter((message) =>
     canReleaseRuntimeDeliveryBarrier(
       sessionName,
       session,
@@ -379,6 +389,9 @@ export function getDeliverableRuntimeMessages(
       })(),
     ),
   );
+  const deliverable = prioritizeHumanRuntimeMessages(releasable);
+  const reports = getCompatibleProgressReports(deliverable);
+  if (reports.length > 1) return reports;
   // These envelopes bind authority to one logical turn. Never let adjacent
   // messages borrow their channel binding or validated internal origin.
   const firstIsolatedTurnIndex = deliverable.findIndex(
@@ -396,16 +409,20 @@ export function getDeliverableRuntimeMessages(
   // An ambiguously stashed turn keeps its original delivery identity. Messages
   // that arrived later must wait for that turn to reconcile instead of being
   // folded into a different prompt and accidentally acknowledged with it.
-  const firstIsReplay = envelopeBounded[0]?.replay === true;
+  // Known capacity retries retain their input cohort for the same reason,
+  // while still receiving a fresh physical delivery id below.
+  const retainsAttemptInput = (message: RuntimeUserMessage) =>
+    message.replay === true || message.providerCapacityRetry !== undefined;
+  const firstIsReplay = envelopeBounded[0] !== undefined && retainsAttemptInput(envelopeBounded[0]);
   let replayBounded: RuntimeUserMessage[];
   if (!firstIsReplay) {
-    const firstReplayIndex = envelopeBounded.findIndex((message) => message.replay === true);
+    const firstReplayIndex = envelopeBounded.findIndex(retainsAttemptInput);
     replayBounded = firstReplayIndex < 0 ? envelopeBounded : envelopeBounded.slice(0, firstReplayIndex);
   } else {
     const firstReplayId = envelopeBounded[0]?.clientMessageId;
     const nextAttemptIndex = envelopeBounded.findIndex(
       (message) =>
-        message.replay !== true || (firstReplayId !== undefined && message.clientMessageId !== firstReplayId),
+        !retainsAttemptInput(message) || (firstReplayId !== undefined && message.clientMessageId !== firstReplayId),
     );
     replayBounded = nextAttemptIndex < 0 ? envelopeBounded : envelopeBounded.slice(0, nextAttemptIndex);
   }
@@ -427,6 +444,94 @@ export function getDeliverableRuntimeMessages(
     (message, index) => index > 0 && runtimeTurnActorKey(message.launchPrompt) !== firstActor,
   );
   return nextActorIndex < 0 ? surfaceBounded : surfaceBounded.slice(0, nextActorIndex);
+}
+
+/**
+ * Choose work before bounding its envelope. Only known background atoms may
+ * be bypassed: unknown senders retain FIFO, and replay/capacity cohorts retain
+ * their current logical turn. This never changes a message's authority or lane.
+ */
+function prioritizeHumanRuntimeMessages(messages: RuntimeUserMessage[]): RuntimeUserMessage[] {
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index]!;
+    if (message.replay || message.providerCapacityRetry !== undefined || message.yieldedRequest) break;
+    const provenance = classifyTurnProvenance({ prompt: message.launchPrompt });
+    if (provenance.origin === "human") {
+      // Leave the real pending queue intact: terminal accounting removes only
+      // the ids actually yielded, even when the selected atom was not first.
+      return index === 0 ? messages : messages.slice(index);
+    }
+    if (!provenance.background) break;
+  }
+  return messages;
+}
+
+const MAX_PROGRESS_BATCH_MESSAGES = 16;
+const MAX_PROGRESS_BATCH_BYTES = 32 * 1024;
+
+function progressReportEnvelope(message: RuntimeUserMessage): object | null {
+  const prompt = message.launchPrompt;
+  const lifecycle = prompt?._slackThreadLifecycle;
+  const origin = resolveRuntimeTurnOrigin(prompt?._turnOrigin);
+  const retainsAttemptInput = message.replay === true || message.providerCapacityRetry !== undefined;
+  if (
+    !prompt ||
+    lifecycle?.eventType !== "thread.report" ||
+    !lifecycle.requestId ||
+    !lifecycle.childSessionKey ||
+    !lifecycle.parentSessionKey ||
+    origin?.producer !== "channel" ||
+    origin.action !== "session.return" ||
+    (retainsAttemptInput ? !message.clientMessageId : Boolean(message.clientMessageId)) ||
+    message.yieldedRequest ||
+    message.taskBarrierTaskId ||
+    prompt._channelBackend ||
+    prompt._bridgeTurnId ||
+    prompt._decisionDeliveryId ||
+    prompt._taskAssignmentId ||
+    prompt._observation ||
+    prompt._cron ||
+    prompt._trigger ||
+    prompt._heartbeat ||
+    prompt._sessionFollowup ||
+    (message.commands?.length ?? 0) > 0 ||
+    (prompt.commands?.length ?? 0) > 0
+  )
+    return null;
+
+  // Ignore only presentation text and the unique report id. Everything else,
+  // including callerContextId, actor, target, approval route, model and thread,
+  // must be identical. Different delegations never borrow each other's grants.
+  const { prompt: _text, _runtimePrompt, _slackThreadLifecycle, ...envelope } = prompt;
+  const { eventId: _eventId, ...thread } = lifecycle;
+  return {
+    envelope,
+    thread,
+    barrier: message.deliveryBarrier,
+    taskBarrierTaskId: message.taskBarrierTaskId,
+    // Recovery and capacity retries retain exactly the already handed-off
+    // cohort, never a new report arriving under the same authority afterward.
+    attemptDeliveryId: retainsAttemptInput ? message.clientMessageId : null,
+    capacityRetry: message.providerCapacityRetry ?? null,
+  };
+}
+
+function getCompatibleProgressReports(messages: RuntimeUserMessage[]): RuntimeUserMessage[] {
+  const first = messages[0];
+  if (!first) return [];
+  const envelope = progressReportEnvelope(first);
+  if (!envelope) return [];
+  const batch = [first];
+  let bytes = Buffer.byteLength(first.message.content);
+  for (const message of messages.slice(1, MAX_PROGRESS_BATCH_MESSAGES)) {
+    const next = progressReportEnvelope(message);
+    bytes += Buffer.byteLength(message.message.content) + 2;
+    if (!next || bytes > MAX_PROGRESS_BATCH_BYTES || !isDeepStrictEqual(envelope, next)) break;
+    batch.push(message);
+  }
+  // Originals stay queued until the terminal acknowledgement. No latest-wins
+  // overwrite, semantic summary or event-id substitution can lose a blocker.
+  return batch;
 }
 
 /**
@@ -560,7 +665,19 @@ export interface RuntimeMessageGeneratorOptions {
   sessionName: string;
   session: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
+  capacityRetryRuntime?: {
+    now?: () => number;
+    wait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
+  };
+  onCapacityRetryExhausted?: (input: {
+    deliverableMessages: RuntimeUserMessage[];
+    reason: typeof PROVIDER_CAPACITY_EXHAUSTED_REASON;
+    error: string;
+  }) => void | Promise<void>;
+  onCapacityRetryCancelled?: (input: { deliverableMessages: RuntimeUserMessage[] }) => void | Promise<void>;
   beforeTurnStart?: (input: { deliverableMessages: RuntimeUserMessage[]; combinedPrompt: string }) => void;
+  /** Release the host-owned authority when the physical turn settles or cannot start. */
+  afterTurnEnd?: () => void;
   transformTurnPrompt?: (input: {
     sessionName: string;
     deliverableMessages: RuntimeUserMessage[];
@@ -574,6 +691,67 @@ export interface RuntimeMessageGeneratorOptions {
     | (RuntimeTraceTurnStartResult & { crashRecoveryAttemptId?: string })
     | null
     | undefined;
+}
+
+function restoredCapacityRetryCancelled(session: RuntimeHostStreamingSession): boolean {
+  return (
+    session.done ||
+    session.abortController.signal.aborted ||
+    session.pendingAbort ||
+    session.currentTurnSuperseded === true ||
+    Boolean(session.internalAbortReason)
+  );
+}
+
+/** Only a persisted, explicitly scheduled retry carries an absolute dispatch floor. */
+async function waitForRestoredCapacityRetry(
+  session: RuntimeHostStreamingSession,
+  messages: RuntimeUserMessage[],
+  runtime?: RuntimeMessageGeneratorOptions["capacityRetryRuntime"],
+): Promise<"ready" | "cancelled" | "exhausted"> {
+  const states = messages.map((message) => message.providerCapacityRetry);
+  if (!states.some((state) => state?.notBefore !== undefined)) return "ready";
+  if (!states.every(isScheduledProviderCapacityRetry)) return "exhausted";
+  const notBefore = Math.max(...states.map((state) => state.notBefore));
+  const deadline = Math.min(...states.map((state) => state.startedAt + PROVIDER_CAPACITY_MAX_ELAPSED_MS));
+  const now = runtime?.now ?? Date.now;
+  if (restoredCapacityRetryCancelled(session)) return "cancelled";
+  if (now() >= deadline || notBefore >= deadline) return "exhausted";
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  session.abortController.signal.addEventListener("abort", onAbort, { once: true });
+  const poll = setInterval(() => {
+    if (restoredCapacityRetryCancelled(session)) controller.abort();
+  }, 25);
+  try {
+    while (now() < notBefore) {
+      if (restoredCapacityRetryCancelled(session)) return "cancelled";
+      const delayMs = notBefore - now();
+      if (runtime?.wait) {
+        await runtime.wait(delayMs, controller.signal);
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          const onCancel = () => {
+            clearTimeout(timer);
+            reject(new Error("Restored capacity retry cancelled"));
+          };
+          const timer = setTimeout(() => {
+            controller.signal.removeEventListener("abort", onCancel);
+            resolve();
+          }, delayMs);
+          controller.signal.addEventListener("abort", onCancel, { once: true });
+        });
+      }
+    }
+    if (restoredCapacityRetryCancelled(session)) return "cancelled";
+    return now() >= deadline ? "exhausted" : "ready";
+  } catch (error) {
+    if (controller.signal.aborted) return "cancelled";
+    throw error;
+  } finally {
+    clearInterval(poll);
+    session.abortController.signal.removeEventListener("abort", onAbort);
+  }
 }
 
 function settlePromptTransform(
@@ -610,7 +788,11 @@ export async function* createRuntimeMessageGenerator({
   sessionName,
   session,
   stashedMessages,
+  capacityRetryRuntime,
+  onCapacityRetryExhausted,
+  onCapacityRetryCancelled,
   beforeTurnStart,
+  afterTurnEnd,
   transformTurnPrompt,
   traceTurnStart,
 }: RuntimeMessageGeneratorOptions): AsyncGenerator<RuntimePromptMessage> {
@@ -644,11 +826,89 @@ export async function* createRuntimeMessageGenerator({
     const yieldedIds = new Set(
       deliverable.map((message) => message.pendingId).filter((pendingId): pendingId is string => Boolean(pendingId)),
     );
+    const restoredRetry = deliverable.some((message) => message.providerCapacityRetry?.notBefore !== undefined);
+    if (restoredRetry) {
+      // A restored wait still belongs to a logical request. Expose its exact
+      // cohort so the dispatcher can supersede it, while keeping the old
+      // physical attempt consumed and detached until a fresh handoff begins.
+      session.currentCrashRecoveryTerminal = undefined;
+      session.currentCrashRecoveryAttemptId = undefined;
+      session.pendingCapacityRetry = undefined;
+      session.currentTraceTurnId = undefined;
+      session.currentTraceTurnStartedAt = undefined;
+      session.currentTraceUserPromptSha256 = undefined;
+      session.currentTraceSystemPromptSha256 = undefined;
+      session.currentTraceRequestBlobSha256 = undefined;
+      session.currentTraceTurnTerminalRecorded = false;
+      session.currentTraceStatusRecorded = undefined;
+      session.currentTurnPendingIds = [...yieldedIds];
+      session.currentTurnSuperseded = false;
+      session.currentTurnYieldContinuationId = undefined;
+      session.currentTurnToolStarted = false;
+      session.currentTurnInputMutated = false;
+      session.durableTurnPreparationFailed = false;
+      session.turnActive = true;
+      session.interrupted = false;
+      session.onTurnComplete = null;
+      session.lastActivity = Date.now();
+      const prompt = deliverable.at(-1)?.launchPrompt;
+      session.currentSource = prompt?.source ? { ...prompt.source } : undefined;
+      session.currentTurnAuthority = pickRuntimeTurnAuthorityEnvelope(prompt);
+      session.currentChannelBackend = prompt?._channelBackend;
+      if (session.idleSessionEvictionTimer) {
+        clearTimeout(session.idleSessionEvictionTimer);
+        session.idleSessionEvictionTimer = undefined;
+      }
+      if (session.idleGapRecoveryTimer) {
+        clearTimeout(session.idleGapRecoveryTimer);
+        session.idleGapRecoveryTimer = undefined;
+      }
+    }
+    const discardRetryCohort = () => {
+      session.pendingMessages = session.pendingMessages.filter((message) => !deliverable.includes(message));
+      session.pendingCapacityRetry = undefined;
+    };
+    const reportCapacityRetryExhausted = async () => {
+      discardRetryCohort();
+      if (!onCapacityRetryExhausted) throw new Error(PROVIDER_CAPACITY_EXHAUSTED_MESSAGE);
+      await onCapacityRetryExhausted({
+        deliverableMessages: deliverable.map((message) => ({ ...message })),
+        reason: PROVIDER_CAPACITY_EXHAUSTED_REASON,
+        error: PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+      });
+    };
+    const reportCapacityRetryCancelled = async () => {
+      discardRetryCohort();
+      await onCapacityRetryCancelled?.({
+        deliverableMessages: deliverable.map((message) => ({ ...message })),
+      });
+    };
+    const retryGate = restoredRetry
+      ? await waitForRestoredCapacityRetry(session, deliverable, capacityRetryRuntime)
+      : "ready";
+    if (retryGate === "exhausted") {
+      session.turnActive = false;
+      session.currentTurnPendingIds = undefined;
+      session.onTurnComplete = null;
+      await reportCapacityRetryExhausted();
+      continue;
+    }
+    if (retryGate === "cancelled") {
+      session.turnActive = false;
+      session.currentTurnPendingIds = undefined;
+      session.onTurnComplete = null;
+      await reportCapacityRetryCancelled();
+      if (!session.currentTurnSuperseded) return;
+      session.currentTurnSuperseded = false;
+      session.interrupted = false;
+      continue;
+    }
     // Retain the previous physical turn's terminal latch across its queue drain
     // and the following idle gap. A restart snapshot must keep treating that
     // delivery as consumed until this next handoff actually begins.
     session.currentCrashRecoveryTerminal = undefined;
-    const replay = deliverable.every((message) => message.replay === true && Boolean(message.clientMessageId));
+    const replay =
+      !restoredRetry && deliverable.every((message) => message.replay === true && Boolean(message.clientMessageId));
     const clientMessageId = replay
       ? (deliverable[0]?.clientMessageId ?? `ravi:${randomUUID()}`)
       : `ravi:${randomUUID()}`;
@@ -664,10 +924,21 @@ export async function* createRuntimeMessageGenerator({
       sessionName,
       count: deliverable.length,
       queued: session.pendingMessages.length,
+      bypassed: session.pendingMessages.indexOf(deliverable[0]!),
+      pendingIds: [...yieldedIds],
     });
 
+    let turnEnded = false;
+    const endTurn = () => {
+      if (turnEnded) return;
+      turnEnded = true;
+      afterTurnEnd?.();
+    };
     const turnCompleted = new Promise<void>((resolve) => {
-      session.onTurnComplete = resolve;
+      session.onTurnComplete = () => {
+        endTurn();
+        resolve();
+      };
     });
     session.turnActive = true;
     session.currentTurnToolStarted = false;
@@ -726,6 +997,7 @@ export async function* createRuntimeMessageGenerator({
         }
       }
     } catch (error) {
+      endTurn();
       settlePromptTransform(sessionName, promptTransform, "release", "turn preparation failed");
       session.durableTurnPreparationFailed = true;
       session.turnActive = false;
@@ -745,23 +1017,63 @@ export async function* createRuntimeMessageGenerator({
       throw error;
     }
 
-    settlePromptTransform(sessionName, promptTransform, "commit");
-    yield {
-      type: "user" as const,
-      message: { role: "user" as const, content: promptContent },
-      session_id: "",
-      parent_tool_use_id: null,
-      clientMessageId,
-      replay,
-      terminalReplayAllowed,
-      runtimeOptions: {
-        model: session.currentModel,
-        effort: session.currentEffort,
-        thinking: session.currentThinking,
-      },
-    };
-
-    await turnCompleted;
+    try {
+      // Preparing a turn can itself await I/O. It must not extend the budget or
+      // turn a cancellation during preparation into a provider delivery.
+      const liveCapacityRetryExpired = deliverable.some(
+        (message) =>
+          message.providerCapacityRetry !== undefined &&
+          (capacityRetryRuntime?.now?.() ?? Date.now()) - message.providerCapacityRetry.startedAt >=
+            PROVIDER_CAPACITY_MAX_ELAPSED_MS,
+      );
+      if (restoredRetry || liveCapacityRetryExpired) {
+        const finalGate = restoredRetry
+          ? await waitForRestoredCapacityRetry(session, deliverable, capacityRetryRuntime)
+          : "exhausted";
+        if (finalGate !== "ready") {
+          settlePromptTransform(sessionName, promptTransform, "release", `capacity retry ${finalGate}`);
+          if (finalGate === "cancelled") {
+            await reportCapacityRetryCancelled();
+            // The event-loop finalizer still owns any attempt prepared above.
+            // Do not replace its binding with a successor before terminalization.
+            return;
+          }
+          await reportCapacityRetryExhausted();
+          session.turnActive = false;
+          session.currentTurnPendingIds = undefined;
+          session.onTurnComplete = null;
+          session.currentTurnSuperseded = false;
+          continue;
+        }
+        for (const message of deliverable) {
+          if (message.providerCapacityRetry) {
+            const { startedAt, retries } = message.providerCapacityRetry;
+            message.providerCapacityRetry = { startedAt, retries };
+          }
+          message.replay = false;
+        }
+      }
+      session.pendingCapacityRetry = undefined;
+      session.capacityRetrySnapshotSaved = false;
+      settlePromptTransform(sessionName, promptTransform, "commit");
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: promptContent },
+        session_id: "",
+        parent_tool_use_id: null,
+        clientMessageId,
+        replay,
+        terminalReplayAllowed,
+        runtimeOptions: {
+          model: session.currentModel,
+          effort: session.currentEffort,
+          thinking: session.currentThinking,
+        },
+      };
+      await turnCompleted;
+    } finally {
+      endTurn();
+    }
 
     const pendingAfterTurn = getRuntimeMessagesAfterTurn(session, yieldedIds);
     if (session.interrupted && session.currentTurnSuperseded) {

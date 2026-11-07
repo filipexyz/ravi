@@ -46,6 +46,7 @@ interface SessionRow {
   sdk_session_id: string | null;
   runtime_provider: string | null;
   runtime_provider_override: string | null;
+  runtime_provider_config_revision: number;
   runtime_session_json: string | null;
   history_reset_after_id: number | null;
   runtime_session_display_id: string | null;
@@ -93,6 +94,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     name: row.name ?? undefined,
     runtimeProvider: row.runtime_provider ?? undefined,
     runtimeProviderOverride: row.runtime_provider_override ?? undefined,
+    runtimeProviderConfigRevision: row.runtime_provider_config_revision ?? 0,
     runtimeSessionParams,
     historyResetAfterId: row.history_reset_after_id ?? undefined,
     runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
@@ -150,6 +152,7 @@ interface SessionStatements {
   updateProviderState: Statement;
   updateRuntimeProviderOnly: Statement;
   updateRuntimeProviderOverride: Statement;
+  bumpRuntimeProviderConfigRevision: Statement;
   clearProviderState: Statement;
   updateTokens: Statement;
   updateName: Statement;
@@ -281,7 +284,10 @@ function getStatements(): SessionStatements {
       "UPDATE sessions SET runtime_provider = ?, updated_at = ? WHERE session_key = ?",
     ),
     updateRuntimeProviderOverride: db.prepare(
-      "UPDATE sessions SET runtime_provider_override = ?, updated_at = ? WHERE session_key = ?",
+      "UPDATE sessions SET runtime_provider_override = ?, runtime_provider_config_revision = runtime_provider_config_revision + 1, updated_at = ? WHERE session_key = ?",
+    ),
+    bumpRuntimeProviderConfigRevision: db.prepare(
+      "UPDATE sessions SET runtime_provider_config_revision = runtime_provider_config_revision + 1 WHERE session_key = ?",
     ),
     clearProviderState: db.prepare(
       "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ?",
@@ -291,7 +297,7 @@ function getStatements(): SessionStatements {
         input_tokens = input_tokens + ?,
         output_tokens = output_tokens + ?,
         total_tokens = total_tokens + ?,
-        context_tokens = ?,
+        context_tokens = COALESCE(?, context_tokens),
         updated_at = ?
       WHERE session_key = ?
     `),
@@ -517,6 +523,11 @@ export function updateSessionRuntimeProviderOverride(
   });
 }
 
+/** Invalidate prior launch snapshots when administrative selection is rematerialized. */
+export function bumpSessionRuntimeProviderConfigRevision(sessionKey: string): void {
+  getStatements().bumpRuntimeProviderConfigRevision.run(sessionKey);
+}
+
 export function updateProviderSessionId(
   sessionKey: string,
   providerSessionId: string,
@@ -536,11 +547,11 @@ export function clearProviderSession(sessionKey: string): void {
 }
 
 /**
- * Update token usage
+ * Update additive usage. A null context preserves the current owner's snapshot.
  */
-export function updateTokens(sessionKey: string, input: number, output: number, context?: number): void {
+export function updateTokens(sessionKey: string, input: number, output: number, context?: number | null): void {
   const s = getStatements();
-  s.updateTokens.run(input, output, input + output, context ?? 0, Date.now(), sessionKey);
+  s.updateTokens.run(input, output, input + output, context === null ? null : (context ?? 0), Date.now(), sessionKey);
 }
 
 function numberFromRow(value: unknown): number {

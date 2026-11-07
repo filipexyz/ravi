@@ -20,6 +20,10 @@ import { RuntimeSessionDispatcher } from "../runtime/session-dispatcher.js";
 import { createQueuedRuntimeUserMessage } from "../runtime/delivery-queue.js";
 import type { RuntimeCrashRecoveryCoordinator } from "../runtime/crash-recovery.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
+import {
+  PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+  PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+} from "../runtime/provider-capacity-retry.js";
 import type { RuntimeCapabilities, RuntimeEvent, RuntimeSessionHandle } from "../runtime/types.js";
 import {
   acceptChannelIngress,
@@ -60,6 +64,7 @@ import {
   prepareSlackAutomaticTerminalManifest,
   type SlackAutomaticTerminalManifestInput,
 } from "./slack/automatic-terminal-manifest.js";
+import { renderSlackBackendOutput } from "./slack/driver.js";
 
 let stateDir: string | null = null;
 let unregisterOutput: (() => void) | undefined;
@@ -435,6 +440,61 @@ describe("channel runtime event projection", () => {
     });
     expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 0, manifests: 0 });
   });
+
+  for (const refusal of ["before_running", "after_running"] as const) {
+    it(`fences terminal writes before commit and retains accepted failure after notification (${refusal})`, async () => {
+      const metadata = await acceptedMetadata();
+      const initial = dbGetChannelBackendRuntimeState(metadata.binding.turnId);
+      const events: KnownChannelRuntimeEvent[] = [];
+      const outputs: ChannelOutputEnvelope[] = [];
+      const sinks = new ChannelRuntimeEventSinkRegistry();
+      let mayRecord = refusal !== "before_running";
+      const guardedStates: Array<string | undefined> = [];
+      sinks.register(metadata.target, {
+        async emit(event) {
+          events.push(event);
+          if (event.kind === "turn.state_changed") {
+            expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("failed");
+            await Promise.resolve();
+            mayRecord = false;
+          }
+        },
+      });
+      unregisterOutput = channelOutputSinks.register(metadata.target, {
+        async emit(output) {
+          outputs.push(output);
+        },
+      });
+
+      const projected = await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.failed", error: "synthetic provider failure", recoverable: false },
+        sinks,
+        beforeRecordEvent: (state) => {
+          guardedStates.push(state);
+          return mayRecord;
+        },
+      });
+
+      expect(projected).toEqual(events);
+      if (refusal === "before_running") {
+        expect(guardedStates).toEqual(["running"]);
+        expect(outputs).toEqual([]);
+        expect(events).toEqual([]);
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toEqual(initial);
+      } else {
+        expect(guardedStates).toContain("running");
+        expect(guardedStates).toContain("failed");
+        expect(events.map((event) => event.kind)).toEqual(["turn.state_changed", "turn.terminal_output"]);
+        expect(outputs).toEqual([expect.objectContaining({ kind: "safe_error", binding: metadata.binding })]);
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+          state: "failed",
+          lastSequence: 2,
+        });
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.assistantMessageId).toBeUndefined();
+      }
+    });
+  }
 
   it("installs runtime, interrupt and terminal manifest tables in the central schema", () => {
     const tables = getDb()
@@ -1040,6 +1100,68 @@ describe("channel runtime event projection", () => {
       }),
     ]);
   });
+
+  it.each([
+    { name: "exhausted", message: PROVIDER_CAPACITY_EXHAUSTED_MESSAGE, retryable: true },
+    { name: "replay-unsafe", message: PROVIDER_CAPACITY_UNSAFE_MESSAGE, retryable: false },
+  ])(
+    "preserves $name capacity replay safety through the automatic terminal manifest",
+    async ({ message, retryable }) => {
+      const metadata = await acceptedMetadata();
+      const events: KnownChannelRuntimeEvent[] = [];
+      const outputs: ChannelOutputEnvelope[] = [];
+      let terminalManifest: ReturnType<typeof prepareSlackAutomaticTerminalManifest> | undefined;
+      let renderedText: string | undefined;
+      unregisterOutput = channelOutputSinks.register(metadata.target, {
+        async emit(output) {
+          expect(getSlackAutomaticTerminalManifest(terminalManifest!.responseId)).toEqual(terminalManifest!);
+          expect(
+            assertSlackAutomaticTerminalPart(terminalManifest!, {
+              type: "text",
+              text: renderSlackBackendOutput(output),
+            }),
+          ).toBe(`${terminalManifest!.responseId}:text`);
+          outputs.push(output);
+        },
+      });
+      await projectChannelRuntimeEvent({
+        metadata,
+        event: {
+          type: "turn.failed",
+          error: message,
+          recoverable: false,
+          rawEvent: { code: "serverOverloaded", diagnostics: "private provider payload" },
+        },
+        sinks: runtimeSinks(metadata, events),
+        prepareTerminalManifest: ({ state, output }) => {
+          expect(state).toBe("failed");
+          expect(output?.kind).toBe("safe_error");
+          renderedText = renderSlackBackendOutput(output!);
+          terminalManifest = prepareSlackAutomaticTerminalManifest({
+            ...terminalManifestInput(metadata, renderedText),
+            kind: "safe_error",
+          });
+          return terminalManifest;
+        },
+      });
+      expect(outputs).toHaveLength(1);
+      expect(outputs[0]).toMatchObject({
+        kind: "safe_error",
+        error: { code: "OVERLOADED", category: "capacity", retryable },
+      });
+      expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+        state: "failed",
+        terminalError: { code: "OVERLOADED", category: "capacity", retryable },
+      });
+      expect(terminalDatabaseCounts(metadata)).toEqual({ assistants: 0, manifests: 1 });
+      if (retryable) expect(renderedText).toContain("try again");
+      else {
+        expect(renderedText).toContain("completed work are preserved");
+        expect(renderedText).not.toContain("try again");
+      }
+      expect(JSON.stringify([outputs, events])).not.toContain("private provider payload");
+    },
+  );
 
   it("classifies runtime failure text into channel-safe codes", () => {
     expect(classifyChannelRuntimeFailure("402 Insufficient Balance", true)).toEqual({
