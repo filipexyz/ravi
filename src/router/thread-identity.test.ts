@@ -1,4 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { admitThreadAttention } from "../channels/slack/thread-attention-admission.js";
+import { reconcileSlackThreadLifecycle } from "../channels/slack/thread-lifecycle.js";
+import { createRuntimeContext } from "../runtime/context-registry.js";
+import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
+import { recordSessionEvent, upsertSessionTurn } from "../session-trace/session-trace-db.js";
 import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { deleteSession, getOrCreateSession, renameSessionName, resolveSession } from "./sessions.js";
@@ -33,6 +38,44 @@ function registerThread() {
 }
 
 describe("channel thread identity", () => {
+  it("never admits a frozen attention to a replacement using the original parent name", async () => {
+    getOrCreateSession(PARENT_KEY, "main", "/tmp", { name: "dev-channel" });
+    getOrCreateSession(CHILD_KEY, "main", "/tmp", { name: "dev-channel-thread" });
+    registerThread();
+    const startedAt = Date.now() - 20 * 60_000;
+    const turnId = "parent-replaced-turn";
+    const caller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "main",
+      sessionKey: CHILD_KEY,
+      capabilities: [],
+    });
+    upsertSessionTurn({ turnId, sessionKey: CHILD_KEY, startedAt, updatedAt: startedAt, status: "running" });
+    recordSessionEvent({
+      sessionKey: CHILD_KEY,
+      turnId,
+      eventType: "adapter.request",
+      eventGroup: "runtime",
+      timestamp: startedAt,
+      payloadJson: { context_id: caller.contextId },
+    });
+    let captured: RuntimeLaunchPrompt | undefined;
+    const result = await reconcileSlackThreadLifecycle({
+      publishEvent: async () => {},
+      publishPrompt: async (_name, payload) => {
+        captured = payload as unknown as RuntimeLaunchPrompt;
+      },
+    });
+    expect(result.failures).toBe(0);
+    expect(captured?._slackThreadLifecycle?.parentSessionKey).toBe(PARENT_KEY);
+    renameSessionName(PARENT_KEY, "renamed-parent");
+    getOrCreateSession("replacement-parent", "main", "/tmp", { name: "dev-channel" });
+    const handle = mock(async () => {});
+    await expect(admitThreadAttention("dev-channel", captured!, handle)).rejects.toThrow("target differs");
+    expect(handle).not.toHaveBeenCalled();
+    expect(resolveSession("dev-channel")?.sessionKey).toBe("replacement-parent");
+  });
+
   it("finds an open thread by its child session name or key", () => {
     const record = registerThread();
     expect(findOpenThreadIdentity("dev-channel-thread")).toMatchObject({

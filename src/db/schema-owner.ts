@@ -42,20 +42,20 @@ export function initializeStateSchema(
   initialize: () => void,
   boundary?: DatabaseBoundaryOptions,
 ): void {
-  if (initialized.get(db)?.has(component)) return;
   if (isSchemaConsumer(boundary)) {
     assertStateSchemaReady(db, component);
-  } else {
-    withSchemaMigrationLock(db, () => {
-      // Invalidate under the same lock as migration and readiness publication.
-      // No outer SQL transaction: migrations own their BEGIN/COMMIT and FK mode.
-      db.exec("CREATE TABLE IF NOT EXISTS state_schema_versions (component TEXT PRIMARY KEY, version TEXT NOT NULL)");
-      db.query("DELETE FROM state_schema_versions WHERE component = ?").run(component);
-      initialize();
-      db.query(`INSERT INTO state_schema_versions (component, version) VALUES (?, ?)
-        ON CONFLICT(component) DO UPDATE SET version = excluded.version`).run(component, STATE_SCHEMA_VERSION);
-    });
+    return;
   }
+  if (initialized.get(db)?.has(component)) return;
+  withSchemaMigrationLock(db, () => {
+    // Invalidate under the same lock as migration and readiness publication.
+    // No outer SQL transaction: migrations own their BEGIN/COMMIT and FK mode.
+    db.exec("CREATE TABLE IF NOT EXISTS state_schema_versions (component TEXT PRIMARY KEY, version TEXT NOT NULL)");
+    db.query("DELETE FROM state_schema_versions WHERE component = ?").run(component);
+    initialize();
+    db.query(`INSERT INTO state_schema_versions (component, version) VALUES (?, ?)
+      ON CONFLICT(component) DO UPDATE SET version = excluded.version`).run(component, STATE_SCHEMA_VERSION);
+  });
   const components = initialized.get(db) ?? new Set<string>();
   components.add(component);
   initialized.set(db, components);

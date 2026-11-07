@@ -1,4 +1,5 @@
 import type { ChannelConfig } from "../../router/router-db.js";
+import { runAsSchemaConsumer } from "../../db/state-boundary.js";
 import {
   ChannelBackendOpaqueIdSchema,
   ChannelBackendWireKindSchema,
@@ -53,7 +54,7 @@ export function createNativeChannelDriverHostLease(options: {
       if (request.channelInstanceId !== channelInstanceId || request.external.channelKind !== provider) {
         throw new Error("native_channel_driver_scope_mismatch");
       }
-      return acceptChannelIngress(request);
+      return runAsSchemaConsumer(() => acceptChannelIngress(request));
     },
     async interrupt(input) {
       ensureActive();
@@ -61,7 +62,7 @@ export function createNativeChannelDriverHostLease(options: {
       if (request.binding.channelInstanceId !== channelInstanceId) {
         throw new Error("native_channel_driver_scope_mismatch");
       }
-      return requestChannelRuntimeInterrupt(request);
+      return runAsSchemaConsumer(() => requestChannelRuntimeInterrupt(request));
     },
     async readback(input) {
       ensureActive();
@@ -69,21 +70,30 @@ export function createNativeChannelDriverHostLease(options: {
       if (request.binding.channelInstanceId !== channelInstanceId) {
         throw new Error("native_channel_driver_scope_mismatch");
       }
-      return readChannelRuntime(request);
+      return runAsSchemaConsumer(() => readChannelRuntime(request));
     },
     registerOutputSink(target, sink) {
       ensureActive();
       if (ChannelBackendWireKindSchema.parse(target.channelKind) !== provider) {
         throw new Error("native_channel_driver_scope_mismatch");
       }
-      return register(channelOutputSinks.register(target, sink));
+      return register(
+        channelOutputSinks.register(target, {
+          handoffCapability: sink.handoffCapability,
+          emit: (...args) => runAsSchemaConsumer(() => sink.emit(...args)),
+        }),
+      );
     },
     registerRuntimeEventSink(target, sink) {
       ensureActive();
       if (ChannelBackendWireKindSchema.parse(target.channelKind) !== provider) {
         throw new Error("native_channel_driver_scope_mismatch");
       }
-      return register(channelRuntimeEventSinks.register(target, sink));
+      return register(
+        channelRuntimeEventSinks.register(target, {
+          emit: (...args) => runAsSchemaConsumer(() => sink.emit(...args)),
+        }),
+      );
     },
   };
 

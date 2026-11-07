@@ -12,7 +12,7 @@ This guide covers building Ravi from source, running the checks CI runs, and sen
 
 - [Bun](https://bun.sh) (CI uses 1.3.11). Use Bun for every package operation: `bun install`, `bun add`, `bun remove`.
 - git.
-- To run the daemon from your checkout: PM2 and a NATS server with JetStream, as set up in [Install Ravi](https://docs.ravi.bot/start/install).
+- For isolated foreground development: a dedicated development machine/container and a separate NATS server with JetStream. Installed services use PM2, as described in [Install Ravi](https://docs.ravi.bot/start/install).
 - Optional: a Swift toolchain for `bun run test:swift-sdk`, which CI also runs.
 
 ## Set up
@@ -22,20 +22,19 @@ git clone https://github.com/filipexyz/ravi.git
 cd ravi
 bun install        # dependencies; the prepare script points git at .githooks/
 bun run build
-bun link           # puts this checkout's ravi in ~/.bun/bin
 ```
 
 `bin/ravi` runs `dist/bundle/index.js`. In a source checkout it first rebuilds the bundle (`build:cli` and `gen:plugins`) whenever anything in `src/` or `package.json` is newer, and it refuses to run if that build fails. `RAVI_ALLOW_STALE_BUNDLE=1` skips the check. Inside the repo, prefer `./bin/ravi`, so you know which code you are running (see "CLI Runtime Hierarchy" in AGENTS.md).
 
-Other ways to run code from the checkout:
+Source commands must select isolated state. On a dedicated development machine/container without live credentials, use a foreground daemon with its own state and broker:
 
 ```bash
-bun src/cli/index.ts agents list    # the CLI straight from source, no bundle
-./bin/ravi daemon start             # registers this checkout's bundle as the PM2 process "ravi"
-./bin/ravi daemon dev               # rebuilds on every src/ change; apply with ravi daemon restart -m "<reason>"
+RAVI_STATE_DIR="$(mktemp -d)" bun src/cli/index.ts agents list --help
+# Development broker on :4322 must use its own JetStream storage, not the live server.
+RAVI_STATE_DIR="$(mktemp -d)" NATS_URL="nats://127.0.0.1:4322" bun src/cli/index.ts daemon run
 ```
 
-To try source commands safely, set an isolated state directory: `RAVI_STATE_DIR="$(mktemp -d)" bun src/cli/index.ts <group> <command> --help`. Do not invoke the auto-building wrapper on a production host.
+Stop the foreground process with Ctrl-C. Do not use checkout `daemon start`, `daemon restart`, `daemon dev` or `channels restart` for this flow: lifecycle commands address shared PM2 process names and may replace installed services. An isolated `RAVI_STATE_DIR` does not isolate PM2, broker consumers or external credentials. Do not link the checkout over the installed `ravi` command or invoke the auto-building wrapper on a production host.
 
 ## Build
 
@@ -45,14 +44,9 @@ bun run build
 
 `build` runs `gen:commands` first (the `prebuild` script writes the barrel `src/cli/commands/index.ts`), then bundles the CLI into `dist/bundle/` (`build:cli`) and the TUI into `dist/tui/` (`build:tui`), then writes the packaged skills and plugins to `dist/bundle/internal-plugins.json` (`gen:plugins`). The barrel file is tracked in git: when adding a command file changes it, commit it. The automatic rebuild in `bin/ravi` skips `gen:commands`, so after adding a command file run `bun run gen:commands` or `bun run build`.
 
-The daemon (`ravi`) and the channel runner (`ravi-channels`) run the built bundle. After changing `src/`, rebuild and restart what you changed. A restart re-registers the process with the bundle of the CLI you invoke, so use `./bin/ravi` to run this checkout:
+For foreground development, rebuild as needed and relaunch only the isolated process described above. The channel runner requires schemas prepared by a daemon of the same release, with the same state and credentials database paths.
 
-```bash
-./bin/ravi daemon restart -m "<reason>"   # -m is required; -b builds first
-./bin/ravi channels restart -b            # Slack and other native channels; -b uses this repo's bundle
-```
-
-`channels restart` refuses a bundle that differs from the one the live daemon runs, so restart the daemon first.
+Installed PM2 services are a separate operational flow. Their lifecycle must use the installed CLI that matches the live daemon bundle, after checking its package and process identity. Never restart them through a source checkout: restart re-registers the invoked CLI bundle, so a checkout can replace the live service before its real-state guard refuses access. Changes in this repository do not authorize a deployment or restart.
 
 Configuration changed through the CLI (agents, instances, routes, triggers, cron) is picked up without a restart.
 
@@ -102,8 +96,10 @@ the remote tree and commit SHA against the local commit. Do not use `git push`
 with disabled hooks. Record the literal upload commands and checks left to CI
 in the PR description.
 
-Publish from the Ravi session and committed worktree through the installed
-daemon gateway:
+Publish from an authenticated Ravi session and committed worktree through the installed
+daemon gateway. This path uses the session identity already accepted by the gateway;
+a bare shell without that context cannot open the real publication journal or use
+this workflow. Do not point it at real state or add credentials to bypass that boundary:
 
 ```bash
 ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
@@ -112,12 +108,21 @@ ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --bod
 
 The command previews by default, preserves the exact local commit/tree and
 history, creates or reuses the ready PR and verifies the CI follow. It does not
-run local tests: record focused validation honestly before publishing. Repeat
+run local tests: record focused validation honestly before publishing. This command does
+not invoke git push/pre-push; disclose that and the checks left to CI. Repeat
 the command to reconcile a partial result. A thread publisher hands CI to its
 durable parent; never close the only recipient while its checks are pending.
 
 Independent review belongs in the PR description. Quality Gate is the required
 merge check; the retired Review Gate must not be reinstated by this workflow.
+
+**Breaking change:** bare operator publication and `--reply-session` are removed.
+Both preview and execute require an authenticated session through the
+gateway/agent. Remove the option from callers and publish in an authorized
+Ravi session. A terminal without one fails with `PERMISSION_DENIED` and
+`pr publish requires an authenticated session context; run through the gateway/agent.`
+There is no human-login-to-runtime-context exchange for the bare terminal today.
+Do not bootstrap an admin key, bypass the journal or infer authority from the host.
 
 ## Adding or changing a CLI command
 

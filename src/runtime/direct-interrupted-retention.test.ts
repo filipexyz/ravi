@@ -214,6 +214,7 @@ async function fixture(
     interruptCalls++;
   };
   const streaming: RuntimeHostStreamingSession = {
+    sessionKey,
     agentId,
     queryHandle: { provider, events: (async function* () {})(), interrupt },
     starting: false,

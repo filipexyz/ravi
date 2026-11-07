@@ -81,6 +81,30 @@ it("matching release serves normal queries while wrong release fails and failed 
   db.close();
 });
 
+it.each([false, true])("consumer rechecks readiness after a prior successful call (owner cache: %s)", (ownerCached) => {
+  const db = new Database(":memory:");
+  let migrations = 0;
+  const consume = () => initializeStateSchema(db, "chat", () => migrations++, channels);
+  try {
+    if (ownerCached) {
+      initializeStateSchema(db, "chat", () => {});
+    } else {
+      db.exec("CREATE TABLE state_schema_versions (component TEXT PRIMARY KEY, version TEXT NOT NULL)");
+      db.query("INSERT INTO state_schema_versions VALUES (?, ?)").run("chat", STATE_SCHEMA_VERSION);
+    }
+    expect(consume).not.toThrow();
+    db.query("UPDATE state_schema_versions SET version = 'old' WHERE component = 'chat'").run();
+    expect(consume).toThrow("STATE_SCHEMA_NOT_READY");
+    db.query("UPDATE state_schema_versions SET version = ? WHERE component = 'chat'").run(STATE_SCHEMA_VERSION);
+    expect(consume).not.toThrow();
+    db.query("DELETE FROM state_schema_versions WHERE component = 'chat'").run();
+    expect(consume).toThrow("STATE_SCHEMA_NOT_READY");
+    expect(migrations).toBe(0);
+  } finally {
+    db.close();
+  }
+});
+
 it("interleaved initializers publish the same ready marker without a uniqueness failure", () => {
   const state = fixture();
   const path = join(state, "interleaved.db");
@@ -114,7 +138,7 @@ it("channels startup refuses missing state before connecting to NATS and creates
   expect(readdirSync(state).filter((name) => name.endsWith(".db"))).toEqual([]);
 });
 
-it.each(["channel-outbound-publish", "slack-automatic-output"])(
+it.each(["channel-outbound-publish", "slack-automatic-output", "cloud-chat"])(
   "channels startup refuses missing %s readiness even when router schema is ready",
   (component) => {
     const state = fixture();
@@ -178,6 +202,12 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
     getDb().query('SELECT trace_turn_id FROM channel_backend_runtime_state LIMIT 0').all();
     getDb().query('SELECT request_id FROM slack_thread_turn_health LIMIT 0').all();
     getDb().query('SELECT response_id FROM slack_automatic_terminal_manifests LIMIT 0').all();
+    getDb().query('SELECT event_id, admission_status FROM slack_thread_attention_notices LIMIT 0').all();
+    getDb().query('SELECT attempt_id, last_signal_at FROM runtime_turn_progress LIMIT 0').all();
+    const { getRuntimeTurnProgress } = await import('./src/runtime/turn-progress.ts');
+    if (getRuntimeTurnProgress({ attemptId: 'absent', turnId: 'absent', sessionKey: 'absent', bootEpoch: 'absent' }) !== null) {
+      throw new Error('NORMAL_PROGRESS_READ_FAILED');
+    }
     const { reserveSlackAutomaticOutput } = await import('./src/channels/slack/automatic-output-circuit.ts');
     const reservation = reserveSlackAutomaticOutput({
       idempotencyKey: 'schema-owner-output', requestFingerprint: 'schema-owner-fingerprint',
@@ -188,6 +218,12 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
     if (sqliteChannelOutboundPublishOutboxStore.summary(1).pendingCount !== 0) throw new Error('NORMAL_OUTBOX_QUERY_FAILED');
     if (getChannelOutboundPublishJob('absent') !== null) throw new Error('NORMAL_OUTBOX_READ_FAILED');
     if (prunePublishedChannelOutboundPublishJobs(1, 1) !== 0) throw new Error('NORMAL_OUTBOX_PRUNE_FAILED');
+    const { interceptCloudChatMessage } = await import('./src/cloud-agents/chat-routing.ts');
+    const handled = await interceptCloudChatMessage({
+      channel: 'slack', accountId: 'fixture', instanceId: 'fixture', chatId: 'C_SCHEMA',
+      threadTs: '1.1', isGroup: true, contactId: 'fixture-contact', text: 'hello',
+    }, async () => { throw new Error('UNEXPECTED_CLOUD_REPLY'); });
+    if (handled) throw new Error('UNEXPECTED_CLOUD_BINDING');
   `,
   );
   expect(consumer.status, consumer.stderr).toBe(0);

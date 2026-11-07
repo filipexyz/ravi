@@ -78,6 +78,8 @@ Every attempt MUST carry a durable request blob reference or provider checkpoint
 
 The runtime host MUST create its boot epoch before accepting subscriptions. It MUST heartbeat the boot independently of provider events and renew the boot before its active attempts. Loss or expiry of a boot/attempt fence MUST stop new provider deliveries and abort every active owned attempt in memory. Every lease-authorized persistent mutation MUST re-read the current clock after the write and validate the lease that authorized the write; a renewal MUST NOT validate a stalled write against the newly extended lease.
 
+Observation of provider progress MUST remain separate from ownership heartbeat. A sampled progress watermark MAY live in `runtime_turn_progress`, bound to exact attempt/turn/session/boot identity. It MUST reject stale, replaced, terminal, recovery-claimed or expired owners atomically, including lease expiry during the write. Provider events alone advance the watermark; heartbeat renewal MUST NOT. This observation grants no replay, termination or ownership authority. Independent reconcilers MUST read the same fenced watermark instead of relying on the owner's process memory.
+
 For each provider delivery, the host MUST persist the sanitized adapter request and create the attempt after resolving source/provenance but before the common prompt generator yields to any provider. Failure of either write MUST prevent delivery and retain the pending prompt. Provider adapters MUST remain unaware of the ledger.
 
 Safety evidence is write-ahead and monotonic:

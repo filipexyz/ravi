@@ -29,6 +29,7 @@ import {
   getSessionByName,
   setSessionEphemeral,
   updateSessionRuntimeProviderOverride,
+  updateSessionName,
   updateRuntimeProviderState,
 } from "../router/sessions.js";
 import {
@@ -204,6 +205,274 @@ function createDispatcher(
 }
 
 describe("RuntimeSessionDispatcher debounce", () => {
+  const attention = (): RuntimeLaunchPrompt => ({
+    prompt: "Observed turn needs attention",
+    _agentId: "main",
+    _slackThreadLifecycle: {
+      eventType: "thread.attention",
+      eventId: "slack-thread-attention:fixture:turn",
+      requestId: "fixture",
+      parentSessionKey: "attention-parent",
+      childSessionKey: "attention-child",
+      turnId: "turn",
+    },
+    _turnOrigin: buildChannelTurnOrigin("session.return", { type: "agent", id: "main" }, "ctx_observed_turn"),
+  });
+
+  function attentionRuntime(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
+    return {
+      sessionKey: "attention-parent",
+      agentId: "main",
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+      abortController: new AbortController(),
+      pendingMessages: [],
+      currentModel: "test-model",
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      compacting: false,
+      interrupted: false,
+      turnActive: true,
+      pushMessage: null,
+      pendingWake: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      toolEffectFence: "provider_event_only",
+      ...overrides,
+    };
+  }
+
+  it.each([{ sessionKey: "old-parent" }, { agentId: "old-agent" }, { sessionKey: "old-parent", starting: true }])(
+    "fences attention from a live runtime with a different launch identity: %j",
+    async (identity) => {
+      const stateDir = await createIsolatedRaviState("ravi-attention-live-identity-");
+      try {
+        getOrCreateSession("old-parent", "main", stateDir, { name: "attention-parent" });
+        updateSessionName("old-parent", "renamed-parent");
+        getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+        configStore.refresh();
+        const dispatcher = createDispatcher();
+        const live = attentionRuntime(identity);
+        dispatcher.streamingSessions.set("attention-parent", live);
+        const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+        try {
+          await expect(
+            dispatcher.handlePromptImmediate("attention-parent", { ...attention(), deliveryBarrier: "after_response" }),
+          ).rejects.toThrow("Thread attention session changed");
+          expect(live.pendingMessages).toHaveLength(0);
+          expect(plan).not.toHaveBeenCalled();
+        } finally {
+          plan.mockRestore();
+        }
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it("fences attention when a differently bound runtime appears during preflight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-live-preflight-");
+    try {
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+        await hold;
+        return undefined;
+      });
+      const dispatcher = createDispatcher();
+      const start = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      const live = attentionRuntime({ sessionKey: "old-parent" });
+      try {
+        const pending = dispatcher.handlePromptImmediate("attention-parent", attention());
+        expect(plan).toHaveBeenCalledTimes(1);
+        dispatcher.streamingSessions.set("attention-parent", live);
+        release();
+        await expect(pending).rejects.toThrow("Thread attention session changed");
+        expect(live.pendingMessages).toHaveLength(0);
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        plan.mockRestore();
+        start.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("rejects attention if its executor disappears during preflight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-executor-preflight-");
+    try {
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+        await hold;
+        return undefined;
+      });
+      const dispatcher = createDispatcher();
+      const start = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      const config = configStore.getConfig();
+      const getConfig = spyOn(configStore, "getConfig").mockReturnValue(config);
+      try {
+        const pending = dispatcher.handlePromptImmediate("attention-parent", attention());
+        expect(plan).toHaveBeenCalledTimes(1);
+        getConfig.mockReturnValue({ ...config, agents: {} });
+        release();
+        await expect(pending).rejects.toThrow("Thread attention agent is unavailable");
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        plan.mockRestore();
+        start.mockRestore();
+        getConfig.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it.each(["pendingStartSessions", "startingSessions"] as const)(
+    "refuses attention while %s has no verifiable live identity",
+    async (reservation) => {
+      const stateDir = await createIsolatedRaviState("ravi-attention-start-identity-");
+      try {
+        getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+        configStore.refresh();
+        const dispatcher = createDispatcher();
+        dispatcher[reservation].add("attention-parent");
+        await expect(dispatcher.handlePromptImmediate("attention-parent", attention())).rejects.toThrow(
+          "Thread attention runtime identity is unavailable",
+        );
+        expect(dispatcher.stashedMessages.size).toBe(0);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it("queues attention on the exact parent runtime without broker preflight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-live-control-");
+    try {
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      const dispatcher = createDispatcher();
+      const live = attentionRuntime();
+      dispatcher.streamingSessions.set("attention-parent", live);
+      const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+      try {
+        await dispatcher.handlePromptImmediate("attention-parent", {
+          ...attention(),
+          deliveryBarrier: "after_response",
+        });
+        expect(live.pendingMessages).toHaveLength(1);
+        expect(live.pendingMessages[0]?.launchPrompt?._slackThreadLifecycle).toEqual(attention()._slackThreadLifecycle);
+        expect(plan).not.toHaveBeenCalled();
+      } finally {
+        plan.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("fences attention when the parent name is replaced during asynchronous preflight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-preflight-");
+    try {
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+        await hold;
+        return undefined;
+      });
+      const dispatcher = createDispatcher();
+      const start = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      try {
+        const pending = dispatcher.handlePromptImmediate("attention-parent", attention());
+        expect(plan).toHaveBeenCalledTimes(1);
+        updateSessionName("attention-parent", "renamed-parent");
+        getOrCreateSession("replacement-parent", "main", stateDir, { name: "attention-parent" });
+        release();
+        await expect(pending).rejects.toThrow("Thread attention session changed");
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        plan.mockRestore();
+        start.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not acknowledge thread attention in a live parent's volatile debounce buffer", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-debounce-");
+    try {
+      dbUpdateAgent("main", { debounceMs: 60000 });
+      configStore.refresh();
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      const dispatcher = createDispatcher();
+      dispatcher.streamingSessions.set("attention-parent", {} as RuntimeHostStreamingSession);
+      const immediate = spyOn(dispatcher, "handlePromptImmediate").mockResolvedValue();
+      const buffered = spyOn(dispatcher, "handlePromptWithDebounce").mockImplementation(() => {});
+      try {
+        const prompt = attention();
+        await dispatcher.handlePrompt("attention-parent", prompt);
+        expect(immediate).toHaveBeenCalledWith("attention-parent", prompt);
+        expect(buffered).not.toHaveBeenCalled();
+      } finally {
+        immediate.mockRestore();
+        buffered.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("rejects thread attention when its executor is missing without default-agent fallback", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-intake-");
+    try {
+      getOrCreateSession("attention-parent", "gone-agent", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      const dispatcher = createDispatcher();
+      const immediate = spyOn(dispatcher, "handlePromptImmediate").mockResolvedValue();
+      try {
+        await expect(
+          dispatcher.handlePrompt("attention-parent", { ...attention(), _agentId: "gone-agent" }),
+        ).rejects.toThrow("Thread attention agent is unavailable");
+        expect(immediate).not.toHaveBeenCalled();
+      } finally {
+        immediate.mockRestore();
+      }
+      const start = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      try {
+        await expect(
+          dispatcher.handlePromptImmediate("attention-parent", { ...attention(), _agentId: "gone-agent" }),
+        ).rejects.toThrow("Thread attention agent is unavailable");
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        start.mockRestore();
+      }
+      expect(dispatcher.streamingSessions.size).toBe(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("does not acknowledge a decision while it is only in a volatile debounce buffer", async () => {
     const stateDir = await createIsolatedRaviState("ravi-decision-debounce-");
     try {
@@ -1227,6 +1496,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
 describe("RuntimeSessionDispatcher abort resolution", () => {
   function createActiveSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
     return {
+      sessionKey: "fixture-active-session",
       agentId: "dev",
       queryHandle: {
         provider: "codex",
@@ -5277,6 +5547,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 describe("RuntimeSessionDispatcher task-bound live sessions", () => {
   function createTaskBoundSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
     return {
+      sessionKey: "fixture-task-bound-session",
       agentId: "main",
       queryHandle: {
         provider: "codex",

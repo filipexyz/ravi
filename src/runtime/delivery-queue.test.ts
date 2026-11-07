@@ -31,6 +31,7 @@ function makeRuntimeSession(): RuntimeSessionHandle {
 
 function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
   return {
+    sessionKey: "agent:main:delivery-queue-fixture",
     agentId: "main",
     queryHandle: makeRuntimeSession(),
     starting: false,

@@ -333,6 +333,25 @@ export interface PromptMessage {
 
 export type RuntimeLaunchPrompt = PromptMessage;
 
+/** Trusted internal occurrence metadata; the consumer still validates its durable receipt. */
+export function isThreadAttentionPrompt(prompt: RuntimeLaunchPrompt): boolean {
+  const meta = prompt._slackThreadLifecycle;
+  return meta?.eventType === "thread.attention" || meta?.eventId?.startsWith("slack-thread-attention:") === true;
+}
+
+export function assertThreadAttentionSession(
+  prompt: RuntimeLaunchPrompt,
+  session: { sessionKey: string; agentId: string } | null | undefined,
+): void {
+  if (
+    isThreadAttentionPrompt(prompt) &&
+    (!session ||
+      session.sessionKey !== prompt._slackThreadLifecycle?.parentSessionKey ||
+      session.agentId !== prompt._agentId)
+  )
+    throw new Error("Thread attention session changed before runtime admission");
+}
+
 export type ResponseMediaType = "image" | "video" | "audio" | "document";
 
 export interface ResponseMediaAttachment {

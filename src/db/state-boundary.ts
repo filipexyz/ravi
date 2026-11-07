@@ -1,4 +1,5 @@
 import { Database, type DatabaseOptions } from "bun:sqlite";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -138,10 +139,17 @@ function runtimeRole(options: DatabaseBoundaryOptions): RuntimeRole | null {
   return match ? role : null;
 }
 
+const schemaConsumerScope = new AsyncLocalStorage<true>();
+
+/** Restricts this execution and its async work; it never grants real-state access. */
+export function runAsSchemaConsumer<T>(callback: () => T): T {
+  return schemaConsumerScope.run(true, callback);
+}
+
 /** The runner never initializes schemas, including when exercised in isolated state. */
 export function isSchemaConsumer(options: DatabaseBoundaryOptions = {}): boolean {
   const argv = options.argv ?? process.argv;
-  return argv[2] === "channels" && argv[3] === "run";
+  return schemaConsumerScope.getStore() === true || (argv[2] === "channels" && argv[3] === "run");
 }
 
 /** Must run before mkdir, legacy file moves, opening SQLite, or cached reuse. */

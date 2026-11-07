@@ -8,6 +8,7 @@ import {
   linkSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -227,6 +228,102 @@ it("restores the harness state and blocks cleanup -> getSessionByName before any
   expect(result.stderr).not.toContain("UNSAFE_OPEN");
   expect(result.status, result.stderr).toBe(0);
   expect(existsSync(join(options.homeDir, ".ravi"))).toBe(false);
+});
+
+it.each(["changed", "removed"])("cached router statements revalidate state when its selection is %s", (selection) => {
+  const options = fixture();
+  const state = join(options.homeDir, "isolated-a");
+  const other = join(options.homeDir, "isolated-b");
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--eval",
+      `
+    import { mock } from 'bun:test';
+    import * as os from 'node:os';
+    const home = ${JSON.stringify(options.homeDir)};
+    mock.module('node:os', () => ({ ...os, homedir: () => home, default: { ...os, homedir: () => home } }));
+    const { dbGetSetting, dbSetSetting, closeRouterDb } = await import('./src/router/router-db.ts');
+    dbSetSetting('boundary-cache', 'first');
+    if (dbGetSetting('boundary-cache') !== 'first') throw new Error('CACHE_NOT_PRIMED');
+    if (${JSON.stringify(selection)} === 'changed') {
+      process.env.RAVI_STATE_DIR = ${JSON.stringify(other)};
+      if (dbGetSetting('boundary-cache') !== null) throw new Error('STALE_STATEMENT_READ');
+      dbSetSetting('boundary-cache', 'second');
+      process.env.RAVI_STATE_DIR = ${JSON.stringify(state)};
+      if (dbGetSetting('boundary-cache') !== 'first') throw new Error('STALE_STATEMENT_WRITE');
+      process.env.RAVI_STATE_DIR = ${JSON.stringify(other)};
+      if (dbGetSetting('boundary-cache') !== 'second') throw new Error('SECOND_STATE_NOT_USED');
+    } else {
+      delete process.env.RAVI_STATE_DIR;
+      for (const access of [() => dbGetSetting('boundary-cache'), () => dbSetSetting('boundary-cache', 'unsafe')]) {
+        try { access(); throw new Error('UNSAFE_CACHED_ACCESS'); }
+        catch (error) { if (error.code !== 'REAL_STATE_ACCESS_REFUSED') throw error; }
+      }
+    }
+    closeRouterDb();
+  `,
+    ],
+    {
+      cwd: resolve(import.meta.dir, "../.."),
+      env: { ...process.env, RAVI_STATE_DIR: state },
+      encoding: "utf8",
+      timeout: 15000,
+    },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  expect(existsSync(join(options.homeDir, ".ravi"))).toBe(false);
+});
+
+it.each(["", "-wal", "-shm"])("legacy migration rejects a hardlinked %s source before moving any file", (suffix) => {
+  const options = fixture();
+  const legacy = join(options.homeDir, "ravi", "ravi.db");
+  const target = join(options.homeDir, ".ravi", "ravi.db");
+  mkdirSync(join(options.homeDir, "ravi"));
+  const seed = new Database(legacy);
+  seed.exec("CREATE TABLE migration_sentinel (id TEXT); INSERT INTO migration_sentinel VALUES ('kept')");
+  seed.close();
+  writeFileSync(`${legacy}-wal`, "wal-sentinel");
+  writeFileSync(`${legacy}-shm`, "shm-sentinel");
+  linkSync(`${legacy}${suffix}`, join(options.homeDir, "second-link"));
+  const before = ["", "-wal", "-shm"].map((part) => readFileSync(`${legacy}${part}`));
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--eval",
+      `
+    import { mock } from 'bun:test';
+    import * as os from 'node:os';
+    const home = ${JSON.stringify(options.homeDir)};
+    mock.module('node:os', () => ({ ...os, homedir: () => home, default: { ...os, homedir: () => home } }));
+    const boundary = { ...await import('./src/db/state-boundary.ts') };
+    const identity = {
+      homeDir: home, modulePath: ${JSON.stringify(options.modulePath)}, argv: ${JSON.stringify(options.argv)},
+      env: {}, pid: 1234,
+      registeredProcesses: () => [{ pid: 1234, name: 'ravi', pm2_env: {
+        pm_exec_path: ${JSON.stringify(options.argv[1])}, args: ['daemon', 'run'],
+      } }],
+    };
+    // Inject only installed-runtime identity; every actual path goes through the real guard.
+    mock.module('./src/db/state-boundary.ts', () => ({ ...boundary,
+      assertDatabaseTargetAllowed: (path) => boundary.assertDatabaseTargetAllowed(path, identity),
+      openStateDatabase: (path, options) => boundary.openStateDatabase(path, options, identity),
+    }));
+    delete process.env.RAVI_STATE_DIR;
+    const { getDb, closeRouterDb } = await import('./src/router/router-db.ts');
+    try { getDb(); throw new Error('UNSAFE_MIGRATION'); }
+    catch (error) { if (error.code !== 'REAL_STATE_ACCESS_REFUSED' || !error.message.includes('hardlinked')) throw error; }
+    finally { closeRouterDb(); }
+  `,
+    ],
+    { cwd: resolve(import.meta.dir, "../.."), env: process.env, encoding: "utf8", timeout: 15000 },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  for (const [index, part] of ["", "-wal", "-shm"].entries()) {
+    expect(existsSync(`${legacy}${part}`)).toBe(true);
+    expect(readFileSync(`${legacy}${part}`)).toEqual(before[index]);
+    expect(existsSync(`${target}${part}`)).toBe(false);
+  }
 });
 
 it("admits a registered installed channels runner only as an existing-state consumer", () => {
