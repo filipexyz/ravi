@@ -1423,6 +1423,7 @@ async function withGeneratedClaudeTurn(
   ): RuntimeHostStreamingSession => {
     let pushMessage: RuntimeHostStreamingSession["pushMessage"] = null;
     return {
+      sessionKey: child.sessionKey,
       agentId: AGENT_ID,
       queryHandle: { provider, events: (async function* () {})(), interrupt: mock(async () => {}) },
       runtimeProviderConfigRevision: revision,
@@ -2106,6 +2107,7 @@ async function withActiveClaudeTurn(
     : undefined;
   if (currentPending) currentPending.clientMessageId = "active-claude-input";
   const streaming: RuntimeHostStreamingSession = {
+    sessionKey: child.sessionKey,
     agentId: AGENT_ID,
     queryHandle: runtimeSession,
     runtimeProviderConfigRevision: child.runtimeProviderConfigRevision ?? 0,

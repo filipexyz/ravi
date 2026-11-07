@@ -132,6 +132,7 @@ async function fixture(options: { rejectReset?: boolean; initiallyRunning?: bool
     deliveryBarrier: "after_response",
   });
   const streaming: RuntimeHostStreamingSession = {
+    sessionKey: session.sessionKey,
     agentId: agent.id,
     queryHandle: runtime,
     starting: false,
@@ -349,6 +350,7 @@ function successorSession(
   pendingMessages: RuntimeUserMessage[],
 ): RuntimeHostStreamingSession {
   return {
+    sessionKey: resolveSession(metadata.binding.sessionId)!.sessionKey,
     agentId: metadata.binding.agentId,
     queryHandle: { provider: "codex", events: (async function* () {})(), async interrupt() {} },
     starting: false,

@@ -110,6 +110,7 @@ import {
   resolveRuntimeTurnInactivityMs,
 } from "./session-pool.js";
 import { markRuntimeLiveIdle, noteRuntimeTurnSignal, updateRuntimeLiveState } from "./live-state.js";
+import { createRuntimeTurnProgressRecorder } from "./turn-progress.js";
 import {
   formatUserFacingTurnFailure,
   isOpenToolsTurnFailure,
@@ -1076,6 +1077,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     onToolBarrierReleased,
   } = options;
   const ownsRuntimeSlot = () => streamingSessions.get(sessionName) === streaming;
+  const recordTurnProgress = createRuntimeTurnProgressRecorder();
+  let progressWarningAt = 0;
   const updateOwnedLiveState = (input: Parameters<typeof updateRuntimeLiveState>[1]) => {
     if (ownsRuntimeSlot()) updateRuntimeLiveState(sessionName, input);
   };
@@ -3306,7 +3309,27 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
-      if (ownsRuntimeSlot()) noteRuntimeTurnSignal(sessionName, streaming.currentTraceTurnId, streaming.lastActivity);
+      if (ownsRuntimeSlot()) {
+        noteRuntimeTurnSignal(sessionName, streaming.currentTraceTurnId, streaming.lastActivity);
+        const attemptId = streaming.currentCrashRecoveryAttemptId;
+        const turnId = streaming.currentTraceTurnId;
+        const bootEpoch = crashRecovery?.bootEpoch;
+        if (attemptId && turnId && bootEpoch) {
+          try {
+            recordTurnProgress(
+              { attemptId, turnId, bootEpoch, sessionKey: session.sessionKey },
+              streaming.lastActivity,
+            );
+          } catch (error) {
+            // Observation must not terminate provider work. Keep failures visible
+            // without logging every streamed token during a storage incident.
+            if (streaming.lastActivity - progressWarningAt >= 60_000) {
+              progressWarningAt = streaming.lastActivity;
+              log.warn("Failed to persist runtime turn progress", { sessionName, turnId, attemptId, error });
+            }
+          }
+        }
+      }
       // Update compaction before asynchronous projection so the after-tool
       // watch cannot expire while handling the compaction-start event itself.
       const wasCompacting = streaming.compacting;
@@ -3320,7 +3343,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       // Liveness-only signal: it has already reset the watchdogs above and
-      // carries nothing to project, persist, or deliver.
+      // carries nothing else to project or deliver after the bounded watermark.
       if (event.type === "provider.activity") {
         continue;
       }

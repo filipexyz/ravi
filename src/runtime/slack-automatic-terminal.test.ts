@@ -184,6 +184,7 @@ async function fixture(
     }),
   );
   const streaming: RuntimeHostStreamingSession = {
+    sessionKey: session.sessionKey,
     agentId: "agent-a",
     queryHandle: { provider: "test-provider", events: (async function* () {})(), async interrupt() {} },
     starting: false,

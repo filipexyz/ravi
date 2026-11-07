@@ -88,6 +88,8 @@ export function runtimeTurnAttemptTerminalEventType(
 
 /** Streaming session - persistent runtime process that accepts messages via AsyncGenerator */
 export interface RuntimeHostStreamingSession {
+  /** Canonical session captured at launch; a reused name cannot rebind this handle. */
+  readonly sessionKey: string;
   /** Agent config used to start this runtime process. Changing it requires restart. */
   agentId: string;
   /** The runtime query handle */

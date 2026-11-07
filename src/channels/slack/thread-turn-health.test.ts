@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { getOrCreateSession } from "../../router/sessions.js";
+import { closeSessionStore, getOrCreateSession } from "../../router/sessions.js";
 import { closeRouterDb, dbCreateAgent, dbRevokeContext, getDb } from "../../router/router-db.js";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
 import { buildRuntimeRequestContext } from "../../runtime/runtime-request-context.js";
@@ -8,9 +8,11 @@ import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import {
   createRuntimeBootEpoch,
   createRuntimeTurnAttempt,
+  listRuntimeTurnAttempts,
   markRuntimeBootEpochGracefulStopped,
 } from "../../runtime/crash-recovery-store.js";
 import { clearRuntimeLiveState, noteRuntimeTurnSignal } from "../../runtime/live-state.js";
+import { recordRuntimeTurnProgress, RUNTIME_TURN_PROGRESS_INTERVAL_MS } from "../../runtime/turn-progress.js";
 import { getSessionTurn, recordSessionEvent, upsertSessionTurn } from "../../session-trace/session-trace-db.js";
 import { recordTerminalTurnTrace } from "../../session-trace/runtime-trace.js";
 import { recordDeliveryTrace } from "../../session-trace/channel-trace.js";
@@ -19,6 +21,7 @@ import { listSlackThreadsForSession, reconcileSlackThreadLifecycle } from "./thr
 import { closeSlackThreadLifecycle, registerInboundSlackThread } from "./thread-lifecycle-store.js";
 import { getThreadTurnHealth } from "./thread-turn-health-store.js";
 import { THREAD_NO_SIGNAL_MS } from "./thread-turn-health.js";
+import { admitThreadAttention } from "./thread-attention-admission.js";
 
 let stateDir: string | null = null;
 const parentKey = "health-parent";
@@ -206,12 +209,19 @@ describe("thread turn health reconciliation", () => {
     });
   }
 
-  it("makes an unterminated turn visible and sends one notice across ticks and database reopen", async () => {
+  it("makes an unterminated turn visible and admits one notice across ticks and database reopen", async () => {
     expect(await tick()).toMatchObject({ state: "attention", reason: "no_signal", turnId });
+    const prompt = publishPrompt.mock.calls[0]?.[1] as RuntimeLaunchPrompt;
+    const handle = mock(async () => {});
+    await admitThreadAttention(parentKey, prompt, handle);
+    // Reopening the shared connection must discard every store's prepared statements.
+    closeSessionStore();
     closeRouterDb();
     now += 30_000;
     expect(await tick()).toMatchObject({ state: "attention", reason: "no_signal" });
     expect(publishPrompt).toHaveBeenCalledTimes(1);
+    await admitThreadAttention(parentKey, prompt, handle);
+    expect(handle).toHaveBeenCalledTimes(1);
     expect(getSessionTurn(turnId)?.completedAt).toBeNull();
     expect(publishPrompt.mock.calls[0]?.[1]).toMatchObject({
       _slackThreadLifecycle: { eventType: "thread.attention", turnId, reason: "no_signal" },
@@ -227,10 +237,13 @@ describe("thread turn health reconciliation", () => {
   });
 
   it("uses real provider activity for a long turn, without treating host leases as progress", async () => {
-    lease(now + 120_000);
-    noteRuntimeTurnSignal(childName, turnId, now - 1000);
+    lease(now + THREAD_NO_SIGNAL_MS * 2);
+    const attempt = listRuntimeTurnAttempts({ turnId, limit: 1 })[0]!;
+    expect(recordRuntimeTurnProgress(attempt, now - 1000, () => now)).toBe(true);
     expect(await tick()).toMatchObject({ state: "running", reason: null });
     clearRuntimeLiveState(childName);
+    expect(await tick()).toMatchObject({ state: "running", reason: null });
+    now += THREAD_NO_SIGNAL_MS + RUNTIME_TURN_PROGRESS_INTERVAL_MS;
     expect(await tick()).toMatchObject({ state: "attention", reason: "no_signal" });
   });
 
@@ -256,12 +269,15 @@ describe("thread turn health reconciliation", () => {
     expect(await tick()).toMatchObject({ state: "attention", reason: "owner_lost" });
   });
 
-  it("does not send another notice when no_signal evolves into owner_lost", async () => {
+  it("does not send another admitted notice when no_signal evolves into owner_lost", async () => {
     lease(now + 120_000);
     expect(await tick()).toMatchObject({ reason: "no_signal" });
+    const handle = mock(async () => {});
+    await admitThreadAttention(parentKey, publishPrompt.mock.calls[0]?.[1] as RuntimeLaunchPrompt, handle);
     now += 120_001;
     expect(await tick()).toMatchObject({ reason: "owner_lost" });
     expect(publishPrompt).toHaveBeenCalledTimes(1);
+    expect(handle).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a human interruption separate from no_reply", async () => {

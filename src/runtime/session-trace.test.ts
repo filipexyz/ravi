@@ -167,6 +167,7 @@ function makeSession(): SessionEntry {
 function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
   const abortController = new AbortController();
   return {
+    sessionKey: SESSION_KEY,
     agentId: AGENT_ID,
     queryHandle: makeRuntimeSession([]),
     starting: false,
@@ -596,6 +597,7 @@ describe("runtime session trace instrumentation", () => {
   it("only records provider activity for the current runtime owner", async () => {
     const old = makeStreamingSession();
     seedAdapterTrace(old, "turn-old-signal");
+    const oldAttemptId = old.currentCrashRecoveryAttemptId!;
     const replacement = makeStreamingSession({ traceRunId: "run-successor-signal" });
     const live = new Map([[SESSION_NAME, old]]);
     const waitingForOldEvent = runtimeRaceLatch();
@@ -615,6 +617,9 @@ describe("runtime session trace instrumentation", () => {
     })();
     const loop = runTraceLoop(old, runtime, { streamingSessions: live });
     await waitingForOldEvent.promise;
+    const persistedSignal = getDb()
+      .query("SELECT * FROM runtime_turn_progress WHERE attempt_id = ?")
+      .get(oldAttemptId) as { turn_id: string; last_signal_at: number } | null;
     live.set(SESSION_NAME, replacement);
     updateRuntimeLiveState(SESSION_NAME, {
       activity: "thinking",
@@ -629,6 +634,11 @@ describe("runtime session trace instrumentation", () => {
 
     expect(ownedSignal?.turnId).toBe("turn-old-signal");
     expect(ownedSignal?.lastSignalAt).toBeGreaterThanOrEqual(signalStartedAt);
+    expect(persistedSignal?.turn_id).toBe("turn-old-signal");
+    expect(persistedSignal?.last_signal_at).toBeGreaterThanOrEqual(signalStartedAt);
+    expect(getDb().query("SELECT * FROM runtime_turn_progress WHERE attempt_id = ?").get(oldAttemptId)).toEqual(
+      persistedSignal,
+    );
     expect(lateSignal).toEqual(successorSignal);
     expect(getRuntimeLiveState(SESSION_NAME)).toEqual(successorSignal);
     expect(live.get(SESSION_NAME)).toBe(replacement);
