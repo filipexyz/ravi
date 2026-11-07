@@ -1,4 +1,5 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
 /**
  * Daemon Commands - Manage ravi via PM2
  */
@@ -656,11 +657,13 @@ export class DaemonCommands {
             pmId: process.pm_id,
             pid: process.pid,
             status: process.status,
+            startedAt: process.startedAt ?? undefined,
           })),
       start: ({ force }) => runPm2Status(startDaemonPm2Args(target.bundlePath, { force }), target.cwd),
       deletePmId: (pmId) => runPm2Status(["delete", String(pmId)]),
       save: () => persistPm2ProcessList(),
       pidAlive,
+      schemaPhase: readDaemonSchemaPhase,
       readyTimeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_READY_TIMEOUT_MS"),
       detachTimeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_DETACH_TIMEOUT_MS"),
       pollMs: optionalDurationMs("RAVI_DAEMON_RESTART_POLL_MS"),
