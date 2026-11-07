@@ -6516,6 +6516,7 @@ describe("runtime session trace instrumentation", () => {
       sessionName: SESSION_NAME,
       session: streaming,
       stashedMessages: new Map(),
+      // The host backoff and the queue's handoff deadline share one clock.
       capacityRetryRuntime: { now: () => now },
       traceTurnStart: ({ combinedPrompt }) => {
         seedAdapterTrace(streaming, `capacity-turn-${attempts + 1}`, combinedPrompt);
