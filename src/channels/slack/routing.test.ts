@@ -12,27 +12,14 @@ import {
 } from "./routing.js";
 
 describe("Slack routing policy", () => {
-  it("keeps foreign bot aliases disabled by default and out of environment config", () => {
-    expect(normalizeSlackRoutingPolicy({}).botMessageAliasesByChat).toEqual({});
-    expect(
-      slackRoutingPolicyFromEnv({
-        RAVI_SLACK_BOT_MESSAGE_ALIASES_BY_CHAT: '{"C1":["Ravi"]}',
-      } as NodeJS.ProcessEnv).botMessageAliasesByChat,
-    ).toEqual({});
-  });
-
-  it("normalizes chat-scoped bot aliases from channel defaults", () => {
+  it("uses channel routing defaults over environment routing policy", () => {
     expect(
       slackRoutingPolicyFromChannelDefaults(
-        {
-          botMessageAliasesByChat: {
-            C1: [" Ravi ", "ravi", "Hana", ""],
-            C2: "not-an-array",
-          },
-        },
-        {} as NodeJS.ProcessEnv,
-      ).botMessageAliasesByChat,
-    ).toEqual({ C1: ["ravi", "Hana"] });
+        { subscriptionScope: "chat", rootReplyMode: "new_thread" },
+        { RAVI_SLACK_SUBSCRIPTION_SCOPE: "thread", RAVI_SLACK_THREAD_REPLY_MODE: "channel_root" },
+      ),
+    ).toMatchObject({ subscriptionScope: "chat", rootReplyMode: "new_thread", threadReplyMode: "channel_root" });
+    expect(slackRoutingPolicyFromEnv({})).toEqual(DEFAULT_SLACK_ROUTING_POLICY);
   });
 
   it("keeps threaded messages in the same thread by default", () => {
@@ -101,7 +88,7 @@ describe("Slack routing policy", () => {
     expect(isSlackMessageEventStructurallyEligible({ type: "app_mention", channel: "C1", ts: "1.0" })).toBe(true);
   });
 
-  it("ignores the local bot by either bot_id or user id", () => {
+  it.each(["status update", "<@ULOCAL> loop"])("ignores the local bot by either id: %s", (text) => {
     const options = { selfBotId: "BLOCAL", selfUserId: "ULOCAL" };
     expect(
       shouldIgnoreSlackMessageEvent(
@@ -112,7 +99,7 @@ describe("Slack routing policy", () => {
           user: "UOTHER",
           channel: "C1",
           ts: "1.0",
-          text: "<@ULOCAL> loop",
+          text,
         },
         options,
       ),
@@ -126,18 +113,17 @@ describe("Slack routing policy", () => {
           user: "ULOCAL",
           channel: "C1",
           ts: "1.0",
-          text: "<@ULOCAL> loop",
+          text,
         },
         options,
       ),
     ).toBe(true);
   });
 
-  it("admits a foreign bot only when explicitly mentioned or addressed by a chat alias", () => {
+  it("admits foreign bots without requiring mentions, aliases, or a text prefix", () => {
     const options = {
       selfBotId: "BLOCAL",
       selfUserId: "ULOCAL",
-      botMessageAliasesByChat: { C1: ["Hana"] },
     };
     const bot = {
       type: "message",
@@ -147,32 +133,35 @@ describe("Slack routing policy", () => {
       ts: "1.0",
     } as const;
 
-    expect(shouldIgnoreSlackMessageEvent({ ...bot, text: "status update" }, options)).toBe(true);
+    expect(shouldIgnoreSlackMessageEvent({ ...bot, text: "status update" }, options)).toBe(false);
+    expect(shouldIgnoreSlackMessageEvent({ ...bot, text: "1. First\n2. Second\n\n3. Third" }, options)).toBe(false);
     expect(shouldIgnoreSlackMessageEvent({ ...bot, text: "oi <@ULOCAL>, consegue responder?" }, options)).toBe(false);
-    expect(shouldIgnoreSlackMessageEvent({ ...bot, text: "hana: consegue responder?" }, options)).toBe(false);
-    expect(shouldIgnoreSlackMessageEvent({ ...bot, text: "Hana—consegue responder?" }, options)).toBe(false);
-    expect(shouldIgnoreSlackMessageEvent({ ...bot, text: "Hana" }, options)).toBe(false);
+    expect(shouldIgnoreSlackMessageEvent({ ...bot, text: "<@UOTHER> status" }, options)).toBe(false);
+    expect(shouldIgnoreSlackMessageEvent({ ...bot, channel: "C2", text: " Status update" }, options)).toBe(false);
   });
 
-  it("rejects aliases from another chat, mid-sentence, or partial words", () => {
-    const options = {
-      selfBotId: "BLOCAL",
-      selfUserId: "ULOCAL",
-      botMessageAliasesByChat: { C1: ["Hana"] },
-    };
-    const bot = {
-      type: "message",
-      subtype: "bot_message",
-      bot_id: "BFOREIGN",
-      ts: "1.0",
-    } as const;
+  it.each([
+    { bot_id: "BFOREIGN" },
+    { subtype: "bot_message", user: "UFOREIGN" },
+    { subtype: "bot_message", user: "UFOREIGN", bot_id: "BFOREIGN" },
+    { subtype: "thread_broadcast", user: "UFOREIGN", bot_id: "BFOREIGN" },
+    { subtype: "file_share", bot_id: "BFOREIGN" },
+  ])("admits supported foreign bot identity shapes without addressing: %j", (identity) => {
+    expect(
+      shouldIgnoreSlackMessageEvent(
+        { type: "message", channel: "C1", ts: "1.0", text: "update", ...identity },
+        { selfBotId: "BLOCAL", selfUserId: "ULOCAL" },
+      ),
+    ).toBe(false);
+  });
 
-    expect(shouldIgnoreSlackMessageEvent({ ...bot, channel: "C2", text: "Hana, oi" }, options)).toBe(true);
-    expect(shouldIgnoreSlackMessageEvent({ ...bot, channel: "C1", text: "oi Hana, tudo bem?" }, options)).toBe(true);
-    expect(shouldIgnoreSlackMessageEvent({ ...bot, channel: "C1", text: "Hanami não é alias" }, options)).toBe(true);
-    expect(shouldIgnoreSlackMessageEvent({ ...bot, channel: "C1", text: " Hana, não começa no alias" }, options)).toBe(
-      true,
-    );
+  it("rejects a bot subtype without any sender identity", () => {
+    expect(
+      shouldIgnoreSlackMessageEvent(
+        { type: "message", subtype: "bot_message", channel: "C1", ts: "1.0", text: "update" },
+        { selfBotId: "BLOCAL", selfUserId: "ULOCAL" },
+      ),
+    ).toBe(true);
   });
 
   it("accepts Slack file_share events so audio uploads are routed", () => {

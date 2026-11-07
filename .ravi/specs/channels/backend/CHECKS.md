@@ -34,3 +34,35 @@
 - Interrupted, sentinel, suppressed, and unknown-phase assistant content MUST
   NOT enter commentary delivery.
 - Public types MUST contain no hosted product entities or private policy.
+
+- `terminal-projection-recovery.test.ts` MUST distinguish unchanged preterminal,
+  exact ambiguous commit, conflicting/unknown readback, owner loss, exhaustion
+  and post-commit callback error without repeating callbacks or physical work.
+- `terminal-output-handoff.test.ts`, `backend-egress.test.ts` and the SDK registry
+  tests MUST cover immutable pinning, unsupported-version/capability refusal
+  before sinks, malformed/generic ACKs, bounded pre-save retry and no unknown retry.
+- Existing host/Slack terminal fixtures MUST prove automatic recovery of only
+  the missing logical/text stage, with one physical terminal and independent media.
+- Runtime/SDK registries and egress MUST preserve bound `unknown(false)` evidence
+  with no pin, a matching pin or a different actual fingerprint. A later unknown
+  fingerprint MUST stop the terminal retry without replacing the first pin or
+  asserting completion; finished mismatches MUST remain conflicts.
+- `backend-egress.test.ts` MUST cover same-version delivery and unsupported
+  request/response versions for both `runtime_event` and `output`. Unsupported
+  requests MUST invoke no sink; rejected replies MUST cause no fallback request.
+- `runtime-events.test.ts` MUST cover remote runtime-notification refusal after
+  terminal persistence, preserving one assistant Message and the committed
+  sequence while attempting terminal output independently. Both suites MUST
+  remain in the CI `src/channels/` test selection.
+- SDK source tests MUST preserve void/generic-error semantics, immutable
+  handoff evidence and current-sink selection after digest preparation.
+- The emitted SDK package MUST be exercised through root and deep exports on
+  real Node 18 without a global-WebCrypto flag, including an operation requiring
+  a digest. Bun source tests or transpiler simulations MUST NOT be reported as
+  that platform proof. Browser/edge validation MUST exercise the portable
+  helper without a Node-module polyfill.
+
+- `src/channels/runtime-events.test.ts` checks failed bootstrap settlement before
+  first notification, captured sequence/order, pre-write refusal and first-error
+  precedence while still attempting eligible output. These assertions do not
+  grant replay authority or equate terminal persistence with transport delivery.

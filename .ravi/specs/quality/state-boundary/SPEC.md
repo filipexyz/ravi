@@ -11,6 +11,8 @@ applies_to:
   - src/db/schema-owner.ts
   - src/db/runtime-state.ts
   - src/channels/runner.ts
+  - src/channels/outbound-publish-outbox.ts
+  - src/channels/slack/automatic-output-circuit.ts
   - src/daemon.ts
   - src/bridge/store.ts
   - src/pr/journal.ts
@@ -33,6 +35,7 @@ applies_to:
 - The installed daemon is the ONLY schema owner. Before becoming ready it MUST initialize all runtime stores and record each component's successful initialization for the exact package version. Failed initialization MUST leave no ready marker.
 - The registered installed `ravi-channels` process MAY open existing stores for normal traffic but MUST NOT create, migrate or repair schemas. Its store initializers MUST only validate the ready marker and MUST NOT execute migration callbacks, persistent journal-mode changes or legacy file moves.
 - Human-bridge state and the PR publication journal MUST use the same opening guard and schema ownership. Daemon bootstrap MUST prepare bridge and publication schemas; channels MUST validate them without running DDL. Cached bridge handles MUST remain bound to the selected state path.
+- Lazy component schemas inside an already guarded database MUST follow the same ownership rule. The daemon MUST prepare the outbound publication outbox and Slack automatic-output circuit before readiness; channel preflight MUST validate both component markers. Their normal reads, reservation and retention operations MUST NOT create, rebuild or backfill schema from channels.
 - Channel startup MUST validate every required store before connecting to NATS or serving channels. Missing markers, missing files or a different package version MUST fail once with `STATE_SCHEMA_NOT_READY` and instructions to start the daemon first using the same release. No silent retry or unbounded wait.
 - No new confirmation flag, launcher variable, environment classification or configuration-before-release step is required. A legitimate installed daemon MUST retain access based on its process identity.
 - Fixture cleanup MUST restore the enclosing `RAVI_STATE_DIR`, including absence. This repair is independent of the opening guard.

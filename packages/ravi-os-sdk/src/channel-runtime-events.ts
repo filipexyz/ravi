@@ -28,6 +28,7 @@ function boundedUtf8String(maxBytes: number, label: string, minBytes = 1) {
 }
 
 export const ChannelRuntimeCorrelationSchema = z.object({
+  traceTurnId: ChannelBackendOpaqueIdSchema.optional(),
   correlationId: ChannelBackendOpaqueIdSchema,
   causationId: ChannelBackendOpaqueIdSchema.optional(),
   ingressRequestId: ChannelBackendOpaqueIdSchema,

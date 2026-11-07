@@ -16,7 +16,7 @@ import {
   shouldQueuePromptOnLiveSession,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
-import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { KNOWLEDGE_AUDIENCE_LINES } from "../knowledge/turn/preamble.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import { stashPendingRuntimeMessages, type RuntimeUserMessage } from "./host-session.js";
@@ -29,6 +29,7 @@ import {
   getSessionByName,
   setSessionEphemeral,
   updateSessionRuntimeProviderOverride,
+  updateRuntimeProviderState,
 } from "../router/sessions.js";
 import {
   dbCreateAgent,
@@ -57,12 +58,14 @@ import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import {
   buildDaemonRestartNoticePrompt,
   buildDaemonRestartResumePrompt,
+  resolveCrashRecoveryRestartResumeDecision,
   resolveCrashRecoveryRestartResumeMode,
 } from "./daemon-restart-resume.js";
 import {
   buildRuntimeModelBrokerPhysicalFingerprint,
   buildRuntimeModelBrokerSelectionCompatibilityKey,
 } from "./model-broker.js";
+import * as modelBrokerPlanning from "./model-broker-planning.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 
@@ -2115,52 +2118,432 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("treats a provider-terminal turn as consumed in daemon restart snapshots", async () => {
-    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-restart-snapshot-");
+  it.each(["during backoff", "after budget expiry"] as const)(
+    "preserves a scheduled capacity retry cohort through a failed terminal restart snapshot %s",
+    async (when) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-capacity-restart-snapshot-");
+      try {
+        const now = Date.now();
+        const sessionKey = "agent:dev:test:restart-capacity-backoff";
+        const sessionName = "restart-capacity-backoff";
+        const restartEpoch = "epoch-capacity-backoff";
+        getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+        dbUpsertDaemonRestartEpoch({ restartEpoch, reason: "test", createdAt: now });
+        const dispatcher = createDispatcher();
+        const retryState = { startedAt: now - (when === "during backoff" ? 5_000 : 40_000), retries: 2 };
+        const notBefore = retryState.startedAt + 12_000;
+        const pending = [
+          createQueuedRuntimeUserMessage({ prompt: "original logical input" }),
+          createQueuedRuntimeUserMessage({ prompt: "same cohort context" }),
+        ];
+        for (const message of pending) {
+          message.clientMessageId = "capacity-original-client-message";
+          message.providerCapacityRetry = retryState;
+        }
+        dispatcher.streamingSessions.set(
+          sessionName,
+          createActiveSession({
+            turnActive: true,
+            currentTraceTurnId: "turn-capacity-backoff",
+            currentCrashRecoveryTerminal: {
+              status: "failed",
+              completedAt: now - 1_000,
+              startedTool: false,
+              materializedOutput: false,
+            },
+            currentTurnPendingIds: pending.map((message) => message.pendingId!),
+            pendingMessages: pending,
+            pendingCapacityRetry: {
+              pendingIds: pending.map((message) => message.pendingId!),
+              state: retryState,
+              notBefore,
+            },
+          }),
+        );
+
+        expect(dispatcher.recordDaemonRestartSnapshot({ restartEpoch, reason: "test", stoppedAt: now })).toBe(1);
+        expect(dispatcher.streamingSessions.get(sessionName)?.capacityRetrySnapshotSaved).toBe(true);
+
+        const snapshot = dbGetDaemonRestartSessionSnapshot(restartEpoch, sessionKey);
+        const persisted = dbGetDaemonRestartPendingMessages(restartEpoch, sessionKey) as RuntimeUserMessage[];
+        expect(persisted.map((message) => message.message.content)).toEqual(
+          pending.map((message) => message.message.content),
+        );
+        const persistedRetryState = { ...retryState, notBefore };
+        expect(persisted.map((message) => message.providerCapacityRetry)).toEqual([
+          persistedRetryState,
+          persistedRetryState,
+        ]);
+        expect(persisted.every((message) => message.replay === false)).toBe(true);
+        const decision = resolveCrashRecoveryRestartResumeDecision({
+          metadata: snapshot?.metadata,
+          snapshotPresent: Boolean(snapshot),
+          snapshotEligible: true,
+          pendingMessageCount: snapshot?.pendingMessageCount,
+        });
+        expect(decision).toEqual({ mode: "pending_only", publish: true, reason: "pending_only" });
+
+        const payload = buildDaemonRestartResumePrompt({
+          restartEpoch,
+          reason: "test",
+          sessionKey,
+          mode: decision.mode,
+        });
+        const prepared = (
+          dispatcher as unknown as {
+            prepareDaemonRestartResumePrompt(
+              requestedSessionName: string,
+              prompt: RuntimeLaunchPrompt,
+              sessionEntry: null,
+            ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null;
+          }
+        ).prepareDaemonRestartResumePrompt(sessionName, payload!, null);
+        expect(prepared?.messages.map((message) => message.providerCapacityRetry)).toEqual([
+          persistedRetryState,
+          persistedRetryState,
+        ]);
+        expect(prepared?.messages.map((message) => message.pendingId)).toEqual(
+          pending.map((message) => message.pendingId),
+        );
+        expect(prepared?.prompt.prompt).not.toContain("Continue de onde parou");
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it("cancels restored capacity backoff when the real dispatcher receives an immediate interrupt", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-capacity-restored-interrupt-");
+    let streaming: RuntimeHostStreamingSession | undefined;
+    let generator: ReturnType<typeof createRuntimeMessageGenerator> | undefined;
+    try {
+      const sessionKey = "agent:main:test:capacity-restored-interrupt";
+      const sessionName = "capacity-restored-interrupt";
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "codex" });
+      const original = createQueuedRuntimeUserMessage({ prompt: "cancel this restored retry", _agentId: "main" });
+      original.providerCapacityRetry = { startedAt: 1_000, retries: 1, notBefore: 13_000 };
+      original.replay = false;
+      streaming = createActiveSession({ agentId: "main", pendingMessages: [original] });
+      const dispatcher = createDispatcher();
+      dispatcher.streamingSessions.set(sessionName, streaming);
+      let now = 8_000;
+      let waitCalls = 0;
+      const deliveredInputs: string[] = [];
+      generator = createRuntimeMessageGenerator({
+        sessionName,
+        session: streaming,
+        stashedMessages: new Map(),
+        capacityRetryRuntime: {
+          now: () => now,
+          wait: async (delayMs) => {
+            waitCalls++;
+            expect(deliveredInputs).toEqual([]);
+            await dispatcher.handlePromptImmediate(sessionName, {
+              prompt: "run the replacement request",
+              _agentId: "main",
+              deliveryBarrier: "immediate_interrupt",
+              deliveryBarrierSource: "explicit",
+              _turnOrigin: buildSessionRelayTurnOrigin("send"),
+            });
+            now += delayMs;
+          },
+        },
+        traceTurnStart: ({ combinedPrompt }) => {
+          deliveredInputs.push(combinedPrompt);
+          return undefined;
+        },
+      });
+
+      const delivered = await generator.next();
+
+      expect(waitCalls).toBe(1);
+      expect(delivered.done).toBe(false);
+      expect(delivered.value?.message.content).toContain("run the replacement request");
+      expect(delivered.value?.message.content).not.toContain("cancel this restored retry");
+      expect(deliveredInputs).toHaveLength(1);
+      expect(deliveredInputs[0]).toContain("run the replacement request");
+      expect(streaming.pendingMessages.some((message) => message.pendingId === original.pendingId)).toBe(false);
+    } finally {
+      if (streaming) {
+        streaming.done = true;
+        streaming.onTurnComplete?.();
+        if (streaming.idleGapRecoveryTimer) clearTimeout(streaming.idleGapRecoveryTimer);
+      }
+      await generator?.return(undefined);
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it.each([
+    "before preparation",
+    "during asynchronous preparation",
+    "after preparation tool marker",
+    "after preparation output marker",
+    "after preparation input mutation",
+    "after preparation ownership loss",
+    "with missing preparation attempt",
+  ] as const)("enforces the restored capacity schedule fence across another restart %s", async (phase) => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-capacity-repeat-restart-");
     try {
       const now = Date.now();
-      const sessionKey = "agent:dev:test:restart-terminal";
-      const sessionName = "restart-terminal";
+      const sessionKey = "agent:dev:test:restart-capacity-twice";
+      const sessionName = "restart-capacity-twice";
+      const firstEpoch = "epoch-capacity-first";
+      const secondEpoch = "epoch-capacity-second";
       getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
-      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-terminal", reason: "test", createdAt: now });
-      const dispatcher = createDispatcher();
-      const consumed = createQueuedRuntimeUserMessage({ prompt: "already completed" });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: firstEpoch, reason: "first stop", createdAt: now });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: secondEpoch, reason: "second stop", createdAt: now + 2_000 });
+      const schedule = { startedAt: now - 5_000, retries: 2, notBefore: now + 7_000 };
+      const pending = [
+        createQueuedRuntimeUserMessage({ prompt: "original retry input" }),
+        createQueuedRuntimeUserMessage({ prompt: "original cohort context" }),
+      ];
+      for (const message of pending) {
+        message.clientMessageId = "restored-capacity-client-message";
+        message.providerCapacityRetry = schedule;
+        message.replay = false;
+      }
+      dbRecordDaemonRestartSessionSnapshot({
+        restartEpoch: firstEpoch,
+        sessionKey,
+        sessionName,
+        runtimeProvider: "codex",
+        activity: "thinking",
+        nonIdle: true,
+        lastActivityAt: now,
+        stoppedAt: now,
+        pendingMessages: pending,
+        metadata: {
+          live: true,
+          crashRecoveryRestartResumeMode: "pending_only",
+          crashRecoveryTerminalStatus: "failed",
+        },
+      });
+      const crashRecovery = {
+        acceptingDeliveries: phase !== "after preparation ownership loss",
+        getActiveTurnAttempt: (attemptId: string) =>
+          phase === "with missing preparation attempt"
+            ? undefined
+            : {
+                attemptId,
+                startedTool: phase === "after preparation tool marker",
+                materializedOutput: phase === "after preparation output marker",
+                metadata: { inputMutated: phase === "after preparation input mutation" },
+              },
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const prepare = (epoch: string) => {
+        const payload = buildDaemonRestartResumePrompt({
+          restartEpoch: epoch,
+          reason: "test",
+          sessionKey,
+          mode: "pending_only",
+        });
+        return (
+          dispatcher as unknown as {
+            prepareDaemonRestartResumePrompt(
+              requestedSessionName: string,
+              prompt: RuntimeLaunchPrompt,
+              sessionEntry: null,
+            ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null;
+          }
+        ).prepareDaemonRestartResumePrompt(sessionName, payload, null);
+      };
+      const restored = prepare(firstEpoch);
+      expect(restored?.messages).toHaveLength(2);
+      const preparing = phase !== "before preparation";
       dispatcher.streamingSessions.set(
         sessionName,
         createActiveSession({
-          turnActive: false,
-          currentTraceTurnId: "turn-terminal-snapshot",
-          currentTraceTurnTerminalRecorded: true,
-          currentCrashRecoveryTerminal: {
-            status: "complete",
-            completedAt: now - 1,
-            startedTool: false,
-            materializedOutput: false,
-          },
-          currentTurnPendingIds: consumed.pendingId ? [consumed.pendingId] : [],
-          pendingMessages: [consumed],
+          turnActive: preparing,
+          pendingMessages: restored!.messages,
+          currentTurnPendingIds: preparing ? pending.map((message) => message.pendingId!) : undefined,
+          currentCrashRecoveryAttemptId: preparing ? "attempt-restored-preparation" : undefined,
+          currentTraceTurnId: preparing ? "turn-restored-preparation" : undefined,
+          currentCrashRecoveryTerminal: undefined,
+          pendingCapacityRetry: undefined,
         }),
       );
 
-      expect(
-        dispatcher.recordDaemonRestartSnapshot({
-          restartEpoch: "epoch-terminal",
-          reason: "test",
-          stoppedAt: now,
-        }),
-      ).toBe(1);
+      dispatcher.recordDaemonRestartSnapshot({
+        restartEpoch: secondEpoch,
+        reason: "second stop",
+        stoppedAt: now + 2_000,
+      });
 
-      expect(dbGetDaemonRestartPendingMessages("epoch-terminal", sessionKey)).toHaveLength(0);
-      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
-        restartEpoch: "epoch-terminal",
-        now: now + 1,
-      })[0];
-      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
-      expect(snapshot?.metadata?.crashRecoveryTerminalStatus).toBe("complete");
+      const snapshot = dbGetDaemonRestartSessionSnapshot(secondEpoch, sessionKey);
+      const persistedAgain = dbGetDaemonRestartPendingMessages(secondEpoch, sessionKey) as RuntimeUserMessage[];
+      if (phase !== "before preparation" && phase !== "during asynchronous preparation") {
+        expect(persistedAgain).toEqual([]);
+        expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
+        return;
+      }
+      expect(persistedAgain).toEqual(restored!.messages);
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("pending_only");
+      expect(snapshot?.metadata?.crashRecoveryTerminalStatus).toBeNull();
+      const restoredAgain = prepare(secondEpoch);
+      expect(restoredAgain?.messages).toEqual(restored!.messages);
+      expect(restoredAgain?.messages.map((message) => message.providerCapacityRetry)).toEqual([schedule, schedule]);
+      expect(restoredAgain?.prompt.prompt).toBe(restored!.prompt.prompt);
+      expect(restoredAgain?.prompt.prompt).not.toContain("Daemon reiniciou");
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
   });
+
+  it.each([
+    "missing checkpoint",
+    "persisted schedule without live checkpoint",
+    "mismatched pending ids",
+    "mismatched retry budget",
+    "incomplete cohort",
+    "started tool",
+    "materialized output",
+    "mutated input",
+    "pending abort",
+    "aborted controller",
+    "superseded turn",
+    "done session",
+    "completed terminal",
+    "nonfinite retry schedule",
+    "nonfinite retry start",
+    "negative retry count",
+    "zero retry count",
+    "fractional retry count",
+    "excess retry count",
+    "schedule before budget start",
+    "schedule outside budget",
+  ] as const)("does not preserve capacity retry work with %s", async (scenario) => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-capacity-restart-fence-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-capacity-fenced";
+      const sessionName = "restart-capacity-fenced";
+      const restartEpoch = "epoch-capacity-fenced";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch, reason: "test", createdAt: now });
+      const dispatcher = createDispatcher();
+      const pending = createQueuedRuntimeUserMessage({ prompt: "fenced original logical input" });
+      const retryState = {
+        startedAt: scenario === "nonfinite retry start" ? Number.NaN : now - 5_000,
+        retries:
+          scenario === "negative retry count"
+            ? -1
+            : scenario === "zero retry count"
+              ? 0
+              : scenario === "fractional retry count"
+                ? 1.5
+                : scenario === "excess retry count"
+                  ? 4
+                  : 2,
+      };
+      const notBefore =
+        scenario === "nonfinite retry schedule"
+          ? Number.POSITIVE_INFINITY
+          : scenario === "schedule before budget start"
+            ? retryState.startedAt - 1
+            : scenario === "schedule outside budget"
+              ? retryState.startedAt + 30_000
+              : now + 7_000;
+      pending.providerCapacityRetry = retryState;
+      if (scenario === "persisted schedule without live checkpoint") {
+        pending.providerCapacityRetry = { ...retryState, notBefore };
+      }
+      const session = createActiveSession({
+        turnActive: true,
+        currentTraceTurnId: "turn-capacity-fenced",
+        currentCrashRecoveryTerminal: {
+          status: scenario === "completed terminal" ? "complete" : "failed",
+          completedAt: now - 1_000,
+          startedTool: scenario === "started tool",
+          materializedOutput: scenario === "materialized output",
+          inputMutated: scenario === "mutated input",
+        },
+        currentTurnPendingIds: [pending.pendingId!],
+        pendingMessages: [pending],
+        pendingAbort: scenario === "pending abort",
+        currentTurnSuperseded: scenario === "superseded turn",
+        done: scenario === "done session",
+        pendingCapacityRetry:
+          scenario === "missing checkpoint" || scenario === "persisted schedule without live checkpoint"
+            ? undefined
+            : {
+                pendingIds:
+                  scenario === "mismatched pending ids"
+                    ? ["a-different-cohort"]
+                    : scenario === "incomplete cohort"
+                      ? [pending.pendingId!, "missing-cohort-member"]
+                      : [pending.pendingId!],
+                state:
+                  scenario === "mismatched retry budget"
+                    ? { ...retryState, retries: retryState.retries - 1 }
+                    : retryState,
+                notBefore,
+              },
+      });
+      if (scenario === "aborted controller") session.abortController.abort();
+      dispatcher.streamingSessions.set(sessionName, session);
+
+      dispatcher.recordDaemonRestartSnapshot({ restartEpoch, reason: "test", stoppedAt: now });
+
+      expect(dbGetDaemonRestartPendingMessages(restartEpoch, sessionKey)).toHaveLength(0);
+      expect(session.capacityRetrySnapshotSaved).not.toBe(true);
+      const snapshot = dbGetDaemonRestartSessionSnapshot(restartEpoch, sessionKey);
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it.each(["complete", "failed", "interrupted", "timeout", "aborted"] as const)(
+    "treats a provider-terminal %s turn as consumed in daemon restart snapshots",
+    async (status) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-restart-snapshot-");
+      try {
+        const now = Date.now();
+        const sessionKey = "agent:dev:test:restart-terminal";
+        const sessionName = "restart-terminal";
+        getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+        dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-terminal", reason: "test", createdAt: now });
+        const dispatcher = createDispatcher();
+        const consumed = createQueuedRuntimeUserMessage({ prompt: "already completed" });
+        dispatcher.streamingSessions.set(
+          sessionName,
+          createActiveSession({
+            turnActive: false,
+            currentTraceTurnId: "turn-terminal-snapshot",
+            currentTraceTurnTerminalRecorded: true,
+            currentCrashRecoveryTerminal: {
+              status,
+              completedAt: now - 1,
+              startedTool: false,
+              materializedOutput: false,
+            },
+            currentTurnPendingIds: consumed.pendingId ? [consumed.pendingId] : [],
+            pendingMessages: [consumed],
+          }),
+        );
+
+        expect(
+          dispatcher.recordDaemonRestartSnapshot({
+            restartEpoch: "epoch-terminal",
+            reason: "test",
+            stoppedAt: now,
+          }),
+        ).toBe(1);
+
+        expect(dbGetDaemonRestartPendingMessages("epoch-terminal", sessionKey)).toHaveLength(0);
+        const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+          restartEpoch: "epoch-terminal",
+          now: now + 1,
+        })[0];
+        expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
+        expect(snapshot?.metadata?.crashRecoveryTerminalStatus).toBe(status);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
 
   it("preserves post-drain successors while a completed terminal latch is still retained", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-post-drain-snapshot-");
@@ -2782,7 +3165,313 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     ).toBe(true);
   });
 
-  it("restarts a live Claude session after a persisted Codex provider override", async () => {
+  it.each([
+    { provider: "codex", revision: 1, expected: true },
+    { provider: "claude", revision: 0, expected: true },
+    { provider: "claude", revision: 1, expected: false },
+  ])("checks provider revision without disturbing matching or unchanged live handles: %j", (configuration) => {
+    const existing = createActiveSession({ agentId: "main", runtimeProviderConfigRevision: 0 });
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "provider-revision",
+        existing,
+        { prompt: "next", deliveryBarrier: "after_response" },
+        "main",
+        undefined,
+        configuration,
+      ),
+    ).toBe(configuration.expected);
+  });
+
+  it.each(["model-change", "native-steer-fallback", "model-replacement", "steer-replacement"])(
+    "revalidates provider after awaited %s without duplicating history or prompt",
+    async (seam) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-await-");
+      const planning = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+      const config = configStore.getConfig();
+      const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+        ...config,
+        agents: { ...config.agents, main: { ...config.agents.main!, provider: "codex", model: "gpt-5.5" } },
+      });
+      try {
+        const sessionName = `provider-await-${seam}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "codex" });
+        const dispatcher = createDispatcher(2);
+        const interrupt = mock(async () => {});
+        const existing = createActiveSession({
+          agentId: "main",
+          currentModel: seam.startsWith("model") ? "gpt-5.4" : "gpt-5.5",
+          turnActive: true,
+          queryHandle: { provider: "codex", events: (async function* () {})(), interrupt },
+        });
+        dispatcher.streamingSessions.set(sessionName, existing);
+        const started: RuntimeLaunchPrompt[] = [];
+        dispatcher.startStreamingSession = mock(async (_name, prompt) => {
+          started.push(prompt);
+        });
+        let entered!: () => void;
+        let release!: () => void;
+        const reached = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const waiting = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const interception = seam.startsWith("model")
+          ? spyOn(dispatcher, "applySessionModelChange").mockImplementation(async () => {
+              entered();
+              await waiting;
+              return "applied";
+            })
+          : spyOn(
+              dispatcher as unknown as { tryNativeRuntimeSteer(): Promise<"accepted" | "fallback"> },
+              "tryNativeRuntimeSteer",
+            ).mockImplementation(async () => {
+              entered();
+              await waiting;
+              return "fallback";
+            });
+        try {
+          const dispatching = dispatcher.handlePromptImmediate(sessionName, {
+            prompt: "deliver once after provider change",
+            _agentId: "main",
+            deliveryBarrier: "after_tool",
+          });
+          await reached;
+          updateSessionRuntimeProviderOverride(sessionKey, "claude");
+          const replacement = seam.endsWith("replacement")
+            ? createActiveSession({
+                agentId: "main",
+                currentModel: "gpt-5.5",
+                turnActive: true,
+                queryHandle: { provider: "claude", events: (async function* () {})(), interrupt: mock(async () => {}) },
+              })
+            : undefined;
+          if (replacement) {
+            existing.done = true;
+            dispatcher.streamingSessions.set(sessionName, replacement);
+          }
+          release();
+          await dispatching;
+
+          expect(existing.done).toBe(true);
+          expect(existing.pendingMessages).toHaveLength(0);
+          if (replacement) {
+            expect(dispatcher.streamingSessions.get(sessionName)).toBe(replacement);
+            expect(replacement.done).toBe(false);
+            expect(replacement.pendingMessages).toHaveLength(1);
+            expect(replacement.pendingMessages[0]?.launchPrompt?.prompt).toBe("deliver once after provider change");
+            expect(replacement.queryHandle.interrupt).not.toHaveBeenCalled();
+            expect(started).toHaveLength(0);
+            expect(dispatcher.stashedMessages.get(sessionName) ?? []).toHaveLength(0);
+            expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+            return;
+          }
+          expect(interrupt).toHaveBeenCalledTimes(1);
+          expect(started).toHaveLength(1);
+          const stashed = dispatcher.stashedMessages.get(sessionName) ?? [];
+          const arrivals = [
+            ...stashed,
+            ...started.filter((prompt) => !prompt._resumeStashedMessages).map(createQueuedRuntimeUserMessage),
+          ];
+          expect(arrivals).toHaveLength(1);
+          expect(arrivals[0]?.launchPrompt?.prompt).toBe("deliver once after provider change");
+          const history = getRecentHistory(sessionName).filter((message) => message.role === "user");
+          expect(history.length + started.filter((prompt) => !prompt._resumeStashedMessages).length).toBe(1);
+          if (seam === "native-steer-fallback") {
+            expect(history).toHaveLength(1);
+            expect(started[0]?._resumeStashedMessages).toBe(true);
+          }
+          const restarts = querySessionTrace({ sessionKey, sessionName }).events.filter(
+            (event) => event.eventType === "dispatch.restart_requested",
+          );
+          expect(restarts).toHaveLength(1);
+          expect(restarts[0]?.payloadJson).toMatchObject({ reason: "provider_change", requestedProvider: "claude" });
+        } finally {
+          release();
+          interception.mockRestore();
+        }
+      } finally {
+        configuration.mockRestore();
+        planning.mockRestore();
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it.each([
+    { change: "clear", deliveryBarrier: "after_response" },
+    { change: "clear", deliveryBarrier: "after_task" },
+    { change: "override", deliveryBarrier: "after_response" },
+    { change: "override", deliveryBarrier: "after_task" },
+  ] as const)(
+    "defers a persisted provider change until the active turn completes: %j",
+    async ({ change, deliveryBarrier }) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-clear-active-");
+      const config = configStore.getConfig();
+      const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+        ...config,
+        agents: { ...config.agents, main: { ...config.agents.main!, provider: "codex", model: "gpt-5.5" } },
+      });
+      const dispatcher = createDispatcher(2);
+      const started = spyOn(dispatcher, "startStreamingSession").mockResolvedValue(undefined);
+      try {
+        const sessionName = `provider-${change}-active-${deliveryBarrier}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "claude" });
+        updateSessionRuntimeProviderOverride(sessionKey, "claude");
+        const interrupt = mock(async () => {});
+        const activeSession = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentModel: "sonnet",
+          runtimeProviderConfigRevision: 1,
+          queryHandle: { provider: "claude", events: (async function* () {})(), interrupt },
+        });
+        dispatcher.streamingSessions.set(sessionName, activeSession);
+        updateSessionRuntimeProviderOverride(sessionKey, change === "clear" ? null : "codex");
+        if (change === "clear") updateRuntimeProviderState(sessionKey, undefined, { runtimeSessionParams: {} });
+
+        await dispatcher.handlePromptImmediate(sessionName, {
+          prompt: "deliver once after the active response",
+          _agentId: "main",
+          deliveryBarrier,
+        });
+
+        expect(dispatcher.streamingSessions.get(sessionName)).toBe(activeSession);
+        expect(activeSession.done).toBe(false);
+        expect(activeSession.abortController.signal.aborted).toBe(false);
+        expect(interrupt).not.toHaveBeenCalled();
+        expect(started).not.toHaveBeenCalled();
+        expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+        expect(activeSession.pendingMessages).toHaveLength(1);
+        expect(activeSession.pendingMessages[0]?.launchPrompt).toMatchObject({
+          prompt: "deliver once after the active response",
+          deliveryBarrier,
+        });
+        expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+      } finally {
+        dispatcher.shutdownAll();
+        started.mockRestore();
+        configuration.mockRestore();
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  for (const deliveryBarrier of ["after_response", "after_task"] as const) {
+    it.each(["broker", "model-resolve", "model-reject", "steer-fallback"] as const)(
+      `defers a saved provider clear during awaited %s for ${deliveryBarrier}`,
+      async (seam) => {
+        const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-defer-await-");
+        const config = configStore.getConfig();
+        const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+          ...config,
+          agents: { ...config.agents, main: { ...config.agents.main!, provider: "codex", model: "openai/gpt-4.1" } },
+        });
+        const dispatcher = createDispatcher(2);
+        const started = spyOn(dispatcher, "startStreamingSession").mockResolvedValue(undefined);
+        let entered!: () => void;
+        let release!: () => void;
+        const reached = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const waiting = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const waitForChange = async () => {
+          entered();
+          await waiting;
+        };
+        const sessionName = `provider-defer-${seam}-${deliveryBarrier}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        const active = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentModel: seam.startsWith("model") ? "openai/gpt-5.5" : "openai/gpt-4.1",
+          runtimeProviderConfigRevision: 1,
+          queryHandle: {
+            provider: "pi",
+            events: (async function* () {})(),
+            interrupt: mock(async () => {}),
+            setModel: async () => {
+              await waitForChange();
+              if (seam === "model-reject") throw new Error("setModel failed after provider configuration changed");
+            },
+          },
+        });
+        const planning = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+          if (seam === "broker") await waitForChange();
+          return undefined;
+        });
+        const steering =
+          seam === "steer-fallback"
+            ? spyOn(
+                dispatcher as unknown as { tryNativeRuntimeSteer(): Promise<"accepted" | "fallback"> },
+                "tryNativeRuntimeSteer",
+              ).mockImplementation(async () => {
+                await waitForChange();
+                return "fallback";
+              })
+            : undefined;
+        try {
+          getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "pi" });
+          updateSessionRuntimeProviderOverride(sessionKey, "pi");
+          dispatcher.streamingSessions.set(sessionName, active);
+          const dispatching = dispatcher.handlePromptImmediate(sessionName, {
+            prompt: "deliver exactly once after generation",
+            _agentId: "main",
+            deliveryBarrier,
+            // Observation metadata bypasses the fast queue but does not
+            // override the session's provider selection or delivery barrier.
+            _observation: {
+              sourceSessionKey: sessionKey,
+              sourceSessionName: sessionName,
+              bindingId: "provider-defer-observer",
+              ruleId: "provider-defer-rule",
+              role: "review",
+              mode: "reactive",
+              eventIds: ["provider-defer-event"],
+            },
+          });
+          await reached;
+          updateSessionRuntimeProviderOverride(sessionKey, null);
+          updateRuntimeProviderState(sessionKey, undefined, { runtimeSessionParams: {} });
+          release();
+          await dispatching;
+
+          expect(dispatcher.streamingSessions.get(sessionName)).toBe(active);
+          expect(active.done).toBe(false);
+          expect(active.abortController.signal.aborted).toBe(false);
+          expect(active.queryHandle.interrupt).not.toHaveBeenCalled();
+          expect(started).not.toHaveBeenCalled();
+          expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+          expect(active.pendingMessages).toHaveLength(1);
+          expect(active.pendingMessages[0]?.launchPrompt).toMatchObject({
+            prompt: "deliver exactly once after generation",
+            deliveryBarrier,
+          });
+          expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+          expect(
+            querySessionTrace({ sessionKey, sessionName }).events.filter(
+              (event) => event.eventType === "dispatch.restart_requested",
+            ),
+          ).toHaveLength(0);
+        } finally {
+          release();
+          dispatcher.shutdownAll();
+          started.mockRestore();
+          steering?.mockRestore();
+          planning.mockRestore();
+          configuration.mockRestore();
+          await cleanupIsolatedRaviState(stateDir);
+        }
+      },
+    );
+  }
+
+  it("immediately restarts a live Claude session after a persisted Codex provider override", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-switch-");
     try {
       const sessionKey = "agent:main:test:provider-switch";
@@ -2814,7 +3503,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const nextPrompt: RuntimeLaunchPrompt = {
         prompt: "hello on codex",
         _agentId: "main",
-        deliveryBarrier: "after_response",
+        deliveryBarrier: "immediate_interrupt",
         deliveryBarrierSource: "default",
         _turnOrigin: buildSessionRelayTurnOrigin("send"),
       };
@@ -3489,7 +4178,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("reuses a provider terminal fence when an abort races before the canonical trace write", async () => {
+  it("preserves a completed provider fence without sealing its trace when an abort races accounting", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-race-");
     try {
       const sessionKey = "agent:dev:test:terminal-race";
@@ -3527,13 +4216,14 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(dispatcher.abortSession(sessionName, { reason: "late_abort" })).toBe(true);
 
       expect(terminalizeTurnAttempt).not.toHaveBeenCalled();
-      expect(getSessionTurn("turn-terminal-race")).toMatchObject({
+      expect(session.currentCrashRecoveryTerminal).toMatchObject({
         status: "complete",
         completedAt,
-        abortReason: null,
       });
+      expect(session.currentTraceTurnTerminalRecorded).toBe(false);
+      expect(getSessionTurn("turn-terminal-race")).toBeNull();
       const trace = querySessionTrace({ sessionKey, sessionName });
-      expect(trace.events.filter((event) => event.eventType === "turn.complete")).toHaveLength(1);
+      expect(trace.events.filter((event) => event.eventType === "turn.complete")).toHaveLength(0);
       expect(trace.events.filter((event) => event.eventType === "turn.interrupted")).toHaveLength(0);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
@@ -3633,6 +4323,159 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
       expect(trace.events.filter((event) => event.eventType === "dispatch.restart_requested")).toHaveLength(1);
     } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it.each(["resolve", "reject"] as const)(
+    "preserves the replacement and admits once when a retired handle's real setModel settles: %s",
+    async (settlement) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-model-owner-");
+      const planning = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+      const config = configStore.getConfig();
+      const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+        ...config,
+        agents: { ...config.agents, main: { ...config.agents.main!, provider: "pi", model: "openai/gpt-4.1" } },
+      });
+      const dispatcher = createDispatcher(2);
+      const started = spyOn(dispatcher, "startStreamingSession").mockResolvedValue(undefined);
+      let entered!: () => void;
+      let release!: () => void;
+      let reject!: (error: Error) => void;
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const waiting = new Promise<void>((resolve, rejectPromise) => {
+        release = resolve;
+        reject = rejectPromise;
+      });
+      try {
+        const sessionName = `model-owner-${settlement}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "pi" });
+        const transferred = createQueuedRuntimeUserMessage({
+          prompt: "already transferred",
+          deliveryBarrier: "after_response",
+        });
+        const old = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentModel: "openai/gpt-5.5",
+          pendingMessages: [transferred],
+          queryHandle: {
+            provider: "pi",
+            events: (async function* () {})(),
+            interrupt: mock(async () => {}),
+            setModel: async () => {
+              entered();
+              await waiting;
+            },
+          },
+        });
+        dispatcher.streamingSessions.set(sessionName, old);
+        const dispatching = dispatcher.handlePromptImmediate(sessionName, {
+          prompt: "arrives during model switch",
+          _agentId: "main",
+          deliveryBarrier: "after_tool",
+        });
+        await reached;
+        const replacement = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          toolRunning: true,
+          currentToolSafety: "unsafe",
+          currentModel: "openai/gpt-4.1",
+          pendingMessages: [transferred],
+          queryHandle: { provider: "pi", events: (async function* () {})(), interrupt: mock(async () => {}) },
+        });
+        old.done = true;
+        dispatcher.streamingSessions.set(sessionName, replacement);
+        if (settlement === "resolve") release();
+        else reject(new Error("retired setModel failed"));
+        await dispatching;
+
+        expect(dispatcher.streamingSessions.get(sessionName)).toBe(replacement);
+        expect(replacement.done).toBe(false);
+        expect(replacement.abortController.signal.aborted).toBe(false);
+        expect(replacement.queryHandle.interrupt).not.toHaveBeenCalled();
+        expect(old.queryHandle.interrupt).not.toHaveBeenCalled();
+        expect(started).not.toHaveBeenCalled();
+        expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+        expect(replacement.pendingMessages.map((message) => message.launchPrompt?.prompt)).toEqual([
+          "already transferred",
+          "arrives during model switch",
+        ]);
+        expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+        expect(
+          querySessionTrace({ sessionKey, sessionName }).events.filter(
+            (event) => event.eventType === "dispatch.restart_requested",
+          ),
+        ).toHaveLength(0);
+      } finally {
+        release();
+        dispatcher.shutdownAll();
+        started.mockRestore();
+        configuration.mockRestore();
+        planning.mockRestore();
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it("leaves completed-turn accounting to the host when a pending setModel rejects", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-model-complete-");
+    const dispatcher = createDispatcher(2);
+    let entered!: () => void;
+    let release!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const sessionName = "model-reject-after-complete";
+      const sessionKey = `agent:main:test:${sessionName}`;
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "pi" });
+      const active = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentModel: "openai/gpt-5.5",
+        currentTraceTurnId: "turn-model-reject-after-complete",
+        currentTraceTurnTerminalRecorded: false,
+        queryHandle: {
+          provider: "pi",
+          events: (async function* () {})(),
+          interrupt: mock(async () => {}),
+          setModel: async () => {
+            entered();
+            await waiting;
+            throw new Error("setModel failed after accepted completion");
+          },
+        },
+      });
+      dispatcher.streamingSessions.set(sessionName, active);
+      const changing = dispatcher.applySessionModelChange(sessionName, "openai/gpt-4.1");
+      await reached;
+      const terminal = {
+        status: "complete",
+        completedAt: Date.now(),
+        startedTool: false,
+        materializedOutput: true,
+      } as const;
+      active.currentCrashRecoveryTerminal = terminal;
+      release();
+      expect(await changing).toBe("restart-next-turn");
+
+      expect(active.done).toBe(true);
+      expect(active.currentCrashRecoveryTerminal).toBe(terminal);
+      expect(active.currentTraceTurnTerminalRecorded).toBe(false);
+      expect(
+        querySessionTrace({ sessionKey, sessionName }).events.filter((event) => event.eventType === "turn.complete"),
+      ).toHaveLength(0);
+    } finally {
+      release();
+      dispatcher.shutdownAll();
       await cleanupIsolatedRaviState(stateDir);
     }
   });

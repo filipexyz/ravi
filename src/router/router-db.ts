@@ -26,6 +26,10 @@ import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js"
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
 import {
+  persistPreparedSlackAutomaticTerminalManifest,
+  type SlackAutomaticTerminalManifest,
+} from "../channels/slack/automatic-terminal-manifest.js";
+import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateAgentDefaultsRecord,
   migrateLegacyReadCapabilityInputs,
@@ -370,6 +374,7 @@ interface ChannelBackendIngressReceiptRow {
 }
 
 interface ChannelBackendRuntimeStateRow {
+  trace_turn_id: string | null;
   turn_id: string;
   state: ChannelBackendRuntimeState;
   last_sequence: number;
@@ -833,6 +838,7 @@ export type ChannelBackendRuntimeState =
   | "interrupted";
 
 export interface ChannelBackendRuntimeStateRecord {
+  traceTurnId?: string;
   turnId: string;
   state: ChannelBackendRuntimeState;
   lastSequence: number;
@@ -843,11 +849,24 @@ export interface ChannelBackendRuntimeStateRecord {
   updatedAt: number;
 }
 
+export class ChannelBackendRuntimeOwnershipLostError extends Error {
+  /** Identifies a rejected projection owner fence so callers can stop without emitting a terminal. */
+  constructor() {
+    super("Channel runtime projection no longer owns the request");
+    this.name = "ChannelBackendRuntimeOwnershipLostError";
+  }
+}
+
 export interface RecordChannelBackendRuntimeEventInput {
+  traceTurnId?: string;
   turnId: string;
   state?: ChannelBackendRuntimeState;
   assistantDelta?: boolean;
   assistantText?: string;
+  /** Internal pure predicate, rechecked inside each synchronous transaction attempt. */
+  mayWrite?: () => boolean;
+  /** Trusted host preparation; no hashing, delivery, or local cleanup inside this transaction. */
+  slackTerminalManifest?: SlackAutomaticTerminalManifest;
   runtimeGenerationId: string;
   terminalError?: Record<string, unknown>;
   occurredAt?: number;
@@ -856,6 +875,8 @@ export interface RecordChannelBackendRuntimeEventInput {
 export interface RecordChannelBackendRuntimeEventResult {
   receipt: ChannelBackendIngressReceiptRecord;
   runtime: ChannelBackendRuntimeStateRecord;
+  /** Committed with the terminal; permits local readiness updates but does not prove sink delivery. */
+  slackTerminalManifest?: SlackAutomaticTerminalManifest;
 }
 
 export interface ChannelBackendRuntimeInterruptRecord {
@@ -1590,6 +1611,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       sdk_session_id TEXT,
       runtime_provider TEXT,
       runtime_provider_override TEXT,
+      runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0,
       runtime_session_json TEXT,
       history_reset_after_id INTEGER,
       runtime_session_display_id TEXT,
@@ -1775,6 +1797,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       ON channel_backend_ingress_receipts(session_name, accepted_at);
 
     CREATE TABLE IF NOT EXISTS channel_backend_runtime_state (
+      trace_turn_id TEXT,
       turn_id TEXT PRIMARY KEY
         REFERENCES channel_backend_ingress_receipts(turn_id) ON DELETE CASCADE,
       state TEXT NOT NULL DEFAULT 'accepted'
@@ -1795,6 +1818,12 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       runtime_generation_id TEXT,
       terminal_error_json TEXT,
       updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS slack_automatic_terminal_manifests (
+      response_id TEXT PRIMARY KEY,
+      request_fingerprint TEXT NOT NULL,
+      manifest_json TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS channel_backend_runtime_interrupts (
@@ -1957,6 +1986,20 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       ON slack_thread_lifecycle(status, creation_claim_expires_at, updated_at);
     CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_parent_return
       ON slack_thread_lifecycle(parent_return_requested, parent_notified_at, parent_notification_claim_expires_at);
+
+    CREATE TABLE IF NOT EXISTS slack_thread_turn_health (
+      request_id TEXT PRIMARY KEY REFERENCES slack_thread_lifecycle(request_id) ON DELETE CASCADE,
+      turn_id TEXT,
+      state TEXT NOT NULL CHECK(state IN ('idle','running','interrupted','attention','closed')),
+      reason TEXT CHECK(reason IN ('no_signal','no_reply','owner_lost','failed')),
+      since_at INTEGER NOT NULL,
+      last_signal_at INTEGER,
+      checked_at INTEGER NOT NULL,
+      notified_turn_id TEXT,
+      notified_at INTEGER,
+      claim_id TEXT,
+      claim_expires_at INTEGER
+    );
 
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
@@ -3084,6 +3127,14 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_provider_override TEXT");
     log.info("Added runtime_provider_override column to sessions table");
   }
+  if (
+    addSessionColumnIfMissing(
+      "runtime_provider_config_revision",
+      "ALTER TABLE sessions ADD COLUMN runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0",
+    )
+  ) {
+    log.info("Added runtime_provider_config_revision column to sessions table");
+  }
   if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");
     log.info("Added runtime_session_json column to sessions table");
@@ -3609,6 +3660,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     "INTEGER NOT NULL DEFAULT 0 CHECK(last_delta_sequence >= 0)",
   );
   ensureColumn(db, "channel_backend_runtime_state", "runtime_generation_id", "TEXT");
+  ensureColumn(db, "channel_backend_runtime_state", "trace_turn_id", "TEXT");
   ensureColumn(db, "channel_backend_runtime_state", "terminal_error_json", "TEXT");
   ensureColumn(db, "channel_backend_ingress_receipts", "prompt_json", "TEXT");
   ensureColumn(db, "daemon_restart_resume_deliveries", "delivery_kind", "TEXT NOT NULL DEFAULT 'resume'");
@@ -3704,6 +3756,9 @@ const CHANNEL_OUTBOUND_RECEIPT_COLUMNS = [
   "persisted_at",
   "trace_recorded_at",
   "completed_at",
+  "suppression_reason",
+  "resend_prohibited",
+  "retain_identity",
   "last_error_phase",
   "last_error_message",
   "last_error_at",
@@ -3713,6 +3768,10 @@ const CHANNEL_OUTBOUND_RECEIPT_COLUMNS = [
 
 type ChannelOutboundReceiptTable = "channel_outbound_receipts" | "channel_outbound_receipts_next";
 
+/**
+ * Creates the receipt table within the caller's schema transaction. Suppression
+ * and identity-retention fields describe local resend policy, not remote delivery.
+ */
 function createChannelOutboundReceiptTable(database: Database, table: ChannelOutboundReceiptTable): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS ${table} (
@@ -3721,7 +3780,7 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
       job_id                TEXT NOT NULL,
       request_id            TEXT NOT NULL,
       session_name          TEXT NOT NULL,
-      state                 TEXT NOT NULL CHECK(state IN ('claimed','sent','persisted','complete')),
+      state                 TEXT NOT NULL CHECK(state IN ('claimed','sent','persisted','complete','suppressed')),
       provider              TEXT NOT NULL,
       delivery_message_id   TEXT,
       platform_message_id   TEXT,
@@ -3733,6 +3792,9 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
       persisted_at          INTEGER,
       trace_recorded_at     INTEGER,
       completed_at          INTEGER,
+      suppression_reason    TEXT,
+      resend_prohibited     INTEGER NOT NULL DEFAULT 0 CHECK(resend_prohibited IN (0,1)),
+      retain_identity       INTEGER NOT NULL DEFAULT 0 CHECK(retain_identity IN (0,1)),
       last_error_phase      TEXT,
       last_error_message    TEXT,
       last_error_at         INTEGER,
@@ -3742,6 +3804,11 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
   `);
 }
 
+/**
+ * Locks before inspecting the receipt schema so concurrent initializers cannot
+ * migrate from stale metadata. Table reconciliation and indexes commit together;
+ * any failure rolls back rather than publishing a partially migrated schema.
+ */
 function ensureChannelOutboundReceiptSchema(database: Database): void {
   // Acquire the write lock before inspecting the schema. A daemon and CLI can
   // initialize the same database concurrently; reading metadata before this
@@ -3764,8 +3831,9 @@ function ensureChannelOutboundReceiptSchema(database: Database): void {
       const missingColumns = CHANNEL_OUTBOUND_RECEIPT_COLUMNS.filter((column) => !columns.has(column));
       const legacyColumns = ["provider_raw_json", "telemetry_emitted_at"].filter((column) => columns.has(column));
       const acceptsClaimedState = tableRow.sql?.includes("'claimed'") === true;
+      const acceptsSuppressedState = tableRow.sql?.includes("'suppressed'") === true;
 
-      if (missingColumns.length > 0 || legacyColumns.length > 0 || !acceptsClaimedState) {
+      if (missingColumns.length > 0 || legacyColumns.length > 0 || !acceptsClaimedState || !acceptsSuppressedState) {
         migrateChannelOutboundReceiptSchema(database, columns, missingColumns, legacyColumns);
       }
     }
@@ -3794,6 +3862,11 @@ function ensureChannelOutboundReceiptSchema(database: Database): void {
   }
 }
 
+/**
+ * Rebuilds receipts inside the caller's transaction, preserving available keys,
+ * recognized states and retention flags, with defaults for legacy columns.
+ * A missing idempotency_key column is rejected; this helper owns no transaction.
+ */
 function migrateChannelOutboundReceiptSchema(
   database: Database,
   columns: ReadonlySet<string>,
@@ -3815,7 +3888,7 @@ function migrateChannelOutboundReceiptSchema(
   const idempotencyKey = "CAST(idempotency_key AS TEXT)";
   const legacyFingerprint = `'legacy:' || ${idempotencyKey}`;
   const state = columns.has("state")
-    ? "CASE WHEN state IN ('claimed','sent','persisted','complete') THEN state ELSE 'sent' END"
+    ? "CASE WHEN state IN ('claimed','sent','persisted','complete','suppressed') THEN state ELSE 'sent' END"
     : "'sent'";
   const createdAt = coalesce(["created_at", "sent_at", "updated_at"], String(now));
   const updatedAt = coalesce(["updated_at", "created_at", "sent_at"], String(now));
@@ -3828,7 +3901,7 @@ function migrateChannelOutboundReceiptSchema(
            idempotency_key, request_fingerprint, job_id, request_id, session_name,
            state, provider, delivery_message_id, platform_message_id, provider_timestamp,
            canonical_message_id, claim_owner, claim_expires_at, sent_at, persisted_at,
-           trace_recorded_at, completed_at, last_error_phase, last_error_message,
+           trace_recorded_at, completed_at, suppression_reason, resend_prohibited, retain_identity, last_error_phase, last_error_message,
            last_error_at, created_at, updated_at
          )
          SELECT
@@ -3849,6 +3922,9 @@ function migrateChannelOutboundReceiptSchema(
            ${nullable("persisted_at")},
            ${nullable("trace_recorded_at")},
            ${nullable("completed_at")},
+           ${nullable("suppression_reason")},
+           ${coalesce(["resend_prohibited"], "0")},
+           ${coalesce(["retain_identity"], "0")},
            ${nullable("last_error_phase")},
            ${nullable("last_error_message")},
            ${nullable("last_error_at")},
@@ -4678,6 +4754,7 @@ function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow)
 function rowToChannelBackendRuntimeState(row: ChannelBackendRuntimeStateRow): ChannelBackendRuntimeStateRecord {
   const terminalError = parseJsonRecord(row.terminal_error_json);
   return {
+    ...(row.trace_turn_id ? { traceTurnId: row.trace_turn_id } : {}),
     turnId: row.turn_id,
     state: row.state,
     lastSequence: row.last_sequence,
@@ -7470,12 +7547,26 @@ export function dbGetChannelBackendRuntimeState(turnId: string): ChannelBackendR
   return row ? rowToChannelBackendRuntimeState(row) : null;
 }
 
+/**
+ * Commits sequence/state, optional canonical assistant text and a prepared Slack
+ * manifest on one connection in executeWrite's synchronous retryable transaction.
+ * The manifest must match the accepted ingress and requested terminal kind.
+ * The pure owner fence is rechecked on each attempt and before mutations; a
+ * rejected owner, transition or manifest rolls back every new write in that
+ * attempt. Callers prepare hashes beforehand and defer cleanup, readiness and
+ * external output until this function returns a committed result.
+ */
 export function dbRecordChannelBackendRuntimeEvent(
   input: RecordChannelBackendRuntimeEventInput,
 ): RecordChannelBackendRuntimeEventResult {
   return executeWrite(
     getDb(),
     (database) => {
+      /** Rejects a lost owner inside the current transaction, allowing its writes to roll back. */
+      const assertOwner = () => {
+        if (input.mayWrite && input.mayWrite() !== true) throw new ChannelBackendRuntimeOwnershipLostError();
+      };
+      assertOwner();
       const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
       const runtimeGenerationId = normalizeOpaqueCanonicalId(input.runtimeGenerationId, "runtimeGenerationId");
       const occurredAt = input.occurredAt ?? Date.now();
@@ -7504,6 +7595,26 @@ export function dbRecordChannelBackendRuntimeEvent(
       const nextState = input.state ?? current.state;
       assertChannelBackendRuntimeTransition(current.state, nextState);
 
+      const preparedManifest = input.slackTerminalManifest;
+      if (preparedManifest) {
+        const expectedKind =
+          input.state === "completed"
+            ? "final_answer"
+            : input.state === "failed"
+              ? "safe_error"
+              : input.state === "interrupted"
+                ? "cancelled"
+                : undefined;
+        if (
+          expectedKind === undefined ||
+          preparedManifest.kind !== expectedKind ||
+          preparedManifest.turnId !== turnId ||
+          preparedManifest.sourceId !== receipt.messageId ||
+          preparedManifest.sourceReceivedAt !== receipt.acceptedAt
+        )
+          throw new Error("Slack terminal manifest does not match the channel runtime transition");
+      }
+
       let assistantMessageId = current.assistantMessageId;
       if (input.assistantText !== undefined) {
         if (nextState !== "completed") {
@@ -7513,6 +7624,7 @@ export function dbRecordChannelBackendRuntimeEvent(
         if (!assistantText) {
           throw new Error("assistantText must not be empty");
         }
+        assertOwner();
         const messageResult = upsertChatMessage(database, {
           chatId: receipt.chatId,
           channel: receipt.external.channelKind,
@@ -7541,10 +7653,12 @@ export function dbRecordChannelBackendRuntimeEvent(
       const nextSequence = current.lastSequence + 1;
       const nextDeltaSequence = current.lastDeltaSequence + (input.assistantDelta ? 1 : 0);
       const terminalErrorJson = input.terminalError === undefined ? undefined : JSON.stringify(input.terminalError);
+      assertOwner();
       database
         .prepare(
           `
           INSERT INTO channel_backend_runtime_state (
+            trace_turn_id,
             turn_id,
             state,
             last_sequence,
@@ -7554,8 +7668,9 @@ export function dbRecordChannelBackendRuntimeEvent(
             terminal_error_json,
             updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(turn_id) DO UPDATE SET
+            trace_turn_id = COALESCE(excluded.trace_turn_id, channel_backend_runtime_state.trace_turn_id),
             state = excluded.state,
             last_sequence = excluded.last_sequence,
             last_delta_sequence = excluded.last_delta_sequence,
@@ -7572,6 +7687,7 @@ export function dbRecordChannelBackendRuntimeEvent(
         `,
         )
         .run(
+          input.traceTurnId ?? null,
           turnId,
           nextState,
           nextSequence,
@@ -7587,7 +7703,12 @@ export function dbRecordChannelBackendRuntimeEvent(
       if (!runtimeRow) {
         throw new Error(`Channel backend runtime state not found after update for turn ${turnId}`);
       }
+      assertOwner();
+      const slackTerminalManifest = preparedManifest
+        ? persistPreparedSlackAutomaticTerminalManifest(database, preparedManifest)
+        : undefined;
       return {
+        ...(slackTerminalManifest ? { slackTerminalManifest } : {}),
         receipt,
         runtime: rowToChannelBackendRuntimeState(runtimeRow),
       };

@@ -333,8 +333,21 @@ export class SlackTextDelivery implements NativeTextDelivery {
     return supportsSlackTarget(target, this.scope);
   }
 
+  /**
+   * Posts to a target already selected by the caller. The internal
+   * _trustedFrozenTarget flag preserves its thread instead of reapplying the
+   * channel-root policy; callers must validate that frozen destination first.
+   * A positive Knowledge guard disables unfurls and document artifacts; lookup
+   * errors fall back to ordinary rendering. Returns the first post's identity
+   * with additional timestamps and document outcomes in raw metadata.
+   * Rendering/provider errors propagate and can follow partial remote output;
+   * this method does not persist delivery receipts or roll back earlier posts.
+   */
   async deliverText(request: NativeTextDeliveryRequest): Promise<NativeTextDeliveryResult> {
-    const threadTs = this.routingPolicy.threadReplyMode === "channel_root" ? undefined : request.target.threadId;
+    const threadTs =
+      !request._trustedFrozenTarget && this.routingPolicy.threadReplyMode === "channel_root"
+        ? undefined
+        : request.target.threadId;
     // Packet conversations post with unfurls off, so no link preview leaks page content.
     let guarded = false;
     try {
@@ -1250,6 +1263,17 @@ export class SlackSocketModeService {
     }
   }
 
+  /**
+   * Normalizes eligible message events, retaining team/sender provenance and
+   * configured thread projection without granting actor or route authority.
+   * Bot candidates need an origin team and a resolved local identity. Present
+   * authorizations must be an array whose extracted team ids include the local
+   * team; without that field, exactly one legacy installation team must match.
+   * This extraction does not validate every authorization entry. Self echoes,
+   * missing identities and unsupported events return null, as do messages with
+   * neither nonblank extracted text nor normalized files. Human messages use
+   * cached bot identity or start background discovery without waiting for auth.test.
+   */
   private async normalizeEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {
     const event = envelopeEvent(envelope);
     if (!event || !isSlackMessageEventStructurallyEligible(event)) return null;
@@ -1307,7 +1331,6 @@ export class SlackSocketModeService {
       shouldIgnoreSlackMessageEvent(event, {
         selfBotId: localBotIdentity?.botId,
         selfUserId: localBotIdentity?.userId,
-        botMessageAliasesByChat: this.routingPolicy.botMessageAliasesByChat,
       })
     ) {
       return null;

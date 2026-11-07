@@ -4,6 +4,7 @@ import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
 import { dbUpsertChat } from "../router/router-db.js";
 import { attachChatToSession } from "../router/sessions.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
+import type { ResponseMessage } from "../runtime/message-types.js";
 import {
   normalizeSessionTraceSource,
   recordChannelMessageReceivedTrace,
@@ -25,6 +26,63 @@ afterEach(async () => {
 });
 
 describe("channel session trace", () => {
+  it("preserves final phase and factual media counts through response and per-part delivery", () => {
+    const sessionName = "trace-final-media";
+    getOrCreateSession(sessionName, "main", "/tmp/ravi", { name: sessionName });
+    const response: ResponseMessage = {
+      traceTurnId: "media-physical-turn",
+      response: "",
+      metadata: { item: { phase: "final_answer" } },
+      content: [
+        { type: "media", media: { type: "image", filePath: "/tmp/one.png", filename: "one.png" } },
+        { type: "media", media: { type: "image", filePath: "/tmp/two.png", filename: "two.png" } },
+      ],
+    };
+    const emitted = recordResponseEmittedTrace({ sessionName, response });
+    expect(emitted?.turnId).toBe("media-physical-turn");
+    expect(emitted?.payloadJson).toMatchObject({
+      textLen: 0,
+      mediaCount: 2,
+      responsePhase: "final_answer",
+      hasError: false,
+    });
+    const delivered = recordDeliveryTrace({
+      sessionName,
+      response,
+      delivery: { status: "delivered", contentType: "media" },
+    });
+    expect(delivered?.turnId).toBe("media-physical-turn");
+    expect(delivered?.payloadJson).toMatchObject({
+      mediaCount: 1,
+      responsePhase: "final_answer",
+      hasError: false,
+    });
+    const commentary = recordDeliveryTrace({
+      sessionName,
+      response,
+      delivery: { status: "delivered", contentType: "media", responsePhase: "commentary" },
+    });
+    expect(commentary?.payloadJson).toMatchObject({
+      mediaCount: 1,
+      responsePhase: "commentary",
+      hasError: false,
+    });
+  });
+
+  it("correlates channel-only delivery without borrowing a newer turn or a provider id", () => {
+    getOrCreateSession("trace-channel-only", "main", "/tmp/ravi", { name: "trace-channel-only" });
+    const recorded = recordDeliveryTrace({
+      sessionName: "trace-channel-only",
+      delivery: {
+        status: "delivered",
+        traceTurnId: "turn-original",
+        responsePhase: "final_answer",
+        target: { channel: "slack", accountId: "test", chatId: "C_TEST" },
+      },
+    });
+    expect(recorded?.turnId).toBe("turn-original");
+    expect(recorded?.payloadJson).toMatchObject({ responsePhase: "final_answer" });
+  });
   it("records an inbound channel message through prompt, response, and delivery outcomes", () => {
     const sessionKey = "agent:main:whatsapp:dm:5511999999999";
     const sessionName = "main-dm-5511999999999";
@@ -76,6 +134,7 @@ describe("channel session trace", () => {
       },
     });
     const response = {
+      traceTurnId: "turn-canonical",
       response: "hi",
       target: {
         channel: "whatsapp-baileys",
@@ -122,6 +181,11 @@ describe("channel session trace", () => {
     });
 
     const events = listSessionEventsForTest(sessionKey);
+    expect(
+      events
+        .filter((event) => event.eventGroup === "response" || event.eventGroup === "delivery")
+        .map((event) => event.turnId),
+    ).toEqual(new Array(4).fill("turn-canonical"));
     expect(events.map((event) => event.eventType)).toEqual([
       "channel.message.received",
       "route.resolved",

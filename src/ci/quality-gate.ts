@@ -34,6 +34,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/runner.test.ts",
     "src/channels/session-prompt.test.ts",
     "src/channels/slack/media.test.ts",
+    // Automatic media receipts: durable suppression recovery and no-resend ambiguity fences.
+    "src/channels/slack/automatic-media-output.test.ts",
     "src/channels/slack/socket-mode.test.ts",
     // `channels start` liveness: PM2-online runner probed on its PID health subject, stale ones bounced.
     "src/channels/runner-liveness.test.ts",
@@ -47,6 +49,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/credential-intake.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
+    // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
+    "src/channels/slack/thread-runtime.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
     "src/channels/slack/markdown-layout.test.ts",
     "src/channels/slack/markdown-delivery.test.ts",
@@ -100,6 +104,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Reset refusal must still settle its captured logical request under ownership fences.
+    "src/runtime/host-event-loop.reset-failure.test.ts",
+    // Real host/generator retention, owner and cancellation fences under memory-only isolation.
+    "src/runtime/direct-interrupted-retention.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
     // Signals piggyback: the transformTurnPrompt seam in the delivery queue.
@@ -114,6 +122,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/runtime-selection.test.ts",
     // Agent default vs last-used runtime_provider rematerialize.
     "src/runtime/agent-session-runtime-sync.test.ts",
+    // A later thread runtime configuration survives the active provider's completion.
+    "src/runtime/thread-provider-config.test.ts",
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",

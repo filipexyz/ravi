@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { reportErrorDiagnostic } from "./error-reporting.js";
 import {
   diagnosticError,
   errorDiagnostic,
@@ -8,6 +9,37 @@ import {
 } from "./error-diagnostic.js";
 
 describe("error diagnostics", () => {
+  it("reports a redacted cause without exposing arbitrary exception payloads", () => {
+    const recorded: unknown[] = [];
+    const error = Object.assign(new Error("lookup failed token=fixture-token"), { body: "PRIVATE_BODY" });
+    reportErrorDiagnostic({ warn: (_message, data) => recorded.push(data) }, "Lookup failed", error, {
+      operation: "fixture_lookup",
+    });
+    expect(recorded).toEqual([
+      { cause: "lookup failed token=[redacted:token]", context: { operation: "fixture_lookup" } },
+    ]);
+  });
+
+  it("preserves the operation's primary error when its diagnostic sink also fails", () => {
+    const primary = new Error("operation failed");
+    let calls = 0;
+    const operation = () => {
+      reportErrorDiagnostic(
+        {
+          warn() {
+            calls += 1;
+            throw new Error("diagnostic sink failed");
+          },
+        },
+        "Operation failed",
+        primary,
+        { operation: "fixture_failure" },
+      );
+      throw primary;
+    };
+    expect(operation).toThrow(primary);
+    expect(calls).toBe(1);
+  });
   it.each(["path", "context", "status", "message", "cause", "error"])(
     "continues collecting diagnostics when %s getter throws",
     (field) => {

@@ -125,6 +125,8 @@ export interface DaemonRestartResumePromptMetadata {
 }
 
 export interface ChannelBackendPromptMetadata {
+  /** Physical Ravi trace turn; distinct from the channel request's binding.turnId. */
+  traceTurnId?: string;
   protocol: "ravi.channel.backend";
   schemaVersion: 1;
   ingressRequestId: string;
@@ -142,6 +144,12 @@ export interface ChannelBackendPromptMetadata {
     connectionId: string;
     conversationId: string;
   };
+}
+
+/** Host-owned reference to the durable input; never inferred from the reply target or latest session sender. */
+export interface ChannelAutomaticOutputOrigin {
+  readonly kind: "channel_backend";
+  readonly binding: Readonly<ChannelBackendPromptMetadata["binding"]>;
 }
 
 export type SessionRelayAction = "send" | "ask" | "answer" | "execute" | "inform";
@@ -351,6 +359,8 @@ export type ResponseContentPart =
 
 /** Response message structure */
 export interface ResponseMessage {
+  /** Canonical session_turns.turn_id, never a provider-native turn id. */
+  traceTurnId?: string;
   response?: string;
   error?: string;
   content?: ResponseContentPart[];
@@ -358,6 +368,10 @@ export interface ResponseMessage {
   metadata?: RuntimeEventMetadata | null;
   /** Unique emit ID to detect ghost/duplicate responses */
   _emitId?: string;
+  /** Immutable native-turn provenance, independently carried when the output target is reconstructed. */
+  _automaticOutputOrigin?: ChannelAutomaticOutputOrigin;
+  /** Frozen complete native bot reply, shared by its terminal text and generated attachments. */
+  _automaticTerminalResponseId?: string;
   usage?: {
     input_tokens: number;
     output_tokens: number;

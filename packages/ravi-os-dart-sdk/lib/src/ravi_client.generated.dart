@@ -8412,6 +8412,18 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsThreadConfigureReturn> threadConfigure(String thread, SessionsThreadConfigureOptions options) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["thread"] = RaviJson.from(thread);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "thread-configure",
+      body: requestBody,
+      decode: sessionsThreadConfigureReturnFromJson,
+    );
+  }
+
   Future<SessionsThreadSendReturn> threadSend(String thread, String message, [SessionsThreadSendOptions options = const SessionsThreadSendOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["thread"] = RaviJson.from(thread);

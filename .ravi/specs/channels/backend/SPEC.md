@@ -104,6 +104,14 @@ MUST both recover after expiry or restart.
 
 - Runtime events MUST use the accepted canonical binding and monotonically
   increasing sequence.
+- When a failed turn needs a running bootstrap, the bootstrap MUST be recorded
+  synchronously without an external sink await before terminal persistence.
+  After terminal commit, notifications MUST remain ordered running, failed,
+  then eligible safe-error output, using their captured envelopes. A bootstrap
+  notification failure MUST NOT prevent later authorized terminal/output
+  attempts. Post-commit callbacks retain their own failure semantics; callbacks
+  and refused writes MUST NOT be retried as notification failures. Readback
+  MAY already be failed when the historical running notification arrives.
 - Commentary, tool activity, deltas, terminal assistant content, failure, and
   interruption MUST remain distinct typed events.
 - A registered transport runtime-event sink MUST receive the validated
@@ -196,3 +204,55 @@ commercial policy, private endpoint schemas, or private authorization rules.
 - Allowing a driver to escape its provider or Channel-instance scope.
 - Retrying publication by creating another Message or Turn.
 - Putting hosted product policy or entities in the public ABI.
+
+
+### Bounded terminal projection and text handoff
+
+The host MUST capture terminal event, response, time, full accepted binding and
+destination before asynchronous projection work. Additional recovery MUST use
+the same slot, handle, terminal latch, trace and coordinator ownership; it MUST
+NOT acquire authority from a successor. Initial explicit-cancellation cleanup
+retains its existing semantics. Receipt/runtime/assistant/manifest readback MUST
+be consistent, and positive settlement MUST match the post-bootstrap sequence
+plus one, delta/generation, terminal time/error and complete authored content.
+Post-commit callbacks or notification failures MUST NOT repeat persistence.
+
+Terminal text handoff MUST be tracked separately from notification and physical
+accounting. The initial sink call MAY remain unclassified. Only the known durable
+adapter's completed, typed pre-save absence with immutable output identity, key,
+request fingerprint and a closed transient code permits at most two extra inline
+attempts, delayed 100 then 400 ms. The first request fingerprint MUST never be
+replaced; each retry MUST validate it before saving. A job-less `not_started`,
+conflict, untyped exception, timeout or unknown outcome MUST NOT cause resending.
+After a confirmed save, the existing outbox reconciler owns pending work.
+
+A request-fingerprint mismatch MUST block replay without asserting that an
+operation finished. Validated `unknown` evidence with `operationFinished: false`
+MUST retain its full identity, actual fingerprint and uncertainty through runtime,
+SDK and egress normalization, including under a different immutable caller pin.
+Evidence for a completed conflicting operation MUST remain non-retryable.
+
+Internal egress version 2 applies to both `runtime_event` and `output`.
+Unsupported request versions and unknown restrictive capabilities MUST be
+rejected before sink invocation. Requesters MUST reject unsupported response
+versions without fallback or downgrade. A generic
+`ok: true` or resolved `Promise<void>` MUST NOT mean durable save or delivery.
+Only a validated known-adapter confirmation matching output/binding/target,
+key and pinned request fingerprint establishes durable handoff. Published,
+deferred and policy-suppressed dispositions MUST remain distinct from Slack ACK.
+No executable owner predicate may cross this transport boundary.
+
+The daemon and channel runner MUST use the same runtime bundle for normal
+traffic, following the coordinated update contract in `permissions/provider-runtime`.
+Stopping intake does not establish that accepted turns or egress calls have
+settled. Process-online status does not establish adapter or egress readiness.
+This contract does not guarantee lossless updates of work already in flight.
+
+The TypeScript SDK MUST support output identity preparation on Node 18 without
+requiring the global-WebCrypto flag, and MUST keep its common entrypoints free
+of Node-only imports. Browser/edge consumers MUST provide WebCrypto through a
+package resolver that selects the portable helper. The registry MUST prepare
+identity before invoking a present sink, reuse that identity for handoff evidence
+and confirmation, and recheck the current sink registration after asynchronous
+preparation. Digest failure MUST prevent invocation, including void sinks;
+`tryEmit` with no registered sink MUST remain false without requiring a digest.

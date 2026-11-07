@@ -90,6 +90,35 @@ it("channels startup refuses missing state before connecting to NATS and creates
   expect(readdirSync(state).filter((name) => name.endsWith(".db"))).toEqual([]);
 });
 
+it.each(["channel-outbound-publish", "slack-automatic-output"])(
+  "channels startup refuses missing %s readiness even when router schema is ready",
+  (component) => {
+    const state = fixture();
+    const prepared = run(
+      state,
+      `const { initializeRuntimeState } = await import('./src/db/runtime-state.ts'); await initializeRuntimeState();`,
+    );
+    expect(prepared.status, prepared.stderr).toBe(0);
+    const database = new Database(join(state, "ravi.db"));
+    database.query("DELETE FROM state_schema_versions WHERE component = ?").run(component);
+    const before = database.query("PRAGMA schema_version").get();
+    expect(() => assertRuntimeStateReady({ RAVI_STATE_DIR: state })).toThrow(`STATE_SCHEMA_NOT_READY: ${component}`);
+    const consumer = run(
+      state,
+      `
+      process.argv[2] = 'channels'; process.argv[3] = 'run';
+      const { ChannelRunner } = await import('./src/channels/runner.ts');
+      try { await new ChannelRunner({ natsUrl: 'nats://127.0.0.1:1' }).start(); throw new Error('UNSAFE_START'); }
+      catch (error) { if (error.code !== 'STATE_SCHEMA_NOT_READY' || !error.message.includes(${JSON.stringify(component)})) throw error; }
+    `,
+    );
+    expect(consumer.status, consumer.stderr).toBe(0);
+    expect(database.query("PRAGMA schema_version").get()).toEqual(before);
+    expect(database.query("SELECT * FROM state_schema_versions WHERE component = ?").get(component)).toBeNull();
+    database.close();
+  },
+);
+
 it("daemon prepares all stores; channels validates and uses those stores with zero schema changes", () => {
   const state = fixture();
   const prepared = run(
@@ -121,6 +150,20 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
     assertRuntimeStateReady(); await initializeRuntimeState();
     const { getDb } = await import('./src/router/router-db.ts');
     if (!getDb().query('SELECT id FROM agents').get()) throw new Error('NORMAL_QUERY_FAILED');
+    getDb().query('SELECT runtime_provider_config_revision FROM sessions LIMIT 0').all();
+    getDb().query('SELECT trace_turn_id FROM channel_backend_runtime_state LIMIT 0').all();
+    getDb().query('SELECT request_id FROM slack_thread_turn_health LIMIT 0').all();
+    getDb().query('SELECT response_id FROM slack_automatic_terminal_manifests LIMIT 0').all();
+    const { reserveSlackAutomaticOutput } = await import('./src/channels/slack/automatic-output-circuit.ts');
+    const reservation = reserveSlackAutomaticOutput({
+      idempotencyKey: 'schema-owner-output', requestFingerprint: 'schema-owner-fingerprint',
+      scope: 'fixture:C_SCHEMA', sourceId: 'source', sourceReceivedAt: 1, now: 1,
+    });
+    if (reservation.status !== 'allowed') throw new Error('NORMAL_RESERVATION_FAILED');
+    const { sqliteChannelOutboundPublishOutboxStore, getChannelOutboundPublishJob, prunePublishedChannelOutboundPublishJobs } = await import('./src/channels/outbound-publish-outbox.ts');
+    if (sqliteChannelOutboundPublishOutboxStore.summary(1).pendingCount !== 0) throw new Error('NORMAL_OUTBOX_QUERY_FAILED');
+    if (getChannelOutboundPublishJob('absent') !== null) throw new Error('NORMAL_OUTBOX_READ_FAILED');
+    if (prunePublishedChannelOutboundPublishJobs(1, 1) !== 0) throw new Error('NORMAL_OUTBOX_PRUNE_FAILED');
   `,
   );
   expect(consumer.status, consumer.stderr).toBe(0);

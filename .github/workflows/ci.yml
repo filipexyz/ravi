@@ -77,6 +77,19 @@ jobs:
       - name: Test state ownership
         run: bun test src/router/state-boundary.test.ts src/db/schema-owner.test.ts src/test/ravi-state.test.ts
 
+      - name: Test direct interruption with retained memory state
+        run: bun --no-env-file run test:runtime-direct-interrupted
+
+      - name: Retain direct interruption evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-interrupted-retained-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ravi-test-artifacts/direct-interrupted/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Test Swift SDK
         run: bun run test:swift-sdk
 
@@ -94,3 +107,68 @@ jobs:
           # per PR via the `revert` label or a `revert` title prefix. It only
           # exempts the focused-coverage check; every other gate is unchanged.
           QUALITY_GATE_REVERT: ${{ contains(github.event.pull_request.labels.*.name, 'revert') || startsWith(github.event.pull_request.title, 'revert') }}
+
+  retained-preload:
+    name: Retained preload guard contracts
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+      - name: Test guard contracts behind an independent OS network boundary
+        run: bun --no-env-file run test:retained-preload
+      - name: Retain guard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retained-preload-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ravi-test-artifacts/retained-preload/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  sdk-node18-platform:
+    name: SDK emitted package / Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    container: node:${{ matrix.node }}-bullseye
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["18.0.0", "18.20.8"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Emit the SDK package only
+        working-directory: packages/ravi-os-sdk
+        run: bun run build
+
+      - name: Consume published files through public package exports
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_consumer=$(mktemp -d "$RUNNER_TEMP/ravi-sdk-node18-XXXXXX")
+          sdk_package="$sdk_consumer/node_modules/@ravi-os/sdk"
+          mkdir -p "$sdk_package"
+          cp packages/ravi-os-sdk/package.json packages/ravi-os-sdk/README.md "$sdk_package/"
+          cp -R packages/ravi-os-sdk/dist packages/ravi-os-sdk/platform "$sdk_package/"
+          ln -s "$GITHUB_WORKSPACE/node_modules/zod" "$sdk_consumer/node_modules/zod"
+          cp packages/ravi-os-sdk/tests/platform-handoff.mjs "$sdk_consumer/consumer.mjs"
+          node "$sdk_consumer/consumer.mjs" --expect-node=${{ matrix.node }} --artifacts="$GITHUB_WORKSPACE/.ravi-test-artifacts/sdk-node18"
+
+      - name: Retain SDK platform results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-node18-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ravi-test-artifacts/sdk-node18/result.json
+          if-no-files-found: error
+          retention-days: 7

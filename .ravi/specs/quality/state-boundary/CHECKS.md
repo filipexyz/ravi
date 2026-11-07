@@ -12,6 +12,7 @@ normative: true
 
 ```bash
 bun test src/db/schema-owner.test.ts src/router/state-boundary.test.ts src/test/ravi-state.test.ts
+bun test src/channels/outbound-publish-outbox.test.ts src/channels/slack/automatic-output-circuit.test.ts
 bun test src/runtime/session-dispatcher.test.ts -t 'runtime recovery'
 RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 ```
@@ -32,3 +33,5 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - The daemon-to-channel schema snapshot includes nested `human-bridge/bridge.db` and the PR publication tables in `ravi.db`; neither consumer path creates tables or changes markers.
 - Source/worktree opens through BridgeStore and the PR publication journal refuse the fake production path before file creation or directory preparation.
 - Interleaved isolated initializers of the same component both complete successfully and publish one ready marker; the concurrent chat-writer test remains green.
+- The daemon-to-channel snapshot exercises automatic-output reservation and outbox read/summary/retention APIs. Schema, schema version and markers remain identical; runtime configuration revision, trace-turn identity, thread health and terminal manifest tables remain usable after integration.
+- With a ready router but either lazy component marker absent, channel startup refuses before NATS. Direct circuit and outbox APIs also refuse without creating or rebuilding tables.

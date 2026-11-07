@@ -199,4 +199,4 @@ export interface SessionTurnRecord {
  * Turn-output marker: `final` when the turn materialized a final utterance,
  * `incomplete` when it ended with commentary only (sessions/turn-output inv. 6).
  */
-export type SessionTurnOutputState = "final" | "incomplete";
+export type SessionTurnOutputState = "final" | "incomplete" | "silent";

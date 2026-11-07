@@ -91,7 +91,6 @@ export type {
   SlackTargetScope,
 } from "./socket-mode.js";
 export type {
-  SlackBotMessageAliasesByChat,
   SlackEventAuthorization,
   SlackEventPayload,
   SlackEventsApiPayload,
