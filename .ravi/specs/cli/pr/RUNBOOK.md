@@ -7,9 +7,17 @@ ravi pr publish --repo owner/repo --base dev --title "Fix publication" --body-fi
 ravi pr publish --repo owner/repo --base dev --title "Fix publication" --body-file /tmp/pr.md --expect-sha <full-local-sha> --execute --json
 ```
 
-Preview exits 3. From a local operator terminal, add `--reply-session <session>`;
-the session must have a chat destination. Runtime and client must both contain
-this feature. `FOLLOW_RUNTIME_UNAVAILABLE` means update/start the normal Ravi
+Preview exits 3. **Breaking change:** bare operator execution and
+`--reply-session` are no longer supported. Remove that flag from CLI/SDK
+callers and run the command from an authorized Ravi session through its
+gateway/agent. The authenticated session must have a chat destination;
+thread publications hand CI to their durable parent. `PERMISSION_DENIED`
+with `pr publish requires an authenticated session context; run through the
+gateway/agent.` means the execution surface/session identity is missing.
+Do not repair this by bypassing the journal or bootstrapping an admin key.
+Cloud login does not currently exchange human identity for a gateway `rctx`.
+Runtime and client must both contain this feature.
+`FOLLOW_RUNTIME_UNAVAILABLE` means update/start the normal Ravi
 runtime; never start a second runner or disable this check.
 
 After a partial failure, rerun in the same session/worktree, with the same
@@ -25,5 +33,6 @@ existing PR explicitly. No force, auto-rebase, automatic retry loop or cleanup
 of uploaded objects is part of publication.
 
 The result's CI state is a snapshot; the returned trigger follows later events.
-An independent current-head review is still needed before merge. The replaced
+Record independent current-head review in the PR; use the live repository's
+required checks, not the retired Review Gate. The replaced
 `scripts/publish-pr.ts` entrypoint is removed; use this registered command.

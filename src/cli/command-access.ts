@@ -266,7 +266,9 @@ function resolveCommandAccessAuthority(
   if (access.localOperator === false) {
     return {
       allowed: false,
-      errorMessage: "Permission denied: local operator is not allowed for this command",
+      errorMessage: ["Permission denied: local operator is not allowed for this command", access.notes]
+        .filter(Boolean)
+        .join(". "),
     };
   }
 
