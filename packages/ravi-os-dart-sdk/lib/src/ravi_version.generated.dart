@@ -4,4 +4,4 @@
 
 const raviSdkVersion = "0.1.0";
 const raviRegistryHash = "sha256:4b9ae77a539ef0e59df81255a09ed0483566d4c23936e8108cfbb03517961a21";
-const raviGitSha = "c572609ebd9e";
+const raviGitSha = "764a4318ae34";

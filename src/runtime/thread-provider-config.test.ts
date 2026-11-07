@@ -10,7 +10,14 @@ import { configStore } from "../config-store.js";
 import * as pricing from "../costs/pricing-catalog.js";
 import { getRecentHistory, saveMessage } from "../db.js";
 import { nats } from "../nats.js";
-import { dbCreateAgent, dbGetAgent, dbGetCostForSession, dbUpdateAgent, dbUpsertChat } from "../router/router-db.js";
+import {
+  dbCreateAgent,
+  dbGetAgent,
+  dbGetCostForSession,
+  dbUpdateAgent,
+  dbUpsertChat,
+  dbUpsertDaemonRestartEpoch,
+} from "../router/router-db.js";
 import {
   getOrCreateSession,
   getSession,
@@ -26,9 +33,11 @@ import { logger } from "../utils/logger.js";
 import { syncAgentSessionsToAgentRuntime } from "./agent-session-runtime-sync.js";
 import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
+import { buildDaemonRestartResumePrompt } from "./daemon-restart-resume.js";
 import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
+import { getRuntimeLiveState, updateRuntimeLiveState } from "./live-state.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import * as modelBrokerPlanning from "./model-broker-planning.js";
 import { createRuntimeProvider } from "./provider-registry.js";
@@ -687,6 +696,131 @@ describe("provider configuration at every terminal generator boundary", () => {
   }
 });
 
+describe("capacity retry across thread provider configuration", () => {
+  for (const configureDuringWait of [false, true]) {
+    it(`retains A's retry cohort and sends B to the configured provider (clear ${configureDuringWait ? "during backoff" : "before failure"})`, async () => {
+      let activeFixture: GeneratedTurnFixture;
+      await withGeneratedClaudeTurn(
+        {
+          terminal: "capacity",
+          emitAssistant: false,
+          onCapacityWait: async () => {
+            if (configureDuringWait) activeFixture.clear();
+          },
+        },
+        async (fixture) => {
+          activeFixture = fixture;
+          if (!configureDuringWait) fixture.clear();
+          await fixture.dispatch(NEXT_PROMPT);
+          await fixture.finishOriginal(false);
+          await fixture.waitForOldSuccessor();
+          const retrying = fixture.snapshot();
+          expect(retrying.oldInputs).toEqual([USER_PROMPT, USER_PROMPT]);
+          expect(retrying.replacementInputs).toEqual([]);
+          expect(retrying.startedProviders).toEqual([]);
+          expect(retrying.originalAttemptStatus).toBe("failed");
+          expect(retrying.originalAuthorityReleases).toBe(1);
+          expect(retrying.retryBudgets).toEqual([[undefined], [{ startedAt: expect.any(Number), retries: 1 }]]);
+          expect(retrying.configuredProvider).toBe("codex");
+          expect(retrying.configuredSessionId).toBeNull();
+          // The failed old provider must not backfill messages written after
+          // configuration cleared its native session state.
+          if (!configureDuringWait) expect(retrying.historyProviderSessionIds).not.toContain(PROVIDER_SESSION_AFTER);
+
+          fixture.releaseCapacityRetry();
+          await fixture.waitForOldLoop();
+          const settled = fixture.snapshot();
+          expect(settled.oldInputs).toEqual([USER_PROMPT, USER_PROMPT]);
+          expect(settled.replacementInputs).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+          expect(settled.replacementInputs[0]).not.toContain(USER_PROMPT);
+          expect(settled.startedProviders).toEqual(["codex"]);
+          expect(settled.restarts).toEqual(["provider_change"]);
+          expect(settled.assistantReplies).toEqual([ASSISTANT_REPLY]);
+          expect(settled.originalAuthorityReleases).toBe(2);
+          expect(settled.configuredProvider).toBe("codex");
+          expect(settled.configuredSessionId).toBeNull();
+          expect(settled.stashedPrompts).toEqual([]);
+          fixture.expectSuccessorBinding();
+        },
+      );
+    });
+  }
+});
+
+describe("capacity ownership and persisted provider configuration", () => {
+  for (const replaceDuringWait of [false, true]) {
+    it(`leaves the replacement intact after ownership changes ${replaceDuringWait ? "during backoff" : "before failure"}`, async () => {
+      let activeFixture: GeneratedTurnFixture;
+      await withGeneratedClaudeTurn(
+        {
+          terminal: "capacity",
+          emitAssistant: false,
+          onCapacityWait: async () => {
+            if (replaceDuringWait) {
+              activeFixture.clear();
+              await activeFixture.replaceOwner();
+            }
+          },
+        },
+        async (fixture) => {
+          activeFixture = fixture;
+          if (!replaceDuringWait) {
+            fixture.clear();
+            await fixture.replaceOwner();
+          }
+          await fixture.finishOriginal(true);
+          const settled = fixture.snapshot();
+          expect(settled.oldInputs).toEqual([USER_PROMPT]);
+          expect(settled.replacementInputs).toEqual([expect.stringContaining(NEXT_PROMPT)]);
+          expect(settled.replacementOwnsSlot).toBe(true);
+          expect(settled.owner).toMatchObject({ provider: "codex", done: false, aborted: false });
+          expect(settled.liveSummary).toBe("replacement is active");
+          expect(settled.originalAuthorityReleases).toBe(1);
+          expect(settled.configuredProvider).toBe("codex");
+          expect(settled.configuredSessionId).toBeNull();
+          expect(settled.restarts).toEqual([]);
+          if (!replaceDuringWait) expect(settled.historyProviderSessionIds).not.toContain(PROVIDER_SESSION_AFTER);
+        },
+      );
+    });
+  }
+
+  for (const clearAfterSnapshot of [false, true]) {
+    it(`resumes a scheduled retry with saved provider intent after clear ${clearAfterSnapshot ? "after" : "before"} snapshot`, async () => {
+      let activeFixture: GeneratedTurnFixture;
+      await withGeneratedClaudeTurn(
+        {
+          terminal: "capacity",
+          emitAssistant: false,
+          onCapacityWait: async () => {
+            await activeFixture.restartFromCapacitySnapshot(clearAfterSnapshot);
+          },
+        },
+        async (fixture) => {
+          activeFixture = fixture;
+          if (!clearAfterSnapshot) fixture.clear();
+          await fixture.dispatch(NEXT_PROMPT);
+          await fixture.finishOriginal(true);
+          const resumed = fixture.snapshot();
+          expect(resumed.originalAttemptStatus).toBe("failed");
+          expect(resumed.oldInputs).toEqual([USER_PROMPT]);
+          expect(resumed.replacementInputs).toEqual([USER_PROMPT]);
+          expect(resumed.startedProviders).toEqual(["codex"]);
+          expect(resumed.replacementOwnsSlot).toBe(true);
+          expect(resumed.configuredProvider).toBe("codex");
+          expect(resumed.configuredSessionId).toBeNull();
+          expect(resumed.originalAuthorityReleases).toBe(1);
+          expect(resumed.owner?.pendingPrompts).toEqual([USER_PROMPT, expect.stringContaining(NEXT_PROMPT)]);
+          expect(resumed.owner?.pendingRetryBudgets).toEqual([
+            { startedAt: expect.any(Number), retries: 1 },
+            undefined,
+          ]);
+        },
+      );
+    });
+  }
+});
+
 describe("Codex tool delivery cancellation at terminal boundaries", () => {
   for (const terminal of ["complete", "failed", "interrupted", "recoverable"] as const) {
     it(`keeps B dormant after actual Codex tool completion and explicit abort (${terminal})`, async () => {
@@ -1137,12 +1271,13 @@ async function withPausedTerminalLease(
 }
 
 interface GeneratedTurnOptions {
-  terminal?: "complete" | "failed" | "interrupted" | "recoverable";
+  terminal?: "complete" | "failed" | "interrupted" | "recoverable" | "capacity";
   deliveryBarrier?: "after_response" | "after_task";
   activeTaskBarrier?: boolean;
   emitAssistant?: boolean;
   agentDefaultProvider?: "claude" | "codex";
   pausePricing?: boolean;
+  onCapacityWait?: () => Promise<void>;
   rejectModelSwitch?: boolean;
   originalProvider?: "claude" | "codex";
   completeDynamicTool?: boolean;
@@ -1169,6 +1304,9 @@ interface GeneratedTurnFixture {
   waitForSuccessorSettlement(): Promise<void>;
   waitForSuccessorInput(): Promise<void>;
   releaseOriginalTerminal(): void;
+  releaseCapacityRetry(): void;
+  replaceOwner(): Promise<void>;
+  restartFromCapacitySnapshot(clearAfterSnapshot: boolean): Promise<void>;
   waitForPricing(): Promise<void>;
   releasePricing(): void;
   waitForOldLoop(): Promise<void>;
@@ -1181,6 +1319,12 @@ interface GeneratedTurnFixture {
     originalStartedTool: boolean | undefined;
     originalToolResultDeliveryPending: boolean;
     originalPendingAbort: boolean;
+    originalAuthorityReleases: number;
+    retryBudgets: Array<Array<{ startedAt: number; retries: number } | undefined>>;
+    configuredProvider: string | null;
+    configuredSessionId: string | null;
+    historyProviderSessionIds: Array<string | null>;
+    liveSummary: string | undefined;
     originalDone: boolean;
     oldInputs: string[];
     replacementInputs: string[];
@@ -1197,6 +1341,7 @@ interface GeneratedTurnFixture {
       pendingAbort: boolean;
       attemptId: string | undefined;
       pendingPrompts: string[];
+      pendingRetryBudgets: Array<{ startedAt: number; retries: number } | undefined>;
     } | null;
   };
 }
@@ -1236,6 +1381,7 @@ async function withGeneratedClaudeTurn(
   const active = deferred();
   const terminalAllowed = deferred();
   const terminalProcessed = deferred();
+  const capacityRetryAllowed = deferred();
   const oldSuccessor = deferred();
   const replacementConsumed = deferred();
   const generatorWaiting = deferred();
@@ -1265,6 +1411,9 @@ async function withGeneratedClaudeTurn(
   let turnCounter = 0;
   let originalTurnId: string | undefined;
   let originalAttemptId: string | undefined;
+  let originalAuthorityReleases = 0;
+  let capacityNow = Date.now();
+  const retryBudgets: Array<Array<{ startedAt: number; retries: number } | undefined>> = [];
 
   const newStreaming = (
     provider: string,
@@ -1315,6 +1464,9 @@ async function withGeneratedClaudeTurn(
       sessionName,
       session: streaming,
       stashedMessages: dispatcher.stashedMessages,
+      afterTurnEnd: () => {
+        if (streaming === original) originalAuthorityReleases++;
+      },
       traceTurnStart: ({ combinedPrompt, deliverableMessages }) => {
         const turnId = `generated-provider-turn-${++turnCounter}`;
         const trace = recordAdapterRequestTrace({
@@ -1364,6 +1516,23 @@ async function withGeneratedClaudeTurn(
     events: (async function* (): AsyncGenerator<RuntimeEvent> {
       for await (const prompt of originalPrompts) {
         oldInputs.push(String(prompt.message.content));
+        retryBudgets.push(
+          original.pendingMessages
+            .filter((message) => original.currentTurnPendingIds?.includes(message.pendingId!))
+            .map((message) => message.providerCapacityRetry && { ...message.providerCapacityRetry }),
+        );
+        if (oldInputs.length === 2 && options.terminal === "capacity") {
+          oldSuccessor.resolve();
+          await capacityRetryAllowed.promise;
+          yield { type: "assistant.message", text: ASSISTANT_REPLY };
+          yield {
+            type: "turn.complete",
+            providerSessionId: PROVIDER_SESSION_AFTER,
+            session: { displayId: PROVIDER_SESSION_AFTER, params: { sessionId: PROVIDER_SESSION_AFTER } },
+            usage: { inputTokens: 10, outputTokens: 4 },
+          };
+          continue;
+        }
         if (oldInputs.length > 1) {
           oldSuccessor.resolve();
           await finishConsumer.promise;
@@ -1397,7 +1566,18 @@ async function withGeneratedClaudeTurn(
         }
         active.resolve();
         await terminalAllowed.promise;
-        if (options.terminal === "failed") {
+        if (options.terminal === "capacity") {
+          yield {
+            type: "turn.failed",
+            error: "Selected model is at capacity. Please try a different model.",
+            rawEvent: { status: 503 },
+            preExecutionRejected: true,
+            providerSessionId: PROVIDER_SESSION_AFTER,
+            session: { displayId: PROVIDER_SESSION_AFTER, params: { sessionId: PROVIDER_SESSION_AFTER } },
+            usage: { inputTokens: 10, outputTokens: 4 },
+          };
+          if (!original.interrupted) return;
+        } else if (options.terminal === "failed") {
           yield {
             type: "turn.failed",
             error: "Generic nonrecoverable provider failure",
@@ -1497,6 +1677,14 @@ async function withGeneratedClaudeTurn(
     },
     drainPendingStarts: () => {},
     crashRecovery: recovery,
+    capacityRetryRuntime: {
+      now: () => capacityNow,
+      random: () => 0,
+      wait: async (delayMs) => {
+        capacityNow += delayMs;
+        await options.onCapacityWait?.();
+      },
+    },
     restartStashedSession: async ({ reason }) => {
       restarts.push(reason);
       await dispatcher.handlePromptImmediate(sessionName, {
@@ -1640,6 +1828,40 @@ async function withGeneratedClaudeTurn(
       waitForSuccessorSettlement: () => Promise.race([oldSuccessor.promise, generatorWaiting.promise, loop]),
       waitForSuccessorInput: () => Promise.race([oldSuccessor.promise, replacementConsumed.promise]),
       releaseOriginalTerminal: terminalAllowed.resolve,
+      releaseCapacityRetry: capacityRetryAllowed.resolve,
+      replaceOwner: async () => {
+        // Simulate another launcher taking the slot while this old event loop
+        // is still settling feedback; deliberately leave the old flags alone.
+        await dispatcher.startStreamingSession(sessionName, { prompt: NEXT_PROMPT, _agentId: AGENT_ID });
+        updateRuntimeLiveState(sessionName, {
+          activity: "thinking",
+          summary: "replacement is active",
+          provider: "codex",
+        });
+      },
+      restartFromCapacitySnapshot: async (clearAfterSnapshot) => {
+        const restartEpoch = "capacity-provider-configuration";
+        dbUpsertDaemonRestartEpoch({ restartEpoch, reason: "test", createdAt: Date.now() });
+        expect(dispatcher.recordDaemonRestartSnapshot({ restartEpoch, reason: "test" })).toBe(1);
+        expect(original.capacityRetrySnapshotSaved).toBe(true);
+        if (clearAfterSnapshot) {
+          configureSlackThreadRuntime(
+            { parentSession: parent, ref: REQUEST_ID, provider: "clear", model: "clear" },
+            () => {},
+          );
+        }
+        dispatcher.shutdownAll();
+        await dispatcher.handlePromptImmediate(sessionName, {
+          ...buildDaemonRestartResumePrompt({
+            restartEpoch,
+            reason: "test",
+            sessionKey: child.sessionKey,
+            runtimeProvider: originalProvider,
+            mode: "pending_only",
+          }),
+          _agentId: AGENT_ID,
+        });
+      },
       waitForPricing: () => waitFor(costEntered),
       releasePricing: costReleased.resolve,
       waitForOldLoop: () => loop,
@@ -1652,6 +1874,12 @@ async function withGeneratedClaudeTurn(
         originalStartedTool: getRuntimeTurnAttempt(originalAttemptId!)?.startedTool,
         originalToolResultDeliveryPending: original.toolResultDeliveryPending === true,
         originalPendingAbort: original.pendingAbort,
+        originalAuthorityReleases,
+        retryBudgets,
+        configuredProvider: getSession(child.sessionKey)?.runtimeProvider ?? null,
+        configuredSessionId: getSession(child.sessionKey)?.providerSessionId ?? null,
+        historyProviderSessionIds: getRecentHistory(sessionName).map((message) => message.provider_session_id ?? null),
+        liveSummary: getRuntimeLiveState(sessionName)?.summary,
         originalDone: original.done,
         oldInputs: [...oldInputs],
         replacementInputs: [...replacementInputs],
@@ -1677,6 +1905,7 @@ async function withGeneratedClaudeTurn(
                 pendingAbort: owner.pendingAbort,
                 attemptId: owner.currentCrashRecoveryAttemptId,
                 pendingPrompts: owner.pendingMessages.map((message) => String(message.message.content)),
+                pendingRetryBudgets: owner.pendingMessages.map((message) => message.providerCapacityRetry),
               }
             : null;
         })(),
@@ -1684,6 +1913,7 @@ async function withGeneratedClaudeTurn(
     });
   } finally {
     terminalAllowed.resolve();
+    capacityRetryAllowed.resolve();
     costReleased.resolve();
     finishConsumer.resolve();
     original.done = true;

@@ -66,6 +66,7 @@ import {
   PROVIDER_ENDED_AFTER_TOOLS_USER_MESSAGE,
   PROVIDER_ENDED_WITH_OPEN_TOOLS_USER_MESSAGE,
 } from "./public-failure.js";
+import { PROVIDER_CAPACITY_EXHAUSTED_MESSAGE, PROVIDER_CAPACITY_UNSAFE_MESSAGE } from "./provider-capacity-retry.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import {
   buildRuntimeStartRequest,
@@ -6414,7 +6415,347 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.payloadJson).toMatchObject({ autoRecovered: false });
   });
 
-  it("stashes the current turn and restarts after retryable credential failure before tools", async () => {
+  async function runCapacityScenario(
+    options: {
+      failures?: number;
+      beforeFailure?: RuntimeEvent[];
+      status?: number;
+      proof?: boolean;
+      successes?: number;
+      inputMutated?: boolean;
+      elapsedDuringWaitMs?: number;
+      retryAfterSeconds?: number;
+      wait?: (delayMs: number, signal: AbortSignal, streaming: RuntimeHostStreamingSession) => Promise<void>;
+    } = {},
+  ) {
+    const queued = createQueuedRuntimeUserMessage({ prompt: "capacity request", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      toolEffectFence: "provider_event_only",
+      agentMode: "sentinel",
+    });
+    let attempts = 0;
+    let successes = 0;
+    let now = 1_000;
+    const waits: number[] = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const inputs: string[] = [];
+    const generator = createRuntimeMessageGenerator({
+      sessionName: SESSION_NAME,
+      session: streaming,
+      stashedMessages: new Map(),
+      traceTurnStart: ({ combinedPrompt }) => {
+        seedAdapterTrace(streaming, `capacity-turn-${attempts + 1}`, combinedPrompt);
+        return undefined;
+      },
+    });
+    const handle: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      interrupt: async () => {},
+      events: (async function* () {
+        for await (const input of generator) {
+          attempts++;
+          inputs.push(String(input.message.content));
+          for (const event of options.beforeFailure ?? []) yield event;
+          if (options.inputMutated) streaming.currentTurnInputMutated = true;
+          if (attempts <= (options.failures ?? 1)) {
+            yield {
+              type: "turn.failed",
+              error: "Selected model is at capacity. Please try a different model.",
+              rawEvent: {
+                status: options.status ?? 503,
+                ...(options.retryAfterSeconds === undefined
+                  ? {}
+                  : { headers: { "Retry-After": String(options.retryAfterSeconds) } }),
+              },
+              preExecutionRejected: options.proof ?? true,
+              providerSessionId: "capacity-thread",
+              session: { displayId: "capacity-thread", params: { sessionId: "capacity-thread" } },
+            };
+            // A terminal failure is final unless the host explicitly retained
+            // the logical input through its existing interrupted queue lane.
+            if (!streaming.interrupted) break;
+          } else {
+            yield { type: "assistant.message", text: "finished exactly once" };
+            yield {
+              type: "turn.complete",
+              usage: { inputTokens: 3, outputTokens: 2 },
+              providerSessionId: "capacity-thread",
+            };
+            successes++;
+            if (successes >= (options.successes ?? 1)) break;
+          }
+        }
+      })(),
+    };
+    await runTraceLoop(streaming, handle, {
+      capacityRetryRuntime: {
+        now: () => now,
+        random: () => 0,
+        wait: async (delayMs, signal) => {
+          waits.push(delayMs);
+          now += delayMs + (options.elapsedDuringWaitMs ?? 0);
+          await options.wait?.(delayMs, signal, streaming);
+        },
+      },
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+    });
+    return { attempts, waits, emitted, inputs, streaming, queued };
+  }
+
+  it("retries structured capacity once in the same session and completes the logical request", async () => {
+    const result = await runCapacityScenario();
+    expect(result.attempts).toBe(2);
+    expect(result.waits).toEqual([500]);
+    expect(result.inputs).toEqual(["capacity request", "capacity request"]);
+    expect(result.emitted.filter((entry) => entry.data.type === "turn.failed")).toHaveLength(0);
+    expect(result.emitted.filter((entry) => entry.data.type === "turn.complete")).toHaveLength(1);
+    expect(
+      getRecentHistory(SESSION_NAME, 20).filter((entry) => entry.content === "finished exactly once"),
+    ).toHaveLength(1);
+    expect(getSession(SESSION_KEY)?.providerSessionId).toBe("capacity-thread");
+  });
+
+  it("bounds persistent capacity to three retries and preserves the failed provider session", async () => {
+    const result = await runCapacityScenario({ failures: 20 });
+    expect(result.attempts).toBe(4);
+    expect(result.waits).toEqual([500, 1_000, 2_000]);
+    const failures = result.emitted.filter((entry) => entry.data.type === "turn.failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.data.error).toBe(PROVIDER_CAPACITY_EXHAUSTED_MESSAGE);
+    expect(failures[0]?.data.failureKind).toBe("provider_capacity_exhausted");
+    expect(getSession(SESSION_KEY)?.providerSessionId).toBe("capacity-thread");
+    expect(getSessionTurn("capacity-turn-4")).toMatchObject({
+      status: "failed",
+      abortReason: "provider_capacity_exhausted",
+      providerSessionIdAfter: "capacity-thread",
+    });
+  });
+
+  it("does not retry an ordinary HTTP 400 even if its text mentions capacity", async () => {
+    const result = await runCapacityScenario({ status: 400 });
+    expect(result.attempts).toBe(1);
+    expect(result.waits).toEqual([]);
+    expect(result.emitted.filter((entry) => entry.data.type === "turn.failed")).toHaveLength(1);
+  });
+
+  it("requires affirmative rejection proof for a provider with asynchronous tool events", async () => {
+    const result = await runCapacityScenario({ proof: false });
+    expect(result.attempts).toBe(1);
+    expect(result.waits).toEqual([]);
+    expect(result.emitted.find((entry) => entry.data.type === "turn.failed")?.data.error).toBe(
+      PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+    );
+  });
+
+  it.each([
+    {
+      name: "tool",
+      events: [{ type: "tool.started", toolUse: { id: "already-ran", name: "Bash", input: {} } }] as RuntimeEvent[],
+    },
+    {
+      name: "output",
+      events: [
+        { type: "assistant.message", text: "already delivered", metadata: { item: { phase: "commentary" } } },
+      ] as RuntimeEvent[],
+    },
+  ])("never replays a capacity failure after $name", async ({ events }) => {
+    const result = await runCapacityScenario({ beforeFailure: events });
+    expect(result.attempts).toBe(1);
+    expect(result.waits).toEqual([]);
+    expect(result.emitted.find((entry) => entry.data.type === "turn.failed")?.data.error).toBe(
+      PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+    );
+    if (events[0]?.type === "assistant.message") {
+      expect(getRecentHistory(SESSION_NAME, 20).filter((entry) => entry.content === "already delivered")).toHaveLength(
+        1,
+      );
+    }
+  });
+
+  it("keeps a newly queued successor out of the capacity retry input", async () => {
+    const successor = createQueuedRuntimeUserMessage({ prompt: "later request", source, _agentId: AGENT_ID });
+    const result = await runCapacityScenario({
+      successes: 2,
+      wait: async (_delay, _signal, streaming) => {
+        streaming.pendingMessages.push(successor);
+      },
+    });
+    expect(result.attempts).toBe(3);
+    expect(result.inputs).toEqual(["capacity request", "capacity request", "later request"]);
+    expect(successor.providerCapacityRetry).toBeUndefined();
+  });
+
+  it("checkpoints the exact capacity retry cohort and remaining Retry-After while its physical attempt is failed", async () => {
+    const successor = createQueuedRuntimeUserMessage({
+      prompt: "independent later request",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const checkpoints: NonNullable<RuntimeHostStreamingSession["pendingCapacityRetry"]>[] = [];
+    const result = await runCapacityScenario({
+      failures: 2,
+      successes: 2,
+      retryAfterSeconds: 10,
+      wait: async (delay, _signal, streaming) => {
+        const checkpoint = streaming.pendingCapacityRetry;
+        expect(checkpoint).toBeDefined();
+        expect(streaming.currentCrashRecoveryTerminal).toMatchObject({
+          status: "failed",
+          startedTool: false,
+          materializedOutput: false,
+        });
+        expect(checkpoint?.pendingIds).toEqual(streaming.currentTurnPendingIds!);
+        expect(checkpoint?.state).toEqual({ startedAt: 1_000, retries: checkpoints.length + 1 });
+        expect(checkpoint?.notBefore).toBe(1_000 + (checkpoints.length + 1) * 10_000);
+        expect(delay).toBe(10_000);
+        if (checkpoints.length === 0) streaming.pendingMessages.push(successor);
+        expect(checkpoint?.pendingIds).not.toContain(successor.pendingId!);
+        const ownMessages = streaming.pendingMessages.filter((message) =>
+          checkpoint?.pendingIds.includes(message.pendingId!),
+        );
+        expect(ownMessages).toHaveLength(1);
+        expect(ownMessages[0]?.providerCapacityRetry).toEqual(checkpoint!.state);
+        checkpoints.push(structuredClone(checkpoint!));
+      },
+    });
+
+    expect(checkpoints).toHaveLength(2);
+    expect(checkpoints[0]?.pendingIds).toEqual(checkpoints[1]?.pendingIds);
+    expect(result.inputs).toEqual([
+      "capacity request",
+      "capacity request",
+      "capacity request",
+      "independent later request",
+    ]);
+    expect(result.waits).toEqual([10_000, 10_000]);
+    expect(successor.providerCapacityRetry).toBeUndefined();
+    expect(result.streaming.pendingCapacityRetry).toBeUndefined();
+  });
+
+  it("does not replay a capacity failure after native input mutation", async () => {
+    const result = await runCapacityScenario({ inputMutated: true });
+    expect(result.attempts).toBe(1);
+    expect(result.waits).toEqual([]);
+  });
+
+  it("lets a superseding input cancel capacity backoff without replaying the old request", async () => {
+    const result = await runCapacityScenario({
+      wait: async (_delay, _signal, streaming) => {
+        streaming.currentTurnSuperseded = true;
+        streaming.pendingMessages.push(
+          createQueuedRuntimeUserMessage({ prompt: "replacement request", source, _agentId: AGENT_ID }),
+        );
+      },
+    });
+    expect(result.attempts).toBe(2);
+    expect(result.inputs).toEqual(["capacity request", "replacement request"]);
+  });
+
+  it("does not start a capacity retry after the elapsed budget expires during backoff", async () => {
+    const result = await runCapacityScenario({ elapsedDuringWaitMs: 30_000 });
+    expect(result.attempts).toBe(1);
+    expect(result.emitted.find((entry) => entry.data.type === "turn.failed")?.data.failureKind).toBe(
+      "provider_capacity_exhausted",
+    );
+    expect(getSessionTurn("capacity-turn-1")?.abortReason).toBe("provider_capacity_exhausted");
+  });
+
+  it("cancels the real capacity timer promptly on abort", async () => {
+    const queued = createQueuedRuntimeUserMessage({ prompt: "abort during wait", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: [queued.pendingId!],
+      toolEffectFence: "provider_event_only",
+    });
+    seedAdapterTrace(streaming, "capacity-real-abort");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    let abortTimer: ReturnType<typeof setTimeout> | undefined;
+    const before = Date.now();
+    try {
+      await runTraceLoop(
+        streaming,
+        {
+          provider: PROVIDER,
+          interrupt: async () => {},
+          events: (async function* () {
+            abortTimer = setTimeout(() => streaming.abortController.abort(), 30);
+            yield {
+              type: "turn.failed",
+              error: "capacity",
+              preExecutionRejected: true,
+              rawEvent: { status: 503, headers: { "Retry-After": "10" } },
+            };
+          })(),
+        },
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
+        },
+      );
+    } finally {
+      if (abortTimer) clearTimeout(abortTimer);
+    }
+    expect(Date.now() - before).toBeLessThan(5_000);
+    expect(emitted.filter((entry) => entry.data.type === "turn.interrupted")).toHaveLength(1);
+    expect(emitted.filter((entry) => entry.data.type === "turn.failed")).toHaveLength(0);
+  });
+
+  it("cancels capacity backoff when the turn is explicitly aborted", async () => {
+    const result = await runCapacityScenario({
+      wait: async (_delay, _signal, streaming) => streaming.abortController.abort(),
+    });
+    expect(result.attempts).toBe(1);
+    expect(result.waits).toEqual([500]);
+    expect(result.emitted.filter((entry) => entry.data.type === "turn.failed")).toHaveLength(0);
+  });
+
+  it.each([true, false])("keeps a snapshotted capacity retry logically open on daemon shutdown: %s", async (saved) => {
+    const result = await runCapacityScenario({
+      wait: async (_delay, _signal, streaming) => {
+        streaming.capacityRetrySnapshotSaved = saved;
+        streaming.internalAbortReason = "shutdown_all";
+        streaming.abortController.abort();
+      },
+    });
+    expect(result.attempts).toBe(1);
+    expect(result.emitted.filter((entry) => entry.data.type === "turn.failed")).toHaveLength(0);
+    expect(result.emitted.filter((entry) => entry.data.type === "turn.interrupted")).toHaveLength(saved ? 0 : 1);
+  });
+
+  it("does not stash an unmanaged authentication failure into the credential retry lane", async () => {
+    const queued = createQueuedRuntimeUserMessage({ prompt: "unmanaged auth", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: [queued.pendingId!],
+    });
+    seedAdapterTrace(streaming, "unmanaged-auth");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restarts: string[] = [];
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "unauthorized",
+          rawEvent: { status: 401 },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async ({ reason }) => {
+          restarts.push(reason);
+        },
+      },
+    );
+    expect(stashedMessages.size).toBe(0);
+    expect(restarts).toEqual([]);
+  });
+
+  it("stashes the current turn and restarts after authentication failure before tools", async () => {
     const queued = createQueuedRuntimeUserMessage({
       prompt: "retry this credential turn",
       deliveryBarrier: "after_tool",
@@ -6431,18 +6772,17 @@ describe("runtime session trace instrumentation", () => {
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
-    const before = Date.now();
 
     await runTraceLoop(
       streaming,
       makeRuntimeSession([
         {
           type: "turn.failed",
-          error: "rate limited",
+          error: "authentication failed",
           recoverable: true,
           rawEvent: {
             type: "error",
-            status: 429,
+            status: 401,
             headers: {
               "retry-after": "2",
               "x-request-id": "req_credential_retry",
@@ -6466,7 +6806,7 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal).toMatchObject({
       status: "failed",
       payloadJson: expect.objectContaining({
-        abort_reason: "runtime_credential_rate_limited",
+        abort_reason: "runtime_credential_auth_invalid",
         autoRecovered: true,
         credentialRetry: true,
       }),
@@ -6477,12 +6817,12 @@ describe("runtime session trace instrumentation", () => {
     expect(restartRequests).toEqual([
       {
         sessionName: SESSION_NAME,
-        reason: "runtime_credential_rate_limited",
+        reason: "runtime_credential_auth_invalid",
       },
     ]);
     const health = getRuntimeCredentialHealth("rcred_retry_before_tool");
     expect(health?.lastRequestId).toBe("req_credential_retry");
-    expect(health?.cooldownUntil ?? 0).toBeGreaterThanOrEqual(before + 1_500);
+    expect(health?.lastFailureKind).toBe("auth_invalid");
     const credentialAttempt = getDb()
       .prepare("SELECT status, completed_at FROM runtime_credential_attempts WHERE credential_id = ?")
       .get("rcred_retry_before_tool") as { status: string; completed_at: number | null } | undefined;
@@ -6541,9 +6881,9 @@ describe("runtime session trace instrumentation", () => {
         makeRuntimeSession([
           {
             type: "turn.failed",
-            error: "rate limited",
+            error: "invalid API key",
             recoverable: true,
-            rawEvent: { type: "error", status: 429, headers: { "retry-after": "60" } },
+            rawEvent: { type: "error", status: 401, code: "invalid_api_key" },
           },
         ]),
         {
@@ -6631,9 +6971,9 @@ describe("runtime session trace instrumentation", () => {
     {
       name: "result api_error_status",
       credentialId: "rcred_claude_sdk_status",
-      error: "Claude provider error (http_429): Request limit reached",
-      rawEvent: { type: "result", subtype: "success", is_error: true, api_error_status: 429 },
-      reason: "runtime_credential_rate_limited",
+      error: "Claude provider error (http_401): Authentication failed",
+      rawEvent: { type: "result", subtype: "success", is_error: true, api_error_status: 401 },
+      reason: "runtime_credential_auth_invalid",
     },
   ])("routes Claude SDK $name failures into credential failover", async ({ credentialId, error, rawEvent, reason }) => {
     const queued = createQueuedRuntimeUserMessage({

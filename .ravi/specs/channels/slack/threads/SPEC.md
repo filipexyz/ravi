@@ -213,6 +213,13 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
   provider materialized by a later `clear` or restore incompatible native state.
   The old turn still records its output and usage; the next turn uses the saved
   configuration. Unchanged or compatible provider continuity MUST still persist.
+- An authorized capacity retry MUST retain its original logical input cohort and
+  budget while the current handle owns the slot; a queued successor uses saved
+  provider configuration after that logical request completes. Failed-turn native
+  state and backoff telemetry MUST obey the same ownership/configuration guards.
+  Restoring a scheduled retry after daemon restart MUST respect current persisted
+  provider intent ahead of the older snapshot's provider hint, without restoring
+  incompatible native state or admitting successors into the retry cohort.
 - The action discovery surface MUST advertise `thread.configure` and its
   command/constraints to an authorized parent. Generic session setters keep
   their existing authorization rules.

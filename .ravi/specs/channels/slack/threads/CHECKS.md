@@ -115,3 +115,9 @@ bun run build
 - Generic reset/delete/rename/read remain unauthorized without their own grant.
 - Run the focused thread runtime and sessions command suites in separate
   disposable-state processes, plus scope and gateway authorization regressions.
+
+- `src/runtime/thread-provider-config.test.ts` MUST cover clear before capacity
+  failure, clear during backoff, ownership replacement before failure/during wait,
+  and clear before/after a retry snapshot. Verify isolated retry input, preserved
+  retry budget, once-only authority release, no native-state resurrection, and
+  successor delivery on the newly configured provider.

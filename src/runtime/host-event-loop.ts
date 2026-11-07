@@ -48,6 +48,13 @@ import {
 } from "./inactivity-recovery-checkpoint.js";
 import { piContextSaturationUserNotice, readPiContextSaturationNotice } from "./pi-context-saturation.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
+import {
+  decideProviderCapacityRetry,
+  PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
+  PROVIDER_CAPACITY_EXHAUSTED_REASON,
+  PROVIDER_CAPACITY_MAX_ELAPSED_MS,
+  PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+} from "./provider-capacity-retry.js";
 import { explainRuntimeCredentialProviderFailure } from "./credential-secret-shape.js";
 import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
 import {
@@ -605,14 +612,13 @@ async function recordRuntimeCredentialTurnFailure(input: {
   | undefined
 > {
   const credential = input.streaming.currentRuntimeCredential;
-  if (!credential) return undefined;
   const rawError = asRecord(input.rawEvent?.error);
   const headers = extractRuntimeFailureHeaders(input.rawEvent);
   const signal = classifyRuntimeCredentialFailure({
     runtimeProvider: input.provider,
-    upstreamProvider: credential.upstreamProvider,
+    upstreamProvider: credential?.upstreamProvider,
     model: input.model,
-    credentialId: credential.credentialId,
+    credentialId: credential?.credentialId,
     // Claude SDK frames carry the HTTP status as `api_error_status` (result) or
     // `error_status` (api_retry) and the provider code as a string `error`.
     httpStatus: firstNumber(
@@ -624,7 +630,12 @@ async function recordRuntimeCredentialTurnFailure(input: {
       rawError?.statusCode,
     ),
     providerCode: firstString(input.rawEvent?.code, input.rawEvent?.error, rawError?.code),
-    providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
+    providerType: firstString(
+      rawError?.type,
+      input.rawEvent?.providerType,
+      input.rawEvent?.type,
+      input.rawEvent?.subtype,
+    ),
     message: input.error,
     ...(headers ? { headers } : {}),
     requestId: firstString(
@@ -636,6 +647,7 @@ async function recordRuntimeCredentialTurnFailure(input: {
     source: "sdk-error",
   });
 
+  if (!credential) return { signal };
   try {
     if (credential.authMethod === "model-broker") {
       const modelBrokerFeedback = await reportModelBrokerFeedback(
@@ -965,6 +977,57 @@ export interface RunRuntimeEventLoopOptions {
   drainPendingStarts(): void;
   restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
   onToolBarrierReleased?(sessionName: string): void | Promise<void>;
+  /** Injectable scheduling dependencies for deterministic capacity-retry tests. */
+  capacityRetryRuntime?: {
+    now?: () => number;
+    random?: () => number;
+    wait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
+  };
+}
+
+/** Backoff belongs to the active turn and must yield promptly to abort or supersession. */
+async function waitForProviderCapacityRetry(
+  delayMs: number,
+  streaming: RuntimeHostStreamingSession,
+  wait?: (delayMs: number, signal: AbortSignal) => Promise<void>,
+): Promise<boolean> {
+  const cancelled = () =>
+    streaming.done ||
+    streaming.abortController.signal.aborted ||
+    streaming.currentTurnSuperseded === true ||
+    streaming.pendingAbort ||
+    Boolean(streaming.internalAbortReason);
+  if (cancelled()) return false;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  streaming.abortController.signal.addEventListener("abort", onAbort, { once: true });
+  const poll = setInterval(() => {
+    if (cancelled()) controller.abort();
+  }, 25);
+  try {
+    if (wait) {
+      await wait(delayMs, controller.signal);
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        const onCancel = () => {
+          clearTimeout(timer);
+          reject(new Error("Capacity backoff cancelled"));
+        };
+        const timer = setTimeout(() => {
+          controller.signal.removeEventListener("abort", onCancel);
+          resolve();
+        }, delayMs);
+        controller.signal.addEventListener("abort", onCancel, { once: true });
+      });
+    }
+    return !cancelled();
+  } catch (error) {
+    if (controller.signal.aborted) return false;
+    throw error;
+  } finally {
+    clearInterval(poll);
+    streaming.abortController.signal.removeEventListener("abort", onAbort);
+  }
 }
 
 /** Process provider events from a streaming runtime session. */
@@ -4166,6 +4229,184 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           : undefined;
         const credentialFailureSignal = credentialFailureRecord?.signal;
         const failedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
+        const currentPendingIds = new Set(streaming.currentTurnPendingIds ?? []);
+        const ownMessages = streaming.pendingMessages.filter(
+          (message) => message.pendingId && currentPendingIds.has(message.pendingId),
+        );
+        // Coalescing inputs must never reset a budget already spent by one of them.
+        const capacityState = ownMessages
+          .map((message) => message.providerCapacityRetry)
+          .filter((state) => state !== undefined)
+          .reduce<(typeof ownMessages)[number]["providerCapacityRetry"]>(
+            (state, next) =>
+              state
+                ? {
+                    startedAt: Math.min(state.startedAt, next.startedAt),
+                    retries: Math.max(state.retries, next.retries),
+                  }
+                : next,
+            undefined,
+          );
+        const capacityDecision = suppressedRecoverable
+          ? { action: "not_capacity" as const }
+          : decideProviderCapacityRetry({
+              signal: credentialFailureSignal,
+              state: capacityState,
+              now: options.capacityRetryRuntime?.now?.(),
+              random: options.capacityRetryRuntime?.random,
+            });
+        let capacityTerminalReason: string | undefined;
+        if (capacityDecision.action !== "not_capacity") {
+          // A failed first turn still owns a valid provider thread. Persist its
+          // opaque state exactly as on success, without resetting prior context.
+          if (event.session || event.providerSessionId) {
+            refreshRuntimeSessionParamsFromDb();
+            const runtimeSessionParams = mergeRuntimeCredentialSessionMetadata(
+              mergeRuntimeSessionParams(event.session?.params ?? undefined),
+              streaming.currentRuntimeCredential,
+            );
+            const providerSessionId =
+              event.session?.displayId ??
+              event.providerSessionId ??
+              (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
+            if (
+              providerSessionId &&
+              persistCurrentProviderState(() => {
+                updateProviderSession(session.sessionKey, runtimeSession.provider, providerSessionId, {
+                  runtimeSessionParams,
+                  runtimeSessionDisplayId: providerSessionId,
+                });
+              })
+            ) {
+              backfillProviderSessionId(sessionName, providerSessionId);
+              session.runtimeSessionParams = runtimeSessionParams;
+              session.runtimeSessionDisplayId = providerSessionId;
+              session.providerSessionId = providerSessionId;
+              session.sdkSessionId = providerSessionId;
+              session.runtimeProvider = runtimeSession.provider;
+            }
+          }
+          const durablePreExecutionRejection =
+            event.preExecutionRejected === true &&
+            currentTurnReplaySafety.durableBinding === "terminal" &&
+            !currentTurnReplaySafety.startedTool &&
+            !currentTurnReplaySafety.materializedOutput &&
+            !currentTurnReplaySafety.inputMutated;
+          const safeToRetry =
+            (currentTurnReplaySafety.replayable && currentTurnReplaySafety.durableBinding === "terminal") ||
+            durablePreExecutionRejection;
+          // Broker feedback controls advancing an attempt; the host cannot
+          // reuse a terminal broker lease or choose a different model itself.
+          const brokerAllowsRetry =
+            streaming.currentRuntimeCredential?.authMethod !== "model-broker" ||
+            credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
+          if (
+            capacityDecision.action === "retry" &&
+            safeToRetry &&
+            ownMessages.length > 0 &&
+            brokerAllowsRetry &&
+            ownsRuntimeSlot()
+          ) {
+            for (const message of ownMessages) message.providerCapacityRetry = capacityDecision.state;
+            // The failed physical attempt stays terminal. Only this separately
+            // authorized next attempt may survive a restart during its wait.
+            streaming.pendingCapacityRetry = {
+              pendingIds: ownMessages.map((message) => message.pendingId!),
+              state: { ...capacityDecision.state },
+              notBefore: (options.capacityRetryRuntime?.now?.() ?? Date.now()) + capacityDecision.delayMs,
+            };
+            updateOwnedLiveState({
+              activity: "thinking",
+              summary: "model busy; retrying shortly",
+              agentId: agent.id,
+              runId,
+              provider: runtimeSession.provider,
+              model,
+              source: streaming.currentSource,
+            });
+            const continueRetry =
+              (await waitForProviderCapacityRetry(
+                capacityDecision.delayMs,
+                streaming,
+                options.capacityRetryRuntime?.wait,
+              )) && ownsRuntimeSlot();
+            const budgetExpired =
+              (options.capacityRetryRuntime?.now?.() ?? Date.now()) - capacityDecision.state.startedAt >=
+              PROVIDER_CAPACITY_MAX_ELAPSED_MS;
+            if (continueRetry && budgetExpired) {
+              streaming.pendingCapacityRetry = undefined;
+              capacityTerminalReason = PROVIDER_CAPACITY_EXHAUSTED_REASON;
+            } else {
+              if (!continueRetry) streaming.pendingCapacityRetry = undefined;
+              recordTerminalTraceOnce({
+                status: "failed",
+                eventType: "turn.failed",
+                abortReason: continueRetry ? "provider_capacity_retry" : "provider_capacity_retry_cancelled",
+                error: truncateLogDetail(event.error),
+                providerSessionIdAfter: session.providerSessionId ?? null,
+                payloadJson: {
+                  autoRecovered: continueRetry,
+                  capacityRetry: capacityDecision.state.retries,
+                  delayMs: capacityDecision.delayMs,
+                  preExecutionRejected: event.preExecutionRejected === true,
+                  providerSessionIdAfter: session.providerSessionId ?? null,
+                },
+              });
+              if (!continueRetry) {
+                if (
+                  streaming.internalAbortReason === "shutdown_all" &&
+                  streaming.capacityRetrySnapshotSaved &&
+                  !streaming.currentTurnSuperseded
+                ) {
+                  // The snapshot owns the pending logical retry now. Closing
+                  // its channel binding here would poison the resumed request.
+                  streaming.currentChannelBackend = undefined;
+                } else {
+                  await projectRuntimeEventToChannel({ type: "turn.interrupted", metadata: event.metadata });
+                  await emitRuntimeEvent({
+                    type: "turn.interrupted",
+                    provider: runtimeSession.provider,
+                    reason: streaming.internalAbortReason ?? "provider_capacity_retry_cancelled",
+                    metadata: event.metadata,
+                  });
+                }
+              }
+              await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+              suppressProviderRawForCurrentTurn = false;
+              clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+              clearTraceTurnState();
+              responseText = "";
+              channelResponseText = "";
+              deliveredVisibleThisTurn.length = 0;
+              clearPendingGeneratedMedia();
+              clearActiveToolState();
+              streaming.turnActive = false;
+              // The existing generator retains this input on interruption and
+              // creates a new durable attempt before the provider consumes it.
+              streaming.interrupted = true;
+              if (!continueRetry && !streaming.currentTurnSuperseded) streaming.done = true;
+              signalTurnComplete();
+              continue;
+            }
+          }
+          capacityTerminalReason ??=
+            capacityDecision.action === "exhausted"
+              ? PROVIDER_CAPACITY_EXHAUSTED_REASON
+              : "provider_capacity_retry_unsafe";
+          event = {
+            ...event,
+            error:
+              capacityTerminalReason === PROVIDER_CAPACITY_EXHAUSTED_REASON
+                ? PROVIDER_CAPACITY_EXHAUSTED_MESSAGE
+                : PROVIDER_CAPACITY_UNSAFE_MESSAGE,
+            recoverable: false,
+            failureKind:
+              capacityTerminalReason === PROVIDER_CAPACITY_EXHAUSTED_REASON
+                ? "provider_capacity_exhausted"
+                : "provider_capacity_retry_unsafe",
+            rawEvent: { ...event.rawEvent, failureReason: capacityTerminalReason },
+          };
+        }
         log[suppressedRecoverable ? "info" : "warn"](
           suppressedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
           {
@@ -4282,7 +4523,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const modelBrokerRetryApproved =
           streaming.currentRuntimeCredential?.authMethod !== "model-broker" ||
           credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
-        if (credentialFailureSignal?.retryableByCredential && modelBrokerRetryApproved && mayRecoverCurrentTurn()) {
+        if (
+          !capacityTerminalReason &&
+          credentialFailureSignal?.retryableByCredential &&
+          modelBrokerRetryApproved &&
+          streaming.currentRuntimeCredential?.credentialId &&
+          mayRecoverCurrentTurn()
+        ) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
           const stashedCount = stashOwnedCurrentTurnMessages({
             crashRecovery,
@@ -4360,7 +4607,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
         }
 
-        if (credentialFailureSignal?.retryableByCredential && !modelBrokerRetryApproved) {
+        if (!capacityTerminalReason && credentialFailureSignal?.retryableByCredential && !modelBrokerRetryApproved) {
           log.warn("Skipping model-broker failover without authoritative pre-effect advance", {
             runId,
             sessionName,
@@ -4551,8 +4798,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         recordTerminalTraceOnce({
           status: "failed",
           eventType: "turn.failed",
-          abortReason: null,
+          abortReason: capacityTerminalReason ?? null,
           error: event.error,
+          providerSessionIdAfter: session.providerSessionId ?? session.sdkSessionId ?? null,
           payloadJson: {
             recoverable: event.recoverable ?? true,
             suppressedRecoverable,
@@ -4568,7 +4816,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           recoverable: event.recoverable ?? true,
           suppressedRecoverable,
           error: publicRuntimeFailureDetail(operatorError),
-          abortReason: null,
+          abortReason: capacityTerminalReason ?? null,
         });
         clearTraceTurnState();
 

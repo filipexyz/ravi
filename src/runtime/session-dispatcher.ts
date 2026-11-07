@@ -77,6 +77,7 @@ import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import { FATAL_TOOL_FAILURE_REASON } from "./fatal-tool-failure.js";
 import { formatUserFacingTurnFailure } from "./public-failure.js";
+import { isScheduledProviderCapacityRetry } from "./provider-capacity-retry.js";
 import { isUserFacingPromptSource, reportRuntimePromptIntakeFailure } from "./intake-failure.js";
 import {
   startRuntimeSession,
@@ -340,26 +341,35 @@ export class RuntimeSessionDispatcher {
         continue;
       }
       const terminalTurnConsumed = session.currentCrashRecoveryTerminal !== undefined;
+      const scheduledCapacityMessages = getScheduledCapacityRestartMessages(session, this.options.crashRecovery);
       const pendingMessages = (
-        terminalTurnConsumed
+        scheduledCapacityMessages ??
+        (terminalTurnConsumed
           ? (session.currentTurnPendingIds?.length ?? 0) > 0
             ? getPendingRuntimeTurnSuccessors(session)
             : session.pendingMessages
-          : getCrashRecoveryReplayablePendingRuntimeMessages(session, this.options.crashRecovery)
+          : getCrashRecoveryReplayablePendingRuntimeMessages(session, this.options.crashRecovery))
       ).map(cloneRuntimeUserMessage);
       const durableReplaySafety = getRuntimeTurnReplaySafety(session, this.options.crashRecovery);
       // A provider-terminal physical turn has already been consumed even when
       // it produced no external output or tool side effect. Explicit retry
       // paths may still use the global replay helper for interrupted/failed
       // turns, but a daemon restart must never resurrect any terminal turn.
+      // A separately authorized capacity retry is pending-only work, not
+      // permission to continue the failed physical attempt.
       const replaySafety = terminalTurnConsumed
         ? { ...durableReplaySafety, replayable: false as const }
         : durableReplaySafety;
-      const restartResumeMode = replaySafety.replayable
-        ? "continue"
-        : pendingMessages.length > 0
-          ? "pending_only"
-          : "skip";
+      const hasScheduledCapacityRetry = pendingMessages.some(
+        (message) => message.providerCapacityRetry?.notBefore !== undefined,
+      );
+      const restartResumeMode = hasScheduledCapacityRetry
+        ? "pending_only"
+        : replaySafety.replayable
+          ? "continue"
+          : pendingMessages.length > 0
+            ? "pending_only"
+            : "skip";
       const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
@@ -440,6 +450,14 @@ export class RuntimeSessionDispatcher {
         metadata: snapshot.metadata,
         recordedAt: stoppedAt,
       });
+      const live = this.streamingSessions.get(snapshot.sessionName);
+      if (live) {
+        // Only a successful durable write authorizes the retiring runtime to
+        // leave the logical channel request open for the next daemon.
+        live.capacityRetrySnapshotSaved = snapshot.pendingMessages.some(
+          (message) => message.providerCapacityRetry?.notBefore !== undefined,
+        );
+      }
       recorded++;
     }
 
@@ -2984,6 +3002,26 @@ export class RuntimeSessionDispatcher {
 
     const decision = shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
     if (decision.interrupt) {
+      const currentIds = new Set(existing.currentTurnPendingIds ?? []);
+      const waitingForRestoredRetry = existing.pendingMessages.some(
+        (message) =>
+          message.pendingId &&
+          currentIds.has(message.pendingId) &&
+          message.providerCapacityRetry?.notBefore !== undefined,
+      );
+      if (waitingForRestoredRetry) {
+        const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
+        if (successor) {
+          await this.interruptForRuntimeSuccessor(
+            sessionName,
+            existing,
+            successor,
+            decision.reason,
+            prompt,
+            sessionEntry?.sessionKey ?? sessionName,
+          );
+        }
+      }
       return;
     }
     log.info("Streaming: queueing (busy)", {
@@ -3544,6 +3582,84 @@ function inferTaskIdFromDedicatedTaskSessionName(sessionName: string): string | 
 
 function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessage {
   return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
+}
+
+/**
+ * A terminal physical turn is consumed. During a capacity wait the host may
+ * already have authorized a distinct next attempt for its exact input cohort.
+ * Persist that pending work without weakening the generic terminal fence.
+ */
+function getScheduledCapacityRestartMessages(
+  session: RuntimeHostStreamingSession,
+  crashRecovery?: RuntimeCrashRecoveryCoordinator,
+): RuntimeUserMessage[] | undefined {
+  const checkpoint = session.pendingCapacityRetry;
+  if (
+    session.done ||
+    session.pendingAbort ||
+    session.abortController.signal.aborted ||
+    session.internalAbortReason ||
+    session.currentTurnSuperseded
+  ) {
+    return undefined;
+  }
+  const safety = getRuntimeTurnReplaySafety(session, crashRecovery);
+  const ownIds = new Set(session.currentTurnPendingIds ?? []);
+  // A restored schedule is consumed synchronously at provider handoff. While
+  // it still exists on every current input atom, even async turn preparation
+  // has not delivered that cohort. Preserve it across a second restart too.
+  if (!session.currentCrashRecoveryTerminal && !checkpoint && ownIds.size > 0) {
+    const ownMessages = session.pendingMessages.filter((message) => message.pendingId && ownIds.has(message.pendingId));
+    if (
+      safety.durableBinding === "missing" ||
+      safety.startedTool ||
+      safety.materializedOutput ||
+      safety.inputMutated ||
+      ownMessages.length !== ownIds.size ||
+      !ownMessages.every((message) => isScheduledProviderCapacityRetry(message.providerCapacityRetry))
+    ) {
+      return undefined;
+    }
+    return session.pendingMessages.map((message) =>
+      message.pendingId && ownIds.has(message.pendingId) ? { ...message, replay: false } : message,
+    );
+  }
+  if (!checkpoint || session.currentCrashRecoveryTerminal?.status !== "failed") return undefined;
+  const scheduledState = { ...checkpoint.state, notBefore: checkpoint.notBefore };
+  if (
+    safety.durableBinding !== "terminal" ||
+    safety.startedTool ||
+    safety.materializedOutput ||
+    safety.inputMutated ||
+    !isScheduledProviderCapacityRetry(scheduledState)
+  ) {
+    return undefined;
+  }
+  const retryIds = new Set(checkpoint.pendingIds);
+  if (
+    ownIds.size === 0 ||
+    ownIds.size !== retryIds.size ||
+    checkpoint.pendingIds.length !== retryIds.size ||
+    [...ownIds].some((id) => !retryIds.has(id))
+  ) {
+    return undefined;
+  }
+  const ownMessages = session.pendingMessages.filter((message) => message.pendingId && retryIds.has(message.pendingId));
+  if (
+    ownMessages.length !== retryIds.size ||
+    ownMessages.some(
+      (message) =>
+        message.providerCapacityRetry?.startedAt !== checkpoint.state.startedAt ||
+        message.providerCapacityRetry?.retries !== checkpoint.state.retries,
+    )
+  ) {
+    return undefined;
+  }
+  return session.pendingMessages.map((message) =>
+    message.pendingId && retryIds.has(message.pendingId)
+      ? { ...message, replay: false, providerCapacityRetry: { ...scheduledState } }
+      : message,
+  );
 }
 
 /** Cancel suspended work before either abort path can stash it for a restart. */
