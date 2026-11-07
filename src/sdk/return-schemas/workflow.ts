@@ -1,5 +1,5 @@
-import { initializeStateSchema } from "../../db/schema-owner.js";
-import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../../db/state-boundary.js";
+import { configureStateJournalMode, initializeStateSchema } from "../../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../../db/state-boundary.js";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -774,7 +774,7 @@ function openDb(dbPath: string): Database {
   mkdirSync(join(dbPath, ".."), { recursive: true });
   const db = openStateDatabase(dbPath);
   db.exec("PRAGMA busy_timeout = 5000");
-  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
+  configureStateJournalMode(db);
   return db;
 }
 

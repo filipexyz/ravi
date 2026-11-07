@@ -1,5 +1,5 @@
-import { initializeStateSchema } from "./db/schema-owner.js";
-import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "./db/state-boundary.js";
+import { configureStateJournalMode, initializeStateSchema } from "./db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "./db/state-boundary.js";
 import { isBridgeSessionRef } from "./bridge/isolation.js";
 import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
@@ -34,7 +34,7 @@ export function getDb(): Database {
   dbPath = nextDbPath;
 
   // WAL mode for concurrent read/write access (CLI + daemon)
-  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
+  configureStateJournalMode(db);
   db.exec("PRAGMA busy_timeout = 5000");
 
   try {

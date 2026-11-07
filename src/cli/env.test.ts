@@ -41,6 +41,15 @@ function loadEnvironment(args: string[]) {
 }
 
 describe("CLI managed environment bootstrap", () => {
+  it("selects the daemon's managed environment before acquiring schema ownership", () => {
+    expect(loadEnvironment(["daemon", "run"])).toEqual({
+      reloaded: "fresh-from-managed-file",
+      missing: "added-from-file",
+      inheritedOnly: "external-value",
+      fileSourced: true,
+    });
+  });
+
   it("reloads channel runner values over stale inherited PM2 or updater values", () => {
     expect(loadEnvironment(["channels", "run"])).toEqual({
       reloaded: "fresh-from-managed-file",
