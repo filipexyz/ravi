@@ -1277,13 +1277,6 @@
       "count": 1
     },
     {
-      "id": "src/cli/commands/sessions.ts:0df79efb6780ab0724c4125a",
-      "file": "src/cli/commands/sessions.ts",
-      "boundary": "sessions",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/cli/commands/sessions.ts:4e8213d901784dd4628928f7",
       "file": "src/cli/commands/sessions.ts",
       "boundary": "sessions",
@@ -5954,7 +5947,7 @@
     }
   ],
   "totals": {
-    "violations": 891,
+    "violations": 890,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5973,7 +5966,7 @@
       "src/channels/slack": 15,
       "src/ci": 1,
       "src/cli": 34,
-      "src/cli/commands": 145,
+      "src/cli/commands": 144,
       "src/cloud-agents": 30,
       "src/cloud-auth": 11,
       "src/console-scope": 5,

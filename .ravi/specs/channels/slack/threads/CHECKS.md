@@ -44,6 +44,14 @@
       thread's name under another key), and the remote relay MUST show local
       copy for them instead of "Remote command failed."
       (`src/cli/commands/sessions.test.ts`, `src/cli/remote-gateway.test.ts`).
+- [ ] Empty and whitespace-only `report`/`thread-send` messages, including
+      literal `\n` decoded to an empty message, MUST yield `USAGE_ERROR`, exit
+      `2`, without publishing or changing lifecycle state
+      (`src/cli/commands/sessions.test.ts`, `src/channels/slack/thread-lifecycle.test.ts`).
+- [ ] `thread-configure`, `close-thread`, `report`, and `thread-send` MUST pass
+      the original throwable and nested cause to the shared CLI boundary.
+      Verify `UNHANDLED_ERROR`, `SQLITE_CAPACITY`, and unchanged typed refusal
+      codes, exit codes, and suggested actions (`src/cli/commands/sessions.test.ts`).
 - [ ] `thread.list` MUST mark an open thread whose child session is gone with
       `childSessionMissing: true`, and `thread-send` to it MUST fail with
       `THREAD_SESSION_MISSING` (`src/channels/slack/thread-lifecycle.test.ts`).
@@ -74,3 +82,42 @@ bun run build
 - [ ] Inactive activation verdicts and unrelated reply sessions do not block close.
 - [ ] `bun test src/cli/commands/sessions.test.ts src/cli/remote-gateway.test.ts` preserves the refusal code, ids and repoint guidance across CLI/gateway.
 - [ ] `bun test src/triggers/__tests__/runner-named-session.test.ts` reloads the repointed trigger, closes the child, and delivers a CI event to the parent with the root source and incremented fire count.
+
+## Parent runtime configuration
+
+- Pause a real host event loop on a fake active provider, clear provider/model
+  through the parent, then complete that turn. Verify fresh next-turn selection
+  and native continuity, with no interrupt/restart and intact output/usage.
+
+- A parent attached to Slack from another channel MUST configure its owned Slack
+  thread using persisted lifecycle identity; a historical channel is not a deny.
+- A denied provider change MUST preserve its permission-denial audit while
+  leaving runtime fields untouched. A changed authorization snapshot MUST refuse
+  configuration before any runtime write.
+
+- An authorized root parent configures only its persisted child with
+  `sessions thread-configure`; the old generic `set-effort` still requires its
+  original scope. Verify real persisted readback and next-turn application.
+- Cover child name/key/request id/thread timestamp, another parent, sibling
+  caller, missing child, agent mismatch, and explicit unauthorized `--session`.
+- Cover atomic provider/model updates, invalid provider/model/effort/thinking,
+  empty patches, provider authority, `clear`, no-op, and closed-thread behavior.
+- The real registry and generated request schemas MUST reject thread-only and
+  thread-plus-session inputs, accept each runtime option individually and
+  several together, and preserve omitted overrides. Thinking MUST accept
+  `off|normal|verbose|clear` with case/whitespace variants and reject unknown,
+  empty, whitespace-only, null, and non-string values. Generated SDK signatures
+  MUST retain the thread and option fields and require the options bag. The
+  TypeScript union enforces at least one field; Swift/Dart constructors still
+  allow an explicit empty bag, so server validation remains required there.
+- Failed validation/authorization leaves all fields unchanged; successful
+  configuration leaves history/subscriptions/status intact and publishes nothing.
+- Generic reset/delete/rename/read remain unauthorized without their own grant.
+- Run the focused thread runtime and sessions command suites in separate
+  disposable-state processes, plus scope and gateway authorization regressions.
+
+- `src/runtime/thread-provider-config.test.ts` MUST cover clear before capacity
+  failure, clear during backoff, ownership replacement before failure/during wait,
+  and clear before/after a retry snapshot. Verify isolated retry input, preserved
+  retry budget, once-only authority release, no native-state resurrection, and
+  successor delivery on the newly configured provider.

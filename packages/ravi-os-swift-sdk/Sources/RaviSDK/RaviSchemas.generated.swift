@@ -110086,6 +110086,583 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsThreadConfigureInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "description": "Reasoning effort, or clear to remove the override",
+            "type": "string"
+          },
+          "model": {
+            "description": "Runtime model selector, or clear to remove the override",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Runtime provider id, or clear to use the agent default",
+            "type": "string"
+          },
+          "session": {
+            "description": "Explicit authorized parent (defaults to current session)",
+            "type": "string"
+          },
+          "thinking": {
+            "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+            "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+            "type": "string"
+          },
+          "thread": {
+            "description": "Owned thread session name, key, request id or Slack thread ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "effort",
+          "thread"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "description": "Reasoning effort, or clear to remove the override",
+            "type": "string"
+          },
+          "model": {
+            "description": "Runtime model selector, or clear to remove the override",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Runtime provider id, or clear to use the agent default",
+            "type": "string"
+          },
+          "session": {
+            "description": "Explicit authorized parent (defaults to current session)",
+            "type": "string"
+          },
+          "thinking": {
+            "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+            "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+            "type": "string"
+          },
+          "thread": {
+            "description": "Owned thread session name, key, request id or Slack thread ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "thread"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "description": "Reasoning effort, or clear to remove the override",
+            "type": "string"
+          },
+          "model": {
+            "description": "Runtime model selector, or clear to remove the override",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Runtime provider id, or clear to use the agent default",
+            "type": "string"
+          },
+          "session": {
+            "description": "Explicit authorized parent (defaults to current session)",
+            "type": "string"
+          },
+          "thinking": {
+            "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+            "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+            "type": "string"
+          },
+          "thread": {
+            "description": "Owned thread session name, key, request id or Slack thread ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "thread"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "description": "Reasoning effort, or clear to remove the override",
+            "type": "string"
+          },
+          "model": {
+            "description": "Runtime model selector, or clear to remove the override",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Runtime provider id, or clear to use the agent default",
+            "type": "string"
+          },
+          "session": {
+            "description": "Explicit authorized parent (defaults to current session)",
+            "type": "string"
+          },
+          "thinking": {
+            "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+            "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+            "type": "string"
+          },
+          "thread": {
+            "description": "Owned thread session name, key, request id or Slack thread ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thinking",
+          "thread"
+        ],
+        "type": "object"
+      }
+    ],
+    "properties": {
+      "effort": {
+        "description": "Reasoning effort, or clear to remove the override",
+        "type": "string"
+      },
+      "model": {
+        "description": "Runtime model selector, or clear to remove the override",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Runtime provider id, or clear to use the agent default",
+        "type": "string"
+      },
+      "session": {
+        "description": "Explicit authorized parent (defaults to current session)",
+        "type": "string"
+      },
+      "thinking": {
+        "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+        "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+        "type": "string"
+      },
+      "thread": {
+        "description": "Owned thread session name, key, request id or Slack thread ts",
+        "type": "string"
+      }
+    },
+    "required": [
+      "thread"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsThreadConfigureReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionId": {
+        "const": "thread.configure",
+        "type": "string"
+      },
+      "after": {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "effort",
+          "thinking"
+        ],
+        "type": "object"
+      },
+      "appliesOn": {
+        "const": "next-turn",
+        "type": "string"
+      },
+      "before": {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "effort",
+          "thinking"
+        ],
+        "type": "object"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "status": {
+        "const": "configured",
+        "type": "string"
+      },
+      "thread": {
+        "additionalProperties": false,
+        "properties": {
+          "childSessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "childSessionMissing": {
+            "type": "boolean"
+          },
+          "childSessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "openDecisionCount": {
+            "type": "number"
+          },
+          "parentReturn": {
+            "additionalProperties": false,
+            "properties": {
+              "pending": {
+                "type": "boolean"
+              },
+              "requested": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "requested",
+              "pending"
+            ],
+            "type": "object"
+          },
+          "pendingAnswerCount": {
+            "type": "number"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "effort": {
+                "type": "string"
+              },
+              "effortSource": {
+                "type": "string"
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "providerSource": {
+                "type": "string"
+              },
+              "requested": {
+                "additionalProperties": false,
+                "properties": {
+                  "effort": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "provider": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "thinking": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model",
+                  "effort",
+                  "thinking"
+                ],
+                "type": "object"
+              },
+              "thinking": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "thinkingSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "providerSource",
+              "model",
+              "modelSource",
+              "effort",
+              "effortSource",
+              "thinking",
+              "thinkingSource",
+              "requested"
+            ],
+            "type": "object"
+          },
+          "slackThreadTs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "action",
+              "inbound"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "root_delivered",
+              "starting",
+              "open",
+              "closed",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uncertainAnswerCount": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "requestId",
+          "title",
+          "status",
+          "source",
+          "childSessionKey",
+          "childSessionName",
+          "childSessionMissing",
+          "openDecisionCount",
+          "pendingAnswerCount",
+          "uncertainAnswerCount",
+          "slackThreadTs",
+          "link",
+          "runtime",
+          "createdAt",
+          "updatedAt",
+          "closedAt",
+          "parentReturn"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "status",
+      "actionId",
+      "changed",
+      "appliesOn",
+      "thread",
+      "before",
+      "after"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsThreadSendInputSchema = #"""
   {
     "additionalProperties": false,

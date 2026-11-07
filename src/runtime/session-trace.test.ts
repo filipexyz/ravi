@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { getRecentHistory, saveMessage, getChatDbPath } from "../db.js";
 import { Database } from "bun:sqlite";
 import { nats } from "../nats.js";
+import { DEFAULT_PRICING_CATALOG_URL } from "../costs/pricing-catalog.js";
 import {
   attachChatToSession,
   detachChatFromSession,
@@ -22,7 +23,7 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { getSessionTurnUsageSummary } from "../router/sessions.js";
-import { dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
+import { dbGetContext, dbSetSetting, dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { getSessionTraceBlob, getSessionTurn } from "../session-trace/session-trace-db.js";
@@ -35,6 +36,8 @@ import {
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
 import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { registerRuntimeCredentialRefreshHook, unregisterRuntimeCredentialRefreshHook } from "./credential-refresh.js";
+import { createRuntimeContext } from "./context-registry.js";
 import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
 import {
   RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
@@ -528,6 +531,40 @@ async function runTraceLoop(
   });
 }
 
+function runtimeRaceLatch() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+function makeRaceBrokerCredential(brokerId: string, turnId: string) {
+  return {
+    attemptId: `attempt_${turnId}`,
+    credentialId: `model-broker:${brokerId}:profile_main`,
+    modelBrokerId: brokerId,
+    modelBrokerProfileRef: "profile_main",
+    modelBrokerLeaseId: `lease_${turnId}`,
+    modelBrokerRuntimeId: "runtime_race",
+    modelBrokerSessionKey: SESSION_KEY,
+    modelBrokerTurnId: turnId,
+    modelBrokerRouteRevision: "route_race",
+    modelBrokerCompatibilityRevision: "compat_race",
+    modelBrokerSelectionCompatibilityKey: "selection_race",
+    modelBrokerLeaseExpiresAt: Date.now() + 60_000,
+    modelBrokerAttemptTerminal: false,
+    label: "Ownership race broker attempt",
+    fingerprint: "sha256:ownership-race",
+    runtimeProvider: PROVIDER,
+    authMethod: "model-broker",
+    resolvedEnv: {},
+    sensitiveEnvKeys: [],
+    remoteForwardEnvKeys: [],
+    bindings: [],
+  };
+}
+
 describe("runtime session trace instrumentation", () => {
   let natsEmitSpy: ReturnType<typeof spyOn> | undefined;
 
@@ -549,6 +586,301 @@ describe("runtime session trace instrumentation", () => {
     }
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("preserves a same-provider replacement after old completion awaits broker feedback", async () => {
+    const brokerId = "ownership-race-completion";
+    const feedbackEntered = runtimeRaceLatch();
+    const releaseFeedback = runtimeRaceLatch();
+    const replacementReady = runtimeRaceLatch();
+    const closeReplacement = runtimeRaceLatch();
+    const feedback: ModelBrokerAttemptFeedback[] = [];
+    updateSessionName(SESSION_KEY, SESSION_NAME);
+    const pricingDir = join(stateDir!, "pricing");
+    mkdirSync(pricingDir, { recursive: true });
+    writeFileSync(
+      join(pricingDir, "model_prices_and_context_window.json"),
+      JSON.stringify({
+        source: "test",
+        sourceUrl: DEFAULT_PRICING_CATALOG_URL,
+        sourceVersion: "ownership-race-fixture",
+        fetchedAt: Date.now(),
+        entries: {
+          [MODEL]: {
+            input_cost_per_token: 0.000001,
+            output_cost_per_token: 0.000002,
+            cache_read_input_token_cost: 0.0000005,
+            cache_creation_input_token_cost: 0.00000125,
+          },
+        },
+      }),
+    );
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      async resolveRoute() {
+        throw new Error("not used");
+      },
+      async reportAttempt(input) {
+        feedback.push(input);
+        feedbackEntered.release();
+        await releaseFeedback.promise;
+        return { recorded: true, nextAction: "retain" };
+      },
+    }));
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "native-before-race",
+      runtimeSessionParams: { sessionId: "native-before-race" },
+    });
+    const old = makeStreamingSession({
+      currentRuntimeCredential: makeRaceBrokerCredential(brokerId, "turn-old-await-feedback"),
+      runtimeProviderConfigRevision: 0,
+    });
+    seedAdapterTrace(old, "turn-old-await-feedback");
+    const replacement = makeStreamingSession({ traceRunId: "run-replacement", runtimeProviderConfigRevision: 0 });
+    const live = new Map([[SESSION_NAME, old]]);
+    const oldLoop = runTraceLoop(
+      old,
+      makeRuntimeSession([
+        { type: "assistant.message", text: "Old turn completed successfully." },
+        {
+          type: "turn.complete",
+          providerSessionId: "native-old-terminal",
+          session: { displayId: "native-old-terminal", params: { sessionId: "native-old-terminal", owner: "old" } },
+          usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 2, cacheCreationTokens: 3 },
+          execution: { model: MODEL },
+        },
+      ]),
+      { session: getSession(SESSION_KEY)!, streamingSessions: live },
+    );
+    let replacementLoop: Promise<void> | undefined;
+    try {
+      await feedbackEntered.promise;
+      expect(old.currentCrashRecoveryTerminal?.status).toBe("complete");
+      live.set(SESSION_NAME, replacement);
+      seedAdapterTrace(replacement, "turn-new-owner");
+      const replacementRuntime: RuntimeSessionHandle = {
+        provider: PROVIDER,
+        events: (async function* () {
+          yield {
+            type: "turn.complete" as const,
+            providerSessionId: "native-replacement",
+            session: {
+              displayId: "native-replacement",
+              params: { sessionId: "native-replacement", owner: "replacement" },
+            },
+            usage: { inputTokens: 300, outputTokens: 40, cacheReadTokens: 50, cacheCreationTokens: 10 },
+            execution: { model: MODEL },
+          };
+          replacementReady.release();
+          await closeReplacement.promise;
+        })(),
+        interrupt: async () => {},
+        close: async () => closeReplacement.release(),
+      };
+      replacementLoop = runTraceLoop(replacement, replacementRuntime, {
+        session: getSession(SESSION_KEY)!,
+        streamingSessions: live,
+      });
+      await replacementReady.promise;
+      expect(getSession(SESSION_KEY)).toMatchObject({ providerSessionId: "native-replacement", contextTokens: 360 });
+      releaseFeedback.release();
+      await oldLoop;
+
+      const persisted = getSession(SESSION_KEY);
+      expect(persisted).toMatchObject({
+        runtimeProvider: PROVIDER,
+        runtimeProviderConfigRevision: 0,
+        providerSessionId: "native-replacement",
+        runtimeSessionDisplayId: "native-replacement",
+        runtimeSessionParams: { sessionId: "native-replacement", owner: "replacement" },
+        contextTokens: 360,
+        inputTokens: 310,
+        outputTokens: 44,
+        totalTokens: 354,
+      });
+      expect(live.get(SESSION_NAME)).toBe(replacement);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(getSessionTurn("turn-old-await-feedback")).toMatchObject({
+        status: "complete",
+        inputTokens: 10,
+        outputTokens: 4,
+        cacheReadTokens: 2,
+        cacheCreationTokens: 3,
+      });
+      expect(getRuntimeLiveStateForSession(persisted!)).toMatchObject({ runId: "run-replacement" });
+      expect(getRecentHistory(SESSION_NAME).some((row) => row.content === "Old turn completed successfully.")).toBe(
+        true,
+      );
+      expect(feedback).toEqual([expect.objectContaining({ outcome: "succeeded" })]);
+      expect(
+        getDb()
+          .prepare("SELECT COUNT(*) AS count, SUM(input_tokens) AS input FROM cost_events WHERE session_key = ?")
+          .get(SESSION_KEY),
+      ).toMatchObject({ count: 2, input: 310 });
+      expect(getSessionTurn("turn-old-await-feedback")?.costUsd).toBeCloseTo(0.00002275, 10);
+    } finally {
+      releaseFeedback.release();
+      closeReplacement.release();
+      replacement.abortController.abort();
+      await Promise.all([oldLoop, replacementLoop]);
+      unregisterModelBroker(brokerId);
+    }
+  });
+
+  it("does not reset or revoke a replacement while context failure awaits broker feedback", async () => {
+    const feedbackEntered = runtimeRaceLatch();
+    const releaseFeedback = runtimeRaceLatch();
+    const brokerId = "ownership-race-context-failure";
+    const feedback: ModelBrokerAttemptFeedback[] = [];
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      async resolveRoute() {
+        throw new Error("not used");
+      },
+      async reportAttempt(input) {
+        feedback.push(input);
+        feedbackEntered.release();
+        await releaseFeedback.promise;
+        return { recorded: true, nextAction: "retain" };
+      },
+    }));
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "native-before-recovery",
+      runtimeSessionParams: { sessionId: "native-before-recovery" },
+    });
+    const active = createQueuedRuntimeUserMessage({ prompt: "recover the old request", source, _agentId: AGENT_ID });
+    const old = makeStreamingSession({
+      pendingMessages: [active],
+      currentTurnPendingIds: [active.pendingId!],
+      currentRuntimeCredential: makeRaceBrokerCredential(brokerId, "turn-old-await-recovery"),
+    });
+    seedAdapterTrace(old, "turn-old-await-recovery");
+    const replacement = makeStreamingSession({ traceRunId: "run-recovery-replacement" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "new owner successor", source, _agentId: AGENT_ID });
+    const successorQueue = [successor];
+    const live = new Map([[SESSION_NAME, old]]);
+    const stash = new Map<string, RuntimeUserMessage[]>();
+    const restarts: unknown[] = [];
+    const loop = runTraceLoop(
+      old,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error:
+            "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+          recoverable: false,
+        },
+      ]),
+      {
+        session: getSession(SESSION_KEY)!,
+        streamingSessions: live,
+        stashedMessages: stash,
+        restartStashedSession: async (input) => {
+          restarts.push(input);
+        },
+      },
+    );
+    try {
+      await feedbackEntered.promise;
+      expect(old.currentCrashRecoveryTerminal?.status).toBe("failed");
+      live.set(SESSION_NAME, replacement);
+      stash.set(SESSION_NAME, successorQueue);
+      updateProviderSession(SESSION_KEY, PROVIDER, "native-recovery-replacement", {
+        runtimeSessionParams: { sessionId: "native-recovery-replacement", owner: "replacement" },
+        runtimeSessionDisplayId: "native-recovery-replacement",
+      });
+      const replacementContext = createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: AGENT_ID,
+        sessionKey: SESSION_KEY,
+        sessionName: SESSION_NAME,
+        capabilities: [],
+      });
+      releaseFeedback.release();
+      await loop;
+
+      expect(getSession(SESSION_KEY)).toMatchObject({
+        runtimeProvider: PROVIDER,
+        providerSessionId: "native-recovery-replacement",
+        runtimeSessionParams: { sessionId: "native-recovery-replacement", owner: "replacement" },
+      });
+      expect(dbGetContext(replacementContext.contextId)?.revokedAt).toBeUndefined();
+      expect(stash.get(SESSION_NAME)).toBe(successorQueue);
+      expect(live.get(SESSION_NAME)).toBe(replacement);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(restarts).toEqual([]);
+      expect(getSessionTurn("turn-old-await-recovery")?.status).toBe("failed");
+      expect(feedback).toEqual([expect.objectContaining({ outcome: "provider_failed", effectState: "none" })]);
+      expect(
+        listSessionEventsForTest(SESSION_KEY).some((event) => event.eventType === "session.context_window_exhausted"),
+      ).toBe(false);
+    } finally {
+      releaseFeedback.release();
+      await loop;
+      unregisterModelBroker(brokerId);
+    }
+  });
+
+  it("does not restart a replacement after final cleanup awaits broker abandonment", async () => {
+    const brokerId = "ownership-race-cleanup";
+    const feedbackEntered = runtimeRaceLatch();
+    const releaseFeedback = runtimeRaceLatch();
+    const feedback: ModelBrokerAttemptFeedback[] = [];
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      async resolveRoute() {
+        throw new Error("not used");
+      },
+      async reportAttempt(input) {
+        feedback.push(input);
+        feedbackEntered.release();
+        await releaseFeedback.promise;
+        return { recorded: true, nextAction: "retain" };
+      },
+    }));
+    const active = createQueuedRuntimeUserMessage({ prompt: "old unfinished request", source, _agentId: AGENT_ID });
+    const old = makeStreamingSession({
+      pendingMessages: [active],
+      currentTurnPendingIds: [active.pendingId!],
+      currentRuntimeCredential: makeRaceBrokerCredential(brokerId, "turn-old-await-cleanup"),
+    });
+    seedAdapterTrace(old, "turn-old-await-cleanup");
+    const live = new Map([[SESSION_NAME, old]]);
+    const stash = new Map<string, RuntimeUserMessage[]>();
+    const restarts: unknown[] = [];
+    let drains = 0;
+    const loop = runTraceLoop(old, makeRuntimeSession([]), {
+      streamingSessions: live,
+      stashedMessages: stash,
+      restartStashedSession: async (input) => {
+        restarts.push(input);
+      },
+      drainPendingStarts: () => {
+        drains++;
+      },
+    });
+    try {
+      await feedbackEntered.promise;
+      expect(stash.get(SESSION_NAME)?.map((entry) => entry.message.content)).toEqual(["old unfinished request"]);
+      const replacement = makeStreamingSession({ traceRunId: "run-cleanup-replacement" });
+      const replacementQueue = [createQueuedRuntimeUserMessage({ prompt: "replacement request", source })];
+      live.set(SESSION_NAME, replacement);
+      stash.set(SESSION_NAME, replacementQueue);
+      releaseFeedback.release();
+      await loop;
+
+      expect(restarts).toEqual([]);
+      expect(drains).toBe(0);
+      expect(live.get(SESSION_NAME)).toBe(replacement);
+      expect(stash.get(SESSION_NAME)).toBe(replacementQueue);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(feedback).toEqual([expect.objectContaining({ outcome: "abandoned" })]);
+      expect(getSessionTurn("turn-old-await-cleanup")?.status).toBe("aborted");
+    } finally {
+      releaseFeedback.release();
+      await loop;
+      unregisterModelBroker(brokerId);
+    }
   });
 
   for (const child of [false, true]) {
@@ -2402,6 +2734,10 @@ describe("runtime session trace instrumentation", () => {
       sessionId: "provider-before",
       skillVisibility: makeSkillVisibility("loaded"),
     };
+    // The loop receives a snapshot of persisted native state, as on a real resume.
+    updateProviderSession(SESSION_KEY, PROVIDER, "provider-before", {
+      runtimeSessionParams: session.runtimeSessionParams,
+    });
 
     await runTraceLoop(
       streaming,
@@ -3010,6 +3346,10 @@ describe("runtime session trace instrumentation", () => {
       sessionId: "provider-before",
       skillVisibility: makeLoadedRaviTaskSkillVisibility(),
     };
+    // The loop receives a snapshot of persisted native state, as on a real resume.
+    updateProviderSession(SESSION_KEY, PROVIDER, "provider-before", {
+      runtimeSessionParams: session.runtimeSessionParams,
+    });
 
     await runTraceLoop(
       streaming,
@@ -3153,6 +3493,10 @@ describe("runtime session trace instrumentation", () => {
       sessionId: "provider-before",
       skillVisibility: makeClaudeCatalogSkillVisibility(),
     };
+    // The loop receives a snapshot of persisted native state, as on a real resume.
+    updateProviderSession(SESSION_KEY, PROVIDER, "provider-before", {
+      runtimeSessionParams: session.runtimeSessionParams,
+    });
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
     const gateSnapshot = makeGateLoadedRoutesSkillVisibility();
 
@@ -3162,6 +3506,9 @@ describe("runtime session trace instrumentation", () => {
         // The authorize path fires while the provider turn is in flight; the
         // bootstrap closure has already refreshed the in-memory params.
         session.runtimeSessionParams = { ...session.runtimeSessionParams, skillVisibility: gateSnapshot };
+        updateProviderSession(SESSION_KEY, PROVIDER, "provider-before", {
+          runtimeSessionParams: session.runtimeSessionParams,
+        });
         streaming.onSkillGatePersisted?.(gateSnapshot, { skill: "ravi-system-routes-manager", toolName: "Bash" });
         expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["routes-manager"]);
         yield makeClaudeTurnComplete("provider-after");
@@ -6600,6 +6947,130 @@ describe("runtime session trace instrumentation", () => {
       completedAt: recoveryAttempt?.completedAt,
     });
   });
+
+  it.each(["explicit abort", "replacement"] as const)(
+    "does not resume credential recovery after %s while refresh awaits",
+    async (transition) => {
+      const refreshEntered = runtimeRaceLatch();
+      const releaseRefresh = runtimeRaceLatch();
+      const refreshReasons: string[] = [];
+      registerRuntimeCredentialRefreshHook(PROVIDER, async ({ reason }) => {
+        refreshReasons.push(reason);
+        refreshEntered.release();
+        await releaseRefresh.promise;
+        return { action: "unsupported" };
+      });
+      const active = createQueuedRuntimeUserMessage({ prompt: "old credential request", source, _agentId: AGENT_ID });
+      const successor = createQueuedRuntimeUserMessage({
+        prompt: "independent successor",
+        deliveryBarrier: "after_response",
+        source,
+        _agentId: AGENT_ID,
+      });
+      const old = makeStreamingSession({
+        pendingMessages: [active, successor],
+        currentTurnPendingIds: [active.pendingId!],
+        currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_await_refresh"),
+      });
+      seedAdapterTrace(old, "turn-await-credential-refresh");
+      const attemptId = old.currentCrashRecoveryAttemptId!;
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "trace-test",
+        maxConcurrentSessions: 10,
+        interactiveReservedSessions: 0,
+        safeEmit: async () => {},
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => MODEL,
+        crashRecovery,
+      });
+      const live = dispatcher.streamingSessions;
+      const stash = dispatcher.stashedMessages;
+      live.set(SESSION_NAME, old);
+      const restarts: unknown[] = [];
+      let drains = 0;
+      const loop = runTraceLoop(
+        old,
+        makeRuntimeSession([
+          {
+            type: "turn.failed",
+            error: "invalid API key",
+            recoverable: true,
+            rawEvent: { type: "error", status: 401, code: "invalid_api_key" },
+          },
+        ]),
+        {
+          streamingSessions: live,
+          stashedMessages: stash,
+          restartStashedSession: async (input) => {
+            restarts.push(input);
+          },
+          drainPendingStarts: () => {
+            drains++;
+          },
+        },
+      );
+      try {
+        await refreshEntered.promise;
+        const terminalBeforeTransition = getSessionTurn("turn-await-credential-refresh");
+        expect(terminalBeforeTransition?.status).toBe("failed");
+        expect(stash.get(SESSION_NAME)?.map((message) => message.pendingId)).toEqual([active.pendingId]);
+        let replacement: RuntimeHostStreamingSession | undefined;
+        let replacementContextId: string | undefined;
+        if (transition === "explicit abort") {
+          expect(dispatcher.abortSession({ sessionName: SESSION_NAME, sessionKey: SESSION_KEY })).toBe(true);
+          expect(old.abortController.signal.aborted).toBe(true);
+          expect(live.has(SESSION_NAME)).toBe(false);
+        } else {
+          replacement = makeStreamingSession({ traceRunId: "run-credential-replacement" });
+          live.set(SESSION_NAME, replacement);
+          stash.set(SESSION_NAME, [successor]);
+          updateProviderSession(SESSION_KEY, PROVIDER, "native-credential-replacement", {
+            runtimeSessionParams: { sessionId: "native-credential-replacement", owner: "replacement" },
+            runtimeSessionDisplayId: "native-credential-replacement",
+          });
+          replacementContextId = createRuntimeContext({
+            kind: "turn-runtime",
+            agentId: AGENT_ID,
+            sessionKey: SESSION_KEY,
+            sessionName: SESSION_NAME,
+            capabilities: [],
+          }).contextId;
+        }
+        const retainedQueue = stash.get(SESSION_NAME);
+        expect(retainedQueue?.some((message) => message.pendingId === successor.pendingId)).toBe(true);
+        releaseRefresh.release();
+        await loop;
+
+        expect(refreshReasons).toEqual(["retryable_failure"]);
+        expect(restarts).toEqual([]);
+        expect(drains).toBe(0);
+        expect(stash.get(SESSION_NAME)).toBe(retainedQueue);
+        expect(live.get(SESSION_NAME)).toBe(replacement);
+        expect(getSessionTurn("turn-await-credential-refresh")).toMatchObject({
+          status: "failed",
+          completedAt: terminalBeforeTransition?.completedAt,
+        });
+        expect(getRuntimeTurnAttempt(attemptId)?.status).toBe("failed");
+        expect(listSessionEventsForTest(SESSION_KEY).filter((event) => event.eventType === "turn.failed")).toHaveLength(
+          1,
+        );
+        if (replacement) {
+          expect(replacement.done).toBe(false);
+          expect(replacement.abortController.signal.aborted).toBe(false);
+          expect(dbGetContext(replacementContextId!)?.revokedAt).toBeUndefined();
+          expect(getSession(SESSION_KEY)).toMatchObject({
+            runtimeProvider: PROVIDER,
+            providerSessionId: "native-credential-replacement",
+            runtimeSessionParams: { sessionId: "native-credential-replacement", owner: "replacement" },
+          });
+        }
+      } finally {
+        releaseRefresh.release();
+        await loop;
+        unregisterRuntimeCredentialRefreshHook(PROVIDER);
+      }
+    },
+  );
 
   it.each([
     {

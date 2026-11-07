@@ -1577,6 +1577,7 @@ function getDb(): Database {
       sdk_session_id TEXT,
       runtime_provider TEXT,
       runtime_provider_override TEXT,
+      runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0,
       runtime_session_json TEXT,
       history_reset_after_id INTEGER,
       runtime_session_display_id TEXT,
@@ -3070,6 +3071,14 @@ function getDb(): Database {
   if (!sessionColumns.some((c) => c.name === "runtime_provider_override")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_provider_override TEXT");
     log.info("Added runtime_provider_override column to sessions table");
+  }
+  if (
+    addSessionColumnIfMissing(
+      "runtime_provider_config_revision",
+      "ALTER TABLE sessions ADD COLUMN runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0",
+    )
+  ) {
+    log.info("Added runtime_provider_config_revision column to sessions table");
   }
   if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");

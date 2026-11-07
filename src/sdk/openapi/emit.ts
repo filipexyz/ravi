@@ -15,6 +15,7 @@
 
 import { createHash } from "node:crypto";
 import { z, type ZodTypeAny } from "zod";
+import { withRequiredAnyOfOptions } from "../input-constraints.js";
 import type {
   ArgRegistryEntry,
   CommandRegistryEntry,
@@ -144,8 +145,8 @@ function buildRequestBody(cmd: CommandRegistryEntry, components: SchemaComponent
   const flat = buildFlatSchema(cmd.args, cmd.options, components);
   if (!flat.hasContent) return undefined;
   return {
-    required: flat.hasRequired,
-    content: { "application/json": { schema: flat.schema } },
+    required: flat.hasRequired || Boolean(cmd.requiredAnyOfOptions?.length),
+    content: { "application/json": { schema: withRequiredAnyOfOptions(flat.schema, cmd.requiredAnyOfOptions) } },
   };
 }
 

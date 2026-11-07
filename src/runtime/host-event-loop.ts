@@ -3,9 +3,12 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
+import { executeWrite } from "../db/write-retry.js";
+import { getDb } from "../router/router-db.js";
 import { isCommentaryMetadata, isFinalAssistantMessage, type UtteranceClass } from "./utterance-class.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
@@ -15,6 +18,7 @@ import {
   dbInsertCostEvent,
   deleteSession,
   getAnnounceCompaction,
+  getAgent,
   getSession,
   resetSession,
   updateProviderSession,
@@ -27,6 +31,7 @@ import { getSessionTraceBlob, getSessionTurn, listSessionEventsByTurn } from "..
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
+import { resolveEffectiveSessionRuntime } from "./runtime-selection.js";
 import { classifyVisibleAssistantUtterances } from "./assistant-transcript.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
@@ -1045,6 +1050,20 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     restartStashedSession,
     onToolBarrierReleased,
   } = options;
+  const ownsRuntimeSlot = () => streamingSessions.get(sessionName) === streaming;
+  const updateOwnedLiveState = (input: Parameters<typeof updateRuntimeLiveState>[1]) => {
+    if (ownsRuntimeSlot()) updateRuntimeLiveState(sessionName, input);
+  };
+  const markOwnedLiveIdle = (summary: string) => {
+    if (ownsRuntimeSlot()) markRuntimeLiveIdle(sessionName, summary);
+  };
+  const stashOwnedPendingMessages = (options: Parameters<typeof stashPendingRuntimeMessages>[3]) =>
+    ownsRuntimeSlot() ? stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, options) : 0;
+  const stashOwnedCurrentTurnMessages = (options: Parameters<typeof stashCurrentTurnRuntimeMessages>[3]) =>
+    ownsRuntimeSlot() ? stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, options) : 0;
+  let lastPersistedProvider = session.runtimeProvider;
+  let lastPersistedOverride = session.runtimeProviderOverride;
+  let providerConfigurationRevision = session.runtimeProviderConfigRevision ?? 0;
   prewarmPricingCatalog();
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
@@ -1368,7 +1387,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         runtimeSession.skillVisibility,
       )
     : runtimeSession.skillVisibility;
-  updateRuntimeLiveState(sessionName, {
+  updateOwnedLiveState({
     activity: "thinking",
     summary: "runtime active",
     agentId: agent.id,
@@ -1434,6 +1453,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     name: string;
     timeoutMs: number;
   }): void => {
+    if (!ownsRuntimeSlot()) return;
+    // A terminal already accepted by the host is settling the explicit abort.
+    // A lease firing during its asynchronous emission must not replace that
+    // intent with inactivity recovery. Before a terminal, keep the watchdog.
+    if (streaming.pendingAbort && streaming.currentCrashRecoveryTerminal) return;
     const seconds = Math.round(input.timeoutMs / 1000);
     const subject = input.kind === "tool" ? `o tool \`${input.name}\`` : "o provider";
     const attempts = (inactivityRecoveryAttempts.get(sessionName) ?? 0) + 1;
@@ -1464,7 +1488,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       _runtimeProviderId: runtimeSession.provider,
     });
 
-    stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    stashOwnedPendingMessages({ crashRecovery });
     const queued = stashedMessages.get(sessionName) ?? [];
     const deduped = notice.clientMessageId
       ? queued.filter((message) => message.clientMessageId !== notice.clientMessageId)
@@ -1562,7 +1586,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         stashedMessages: stashedMessages.get(sessionName)?.length ?? 0,
       },
     });
-    updateRuntimeLiveState(sessionName, {
+    updateOwnedLiveState({
       activity: "thinking",
       summary: "continuando apos inatividade",
       agentId: agent.id,
@@ -1722,7 +1746,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionDone: streaming.done,
         })
       ) {
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           ...buildSlowToolLivePatch(toolName, elapsedMs, streaming.pendingMessages.length),
           agentId: agent.id,
           runId,
@@ -1788,13 +1812,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
   const scheduleIdleSessionEviction = () => {
-    if (IDLE_SESSION_TTL_MS <= 0) {
+    if (!ownsRuntimeSlot() || IDLE_SESSION_TTL_MS <= 0) {
       return;
     }
     clearIdleSessionEvictionTimer();
     streaming.idleSessionEvictionTimer = setTimeout(() => {
       streaming.idleSessionEvictionTimer = undefined;
       if (
+        !ownsRuntimeSlot() ||
         streaming.done ||
         streaming.starting ||
         streaming.turnActive ||
@@ -1840,6 +1865,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
   const finishActiveToolBarrier = async () => {
     clearActiveToolState();
+    if (!ownsRuntimeSlot()) return;
 
     if (streaming.pendingAbort) {
       if (streaming.pendingMessages.length > 0) {
@@ -1847,7 +1873,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionName,
           count: streaming.pendingMessages.length,
         });
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+        stashOwnedPendingMessages({ crashRecovery });
       }
       log.info("Executing deferred abort after tool barrier released", {
         sessionName,
@@ -1896,12 +1922,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
   const terminateTurnAfterFatalTool = (failure: FatalToolFailure) => {
-    if (streaming.done || streaming.abortController.signal.aborted) {
+    if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) {
       return;
     }
 
     streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
-    const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+    const stashedCount = stashOwnedPendingMessages({ crashRecovery });
     if (stashedCount > 0) {
       restartStashedReason = FATAL_TOOL_FAILURE_REASON;
     }
@@ -1976,7 +2002,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.turnActive = false;
     streaming.internalAbortReason = FATAL_TOOL_FAILURE_REASON;
     clearActiveToolState();
-    markRuntimeLiveIdle(sessionName, "fatal tool failure");
+    markOwnedLiveIdle("fatal tool failure");
     streaming.done = true;
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
@@ -1991,6 +2017,66 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.onTurnComplete();
       streaming.onTurnComplete = null;
     }
+  };
+
+  // Cancellation is distinct from provider selection: recovery exits must
+  // settle an explicit abort without turning it into a new physical delivery.
+  const finishPendingTerminalAbort = (pendingAbortBeforeCleanup?: string): boolean => {
+    if (!ownsRuntimeSlot()) return false;
+    if (!streaming.pendingAbort && !pendingAbortBeforeCleanup) return false;
+    stashOwnedPendingMessages({ crashRecovery });
+    streaming.internalAbortReason = pendingAbortBeforeCleanup ?? streaming.internalAbortReason ?? "deferred_abort";
+    revokeAgentRuntimeContextsForSession(session.sessionKey, { reason: streaming.internalAbortReason });
+    restartStashedReason = undefined;
+    streaming.done = true;
+    streaming.pendingAbort = false;
+    markOwnedLiveIdle("turn interrupted");
+    return true;
+  };
+
+  // Run after terminal accounting and replay decisions, before waking the
+  // generator. Existing recovery branches retain their own restart path.
+  const finishPendingTerminalTransition = (
+    terminal: "complete" | "failed" | "interrupted",
+    pendingAbortBeforeCleanup?: string,
+  ): boolean => {
+    if (finishPendingTerminalAbort(pendingAbortBeforeCleanup)) return true;
+    if (!ownsRuntimeSlot() || streaming.done || streaming.abortController.signal.aborted) return false;
+    const configuredSession = getSession(session.sessionKey);
+    if (
+      !configuredSession ||
+      (configuredSession.runtimeProviderConfigRevision ?? 0) ===
+        (streaming.runtimeProviderConfigRevision ?? session.runtimeProviderConfigRevision ?? 0) ||
+      resolveEffectiveSessionRuntime({
+        session: configuredSession,
+        agent: getAgent(configuredSession.agentId) ?? agent,
+      }).provider.value === runtimeSession.provider
+    ) {
+      return false;
+    }
+    const successors = getPendingRuntimeTurnSuccessors(streaming);
+    if (successors.length === 0) return false;
+
+    // Unexpected interruption may replay A before B. Keep that existing safety
+    // decision and its envelope; a completed/failed A is never replayed here.
+    const pending =
+      terminal === "interrupted"
+        ? getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery)
+        : successors;
+    stashedMessages.set(
+      sessionName,
+      pending.map((message) => ({ ...message })),
+    );
+    restartStashedReason = "provider_change";
+    streaming.internalAbortReason = "provider_change";
+    streaming.done = true;
+    recordTraceEvent({
+      eventType: "dispatch.restart_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      payloadJson: { reason: "provider_change", queuedSuccessors: successors.length, terminal },
+    });
+    return true;
   };
 
   const emitLegacyProviderEvent = async (event: Record<string, unknown>) => {
@@ -2085,9 +2171,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (pending) pending.safetyFenced = true;
   };
 
-  const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
-    const metadata = streaming.currentChannelBackend;
-    if (!metadata) return;
+  const projectRuntimeEventToChannel = async (
+    event: RuntimeEvent,
+    projectedResponseText?: string,
+    metadata = streaming.currentChannelBackend,
+    mayProject?: () => boolean,
+  ) => {
+    if (!metadata || (mayProject && !mayProject())) return;
     // The physical turn ends, but its queued continuation still owns this channel request.
     if (
       streaming.currentTurnYieldContinuationId &&
@@ -2118,6 +2208,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       await projectChannelRuntimeEvent({
         metadata,
         event: stripRuntimeRawEvent(event),
+        ...(mayProject ? { beforeRecordEvent: mayProject } : {}),
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
         ...toolProjection,
       });
@@ -2281,6 +2372,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
    * restart they would stay in this dead session object and be lost.
    */
   const recoverQueueBehindSettledTurn = () => {
+    if (!ownsRuntimeSlot()) return;
     const reason =
       streaming.internalAbortReason ??
       (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
@@ -2307,12 +2399,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const prepareUnterminatedTurnRecovery = () => {
+    if (!ownsRuntimeSlot()) return;
     if (streaming.durableTurnPreparationFailed) {
       if (!restartStashedReason) {
         // The prompt was never yielded to the provider. Preserve it even when
         // the failed attempt write made the coordinator reject new work;
         // shutdown snapshots still need the exact original envelope.
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+        stashOwnedPendingMessages({ crashRecovery });
       }
       if (restartStashedReason || !crashRecovery?.acceptingDeliveries) {
         return;
@@ -2361,7 +2454,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
     const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
-    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+    const stashedCount = stashOwnedCurrentTurnMessages({
       crashRecovery,
       reconcileCurrentTurn,
     });
@@ -2412,7 +2505,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     input: Parameters<typeof updateRuntimeLiveState>[1],
     skillVisibility?: RuntimeSkillVisibilitySnapshot,
   ) =>
-    updateRuntimeLiveState(sessionName, {
+    updateOwnedLiveState({
       ...input,
       ...(skillVisibility
         ? {
@@ -2458,6 +2551,42 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     };
   };
 
+  // Configuration can rematerialize the next provider while this handle still
+  // owns an active turn. Check under the write lock so a late completion or
+  // telemetry write cannot restore that handle's incompatible native state.
+  // The revision distinguishes an explicit clear (even of a null override) and
+  // ABA from an unchanged launch. Compatible providers can keep continuity.
+  const persistCurrentProviderState = (write: () => void): boolean => {
+    if (!ownsRuntimeSlot()) return false;
+    const saved = executeWrite(
+      getDb(),
+      () => {
+        const current = getSession(session.sessionKey);
+        if (!current) return null;
+        const unchanged =
+          (current.runtimeProviderConfigRevision ?? 0) === providerConfigurationRevision &&
+          current.runtimeProvider === lastPersistedProvider &&
+          current.runtimeProviderOverride === lastPersistedOverride;
+        if (
+          !unchanged &&
+          resolveEffectiveSessionRuntime({ session: current, agent: getAgent(current.agentId) ?? agent }).provider
+            .value !== runtimeSession.provider
+        ) {
+          return null;
+        }
+        write();
+        return current;
+      },
+      { label: "runtime_provider_state" },
+    );
+    if (saved) {
+      lastPersistedProvider = runtimeSession.provider;
+      lastPersistedOverride = saved.runtimeProviderOverride;
+      providerConfigurationRevision = saved.runtimeProviderConfigRevision ?? 0;
+    }
+    return saved !== null;
+  };
+
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
@@ -2476,20 +2605,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (!lastUsedMatchesCurrent) {
       return runtimeSessionParams;
     }
-    if (persistedSessionId) {
-      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-        runtimeSessionParams,
-        runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-      });
-    } else {
-      updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
-        runtimeSessionParams,
-      });
-    }
+    persistCurrentProviderState(() => {
+      if (persistedSessionId) {
+        updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+          runtimeSessionParams,
+          runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
+        });
+      } else {
+        updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
+          runtimeSessionParams,
+        });
+      }
+    });
     return runtimeSessionParams;
   };
 
   const persistPiContextSaturation = (usedTokens: number, limitTokens: number) => {
+    if (!ownsRuntimeSlot()) return;
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
       contextWindow: limitTokens,
@@ -2505,15 +2637,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const providerUnset = !session.runtimeProvider;
     const lastUsedMatchesCurrent = session.runtimeProvider === runtimeSession.provider;
     if (!lastUsedMatchesCurrent && !providerUnset) return;
-    if (persistedSessionId) {
-      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-        runtimeSessionParams,
-        runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-      });
-      return;
-    }
-    updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
-      runtimeSessionParams,
+    persistCurrentProviderState(() => {
+      if (persistedSessionId) {
+        updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+          runtimeSessionParams,
+          runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
+        });
+      } else {
+        updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, { runtimeSessionParams });
+      }
     });
   };
 
@@ -2791,7 +2923,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     let timedOut = false;
     const timeout = new Promise<IteratorResult<RuntimeEvent>>((resolve) => {
       interval = setInterval(() => {
-        if (timedOut || streaming.done || streaming.abortController.signal.aborted) return;
+        if (!ownsRuntimeSlot() || timedOut || streaming.done || streaming.abortController.signal.aborted) return;
         if (!streaming.turnActive || streaming.toolRunning || streaming.compacting) return;
 
         const idleMs = Date.now() - streaming.lastActivity;
@@ -2800,7 +2932,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         timedOut = true;
         const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
         const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
-        const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+        const stashedCount = stashOwnedPendingMessages({
           crashRecovery,
           reconcileCurrentTurn,
         });
@@ -2829,7 +2961,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.turnActive = false;
         streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
         clearActiveToolState();
-        markRuntimeLiveIdle(sessionName, "provider turn inactive");
+        markOwnedLiveIdle("provider turn inactive");
         streaming.done = true;
         if (!streaming.abortController.signal.aborted) {
           streaming.abortController.abort();
@@ -3061,6 +3193,37 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
       }
 
+      // A reset exception must settle this accepted request, never an envelope
+      // installed while diagnostics or the running-state sink are awaited.
+      // This is initial settlement, not replay or a native-state write. A
+      // next-turn provider revision or cancellation does not replace the failed
+      // outcome while this exact request still owns the slot and lease.
+      const failedChannelProjection =
+        event.type === "turn.failed" && streaming.currentChannelBackend
+          ? (() => {
+              const metadata = structuredClone(streaming.currentChannelBackend);
+              const failedEvent = structuredClone(stripRuntimeRawEvent(event)) as RuntimeEvent;
+              const handle = streaming.queryHandle;
+              const traceTurnId = streaming.currentTraceTurnId;
+              const terminal = streaming.currentCrashRecoveryTerminal;
+              const bootEpoch = crashRecovery?.bootEpoch;
+              return {
+                metadata,
+                event: failedEvent,
+                mayProject: () =>
+                  ownsRuntimeSlot() &&
+                  streaming.queryHandle === handle &&
+                  streaming.currentTraceTurnId === traceTurnId &&
+                  streaming.currentCrashRecoveryTerminal === terminal &&
+                  isDeepStrictEqual(streaming.currentChannelBackend, metadata) &&
+                  (!crashRecovery ||
+                    (crashRecovery.bootEpoch === bootEpoch &&
+                      !crashRecovery.ownershipFailure &&
+                      crashRecovery.acceptingDeliveries)),
+              };
+            })()
+          : undefined;
+
       if (event.type === "text.delta") {
         // The chunk can be queued for external emission below, so persist the
         // replay-safety fence before any projection or async work.
@@ -3077,7 +3240,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             metadata: event.metadata,
           });
         }
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "streaming",
           summary: truncateLiveSummary(event.text) || "streaming",
           agentId: agent.id,
@@ -3294,7 +3457,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           metadata: event.metadata,
           ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "thinking",
           summary: `${event.toolUse.name} running`,
           agentId: agent.id,
@@ -3479,7 +3642,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                     text: utterance,
                   });
                 }
-                updateRuntimeLiveState(sessionName, {
+                updateOwnedLiveState({
                   activity: "streaming",
                   summary: truncateLiveSummary(utterance) || "response",
                   agentId: agent.id,
@@ -3617,7 +3780,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
 
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: event.isError ? "blocked" : "thinking",
           summary: event.isError ? `${toolName} failed` : `${toolName} completed`,
           agentId: agent.id,
@@ -3717,7 +3880,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Visible assistant text is real progress. A silent, empty, or @@SILENT@@
         // completion — including a recovery that produced nothing — keeps the
         // consecutive inactivity budget so repeated silence reaches the cap.
-        if (inactivityRecoveryCompletionHasProgress(responseText)) {
+        if (ownsRuntimeSlot() && inactivityRecoveryCompletionHasProgress(responseText)) {
           resetInactivityRecoveryBudget(sessionName);
         }
         await recordRuntimeCredentialTurnSuccess(
@@ -3751,11 +3914,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           runtimeSessionDisplayId ??
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
-        if (persistedSessionId) {
-          updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-            runtimeSessionParams,
-            runtimeSessionDisplayId,
-          });
+        if (
+          persistedSessionId &&
+          persistCurrentProviderState(() => {
+            updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+              runtimeSessionParams,
+              runtimeSessionDisplayId,
+            });
+          })
+        ) {
           backfillProviderSessionId(sessionName, persistedSessionId);
           session.runtimeSessionParams = runtimeSessionParams;
           session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
@@ -3764,7 +3931,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
-        updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
+        // Totals belong to the completed turn; context is the current handle's snapshot.
+        updateTokens(
+          session.sessionKey,
+          inputTokens,
+          outputTokens,
+          ownsRuntimeSlot() ? inputTokens + cacheRead + cacheCreation : null,
+        );
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
@@ -3799,10 +3972,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             createdAt: Date.now(),
           });
         }
+        const providerSessionIdAfter = getSession(session.sessionKey)?.providerSessionId ?? null;
         recordTerminalTraceOnce({
           status: "complete",
           eventType: "turn.complete",
-          providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
+          providerSessionIdAfter,
           usage: event.usage,
           costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
@@ -3836,10 +4010,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           usage: event.usage,
           costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
-          providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
+          providerSessionIdAfter,
           promptTooLongReset: streaming._promptTooLong ?? false,
         });
         if (
+          ownsRuntimeSlot() &&
           shouldRefreshTaskSessionTtlOnTurnComplete({
             sessionName,
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
@@ -3851,7 +4026,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         // Auto-reset session when prompt is too long (compact failed)
-        if (streaming._promptTooLong) {
+        if (ownsRuntimeSlot() && streaming._promptTooLong) {
           log.warn("Auto-resetting session due to 'Prompt is too long'", {
             sessionName,
           });
@@ -3892,6 +4067,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
+        const pendingAbortBeforeCleanup = streaming.pendingAbort
+          ? (streaming.internalAbortReason ?? "deferred_abort")
+          : undefined;
         streaming.pendingAbort = false;
         streaming.currentTurnToolStarted = false;
         resetTurnToolContinuationLedger(turnToolContinuation);
@@ -3912,6 +4090,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           terminalSkillVisibility,
         );
 
+        if (finishPendingTerminalTransition("complete", pendingAbortBeforeCleanup)) {
+          signalTurnComplete();
+          break;
+        }
+
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
         scheduleIdleSessionEviction();
@@ -3919,7 +4102,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "goal.updated") {
-        syncRuntimeSessionGoal(session.sessionKey, event.goal);
+        if (ownsRuntimeSlot()) syncRuntimeSessionGoal(session.sessionKey, event.goal);
         await emitRuntimeEvent({ type: "goal.updated", goal: event.goal });
         continue;
       }
@@ -4013,7 +4196,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
         clearTraceTurnState();
-        markRuntimeLiveIdle(sessionName, "turn interrupted");
+        markOwnedLiveIdle("turn interrupted");
+        if (finishPendingTerminalTransition("interrupted")) {
+          signalTurnComplete();
+          break;
+        }
         signalTurnComplete();
         continue;
       }
@@ -4082,11 +4269,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               event.session?.displayId ??
               event.providerSessionId ??
               (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
-            if (providerSessionId) {
-              updateProviderSession(session.sessionKey, runtimeSession.provider, providerSessionId, {
-                runtimeSessionParams,
-                runtimeSessionDisplayId: providerSessionId,
-              });
+            if (
+              providerSessionId &&
+              persistCurrentProviderState(() => {
+                updateProviderSession(session.sessionKey, runtimeSession.provider, providerSessionId, {
+                  runtimeSessionParams,
+                  runtimeSessionDisplayId: providerSessionId,
+                });
+              })
+            ) {
               backfillProviderSessionId(sessionName, providerSessionId);
               session.runtimeSessionParams = runtimeSessionParams;
               session.runtimeSessionDisplayId = providerSessionId;
@@ -4109,7 +4300,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           const brokerAllowsRetry =
             streaming.currentRuntimeCredential?.authMethod !== "model-broker" ||
             credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
-          if (capacityDecision.action === "retry" && safeToRetry && ownMessages.length > 0 && brokerAllowsRetry) {
+          if (
+            capacityDecision.action === "retry" &&
+            safeToRetry &&
+            ownMessages.length > 0 &&
+            brokerAllowsRetry &&
+            ownsRuntimeSlot()
+          ) {
             for (const message of ownMessages) message.providerCapacityRetry = capacityDecision.state;
             // The failed physical attempt stays terminal. Only this separately
             // authorized next attempt may survive a restart during its wait.
@@ -4118,7 +4315,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               state: { ...capacityDecision.state },
               notBefore: (options.capacityRetryRuntime?.now?.() ?? Date.now()) + capacityDecision.delayMs,
             };
-            updateRuntimeLiveState(sessionName, {
+            updateOwnedLiveState({
               activity: "thinking",
               summary: "model busy; retrying shortly",
               agentId: agent.id,
@@ -4127,11 +4324,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               model,
               source: streaming.currentSource,
             });
-            const continueRetry = await waitForProviderCapacityRetry(
-              capacityDecision.delayMs,
-              streaming,
-              options.capacityRetryRuntime?.wait,
-            );
+            const continueRetry =
+              (await waitForProviderCapacityRetry(
+                capacityDecision.delayMs,
+                streaming,
+                options.capacityRetryRuntime?.wait,
+              )) && ownsRuntimeSlot();
             const budgetExpired =
               (options.capacityRetryRuntime?.now?.() ?? Date.now()) - capacityDecision.state.startedAt >=
               PROVIDER_CAPACITY_MAX_ELAPSED_MS;
@@ -4271,13 +4469,31 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
-        streaming.pendingAbort = false;
+        const pendingAbortBeforeCleanup = streaming.pendingAbort
+          ? (streaming.internalAbortReason ?? "deferred_abort")
+          : undefined;
+        // Keep explicit cancellation latched until it is consumed, including
+        // if terminal projection/feedback throws before the normal tail.
         streaming.turnActive = false;
-        streaming.internalAbortReason = undefined;
+        streaming.internalAbortReason = pendingAbortBeforeCleanup;
+        const mayRecoverCurrentTurn = () =>
+          ownsRuntimeSlot() &&
+          !streaming.done &&
+          !streaming.abortController.signal.aborted &&
+          !pendingAbortBeforeCleanup &&
+          !streaming.pendingAbort;
 
         if (suppressedRecoverable) {
+          // Its interrupted terminal and usage were already recorded above.
+          // An explicit abort wins over the physical recovery restart.
+          if (finishPendingTerminalAbort(pendingAbortBeforeCleanup)) {
+            clearTraceTurnState();
+            streaming.currentChannelBackend = undefined;
+            signalTurnComplete();
+            break;
+          }
           const restartReason = recoveryReason ?? "recoverable_interrupt_failure";
-          markRuntimeLiveIdle(sessionName, "turn interrupted");
+          markOwnedLiveIdle("turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
             sessionName,
@@ -4290,7 +4506,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
           // immediately; preserve queued/current messages so the next session
           // can drain them instead of losing the interrupted turn.
-          const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+          const stashedCount = stashOwnedPendingMessages({ crashRecovery });
           if (stashedCount > 0) {
             restartStashedReason = restartReason;
           } else {
@@ -4317,10 +4533,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           !capacityTerminalReason &&
           credentialFailureSignal?.retryableByCredential &&
           modelBrokerRetryApproved &&
-          streaming.currentRuntimeCredential?.credentialId
+          streaming.currentRuntimeCredential?.credentialId &&
+          mayRecoverCurrentTurn()
         ) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
-          const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+          const stashedCount = stashOwnedCurrentTurnMessages({
             crashRecovery,
           });
           if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
@@ -4356,6 +4573,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   error,
                 });
               }
+            }
+            // Refresh can yield to an explicit abort or a replacement handle.
+            // Do not arm a retry from the old ownership snapshot.
+            if (!mayRecoverCurrentTurn()) {
+              finishPendingTerminalAbort(pendingAbortBeforeCleanup);
+              clearTraceTurnState();
+              streaming.currentChannelBackend = undefined;
+              streaming.done = true;
+              signalTurnComplete();
+              break;
             }
             restartStashedReason = restartReason;
             log.info("Closing runtime after retryable credential failure", {
@@ -4402,9 +4629,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
         const sessionRecoveryHasStateToClear =
           sessionRecoveryFailure?.kind !== "provider_session_missing" || hasStoredProviderSessionId(session);
-        if (sessionRecoveryFailure && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable) {
+        const canRecoverSession = () =>
+          mayRecoverCurrentTurn() && sessionRecoveryHasStateToClear && currentTurnReplaySafety.replayable;
+        if (sessionRecoveryFailure && canRecoverSession()) {
           const recoveryPlan = resolveRuntimeSessionRecoveryPlan(sessionRecoveryFailure);
-          await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48).filter(
             (message) => message.id > (session.historyResetAfterId ?? 0),
           );
@@ -4423,7 +4651,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           const queuedSuccessors = streaming.pendingMessages
             .filter((message) => !message.pendingId || !ownPendingIds.has(message.pendingId))
             .map((message) => ({ ...message }));
-          const resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
+          let resetApplied: boolean;
+          try {
+            resetApplied = resetSession(session.sessionKey, { preserveHistoryContext: true });
+          } catch (error) {
+            // The physical attempt is already terminal. Without a successful
+            // reset there is no recovery handoff to settle this logical request.
+            try {
+              if (failedChannelProjection) {
+                await projectRuntimeEventToChannel(
+                  failedChannelProjection.event,
+                  undefined,
+                  failedChannelProjection.metadata,
+                  failedChannelProjection.mayProject,
+                );
+              }
+            } catch (projectionError) {
+              log.warn("Failed to settle channel request after provider-state reset failure", {
+                sessionName,
+                errorKind: projectionError instanceof Error ? projectionError.name : typeof projectionError,
+              });
+            }
+            throw error;
+          }
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
           session.runtimeProvider = undefined;
@@ -4495,7 +4745,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               currentTurnHadToolStarted,
             },
           });
-          updateRuntimeLiveState(sessionName, {
+          updateOwnedLiveState({
             activity: "thinking",
             summary: recoveryPlan.liveSummary,
             agentId: agent.id,
@@ -4625,7 +4875,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             }
           }
         }
-        updateRuntimeLiveState(sessionName, {
+        updateOwnedLiveState({
           activity: "blocked",
           summary: truncateLiveSummary(publicRuntimeFailureDetail(operatorError)) || "turn failed",
           agentId: agent.id,
@@ -4635,6 +4885,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           source: streaming.currentSource,
         });
 
+        if (finishPendingTerminalTransition("failed", pendingAbortBeforeCleanup)) {
+          signalTurnComplete();
+          break;
+        }
         signalTurnComplete();
       }
     }
@@ -4646,6 +4900,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     log.info("Streaming session ended", { runId, sessionName });
 
     try {
+      // An awaited terminal sink can fail before its normal cancellation tail.
+      // Preserve the pending queue without arming recovery on that exit too.
+      finishPendingTerminalAbort();
       const terminalRecordedBeforeFinalization = Boolean(
         streaming.currentCrashRecoveryTerminal || streaming.currentTraceTurnTerminalRecorded,
       );
@@ -4706,10 +4963,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
     await closeRuntimeSession();
 
-    const stillOwnsRuntimeSlot = streamingSessions.get(sessionName) === streaming;
-    if (stillOwnsRuntimeSlot) {
-      streamingSessions.delete(sessionName);
-    }
     try {
       const finalCredential = streaming.currentRuntimeCredential;
       if (
@@ -4735,7 +4988,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         error,
       });
     }
-    if (stillOwnsRuntimeSlot) {
+    // Feedback can yield to a replacement. Decide ownership only after every
+    // cleanup await, immediately before releasing the slot and its queued work.
+    if (ownsRuntimeSlot()) {
+      streamingSessions.delete(sessionName);
       try {
         if (restartStashedReason && restartStashedSession) {
           await restartStashedSession({

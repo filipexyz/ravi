@@ -121,6 +121,8 @@ implementation concerns unless a dedicated runtime-port spec exists.
   package version.
 - Registry hash MUST change when the generated client surface changes.
 
+- TypeScript optional positional arguments before a required options bag MUST use `T | undefined` while retaining the normalized local identifier and original wire key.
+
 ## Checks
 
 - Every backend MUST have unit tests for deterministic emit.

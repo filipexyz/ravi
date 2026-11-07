@@ -78,6 +78,57 @@ afterEach(async () => {
 });
 
 describe("channel runtime event projection", () => {
+  for (const refusal of ["before_running", "after_running"] as const) {
+    it(`rechecks terminal recorder permission ${refusal}`, async () => {
+      const metadata = await acceptedMetadata();
+      const initial = dbGetChannelBackendRuntimeState(metadata.binding.turnId);
+      const events: KnownChannelRuntimeEvent[] = [];
+      const outputs: ChannelOutputEnvelope[] = [];
+      const sinks = new ChannelRuntimeEventSinkRegistry();
+      let mayRecord = refusal !== "before_running";
+      let guardCalls = 0;
+      sinks.register(metadata.target, {
+        async emit(event) {
+          events.push(event);
+          if (event.kind === "turn.state_changed") {
+            await Promise.resolve();
+            mayRecord = false;
+          }
+        },
+      });
+      unregisterOutput = channelOutputSinks.register(metadata.target, {
+        async emit(output) {
+          outputs.push(output);
+        },
+      });
+
+      const projected = await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.failed", error: "synthetic provider failure", recoverable: false },
+        sinks,
+        beforeRecordEvent: () => {
+          guardCalls++;
+          return mayRecord;
+        },
+      });
+
+      expect(guardCalls).toBe(2);
+      expect(outputs).toEqual([]);
+      expect(projected).toEqual(events);
+      if (refusal === "before_running") {
+        expect(events).toEqual([]);
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toEqual(initial);
+      } else {
+        expect(events.map((event) => event.kind)).toEqual(["turn.state_changed"]);
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
+          state: "running",
+          lastSequence: 1,
+        });
+        expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.assistantMessageId).toBeUndefined();
+      }
+    });
+  }
+
   it("installs durable runtime state and interrupt outbox tables", () => {
     const tables = getDb()
       .prepare(

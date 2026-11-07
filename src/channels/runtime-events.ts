@@ -416,6 +416,8 @@ export async function projectChannelRuntimeEvent(input: {
   toolDurationMs?: number;
   occurredAt?: number;
   sinks?: ChannelRuntimeEventSinkRegistry;
+  /** Revalidate the captured runtime owner immediately before each durable event. */
+  beforeRecordEvent?: () => boolean;
 }): Promise<KnownChannelRuntimeEvent[]> {
   const metadata = parseChannelBackendMetadata(input.metadata);
   const occurredAt = input.occurredAt ?? Date.now();
@@ -423,6 +425,7 @@ export async function projectChannelRuntimeEvent(input: {
   const projected: KnownChannelRuntimeEvent[] = [];
   let dispatchError: unknown;
   const append = async (eventInput: RecordAndEmitInput) => {
+    if (input.beforeRecordEvent && !input.beforeRecordEvent()) return;
     const recorded = await recordAndEmit(eventInput);
     projected.push(recorded.event);
     dispatchError ??= recorded.dispatchError;
