@@ -16,7 +16,8 @@
 - The event loop records `session.context_window_exhausted`.
 - Provider state is cleared with `resetSession`.
 - A real SQLite trigger refusing only the native-id reset MUST leave one failed physical attempt/trace and one logical failure, with no stash/restart or raw reset error in channel output.
-- Recheck captured owner, binding and lease after an awaited running-state sink; a replacement owner MUST NOT receive or authorize the old request's terminal. A successful reset still defers logical finalization until recovery completes.
+- Before the first running-state sink is invoked for a reset failure, read back the old logical request as failed. Retire the owner or change its lease/binding/handle in that sink and preserve the accepted failure, original reset exception, one physical attempt and untouched successor. Separately invalidate authority before persistence and require refusal; the successor MUST NOT authorize the old write. A successful reset still defers logical finalization until recovery completes.
+- Retire the real handle after accepted failure/interruption but before host accounting and retain 13/5 input/output tokens once. For reset failure, expire the coordinator lease and call its real heartbeat after retirement: historical accounting survives, while the host notification boundary and diagnostic remain silent. The valid-lease control emits one terminal; abort/retirement before provider terminal and ownership loss without a latch preserve their original outcomes.
 - The current user-visible raw provider error is not emitted as a runtime response.
 - A restart is requested with reason `runtime_context_window_exhausted`.
 - The stashed restart prompt contains the latest user request and local recent history.

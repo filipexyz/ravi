@@ -20,6 +20,7 @@ applies_to:
   - src/runtime/session-resolver.ts
   - src/runtime/session-dispatcher.ts
   - src/runtime/host-event-loop.ts
+  - src/runtime/direct-interrupted-retention.ts
   - src/runtime/types.ts
   - src/db.ts
   - src/session-trace
@@ -68,6 +69,27 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - Ravi MUST treat prompt atoms as the canonical replay boundary. Provider turns and provider threads are not precise enough when prompts are debounced, steered, or concatenated.
 - Ravi MUST persist enough prompt atom metadata to replay or rebase a session without depending on provider transcripts.
 - Ravi MUST record which prompt atoms were yielded to each provider turn.
+- A direct physical interruption MUST NOT terminalize a logical channel request
+  that the current live generator actually retains for a permitted replay. The
+  retained atom MUST match the accepted pending identity, complete launch
+  envelope and channel binding after the existing replay-safety filters.
+  Deferral requires the same runtime owner and no explicit cancellation; a
+  successor alone or a replay-safe flag is insufficient. Revalidate ownership
+  at logical projection and keep retention-to-generator notification synchronous.
+  A genuine terminal interruption still cancels the captured request, without
+  reopening terminal rows, manifests or quota. Physical trace/accounting and
+  provider/tool/output/input-mutation fences remain unchanged.
+- An in-place mutation of the accepted backend envelope MUST NOT prevent its
+  first canonical cancellation solely because that mutation disallows replay.
+  This initial alias alternative MUST use immutable captured metadata and
+  require the original backend object, query handle, trace identity and the
+  same accepted `interrupted` latch. It MUST retain the existing exact-owner
+  or positive explicit-cancellation absent-slot rule. With crash recovery,
+  the captured boot epoch MUST still match, ownership failure MUST be absent
+  and the lease MUST still accept deliveries at each transaction guard.
+  Replacement or missing witnesses MUST NOT gain authority from the alias.
+  Extra persistence attempts and text handoff MUST retain strict metadata and
+  lifecycle validation; this alternative grants neither replay nor new retries.
 - Ravi MUST record assistant outputs with enough turn/atom correlation to build a replay transcript when native fork is unavailable.
 - Provider-native fork MUST NOT be exposed as canonical Ravi fork until it can be mapped to Ravi fork points, persistence, traces, and parent/child session state.
 - `supportsSessionFork` MUST mean "this provider can materialize a Ravi fork plan for at least one declared fork point type", not merely "the provider has a native command named fork".
@@ -195,6 +217,28 @@ Provider adapters MUST declare structured fork behavior before canonical fork is
 An adapter that reconciles ambiguous delivery on resume MUST define its stable client id mapping, native turn lookup, completed/in-progress behavior, failed-turn recovery boundary, and legacy fallback behavior.
 
 The legacy `forkSession?: boolean` on `RuntimeStartRequest` SHOULD be replaced or wrapped by a structured `RuntimeForkRequest`.
+
+## Retained integration evidence
+
+The dedicated retained test runner MUST resolve every protected home child root
+before starting its sandbox. Both the OS profile and preload MUST deny the union
+of lexical and canonical roots; an absent child retains its lexical protection.
+Unexpected resolution errors MUST fail closed. The preload MUST consume that
+bootstrap contract rather than inspect protected roots from inside the sandbox.
+Hard-link creation MUST require write authority for both source and destination.
+The guarded DNS promises object MUST cover nested, default, bare and `node:`
+module imports as well as standalone promises imports, recording each refusal.
+
+Memory SQLite evidence MUST be captured per connection before its real close or
+disposal, including writes made by a close decorator before delegating to native
+close. A disposal that does not close the connection MUST leave capture live.
+Native return/throw behavior MUST remain intact. A failed close MUST
+not reuse a stale snapshot for a still-live connection. Final collection MUST
+read live connections afresh and use pre-close evidence only for connections
+whose close completed. Missing capture or a genuine capture failure MUST remain
+a validation failure even when the caller catches a close error. These tests
+MUST retain evidence and MUST NOT claim disk durability or native-code isolation
+from JavaScript interception alone.
 
 ## Acceptance Criteria
 

@@ -4926,6 +4926,160 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-login-stub")).toMatchObject({ status: "failed", inputTokens: 0, outputTokens: 0 });
   });
 
+  it("keeps accepted interrupted usage when real retirement occurs before the host trace", async () => {
+    updateSessionName(SESSION_KEY, SESSION_NAME);
+    const runtime = makeRuntimeSession([{ type: "turn.interrupted", usage: { inputTokens: 13, outputTokens: 5 } }]);
+    const streaming = makeStreamingSession({ queryHandle: runtime });
+    const turnId = "turn-interrupted-retirement-accounting";
+    seedAdapterTrace(streaming, turnId);
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 2,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => MODEL,
+      crashRecovery,
+    });
+    dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const restarts: unknown[] = [];
+    let retired = 0;
+    let accepted: ReturnType<typeof getRuntimeTurnAttempt> | undefined;
+    await runTraceLoop(streaming, runtime, {
+      streamingSessions: dispatcher.streamingSessions,
+      stashedMessages: dispatcher.stashedMessages,
+      restartStashedSession: async (input) => {
+        restarts.push(input);
+      },
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+        if (data.type !== "turn.interrupted") return;
+        accepted = getRuntimeTurnAttempt(attemptId);
+        expect(accepted?.status).toBe("interrupted");
+        expect(
+          await dispatcher.applySessionModelChange(SESSION_NAME, "retired-model", {
+            drainReleasedSlot: false,
+            restartStashedMessages: false,
+          }),
+        ).toBe("restart-next-turn");
+        retired++;
+        expect(dispatcher.streamingSessions.has(SESSION_NAME)).toBe(false);
+      },
+    });
+    expect(retired).toBe(1);
+    expect(getRuntimeTurnAttempt(attemptId)).toEqual(accepted!);
+    expect(getSessionTurn(turnId)).toMatchObject({
+      status: "interrupted",
+      completedAt: accepted!.completedAt,
+      inputTokens: 13,
+      outputTokens: 5,
+      runId: "run-1",
+      provider: PROVIDER,
+      model: MODEL,
+    });
+    expect(
+      listSessionEventsForTest(SESSION_KEY).filter(
+        (event) => event.turnId === turnId && event.eventType === "turn.interrupted",
+      ),
+    ).toHaveLength(1);
+    expect(emitted.filter(({ data }) => data.type === "turn.interrupted")).toHaveLength(1);
+    expect(streaming.abortController.signal.aborted).toBe(true);
+    expect(streaming.done).toBe(true);
+    expect(restarts).toEqual([]);
+    expect(dispatcher.stashedMessages.size).toBe(0);
+  });
+
+  for (const retirement of ["abort", "model"] as const) {
+    it(`preserves ${retirement} accounting when real retirement precedes provider terminal acceptance`, async () => {
+      updateSessionName(SESSION_KEY, SESSION_NAME);
+      const entered = runtimeRaceLatch();
+      const release = runtimeRaceLatch();
+      let offered = 0;
+      const runtime: RuntimeSessionHandle = {
+        provider: PROVIDER,
+        events: (async function* () {
+          entered.release();
+          await release.promise;
+          offered++;
+          yield { type: "turn.interrupted" as const, usage: { inputTokens: 13, outputTokens: 5 } };
+        })(),
+        async interrupt() {},
+      };
+      const streaming = makeStreamingSession({ queryHandle: runtime });
+      const turnId = `turn-retirement-before-provider-${retirement}`;
+      seedAdapterTrace(streaming, turnId);
+      const attemptId = streaming.currentCrashRecoveryAttemptId!;
+      const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "trace-test",
+        maxConcurrentSessions: 2,
+        interactiveReservedSessions: 0,
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => MODEL,
+        crashRecovery,
+      });
+      dispatcher.streamingSessions.set(SESSION_NAME, streaming);
+      const restarts: unknown[] = [];
+      const loop = runTraceLoop(streaming, runtime, {
+        streamingSessions: dispatcher.streamingSessions,
+        stashedMessages: dispatcher.stashedMessages,
+        restartStashedSession: async (input) => {
+          restarts.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+      try {
+        await entered.promise;
+        expect(offered).toBe(0);
+        expect(getRuntimeTurnAttempt(attemptId)?.status).toBe("running");
+        if (retirement === "abort") {
+          expect(dispatcher.abortSession({ sessionName: SESSION_NAME, sessionKey: SESSION_KEY })).toBe(true);
+        } else {
+          expect(
+            await dispatcher.applySessionModelChange(SESSION_NAME, "retired-model", {
+              drainReleasedSlot: false,
+              restartStashedMessages: false,
+            }),
+          ).toBe("restart-next-turn");
+        }
+        const accepted = getRuntimeTurnAttempt(attemptId)!;
+        const expected = retirement === "abort" ? "aborted" : "interrupted";
+        expect(accepted.status).toBe(expected);
+        expect(streaming.done).toBe(true);
+        expect(dispatcher.streamingSessions.has(SESSION_NAME)).toBe(false);
+        release.release();
+        await loop;
+        expect(getRuntimeTurnAttempt(attemptId)).toEqual(accepted);
+        expect(getSessionTurn(turnId)).toMatchObject({
+          status: expected,
+          completedAt: accepted.completedAt,
+          inputTokens: null,
+          outputTokens: null,
+        });
+        expect(
+          listSessionEventsForTest(SESSION_KEY).filter(
+            (event) => event.turnId === turnId && event.eventType === "turn.interrupted",
+          ),
+        ).toHaveLength(1);
+        expect(emitted.filter(({ data }) => data.type === "turn.interrupted")).toHaveLength(
+          retirement === "abort" ? 1 : 0,
+        );
+        expect(restarts).toEqual([]);
+        expect(dispatcher.stashedMessages.size).toBe(0);
+      } finally {
+        release.release();
+        await loop;
+      }
+    });
+  }
+
   it("records provider turn interruptions as terminal interrupted turns", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-interrupted");

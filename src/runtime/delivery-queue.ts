@@ -769,6 +769,21 @@ function settlePromptTransform(
   }
 }
 
+/**
+ * Select the queue that survives a physical turn. The host uses this same
+ * selection after its replay-safety filtering to decide whether a logical
+ * request really continues; this helper does not grant replay permission.
+ * Interrupted supersession consults the live current-turn IDs, while normal
+ * completion removes only the IDs captured by that generator handoff.
+ */
+export function getRuntimeMessagesAfterTurn(
+  session: RuntimeHostStreamingSession,
+  yieldedIds: ReadonlySet<string>,
+): RuntimeUserMessage[] {
+  if (session.interrupted) return getReplayablePendingRuntimeMessages(session);
+  return session.pendingMessages.filter((message) => !message.pendingId || !yieldedIds.has(message.pendingId));
+}
+
 export async function* createRuntimeMessageGenerator({
   sessionName,
   session,
@@ -1060,9 +1075,10 @@ export async function* createRuntimeMessageGenerator({
       endTurn();
     }
 
+    const pendingAfterTurn = getRuntimeMessagesAfterTurn(session, yieldedIds);
     if (session.interrupted && session.currentTurnSuperseded) {
       const queuedBefore = session.pendingMessages.length;
-      session.pendingMessages = getReplayablePendingRuntimeMessages(session);
+      session.pendingMessages = pendingAfterTurn;
       log.info("Generator: superseded turn interrupted, releasing successor", {
         sessionName,
         cleared: queuedBefore - session.pendingMessages.length,
@@ -1070,15 +1086,14 @@ export async function* createRuntimeMessageGenerator({
       });
       session.interrupted = false;
     } else if (session.interrupted) {
+      session.pendingMessages = pendingAfterTurn;
       log.info("Generator: provider interrupted unexpectedly, keeping queue for replay", {
         sessionName,
         count: session.pendingMessages.length,
       });
       session.interrupted = false;
     } else {
-      session.pendingMessages = session.pendingMessages.filter(
-        (message) => !message.pendingId || !yieldedIds.has(message.pendingId),
-      );
+      session.pendingMessages = pendingAfterTurn;
       log.info("Generator: turn complete", {
         sessionName,
         cleared: deliverable.length,

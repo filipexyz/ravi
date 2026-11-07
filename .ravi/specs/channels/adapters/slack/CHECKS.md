@@ -4,7 +4,7 @@
 - [ ] Thread reply MUST include the Slack thread target.
 - [ ] Outbound response MUST use Slack native delivery.
 - [ ] Human message admission MUST remain unchanged.
-- [ ] A human message mentioning `<@local_bot_user_id>` (with or without a label) MUST carry `@mention` in the prompt header and `botTag` in group context; a mention of another user MUST NOT add the marker.
+- [ ] An admitted human or foreign bot message mentioning `<@local_bot_user_id>` (with or without a label) MUST carry `@mention` in the prompt header and `botTag` in group context; a mention of another user MUST NOT add the marker.
 - [ ] The group system prompt MUST explain the `@mention` marker whenever `botTag` is set, also for groups with fewer than three known members.
 - [ ] Human intake MUST NOT wait on `auth.test`; a stuck or failing discovery MUST still admit the human message, without the marker.
 - [ ] The local bot MUST be ignored when either event `bot_id` or `user` matches `auth.test`.
@@ -16,14 +16,18 @@
 - [ ] Resolved origin, `source_team`, `user_team`, `event.team`, `payload.team_id`, received authorization team ids, and local authenticated team MUST remain separate provenance fields.
 - [ ] Successful `auth.test` discovery MUST be cached, concurrent calls coalesced, and failures retried only after a bounded backoff.
 - [ ] A stuck `auth.test` MUST receive an abort signal, time out, fail closed, release the shared in-flight slot, and permit a later retry.
-- [ ] A foreign bot MUST require an explicit local-user mention or a chat-scoped alias at the beginning with a Unicode whitespace/punctuation boundary.
-- [ ] Aliases MUST come only from the current channel account's `defaults.botMessageAliasesByChat`; wrong-chat, wrong-account, middle, partial-word, and env aliases MUST be rejected.
+- [ ] An eligible foreign bot message with no local-bot mention or address MUST pass the same route/channel policy as a human message, without a bot-only admission gate or message-addressing alias configuration.
+- [ ] Plain and multiline foreign bot messages MUST pass the same admission checks even with leading whitespace or text before an address, preserving text and line breaks through normal normalization.
+- [ ] Explicit local-bot mentions MUST remain addressing signals; their presence or absence MUST NOT change bot admission when normal route/channel policy is otherwise identical.
 - [ ] Raw bot/user ids and `senderKind=bot` MUST survive chat, message, participant, source, and context provenance.
 - [ ] Bot/user candidate identities MAY produce `actorType=agent` only when all resolved ids identify one consistent agent; contact-only and owner conflicts MUST be unknown with no authority.
 - [ ] A resolved bot agent MUST become runtime principal `agent:<actorAgentId>` without stripping the executor agent's effective capabilities.
 - [ ] Daemon-restart resume MUST select stashed agent actor metadata and preserve its `agent:<actorAgentId>` authority principal.
 - [ ] Bot actor lookup MUST preserve canonical UUID/slug aliases, exact-empty fallback, cross-workspace isolation, and alias-collision fail-closed behavior.
-- [ ] Admitted bot messages MUST preserve root/thread routing and duplicate-envelope suppression.
+- [ ] An eligible unaddressed foreign bot root message MUST follow the configured root reply mode; a thread message MUST follow the same subscription/reply policy and session-fork rules as a human message.
+- [ ] Ignored-channel policy and missing-route rejection MUST apply to foreign bots with and without a local-bot mention, just as they do to human messages.
+- [ ] Duplicate envelopes for an admitted unaddressed bot message MUST still produce at most one prompt.
+- [ ] Admitting unaddressed foreign bot messages MUST NOT grant authority: unlinked, contact-only, mixed-owner, and ambiguous actors MUST remain unknown with zero actor authority, while a consistently linked agent keeps its existing principal.
 - [ ] Missing credentials MUST disable the adapter.
 - [ ] Env fallback MUST be opt-in.
 - [ ] Tests MUST cover routing policy and native delivery.
@@ -44,3 +48,28 @@
 - [ ] New writes MUST use the canonical instance reference and stay duplicate-free across retries.
 - [ ] An explicit alias owner collision MUST fail closed even when a chat participant was cached from an earlier non-conflicting resolution; the participant fast path MUST NOT mask a later slug/UUID conflict.
 - [ ] A resolved Slack actor MUST keep the same owner, non-zero agent-identity authority, and allowed representative capability across consecutive turns and turn-context rotations.
+- [ ] Ten independent unmentioned bot notices, including a burst beyond the output allowance, MUST all reach normal processing and produce durable effects.
+- [ ] A real two-peer loop fed by mocked Slack delivery into opposite Socket Mode intake MUST drain under the fast bound. Restart/time advance MUST NOT replay suppression; a new accepted input after recovery MUST work without a human.
+- [ ] A slow-loop control MUST remain explicit evidence that the policy does not prove universal termination.
+- [ ] Multiple commentary events MUST NOT consume the complete final's permit. Long output requiring more than four posts and multiple attachments MUST preserve its existing complete delivery behavior.
+- [ ] Concurrent workers MUST share the last terminal allowance and retry the same manifest without another debit. Changed content, parts or outcome MUST fail frozen identity checks.
+- [ ] `automatic-text-delivery.test.ts` MUST cover the real egress guard against frozen text: changed bytes fail before send, direct/claim/wrapper readbacks retain failed/nonretryable across guard removal and DB reopen, telemetry retry never reopens delivery, and no policy outbox tombstone is fabricated. Cover ambiguous acceptance, observed-send bookkeeping, complete safe text and ordinary guarded text separately.
+- [ ] Account aliases, shared sessions, root/thread/channel_root destinations and unknown human actors MUST retain correct scope/provenance. Changing attach MUST NOT redirect a bot terminal or its media.
+- [ ] Final, safe-error, cancellation, pre-complete media, transport retry and explicit-send boundaries MUST be covered separately; no test may substitute prompt counts for actual output feedback.
+- [ ] `generated-media-allocation.test.ts` MUST use a fully virtual filesystem to cover exclusive allocation, private-token and exact-descriptor ownership, duplicate disposal without harming the accepted member, final retention, substituted files/symlinks, ENOENT and visible bounded cleanup failures. Tests MUST NOT infer ownership from a prefix/source/path or physically remove host files.
+- [ ] Discarded-media lifecycle regression oracles MUST distinguish accepted cancelled/safe-error disposal from owner/identity/transition refusal, rollback and continuation. Capture MUST precede post-commit callback/payload/schema exceptions; async disposal MUST preserve the original error and both independent sink attempts. Include direct cancellation without a host callback. A mocked recorder/lexical harness MUST NOT be reported as a new real SQLite COMMIT or full-host proof; retained atomic evidence remains separate.
+- [ ] Different publication/output wrappers for the same canonical terminal part MUST converge on one receipt/provider token across concurrent workers, retries, restart and pruning. Original publication identities MUST remain auditable.
+- [ ] Distinct equal-content parts and a new turn repeating the same text MUST remain independently deliverable. Changed bytes at the same path/reference or changed content/destination for an existing part MUST conflict explicitly.
+- [ ] Text and media MUST preserve their frozen thread/root destination across restart and reply-mode changes in either direction. External/nested flags, copied hashes and public requests MUST NOT assert internal manifest trust or bypass installation/authority.
+- [ ] Media retry with persisted success MUST work after local-file cleanup; fresh upload MUST pass the exact verified bytes to the provider. Acceptance before receipt persistence MUST be reported as ambiguous, not exactly-once success.
+- [ ] `automatic-media-output.test.ts` MUST exercise direct and claim-existing conflict readback plus the real gateway across SQLite reopen: integrity conflicts stay failed/nonretryable, never upload or trigger success cleanup, and never resend a completed sibling in a mixed bundle. Cover telemetry failure, restored bytes, success without a source file, unavailable-at-freeze members and legitimate cooldown separately.
+- [ ] A failed suppression tombstone write MUST recover on immediate and expired/reopened retries, including a stale receipt lookup, without upload or mutation of the manifest, decision, sibling, bytes or receipt identity. Persistent write faults and changed claim owners MUST remain safe and retryable; identity conflicts and explicit send/receipt-write ambiguity MUST never become successful policy suppression.
+- [ ] A missing attachment at freeze MUST fail that member explicitly while preserving full text and other available files. Restart/file reappearance MUST NOT revive the failed member.
+- [ ] A notification/text sink failure after a valid final freeze MUST NOT silently discard its media. An interruption accepted by existing recovery MUST NOT add a cancelled-manifest tombstone; real terminal cancellation MUST still close the manifest.
+- [ ] A logical request that generates media, physically yields and resumes in a new event-loop invocation with a new streaming-session object MUST preserve its pending members and complete text, without early media release. Cancellation/terminal state MUST prevent later member revival; this in-process test MUST NOT be described as crash recovery.
+- [ ] Replay-safe Claude context recovery MUST preserve the trusted backend binding through the real message generator: a complete bot final is delivered outside cooldown and suppressed inside it, with human final delivery preserved. Field-only preservation MUST have a regression demonstrating why premature safe-error projection is insufficient. Tests MUST NOT reset backend terminals, manifests or quota; absent binding, provider-event-only fencing and refused recovery MUST retain their real behavior.
+
+- Interrupted transport replay: `src/runtime/slack-context-recovery.test.ts` requires the real queue/generator to preserve the accepted binding and produce a complete native final with logical completion (or ordinary bot cooldown suppression). It also checks replay refusal, explicit cancellation, replacement ownership, exact binding/destination, pending media and diagnostic failure; the immutable observational reviewer fixture is not a correctness oracle.
+
+- Atomic terminal acceptance: `src/runtime/slack-automatic-terminal.test.ts` covers text with media, media-only completion, safe error and cancellation using an independent SQLite writer at the terminal sink and real manifest-insert refusal. The terminal, canonical assistant, sequence and manifest MUST be jointly visible; refusal MUST preserve pre-terminal state and pending members with no notification or output.
+- `src/channels/runtime-events.test.ts` MUST cover deterministic preparation, transient contention within existing write retries, identity/owner/transition refusal and accepted-once cleanup. These checks MUST preserve interrupted replay, human output, unavailable-file and failed-sink controls, and MUST NOT be described as remote Slack delivery or automatic crash replay.

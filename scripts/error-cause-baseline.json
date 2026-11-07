@@ -416,13 +416,6 @@
       "count": 1
     },
     {
-      "id": "src/channels/outbound-consumer.ts:1e5d66673b54fd42a0882209",
-      "file": "src/channels/outbound-consumer.ts",
-      "boundary": "channels",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
       "id": "src/channels/outbound-consumer.ts:65f8637fdd10846a0e3c79da",
       "file": "src/channels/outbound-consumer.ts",
       "boundary": "channels",
@@ -439,13 +432,6 @@
     {
       "id": "src/channels/outbound-consumer.ts:d058fca965fd50db8493d159",
       "file": "src/channels/outbound-consumer.ts",
-      "boundary": "channels",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/channels/outbound-publish-outbox.ts:d83c64649e39a54ee907d38f",
-      "file": "src/channels/outbound-publish-outbox.ts",
       "boundary": "channels",
       "rule": "surface-bypasses-constructor",
       "count": 1
@@ -5947,7 +5933,7 @@
     }
   ],
   "totals": {
-    "violations": 890,
+    "violations": 888,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5961,7 +5947,7 @@
       "src/bridge": 4,
       "src/bug-report": 2,
       "src/calendar": 2,
-      "src/channels": 27,
+      "src/channels": 25,
       "src/channels/native": 7,
       "src/channels/slack": 15,
       "src/ci": 1,

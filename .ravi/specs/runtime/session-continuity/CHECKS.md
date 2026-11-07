@@ -79,6 +79,45 @@
 
 ## Safety
 
+- Run `bun --no-env-file run test:retained-preload` for the guard contracts.
+  Use only virtual private roots and hard links, inert original DNS sentinels
+  behind an independent network boundary, and real memory SQLite. Exercise
+  lexical/canonical aliases, nested/standalone DNS imports and source write
+  authority. Do not probe operator data or a real DNS resolver.
+- Verify close, strict-close failure, repeated close, disposal and two distinct
+  connections requesting the same path. A live connection snapshot must include
+  its latest row; a closed connection must retain its pre-close rows. Injected
+  capture errors remain fatal and must be distinguished from expected guard
+  refusals. A skipped fixture or setup failure is not passing validation.
+- Native disposal through a close decorator must retain both the initial row
+  and a row written by the decorator before actual close. A no-op replacement
+  close must leave the connection live and its later rows visible to capture.
+
+- Run `bun --no-env-file run test:runtime-direct-interrupted` for the direct
+  interruption integration suite. Its dedicated runner supplies memory-only
+  SQLite, retained identity anchors/snapshots and filesystem/network guards.
+  Running the test file without that harness skips it and is not validation.
+- Direct `turn.interrupted` without a yield continuation: a bot and a human
+  accepted request retained by the real generator can produce a later final
+  under the same complete binding. Preserve physical interrupted accounting.
+- Keep the existing mutation controls: in-place binding, destination and
+  ingress/correlation changes reject retention but still settle the original
+  captured interruption. Separately replace the backend object with different
+  values, or replace owner, handle, trace, latch or boot witnesses, and require
+  no old-owner cancellation. An equal clone may still pass the strict branch.
+  Expire a real coordinator lease before an ownership failure is latched and
+  require the alias alternative to refuse. A typed initial write failure after
+  an alias mutation MUST NOT schedule another persistence attempt.
+- Join private media with a queued foreign surface: the real selector refuses
+  cross-surface interruption, and complete final text and media remain at the
+  original destination before the foreign handoff. Cancellation disposes only
+  after an accepted COMMIT; rollback preserves the original collector and
+  allocation even after the foreign request completes. Use virtual files and
+  memory SQLite; these checks do not prove remote delivery or crash recovery.
+- Keep normal final, provider-event-only, started-tool, explicit shutdown and
+  replacement-owner controls. Add full-envelope mismatch, successor-only,
+  supersession, materialized-output/input-mutation and awaited cancellation
+  races. No terminal/manifest/quota reset may make these cases pass.
 - Dirty workspace during rebase causes the agent to ask for keep/revert authorization before modifying files.
 - Rebase does not silently discard pending messages.
 - Rebase preserves actor metadata and source message ids.

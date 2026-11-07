@@ -3812,9 +3812,14 @@ function recordStreamingTurnInterruptedTrace(
 ): void {
   const requestedCompletedAt = Date.now();
   const existingTerminal = session.currentCrashRecoveryTerminal;
-  // Accepted completion belongs to the host, which may still be awaiting
-  // accounting. Do not seal its trace before the final usage and costs arrive.
-  if (existingTerminal?.status === "complete") return;
+  // Accepted provider terminals belong to the host, which may still be awaiting
+  // accounting. Retirement must not seal their trace before usage and costs arrive.
+  if (
+    existingTerminal?.status === "complete" ||
+    existingTerminal?.status === "failed" ||
+    existingTerminal?.status === "interrupted"
+  )
+    return;
   if (!existingTerminal && !session.currentTraceTurnId && !session.currentCrashRecoveryAttemptId) {
     return;
   }

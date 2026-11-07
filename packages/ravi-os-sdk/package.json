@@ -5,6 +5,13 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "imports": {
+    "#ravi-sdk-sha256": {
+      "types": "./platform/sha256.d.ts",
+      "node": "./platform/sha256.node.js",
+      "default": "./platform/sha256.web.js"
+    }
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -53,6 +60,7 @@
   },
   "files": [
     "dist/",
+    "platform/",
     "README.md"
   ],
   "scripts": {

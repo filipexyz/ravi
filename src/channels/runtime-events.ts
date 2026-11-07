@@ -1,7 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { nats } from "../nats.js";
+import type { SlackAutomaticTerminalManifest } from "./slack/automatic-terminal-manifest.js";
+import { discardSlackAutomaticPendingReply } from "./slack/automatic-pending-reply.js";
 import {
+  recordTerminalProjectionWithRecovery,
+  type TerminalProjectionRecoveryOptions,
+} from "./terminal-projection-recovery.js";
+import { handoffTerminalOutputWithRecovery, type TerminalOutputHandoffState } from "./terminal-output-handoff.js";
+import type { ChannelOutputEmissionContext } from "./output-handoff.js";
+
+import {
+  ChannelBackendRuntimeOwnershipLostError,
   dbClaimChannelBackendRuntimeInterrupt,
   dbGetChatMessage,
   dbGetChannelBackendIngressReceiptByTurnId,
@@ -16,6 +27,7 @@ import {
   type ChannelBackendRuntimeStateRecord,
 } from "../router/router-db.js";
 import { classifyRuntimeCredentialFailure } from "../runtime/credential-classifier.js";
+import { generatedMediaAllocations, type GeneratedMediaCleanupResult } from "../runtime/generated-media-allocation.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
 import {
   PROVIDER_CAPACITY_EXHAUSTED_MESSAGE,
@@ -23,6 +35,7 @@ import {
 } from "../runtime/provider-capacity-retry.js";
 import { isRuntimeCredentialResolutionFailure } from "../runtime/public-failure.js";
 import type { RuntimeEvent } from "../runtime/types.js";
+import { logger } from "../utils/logger.js";
 import type { ChannelBackendEgressRequester } from "./backend-egress.js";
 import {
   CHANNEL_BACKEND_MAX_CONTENT_BLOCKS,
@@ -38,10 +51,16 @@ import {
   LocalChannelMessageBindingSchema,
   channelOutputSinks,
   type ChannelContent,
+  type ChannelOutputEnvelope,
   type ChannelSafeError,
   type ExternalChannelTarget,
   type LocalChannelMessageBinding,
 } from "./backend.js";
+
+/** Host-only recovery hooks; never serialized or accepted from a channel request. */
+export interface ChannelTerminalRecoveryOptions extends Omit<TerminalProjectionRecoveryOptions, "onCommitted"> {
+  onOutputState?: (state: TerminalOutputHandoffState) => void;
+}
 
 export const CHANNEL_RUNTIME_EVENTS_PROTOCOL = "ravi.channel.runtime-events" as const;
 export const CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION = 1 as const;
@@ -53,6 +72,7 @@ export const MAX_CHANNEL_TOOL_PRESENTATION_PARAMETER_VALUE_BYTES = 512;
 export const MAX_CHANNEL_TOOL_PRESENTATION_PARAMETERS = 8;
 
 const textEncoder = new TextEncoder();
+const log = logger.child("channels:runtime-events");
 let channelRuntimeGenerationId = newRuntimeGenerationId();
 
 function boundedUtf8String(maxBytes: number, label: string, minBytes = 1) {
@@ -408,6 +428,13 @@ export function setChannelRuntimeGenerationIdForTests(generationId?: string): vo
     : newRuntimeGenerationId();
 }
 
+/**
+ * Projects provider events onto the accepted channel binding, rechecking the
+ * optional owner fence after awaits and within each synchronous DB attempt.
+ * Terminal preparation has no persistence effects; afterRecordEvent runs only
+ * after the runtime state and any assistant row/manifest commit together.
+ * Sink failures propagate after projection and do not roll back committed state.
+ */
 export async function projectChannelRuntimeEvent(input: {
   metadata: ChannelBackendPromptMetadata;
   event: RuntimeEvent;
@@ -416,33 +443,68 @@ export async function projectChannelRuntimeEvent(input: {
   toolDurationMs?: number;
   occurredAt?: number;
   sinks?: ChannelRuntimeEventSinkRegistry;
-  /** Revalidate the captured runtime owner immediately before each durable event. */
-  beforeRecordEvent?: () => boolean;
+  /** Internal pure owner guard, rechecked after prior awaits and before each DB write. */
+  beforeRecordEvent?: (state: ChannelBackendRuntimeState | undefined) => boolean;
+  /** Internal synchronous preparation; no persistence, publication, or local cleanup. */
+  prepareTerminalManifest?: (terminal: {
+    state: ChannelBackendRuntimeState;
+    output?: ChannelOutputEnvelope;
+  }) => SlackAutomaticTerminalManifest;
+  /** The whole DB unit committed; no notification or output await has occurred. */
+  afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined, manifest?: SlackAutomaticTerminalManifest) => void;
+  /** Internal, owned inline recovery. Never accepted from a serialized channel request. */
+  terminalRecovery?: ChannelTerminalRecoveryOptions;
 }): Promise<KnownChannelRuntimeEvent[]> {
   const metadata = parseChannelBackendMetadata(input.metadata);
   const occurredAt = input.occurredAt ?? Date.now();
   const sinks = input.sinks ?? channelRuntimeEventSinks;
   const projected: KnownChannelRuntimeEvent[] = [];
+  const precedingNotifications: KnownChannelRuntimeEvent[] = [];
+  const event = input.event;
   let dispatchError: unknown;
+  /** Records only while authorized and retains the first post-commit dispatch error. */
   const append = async (eventInput: RecordAndEmitInput) => {
-    if (input.beforeRecordEvent && !input.beforeRecordEvent()) return;
-    const recorded = await recordAndEmit(eventInput);
+    if (input.beforeRecordEvent?.(eventInput.state) === false) return;
+    const recorded = await recordAndEmit({
+      ...eventInput,
+      precedingNotifications,
+      /** Re-evaluates the pure owner fence per DB attempt; an installed fence must return true. */
+      mayWrite: () => (input.beforeRecordEvent ? input.beforeRecordEvent(eventInput.state) === true : true),
+      afterRecordEvent: input.afterRecordEvent,
+      prepareTerminalManifest: input.prepareTerminalManifest,
+      terminalRecovery: input.terminalRecovery,
+    });
+    if (!recorded) return;
     projected.push(recorded.event);
     dispatchError ??= recorded.dispatchError;
   };
   const current = dbGetChannelBackendRuntimeState(metadata.binding.turnId);
   if (!current || current.state === "accepted") {
-    await append({
+    const bootstrap: RecordAndEmitInput = {
       metadata,
       kind: "turn.state_changed",
       state: "running",
       payload: { state: "running" },
       occurredAt,
       sinks,
-    });
+    };
+    if (event.type === "turn.failed") {
+      if (input.beforeRecordEvent?.("running") === false) return projected;
+      // Keep the terminal recorder's baseline after this commit, without yielding
+      // to a running notification that can retire the captured owner first.
+      const recorded = recordFailedTurnBootstrap({
+        ...bootstrap,
+        mayWrite: () => (input.beforeRecordEvent ? input.beforeRecordEvent("running") === true : true),
+        afterRecordEvent: input.afterRecordEvent,
+      });
+      if (!recorded) return projected;
+      projected.push(recorded);
+      precedingNotifications.push(recorded);
+    } else {
+      await append(bootstrap);
+    }
   }
 
-  const event = input.event;
   if (event.type === "text.delta" && event.text) {
     const phase = channelAssistantPhase(event.metadata);
     const chunks = splitChannelText(event.text);
@@ -700,20 +762,22 @@ interface RecordAndEmitInput {
   payload: unknown | EventPayloadFactory;
   occurredAt: number;
   sinks: ChannelRuntimeEventSinkRegistry;
+  /** Already committed bootstrap events, emitted inside the terminal's disposal scope. */
+  precedingNotifications?: readonly KnownChannelRuntimeEvent[];
+  mayWrite?: () => boolean;
+  prepareTerminalManifest?: (terminal: {
+    state: ChannelBackendRuntimeState;
+    output?: ChannelOutputEnvelope;
+  }) => SlackAutomaticTerminalManifest;
+  afterRecordEvent?: (state: ChannelBackendRuntimeState | undefined, manifest?: SlackAutomaticTerminalManifest) => void;
+  terminalRecovery?: ChannelTerminalRecoveryOptions;
 }
 
-async function recordAndEmit(
+/** Preserve the recorded sequence and payload instead of rereading the later terminal row. */
+function recordedRuntimeEvent(
   input: RecordAndEmitInput,
-): Promise<{ event: KnownChannelRuntimeEvent; dispatchError?: unknown }> {
-  const persisted = dbRecordChannelBackendRuntimeEvent({
-    turnId: input.metadata.binding.turnId,
-    state: input.state,
-    assistantDelta: input.assistantDelta,
-    assistantText: input.assistantText,
-    runtimeGenerationId: channelRuntimeGenerationId,
-    terminalError: input.safeError,
-    occurredAt: input.occurredAt,
-  });
+  persisted: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>,
+): KnownChannelRuntimeEvent {
   const payload =
     typeof input.payload === "function"
       ? input.payload(
@@ -722,7 +786,7 @@ async function recordAndEmit(
           persisted.runtime.lastDeltaSequence,
         )
       : input.payload;
-  const event = KnownChannelRuntimeEventSchema.parse({
+  return KnownChannelRuntimeEventSchema.parse({
     protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
     schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
     eventId: semanticEventId(input.kind, input.metadata.binding.turnId, String(persisted.runtime.lastSequence)),
@@ -737,62 +801,230 @@ async function recordAndEmit(
     },
     payload,
   });
-  let dispatchError: unknown;
-  try {
-    const deliveredLocally = await input.sinks.tryEmit(input.metadata.target, event);
-    if (!deliveredLocally) {
-      if (!channelBackendEgressRequester) {
-        throw new Error(
-          `Channel runtime event sink is unavailable for ${input.metadata.target.channelKind}/${input.metadata.target.connectionId}`,
-        );
-      }
-      await channelBackendEgressRequester.emitRuntimeEvent(input.metadata.target, event);
-    }
-  } catch (error) {
-    dispatchError = error;
-  }
+}
 
+/**
+ * Persist the failure's bootstrap without a promise boundary or external sink.
+ * Its synchronous post-commit callback retains normal refusal semantics; this
+ * nonterminal step never prepares a manifest or acquires media disposal rights.
+ */
+function recordFailedTurnBootstrap(input: RecordAndEmitInput): KnownChannelRuntimeEvent | undefined {
+  if (input.mayWrite && input.mayWrite() !== true) return;
+  let persisted: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>;
+  try {
+    persisted = dbRecordChannelBackendRuntimeEvent({
+      turnId: input.metadata.binding.turnId,
+      state: "running",
+      runtimeGenerationId: channelRuntimeGenerationId,
+      occurredAt: input.occurredAt,
+      mayWrite: input.mayWrite,
+    });
+  } catch (error) {
+    if (error instanceof ChannelBackendRuntimeOwnershipLostError) return;
+    throw error;
+  }
+  input.afterRecordEvent?.("running", persisted.slackTerminalManifest);
+  return recordedRuntimeEvent(input, persisted);
+}
+
+/**
+ * Validates a terminal output envelope without emitting it. Only completed text
+ * or a failed turn's safe error produces an envelope; its semantic ID, binding
+ * and destination remain those of the accepted request.
+ */
+function prepareTerminalOutput(input: RecordAndEmitInput): ChannelOutputEnvelope | undefined {
   if (
-    input.kind === "turn.terminal_output" &&
-    ((input.state === "completed" && input.assistantText) || (input.state === "failed" && input.safeError))
-  ) {
-    try {
-      const output = ChannelOutputEnvelopeSchema.parse({
-        protocol: CHANNEL_BACKEND_PROTOCOL,
-        schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
-        outputId: semanticEventId("output", input.metadata.binding.turnId, "terminal"),
-        correlationId: input.metadata.correlationId,
-        causationId: input.metadata.ingressRequestId,
-        binding: input.metadata.binding,
-        target: input.metadata.target,
-        ...(input.state === "completed" && input.assistantText
-          ? {
-              kind: "assistant_message",
-              content: input.assistantContent ?? channelTextContent(input.assistantText),
-            }
-          : {
-              kind: "safe_error",
-              error: input.safeError,
-            }),
-        emittedAt: new Date(input.occurredAt).toISOString(),
-      });
-      const deliveredLocally = await channelOutputSinks.tryEmit(output);
-      if (!deliveredLocally) {
-        if (!channelBackendEgressRequester) {
-          throw new Error(
-            `Channel output sink is unavailable for ${output.target.channelKind}/${output.target.connectionId}`,
-          );
+    input.kind !== "turn.terminal_output" ||
+    !((input.state === "completed" && input.assistantText) || (input.state === "failed" && input.safeError))
+  )
+    return undefined;
+  return ChannelOutputEnvelopeSchema.parse({
+    protocol: CHANNEL_BACKEND_PROTOCOL,
+    schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+    outputId: semanticEventId("output", input.metadata.binding.turnId, "terminal"),
+    correlationId: input.metadata.correlationId,
+    causationId: input.metadata.ingressRequestId,
+    binding: input.metadata.binding,
+    target: input.metadata.target,
+    ...(input.state === "completed" && input.assistantText
+      ? {
+          kind: "assistant_message",
+          content: input.assistantContent ?? channelTextContent(input.assistantText),
         }
-        await channelBackendEgressRequester.emitOutput(output);
+      : {
+          kind: "safe_error",
+          error: input.safeError,
+        }),
+    emittedAt: new Date(input.occurredAt).toISOString(),
+  });
+}
+
+/**
+ * Prepares output before atomically recording runtime state and its manifest.
+ * Owned recovery retains one terminal for bounded persistence recovery. Commit
+ * confirmation synchronously detaches private handles before readiness callbacks;
+ * disposal is awaited outside the transaction even if recovery/callback/schema
+ * or sinks throw. Independent sinks preserve the first dispatchError, which does
+ * not undo commit or establish remote delivery. Text retries require a typed,
+ * completed pre-save absence; durable outbox work and media are not resent here.
+ */
+async function recordAndEmit(
+  input: RecordAndEmitInput,
+): Promise<{ event: KnownChannelRuntimeEvent; dispatchError?: unknown } | undefined> {
+  if (input.mayWrite && input.mayWrite() !== true) return;
+  const output = prepareTerminalOutput(input);
+  const preparedManifest =
+    input.state && isTerminalState(input.state)
+      ? input.prepareTerminalManifest?.({ state: input.state, output })
+      : undefined;
+  let persisted: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>;
+  const discardedAllocations: Array<() => Promise<GeneratedMediaCleanupResult>> = [];
+  /**
+   * Confirmed commit/readback settles only this reply before readiness callbacks.
+   * The recovery helper latches this synchronous callback once, outside DB catches.
+   * Preserve a callback's original error even if private-handle settlement also fails.
+   */
+  const afterCommit = (recorded: ReturnType<typeof dbRecordChannelBackendRuntimeEvent>) => {
+    let settlementFailed = false;
+    let settlementError: unknown;
+    try {
+      if (input.state === "completed" || input.state === "failed" || input.state === "interrupted") {
+        // Only this accepted transition can transfer disposal authority. Capture
+        // it before callbacks can throw or erase descriptors, without filesystem I/O.
+        const reply = discardSlackAutomaticPendingReply(input.metadata.binding);
+        if (reply && isDeepStrictEqual(reply.origin.binding, input.metadata.binding)) {
+          for (const allocation of reply.ownedMediaAllocations) {
+            if (input.state === "completed") {
+              generatedMediaAllocations.retain(allocation, reply);
+            } else {
+              const dispose = generatedMediaAllocations.prepareDiscard(allocation, reply);
+              if (dispose) discardedAllocations.push(dispose);
+            }
+          }
+          if (input.state !== "completed") {
+            reply.ownedMediaAllocations.clear();
+            reply.media = [];
+            reply.mediaKeys.clear();
+          }
+        }
       }
     } catch (error) {
-      dispatchError ??= error;
+      settlementFailed = true;
+      settlementError = error;
+    }
+    let callbackFailed = false;
+    let callbackError: unknown;
+    try {
+      input.afterRecordEvent?.(input.state, recorded.slackTerminalManifest);
+    } catch (error) {
+      callbackFailed = true;
+      callbackError = error;
+    }
+    if (callbackFailed) throw callbackError;
+    if (settlementFailed) throw settlementError;
+  };
+  const recordInput = {
+    turnId: input.metadata.binding.turnId,
+    state: input.state,
+    assistantDelta: input.assistantDelta,
+    assistantText: input.assistantText,
+    runtimeGenerationId: channelRuntimeGenerationId,
+    terminalError: input.safeError,
+    occurredAt: input.occurredAt,
+    mayWrite: input.mayWrite,
+    slackTerminalManifest: preparedManifest,
+  };
+  try {
+    if (input.terminalRecovery && input.state && isTerminalState(input.state)) {
+      persisted = await recordTerminalProjectionWithRecovery(recordInput, {
+        ...input.terminalRecovery,
+        onCommitted: afterCommit,
+      });
+    } else {
+      try {
+        persisted = dbRecordChannelBackendRuntimeEvent(recordInput);
+      } catch (error) {
+        if (error instanceof ChannelBackendRuntimeOwnershipLostError) return;
+        throw error;
+      }
+      afterCommit(persisted);
+    }
+    const event = recordedRuntimeEvent(input, persisted);
+    let dispatchError: unknown;
+    for (const notification of [...(input.precedingNotifications ?? []), event]) {
+      try {
+        const deliveredLocally = await input.sinks.tryEmit(input.metadata.target, notification);
+        if (!deliveredLocally) {
+          if (!channelBackendEgressRequester) {
+            throw new Error(
+              `Channel runtime event sink is unavailable for ${input.metadata.target.channelKind}/${input.metadata.target.connectionId}`,
+            );
+          }
+          await channelBackendEgressRequester.emitRuntimeEvent(input.metadata.target, notification);
+        }
+      } catch (error) {
+        dispatchError ??= error;
+      }
+    }
+
+    if (output) {
+      // Pin this routing handle along with the immutable output. A replacement
+      // requester cannot silently reinterpret a prepared retry in the same call.
+      const requester = channelBackendEgressRequester;
+      const emitOutput = async (envelope: ChannelOutputEnvelope, context?: ChannelOutputEmissionContext) => {
+        const local = await channelOutputSinks.tryEmitWithHandoff(envelope, context);
+        if (local.emitted) return local.confirmation;
+        if (!requester) {
+          throw new Error(
+            `Channel output sink is unavailable for ${envelope.target.channelKind}/${envelope.target.connectionId}`,
+          );
+        }
+        const confirmation = await requester.emitOutput(envelope, context);
+        return confirmation === undefined ? undefined : confirmation;
+      };
+      try {
+        if (input.terminalRecovery && output.target.channelKind === "slack") {
+          await handoffTerminalOutputWithRecovery(output, emitOutput, {
+            mayEmit: () => input.terminalRecovery!.mayRecover() && (!input.mayWrite || input.mayWrite() === true),
+            onState: input.terminalRecovery.onOutputState,
+          });
+        } else {
+          await emitOutput(output);
+        }
+      } catch (error) {
+        // Notification failure retains precedence but never selects text retry
+        // policy: the missing handoff was settled by its own typed stage above.
+        dispatchError ??= error;
+      }
+    }
+    return {
+      event,
+      ...(dispatchError !== undefined ? { dispatchError } : {}),
+    };
+  } finally {
+    // Never execute removals inside the transaction or its synchronous callback.
+    // Await every owned intention even if callback/payload/schema or sinks failed.
+    for (const dispose of discardedAllocations) {
+      try {
+        const result = await dispose();
+        if (result.status === "failed" || result.status === "rejected") {
+          reportAutomaticMediaDisposalFailure(input.metadata.binding.turnId, result);
+        }
+      } catch (error) {
+        reportAutomaticMediaDisposalFailure(input.metadata.binding.turnId, { error });
+      }
     }
   }
-  return {
-    event,
-    ...(dispatchError !== undefined ? { dispatchError } : {}),
-  };
+}
+
+/** Records disposal failure without replacing the accepted terminal's result or original exception. */
+function reportAutomaticMediaDisposalFailure(turnId: string, details: Record<string, unknown>): void {
+  try {
+    log.warn("Discarded automatic media allocation could not be released", { turnId, ...details });
+    // no-cause: Logging already failed while reporting disposal; propagation would replace the accepted terminal or primary error.
+  } catch {
+    // A broken logging sink must not turn cleanup into a new terminal failure.
+  }
 }
 
 function parseChannelBackendMetadata(input: ChannelBackendPromptMetadata): ChannelBackendPromptMetadata {
