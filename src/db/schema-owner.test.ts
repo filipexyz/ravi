@@ -90,7 +90,7 @@ it("channels startup refuses missing state before connecting to NATS and creates
   expect(readdirSync(state).filter((name) => name.endsWith(".db"))).toEqual([]);
 });
 
-it.each(["channel-outbound-publish", "slack-automatic-output"])(
+it.each(["channel-outbound-publish", "slack-automatic-output", "cloud-chat"])(
   "channels startup refuses missing %s readiness even when router schema is ready",
   (component) => {
     const state = fixture();
@@ -164,6 +164,12 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
     if (sqliteChannelOutboundPublishOutboxStore.summary(1).pendingCount !== 0) throw new Error('NORMAL_OUTBOX_QUERY_FAILED');
     if (getChannelOutboundPublishJob('absent') !== null) throw new Error('NORMAL_OUTBOX_READ_FAILED');
     if (prunePublishedChannelOutboundPublishJobs(1, 1) !== 0) throw new Error('NORMAL_OUTBOX_PRUNE_FAILED');
+    const { interceptCloudChatMessage } = await import('./src/cloud-agents/chat-routing.ts');
+    const handled = await interceptCloudChatMessage({
+      channel: 'slack', accountId: 'fixture', instanceId: 'fixture', chatId: 'C_SCHEMA',
+      threadTs: '1.1', isGroup: true, contactId: 'fixture-contact', text: 'hello',
+    }, async () => { throw new Error('UNEXPECTED_CLOUD_REPLY'); });
+    if (handled) throw new Error('UNEXPECTED_CLOUD_BINDING');
   `,
   );
   expect(consumer.status, consumer.stderr).toBe(0);

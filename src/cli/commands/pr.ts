@@ -26,7 +26,9 @@ const access: CommandAccessOptions = {
 const HELP = `
 USE
   Publish a committed work branch through Git Data API, then create/reuse its ready PR and CI follow.
-  Run in the publishing session. From an operator terminal, select --reply-session explicitly.
+  Publication requires an authenticated gateway context and the installed daemon journal.
+  Run in the publishing Ravi session; a bare operator terminal is not a supported publication path.
+  --reply-session must match the publishing session; it does not authenticate the caller.
 NÃO USE
   This is not commit, merge, approval, force-push, fork publication or a draft workflow.
 REGRAS HARD
@@ -48,6 +50,7 @@ ON ERROR
   NON_FAST_FORWARD / REMOTE_REF_CHANGED: integrate remote changes or choose a new branch.
   PR_PUBLICATION_INCOMPLETE: inspect partial.phase and rerun with the same --expect-sha.
   FOLLOW_RUNTIME_UNAVAILABLE: update/start Ravi's runtime; no success without its active CI producer.
+  PUBLICATION_AUDIT_FAILED from a local terminal: use the authenticated gateway path; do not open real state locally.
 OUTPUT
   --json returns publication/attempt IDs, repo/head/base, SHAs, PR URL, watch/trigger IDs and CI snapshot.
   Exits: 0 complete; 1 failed/incomplete; 2 invalid usage; 3 preview/write brake (no mutations).
@@ -89,7 +92,7 @@ export class PrCommands {
     expectSha?: string,
     @Option({
       flags: "--reply-session <session>",
-      description: "Required only for an operator terminal without a session",
+      description: "CI publishing session; must match the authenticated session and does not grant authority",
     })
     replySession?: string,
     @Option({ flags: "--dry-run", description: "Preview only; also the default without --execute (exit 3)" })

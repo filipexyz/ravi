@@ -37,9 +37,14 @@ PR reconciliation and follow are internal helpers, not separate public commands.
   typed plan with no GitHub writes, journal, watch or trigger mutations.
   Combining the flags is usage error, exit 2. Failure/partial is exit 1;
   complete publication is exit 0. `--json` preserves the native error envelope.
+- Publication against runtime state requires an authenticated gateway context
+  and the installed daemon journal. A bare operator terminal without that
+  context is not a supported publication path; `--reply-session` does not
+  authenticate the caller or authorize local writable access to real state.
 - Read the caller worktree and body file, never silently the gateway cwd.
-  Session publication follows in that session; a local operator outside a
-  session must select an accessible chat session with `--reply-session`.
+  Session publication follows in that session. An explicit `--reply-session`
+  must match the authenticated publishing session, whose chat destination
+  must be accessible to that context.
 - Declare `@CommandAccess(kind:mutate, resource:pr, action:publish, risk:high,
   requiresConfirmation:true)` and concrete `@Returns`; no `@CliOnly`.
   Authorization runs before filesystem/network reads and before effects.

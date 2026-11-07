@@ -12,6 +12,7 @@ import {
   dbPendingCloudChatQuestion,
   dbRecordCloudChatApproval,
   dbRecordCloudChatQuestion,
+  dbFindActiveCloudThread,
 } from "./chat-db.js";
 import {
   type CloudChatInbound,
@@ -60,6 +61,24 @@ function recordApproval(actorContactId: string | null = "contact-ana") {
 }
 
 describe("cloud chat approvals table", () => {
+  it("channels refuses unprepared cloud-chat schema without creating tables", () => {
+    const database = getDb();
+    const before = database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all();
+    const version = database.prepare("PRAGMA schema_version").get();
+    const argv = process.argv;
+    process.argv = [argv[0], argv[1], "channels", "run"];
+    try {
+      expect(() =>
+        dbFindActiveCloudThread({ channel: "slack", instanceId: "fixture", chatId: "C1", threadTs: "1.1" }),
+      ).toThrow("STATE_SCHEMA_NOT_READY: cloud-chat");
+      expect(() => recordApproval()).toThrow("STATE_SCHEMA_NOT_READY: cloud-chat");
+    } finally {
+      process.argv = argv;
+    }
+    expect(database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all()).toEqual(before);
+    expect(database.prepare("PRAGMA schema_version").get()).toEqual(version);
+  });
+
   it("adds the card marker to a table an earlier build created", () => {
     getDb().exec(`CREATE TABLE cloud_chat_approvals (
       approval_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, code TEXT NOT NULL, session_name TEXT, agent_name TEXT,

@@ -28,9 +28,16 @@ The installed daemon owns real state by process identity, with no new launcher f
 
 ## Boot and upgrades
 
-The daemon is the only schema owner. Start it first; it initializes the router, outbound publication outbox, Slack automatic-output circuit, contacts, chat, credentials, console scope, insights, knowledge, Devin, human-bridge and PR publication stores before serving. Each store or lazy component records the exact package version after successful initialization. Then start channels from that same installed release.
+The daemon role owns schema initialization; this does not establish exclusivity between daemon processes. Start it first; it initializes the router, cloud-chat bindings/approvals, outbound publication outbox, Slack automatic-output circuit, contacts, chat, credentials, console scope, insights, knowledge, Devin, human-bridge and PR publication stores before serving. Each store or lazy component records the exact package version after successful initialization. Then start channels from that same installed release.
 
 For upgrades, stop the old channel runner before the daemon applies a new release's migrations, and start the new runner after daemon initialization. An already-running consumer is not a schema-migration coordinator.
+
+Overlapping daemon startups remain a known limitation: supervised restart can
+temporarily admit two owners, and concurrent failed migration can leave stale
+readiness evidence. Do not treat a component marker as proof of exclusive
+migration ownership. This PR does not change restart policy or serialize those
+owners; the separate migration-coordination work must preserve legacy foreign-key
+and nested-transaction semantics.
 
 If channels starts first, it fails before connecting to NATS, without creating a database or migrating anything. The error names `STATE_SCHEMA_NOT_READY` and tells the operator to initialize the daemon first. Fix the boot order/version and start channels again; no configuration variable or allow flag is involved.
 
@@ -46,7 +53,9 @@ No package installation, environment mutation, daemon restart or live-state repa
 
 Run focused tests and the spec/coverage gate with isolated state, then commit on
 a work branch with pre-commit enabled. From the publishing Ravi session, preview
-and execute the canonical publisher through the installed daemon gateway:
+and execute the canonical publisher through an authenticated context on the
+installed daemon gateway. A bare operator terminal is unsupported, and
+`--reply-session` alone does not provide authentication:
 
 ```bash
 ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md

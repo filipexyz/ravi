@@ -13,6 +13,10 @@
   partial failure details while excluding secret/unrelated payload fields.
 - SDK/OpenAPI generation and drift checks include `pr.publish` and its typed
   output; the command is available to gateway and tool consumers.
+- Rendered command help and the runbook state that publication requires an
+  authenticated gateway context and daemon journal. They do not promise that
+  `--reply-session` alone enables a bare operator terminal to publish or grant
+  it writable local access to runtime state.
 - A live authorized smoke must verify remote SHA/tree against local Git,
   ready PR, active follow and receipt of CI events in the selected session.
   Build and the complete test suite belong in CI, not the production machine.

@@ -8,6 +8,7 @@ import { assertDatabaseTargetAllowed, openStateDatabase } from "./state-boundary
 /** Daemon boot prepares every store before consumers or gateway become ready. */
 export async function initializeRuntimeState(): Promise<void> {
   const router = (await import("../router/router-db.js")).getDb();
+  (await import("../cloud-agents/chat-db.js")).ensureCloudChatSchema(router);
   (await import("../channels/outbound-publish-outbox.js")).ensureChannelOutboundPublishOutboxSchema(router);
   (await import("../channels/slack/automatic-output-circuit.js")).ensureSlackAutomaticOutputSchema(router);
   (await import("../pr/journal.js")).initializePublicationSchema(router);
@@ -27,7 +28,7 @@ export function assertRuntimeStateReady(env: NodeJS.ProcessEnv = process.env): v
   const stores: Array<[string, string[]]> = [
     [
       join(root, "ravi.db"),
-      ["router", "channel-outbound-publish", "slack-automatic-output", "console-scope", "pr-publication"],
+      ["router", "cloud-chat", "channel-outbound-publish", "slack-automatic-output", "console-scope", "pr-publication"],
     ],
     [join(root, "chat.db"), ["contacts", "chat"]],
     [getCredentialsDbPath(env), ["credentials"]],

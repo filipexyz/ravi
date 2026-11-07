@@ -1414,6 +1414,13 @@ function getDb(): Database {
 
   // Auto-migrate from legacy path (~/ravi/ravi.db → ~/.ravi/ravi.db)
   if (!isSchemaConsumer() && nextDbPath === DEFAULT_DB_PATH && !existsSync(nextDbPath) && existsSync(LEGACY_DB_PATH)) {
+    // Validate every source before the first move, so a refused DB or sidecar
+    // leaves the entire legacy set in place for recovery.
+    assertDatabaseTargetAllowed(LEGACY_DB_PATH);
+    for (const suffix of ["-wal", "-shm"]) {
+      const legacy = LEGACY_DB_PATH + suffix;
+      if (existsSync(legacy)) assertDatabaseTargetAllowed(legacy);
+    }
     log.info("Migrating database from ~/ravi/ravi.db to ~/.ravi/ravi.db");
     renameSync(LEGACY_DB_PATH, nextDbPath);
     // Also move WAL/SHM files if they exist
@@ -6427,11 +6434,10 @@ interface PreparedStatements {
  * Get prepared statements, creating them on first access.
  */
 function getStatements(): PreparedStatements {
+  const database = getDb();
   if (routerDbState.stmts !== null) {
     return routerDbState.stmts;
   }
-
-  const database = getDb();
 
   routerDbState.stmts = {
     // Agents

@@ -13,6 +13,8 @@ normative: true
 ```bash
 bun test src/db/schema-owner.test.ts src/router/state-boundary.test.ts src/test/ravi-state.test.ts
 bun test src/channels/outbound-publish-outbox.test.ts src/channels/slack/automatic-output-circuit.test.ts
+bun test src/cloud-agents/chat-routing.test.ts
+bun test src/channels/runner-state-boundary.test.ts
 bun test src/runtime/session-dispatcher.test.ts -t 'runtime recovery'
 RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 ```
@@ -32,6 +34,12 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 
 - The daemon-to-channel schema snapshot includes nested `human-bridge/bridge.db` and the PR publication tables in `ravi.db`; neither consumer path creates tables or changes markers.
 - Source/worktree opens through BridgeStore and the PR publication journal refuse the fake production path before file creation or directory preparation.
-- Interleaved isolated initializers of the same component both complete successfully and publish one ready marker; the concurrent chat-writer test remains green.
+- Two isolated handles initialized sequentially for the same component both complete successfully and publish one ready marker. This check does not establish exclusive ownership across concurrent daemon processes; that limitation remains accepted.
 - The daemon-to-channel snapshot exercises automatic-output reservation and outbox read/summary/retention APIs. Schema, schema version and markers remain identical; runtime configuration revision, trace-turn identity, thread health and terminal manifest tables remain usable after integration.
 - With a ready router but either lazy component marker absent, channel startup refuses before NATS. Direct circuit and outbox APIs also refuse without creating or rebuilding tables.
+- Cached statement APIs switch between isolated states without cross-state reads/writes and refuse after state selection is removed.
+- Hardlinked legacy database, WAL and SHM sources each refuse before any file moves; all source bytes remain intact.
+- Cloud-chat reads/writes refuse an unprepared component in channels. The positive daemon-to-channel schema snapshot reaches `interceptCloudChatMessage` through a synthetic Slack thread message and preserves schema/markers/version.
+- Programmatic runner startup, status, detached maintenance and native callbacks retain consumer restrictions without changing unrelated owner work. Consumer marker validation precedes a warmed owner cache, and consumer checks never warm that cache.
+- Divergent injected/process state or credential paths refuse before NATS. Canonically equivalent symlink paths remain accepted.
+- Checkout documentation separates foreground development from installed PM2 services and requires independent state, broker and credentials. Publication help requires authenticated gateway context; no bare-operator or concurrent-owner guarantee is made.
