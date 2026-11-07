@@ -34,6 +34,22 @@ describe("Slack durable automatic terminal response circuit", () => {
     expect(getSlackAutomaticOutputDecision("absent")).toBeNull();
   });
 
+  it("channels refuses an unprepared circuit without creating schema or reservations", () => {
+    const database = getDb();
+    const before = database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all();
+    const version = database.prepare("PRAGMA schema_version").get();
+    const argv = process.argv;
+    process.argv = [argv[0], argv[1], "channels", "run"];
+    try {
+      expect(() => getSlackAutomaticOutputDecision("absent")).toThrow("STATE_SCHEMA_NOT_READY: slack-automatic-output");
+      expect(() => reserve("refused", 100)).toThrow("STATE_SCHEMA_NOT_READY: slack-automatic-output");
+    } finally {
+      process.argv = argv;
+    }
+    expect(database.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all()).toEqual(before);
+    expect(database.prepare("PRAGMA schema_version").get()).toEqual(version);
+  });
+
   it("admits four responses and fixes the fifth candidate's cooldown without extending it", () => {
     for (let i = 0; i < 4; i++) expect(reserve(`response-${i}`, 100 + i).status).toBe("allowed");
     const fifth = reserve("fifth", 104);

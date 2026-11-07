@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { initializeStateSchema } from "../../db/schema-owner.js";
 import { getDb } from "../../router/router-db.js";
 
 export const SLACK_AUTOMATIC_OUTPUT_POLICY = Object.freeze({
@@ -50,8 +51,6 @@ interface ScopeRow {
   eligibility_after: number | null;
 }
 
-const initializedDatabases = new WeakSet<Database>();
-
 /**
  * Reserve quota for one complete terminal response under an IMMEDIATE writer
  * transaction. The caller supplies its fixed manifest identity, excludes
@@ -73,7 +72,7 @@ export function reserveSlackAutomaticOutput(input: SlackAutomaticOutputReservati
   const sourceReceivedAt = requireTimestamp(input.sourceReceivedAt, "sourceReceivedAt");
   const now = requireTimestamp(input.now ?? Date.now(), "now");
   const database = getDb();
-  ensureSchema(database);
+  ensureSlackAutomaticOutputSchema(database);
 
   // Take the writer lock before reading either the frozen decision or window.
   // Separate processes racing the last allowance cannot both observe a vacancy.
@@ -170,22 +169,23 @@ export function reserveSlackAutomaticOutput(input: SlackAutomaticOutputReservati
 export function getSlackAutomaticOutputDecision(idempotencyKey: string): SlackAutomaticOutputDecision | null {
   const key = requireText(idempotencyKey, "idempotencyKey");
   const database = getDb();
-  ensureSchema(database);
+  ensureSlackAutomaticOutputSchema(database);
   const row = selectDecision(database, key);
   return row ? rowToDecision(row) : null;
 }
 
 /**
- * Initialize the quota schema in an IMMEDIATE transaction once per Database.
+ * The daemon initializes quota schema in an IMMEDIATE transaction. Channels
+ * only validates the same-release ready marker and never executes the DDL.
  * Decisions, suppression tombstones and recovery floors have no age-based
  * expiry: pruning them could debit a replay again or revive suppressed output.
  * Retained rows contain identities and decisions, never message or media bodies.
  */
-function ensureSchema(database: Database): void {
-  if (initializedDatabases.has(database)) return;
-  database
-    .transaction(() => {
-      database.exec(`
+export function ensureSlackAutomaticOutputSchema(database: Database = getDb()): void {
+  initializeStateSchema(database, "slack-automatic-output", () => {
+    database
+      .transaction(() => {
+        database.exec(`
       CREATE TABLE IF NOT EXISTS slack_automatic_output_scopes (
         scope TEXT PRIMARY KEY,
         cooldown_until INTEGER,
@@ -205,9 +205,9 @@ function ensureSchema(database: Database): void {
       CREATE INDEX IF NOT EXISTS idx_slack_automatic_output_window
         ON slack_automatic_output_decisions (scope, decided_at) WHERE status = 'allowed';
     `);
-    })
-    .immediate();
-  initializedDatabases.add(database);
+      })
+      .immediate();
+  });
   // Keep these compact identity/decision tombstones and the scope floor. Age
   // alone is not proof that an old output cannot return. Deleting either would
   // allow a replay to debit again, revive suppression, or reset the source floor.

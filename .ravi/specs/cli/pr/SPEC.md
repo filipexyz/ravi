@@ -37,6 +37,10 @@ PR reconciliation and follow are internal helpers, not separate public commands.
   typed plan with no GitHub writes, journal, watch or trigger mutations.
   Combining the flags is usage error, exit 2. Failure/partial is exit 1;
   complete publication is exit 0. `--json` preserves the native error envelope.
+- Publication against runtime state requires an authenticated gateway context
+  and the installed daemon journal. A bare operator terminal without that
+  context is not a supported publication path; `--reply-session` does not
+  authenticate the caller or authorize local writable access to real state.
 - Read the caller worktree and body file, never silently the gateway cwd.
   Publication, including preview, MUST run through the gateway/agent with
   a resolved authenticated runtime context bound to an agent and session.

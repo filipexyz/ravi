@@ -1,4 +1,6 @@
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { initializeStateSchema } from "./db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "./db/state-boundary.js";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -98,6 +100,7 @@ const CRM_PIPELINE_STAGE_TOPIC_TYPES = new Set([
 
 function ensureDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (db !== null && dbPath === nextDbPath) {
     return db;
   }
@@ -108,18 +111,25 @@ function ensureDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  const database = new Database(nextDbPath);
+  const database = openStateDatabase(nextDbPath);
 
   // WAL mode for concurrent read/write access (CLI + daemon)
-  database.exec("PRAGMA journal_mode = WAL");
+  if (!isSchemaConsumer()) database.exec("PRAGMA journal_mode = WAL");
   // Wait up to 5s for locks to clear instead of failing immediately
   database.exec("PRAGMA busy_timeout = 5000");
   // Enable foreign keys
   database.exec("PRAGMA foreign_keys = ON");
 
-  initializeAccountPendingSchema(database);
-  initializeIdentitySchema(database);
-  initializeCrmSchema(database);
+  try {
+    initializeStateSchema(database, "contacts", () => {
+      initializeAccountPendingSchema(database);
+      initializeIdentitySchema(database);
+      initializeCrmSchema(database);
+    });
+  } catch (error) {
+    database.close();
+    throw error;
+  }
 
   db = database;
   dbPath = nextDbPath;
@@ -8173,7 +8183,7 @@ function uniqueNonEmptyStrings(values: Array<string | null | undefined>): string
 function openBackfillRouterDb(): Database | null {
   const routerDbPath = resolveRouterDbPath();
   if (!existsSync(routerDbPath)) return null;
-  const database = new Database(routerDbPath);
+  const database = openStateDatabase(routerDbPath);
   database.exec("PRAGMA busy_timeout = 5000");
   database.exec("PRAGMA foreign_keys = ON");
   return database;
@@ -10830,3 +10840,5 @@ export function closeContacts(): void {
     dbPath = null;
   }
 }
+
+export { ensureDb as ensureContactsDb };

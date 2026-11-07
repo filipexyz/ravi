@@ -1,6 +1,7 @@
 # Verified PR publication / RUNBOOK
 
-From the clean, committed worktree in the publishing Ravi session:
+From the clean, committed worktree in a publishing Ravi session with an
+authenticated gateway context and access to the installed daemon journal:
 
 ```bash
 ravi pr publish --repo owner/repo --base dev --title "Fix publication" --body-file /tmp/pr.md --dry-run --json
@@ -34,6 +35,10 @@ a replacement. `NON_FAST_FORWARD`/`REMOTE_REF_CHANGED`: integrate the remote
 work explicitly or choose a new work branch. `PR_CONFLICT`: resolve the
 existing PR explicitly. No force, auto-rebase, automatic retry loop or cleanup
 of uploaded objects is part of publication.
+
+`PUBLICATION_AUDIT_FAILED` from local journal access: return to the authenticated
+gateway path. No writable local-state fallback or bare-operator authentication
+is provided by this command.
 
 The result's CI state is a snapshot; the returned trigger follows later events.
 Record independent current-head review in the PR; use the live repository's
