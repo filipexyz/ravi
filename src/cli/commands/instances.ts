@@ -2326,7 +2326,7 @@ export class InstancesPendingCommands {
     if (instance.channel === "slack") {
       // The supplied ref can be a DM chat id or a case-insensitive lookup. The
       // pending row retains the original Slack sender, including for old rows.
-      const senderId = pending?.phone ?? contact;
+      const senderId = pending?.phone ?? contact.trim().toUpperCase();
       const resolved = resolvePendingContact({ accountId: name, phone: senderId });
       if (!isSlackHumanUserId(senderId) || resolved.ambiguous || resolved.identity?.ownerType === "agent") {
         contractFail(

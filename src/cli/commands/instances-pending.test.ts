@@ -182,11 +182,14 @@ describe("pending Slack contact approval", () => {
     expect(getContact("0444")).toBeNull();
     expect(listAccountPending(instance)).toEqual([]);
 
-    quietly(() => commands.approve(instance, userId, undefined, true));
+    quietly(() => commands.approve(instance, userId.toLowerCase(), undefined, true));
     expect(resolvePlatformIdentity({ channel: "slack", instanceId: instance, platformUserId: userId })?.ownerId).toBe(
       identity!.ownerId,
     );
     expect(getContactDetails(identity!.ownerId!)?.platformIdentities).toHaveLength(1);
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: instance, platformUserId: userId.toLowerCase() }),
+    ).toBeNull();
   });
 
   it("does not approve a different workspace or a phone sharing the Slack id digits", () => {
