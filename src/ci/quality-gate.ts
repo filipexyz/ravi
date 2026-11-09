@@ -67,10 +67,16 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Headless Omni stub: presence/renew no-ops when Omni is not installed.
     "src/omni/stub-consumer.test.ts",
   ],
-  "src/db/schema-owner.ts": ["src/db/schema-owner.test.ts"],
+  "src/db.ts": ["src/db.test.ts", "src/db/journal-mode-retry.test.ts"],
+  "src/db/schema-owner.ts": ["src/db/schema-owner.test.ts", "src/db/schema-lock.test.ts"],
+  "src/db/schema-lock.ts": ["src/db/schema-lock.test.ts"],
+  "src/db/daemon-schema-owner.ts": ["src/db/schema-lock.test.ts", "src/cli/commands/daemon-schema-cutover.test.ts"],
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
+    // Daemon/consumer initialization exercises the router's journal/schema boundary.
+    "src/db/schema-owner.test.ts",
+    "src/db/journal-mode-retry.test.ts",
     "src/router/state-boundary.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
@@ -239,7 +245,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   ],
   "src/apps/router.ts": ["src/apps/router.test.ts"],
   "src/apps/youtube/": ["src/apps/youtube/client.test.ts", "src/apps/youtube/credential-authority.test.ts"],
-  "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
+  "src/devin/": [
+    "src/devin/client.test.ts",
+    "src/devin/store.test.ts",
+    "src/db/schema-owner.test.ts",
+    "src/db/journal-mode-retry.test.ts",
+  ],
 };
 
 export interface SpecGateError {

@@ -1,5 +1,5 @@
-import { initializeStateSchema } from "./db/schema-owner.js";
-import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "./db/state-boundary.js";
+import { configureStateJournalMode, initializeStateSchema } from "./db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "./db/state-boundary.js";
 import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
@@ -114,7 +114,7 @@ function ensureDb(): Database {
   const database = openStateDatabase(nextDbPath);
 
   // WAL mode for concurrent read/write access (CLI + daemon)
-  if (!isSchemaConsumer()) database.exec("PRAGMA journal_mode = WAL");
+  configureStateJournalMode(database);
   // Wait up to 5s for locks to clear instead of failing immediately
   database.exec("PRAGMA busy_timeout = 5000");
   // Enable foreign keys

@@ -1,4 +1,5 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
 /**
  * Daemon Commands - Manage ravi via PM2
  */
@@ -388,7 +389,7 @@ function startDaemonPm2Args(bundlePath: string, options: { force?: boolean; bunP
     bunPath: options.bunPath ?? "bun",
     stdinWrapperPath: ensurePm2InertStdinWrapper(bundlePath),
   });
-  // A second supervised instance has to exist before the running one is stopped.
+  // A supervised standby has to exist before the running owner is stopped.
   // PM2 refuses that unless the start is forced; the old pm id is deleted later.
   if (options.force) args.splice(1, 0, "--force");
   return args;
@@ -601,7 +602,7 @@ export class DaemonCommands {
         printJson(payload);
       } else {
         console.log(
-          `Daemon restart handed off. The running daemon stays up until a supervised successor is online. Log: ${logPath}`,
+          `Daemon restart handed off. The running daemon stays up until a supervised replacement is waiting to take over. Log: ${logPath}`,
         );
       }
       return payload;
@@ -656,11 +657,13 @@ export class DaemonCommands {
             pmId: process.pm_id,
             pid: process.pid,
             status: process.status,
+            startedAt: process.startedAt ?? undefined,
           })),
       start: ({ force }) => runPm2Status(startDaemonPm2Args(target.bundlePath, { force }), target.cwd),
       deletePmId: (pmId) => runPm2Status(["delete", String(pmId)]),
       save: () => persistPm2ProcessList(),
       pidAlive,
+      schemaPhase: readDaemonSchemaPhase,
       readyTimeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_READY_TIMEOUT_MS"),
       detachTimeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_DETACH_TIMEOUT_MS"),
       pollMs: optionalDurationMs("RAVI_DAEMON_RESTART_POLL_MS"),
