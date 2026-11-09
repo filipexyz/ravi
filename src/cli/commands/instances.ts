@@ -2329,12 +2329,11 @@ export class InstancesPendingCommands {
       const senderId = pending?.phone ?? contact.trim().toUpperCase();
       const resolved = resolvePendingContact({ accountId: name, phone: senderId });
       if (!isSlackHumanUserId(senderId) || resolved.ambiguous || resolved.identity?.ownerType === "agent") {
-        contractFail(
-          "instances pending approve",
-          "CONTACT_IDENTITY_UNRESOLVED",
-          "Approval requires an unambiguous Slack human identity in this instance.",
-          { asJson },
-        );
+        const message = "Approval requires an unambiguous Slack human identity in this instance.";
+        contractFail("instances pending approve", "CONTACT_IDENTITY_UNRESOLVED", message, {
+          asJson,
+          diagnostic: errorDiagnostic(message, { operation: "instances pending approve" }),
+        });
       }
       if (resolved.contact) {
         allowContact(resolved.contact.id);
