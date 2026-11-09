@@ -1,10 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { getContact, listAccountPending, saveAccountPending } from "../../contacts.js";
+import {
+  getContact,
+  getContactDetails,
+  listAccountPending,
+  resolvePlatformIdentity,
+  saveAccountPending,
+  upsertAgentPlatformIdentity,
+  upsertContactFromPlatformIdentity,
+} from "../../contacts.js";
 import { nats } from "../../nats.js";
 import { loadRouterConfig, matchRoute } from "../../router/index.js";
 import { dbCreateAgent, dbCreateRoute, dbGetRoute, dbListRoutes, dbUpsertInstance } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { InstancesPendingCommands, RoutesCommands } from "./instances.js";
+import { ContactsCommands } from "./contacts.js";
 
 let stateDir: string | null = null;
 const instance = "pending-review-test";
@@ -137,5 +146,130 @@ describe("pending chat approval", () => {
     expect(result).toMatchObject({ reviewKind: "contact", removedPending: true });
     expect(getContact("5511999991234")?.status).toBe("allowed");
     expect(dbListRoutes(instance)).toEqual([]);
+  });
+});
+
+describe("pending Slack contact approval", () => {
+  const userId = "U0ABC4D44EF";
+
+  it("approves an already queued unknown Slack user without manufacturing a phone identity", () => {
+    saveAccountPending(instance, userId, { name: "Pending Person", chatId: "D0TESTDM" });
+
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      new ContactsCommands().pending(instance);
+      const output = log.mock.calls.map((args) => args.join(" ")).join("\n");
+      expect(output).toContain(`slack ${userId}`);
+      expect(output).not.toContain(`phone ${userId}`);
+    } finally {
+      log.mockRestore();
+    }
+
+    const commands = new InstancesPendingCommands();
+    const approved = quietly(() => commands.approve(instance, userId, undefined, true));
+    expect(approved).toMatchObject({ reviewKind: "contact", removedPending: true });
+    const identity = resolvePlatformIdentity({ channel: "slack", instanceId: instance, platformUserId: userId });
+    expect(identity).toMatchObject({
+      ownerType: "contact",
+      channel: "slack",
+      instanceId: instance,
+      platformUserId: userId,
+    });
+    const details = getContactDetails(identity!.ownerId!);
+    expect(details?.contact).toMatchObject({ displayName: "Pending Person", primaryPhone: null });
+    expect(details?.policy?.status).toBe("allowed");
+    expect(details?.platformIdentities).toHaveLength(1);
+    expect(getContact("0444")).toBeNull();
+    expect(listAccountPending(instance)).toEqual([]);
+
+    quietly(() => commands.approve(instance, userId, undefined, true));
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: instance, platformUserId: userId })?.ownerId).toBe(
+      identity!.ownerId,
+    );
+    expect(getContactDetails(identity!.ownerId!)?.platformIdentities).toHaveLength(1);
+  });
+
+  it("does not approve a different workspace or a phone sharing the Slack id digits", () => {
+    const foreign = upsertContactFromPlatformIdentity({
+      channel: "slack",
+      instanceId: "other-workspace",
+      platformUserId: userId,
+      name: "Other Person",
+      status: "pending",
+    });
+    const phone = upsertContactFromPlatformIdentity({
+      channel: "phone",
+      platformUserId: "0444",
+      name: "Phone Person",
+      status: "pending",
+    });
+    saveAccountPending(instance, userId, { name: "Local Person", chatId: "D0TESTDM" });
+
+    quietly(() => new InstancesPendingCommands().approve(instance, userId, undefined, true));
+
+    const local = resolvePlatformIdentity({ channel: "slack", instanceId: instance, platformUserId: userId });
+    expect(local?.ownerType).toBe("contact");
+    expect(local?.ownerId).not.toBe(foreign.id);
+    expect(local?.ownerId).not.toBe(phone.id);
+    expect(getContactDetails(local!.ownerId!)?.policy?.status).toBe("allowed");
+    expect(getContact(foreign.id)?.status).toBe("pending");
+    expect(getContact(phone.id)?.status).toBe("pending");
+    expect(listAccountPending(instance)).toEqual([]);
+  });
+
+  it("keeps an agent-owned Slack identity out of human approval and preserves its pending entry", () => {
+    const identity = upsertAgentPlatformIdentity({
+      agentId: agent,
+      channel: "slack",
+      instanceId: instance,
+      platformUserId: userId,
+    });
+    saveAccountPending(instance, userId, { name: "Agent", chatId: "D0TESTDM" });
+
+    expect(() => quietly(() => new InstancesPendingCommands().approve(instance, userId, undefined, true))).toThrow();
+
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: instance, platformUserId: userId })).toMatchObject({
+      id: identity.id,
+      ownerType: "agent",
+      ownerId: agent,
+    });
+    expect(getContact("0444")).toBeNull();
+    expect(listAccountPending(instance)).toHaveLength(1);
+  });
+
+  it("reuses the configured instance alias and the pending sender when approved by DM id", () => {
+    const instanceAlias = "aaaaaaaa-bbbb-cccc-dddd-111111111111";
+    dbUpsertInstance({ name: instance, instanceId: instanceAlias, channel: "slack", agent });
+    const contact = upsertContactFromPlatformIdentity({
+      channel: "slack",
+      instanceId: instance,
+      platformUserId: userId,
+      name: "Known Person",
+      status: "pending",
+    });
+    saveAccountPending(instance, userId, { name: "Pending Person", chatId: "D0TESTDM" });
+
+    quietly(() => new InstancesPendingCommands().approve(instance, "D0TESTDM", undefined, true));
+
+    expect(getContact(contact.id)).toMatchObject({ name: "Known Person", status: "allowed" });
+    expect(getContactDetails(contact.id)?.platformIdentities).toHaveLength(1);
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: instanceAlias, platformUserId: userId })).toBeNull();
+    expect(getContact("0444")).toBeNull();
+    expect(listAccountPending(instance)).toEqual([]);
+  });
+
+  it("rejects conflicting owners across configured Slack instance aliases without changing either policy", () => {
+    const instanceAlias = "aaaaaaaa-bbbb-cccc-dddd-111111111111";
+    dbUpsertInstance({ name: instance, instanceId: instanceAlias, channel: "slack", agent });
+    const contacts = [instance, instanceAlias].map((instanceId) =>
+      upsertContactFromPlatformIdentity({ channel: "slack", instanceId, platformUserId: userId, status: "pending" }),
+    );
+    saveAccountPending(instance, userId, { chatId: "D0TESTDM" });
+
+    expect(() => quietly(() => new InstancesPendingCommands().approve(instance, userId, undefined, true))).toThrow();
+
+    expect(contacts.map((contact) => getContact(contact.id)?.status)).toEqual(["pending", "pending"]);
+    expect(listAccountPending(instance)).toHaveLength(1);
+    expect(getContact("0444")).toBeNull();
   });
 });
