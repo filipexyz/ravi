@@ -57,7 +57,7 @@ The AST ratchet freezes existing syntactic masking debt without requiring a
 rewrite of every throw/catch. Its generated inventory makes remaining debt
 public and its shrinking baseline prevents regression. Static binding usage
 cannot prove semantic propagation through arbitrary dynamic code, so the
-13-row/nine-sink corpus separately checks original cause/code preservation and
+14-row/nine-sink corpus separately checks original cause/code preservation and
 secret absence. Mocked Slack delivery and the TypeScript SDK are explicit
 sinks; native SDK shape tests do not prove identical redaction algorithms.
 

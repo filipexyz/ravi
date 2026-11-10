@@ -36,6 +36,41 @@ function contractBody(exitCode: 1 | 2 | 3, outcome: RaviContractErrorBody["outco
   };
 }
 
+describe("diagnostic credential paths", () => {
+  it.each([
+    ["/srv/secrets/hunter2", "/srv/secrets/[redacted:path]"],
+    ["/srv/secret/profile/hunter2", "/srv/secret/[redacted:path]"],
+    ["./credentials/hunter2/config.json", "./credentials/[redacted:path]"],
+    ["/srv/password/hunter2#private;tail", "/srv/password/[redacted:path]"],
+    ["C:\\Tokens\\hunter2\\config.json", "C:\\Tokens\\[redacted:path]"],
+    ["/srv/secrets/[redacted:path]", "/srv/secrets/[redacted:path]"],
+    ['"/srv/secrets/hunter2 secret-tail"', '"/srv/secrets/[redacted:path]"'],
+    ["'/srv/secrets/hunter2 secret-tail'", "'/srv/secrets/[redacted:path]'"],
+    ['"/srv/secrets/hunter2\\\" secret-tail"', '"/srv/secrets/[redacted:path]"'],
+    ["/srv/secrets/hunter2/tokens/private", "/srv/secrets/[redacted:path]"],
+  ])("redacts the sensitive suffix of %s idempotently", (path, expected) => {
+    const message = `Cannot read profile ${path} - choose another profile.`;
+    const redacted = `Cannot read profile ${expected} - choose another profile.`;
+    expect(redactDiagnosticText(message)).toBe(redacted);
+    expect(redactDiagnosticText(redacted)).toBe(redacted);
+  });
+
+  it.each(["Can't open", "The user's profile"])("does not mistake apostrophes in prose for path quotes: %s", (prefix) => {
+    const message = `${prefix} '/srv/secrets/hunter2 secret-tail' - choose another profile.`;
+    const redacted = `${prefix} '/srv/secrets/[redacted:path]' - choose another profile.`;
+    expect(redactDiagnosticText(message)).toBe(redacted);
+    expect(redactDiagnosticText(redacted)).toBe(redacted);
+  });
+
+  it.each(["/srv/profiles/public.json", "/srv/secrets-manager/config.json", "/docs/secrets.md", "./tokenizer/model.json"])(
+    "preserves safe actionable path %s",
+    (path) => {
+      const message = `Cannot read profile ${path} - choose another profile.`;
+      expect(redactDiagnosticText(message)).toBe(message);
+    },
+  );
+});
+
 describe("provider diagnostic field access", () => {
   it("ignores_throwing_provider_diagnostic_getters_and_keeps_readable_reason", () => {
     const body = {

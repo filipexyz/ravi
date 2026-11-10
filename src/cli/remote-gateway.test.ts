@@ -754,12 +754,80 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain(secretKey);
   });
 
+  it.each([400, 422])("preserves uncatalogued canonical usage errors at HTTP %i", (status) => {
+    const message = "No current chat in this context; pass --chat <chat-id>.";
+    const requestId = "00000000-0000-4000-8000-000000000010";
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status,
+        requestId,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: { code: "USAGE_ERROR", message, retryable: false },
+        }),
+      }),
+    );
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, message, details: { status, requestId } });
+    expect(error?.envelope().error.message).toBe(message);
+    expect(remoteNextStepLine(error!)).toContain(requestId);
+  });
+
+  it("redacts canonical usage diagnostics without losing their reason", () => {
+    const message = "No capabilities found: token=unstructured-secret";
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status: 400,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: { code: "USAGE_ERROR", message, retryable: false },
+        }),
+      }),
+    );
+    expect(error?.message).toBe("No capabilities found: token=[redacted:token]");
+    expect(JSON.stringify(error?.envelope())).not.toContain("unstructured-secret");
+  });
+
+  it.each([400, 422])("redacts credential directories in issue-less canonical usage errors at HTTP %i", (status) => {
+    const requestId = "00000000-0000-4000-8000-000000000011";
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status,
+        requestId,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: {
+            code: "USAGE_ERROR",
+            message: "Cannot read profile /srv/secrets/hunter2 - use /srv/profiles/public.json instead.",
+            retryable: false,
+          },
+        }),
+      }),
+    );
+    const message = "Cannot read profile /srv/secrets/[redacted:path] - use /srv/profiles/public.json instead.";
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, message, details: { status, requestId } });
+    expect(error?.envelope().error.message).toBe(message);
+    expect(JSON.stringify(error?.envelope())).not.toContain("hunter2");
+    expect(remoteNextStepLine(error!)).toContain(requestId);
+  });
+
   it.each([
-    "No capabilities found: token=unstructured-secret",
     "No capabilities found for rctx_secret_fixture",
     "No capabilities found for ctx_secret_fixture",
     "No capabilities found: PRIVATE_PROVIDER_BODY_8K2R",
     "Profile is unknown.\nPRIVATE_PROVIDER_BODY_8K2R",
+    "Invalid input.\n    at parseGrant (/srv/private/accounts/alice/grant.ts:12:4)",
   ])("does not relay unsafe issue-less validation copy: %s", (message) => {
     const error = remoteGatewayErrorToContractError(
       "permissions allow",
@@ -972,7 +1040,7 @@ describe("remote gateway exit taxonomy", () => {
   it.each([
     [1, "failed", "COMMAND_FAILED", "Command refused; token=[redacted:token]"],
     [1, "denied", "PERMISSION_DENIED", "Command refused; token=[redacted:token]"],
-    [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],
+    [2, "usage_error", "USAGE_ERROR", "Command refused; token=[redacted:token]"],
     [
       3,
       "blocked",

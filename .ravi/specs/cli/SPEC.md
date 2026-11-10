@@ -86,6 +86,10 @@ The canonical failure value is a `ContractError` and its envelope:
   gateway adds `exitCode` and `outcome` to the JSON body.
 - A failure MUST be rendered exactly once. A transport MUST NOT append a
   generic `Error:` line, stack trace or second envelope.
+- Complete remote usage-error envelopes without structured issues MUST preserve
+  their bounded, sanitized public reason and server correlation id. The relay
+  MUST NOT require a sentence/prefix allowlist to expose an expected handler
+  failure; issue-first projection and unsafe-payload filtering still apply.
 - Exit codes are: `0` success; `1` execution, provider or entity failure; `2`
   invalid usage; `3` blocked by confirmation policy. Exit `3` is a safe block,
   not an execution failure.
@@ -129,8 +133,13 @@ The canonical failure value is a `ContractError` and its envelope:
   the TypeScript SDK envelope. Its finite patterns cover URL/DSN userinfo,
   URL queries/fragments, sensitive query assignments (`key`, `token`, `sig`,
   `secret`, `password`), bearer/API-key credentials, cookies, password tails,
-  key-shaped strings and long high-entropy encoded values. Structured or
-  opaque embedded payloads are projected or replaced with a field marker.
+  key-shaped strings and long high-entropy encoded values. Version 2 also
+  removes the suffix after a slash/backslash-delimited `secret(s)`,
+  `credential(s)`, `password(s)` or `token(s)` directory, including whitespace
+  in quoted paths. Safe paths and the prefix before that suffix stay readable;
+  this rule does not identify arbitrary short secrets in unlabeled paths.
+  Structured or opaque embedded payloads are projected or replaced with a
+  field marker.
   Markers such as `[redacted:url-query]` identify the removed field; the
   remaining diagnostic reason and original stable code MUST stay readable.
   A new unrecognized credential encoding requires a corpus row and a shared
@@ -194,7 +203,7 @@ follow-up list. A `fixed` static site means the configured AST rules pass; it
 does not establish end-to-end propagation through dynamic or aliased code.
 
 `src/cli/error-egress-corpus.test.ts` supplies that complementary behavioral
-proof for 13 corpus rows across nine required sinks: process CLI envelope,
+proof for 14 corpus rows across nine required sinks: process CLI envelope,
 exported tool, gateway response, remote relay, gateway log, trace event, trace
 blob, TypeScript SDK envelope, and the Slack `chat.postMessage` payload captured
 by a mock. Each row asserts exact expected cause/code and absence of every

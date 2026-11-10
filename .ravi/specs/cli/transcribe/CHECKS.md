@@ -21,7 +21,7 @@
 - The CLI constructor requires cause/context for missing-file and provider
   failures. An APIError containing a serialized body must retain declared
   reason/code while dropping the body and its private values.
-- Run `bun test src/cli/error-egress-corpus.test.ts` for the global 13-vector,
+- Run `bun test src/cli/error-egress-corpus.test.ts` for the global 14-vector,
   nine-sink regression proof, including mocked Slack chat delivery and the
   TypeScript SDK. Swift/Dart decoding tests do not prove native redactor parity.
 - `bun test src/transcribe/error-context.test.ts` MUST verify the provider

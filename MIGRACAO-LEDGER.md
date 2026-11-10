@@ -1,5 +1,37 @@
 # Migration evidence
 
+## 2026-11-10 — issue-less gateway usage errors
+
+- Baseline: `5bac836c` (`origin/dev` at worktree creation). The installed
+  `3.261102.1` bundle also contains the reported vocabulary-filter fallback.
+- Before the source fix, all three new targeted relay assertions failed:
+  real missing-current-chat copy at HTTP 400 and 422, plus preservation of a
+  reason containing a redacted token assignment. All became generic rejection.
+- Canonical usage errors now use the shared bounded message sanitizer without
+  requiring a known phrase. Existing issue-first, unsafe dump/context-key and
+  malformed-envelope checks still pass.
+- Focused checks: remote relay 115 passed; gateway error contract 20 passed;
+  redaction and nine-sink corpus 25 passed; real CLI/gateway permissions
+  regression 7 passed. SQLite production-path guard and isolated state active.
+- The CLI regression covers `--agent` in JSON/text, unknown profile (400),
+  invalid contact (422), missing current chat (400), exact message/code/request
+  id/exit parity, and a valid-contact preview without grants.
+- The VPS's reported false `CONTACT_NOT_FOUND` is not reproduced on this
+  baseline. Source lookup precedes executor planning and uses the canonical id;
+  the actual VPS bundle/gateway/state still needs correlation. No production
+  contacts, permissions or services were changed.
+- Typecheck passed locally after correcting strict test fixture types. Full build
+  and complete suite remain in PR CI; no rollout included.
+- CodeRabbit's credential-directory finding reproduced at HTTP 400 and 422:
+  `/srv/secrets/hunter2` escaped the existing token patterns. Shared redactor v2
+  now removes sensitive directory suffixes, including nested and quoted paths,
+  and retains unrelated actionable paths. Added a fourteenth nine-sink corpus
+  vector. Focused relay, SDK, diagnostic and corpus checks: 238 tests and 1662
+  assertions passed; both new relay tests failed before the redactor change.
+- Independent review found two issues, both fixed: the new suite is selected by
+  `test:agent-contract` in a separate guarded process, and the existing single-line
+  boundary stays intact so an embedded stack cannot cross as a usage message.
+
 ## 2026-10-31 — gateway error contract
 
 - Baseline: `caf65661` (`origin/dev` at worktree creation).
