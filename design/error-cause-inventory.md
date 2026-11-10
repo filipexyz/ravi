@@ -353,33 +353,33 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/markdown-delivery.ts | 221 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:ccc0ed294946bae8a53fdb64 |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 222 | triaged-follow-up | rejection-without-binding | src/channels/slack/markdown-delivery.ts:ddbbf99b5618436506c18e7a |
 | channels-slack | src/channels/slack/media.ts | 181 | triaged-follow-up | catch-without-binding | src/channels/slack/media.ts:c080cae772801e60d5e1b98b |
-| channels-slack | src/channels/slack/socket-mode.ts | 355 | triaged-follow-up | catch-without-binding | src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0 |
-| channels-slack | src/channels/slack/socket-mode.ts | 427 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f9d1467f6e1de69cf31a8d52 |
-| channels-slack | src/channels/slack/socket-mode.ts | 508 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:6099dacad897d9487e5c0270 |
-| channels-slack | src/channels/slack/socket-mode.ts | 657 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7ef09df6c56777f5f2bc6163 |
-| channels-slack | src/channels/slack/socket-mode.ts | 669 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0d0875beb51d8ee37728b4d7 |
-| channels-slack | src/channels/slack/socket-mode.ts | 830 | triaged-follow-up | rejection-without-binding | src/channels/slack/socket-mode.ts:c2fdb542c65974c643e5b417 |
-| channels-slack | src/channels/slack/socket-mode.ts | 946 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:2298c74b282248b55c65f18a |
-| channels-slack | src/channels/slack/socket-mode.ts | 988 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:8e06965b6f7a08e847fe71dd |
-| channels-slack | src/channels/slack/socket-mode.ts | 1012 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:76304872a7b7f5af84a766fb |
-| channels-slack | src/channels/slack/socket-mode.ts | 1040 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:4d9f3fbb21e3fcb6365994bf |
-| channels-slack | src/channels/slack/socket-mode.ts | 1048 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:360946747d4fd544bc197402 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1079 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c696a2f9983f8285c39ffe60 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1152 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0a240ad0d74775d8567b1500 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1192 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:b50e34b43048777fab39930d |
-| channels-slack | src/channels/slack/socket-mode.ts | 1261 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c4932057c509541d62020a35 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1429 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7a31d102bae43811b1e22488 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1596 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:75b1ddfaffa11c9a57945410 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1652 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:cc425e50d06483314ccdd599 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1915 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:860e2b2e0726e3796bd40958 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1950 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e7cc946eb68d118ae004c1c7 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2039 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:9ad24298b226ed9d4f0aa0ca |
-| channels-slack | src/channels/slack/socket-mode.ts | 2057 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e02fe64267df2775c851ecc0 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2362 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:023e0658ddc9f4d90e557bca |
-| channels-slack | src/channels/slack/socket-mode.ts | 2375 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:eee9b1dca53f26e40d046797 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2419 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c52256502098f1fcdf6ed28d |
-| channels-slack | src/channels/slack/socket-mode.ts | 2808 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:ece0f2429234cdb1c2567c17 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2939 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:bca6f7f65214760682070030 |
+| channels-slack | src/channels/slack/socket-mode.ts | 356 | triaged-follow-up | catch-without-binding | src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0 |
+| channels-slack | src/channels/slack/socket-mode.ts | 428 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f9d1467f6e1de69cf31a8d52 |
+| channels-slack | src/channels/slack/socket-mode.ts | 509 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:6099dacad897d9487e5c0270 |
+| channels-slack | src/channels/slack/socket-mode.ts | 658 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7ef09df6c56777f5f2bc6163 |
+| channels-slack | src/channels/slack/socket-mode.ts | 670 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0d0875beb51d8ee37728b4d7 |
+| channels-slack | src/channels/slack/socket-mode.ts | 831 | triaged-follow-up | rejection-without-binding | src/channels/slack/socket-mode.ts:c2fdb542c65974c643e5b417 |
+| channels-slack | src/channels/slack/socket-mode.ts | 947 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:2298c74b282248b55c65f18a |
+| channels-slack | src/channels/slack/socket-mode.ts | 989 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:8e06965b6f7a08e847fe71dd |
+| channels-slack | src/channels/slack/socket-mode.ts | 1013 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:76304872a7b7f5af84a766fb |
+| channels-slack | src/channels/slack/socket-mode.ts | 1041 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:4d9f3fbb21e3fcb6365994bf |
+| channels-slack | src/channels/slack/socket-mode.ts | 1049 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:360946747d4fd544bc197402 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1080 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c696a2f9983f8285c39ffe60 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1153 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0a240ad0d74775d8567b1500 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1193 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:b50e34b43048777fab39930d |
+| channels-slack | src/channels/slack/socket-mode.ts | 1262 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c4932057c509541d62020a35 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1430 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7a31d102bae43811b1e22488 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1597 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:75b1ddfaffa11c9a57945410 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1653 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:cc425e50d06483314ccdd599 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1933 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:860e2b2e0726e3796bd40958 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1968 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e7cc946eb68d118ae004c1c7 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2057 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:9ad24298b226ed9d4f0aa0ca |
+| channels-slack | src/channels/slack/socket-mode.ts | 2075 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e02fe64267df2775c851ecc0 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2380 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:023e0658ddc9f4d90e557bca |
+| channels-slack | src/channels/slack/socket-mode.ts | 2393 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:eee9b1dca53f26e40d046797 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2437 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c52256502098f1fcdf6ed28d |
+| channels-slack | src/channels/slack/socket-mode.ts | 2826 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:ece0f2429234cdb1c2567c17 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2957 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:bca6f7f65214760682070030 |
 | channels-slack | src/channels/slack/text-send.ts | 175 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:0f1bf349b3fa2225c2574ce2 |
 | channels-slack | src/channels/slack/text-send.ts | 184 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:9945b3a4b2a039c94559999f |
 | channels-slack | src/channels/slack/thread-attention-admission.ts | 148 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-attention-admission.ts:a09b29324d114afdaeb39692 |
@@ -490,24 +490,24 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/cloud-worker.ts | 333 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-worker.ts:06716f042afaa4e38f670664 |
 | cli | src/cli/commands/connectors.ts | 120 | triaged-follow-up | catch-without-binding | src/cli/commands/connectors.ts:6bfb1a8b187361f1313b7384 |
 | cli | src/cli/commands/connectors.ts | 549 | fixed | binding retained / no recognized error surface | src/cli/commands/connectors.ts:df1dea9035832c79b344a4b4 |
-| cli | src/cli/commands/contacts.ts | 20 | triaged-follow-up | rejection-without-binding | src/cli/commands/contacts.ts:7f4a51c2ae6cb3a6ad3ca91b |
-| cli | src/cli/commands/contacts.ts | 289 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:b58cccc7efc96221247f6edb |
-| cli | src/cli/commands/contacts.ts | 793 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:0800f1df84fd38dcc0e74f0a |
-| cli | src/cli/commands/contacts.ts | 1045 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:f182a24f0270b8eba7ddd078 |
-| cli | src/cli/commands/contacts.ts | 1060 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:e6150fcf5b0597bb98fd305f |
-| cli | src/cli/commands/contacts.ts | 1090 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:4006b70fdf499a3b84d2f335 |
-| cli | src/cli/commands/contacts.ts | 1293 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:f1a0d044ca9ad5f0a66db401 |
-| cli | src/cli/commands/contacts.ts | 1348 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:d5032da60f885debdd11b6aa |
-| cli | src/cli/commands/contacts.ts | 1407 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:163e415f8f41825cfaa2862a |
-| cli | src/cli/commands/contacts.ts | 1465 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:fc55aea6351f545ee72c02b1 |
-| cli | src/cli/commands/contacts.ts | 1593 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:578c29df9738b798dfddc1c4 |
-| cli | src/cli/commands/contacts.ts | 1628 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:84c60f7b8f3408ec21f0c04a |
-| cli | src/cli/commands/contacts.ts | 1777 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:6920261fe957bd1c905d7f21 |
-| cli | src/cli/commands/contacts.ts | 1857 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:9589c801cf7286a073e35075 |
-| cli | src/cli/commands/contacts.ts | 1987 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:ee5db11759794b0984bfc94b |
-| cli | src/cli/commands/contacts.ts | 2047 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:a8d708ea9f925a316e4f6923 |
-| cli | src/cli/commands/contacts.ts | 2085 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:e7d8b7490bd9c839ff0fc2b6 |
-| cli | src/cli/commands/contacts.ts | 2124 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:c47fc2f7c999bb41ca5fa531 |
+| cli | src/cli/commands/contacts.ts | 21 | triaged-follow-up | rejection-without-binding | src/cli/commands/contacts.ts:7f4a51c2ae6cb3a6ad3ca91b |
+| cli | src/cli/commands/contacts.ts | 290 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:b58cccc7efc96221247f6edb |
+| cli | src/cli/commands/contacts.ts | 794 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:0800f1df84fd38dcc0e74f0a |
+| cli | src/cli/commands/contacts.ts | 1046 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:f182a24f0270b8eba7ddd078 |
+| cli | src/cli/commands/contacts.ts | 1061 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:e6150fcf5b0597bb98fd305f |
+| cli | src/cli/commands/contacts.ts | 1091 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:4006b70fdf499a3b84d2f335 |
+| cli | src/cli/commands/contacts.ts | 1294 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:f1a0d044ca9ad5f0a66db401 |
+| cli | src/cli/commands/contacts.ts | 1349 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:d5032da60f885debdd11b6aa |
+| cli | src/cli/commands/contacts.ts | 1408 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:163e415f8f41825cfaa2862a |
+| cli | src/cli/commands/contacts.ts | 1466 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:fc55aea6351f545ee72c02b1 |
+| cli | src/cli/commands/contacts.ts | 1594 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:578c29df9738b798dfddc1c4 |
+| cli | src/cli/commands/contacts.ts | 1629 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:84c60f7b8f3408ec21f0c04a |
+| cli | src/cli/commands/contacts.ts | 1778 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:6920261fe957bd1c905d7f21 |
+| cli | src/cli/commands/contacts.ts | 1858 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:9589c801cf7286a073e35075 |
+| cli | src/cli/commands/contacts.ts | 1988 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:ee5db11759794b0984bfc94b |
+| cli | src/cli/commands/contacts.ts | 2048 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:a8d708ea9f925a316e4f6923 |
+| cli | src/cli/commands/contacts.ts | 2086 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:e7d8b7490bd9c839ff0fc2b6 |
+| cli | src/cli/commands/contacts.ts | 2125 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:c47fc2f7c999bb41ca5fa531 |
 | cli | src/cli/commands/context.ts | 446 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:6de0e69887316ed0b8bfdf22 |
 | cli | src/cli/commands/context.ts | 701 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:ba2c2c58277aeb25eb28a850 |
 | cli | src/cli/commands/context.ts | 723 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:59fbe5b5250b9fbf7b7287ee |
@@ -603,22 +603,22 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/inbox.ts | 392 | fixed | binding retained / no recognized error surface | src/cli/commands/inbox.ts:047a57713c9ea93753210fa3 |
 | cli | src/cli/commands/inbox.ts | 494 | fixed | binding retained / no recognized error surface | src/cli/commands/inbox.ts:3ff50fc924fd7cfd571db5af |
 | cli | src/cli/commands/insights.ts | 83 | triaged-follow-up | catch-without-binding | src/cli/commands/insights.ts:3effa54a1fa3c5b3cf2950fc |
-| cli | src/cli/commands/instances.ts | 110 | triaged-follow-up | rejection-without-binding | src/cli/commands/instances.ts:42b7b5f2bdfcf682d8dedbd8 |
-| cli | src/cli/commands/instances.ts | 775 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:e2b7e02f4388c982ecddbd2b |
-| cli | src/cli/commands/instances.ts | 833 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:11a36f37c5f28d060bb1acd7 |
-| cli | src/cli/commands/instances.ts | 924 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:753e4157220f5658018f89d9 |
-| cli | src/cli/commands/instances.ts | 1042 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:95d09c72a59288a9a865484b |
-| cli | src/cli/commands/instances.ts | 1134 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:dd712258a357b910f97d70f8 |
-| cli | src/cli/commands/instances.ts | 1421 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:c40e45fff16acadf351fd462 |
-| cli | src/cli/commands/instances.ts | 1433 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:063f31c94e968495b595a7e7 |
-| cli | src/cli/commands/instances.ts | 1473 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:c40e45fff16acadf351fd462 |
-| cli | src/cli/commands/instances.ts | 1481 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:6e15796f376eab49627a4cb1 |
-| cli | src/cli/commands/instances.ts | 1508 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:c09f95b9e9638cb7528eda26 |
-| cli | src/cli/commands/instances.ts | 1558 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:0e14e90d9d074040e0e6a069 |
-| cli | src/cli/commands/instances.ts | 1595 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:e6d5c50a88054f661840f6e2 |
-| cli | src/cli/commands/instances.ts | 1657 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:bb05931d2c5f0635fdb4d79a |
-| cli | src/cli/commands/instances.ts | 1910 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:0aca774bf6a97a6693e79d38 |
-| cli | src/cli/commands/instances.ts | 2138 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:2652a035c7ec48d9a7a238e3 |
+| cli | src/cli/commands/instances.ts | 113 | triaged-follow-up | rejection-without-binding | src/cli/commands/instances.ts:42b7b5f2bdfcf682d8dedbd8 |
+| cli | src/cli/commands/instances.ts | 778 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:e2b7e02f4388c982ecddbd2b |
+| cli | src/cli/commands/instances.ts | 836 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:11a36f37c5f28d060bb1acd7 |
+| cli | src/cli/commands/instances.ts | 927 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:753e4157220f5658018f89d9 |
+| cli | src/cli/commands/instances.ts | 1045 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:95d09c72a59288a9a865484b |
+| cli | src/cli/commands/instances.ts | 1137 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:dd712258a357b910f97d70f8 |
+| cli | src/cli/commands/instances.ts | 1424 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:c40e45fff16acadf351fd462 |
+| cli | src/cli/commands/instances.ts | 1436 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:063f31c94e968495b595a7e7 |
+| cli | src/cli/commands/instances.ts | 1476 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:c40e45fff16acadf351fd462 |
+| cli | src/cli/commands/instances.ts | 1484 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:6e15796f376eab49627a4cb1 |
+| cli | src/cli/commands/instances.ts | 1511 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:c09f95b9e9638cb7528eda26 |
+| cli | src/cli/commands/instances.ts | 1561 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:0e14e90d9d074040e0e6a069 |
+| cli | src/cli/commands/instances.ts | 1598 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:e6d5c50a88054f661840f6e2 |
+| cli | src/cli/commands/instances.ts | 1660 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:bb05931d2c5f0635fdb4d79a |
+| cli | src/cli/commands/instances.ts | 1913 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:0aca774bf6a97a6693e79d38 |
+| cli | src/cli/commands/instances.ts | 2141 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:2652a035c7ec48d9a7a238e3 |
 | cli | src/cli/commands/jobs.ts | 131 | triaged-follow-up | catch-without-binding | src/cli/commands/jobs.ts:fb034d271632712a039f206c |
 | cli | src/cli/commands/jobs.ts | 140 | triaged-follow-up | catch-without-binding | src/cli/commands/jobs.ts:26a5d1396be7b5010ce57560 |
 | cli | src/cli/commands/jobs.ts | 243 | fixed | binding retained / no recognized error surface | src/cli/commands/jobs.ts:170e76797d42878a66023419 |
@@ -1902,18 +1902,18 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-defaults.ts | 88 | triaged-follow-up | catch-without-binding | src/runtime/runtime-defaults.ts:8cdcd933953e255901103de8 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 70 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:1af4a0589a1041ffeccf4ee1 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 102 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:93f2b3d2b18f3fa43b75229f |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 222 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:028234050a59a66edab09af2 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 262 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:51a46e76088c678f82acd7dc |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 288 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:ebf034c2d5826c4116f00eff |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 404 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:960da1d172cfc9d8affaf2b6 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 407 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:fe50d1206bebdad537025ec0 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 785 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b3b50aff43071847aa649325 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 787 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:1811a7ab1cda44b52fb4b036 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 962 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:a3e3e46ad92120dd20b659fb |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 998 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b67c3886f6623fc3c37f992b |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1071 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:861b739b16846ea4c68047b8 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1173 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:f49adb7da30eef0673bbfeb3 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1252 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 223 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:028234050a59a66edab09af2 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 263 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:51a46e76088c678f82acd7dc |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 289 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:ebf034c2d5826c4116f00eff |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 405 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:960da1d172cfc9d8affaf2b6 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 408 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:fe50d1206bebdad537025ec0 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 786 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b3b50aff43071847aa649325 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 788 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:1811a7ab1cda44b52fb4b036 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 963 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:a3e3e46ad92120dd20b659fb |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 999 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b67c3886f6623fc3c37f992b |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1072 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:861b739b16846ea4c68047b8 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1174 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:f49adb7da30eef0673bbfeb3 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1253 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
 | runtime-chat | src/runtime/runtime-request-context.ts | 103 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
 | runtime-chat | src/runtime/runtime-request-context.ts | 175 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
 | runtime-chat | src/runtime/runtime-request-context.ts | 463 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |

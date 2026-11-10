@@ -4,6 +4,7 @@ import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
 import {
   ensureContactFromInbound,
+  getContactById,
   isSlackHumanUserId,
   resolvePlatformIdentity,
   saveAccountPending,
@@ -1864,9 +1865,26 @@ export class SlackSocketModeService {
     const inboundPolicy = isGroup
       ? (routePolicy ?? instanceConfig?.groupPolicy ?? "open")
       : (routePolicy ?? instanceConfig?.dmPolicy ?? "open");
+    let approvedDmContact = false;
+    if (!isGroup && !explicitRoute && inboundPolicy === "pairing" && matched && message.senderKind !== "bot") {
+      const actor = resolveSlackActorIdentity({
+        chatId: canonicalChat.id,
+        instanceAliases,
+        platformUserId: message.slackUserId ?? message.userId,
+        senderKind: message.senderKind,
+      });
+      const contact = actor.contactId ? getContactById(actor.contactId) : null;
+      approvedDmContact = Boolean(
+        contact?.status === "allowed" &&
+          !contact.opt_out &&
+          (!contact.allowedAgents?.length || contact.allowedAgents.includes(matched.agentId)),
+      );
+    }
     const needsReview =
       !matched ||
-      (!explicitRoute && ((isGroup && inboundPolicy === "allowlist") || (!isGroup && inboundPolicy === "pairing")));
+      (!explicitRoute &&
+        ((isGroup && inboundPolicy === "allowlist") ||
+          (!isGroup && inboundPolicy === "pairing" && !approvedDmContact)));
     if (needsReview) {
       await this.holdSlackSenderForReview({
         message,

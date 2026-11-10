@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
 
 let nextMessages: any[] = [];
@@ -1122,6 +1122,38 @@ describe("buildClaudeQueryOptions chat-only host deny", () => {
     );
     expect(denied?.behavior).toBe("deny");
     expect(String((denied as { message?: string })?.message ?? "")).toMatch(/chat-only|denied|permission/i);
+  });
+});
+describe("claude profile credential env", () => {
+  const defaultProfile = join(homedir(), ".claude");
+  const loadBuilder = async () => (await import("./runtime-request-builder.js")).buildRuntimeCredentialProfileEnv;
+
+  it("leaves the default Claude profile implicit so the normal login is found", async () => {
+    const build = await loadBuilder();
+    expect(build("claude", { authProfileRef: "~/.claude" }, {})).toBeUndefined();
+    expect(build("claude", { authProfileRef: defaultProfile }, {})).toBeUndefined();
+    expect(build("claude", { authProfileRef: `${defaultProfile}/` }, {})).toBeUndefined();
+  });
+
+  it("names a non-default Claude profile explicitly", async () => {
+    const build = await loadBuilder();
+    expect(build("claude", { authProfileRef: "/tmp/claude-profile" }, {})).toEqual({
+      CLAUDE_CONFIG_DIR: "/tmp/claude-profile",
+    });
+  });
+
+  it("names the default profile when the daemon itself runs under another config dir", async () => {
+    const build = await loadBuilder();
+    expect(build("claude", { authProfileRef: "~/.claude" }, { CLAUDE_CONFIG_DIR: "/tmp/other-claude" })).toEqual({
+      CLAUDE_CONFIG_DIR: defaultProfile,
+    });
+  });
+
+  it("keeps naming the Codex home and ignores a blank profile reference", async () => {
+    const build = await loadBuilder();
+    expect(build("codex", { authProfileRef: "~/.codex" }, {})).toEqual({ CODEX_HOME: join(homedir(), ".codex") });
+    expect(build("claude", undefined, {})).toBeUndefined();
+    expect(build("claude", { authProfileRef: "  " }, {})).toBeUndefined();
   });
 });
 afterAll(() => mock.restore());
