@@ -795,6 +795,33 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain("unstructured-secret");
   });
 
+  it.each([400, 422])("redacts credential directories in issue-less canonical usage errors at HTTP %i", (status) => {
+    const requestId = "00000000-0000-4000-8000-000000000011";
+    const error = remoteGatewayErrorToContractError(
+      "permissions allow",
+      result({
+        status,
+        requestId,
+        body: JSON.stringify({
+          success: false,
+          op: "permissions allow",
+          exitCode: 2,
+          outcome: "usage_error",
+          error: {
+            code: "USAGE_ERROR",
+            message: "Cannot read profile /srv/secrets/hunter2 - use /srv/profiles/public.json instead.",
+            retryable: false,
+          },
+        }),
+      }),
+    );
+    const message = "Cannot read profile /srv/secrets/[redacted:path] - use /srv/profiles/public.json instead.";
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2, message, details: { status, requestId } });
+    expect(error?.envelope().error.message).toBe(message);
+    expect(JSON.stringify(error?.envelope())).not.toContain("hunter2");
+    expect(remoteNextStepLine(error!)).toContain(requestId);
+  });
+
   it.each([
     "No capabilities found for rctx_secret_fixture",
     "No capabilities found for ctx_secret_fixture",

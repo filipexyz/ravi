@@ -56,14 +56,14 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   and unused bindings at recognized error surfaces. Tests prove that a new
   violation fails, removing it passes, and baseline entries/counts cannot grow
   or be reintroduced after removal. Generated inventory freshness is checked.
-- The table-driven corpus has 13 rows and nine required sinks: CLI, tool,
+- The table-driven corpus has 14 rows and nine required sinks: CLI, tool,
   gateway, relay, gateway log, trace event, trace blob, TypeScript SDK and
   mocked Slack `chat.postMessage`. Every row checks all sinks for exact
   expected cause/code and absence of each sentinel. Missing a sink fails the
   harness. The vectors include query key, signed URL, cookie, Authorization,
   a real APIError with body/PII, password tail, escaped-quote password tail,
-  DSN, token-bearing path, arbitrary properties, high-entropy base64, Omni
-  media failure and an exact original-cause positive.
+  DSN, token-bearing path, credential-directory path, arbitrary properties,
+  high-entropy base64, Omni media failure and an exact original-cause positive.
 - Swift/Dart tests verify diagnostic envelope typing/decoding; the nine-sink
   corpus exercises TypeScript SDK redaction, not native redactor equivalence.
 

@@ -21,7 +21,7 @@ done
 
 - Real tasks/create missing instructions: 422, VALIDATION_ERROR, field/argument/issues, exit 2, non-retryable.
 - Expected failure: public message and next action survive HTTP to CLI.
-- Issue-less canonical usage errors retain uncatalogued reasons at HTTP 400 and 422; secret assignments are redacted without erasing the reason. Existing unsafe dump/context-key negatives and issue-first projection remain covered.
+- Issue-less canonical usage errors retain uncatalogued reasons at HTTP 400 and 422; secret assignments and credential-directory path suffixes are redacted without erasing the reason, safe paths or request id. Existing unsafe dump/context-key negatives and issue-first projection remain covered.
 - Real `permissions allow` dry-runs through the gateway and CLI with `--agent` cover an unknown profile, an invalid contact and a missing current chat. JSON/text output retain the daemon message, code and request id; no grants are applied. A valid canonical contact plus executor still resolves successfully.
 - Internal failure: safe 500 and correlated stack/cause log; no body/secret leakage.
 - Pre-dispatch auth failure: same safe boundary.

@@ -133,8 +133,13 @@ The canonical failure value is a `ContractError` and its envelope:
   the TypeScript SDK envelope. Its finite patterns cover URL/DSN userinfo,
   URL queries/fragments, sensitive query assignments (`key`, `token`, `sig`,
   `secret`, `password`), bearer/API-key credentials, cookies, password tails,
-  key-shaped strings and long high-entropy encoded values. Structured or
-  opaque embedded payloads are projected or replaced with a field marker.
+  key-shaped strings and long high-entropy encoded values. Version 2 also
+  removes the suffix after a slash/backslash-delimited `secret(s)`,
+  `credential(s)`, `password(s)` or `token(s)` directory, including whitespace
+  in quoted paths. Safe paths and the prefix before that suffix stay readable;
+  this rule does not identify arbitrary short secrets in unlabeled paths.
+  Structured or opaque embedded payloads are projected or replaced with a
+  field marker.
   Markers such as `[redacted:url-query]` identify the removed field; the
   remaining diagnostic reason and original stable code MUST stay readable.
   A new unrecognized credential encoding requires a corpus row and a shared
@@ -198,7 +203,7 @@ follow-up list. A `fixed` static site means the configured AST rules pass; it
 does not establish end-to-end propagation through dynamic or aliased code.
 
 `src/cli/error-egress-corpus.test.ts` supplies that complementary behavioral
-proof for 13 corpus rows across nine required sinks: process CLI envelope,
+proof for 14 corpus rows across nine required sinks: process CLI envelope,
 exported tool, gateway response, remote relay, gateway log, trace event, trace
 blob, TypeScript SDK envelope, and the Slack `chat.postMessage` payload captured
 by a mock. Each row asserts exact expected cause/code and absence of every
