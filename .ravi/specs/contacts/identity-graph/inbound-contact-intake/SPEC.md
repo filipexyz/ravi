@@ -183,6 +183,14 @@ Pending MUST be split by domain.
 
 `crm_contact_profiles.lifecycle` MUST NOT be used as contact approval state.
 
+### Slack Pending Approval
+
+- The legacy `account_pending.phone` field stores a raw sender reference; its name MUST NOT determine the identity channel. Slack pending reads and approval MUST derive channel and instance scope from the configured account.
+- Approving a Slack human MUST resolve the pending row's original sender (even when selected by DM chat id), using the configured instance aliases. An existing contact MUST be approved by canonical contact id; a new contact MUST receive a `slack` platform identity in the canonical instance scope, with no derived phone identity or primary phone.
+- This rule MUST also apply to already queued pending rows, without waiting for another inbound message. Ambiguous aliases and agent-owned identities MUST fail closed and retain the pending entry.
+- A digits-only contact or an identity in another Slack workspace MUST NOT be used as evidence for approval or pending-list attribution. Already corrupted phone contacts require explicit identity review; the fix MUST NOT automatically merge or delete them based on extracted digits.
+- `contact_intake_mode=off` MUST remain off: automatic capture and explicit operator approval are separate operations. Pending display MUST label unresolved Slack senders as Slack identities.
+
 ## CRM Boundary
 
 Inbound contact intake MUST NOT require CRM analysis.

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
@@ -7,15 +7,21 @@ import { configStore } from "../../config-store.js";
 import {
   createContact,
   ensureContactFromInbound,
+  getContact,
+  getContactDetails,
   getPendingContacts,
   linkContactIdentity,
   listAccountPendingChats,
   listAccountPendingContacts,
   resolvePlatformIdentity,
   unlinkContactIdentity,
+  updateContact,
   upsertAgentPlatformIdentity,
+  upsertContactFromPlatformIdentity,
 } from "../../contacts.js";
 import { dbGetCloudChatApproval, dbRecordCloudChatApproval } from "../../cloud-agents/chat-db.js";
+import { InstancesPendingCommands } from "../../cli/commands/instances.js";
+import { nats } from "../../nats.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { canWithCapabilities } from "../../permissions/provider-runtime.js";
 import {
@@ -23,6 +29,7 @@ import {
   getOrCreateSession,
   getSessionByName,
   listSessionSubscriptions,
+  loadRouterConfig,
 } from "../../router/index.js";
 import type { AgentConfig } from "../../router/index.js";
 import {
@@ -309,6 +316,165 @@ describe("Slack Socket Mode routing", () => {
       resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U123" }),
     ).toMatchObject({ ownerType: "contact", platformDisplayName: "Luis" });
   });
+
+  it.each(["off", "pending"] as const)(
+    "admits a new Slack DM after contact approval with intake %s and no explicit route",
+    async (intakeMode) => {
+      const accountId = "slack-pairing";
+      const instanceAlias = "aaaaaaaa-bbbb-cccc-dddd-111111111111";
+      const userId = "U0ABC4D44EF";
+      dbUpsertInstance({
+        name: accountId,
+        instanceId: instanceAlias,
+        channel: "slack",
+        agent: "ravi-hil",
+        dmPolicy: "pairing",
+        groupPolicy: "allowlist",
+        contactIntakeMode: intakeMode,
+      });
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const service = new SlackSocketModeService({
+        appToken: "xapp-test",
+        botToken: "xoxb-test",
+        accountId,
+        routeAccountId: accountId,
+        instanceId: instanceAlias,
+        getRouterConfig: loadRouterConfig,
+        publishPrompt: async (sessionName, payload) => {
+          published.push({ sessionName, payload });
+        },
+        webClient: {
+          usersInfo: mock(async () => ({
+            ok: true,
+            user: { id: userId, profile: { display_name: "New Person" } },
+          })),
+        } as never,
+      });
+      const inbound = (eventId: string, ts: string): SlackSocketEnvelope => ({
+        envelope_id: eventId,
+        type: "events_api",
+        payload: {
+          type: "event_callback",
+          team_id: "TTEST",
+          event_id: eventId,
+          event_time: 1_713_000_000,
+          event: { type: "message", channel: "D0TESTDM", channel_type: "im", user: userId, text: "hello", ts },
+        },
+      });
+
+      await service.handleEnvelope(inbound("Ev-pairing-before", "1713000000.000610"));
+
+      expect(published).toHaveLength(0);
+      expect(listAccountPendingContacts(accountId)).toMatchObject([
+        { accountId, phone: userId, name: "New Person", chatId: "D0TESTDM" },
+      ]);
+      if (intakeMode === "off") {
+        expect(
+          resolvePlatformIdentity({ channel: "slack", instanceId: instanceAlias, platformUserId: userId }),
+        ).toBeNull();
+      }
+      const emit = spyOn(nats, "emit").mockResolvedValue(undefined);
+      const log = spyOn(console, "log").mockImplementation(() => {});
+      try {
+        new InstancesPendingCommands().approve(accountId, userId, undefined, true);
+      } finally {
+        emit.mockRestore();
+        log.mockRestore();
+      }
+
+      const identity = resolvePlatformIdentity({ channel: "slack", instanceId: instanceAlias, platformUserId: userId });
+      expect(identity).toMatchObject({
+        channel: "slack",
+        instanceId: instanceAlias,
+        platformUserId: userId,
+        ownerType: "contact",
+      });
+      const details = getContactDetails(identity!.ownerId!);
+      expect(details?.contact).toMatchObject({ displayName: "New Person", primaryPhone: null });
+      expect(details?.policy?.status).toBe("allowed");
+      expect(details?.platformIdentities).toHaveLength(1);
+      expect(getContact("0444")).toBeNull();
+      expect(listAccountPendingContacts(accountId)).toEqual([]);
+
+      await service.handleEnvelope(inbound("Ev-pairing-after", "1713000000.000620"));
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.payload.source).toMatchObject({
+        channel: "slack",
+        actorType: "contact",
+        contactId: identity!.ownerId,
+        platformIdentityId: identity!.id,
+      });
+      expect(listAccountPendingContacts(accountId)).toEqual([]);
+      expect(getContactDetails(identity!.ownerId!)?.platformIdentities).toHaveLength(1);
+    },
+  );
+
+  it.each(["other workspace", "blocked", "opted out", "different allowed agent", "alias conflict"] as const)(
+    "keeps a Slack DM under pairing review for an %s contact",
+    async (scenario) => {
+      const accountId = "slack-pairing";
+      const instanceAlias = "aaaaaaaa-bbbb-cccc-dddd-111111111111";
+      const userId = "U0ABC4D44EF";
+      dbUpsertInstance({
+        name: accountId,
+        instanceId: instanceAlias,
+        channel: "slack",
+        agent: "ravi-hil",
+        dmPolicy: "pairing",
+        contactIntakeMode: "off",
+      });
+      const contact = upsertContactFromPlatformIdentity({
+        channel: "slack",
+        instanceId: scenario === "other workspace" ? "other-workspace" : instanceAlias,
+        platformUserId: userId,
+        status: scenario === "blocked" ? "blocked" : "allowed",
+      });
+      if (scenario === "opted out") updateContact(contact.id, { opt_out: true });
+      if (scenario === "different allowed agent") updateContact(contact.id, { allowedAgents: ["another-agent"] });
+      if (scenario === "alias conflict") {
+        upsertContactFromPlatformIdentity({
+          channel: "slack",
+          instanceId: accountId,
+          platformUserId: userId,
+          status: "allowed",
+        });
+      }
+      const publishPrompt = mock(async () => {});
+      const service = new SlackSocketModeService({
+        appToken: "xapp-test",
+        botToken: "xoxb-test",
+        accountId,
+        instanceId: instanceAlias,
+        getRouterConfig: loadRouterConfig,
+        publishPrompt,
+        webClient: {} as never,
+      });
+
+      await service.handleEnvelope({
+        envelope_id: "Ev-pairing-denied",
+        type: "events_api",
+        payload: {
+          type: "event_callback",
+          team_id: "TTEST",
+          event_id: "Ev-pairing-denied",
+          event_time: 1_713_000_000,
+          event: {
+            type: "message",
+            channel: "D0TESTDM",
+            channel_type: "im",
+            user: userId,
+            text: "hello",
+            ts: "1713000000.000630",
+          },
+        },
+      });
+
+      expect(publishPrompt).not.toHaveBeenCalled();
+      expect(listAccountPendingContacts(accountId)).toMatchObject([{ phone: userId, chatId: "D0TESTDM" }]);
+      expect(getContact(contact.id)?.status).toBe(scenario === "blocked" ? "blocked" : "allowed");
+    },
+  );
 
   it("holds an allowlisted Slack channel for review and still captures the human sender", async () => {
     dbUpsertInstance({

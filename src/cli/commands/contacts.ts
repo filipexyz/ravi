@@ -14,6 +14,7 @@ import {
   platformIdentityLinkReturnSchema,
 } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
+import { resolvePendingContact } from "../pending-contact.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -403,11 +404,11 @@ function assertCanReadContactTimeline(op: string, contactRef: string, asJson?: b
   assertCanReadContact(op, contactRef, asJson);
 }
 
-function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string }): boolean {
+function canViewPendingAccountEntry(entry: { accountId: string; phone: string; pendingKind?: string }): boolean {
   const scopeCtx = getScopeContext();
   if (!isScopeEnforced(scopeCtx)) return true;
   if (entry.pendingKind === "chat") return canWriteContacts(scopeCtx);
-  const contact = getContact(entry.phone);
+  const { contact } = resolvePendingContact(entry);
   return contact ? canReadContactRecord(scopeCtx, contact) : canWriteContacts(scopeCtx);
 }
 
@@ -561,7 +562,7 @@ export class ContactsCommands {
       accountPendingContacts: accountPendingContacts.map((entry) => ({
         ...entry,
         type: entry.chatType,
-        contact: serializeContactMaybe(getContact(entry.phone)),
+        contact: serializeContactMaybe(resolvePendingContact(entry).contact),
       })),
       pendingChats: pendingChats.map((entry) => ({
         ...entry,
@@ -571,7 +572,7 @@ export class ContactsCommands {
       accountPending: accountPending.map((entry) => ({
         ...entry,
         type: entry.chatType,
-        contact: entry.pendingKind === "contact" ? serializeContactMaybe(getContact(entry.phone)) : null,
+        contact: entry.pendingKind === "contact" ? serializeContactMaybe(resolvePendingContact(entry).contact) : null,
       })),
     };
     if (asJson) {
@@ -601,15 +602,15 @@ export class ContactsCommands {
       console.log("  ------------  --------------------  ---------------------------------   ----------");
       for (const entry of accountPendingContacts) {
         const acct = entry.accountId.padEnd(12);
-        const contact = getContact(entry.phone);
+        const { contact, channel } = resolvePendingContact(entry);
         const name = (contact?.name || entry.name || "-").slice(0, 20).padEnd(20);
         const identities = contact
           ? formatIdentitiesShort(contact, 35).padEnd(35)
-          : `phone ${entry.phone}`.slice(0, 35).padEnd(35);
+          : `${channel} ${entry.phone}`.slice(0, 35).padEnd(35);
         const since = new Date(entry.updatedAt).toISOString().split("T")[0];
         console.log(`  ${acct}  ${name}  ${identities}   ${since}`);
       }
-      console.log("\nApprove: ravi instances pending approve <instance> <phone>");
+      console.log("\nApprove: ravi instances pending approve <instance> <identity>");
       console.log("Add route: ravi instances routes add <instance> <pattern> <agent>");
     }
 

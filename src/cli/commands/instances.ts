@@ -80,8 +80,11 @@ import {
   listAccountPending,
   removeAccountPending,
   allowContact,
+  isSlackHumanUserId,
+  upsertContactFromPlatformIdentity,
   type AccountPendingEntry,
 } from "../../contacts.js";
+import { resolvePendingContact } from "../pending-contact.js";
 import {
   detachRouteBookkeepingSubscriptions,
   listRouteStickyOverrides,
@@ -2234,7 +2237,7 @@ export class InstancesPendingCommands {
         console.log("\n  Next page:");
         console.log(`    ${pagination.nextCommand}`);
       }
-      console.log(`\n  Approve contact: ravi instances pending approve ${name} <phone>`);
+      console.log(`\n  Approve contact: ravi instances pending approve ${name} <identity>`);
       console.log(`  Approve chat:    ravi instances pending approve ${name} <chat> --agent <agent>`);
     }
     return payload;
@@ -2320,7 +2323,32 @@ export class InstancesPendingCommands {
       return payload;
     }
 
-    allowContact(contact);
+    if (instance.channel === "slack") {
+      // The supplied ref can be a DM chat id or a case-insensitive lookup. The
+      // pending row retains the original Slack sender, including for old rows.
+      const senderId = pending?.phone ?? contact.trim().toUpperCase();
+      const resolved = resolvePendingContact({ accountId: name, phone: senderId });
+      if (!isSlackHumanUserId(senderId) || resolved.ambiguous || resolved.identity?.ownerType === "agent") {
+        const message = "Approval requires an unambiguous Slack human identity in this instance.";
+        contractFail("instances pending approve", "CONTACT_IDENTITY_UNRESOLVED", message, {
+          asJson,
+          diagnostic: errorDiagnostic(message, { operation: "instances pending approve" }),
+        });
+      }
+      if (resolved.contact) {
+        allowContact(resolved.contact.id);
+      } else {
+        upsertContactFromPlatformIdentity({
+          channel: "slack",
+          instanceId: resolved.instanceId,
+          platformUserId: senderId,
+          name: pending?.name,
+          status: "allowed",
+        });
+      }
+    } else {
+      allowContact(contact);
+    }
     const removedPending = pending ? removeAccountPending(name, pending.phone) : removeAccountPending(name, contact);
     const payload = {
       status: "approved" as const,
