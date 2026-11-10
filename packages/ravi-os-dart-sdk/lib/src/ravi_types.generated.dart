@@ -11425,6 +11425,32 @@ class CredentialsRequestReturn {
 
 CredentialsRequestReturn credentialsRequestReturnFromJson(Object? json) => CredentialsRequestReturn.fromJsonValue(json);
 
+class CredentialsRequestStatusReturn {
+  const CredentialsRequestStatusReturn({required this.activation, this.receipt, required this.requestId, required this.status, required this.target});
+
+  final String activation;
+  final String? receipt;
+  final String requestId;
+  final String status;
+  final String target;
+
+  factory CredentialsRequestStatusReturn.fromJson(Map<String, Object?> json) {
+    return CredentialsRequestStatusReturn(
+      activation: raviJsonAsString(json["activation"]),
+      receipt: json["receipt"] == null ? null : raviJsonAsString(json["receipt"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      status: raviJsonAsString(json["status"]),
+      target: raviJsonAsString(json["target"]),
+    );
+  }
+
+  static CredentialsRequestStatusReturn fromJsonValue(Object? json) {
+    return CredentialsRequestStatusReturn.fromJson(raviJsonObject(json, "CredentialsRequestStatusReturn"));
+  }
+}
+
+CredentialsRequestStatusReturn credentialsRequestStatusReturnFromJson(Object? json) => CredentialsRequestStatusReturn.fromJsonValue(json);
+
 class CrmAccountReturn {
   const CrmAccountReturn({required this.crm, required this.target});
 
@@ -20850,14 +20876,13 @@ class PermissionsStatusReturn {
 PermissionsStatusReturn permissionsStatusReturnFromJson(Object? json) => PermissionsStatusReturn.fromJsonValue(json);
 
 class PrPublishOptions {
-  const PrPublishOptions({this.base, this.bodyFile, this.dryRun, this.execute, this.expectSha, this.replySession, this.repo, this.title});
+  const PrPublishOptions({this.base, this.bodyFile, this.dryRun, this.execute, this.expectSha, this.repo, this.title});
 
   final String? base;
   final String? bodyFile;
   final bool? dryRun;
   final bool? execute;
   final String? expectSha;
-  final String? replySession;
   final String? repo;
   final String? title;
 
@@ -20876,9 +20901,6 @@ class PrPublishOptions {
     }
     if (expectSha != null) {
       into["expectSha"] = RaviJson.from(expectSha);
-    }
-    if (replySession != null) {
-      into["replySession"] = RaviJson.from(replySession);
     }
     if (repo != null) {
       into["repo"] = RaviJson.from(repo);
@@ -25384,6 +25406,64 @@ SessionsSetTtlReturn sessionsSetTtlReturnFromJson(Object? json) => raviJsonAsRav
 typedef SessionsSubscriptionsReturn = Map<String, RaviJson>;
 
 SessionsSubscriptionsReturn sessionsSubscriptionsReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class SessionsThreadConfigureOptions {
+  const SessionsThreadConfigureOptions({this.effort, this.model, this.provider, this.session, this.thinking});
+
+  final String? effort;
+  final String? model;
+  final String? provider;
+  final String? session;
+  final String? thinking;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
+    if (model != null) {
+      into["model"] = RaviJson.from(model);
+    }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+    if (thinking != null) {
+      into["thinking"] = RaviJson.from(thinking);
+    }
+  }
+}
+
+class SessionsThreadConfigureReturn {
+  const SessionsThreadConfigureReturn({required this.actionId, required this.after, required this.appliesOn, required this.before, required this.changed, required this.status, required this.thread});
+
+  final String actionId;
+  final RaviJson after;
+  final String appliesOn;
+  final RaviJson before;
+  final bool changed;
+  final String status;
+  final RaviJson thread;
+
+  factory SessionsThreadConfigureReturn.fromJson(Map<String, Object?> json) {
+    return SessionsThreadConfigureReturn(
+      actionId: raviJsonAsString(json["actionId"]),
+      after: RaviJson.from(json["after"]),
+      appliesOn: raviJsonAsString(json["appliesOn"]),
+      before: RaviJson.from(json["before"]),
+      changed: raviJsonAsBool(json["changed"]),
+      status: raviJsonAsString(json["status"]),
+      thread: RaviJson.from(json["thread"]),
+    );
+  }
+
+  static SessionsThreadConfigureReturn fromJsonValue(Object? json) {
+    return SessionsThreadConfigureReturn.fromJson(raviJsonObject(json, "SessionsThreadConfigureReturn"));
+  }
+}
+
+SessionsThreadConfigureReturn sessionsThreadConfigureReturnFromJson(Object? json) => SessionsThreadConfigureReturn.fromJsonValue(json);
 
 class SessionsThreadSendOptions {
   const SessionsThreadSendOptions({this.session});

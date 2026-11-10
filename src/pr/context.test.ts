@@ -47,6 +47,7 @@ it("persists audit through a dedicated real SQLite connection and shares its lea
   second.close();
 });
 const context: ToolContext = {
+  transport: "gateway",
   agentId: "test",
   sessionKey: "agent:test:publisher",
   sessionName: "publisher",
@@ -55,6 +56,8 @@ const context: ToolContext = {
     contextKey: "rctx_publisher",
     kind: "turn-runtime",
     agentId: "test",
+    sessionKey: "agent:test:publisher",
+    sessionName: "publisher",
     capabilities: [],
     createdAt: 0,
   },
@@ -68,15 +71,28 @@ it("uses the publishing session and its actual reply thread without mutating ses
     source: { channel: "slack", accountId: "main", chatId: "C-test", threadId: "thread-1" },
   });
   const source = { channel: "slack", accountId: "main", chatId: "C-inbound", threadId: "current-thread" };
-  expect(runWithContext({ ...context, source }, () => resolvePublicationContext()).source).toEqual(source);
+  expect(
+    runWithContext({ ...context, context: { ...context.context!, source } }, () => resolvePublicationContext()).source,
+  ).toEqual(source);
   expect(getDb().query("SELECT * FROM sessions").all()).toEqual(before);
 });
-it("refuses cross-session routing, absent sessions and sessions with no chat destination", () => {
-  expect(() => runWithContext(context, () => resolvePublicationContext("other-session"))).toThrow("own session");
+it("fails closed when ambient session aliases disagree with the authenticated session", () => {
   expect(() =>
-    runWithContext({ ...context, sessionKey: "missing", sessionName: "missing" }, () => resolvePublicationContext()),
+    runWithContext({ ...context, sessionKey: "other-session", sessionName: "other-session" }, () =>
+      resolvePublicationContext(),
+    ),
+  ).toThrow("unavailable in this scope");
+});
+it("refuses absent sessions and sessions with no chat destination", () => {
+  expect(() =>
+    runWithContext(
+      { ...context, context: { ...context.context!, sessionKey: "missing", sessionName: "missing" } },
+      () => resolvePublicationContext(),
+    ),
   ).toThrow("unavailable in this scope");
   getDb().exec("UPDATE sessions SET last_to=NULL");
   expect(() => runWithContext(context, () => resolvePublicationContext())).toThrow("no chat destination");
-  expect(() => runWithContext({}, () => resolvePublicationContext())).toThrow("--reply-session");
+  expect(() => runWithContext({}, () => resolvePublicationContext())).toThrow(
+    "requires an authenticated session context",
+  );
 });

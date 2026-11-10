@@ -11,6 +11,9 @@ export function isRuntimeLiveBusy(activity: RuntimeLiveActivity): boolean {
 }
 
 export interface RuntimeLiveState {
+  /** Provider activity, not the daemon's ownership heartbeat. */
+  turnId?: string;
+  lastSignalAt?: number;
   activity: RuntimeLiveActivity;
   summary?: string;
   updatedAt: number;
@@ -74,6 +77,12 @@ export function markRuntimeLiveIdle(sessionName: string, summary = "idle"): Runt
 export function getRuntimeLiveState(sessionName: string): RuntimeLiveState | null {
   const live = liveBySessionName.get(sessionName);
   return live ? { ...live } : null;
+}
+
+export function noteRuntimeTurnSignal(sessionName: string, turnId: string | undefined, at: number): void {
+  if (!turnId) return;
+  const current = liveBySessionName.get(sessionName) ?? { activity: "thinking" as const, updatedAt: at };
+  liveBySessionName.set(sessionName, { ...current, turnId, lastSignalAt: at });
 }
 
 export function getRuntimeLiveStateForSession(session: SessionEntry): RuntimeLiveState | null {

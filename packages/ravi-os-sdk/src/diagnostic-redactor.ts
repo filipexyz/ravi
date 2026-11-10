@@ -1,5 +1,5 @@
 /** Single versioned redactor used by diagnostic egress, including the standalone TS SDK. */
-export const DIAGNOSTIC_REDACTOR_VERSION = 1;
+export const DIAGNOSTIC_REDACTOR_VERSION = 2;
 export interface DiagnosticRedactionOptions {
   secrets?: readonly string[];
 }
@@ -139,6 +139,21 @@ function normalizeAssignments(text: string): string {
     .join("\n");
 }
 
+function normalizeCredentialPaths(text: string): string {
+  // Directory labels supply context for short credentials that have no token
+  // signature. Hide the entire suffix, including nested directories. Quoted
+  // paths may contain whitespace; normalize them before unquoted path tokens.
+  return text
+    .replace(/(^|[^\p{L}\p{N}_])("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')/gu, (_match, prefix: string, quoted: string) => {
+      const path = quoted.slice(1, -1).replace(
+        /([/\\](?:secrets?|credentials?|passwords?|tokens?)[/\\])[\s\S]+/i,
+        "$1[redacted:path]",
+      );
+      return `${prefix}${quoted[0]}${path}${quoted[0]}`;
+    })
+    .replace(/([/\\](?:secrets?|credentials?|passwords?|tokens?)[/\\])[^\s"'<>]+/gi, "$1[redacted:path]");
+}
+
 function entropy(value: string): number {
   const counts = new Map<string, number>();
   for (const char of value) counts.set(char, (counts.get(char) ?? 0) + 1);
@@ -189,6 +204,7 @@ function normalizeText(value: string, options: DiagnosticRedactionOptions, depth
     (match) => `${match.split(/\s/, 1)[0]} [redacted:authorization]`,
   );
   text = normalizeAssignments(text);
+  text = normalizeCredentialPaths(text);
   text = text
     .replace(
       /\b(?:rctx_[A-Za-z0-9_-]+|(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}|gsk_[A-Za-z0-9_-]{12,}|gh[oprsu]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|xox[baprs]-[A-Za-z0-9-]+|xapp-[A-Za-z0-9-]+|AIza[A-Za-z0-9_-]{20,}|AKIA[A-Z0-9]{16})\b/g,

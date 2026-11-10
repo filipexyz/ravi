@@ -213,6 +213,23 @@ describe("client-codegen :: emitAll", () => {
     expect(JSON.parse(JSON.stringify(omitted.body))).toEqual({ "request-id": "req-2" });
   });
 
+  it("keeps normalized optional arguments valid before a required options bag", async () => {
+    const registry = buildRegistry([ArgNamesCommands]);
+    registry.commands.find((command) => command.command === "show")!.requiredAnyOfOptions = ["force"];
+    const output = emitAll(registry, { version: FIXED_VERSION });
+    expect(output.client).toContain(
+      "show: async (requestId: string, displayName: string | undefined, artifactPaths: string[] | undefined, options:",
+    );
+    const { RaviClient } = await importClient(output.client);
+    const client = new RaviClient({ call: async (input: { body: unknown }) => input.body });
+    expect(await client.argNames.show("req-1", undefined, undefined, { force: true })).toEqual({
+      "request-id": "req-1",
+      display_name: undefined,
+      "artifact-paths": undefined,
+      force: true,
+    });
+  });
+
   it("keeps colliding normalized arguments bound to distinct symbols in positional order", async () => {
     const registry = buildRegistry([ArgNamesCommands]);
     const output = emitAll(registry, { version: FIXED_VERSION });

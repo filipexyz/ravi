@@ -5,7 +5,7 @@ const DAY_MS = 24 * 60 * 60 * 1_000;
 export const CHANNEL_OUTBOUND_CLAIM_LEASE_MS = 5 * 60 * 1_000;
 export const CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS = 14 * DAY_MS;
 
-export type ChannelOutboundReceiptState = "claimed" | "sent" | "persisted" | "complete";
+export type ChannelOutboundReceiptState = "claimed" | "sent" | "persisted" | "complete" | "suppressed";
 export type ChannelOutboundReceiptErrorPhase =
   | "adapter_lookup"
   | "send"
@@ -35,6 +35,11 @@ export interface ChannelOutboundReceipt {
   persistedAt?: number;
   traceRecordedAt?: number;
   completedAt?: number;
+  suppressionReason?: string;
+  /** Permanent non-idempotent send marker, retained through every receipt phase. */
+  resendProhibited?: boolean;
+  /** Keep this canonical output identity indefinitely without changing lease retries. */
+  retainIdentity?: boolean;
   lastErrorPhase?: ChannelOutboundReceiptErrorPhase;
   lastErrorMessage?: string;
   lastErrorAt?: number;
@@ -60,6 +65,9 @@ interface ChannelOutboundReceiptRow {
   persisted_at: number | null;
   trace_recorded_at: number | null;
   completed_at: number | null;
+  suppression_reason: string | null;
+  resend_prohibited: number;
+  retain_identity: number;
   last_error_phase: ChannelOutboundReceiptErrorPhase | null;
   last_error_message: string | null;
   last_error_at: number | null;
@@ -85,6 +93,9 @@ export interface ChannelOutboundReceiptStore {
     provider: string;
     now?: number;
     leaseMs?: number;
+    /** Non-idempotent providers must never take over an ambiguous earlier send. */
+    allowExpiredTakeover?: boolean;
+    retainIdentity?: boolean;
   }): ChannelOutboundClaimResult;
   releaseClaim(input: {
     idempotencyKey: string;
@@ -109,6 +120,13 @@ export interface ChannelOutboundReceiptStore {
   ): ChannelOutboundReceipt;
   markTraceRecorded(idempotencyKey: string, recordedAt?: number): ChannelOutboundReceipt;
   markComplete(idempotencyKey: string, completedAt?: number): ChannelOutboundReceipt;
+  markSuppressed(input: {
+    idempotencyKey: string;
+    requestFingerprint: string;
+    owner: string;
+    reason: string;
+    suppressedAt?: number;
+  }): ChannelOutboundReceipt;
   markTerminalError(
     idempotencyKey: string,
     phase: ChannelOutboundReceiptErrorPhase,
@@ -132,6 +150,7 @@ export const sqliteChannelOutboundReceiptStore: ChannelOutboundReceiptStore = {
   markPersisted: markChannelOutboundReceiptPersisted,
   markTraceRecorded: markChannelOutboundReceiptTraceRecorded,
   markComplete: markChannelOutboundReceiptComplete,
+  markSuppressed: markChannelOutboundReceiptSuppressed,
   markTerminalError: markChannelOutboundReceiptTerminalError,
   recordError: recordChannelOutboundReceiptError,
   pruneExpired: pruneExpiredChannelOutboundReceipts,
@@ -142,6 +161,17 @@ export function getChannelOutboundReceipt(idempotencyKey: string): ChannelOutbou
   return row ? rowToReceipt(row) : null;
 }
 
+/**
+ * Atomically inserts or claims a matching key/fingerprint for an owner.
+ * Returns acquired for that owner, busy for a competing protected claim,
+ * existing for a post-claim state, or conflict for a different fingerprint.
+ * Reacquiring as the same owner does not renew the lease. Another owner can
+ * take over an expired/absent lease only when resend has not been prohibited.
+ *
+ * Matching requests may monotonically set `resendProhibited` (no takeover and
+ * no pruning) or `retainIdentity` (no pruning, but takeover remains possible).
+ * A fingerprint conflict returns before either flag can be promoted.
+ */
 export function claimChannelOutboundReceipt(input: {
   idempotencyKey: string;
   requestFingerprint: string;
@@ -152,6 +182,8 @@ export function claimChannelOutboundReceipt(input: {
   provider: string;
   now?: number;
   leaseMs?: number;
+  allowExpiredTakeover?: boolean;
+  retainIdentity?: boolean;
 }): ChannelOutboundClaimResult {
   const database = getDb();
   const idempotencyKey = requireText(input.idempotencyKey, "idempotencyKey");
@@ -170,8 +202,8 @@ export function claimChannelOutboundReceipt(input: {
            state, provider, delivery_message_id, platform_message_id, provider_timestamp,
            canonical_message_id, claim_owner, claim_expires_at, sent_at, persisted_at,
            trace_recorded_at, completed_at, last_error_phase, last_error_message,
-           last_error_at, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, 'claimed', ?, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)`,
+           last_error_at, created_at, updated_at, resend_prohibited, retain_identity
+         ) VALUES (?, ?, ?, ?, ?, 'claimed', ?, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?)`,
       )
       .run(
         idempotencyKey,
@@ -184,11 +216,25 @@ export function claimChannelOutboundReceipt(input: {
         claimExpiresAt,
         now,
         now,
+        input.allowExpiredTakeover === false ? 1 : 0,
+        input.retainIdentity === true ? 1 : 0,
       );
 
     let receipt = requireReceipt(idempotencyKey);
     if (receipt.requestFingerprint !== requestFingerprint) {
       return { status: "conflict", receipt };
+    }
+    if (input.allowExpiredTakeover === false && !receipt.resendProhibited) {
+      database
+        .prepare("UPDATE channel_outbound_receipts SET resend_prohibited = 1 WHERE idempotency_key = ?")
+        .run(idempotencyKey);
+      receipt = requireReceipt(idempotencyKey);
+    }
+    if (input.retainIdentity === true && !receipt.retainIdentity) {
+      database
+        .prepare("UPDATE channel_outbound_receipts SET retain_identity = 1 WHERE idempotency_key = ?")
+        .run(idempotencyKey);
+      receipt = requireReceipt(idempotencyKey);
     }
     if (receipt.state !== "claimed") {
       return { status: "existing", receipt };
@@ -196,7 +242,7 @@ export function claimChannelOutboundReceipt(input: {
     if (receipt.claimOwner === owner) {
       return { status: "acquired", receipt };
     }
-    if (receipt.claimExpiresAt !== undefined && receipt.claimExpiresAt > now) {
+    if (receipt.resendProhibited || (receipt.claimExpiresAt !== undefined && receipt.claimExpiresAt > now)) {
       return { status: "busy", receipt };
     }
 
@@ -209,6 +255,7 @@ export function claimChannelOutboundReceipt(input: {
          WHERE idempotency_key = ?
            AND request_fingerprint = ?
            AND state = 'claimed'
+           AND resend_prohibited = 0
            AND (claim_expires_at IS NULL OR claim_expires_at <= ?)`,
       )
       .run(
@@ -363,6 +410,48 @@ export function markChannelOutboundReceiptComplete(
   return requireReceipt(key);
 }
 
+/**
+ * Closes a claimed key/fingerprint by owner-checked compare-and-swap, clearing
+ * owner/lease and retaining a terminal reason without asserting a provider send.
+ * Replay with the same fingerprint and reason returns the existing tombstone;
+ * any other lost claim throws. The physical suppressed state can also retain
+ * an integrity failure: callers must interpret its reason before reporting
+ * policy suppression or allowing cleanup.
+ */
+export function markChannelOutboundReceiptSuppressed(input: {
+  idempotencyKey: string;
+  requestFingerprint: string;
+  owner: string;
+  reason: string;
+  suppressedAt?: number;
+}): ChannelOutboundReceipt {
+  const key = requireText(input.idempotencyKey, "idempotencyKey");
+  const fingerprint = requireText(input.requestFingerprint, "requestFingerprint");
+  const reason = requireText(input.reason, "reason");
+  const at = finiteNumber(input.suppressedAt) ?? Date.now();
+  const result = getDb()
+    .prepare(
+      `UPDATE channel_outbound_receipts
+       SET state = 'suppressed', suppression_reason = ?, completed_at = ?,
+           claim_owner = NULL, claim_expires_at = NULL, updated_at = ?
+       WHERE idempotency_key = ? AND request_fingerprint = ?
+         AND state = 'claimed' AND claim_owner = ?`,
+    )
+    .run(reason, at, at, key, fingerprint, requireText(input.owner, "owner"));
+  const receipt = requireReceipt(key);
+  if (
+    result.changes === 0 &&
+    !(
+      receipt.state === "suppressed" &&
+      receipt.requestFingerprint === fingerprint &&
+      receipt.suppressionReason === reason
+    )
+  ) {
+    throw new Error(`Outbound receipt claim lost: ${key}`);
+  }
+  return receipt;
+}
+
 export function markChannelOutboundReceiptTerminalError(
   idempotencyKey: string,
   phase: ChannelOutboundReceiptErrorPhase,
@@ -401,6 +490,12 @@ export function recordChannelOutboundReceiptError(
   return getChannelOutboundReceipt(key);
 }
 
+/**
+ * Removes rows last updated at/before cutoff and returns the number removed.
+ * Preserves suppressed, resend-prohibited and retain-identity rows regardless
+ * of age, plus claims whose lease is active at `now`. Both timestamps must be
+ * finite; expiring a lease does not discard the permanent retention flags.
+ */
 export function pruneExpiredChannelOutboundReceipts(cutoff: number, now = Date.now()): number {
   const normalizedCutoff = finiteNumber(cutoff);
   if (normalizedCutoff === null) throw new Error("cutoff must be a finite number");
@@ -410,6 +505,9 @@ export function pruneExpiredChannelOutboundReceipts(cutoff: number, now = Date.n
     .prepare(
       `DELETE FROM channel_outbound_receipts
        WHERE updated_at <= ?
+         AND state != 'suppressed'
+         AND resend_prohibited = 0
+         AND retain_identity = 0
          AND NOT (state = 'claimed' AND claim_expires_at IS NOT NULL AND claim_expires_at > ?)`,
     )
     .run(normalizedCutoff, normalizedNow).changes;
@@ -429,6 +527,11 @@ function requireReceipt(idempotencyKey: string): ChannelOutboundReceipt {
   return rowToReceipt(row);
 }
 
+/**
+ * Projects SQL optional fields and permanent retention/resend flags without
+ * deriving a delivery outcome. In particular, suppressed state alone proves
+ * neither a send nor a policy disposition/cleanup permission; read its reason.
+ */
 function rowToReceipt(row: ChannelOutboundReceiptRow): ChannelOutboundReceipt {
   return {
     idempotencyKey: row.idempotency_key,
@@ -448,6 +551,9 @@ function rowToReceipt(row: ChannelOutboundReceiptRow): ChannelOutboundReceipt {
     ...(row.persisted_at !== null ? { persistedAt: row.persisted_at } : {}),
     ...(row.trace_recorded_at !== null ? { traceRecordedAt: row.trace_recorded_at } : {}),
     ...(row.completed_at !== null ? { completedAt: row.completed_at } : {}),
+    ...(row.suppression_reason ? { suppressionReason: row.suppression_reason } : {}),
+    ...(row.resend_prohibited === 1 ? { resendProhibited: true } : {}),
+    ...(row.retain_identity === 1 ? { retainIdentity: true } : {}),
     ...(row.last_error_phase ? { lastErrorPhase: row.last_error_phase } : {}),
     ...(row.last_error_message ? { lastErrorMessage: row.last_error_message } : {}),
     ...(row.last_error_at !== null ? { lastErrorAt: row.last_error_at } : {}),

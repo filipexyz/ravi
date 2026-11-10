@@ -1,8 +1,8 @@
+import { openStateDatabase } from "../../db/state-boundary.js";
 // chat.db cleanup for synthetic sessions (contract §13.3): a curator turn
 // quotes up to 200 of a contact's messages, so its rows are deleted once the
 // turn is over.
 
-import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { getChatDbPath } from "../../db.js";
 import { getSession } from "../../router/sessions.js";
@@ -24,7 +24,7 @@ export function deleteChatDbSessionMessages(sessionKey: string): number {
   }
   const path = getChatDbPath();
   if (!existsSync(path)) return 0;
-  const db = new Database(path);
+  const db = openStateDatabase(path);
   try {
     db.exec("PRAGMA busy_timeout = 5000");
     const placeholders = [...ids].map(() => "?").join(", ");

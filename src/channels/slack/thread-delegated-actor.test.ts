@@ -24,6 +24,7 @@ import {
   refreshRuntimeRequestContextForTurn,
 } from "../../runtime/runtime-request-context.js";
 import { classifyTurnProvenance } from "../../runtime/turn-provenance.js";
+import { recordSessionEvent, upsertSessionTurn } from "../../session-trace/session-trace-db.js";
 import { dbCreateTagDefinition } from "../../tags/index.js";
 import type { TaskRuntimeResolution } from "../../tasks/types.js";
 import {
@@ -34,11 +35,14 @@ import {
 import {
   closeSlackThread,
   finalizeSlackThreadCreation,
+  reconcileSlackThreadLifecycle,
   reportSlackThreadProgress,
   sendSlackThreadMessage,
   type SlackThreadLifecycleDependencies,
 } from "./thread-lifecycle.js";
 import { createSlackThreadLifecycle, markSlackThreadRootDelivered } from "./thread-lifecycle-store.js";
+import { admitThreadAttention } from "./thread-attention-admission.js";
+import { THREAD_REPLY_GRACE_MS } from "./thread-turn-health.js";
 
 const AGENT = { id: "thread-worker", cwd: "/tmp/thread-worker" };
 const ROOT_KEY = "thread-parent";
@@ -438,6 +442,92 @@ describe("Slack thread delegated Console actor", () => {
       const queued = enqueue(transport.prompts[1]!);
       expect(queued.sessionName).toBe(fixture.parent.name!);
       assertDelegatedContact(buildTurn(fixture.parent, queued.payload), original.contactId);
+    },
+  );
+
+  it.each(["live", "completed"])(
+    "keeps a real attention notice unattributed to a human with a %s child caller",
+    async (callerState) => {
+      const fixture = seedRoot();
+      const person = seedPerson("U111", "test_contact_user");
+      seedReadProfile();
+      seedReadGrant(person.contactId, fixture.rootChatId);
+      const parentTurn = buildTurn(fixture.parent, humanPrompt(fixture.rootChatId, person));
+      seedCreation(fixture.rootChatId, parentTurn.runtimeContext.contextId);
+      const transport = captureTransport();
+      deliverRoot();
+      await finalizeSlackThreadCreation(REQUEST_ID, transport.dependencies);
+      const childTurn = buildPublishedTurn(transport.prompts[0]!);
+      const child = getSession(`${ROOT_KEY}:thread:${THREAD_TS}`)!;
+      // A valid admitted person is the positive control: denial below must not
+      // pass merely because the observed caller was never attributable.
+      assertDelegatedContact(childTurn, person.contactId);
+      expect(canReadBases(childTurn)).toBe(true);
+
+      const turnId = "delegated-actor-attention-turn";
+      const completedAt = Date.now();
+      upsertSessionTurn({
+        turnId,
+        sessionKey: child.sessionKey,
+        sessionName: child.name,
+        agentId: AGENT.id,
+        status: "complete",
+        outputState: "incomplete",
+        startedAt: childTurn.runtimeContext.createdAt,
+        completedAt,
+        updatedAt: completedAt,
+      });
+      recordSessionEvent({
+        sessionKey: child.sessionKey,
+        sessionName: child.name,
+        turnId,
+        eventType: "adapter.request",
+        eventGroup: "runtime",
+        timestamp: childTurn.runtimeContext.createdAt,
+        payloadJson: { context_id: childTurn.runtimeContext.contextId },
+      });
+      if (callerState === "completed") {
+        revokeRuntimeContext(childTurn.runtimeContext.contextId, { reason: "turn_context_completed" });
+        expect(resolveRuntimeContext(childTurn.runtimeContext.contextKey, { touch: false })).toBeNull();
+      }
+
+      expect(
+        await reconcileSlackThreadLifecycle({
+          ...transport.dependencies,
+          now: () => completedAt + THREAD_REPLY_GRACE_MS + 1,
+        }),
+      ).toMatchObject({ failures: 0 });
+      expect(transport.prompts).toHaveLength(2);
+      const attention = transport.prompts[1]!;
+      expect(attention.sessionName).toBe(fixture.parent.name!);
+      expect(attention.payload).toMatchObject({
+        _slackThreadLifecycle: { eventType: "thread.attention", turnId, reason: "no_reply" },
+        _turnOrigin: {
+          producer: "channel",
+          action: "session.return",
+          callerContextId: childTurn.runtimeContext.contextId,
+        },
+      });
+      expect(attention.payload._turnOrigin?.delegation).toBeUndefined();
+      expect(classifyTurnProvenance({ prompt: attention.payload }).origin).toBe("agent");
+
+      const handle = mock(async (admitted: RuntimeLaunchPrompt) => {
+        expect(admitted).toEqual(attention.payload);
+        const queued = enqueue({ sessionName: attention.sessionName, payload: admitted });
+        expect(queued.payload._turnOrigin).toEqual(attention.payload._turnOrigin);
+        const attentionTurn = buildTurn(fixture.parent, queued.payload);
+        expect(attentionTurn.runtimeContext.metadata).toMatchObject({
+          actorPrincipal: `agent:${AGENT.id}`,
+          relayNarrowing: true,
+          relayCallerContactId: person.contactId,
+          turnOrigin: attention.payload._turnOrigin,
+        });
+        expect(canReadBases(attentionTurn)).toBe(true);
+        assertDenied(attentionTurn);
+      });
+      expect(await admitThreadAttention(attention.sessionName, attention.payload, handle)).toBe(true);
+      expect(await admitThreadAttention(attention.sessionName, attention.payload, handle)).toBe(true);
+      expect(handle).toHaveBeenCalledTimes(1);
     },
   );
 

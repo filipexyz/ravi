@@ -76,6 +76,7 @@ function emptyRuntimeSession(): RuntimeSessionHandle {
 
 function streamingSession(prompt: string): RuntimeHostStreamingSession {
   return {
+    sessionKey: SESSION_KEY,
     agentId: AGENT_ID,
     queryHandle: emptyRuntimeSession(),
     starting: false,

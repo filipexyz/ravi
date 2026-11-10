@@ -1,5 +1,4 @@
 #!/usr/bin/env tsx
-import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Ravi Bot CLI - Unified command-line interface
  *
@@ -14,6 +13,7 @@ import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import "../daemon-stdin.js";
 // Loads ~/.ravi/.env before other modules initialize
 import "./env.js";
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 
 import "reflect-metadata";
 import { Command } from "commander";

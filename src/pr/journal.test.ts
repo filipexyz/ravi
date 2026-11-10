@@ -43,3 +43,15 @@ it("fails closed if the audit store breaks or an expired lease is acquired by an
   expect(() => second.record("objects", "confirmed")).toThrow("audit could not be persisted");
   second.close();
 });
+
+it("a channel consumer refuses an unprepared publication schema without creating audit tables", () => {
+  db = new Database(":memory:");
+  const argv = process.argv;
+  process.argv = [process.execPath, "index.js", "channels", "run"];
+  try {
+    expect(() => openPublicationJournal(plan, {}, db)).toThrow("Could not persist publication intent");
+    expect(db.query("SELECT name FROM sqlite_master").all()).toEqual([]);
+  } finally {
+    process.argv = argv;
+  }
+});

@@ -5,6 +5,7 @@ import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import type { RuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
+import type { ProviderCapacityRetryState } from "./provider-capacity-retry.js";
 import type { SkillGatePersistedListener } from "./skill-gate.js";
 import type {
   ChannelBackendPromptMetadata,
@@ -73,6 +74,8 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   queuedAt?: number;
   /** Original work for a fresh continuation after yielding to another reply surface. */
   yieldedRequest?: string;
+  /** Bounded capacity retry budget travels with this logical input across physical attempts. */
+  providerCapacityRetry?: ProviderCapacityRetryState;
 }
 
 export function runtimeTurnAttemptTerminalEventType(
@@ -85,10 +88,14 @@ export function runtimeTurnAttemptTerminalEventType(
 
 /** Streaming session - persistent runtime process that accepts messages via AsyncGenerator */
 export interface RuntimeHostStreamingSession {
+  /** Canonical session captured at launch; a reused name cannot rebind this handle. */
+  readonly sessionKey: string;
   /** Agent config used to start this runtime process. Changing it requires restart. */
   agentId: string;
   /** The runtime query handle */
   queryHandle: RuntimeSessionHandle;
+  /** Provider configuration captured before launching this handle. */
+  runtimeProviderConfigRevision?: number;
   /** True while the runtime provider is still bootstrapping */
   starting: boolean;
   /** Abort controller to kill the subprocess */
@@ -218,6 +225,14 @@ export interface RuntimeHostStreamingSession {
     materializedOutput: boolean;
     inputMutated?: boolean;
   };
+  /** Host-authorized next capacity attempt; distinct from the consumed physical turn. */
+  pendingCapacityRetry?: {
+    pendingIds: string[];
+    state: ProviderCapacityRetryState;
+    notBefore: number;
+  };
+  /** This scheduled retry was durably copied before daemon shutdown. */
+  capacityRetrySnapshotSaved?: boolean;
   /** Durable handoff failed before the prompt reached the provider. */
   durableTurnPreparationFailed?: boolean;
   /** Managed runtime credential selected for this provider process, if any. */

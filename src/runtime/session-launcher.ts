@@ -23,6 +23,10 @@ import {
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import {
+  createCapacityRetryCancellationHandler,
+  createCapacityRetryExhaustionHandler,
+} from "./capacity-retry-exhaustion.js";
 import { resolvePersistedUserText } from "./session-surface-hint.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
@@ -33,7 +37,7 @@ import {
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
-import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { isThreadAttentionPrompt, type RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeSessionStartLane } from "./session-pool.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
@@ -191,6 +195,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   }
   let resolvedSession;
   try {
+    // A broker cache miss can yield after identity resolution. An attention
+    // receipt still belongs to the exact parent and executor captured upstream.
+    if (isThreadAttentionPrompt(prompt)) resolveRuntimeSessionIdentity({ sessionName, prompt });
     resolvedSession = resolveRuntimeSession({
       sessionName,
       prompt,
@@ -305,8 +312,10 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   let modelBrokerPlanHandedToBuilder = false;
 
   const streamingSession: RuntimeHostStreamingSession = {
+    sessionKey: dbSessionKey,
     agentId: agent.id,
     queryHandle: createPendingRuntimeHandle(runtimeProviderId),
+    runtimeProviderConfigRevision: session.runtimeProviderConfigRevision ?? 0,
     starting: true,
     abortController,
     pushMessage: null,
@@ -396,6 +405,17 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
 
     modelBrokerPlanHandedToBuilder = true;
+    const capacityRetryHandlers = {
+      sessionName,
+      session,
+      agent,
+      runId,
+      runtimeProviderId,
+      instanceId,
+      streamingSession,
+      crashRecovery,
+      safeEmit,
+    };
     const builtRuntimeRequest = await buildRuntimeStartRequest({
       runId,
       sessionName,
@@ -421,6 +441,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
       crashRecovery,
       modelBrokerPlanClaim,
+      onCapacityRetryExhausted: createCapacityRetryExhaustionHandler(capacityRetryHandlers),
+      onCapacityRetryCancelled: createCapacityRetryCancellationHandler(capacityRetryHandlers),
     });
     runtimeCredentialAttempt = builtRuntimeRequest.runtimeCredentialAttempt;
     const { runtimeRequest, toolContext } = builtRuntimeRequest;

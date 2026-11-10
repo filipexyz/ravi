@@ -94,6 +94,7 @@ import { tightenStateDirPermissions } from "./security/state-dir-permissions.js"
 import { getRaviStateDir } from "./utils/paths.js";
 
 import { recordManagedRuntimeBoot } from "./runtime-process-identity.js";
+import { acquireDaemonSchemaOwnership, markDaemonSchemaReady } from "./db/daemon-schema-owner.js";
 
 const log = logger.child("daemon");
 
@@ -408,10 +409,12 @@ async function checkNatsExposureAtBoot(natsUrl: string): Promise<void> {
 }
 
 export async function startDaemon() {
+  acquireDaemonSchemaOwnership();
   maybeNeuterDaemonStdin();
   if (!recordManagedRuntimeBoot("ravi"))
     log.warn("Could not record process boot identity; runtime alignment will remain unverified");
   tightenStateDirAtBoot();
+  await (await import("./db/runtime-state.js")).initializeRuntimeState();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
@@ -617,6 +620,8 @@ export async function startDaemon() {
     hostCliGateway = null;
   }
 
+  await bot.consumerReady;
+  markDaemonSchemaReady();
   log.info("Daemon ready");
 
   // Notify restart reason after consumer is ready + delay to let sessions reconnect first.

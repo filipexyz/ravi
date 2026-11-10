@@ -27,6 +27,8 @@ export interface SlackMediaSendInput {
   readonly accountId: string;
   readonly chatId: string;
   readonly filePath: string;
+  /** Internal automatic delivery: bytes verified against a frozen terminal. Never reopen filePath when supplied. */
+  readonly fileBytes?: Buffer;
   readonly filename: string;
   readonly caption?: string;
   readonly threadId?: string;
@@ -57,6 +59,18 @@ export function resolveSlackMediaChannel(
   return findNativeChannelAccount(channels, accountId, { provider: "slack" });
 }
 
+/**
+ * Resolves the configured Slack account and performs the external-upload
+ * ticket, byte upload and completion sequence for the requested chat/thread.
+ * Supplied fileBytes are used directly without reopening filePath; their
+ * integrity must already have been checked by the automatic-delivery caller.
+ * Otherwise the file is read once. Successful completion returns a file id
+ * and, when Slack includes share metadata, a message timestamp.
+ *
+ * Configuration, file and provider errors reject. An error after an external
+ * request may leave accepted remote work: this helper has no receipt ledger,
+ * retry/idempotency guarantee or local-file cleanup.
+ */
 export async function sendSlackMedia(
   input: SlackMediaSendInput,
   dependencies: SlackMediaSendDependencies = {},
@@ -78,7 +92,7 @@ export async function sendSlackMedia(
     throw new Error(`Slack credentials not configured for channel "${channel.name}".`);
   }
 
-  const bytes = await readFile(input.filePath);
+  const bytes = input.fileBytes ?? (await readFile(input.filePath));
   const fetchImpl = dependencies.fetchImpl ?? fetch;
   const apiBaseUrl = (dependencies.apiBaseUrl ?? credentials.apiBaseUrl ?? DEFAULT_SLACK_API_BASE_URL).replace(
     /\/+$/,

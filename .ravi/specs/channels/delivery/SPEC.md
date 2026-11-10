@@ -63,6 +63,7 @@ Delivery state MUST support:
 - read
 - failed
 - cancelled
+- suppressed
 - dead_lettered
 - unknown
 
@@ -130,6 +131,7 @@ The channel runner MUST acknowledge the job only after:
 - sent or delivered state is persisted;
 - terminal failure is persisted;
 - cancellation is persisted;
+- terminal policy suppression is persisted;
 - dead-letter state is persisted after retry policy is exhausted.
 
 If the runner exits during delivery, the job MUST be redelivered, requeued or reconciled by idempotency.
@@ -149,9 +151,37 @@ A redelivery with a `sent`, `persisted` or `complete` receipt MUST NOT call the 
 
 Trace and delivery telemetry are at-least-once side effects: a process can exit after recording or publishing them but before recording the next SQLite state. Their payloads MUST include the request idempotency key, and consumers MUST deduplicate by that key when duplicate observations matter. `complete` MUST only be recorded after the telemetry publish returns and a NATS connection flush confirms that the server processed the publish. A failed flush MUST leave the receipt resumable and re-emit telemetry on retry.
 
-Receipts MUST be retained for at least twice the outbound workqueue's seven-day maximum age and then pruned by their last update time. This applies to complete receipts and to orphaned `claimed`, `sent` or `persisted` receipts after their source job has expired. Pruning MUST run at startup and periodically while the daemon remains alive, and MUST NOT delete any receipt updated inside the 14-day window or any claim whose lease is still active. Provider raw responses MUST NOT be retained in the receipt ledger; only the identities and timestamps required for recovery belong there.
+Receipts MUST be retained for at least twice the outbound workqueue's seven-day maximum age and then pruned by their last update time. This applies to complete receipts and to orphaned `claimed`, `sent` or `persisted` receipts after their source job has expired. Pruning MUST run at startup and periodically while the daemon remains alive, and MUST NOT delete any receipt updated inside the 14-day window or any claim whose lease is still active. Terminal `suppressed` receipts, canonical automatic terminal-part receipts, and receipts that prohibit ambiguous resend retain their compact identity permanently so expiry cannot reopen an old output. Provider raw responses MUST NOT be retained in the receipt ledger; only the identities and timestamps required for recovery belong there.
 
 Providers with native idempotency support SHOULD receive a deterministic provider token derived from the request idempotency key. Slack `chat.postMessage` MUST receive a stable UUID `client_msg_id` as a duplicate-suppression token. This reduces duplicate risk only to the extent that Slack honors that field; Ravi MUST NOT describe it as an exactly-once guarantee.
+
+For a grouped automatic terminal, publication wrapper identity MUST remain
+separate from canonical send-part identity. Retrying the same part through a
+different wrapper MUST use the same receipt and provider token. A provider
+accepting a request before its receipt is persisted remains an ambiguous crash
+window. Text retries MAY reuse the stable provider token; automatic media
+uploads without proven provider idempotency MUST retain a durable no-resend
+claim and report ambiguity instead of blindly repeating the upload.
+
+## Terminal Policy Suppression
+
+A policy that suppresses an unsent automatic output MUST persist a distinct
+`suppressed` receipt and reason while owning its delivery claim. It MUST NOT
+fabricate a provider message identity, `sent`/`persisted` timestamp or successful
+delivery. Reusing a suppressed output key MUST keep the original disposition,
+including after restart and after the policy's recovery deadline. Telemetry
+failure MAY retry telemetry, but MUST NOT retry the platform send.
+
+The publication outbox MUST also retain terminal `suppressed` state when that
+job is closed by policy. It MUST NOT leave the job pending or describe an
+unsent, unpublished output as published. If publication to the workqueue
+preceded the delivery decision, its historical publication timestamp MAY be
+retained, separately from the terminal suppression state. Neither reconciliation
+nor explicit publication retry may reopen a suppressed job. Policy suppression
+MUST NOT change runtime completion, canonical processing results or intake.
+The outbox MAY prune the suppressed payload after its normal retention period,
+but MUST retain a compact fingerprint/identity/reason tombstone that preserves
+the terminal disposition for later lookups and publication attempts.
 
 The default provider-send lease is five minutes. An adapter MUST normally finish before its claim expires. If it can remain in flight longer, it MUST either renew the claim before expiry or provide provider-side idempotency for concurrent retries with the stable token; otherwise it MUST fail closed instead of allowing an ambiguous resend.
 
@@ -170,3 +200,21 @@ The default provider-send lease is five minutes. An adapter MUST normally finish
 11. Provider send, durable receipt and canonical persistence MUST remain separately resumable phases; trace and telemetry remain explicitly at-least-once.
 12. The durable receipt MUST preserve the first successful provider response for an idempotency key.
 13. The publish outbox MAY coalesce pending duplicates of the same mapped provider-unavailable notice for the same delivery destination (channel, account, instance, chat and thread) and the same mapped text, keeping one copy and closing the rest as superseded. Duplicates waiting beyond the current reconciliation batch MUST also be closed, so a backlog larger than one batch cannot publish one extra copy per tick; reconciliation work per tick stays bounded to the due batch. Coalescing MUST be driven by that mapped failure class only and MUST NOT discard arbitrary chat text, even when it repeats verbatim.
+
+
+### Terminal handoff acceptance
+
+A publish-outbox save exception MUST be distinguished from publisher acceptance.
+An exact matching durable row or tombstone observed after a synchronous save
+failure settles handoff without a second publish. Missing state is retry evidence
+only after that concrete save has finished and returned a closed transient
+SQLite code; a timeout or unreadable row does not prove absence. Once save is
+positively known, publisher or subsequent bookkeeping failure MUST NOT turn the
+operation back into pre-save absence. Reconciliation remains responsible for
+pending publication, and suppression/coalescing MUST never reopen old keys.
+
+Job-level creation timestamps may differ across prepared attempts; the actual
+rendered request and its fingerprint MUST remain identical. Confirmation of
+save/publication does not prove platform delivery or exactly-once behavior.
+Text recovery MUST NOT gate independently committed media disposal or release,
+nor obtain media belonging to a successor.

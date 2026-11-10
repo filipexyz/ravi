@@ -46,8 +46,17 @@ typing.
 bun add @ravi-os/sdk
 ```
 
-The package is ESM-only and works anywhere `fetch` is available: Bun, Node 18+,
-modern browsers, Deno, and edge runtimes.
+The package is ESM-only and supports Bun, Node 18+, modern browsers, Deno, and
+edge runtimes. HTTP clients require `fetch`. Channel output handoff also requires
+SHA-256: Node and Bun use `node:crypto.webcrypto`, without a global-WebCrypto
+flag; browser/edge package resolvers use the portable WebCrypto helper and must
+provide `crypto.subtle`. Both the root and deep exports use the same internal
+package-import mapping.
+
+The output registry prepares identity before invoking a registered sink. A
+digest failure prevents that invocation, including a sink returning `void`.
+Successful `void` completion still means invocation only; a validated handoff
+confirmation means durable outbound acceptance, not delivery to the recipient.
 
 ## Start The Ravi Gateway
 

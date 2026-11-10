@@ -218,6 +218,51 @@ describe("Slack private credential intake boundary", () => {
     expect(JSON.stringify(h.ack.mock.calls[1]?.[1])).not.toContain("plain_text_input");
   });
 
+  it("shows the exact remote destination before input and retains its opaque receipt on replay", async () => {
+    const remote = {
+      destinationVersion: "47ebf6bb-6865-4478-bbbf-905f34b394aa",
+      bindingHash: "a".repeat(64),
+      label: "Billing production",
+      sshAlias: "billing",
+      host: "192.0.2.1",
+      port: 22,
+      user: "writer",
+      envPath: "/srv/billing/.env",
+      remoteTarget: "billing",
+      profile: "dotenv-single-line-v1" as const,
+      expectedVersion: "b".repeat(64),
+    };
+    const request = createIntakeRequest({ ...metadata, target: "remote:billing:API_TOKEN", remote });
+    let writes = 0;
+    const h = harness({
+      store: (claimed, secret) =>
+        storeIntakeSecret(claimed, secret, {
+          remoteStore: async (current, value) => {
+            writes++;
+            expect(current.remote).toEqual(remote);
+            expect(value).toBe(SECRET);
+            return { v: 1, status: "stored", receipt: "c".repeat(64), version: "d".repeat(64) };
+          },
+        }),
+    });
+    await h.open(request.id);
+    const modal = JSON.stringify(h.opens[0]);
+    for (const field of [remote.envPath, remote.host, "API_TOKEN", "adicionar somente"]) {
+      expect(modal.indexOf(field)).toBeLessThan(modal.indexOf("plain_text_input"));
+    }
+    const payload = submission(request.id);
+    await h.service.handleEnvelope(payload, h.ack);
+    expect(JSON.stringify(h.updates)).toContain("Recibo");
+    expect(JSON.stringify(h.updates)).toContain("ainda precisa carregar");
+    expect(JSON.stringify(h.updates)).toContain(remote.envPath);
+    await h.service.handleEnvelope(submission(request.id), h.ack);
+    expect(writes).toBe(1);
+    expect(JSON.stringify(h.ack.mock.calls.at(-1))).toContain("Recibo");
+    expect(h.published).toEqual([]);
+    expect(h.prompts).toEqual([]);
+    expect(JSON.stringify([payload, h.opens, h.updates, h.ack.mock.calls]) + databaseSnapshot()).not.toContain(SECRET);
+  });
+
   it("stores a provider connection using its existing parser and secret backend only", async () => {
     const request = createIntakeRequest({ ...metadata, target: "connection:slack:test", backend: "keychain" });
     const secret = JSON.stringify({ appToken: "xapp-test-only-123456789", botToken: "xoxb-test-only-123456789" });

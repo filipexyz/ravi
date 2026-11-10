@@ -1,10 +1,13 @@
+import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/state-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { dirname } from "node:path";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { executeWrite, resetWriteCounter } from "../db/write-retry.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage } from "../utils/pagination.js";
-import { getRaviStateDir } from "../utils/paths.js";
+import { getCredentialsDbPath } from "../db/state-paths.js";
+export { getCredentialsDbPath } from "../db/state-paths.js";
 import type {
   CredentialAuditEvent,
   CredentialAuditEventInput,
@@ -55,10 +58,6 @@ export interface ListCredentialConnectionsInput {
   includeDisabled?: boolean;
   limit?: number | string | null;
   offset?: number | string | null;
-}
-
-export function getCredentialsDbPath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.RAVI_CREDENTIALS_DB_PATH?.trim() || join(getRaviStateDir(env), "credentials.db");
 }
 
 export function ensureCredentialTables(options: CredentialStoreOptions = {}): void {
@@ -333,11 +332,12 @@ export function closeCredentialsDb(): void {
 
 function getCredentialDb(options: CredentialStoreOptions = {}): Database {
   const path = options.dbPath ?? getCredentialsDbPath(options.env);
+  assertDatabaseTargetAllowed(path, { env: options.env });
   if (handle?.path === path) return handle.db;
   handle?.db.close();
   mkdirSync(dirname(path), { recursive: true });
-  const db = new Database(path, { create: true });
-  db.exec("PRAGMA journal_mode = WAL");
+  const db = openStateDatabase(path, { create: true }, { env: options.env });
+  configureStateJournalMode(db);
   db.exec("PRAGMA foreign_keys = ON");
   ensureSchema(db);
   handle = { db, path };
@@ -345,6 +345,10 @@ function getCredentialDb(options: CredentialStoreOptions = {}): Database {
 }
 
 function ensureSchema(db: Database): void {
+  initializeStateSchema(db, "credentials", () => migrateSchema(db));
+}
+
+function migrateSchema(db: Database): void {
   migrateFileBackend(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS credential_connections (

@@ -75,6 +75,8 @@ export interface CommandOptions {
   name: string;
   description: string;
   aliases?: string[];
+  /** At least one of these option names is required by the command's input contract. */
+  requiredAnyOfOptions?: readonly string[];
   /**
    * Optional extended help text rendered after the auto-generated usage section
    * (`commander addHelpText("after", ...)`). Use for educational examples, flag

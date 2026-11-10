@@ -11,7 +11,11 @@ import {
   intakeMetadataSchema,
   normalizeIntakeTarget,
   IntakeError,
+  getIntakeRequest,
+  reconcileRemoteIntakeRequest,
 } from "../../credentials/intake.js";
+import { prepareRemoteIntake } from "../../credentials/remote-intake.js";
+import { RemoteCredentialError } from "../../credentials/remote/ssh.js";
 import { getContext, type ToolContext } from "../context.js";
 import { ContractError, contractDryRun, contractFail } from "../agent-contract.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
@@ -40,6 +44,9 @@ export interface CredentialIntakeCommandDeps {
   client(channel: ChannelConfig): Promise<Pick<SlackWebApiClient, "authTest" | "postEphemeral">>;
   create: typeof createIntakeRequest;
   cancel: typeof cancelIntakeRequest;
+  prepareRemote?: typeof prepareRemoteIntake;
+  get?: typeof getIntakeRequest;
+  reconcile?: typeof reconcileRemoteIntakeRequest;
 }
 
 const defaults: CredentialIntakeCommandDeps = {
@@ -82,7 +89,11 @@ export class CredentialIntakeCommands {
     name: "request",
     description: "Send a private Slack button to add an API credential; accepts metadata only",
     helpAfter: `
-Targets: env:<allowlisted secret key> or connection:<provider>:<connection>.
+Targets: env:<allowlisted secret key>, connection:<provider>:<connection>,
+or remote:<registered destination>:<KEY>. Remote destinations are registered
+by an operator with credentials destinations register. Remote requests only
+add an absent key, bind the displayed destination and current file version,
+and never copy a local .env or restart the remote application.
 Runs in the current Slack conversation. The recipient needs
 mutate:credentials.secrets:<target>; the caller needs
 mutate:credentials.requests:<target>. No permission is granted by this command.
@@ -108,7 +119,8 @@ Example: ravi credentials request connection:slack:secondary --user U123ABC
   })
   @Returns(requestResultSchema)
   async request(
-    @Arg("target", { description: "env:<key> or connection:<provider>:<connection>" }) target: string,
+    @Arg("target", { description: "env:<key>, connection:<provider>:<connection> or remote:<destination>:<KEY>" })
+    target: string,
     @Option({ flags: "--user <id>", description: "Slack user who will provide the credential privately" })
     user?: string,
     @Option({ flags: "--reason <text>", description: "Why the credential is needed (never include a secret)" })
@@ -202,7 +214,11 @@ Example: ravi credentials request connection:slack:secondary --user U123ABC
       const client = await this.deps.client(channel);
       const identity = await client.authTest();
       if (!identity.team_id || !/^T[A-Z0-9]+$/.test(identity.team_id)) throw new Error("INTAKE_WORKSPACE_UNRESOLVED");
-      const request = this.deps.create({ ...metadata, teamId: identity.team_id });
+      const remote =
+        normalized.kind === "remote"
+          ? await (this.deps.prepareRemote ?? prepareRemoteIntake)(normalized.destinationId, normalized.key)
+          : undefined;
+      const request = this.deps.create({ ...metadata, teamId: identity.team_id, ...(remote ? { remote } : {}) });
       try {
         await client.postEphemeral({
           channel: metadata.channelId,
@@ -233,7 +249,7 @@ Example: ravi credentials request connection:slack:secondary --user U123ABC
       if (error instanceof ContractError) throw error;
       // Do not serialize parser errors, Slack responses, backend errors or causes.
       const code =
-        error instanceof IntakeError
+        error instanceof IntakeError || error instanceof RemoteCredentialError
           ? error.code
           : error instanceof z.ZodError
             ? "INTAKE_METADATA_INVALID"
@@ -241,6 +257,77 @@ Example: ravi credentials request connection:slack:secondary --user U123ABC
       failIntake(
         code,
         "Credential request could not be created. Check the target, recipient and direct Slack account.",
+        asJson,
+      );
+    }
+  }
+
+  @Command({
+    name: "request-status",
+    description: "Reconcile a remote credential request without reading or resubmitting its secret",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "credentials.requests",
+    action: "request-status",
+    risk: "low",
+    resourceId: "target",
+    requireConcreteResource: true,
+    input: ["target"],
+  })
+  @Returns(
+    z
+      .object({
+        requestId: z.string(),
+        target: z.string(),
+        status: z.string(),
+        receipt: z.string().optional(),
+        activation: z.literal("not_requested"),
+      })
+      .strict(),
+  )
+  async requestStatus(
+    @Arg("target", { description: "remote:<destination>:<KEY>" }) target: string,
+    @Arg("requestId", { description: "Opaque request ID returned by credentials request" }) requestId: string,
+    @Option({ flags: "--json", description: "Print metadata and receipt only" }) asJson?: boolean,
+  ) {
+    try {
+      const ctx = this.deps.context()?.context;
+      const source = ctx?.source;
+      const request = (this.deps.get ?? getIntakeRequest)(requestId);
+      if (
+        !ctx ||
+        !source ||
+        source.channel !== "slack" ||
+        !request ||
+        request.target !== target ||
+        normalizeIntakeTarget(target).kind !== "remote" ||
+        request.issuerAgentId !== ctx.agentId ||
+        request.issuerSessionKey !== ctx.sessionKey ||
+        request.accountId !== source.accountId ||
+        request.channelId !== source.chatId ||
+        request.threadTs !== source.threadId ||
+        !request.actorContactId
+      ) {
+        throw new IntakeError("INTAKE_NOT_AVAILABLE");
+      }
+      // The remote status boundary also checks the live issuer and human authority.
+      const current = await (this.deps.reconcile ?? reconcileRemoteIntakeRequest)(requestId);
+      const result = {
+        requestId,
+        target,
+        status: current.status,
+        ...(current.status === "stored" && current.fingerprint ? { receipt: current.fingerprint } : {}),
+        activation: "not_requested" as const,
+      };
+      if (asJson) console.log(JSON.stringify(result));
+      else console.log(`Credential request: ${result.status}. Application activation was not requested.`);
+      return result;
+    } catch (error) {
+      if (error instanceof ContractError) throw error;
+      failIntake(
+        error instanceof IntakeError || error instanceof RemoteCredentialError ? error.code : "INTAKE_STATUS_FAILED",
+        "Credential status could not be verified. Do not resubmit the secret until its state is known.",
         asJson,
       );
     }

@@ -416,13 +416,6 @@
       "count": 1
     },
     {
-      "id": "src/channels/outbound-consumer.ts:1e5d66673b54fd42a0882209",
-      "file": "src/channels/outbound-consumer.ts",
-      "boundary": "channels",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
       "id": "src/channels/outbound-consumer.ts:65f8637fdd10846a0e3c79da",
       "file": "src/channels/outbound-consumer.ts",
       "boundary": "channels",
@@ -439,13 +432,6 @@
     {
       "id": "src/channels/outbound-consumer.ts:d058fca965fd50db8493d159",
       "file": "src/channels/outbound-consumer.ts",
-      "boundary": "channels",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/channels/outbound-publish-outbox.ts:d83c64649e39a54ee907d38f",
-      "file": "src/channels/outbound-publish-outbox.ts",
       "boundary": "channels",
       "rule": "surface-bypasses-constructor",
       "count": 1
@@ -1273,13 +1259,6 @@
       "id": "src/cli/commands/self.ts:baedabaf40aa5665fd263637",
       "file": "src/cli/commands/self.ts",
       "boundary": "cli",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/cli/commands/sessions.ts:0df79efb6780ab0724c4125a",
-      "file": "src/cli/commands/sessions.ts",
-      "boundary": "sessions",
       "rule": "catch-without-binding",
       "count": 1
     },
@@ -2227,13 +2206,6 @@
       "boundary": "daemon.ts",
       "rule": "catch-without-binding",
       "count": 1
-    },
-    {
-      "id": "src/db.ts:c6978c968e80ffb42dda9b1d",
-      "file": "src/db.ts",
-      "boundary": "db.ts",
-      "rule": "catch-without-binding",
-      "count": 2
     },
     {
       "id": "src/db/read-watchdog.ts:43c5de7e031c12444519e89b",
@@ -4315,13 +4287,6 @@
       "count": 1
     },
     {
-      "id": "src/router/router-db.ts:99b3e500a1e454bfa7a36c7f",
-      "file": "src/router/router-db.ts",
-      "boundary": "router",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/router/router-db.ts:9ede63713cc288420d24b976",
       "file": "src/router/router-db.ts",
       "boundary": "router",
@@ -4473,13 +4438,6 @@
       "file": "src/runtime/codex-provider.ts",
       "boundary": "runtime-chat",
       "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/runtime/codex-provider.ts:94088f21db40084b4cad3177",
-      "file": "src/runtime/codex-provider.ts",
-      "boundary": "runtime-chat",
-      "rule": "surface-bypasses-constructor",
       "count": 1
     },
     {
@@ -5954,7 +5912,7 @@
     }
   ],
   "totals": {
-    "violations": 891,
+    "violations": 884,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5968,16 +5926,16 @@
       "src/bridge": 4,
       "src/bug-report": 2,
       "src/calendar": 2,
-      "src/channels": 27,
+      "src/channels": 25,
       "src/channels/native": 7,
       "src/channels/slack": 15,
       "src/ci": 1,
       "src/cli": 34,
-      "src/cli/commands": 145,
+      "src/cli/commands": 144,
       "src/cloud-agents": 30,
       "src/cloud-auth": 10,
       "src/console-scope": 5,
-      "src": 45,
+      "src": 43,
       "src/costs": 2,
       "src/crm": 1,
       "src/cron": 5,
@@ -6019,8 +5977,8 @@
       "src/pr": 14,
       "src/prox/calls": 5,
       "src/reference": 1,
-      "src/router": 25,
-      "src/runtime": 100,
+      "src/router": 24,
+      "src/runtime": 99,
       "src/sandbox": 3,
       "src/sdk/gateway": 9,
       "src/sdk/gateway/streaming": 6,

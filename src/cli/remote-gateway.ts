@@ -1013,7 +1013,7 @@ function remoteContractFailureMessage(
   code?: string,
 ): string {
   if (outcome === "denied") return sanitizePublicContractMessage(sourceMessage) ?? "Remote gateway denied the command.";
-  if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
+  if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage, true);
   if (op === PAGES_DOMAINS_OP && code === "DOMAIN_SETUP_REQUIRED" && sourceMessage) {
     return safeDomainSetupMessage(sourceMessage);
   }
@@ -1050,12 +1050,16 @@ function remoteContractFailureMessage(
 function remoteValidationFailureMessage(
   issues?: ReturnType<typeof projectPublicIssues>,
   sourceMessage?: unknown,
+  canonical = false,
 ): string {
   const first = issues?.[0];
   if (first) {
     const path = first.path.filter((item) => item !== "<unknown>").join(".");
     return path ? `${path}: ${first.message}` : first.message;
   }
+  // A validated contract already declares a public diagnostic. Keep the bounded
+  // single-line redactor, not a vocabulary allowlist that can erase handler guidance.
+  // Unstructured responses still need the narrower local-validation projection.
   const safe = boundedRemoteLine(sourceMessage, LIBRARY_REMOTE_MESSAGE_MAX);
   if (
     safe &&
@@ -1063,6 +1067,7 @@ function remoteValidationFailureMessage(
     !looksLikeProviderDump(sourceMessage) &&
     !/\bctx_/.test(sourceMessage)
   ) {
+    if (canonical) return safe;
     if (
       safe === sourceMessage &&
       (REMOTE_PROFILE_INSPECTION_MESSAGE.test(safe) ||

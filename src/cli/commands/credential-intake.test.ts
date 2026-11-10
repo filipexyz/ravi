@@ -7,6 +7,21 @@ import { enforceCliCommandAccess } from "../command-access.js";
 import { runWithContext, type ToolContext } from "../context.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import type { ContextRecord, ChannelConfig } from "../../router/router-db.js";
+import type { IntakeRequest } from "../../credentials/intake.js";
+
+const remoteSnapshot = {
+  destinationVersion: "47ebf6bb-6865-4478-bbbf-905f34b394aa",
+  bindingHash: "a".repeat(64),
+  label: "Billing production",
+  sshAlias: "billing",
+  host: "192.0.2.1",
+  port: 22,
+  user: "writer",
+  envPath: "/srv/billing/.env",
+  remoteTarget: "billing",
+  profile: "dotenv-single-line-v1" as const,
+  expectedVersion: "b".repeat(64),
+};
 
 let stateDir: string;
 beforeEach(async () => {
@@ -81,6 +96,104 @@ function fixture() {
 }
 
 describe("credential request CLI", () => {
+  it("preflights a registered remote destination only on execute and binds its snapshot", async () => {
+    const f = fixture();
+    let preflights = 0;
+    f.deps.prepareRemote = async (destination, key) => {
+      preflights++;
+      expect([destination, key]).toEqual(["billing", "API_TOKEN"]);
+      return remoteSnapshot;
+    };
+    await expect(
+      f.command.request(
+        "remote:billing:API_TOKEN",
+        "U123ABC",
+        "Connect billing",
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toMatchObject({ exitCode: 3 });
+    expect(preflights).toBe(0);
+    expect(f.calls).toEqual([]);
+    await f.command.request(
+      "remote:billing:API_TOKEN",
+      "U123ABC",
+      "Connect billing",
+      undefined,
+      undefined,
+      undefined,
+      true,
+      true,
+    );
+    expect(preflights).toBe(1);
+    expect(f.calls[1]).toMatchObject({ target: "remote:billing:API_TOKEN", remote: remoteSnapshot });
+    const invitation = JSON.stringify(f.calls.at(-1));
+    for (const field of [remoteSnapshot.envPath, remoteSnapshot.host, "API_TOKEN"]) expect(invitation).toContain(field);
+  });
+
+  it("does not issue an invitation when remote preflight fails", async () => {
+    const f = fixture();
+    f.deps.prepareRemote = async () => {
+      throw new Error("PRIVATE_REMOTE_DIAGNOSTIC");
+    };
+    await expect(
+      f.command.request(
+        "remote:billing:API_TOKEN",
+        "U123ABC",
+        "Connect billing",
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    ).rejects.toMatchObject({ code: "INTAKE_REQUEST_FAILED" });
+    expect(f.calls).toEqual(["client"]);
+  });
+
+  it("binds status reconciliation to the issuing agent/session and exact Slack source", async () => {
+    const f = fixture();
+    const r: IntakeRequest = {
+      id: "intake-request",
+      target: "remote:billing:API_TOKEN",
+      accountId: "slack-test",
+      teamId: "T123ABC",
+      userId: "U123ABC",
+      channelId: "C123ABC",
+      threadTs: "1234.000001",
+      reason: "Connect billing",
+      issuerAgentId: "intake-test",
+      issuerSessionKey: "intake-session",
+      actorContactId: "contact-test",
+      status: "pending",
+      remote: remoteSnapshot,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 600000,
+    };
+    f.deps.get = () => r;
+    let calls = 0;
+    f.deps.reconcile = async () => {
+      calls++;
+      return { ...r, status: "stored", fingerprint: "c".repeat(64) };
+    };
+    const result = await f.command.requestStatus(r.target, r.id, true);
+    expect(result).toMatchObject({ status: "stored", receipt: "c".repeat(64), activation: "not_requested" });
+    for (const patch of [
+      { agentId: "other" },
+      { sessionKey: "other" },
+      { source: { ...f.ctx.context!.source!, threadId: "other" } },
+    ]) {
+      const original = f.ctx.context!;
+      f.ctx.context = { ...original, ...patch };
+      await expect(f.command.requestStatus(r.target, r.id, true)).rejects.toMatchObject({
+        code: "INTAKE_NOT_AVAILABLE",
+      });
+      f.ctx.context = original;
+    }
+    expect(calls).toBe(1);
+  });
   it("rejects a projected Slack source without an authenticated Slack source", async () => {
     const f = fixture();
     delete f.ctx.context!.source;

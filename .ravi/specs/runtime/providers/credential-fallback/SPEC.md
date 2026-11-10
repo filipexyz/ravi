@@ -463,6 +463,18 @@ The runtime host MUST NOT automatically re-run a turn after any provider tool st
 
 Provider overload and network transient failures SHOULD use normal retry/backoff policy, not credential exhaustion marking, unless provider data proves the credential/account is the constrained resource.
 
+### Transient capacity within one logical turn
+
+- Capacity retry MUST require structured HTTP `429`/`503`/`529` or an allowlisted provider capacity/rate-limit code. Quota, billing, authentication, ordinary `400`, assistant text and tool result bodies MUST NOT activate this path. A legacy native capacity sentence MAY be normalized only by its provider adapter at a real error-envelope boundary using an exact signature.
+- Native error normalization MUST retain status, code/type, retry headers and compatible provider session state through `turn.failed`, including JSON-RPC rejection and failure of the first turn.
+- The host MUST use the existing current-turn input replay lane and preserve actor, input ordering, logical channel binding and provider session. It MUST NOT consume a queued successor as retry input or write a duplicate user message.
+- Retry MUST require existing replay authority or affirmative provider proof of a pre-execution rejection, and MUST remain fenced by tools, materialized output, changed input, interruption and durable ownership. Sparse event streams and omitted terminal items are not proof. Codex terminal readback MUST establish a full item list containing no execution/output items (empty or only the original matching user input) for the matching failed turn before granting pre-execution proof.
+- A transient capacity retry MUST use exponential equal jitter (base 1 second, cap 8 seconds), at most three retries, and at most 30 seconds elapsed from the first failure before scheduling another attempt. Provider execution duration counts toward this budget. `Retry-After` is a floor; when it cannot fit, the host MUST stop rather than shorten it.
+- Retry state MUST remain attached to the failed turn input across any runtime restart. Capacity handling MUST precede credential rotation so a different path cannot reset the budget. Model-broker authorization remains mandatory.
+- A graceful-restart snapshot taken during capacity backoff MUST retain only the explicitly authorized retry cohort as pending-only work. The spent count, first-failure time and absolute Retry-After/backoff deadline MUST survive serialization. Resume MUST consume the remaining delay without incrementing or resetting the budget and MUST enforce expiry before provider handoff. A generic terminal attempt without a scheduling checkpoint remains consumed.
+- Waiting MUST be cancellable by explicit abort and MUST not lose or borrow the authority of queued successors.
+- Exhaustion MUST terminalize with `provider_capacity_exhausted`, retain compatible provider session state, and disclose model saturation in the channel. A turn with prior effects MUST stop with a distinct replay-unsafe reason and preserve completed work. Intermediate capacity failures MUST NOT emit terminal channel errors.
+
 Default limits:
 
 - `maxCredentialAttemptsPerTurn`: 3
@@ -603,3 +615,6 @@ JSON output MUST redact secrets and include enough health data for automation.
 - Letting implicit process env override a managed credential slot.
 - Refreshing an external provider-native token without locking or without syncing fresher external state first.
 - Switching active provider as a side effect of refreshing or rotating a credential.
+
+- A restored capacity retry that expires or is cancelled during physical-turn preparation MUST release that turn's authority exactly once before yielding a successor or returning.
+- Capacity retries of consolidated thread reports MUST keep the complete original input cohort ahead of fresh input; a retry receives a new physical delivery id without admitting newly queued reports into that cohort.

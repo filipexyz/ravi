@@ -13570,6 +13570,30 @@ public struct CredentialsRequestReturn: Codable, Sendable {
   }
 }
 
+public struct CredentialsRequestStatusReturn: Codable, Sendable {
+  public var activation: String
+  public var receipt: String?
+  public var requestId: String
+  public var status: String
+  public var target: String
+
+  public init(activation: String, receipt: String? = nil, requestId: String, status: String, target: String) {
+    self.activation = activation
+    self.receipt = receipt
+    self.requestId = requestId
+    self.status = status
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case activation = "activation"
+    case receipt = "receipt"
+    case requestId = "requestId"
+    case status = "status"
+    case target = "target"
+  }
+}
+
 public struct CrmAccountReturn: Codable, Sendable {
   public var crm: [String: RaviJSON]
   public var target: String
@@ -24562,17 +24586,15 @@ public struct PrPublishOptions: Codable, Sendable {
   public var dryRun: Bool?
   public var execute: Bool?
   public var expectSha: String?
-  public var replySession: String?
   public var repo: String?
   public var title: String?
 
-  public init(base: String? = nil, bodyFile: String? = nil, dryRun: Bool? = nil, execute: Bool? = nil, expectSha: String? = nil, replySession: String? = nil, repo: String? = nil, title: String? = nil) {
+  public init(base: String? = nil, bodyFile: String? = nil, dryRun: Bool? = nil, execute: Bool? = nil, expectSha: String? = nil, repo: String? = nil, title: String? = nil) {
     self.base = base
     self.bodyFile = bodyFile
     self.dryRun = dryRun
     self.execute = execute
     self.expectSha = expectSha
-    self.replySession = replySession
     self.repo = repo
     self.title = title
   }
@@ -24583,7 +24605,6 @@ public struct PrPublishOptions: Codable, Sendable {
     case dryRun = "dryRun"
     case execute = "execute"
     case expectSha = "expectSha"
-    case replySession = "replySession"
     case repo = "repo"
     case title = "title"
   }
@@ -24603,9 +24624,6 @@ public struct PrPublishOptions: Codable, Sendable {
     }
     if let value = self.expectSha {
       body["expectSha"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.replySession {
-      body["replySession"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.repo {
       body["repo"] = try RaviJSON.fromEncodable(value)
@@ -29751,6 +29769,78 @@ public typealias SessionsSetThinkingReturn = [String: RaviJSON]
 public typealias SessionsSetTtlReturn = [String: RaviJSON]
 
 public typealias SessionsSubscriptionsReturn = [String: RaviJSON]
+
+public struct SessionsThreadConfigureOptions: Codable, Sendable {
+  public var effort: String?
+  public var model: String?
+  public var provider: String?
+  public var session: String?
+  public var thinking: String?
+
+  public init(effort: String? = nil, model: String? = nil, provider: String? = nil, session: String? = nil, thinking: String? = nil) {
+    self.effort = effort
+    self.model = model
+    self.provider = provider
+    self.session = session
+    self.thinking = thinking
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case effort = "effort"
+    case model = "model"
+    case provider = "provider"
+    case session = "session"
+    case thinking = "thinking"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.effort {
+      body["effort"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.model {
+      body["model"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.provider {
+      body["provider"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.thinking {
+      body["thinking"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsThreadConfigureReturn: Codable, Sendable {
+  public var actionId: String
+  public var after: RaviJSON
+  public var appliesOn: String
+  public var before: RaviJSON
+  public var changed: Bool
+  public var status: String
+  public var thread: RaviJSON
+
+  public init(actionId: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, status: String, thread: RaviJSON) {
+    self.actionId = actionId
+    self.after = after
+    self.appliesOn = appliesOn
+    self.before = before
+    self.changed = changed
+    self.status = status
+    self.thread = thread
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "actionId"
+    case after = "after"
+    case appliesOn = "appliesOn"
+    case before = "before"
+    case changed = "changed"
+    case status = "status"
+    case thread = "thread"
+  }
+}
 
 public struct SessionsThreadSendOptions: Codable, Sendable {
   public var session: String?

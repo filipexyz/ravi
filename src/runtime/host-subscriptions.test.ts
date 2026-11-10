@@ -11,6 +11,7 @@ function streamingSession(
   control: (request: RuntimeControlRequest) => Promise<RuntimeControlResult>,
 ): RuntimeHostStreamingSession {
   return {
+    sessionKey: "agent:agent-a:control-fixture",
     agentId: "agent-a",
     queryHandle: { provider: "codex", events: emptyEvents(), interrupt: async () => {}, control },
     starting: false,

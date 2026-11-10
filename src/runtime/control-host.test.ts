@@ -18,6 +18,7 @@ function createStreamingSession(
   control: (request: RuntimeControlRequest) => Promise<RuntimeControlResult>,
 ): RuntimeHostStreamingSession {
   return {
+    sessionKey: "agent:agent-a:session-a",
     agentId: "agent-a",
     queryHandle: {
       provider: "pi",

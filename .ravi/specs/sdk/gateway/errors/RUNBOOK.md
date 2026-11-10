@@ -1,5 +1,27 @@
 # Diagnosis and evidence
 
+## Issue-less usage errors (2026-11-10)
+
+The installed bundle's validation-message helper passed issue-less messages
+through a local payload vocabulary filter. A valid public handler reason outside
+that vocabulary became `Remote gateway rejected the command input.` Current
+`dev` already admitted some exact permission-profile sentences, but other real
+reasons such as `No current chat in this context; pass --chat <chat-id>.` still
+failed. The canonical relay now applies the shared bounded redactor without
+requiring those phrases. The field-issue, malformed-response and unsafe-dump
+boundaries remain in place.
+
+For a reported `CONTACT_NOT_FOUND` on an existing contact, compare the actual
+gateway destination, installed bundle version and daemon's selected state before
+changing grants. `permissions allow` resolves contact targets through
+`getContact(target.id)` before profile/scope/executor planning; `--agent` selects
+the executor ceiling and does not select a contact database. On baseline
+`5bac836c`, lookup starts with the exact canonical id in `chat.db`. A synthetic
+existing contact with an explicit executor resolves in an isolated test. The
+reported VPS false negative was not reproduced here; its cause remains unknown
+and is separate from the transport masking. No production permission or contact
+state was changed to investigate it.
+
 Baseline: `caf65661` (origin/dev at worktree creation). This investigation used
 source and isolated fixtures only, never the production database. The table
 below is static reachability evidence, not a claim that every endpoint was

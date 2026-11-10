@@ -681,7 +681,13 @@ describe("native channel driver contract", () => {
     ).toThrow("scope_mismatch");
 
     lease.dispose();
-    await expect(channelOutputSinks.emit(envelope)).rejects.toThrow("unavailable");
+    await expect(channelOutputSinks.emit(envelope)).rejects.toMatchObject({
+      evidence: {
+        disposition: "not_started",
+        code: "SINK_UNAVAILABLE",
+        operationFinished: true,
+      },
+    });
   });
 
   it("rejects duplicate driver ownership without replacing the registered driver", () => {

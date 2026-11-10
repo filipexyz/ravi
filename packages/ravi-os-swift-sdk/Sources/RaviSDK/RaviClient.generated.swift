@@ -2660,6 +2660,13 @@ public struct CredentialsNamespace: Sendable {
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["credentials"], command: "request", body: requestBody, as: CredentialsRequestReturn.self)
   }
+
+  public func requestStatus(_ target: String, _ requestId: String) async throws -> CredentialsRequestStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["target"] = try RaviJSON.fromEncodable(target)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    return try await transport.call(groupSegments: ["credentials"], command: "request-status", body: requestBody, as: CredentialsRequestStatusReturn.self)
+  }
 }
 
 public struct CredentialsConnectionsNamespace: Sendable {
@@ -5957,6 +5964,13 @@ public struct SessionsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     return try await transport.call(groupSegments: ["sessions"], command: "subscriptions", body: requestBody, as: SessionsSubscriptionsReturn.self)
+  }
+
+  public func threadConfigure(_ thread: String, _ options: SessionsThreadConfigureOptions) async throws -> SessionsThreadConfigureReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["thread"] = try RaviJSON.fromEncodable(thread)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "thread-configure", body: requestBody, as: SessionsThreadConfigureReturn.self)
   }
 
   public func threadSend(_ thread: String, _ message: String, _ options: SessionsThreadSendOptions = .init()) async throws -> SessionsThreadSendReturn {

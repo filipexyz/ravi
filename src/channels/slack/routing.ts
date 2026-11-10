@@ -1,5 +1,4 @@
 import type {
-  SlackBotMessageAliasesByChat,
   SlackEventPayload,
   SlackRootReplyMode,
   SlackRoutingPolicy,
@@ -16,15 +15,17 @@ export const DEFAULT_SLACK_ROUTING_POLICY: SlackRoutingPolicy = {
   subscriptionScope: "thread",
   threadReplyMode: "same_thread",
   rootReplyMode: "channel_root",
-  botMessageAliasesByChat: {},
 };
 
 export interface SlackMessageEventIgnoreOptions {
   readonly selfBotId?: string;
   readonly selfUserId?: string;
-  readonly botMessageAliasesByChat?: SlackBotMessageAliasesByChat;
 }
 
+/**
+ * Returns a complete policy without mutating input. Each absent or unrecognized
+ * field independently falls back to the built-in policy, preserving valid peers.
+ */
 export function normalizeSlackRoutingPolicy(input: Partial<SlackRoutingPolicy> = {}): SlackRoutingPolicy {
   return {
     subscriptionScope: isSlackSubscriptionScope(input.subscriptionScope)
@@ -36,7 +37,6 @@ export function normalizeSlackRoutingPolicy(input: Partial<SlackRoutingPolicy> =
     rootReplyMode: isSlackRootReplyMode(input.rootReplyMode)
       ? input.rootReplyMode
       : DEFAULT_SLACK_ROUTING_POLICY.rootReplyMode,
-    botMessageAliasesByChat: normalizeSlackBotMessageAliasesByChat(input.botMessageAliasesByChat),
   };
 }
 
@@ -48,6 +48,10 @@ export function slackRoutingPolicyFromEnv(env: NodeJS.ProcessEnv = process.env):
   });
 }
 
+/**
+ * Resolves each field from valid channel defaults, then the environment, then
+ * built-in defaults. Invalid channel values do not mask a valid environment value.
+ */
 export function slackRoutingPolicyFromChannelDefaults(
   defaults: Record<string, unknown> | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -63,7 +67,6 @@ export function slackRoutingPolicyFromChannelDefaults(
     rootReplyMode: isSlackRootReplyMode(defaults?.rootReplyMode)
       ? defaults.rootReplyMode
       : environmentPolicy.rootReplyMode,
-    botMessageAliasesByChat: defaults?.botMessageAliasesByChat as SlackBotMessageAliasesByChat | undefined,
   });
 }
 
@@ -98,6 +101,12 @@ export function slackPeerKindForChannelType(channelType: string | undefined): "d
   return channelType === "im" ? "dm" : "group";
 }
 
+/**
+ * Rejects structurally unsupported events, unidentified senders and local-bot
+ * echoes. Bot candidates require at least one known local identity for the
+ * self check; eligible foreign bots need no mention or addressing prefix.
+ * Installation proof and route/channel admission remain caller responsibilities.
+ */
 export function shouldIgnoreSlackMessageEvent(
   event: SlackEventPayload,
   options: SlackMessageEventIgnoreOptions = {},
@@ -115,15 +124,8 @@ export function shouldIgnoreSlackMessageEvent(
   if (!selfBotId && !selfUserId) return true;
   if ((selfBotId && botId === selfBotId) || (selfUserId && userId === selfUserId)) return true;
 
-  const text = typeof event.text === "string" ? event.text : "";
-  return !(
-    (selfUserId && slackTextMentionsUser(text, selfUserId)) ||
-    isSlackMessageAddressedByAlias({
-      channelId: cleanSlackId(event.channel),
-      text,
-      aliasesByChat: options.botMessageAliasesByChat,
-    })
-  );
+  // Foreign bots follow the normal route/channel policy without an extra addressing gate.
+  return false;
 }
 
 /** True when the text carries an explicit Slack mention of `userId` (`<@U…>` or `<@U…|label>`). */
@@ -185,44 +187,4 @@ function isSlackRootReplyMode(value: unknown): value is SlackRootReplyMode {
 
 function isSupportedSlackMessageSubtype(value: string | undefined): boolean {
   return !value || value === "thread_broadcast" || value === "file_share" || value === "bot_message";
-}
-
-function isSlackMessageAddressedByAlias(input: {
-  channelId: string | undefined;
-  text: string;
-  aliasesByChat: SlackBotMessageAliasesByChat | undefined;
-}): boolean {
-  if (!input.channelId) return false;
-  const aliases = input.aliasesByChat?.[input.channelId] ?? [];
-  return aliases.some((alias) => slackTextStartsWithAlias(input.text, alias));
-}
-
-function slackTextStartsWithAlias(text: string, alias: string): boolean {
-  const cleanedAlias = cleanSlackId(alias);
-  if (!cleanedAlias) return false;
-  const pattern = new RegExp(`^${escapeRegExp(cleanedAlias)}(?:$|[\\s\\p{P}])`, "iu");
-  return pattern.test(text);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function normalizeSlackBotMessageAliasesByChat(input: unknown): SlackBotMessageAliasesByChat {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
-  const entries: Array<[string, string[]]> = [];
-  for (const [rawChatId, rawAliases] of Object.entries(input)) {
-    const chatId = cleanSlackId(rawChatId);
-    if (!chatId || !Array.isArray(rawAliases)) continue;
-    const aliases = Array.from(
-      new Map(
-        rawAliases
-          .map((alias) => (typeof alias === "string" ? alias.trim() : ""))
-          .filter(Boolean)
-          .map((alias) => [alias.toLowerCase(), alias]),
-      ).values(),
-    );
-    if (aliases.length > 0) entries.push([chatId, aliases]);
-  }
-  return Object.fromEntries(entries);
 }
