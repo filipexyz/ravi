@@ -61,7 +61,7 @@ beforeAll(async () => {
           input,
           status: response.status,
           requestId: response.headers.get("x-request-id"),
-          body: await response.clone().json(),
+          body: (await response.clone().json()) as ObservedFailure["body"],
         });
       }
       return response;
@@ -114,6 +114,7 @@ async function runCli(args: string[], asJson: boolean) {
   const failure = failures[start]!;
   expect(failure.input.agent).toBe(executor);
   expect(failure.input.apply).not.toBe(true);
+  if (failure.requestId === null) throw new Error("Gateway failure omitted x-request-id");
   expect(failure.requestId).toMatch(/^[0-9a-f-]{36}$/);
   expect(failure.body.error.requestId).toBe(failure.requestId);
   expect(failure.body.error.issues).toBeUndefined();
@@ -134,7 +135,7 @@ async function runCli(args: string[], asJson: boolean) {
   } else {
     expect(stdout.trim()).toBe("");
     expect(stderr).toContain(failure.body.error.message);
-    expect(stderr).toContain(failure.requestId!);
+    expect(stderr).toContain(failure.requestId);
   }
   return failure;
 }
