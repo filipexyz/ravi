@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { getRecentHistory } from "../db.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
@@ -1342,9 +1343,10 @@ export function resolveRuntimeCredentialUpstreamProvider(
   return undefined;
 }
 
-function buildRuntimeCredentialProfileEnv(
+export function buildRuntimeCredentialProfileEnv(
   runtimeProviderId: RuntimeProviderId,
-  binding: RuntimeCredentialAttemptBinding | undefined,
+  binding: Pick<RuntimeCredentialAttemptBinding, "authProfileRef"> | undefined,
+  env: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> | undefined {
   const authProfileRef = binding?.authProfileRef?.trim();
   if (!authProfileRef) return undefined;
@@ -1353,9 +1355,18 @@ function buildRuntimeCredentialProfileEnv(
     return { CODEX_HOME: profilePath };
   }
   if (runtimeProviderId === "claude") {
+    // Claude Code keys its stored login on whether CLAUDE_CONFIG_DIR is set, not
+    // only on the directory it names. Naming the default directory explicitly
+    // makes it look for a different login than the one the operator created by
+    // logging in normally, so the default profile must stay implicit.
+    if (!env.CLAUDE_CONFIG_DIR?.trim() && isDefaultClaudeProfilePath(profilePath)) return undefined;
     return { CLAUDE_CONFIG_DIR: profilePath };
   }
   return undefined;
+}
+
+function isDefaultClaudeProfilePath(profilePath: string): boolean {
+  return resolve(profilePath) === resolve(homedir(), ".claude");
 }
 
 function assertModelBrokerAttemptBinding(binding: RuntimeCredentialAttemptBinding | null): void {
