@@ -5,6 +5,7 @@ Run each focused suite in its own process with an isolated state directory and t
 ```bash
 for test_file in \
   src/sdk/gateway/error-contract.test.ts \
+  src/sdk/gateway/permissions-errors.test.ts \
   src/sdk/gateway/auth-expiration.test.ts \
   src/sdk/gateway/dispatcher.test.ts \
   src/sdk/gateway/server.test.ts \
@@ -20,6 +21,8 @@ done
 
 - Real tasks/create missing instructions: 422, VALIDATION_ERROR, field/argument/issues, exit 2, non-retryable.
 - Expected failure: public message and next action survive HTTP to CLI.
+- Issue-less canonical usage errors retain uncatalogued reasons at HTTP 400 and 422; secret assignments are redacted without erasing the reason. Existing unsafe dump/context-key negatives and issue-first projection remain covered.
+- Real `permissions allow` dry-runs through the gateway and CLI with `--agent` cover an unknown profile, an invalid contact and a missing current chat. JSON/text output retain the daemon message, code and request id; no grants are applied. A valid canonical contact plus executor still resolves successfully.
 - Internal failure: safe 500 and correlated stack/cause log; no body/secret leakage.
 - Pre-dispatch auth failure: same safe boundary.
 - Real registry credentials on open and protected routes: expiry returns `CONTEXT_EXPIRED`/401 before the handler and survives the HTTP-to-CLI projection; a valid credential without grants returns `PERMISSION_DENIED`/403.

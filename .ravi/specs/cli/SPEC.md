@@ -86,6 +86,10 @@ The canonical failure value is a `ContractError` and its envelope:
   gateway adds `exitCode` and `outcome` to the JSON body.
 - A failure MUST be rendered exactly once. A transport MUST NOT append a
   generic `Error:` line, stack trace or second envelope.
+- Complete remote usage-error envelopes without structured issues MUST preserve
+  their bounded, sanitized public reason and server correlation id. The relay
+  MUST NOT require a sentence/prefix allowlist to expose an expected handler
+  failure; issue-first projection and unsafe-payload filtering still apply.
 - Exit codes are: `0` success; `1` execution, provider or entity failure; `2`
   invalid usage; `3` blocked by confirmation policy. Exit `3` is a safe block,
   not an execution failure.
