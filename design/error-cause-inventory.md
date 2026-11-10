@@ -1901,18 +1901,18 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-defaults.ts | 88 | triaged-follow-up | catch-without-binding | src/runtime/runtime-defaults.ts:8cdcd933953e255901103de8 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 70 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:1af4a0589a1041ffeccf4ee1 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 102 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:93f2b3d2b18f3fa43b75229f |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 222 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:028234050a59a66edab09af2 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 262 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:51a46e76088c678f82acd7dc |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 288 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:ebf034c2d5826c4116f00eff |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 404 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:960da1d172cfc9d8affaf2b6 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 407 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:fe50d1206bebdad537025ec0 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 785 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b3b50aff43071847aa649325 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 787 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:1811a7ab1cda44b52fb4b036 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 962 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:a3e3e46ad92120dd20b659fb |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 998 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b67c3886f6623fc3c37f992b |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1071 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:861b739b16846ea4c68047b8 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1173 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:f49adb7da30eef0673bbfeb3 |
-| runtime-chat | src/runtime/runtime-request-builder.ts | 1252 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 223 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:028234050a59a66edab09af2 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 263 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:51a46e76088c678f82acd7dc |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 289 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:ebf034c2d5826c4116f00eff |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 405 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:960da1d172cfc9d8affaf2b6 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 408 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:fe50d1206bebdad537025ec0 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 786 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b3b50aff43071847aa649325 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 788 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:1811a7ab1cda44b52fb4b036 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 963 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:a3e3e46ad92120dd20b659fb |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 999 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:b67c3886f6623fc3c37f992b |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1072 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:861b739b16846ea4c68047b8 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1174 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:f49adb7da30eef0673bbfeb3 |
+| runtime-chat | src/runtime/runtime-request-builder.ts | 1253 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
 | runtime-chat | src/runtime/runtime-request-context.ts | 103 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
 | runtime-chat | src/runtime/runtime-request-context.ts | 175 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
 | runtime-chat | src/runtime/runtime-request-context.ts | 463 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
