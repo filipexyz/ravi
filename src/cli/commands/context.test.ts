@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { isOrdinaryTurnCompletionRevocation } from "../../runtime/context-revocation.js";
 
 afterAll(() => mock.restore());
 
@@ -1258,7 +1259,10 @@ describe("ContextCommands", () => {
       cascaded: [],
       revokedAt: 5000,
     });
-    expect(revokedCalls.at(-1)).toEqual({ contextId: "ctx_123", options: { cascade: false, reason: undefined } });
+    expect(revokedCalls.at(-1)).toEqual({
+      contextId: "ctx_123",
+      options: { cascade: false, reason: "context_revoked" },
+    });
     expect(errors.join("\n")).toContain("--no-cascade leaves descendant contexts active");
   });
 
@@ -1775,10 +1779,26 @@ describe("ContextCommands", () => {
       };
 
       expect(thrown).toBeUndefined();
-      expect(revokedCalls).toEqual([{ contextId: "ctx_123", options: { cascade: true, reason: undefined } }]);
+      expect(revokedCalls).toEqual([{ contextId: "ctx_123", options: { cascade: true, reason: "context_revoked" } }]);
       expect(result).toMatchObject(expectedPayload);
       expect(JSON.parse(logs[0] ?? "{}")).toMatchObject(expectedPayload);
     });
+
+    it.each(["turn_context_completed", "turn_context_rotated", "stale_turn_context_reclaimed"])(
+      "public revoke --reason %s stays an explicit authority withdrawal",
+      (reason) => {
+        revokedContext = { ...fetchedContext!, revokedAt: 5000 };
+        const command = new ContextCommands();
+        const { thrown } = captureContractCall(() => command.revoke("ctx_123", true, `  ${reason}  `, true));
+        expect(thrown).toBeUndefined();
+        const options = revokedCalls.at(-1)?.options as { cascade: boolean; reason: string };
+        expect(options).toEqual({ cascade: false, reason: `context_revoked: ${reason}` });
+        // The free-text audit note must not become the host's completion
+        // signal, which would admit queued human handoffs after revocation.
+        expect(isOrdinaryTurnCompletionRevocation(reason)).toBe(true);
+        expect(isOrdinaryTurnCompletionRevocation(options.reason)).toBe(false);
+      },
+    );
 
     it("emits CONTEXT_NOT_FOUND on revoke of an unknown context before any mutation", () => {
       fetchedContext = undefined;

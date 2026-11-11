@@ -498,7 +498,12 @@ export class ContextCommands {
       );
     }
     const cascade = !noCascade;
-    const result = revokeRuntimeContext(contextId, { cascade, reason });
+    // Public audit text cannot select a host-only completion/rotation reason.
+    const auditNote = reason?.trim();
+    const result = revokeRuntimeContext(contextId, {
+      cascade,
+      reason: auditNote ? `context_revoked: ${auditNote}` : "context_revoked",
+    });
     const payload = this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
     this.printPayload(payload, asJson, () =>
       this.printRevokeResult(payload.context, payload.cascaded, payload.revokedAt),

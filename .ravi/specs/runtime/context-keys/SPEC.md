@@ -47,6 +47,9 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   normal completion/rotation cleanup MUST NOT replace an explicit withdrawal
   (including an unnamed revoke) with a benign reason. A later explicit revoke
   MUST invalidate a previously completed context's admitted work.
+- Public `context revoke --reason` text MUST be an audit note on an explicit
+  withdrawal, never a selector for host completion/rotation semantics. Even
+  a note matching a host cleanup reason MUST invalidate admitted human work.
 - Daemon bootstrap admin detection MUST only consider `admin-bootstrap`
   contexts. Agent identity turn contexts that happen to snapshot
   `admin:system:*` MUST NOT count as bootstrap admin credentials.
