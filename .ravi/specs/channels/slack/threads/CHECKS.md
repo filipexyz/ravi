@@ -138,3 +138,5 @@ bun run build
   and clear before/after a retry snapshot. Verify isolated retry input, preserved
   retry budget, once-only authority release, no native-state resurrection, and
   successor delivery on the newly configured provider.
+
+- `src/channels/slack/thread-lifecycle.test.ts` checks a human initiating context survives durable root delivery into the bootstrap runtime actor, with agent producer provenance retained and Bases attribution restored.

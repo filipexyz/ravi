@@ -48,6 +48,8 @@ import {
 } from "../runtime/context-registry.js";
 import { RAVI_AUTOMATION_PRINCIPAL_ENV, readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import { readTurnReplyTarget } from "../runtime/turn-reply-target.js";
+import { resolveHumanRequestCaller } from "../runtime/human-request.js";
+import { resolveRuntimeTurnOrigin } from "../runtime/turn-origin.js";
 import { connectorModeArg, readAgentConnectorMode, type ConnectorUseMode } from "./connector-mode.js";
 
 export type ConnectorSpeakerKind = "terminal" | "owner" | "contact" | "agent" | "automation";
@@ -106,6 +108,9 @@ export type ConnectorTurnResult =
        * through agent exec.
        */
       candidate?: ConnectorTurn;
+      /** Verified human request forwarded by an agent. Attribution for Bases/access
+       * only: forwarding does not consent to personal or shared connectors. */
+      delegatedRequester?: ConnectorTurn;
       /** A cron run refused because someone other than the owner owns the job. */
       routineOwner?: { kind: "cron"; id: string; ownerPrincipal: string };
       /** The turn (or the turn it was projected from) already ended. */
@@ -254,6 +259,32 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
     const resolved = stringField(metadata, "actorResolution") === "resolved";
     const isOwner = resolved && isOwnerUser(owner, consoleUserId, stringField(metadata, "consoleOrgId"));
     const conversation = surface?.type === "chat" ? "group" : surface?.type === "dm" ? "dm" : null;
+    const requestMetadata = projectionSource?.metadata ?? metadata;
+    if (resolved && objectField(requestMetadata, "humanRequest")) {
+      const origin = resolveRuntimeTurnOrigin(requestMetadata.turnOrigin);
+      const requester = origin ? resolveHumanRequestCaller({ _turnOrigin: origin }) : null;
+      if (!requester || requester.contactId !== principalId) {
+        return {
+          ...notOwner(
+            actorPrincipal,
+            "The forwarded human request is no longer valid. Ask again from a current verified turn.",
+          ),
+          ended: true,
+        };
+      }
+      return {
+        ...notOwner(
+          actorPrincipal,
+          "This human request was forwarded by an agent. Ask directly in the destination chat before using connected accounts.",
+        ),
+        delegatedRequester: {
+          ...base,
+          actorPrincipal,
+          speaker: { kind: isOwner ? "owner" : "contact", contactId: principalId },
+          conversation: conversation ?? "automation",
+        },
+      };
+    }
     // Who this person is to the Console is never part of it: the Worker
     // reads it from its own `ravi link` binding.
     const candidate: ConnectorTurn | undefined =

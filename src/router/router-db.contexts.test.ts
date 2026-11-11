@@ -155,6 +155,16 @@ describe("context metadata and transactional revocation persistence", () => {
     expect(getDb().inTransaction).toBe(false);
   });
 
+  it.each(["operator_revoked", undefined])("ordinary cleanup cannot undo withdrawal (%s)", (reason) => {
+    const { root, child } = createFamily();
+    dbRevokeContextCascade(root.contextId, { revokedAt: 3_000, reason: "turn_context_completed", cascade: false });
+    dbRevokeContextCascade(root.contextId, { revokedAt: 4_000, reason });
+    dbRevokeContextCascade(root.contextId, { revokedAt: 5_000, reason: "turn_context_completed" });
+    for (const id of [root.contextId, child.contextId]) {
+      expect(dbGetContext(id)?.metadata?.revocationReason).toBe(reason ?? "context_revoked");
+    }
+  });
+
   it("keeps authority unchanged when renewing, and revocation wins over a pending renewal", () => {
     const now = Date.now();
     const context = createContext("active-turn", {

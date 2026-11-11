@@ -40,6 +40,16 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   compartment `agent_identity:<agent-id>:workspace:default`.
 - Child contexts issued from a `turn-runtime` context MUST remain derived
   credentials and MUST NOT bypass `resolveRuntimeContext`.
+- Caller-supplied child metadata MUST NOT replace or erase `parentContextId`,
+  `parentContextKind`, `issuedFor`, `issuedAt` or `issuanceMode`. A child MUST
+  NOT impersonate a host-issued root for human bootstrap/relay attribution.
+- Revocation reasons MUST be monotonic with respect to authority withdrawal:
+  normal completion/rotation cleanup MUST NOT replace an explicit withdrawal
+  (including an unnamed revoke) with a benign reason. A later explicit revoke
+  MUST invalidate a previously completed context's admitted work.
+- Public `context revoke --reason` text MUST be an audit note on an explicit
+  withdrawal, never a selector for host completion/rotation semantics. Even
+  a note matching a host cleanup reason MUST invalidate admitted human work.
 - Daemon bootstrap admin detection MUST only consider `admin-bootstrap`
   contexts. Agent identity turn contexts that happen to snapshot
   `admin:system:*` MUST NOT count as bootstrap admin credentials.

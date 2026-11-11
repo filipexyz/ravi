@@ -399,7 +399,9 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
       if (isCompleteContractErrorBody(body, op) || (body.op === "gateway" && isCompleteContractErrorBody(body))) {
         const turnLink = turnLinkRemoteCopy(body.error);
         const connectorTurn = turnLink ?? connectorTurnRemoteCopy(op, body.error);
-        const library = connectorTurn ? null : (operatorOnlyRemoteCopy(op, body) ?? libraryRemoteCopy(op, body));
+        const refusal = connectorTurn
+          ? null
+          : (actorUnknownRemoteCopy(body) ?? operatorOnlyRemoteCopy(op, body) ?? libraryRemoteCopy(op, body));
         const projected = remoteContractFailureMessage(
           op,
           body.outcome,
@@ -407,7 +409,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           body.error.message,
           body.error.code,
         );
-        // An issue-first projection already names the field; the Library copy only replaces the generic line.
+        // An issue-first projection already names the field; refusal copy only replaces the generic line.
         const generic = projected === remoteFailureMessage(op, body.error.code) || projected === REMOTE_GENERIC_BLOCKED;
         const dnsHint =
           op === PAGES_DOMAINS_OP && isRemoteWriteBrake(body) ? plannedDomainDnsHint(body.error.plan) : null;
@@ -416,13 +418,13 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           op,
           body.error.code,
           connectorTurn?.message ??
-            (generic ? library?.message : undefined) ??
+            (generic ? refusal?.message : undefined) ??
             (dnsHint ? `${projected}\n${dnsHint}` : projected),
           body.exitCode,
           {
             ...errorDiagnostic(
               connectorTurn?.message ??
-                (generic ? library?.message : undefined) ??
+                (generic ? refusal?.message : undefined) ??
                 (dnsHint ? `${projected}\n${dnsHint}` : projected),
               { operation: op },
             ),
@@ -430,7 +432,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
               ...projectRemoteContractDetails(op, body, result.status),
               ...(requestId ? { requestId } : {}),
               ...(connectorTurn?.details ?? {}),
-              ...(library?.details ?? {}),
+              ...(refusal?.details ?? {}),
             },
           },
         );
@@ -795,6 +797,41 @@ function isOperatorOnlyRefusal(op: string, code: string): boolean {
   return OPERATOR_ONLY_REMOTE_CODES.get(code)?.(op) ?? false;
 }
 
+/** Preserve the daemon's public actor refusal without copying arbitrary remote details. */
+function actorUnknownRemoteCopy(
+  body: CompleteContractErrorBody,
+): { message: string; details: ContractErrorDetails } | null {
+  const remote = body.error;
+  if (body.outcome !== "blocked" || remote.code !== "ACTOR_UNKNOWN") return null;
+  const message = boundedRemoteLine(remote.message, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (!message) return null;
+  const details: ContractErrorDetails = {};
+  const suggestedAction = boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX, "suggestedAction");
+  if (suggestedAction) details.suggestedAction = suggestedAction;
+  switch (remote.refusalReason) {
+    case "agent_relay":
+    case "ended":
+    case "unknown":
+      details.refusalReason = remote.refusalReason;
+      break;
+    case "routine_not_operator_owned": {
+      details.refusalReason = remote.refusalReason;
+      if (remote.routine === "cron") details.routine = remote.routine;
+      const jobId = boundedRemoteField(remote, ["jobId"], /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, 128);
+      const ownerPrincipal = boundedRemoteField(
+        remote,
+        ["ownerPrincipal"],
+        /^(?:unknown|(?:agent|contact):[A-Za-z0-9][A-Za-z0-9._-]{0,127})$/,
+        136,
+      );
+      if (jobId) details.jobId = jobId;
+      if (ownerPrincipal) details.ownerPrincipal = ownerPrincipal;
+      break;
+    }
+  }
+  return { message, details };
+}
+
 function operatorOnlyRemoteCopy(
   op: string,
   body: CompleteContractErrorBody,
@@ -823,13 +860,14 @@ function operatorOnlyRemoteCopy(
 }
 
 /**
- * Text mode prints the message and the issues; a Library refusal's next step
+ * Text mode prints the message and the issues; a public refusal's next step
  * is printed too when no issue already carries it.
  */
 export function remoteNextStepLine(error: ContractError): string | null {
   if (
     !isLibraryRemoteOp(error.op) &&
     !isOperatorOnlyRefusal(error.op, error.code) &&
+    error.code !== "ACTOR_UNKNOWN" &&
     !safeRequestId(error.details.requestId)
   )
     return null;

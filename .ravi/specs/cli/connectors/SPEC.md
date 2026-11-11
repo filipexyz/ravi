@@ -114,6 +114,16 @@ instead of inventing local suggestions that would require extra remote calls.
 | An allowed routine or relay that answers into a chat: its compartment is `chat:<id>` or `dm:<id>`, or its recorded `turnReplyTarget` is a chat, or (a relay) the target was `unresolved` and the session now has an output attachment | allowed with conversation `dm` only when every `chats` row for that chat is a `dm` that resolves to one contact linked to the active Console user and org; otherwise blocked `CONNECTOR_GROUP_BLOCKED` (a relay keeps `speakerIsOwner`) |
 | An operator relay with no chat compartment and no readable `turnReplyTarget`, or an `unresolved` one without a session to read | blocked `CONNECTOR_GROUP_BLOCKED`: Ravi cannot tell who reads the answer |
 
+A verified human work handoff (`humanRequest` on a runtime-issued turn) MAY
+identify the accountable requester for Bases/access. It MUST remain blocked
+for connector management and exec in every mode (`owner`, `person_asking`,
+`shared`); delegation of work alone is not direct consent in the destination
+chat. The classifier exposes `delegatedRequester` only for attribution, never
+as an exec `candidate`. A direct human turn still uses the ordinary policy.
+The classifier MUST also inspect the live source of a session-actor projection;
+copying identity fields MUST NOT discard handoff restrictions. Attribution
+MUST revalidate the human caller chain and contact before each protected call.
+
 3a. Where a turn's answer goes. The runtime records it on the turn context
    each time a turn starts (`turnReplyTarget`, `src/runtime/turn-reply-target.ts`,
    written in `beforeTurnStart` right after the turn's reply target is bound):
