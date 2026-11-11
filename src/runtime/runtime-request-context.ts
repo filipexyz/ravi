@@ -52,6 +52,7 @@ import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 import { readCronRunAuthority } from "../cron/authority.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 import { isRuntimeContextLive } from "./context-liveness.js";
+import { isWorkHandoff, resolveHumanRequestCaller } from "./human-request.js";
 
 export interface RuntimeRequestContextOptions {
   dbSessionKey: string;
@@ -635,16 +636,28 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   /** The contact the producing turn acted for, so Console calls stay attributed to them. */
   contactId?: string;
 } {
-  const callerContextId = resolveRuntimeTurnOrigin(prompt._turnOrigin)?.callerContextId;
+  const origin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
+  const callerContextId = origin?.callerContextId;
   if (!callerContextId) return {};
   const caller = dbGetContext(callerContextId);
   if (!caller) return { narrowing: [] };
   const metadata = caller.metadata ?? {};
+  const human = resolveHumanRequestCaller(prompt);
+  // A lost/revoked human handoff must not fall back to the agent's ambient
+  // ceiling. The requester is explicit even when its proof no longer passes.
+  const humanHandoffRefused = Boolean(
+    origin &&
+      isWorkHandoff(origin) &&
+      (String(metadata.actorPrincipal).startsWith("contact:") || metadata.humanRequest) &&
+      !human,
+  );
   // Ordinary turn rotation revokes the key but intentionally keeps queued relays
   // usable. A profile reduction invalidates the authority snapshot as well.
   const profileRevoked = typeof metadata.permissionProfileRevokedAt === "number";
   const narrowed =
-    metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE || metadata.relayNarrowing === true;
+    metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE ||
+    metadata.relayNarrowing === true ||
+    human !== null;
   const actorPrincipal = typeof metadata.actorPrincipal === "string" ? metadata.actorPrincipal : "";
   const contactId = actorPrincipal.startsWith("contact:")
     ? actorPrincipal.slice("contact:".length)
@@ -652,7 +665,9 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
       ? metadata.relayCallerContactId
       : undefined;
   return {
-    ...(profileRevoked || narrowed ? { narrowing: profileRevoked ? [] : caller.capabilities } : {}),
+    ...(profileRevoked || humanHandoffRefused || narrowed
+      ? { narrowing: profileRevoked || humanHandoffRefused ? [] : caller.capabilities }
+      : {}),
     ...(contactId ? { contactId } : {}),
   };
 }
@@ -744,6 +759,8 @@ function resolveAuthorityActorMetadata(
   const source = resolvedSource ?? prompt.source;
   const context = prompt.context;
   const turnOrigin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
+  const human = resolveHumanRequestCaller(prompt);
+  const humanActor = human?.caller.metadata?.actor as MessageActorMetadata | undefined;
   const promptPrincipal =
     resolveTurnOriginPrincipal(turnOrigin) ?? resolveAutomationPromptPrincipal(prompt, source, context);
   const promptIdentityProvenance = turnOrigin
@@ -754,14 +771,17 @@ function resolveAuthorityActorMetadata(
     ...(source ?? {}),
     ...(context ?? {}),
     canonicalChatId: context?.canonicalChatId ?? source?.canonicalChatId,
-    actorType: promptPrincipal
-      ? promptPrincipal.subjectType === "agent"
-        ? "agent"
-        : "automation"
-      : (context?.actorType ?? source?.actorType),
-    contactId: promptPrincipal ? undefined : (context?.contactId ?? source?.contactId),
-    actorAgentId:
-      promptPrincipal?.subjectType === "agent"
+    actorType: human
+      ? "contact"
+      : promptPrincipal
+        ? promptPrincipal.subjectType === "agent"
+          ? "agent"
+          : "automation"
+        : (context?.actorType ?? source?.actorType),
+    contactId: human?.contactId ?? (promptPrincipal ? undefined : (context?.contactId ?? source?.contactId)),
+    actorAgentId: human
+      ? undefined
+      : promptPrincipal?.subjectType === "agent"
         ? promptPrincipal.subjectId
         : promptPrincipal
           ? undefined
@@ -773,19 +793,28 @@ function resolveAuthorityActorMetadata(
           ? undefined
           : (context?.automationId ?? source?.automationId),
     identityProvenance: promptIdentityProvenance ?? context?.identityProvenance ?? source?.identityProvenance,
-    platformIdentityId: promptPrincipal ? undefined : (context?.platformIdentityId ?? source?.platformIdentityId),
-    rawSenderId: promptPrincipal ? undefined : (context?.rawSenderId ?? source?.rawSenderId),
-    normalizedSenderId: promptPrincipal ? undefined : (context?.normalizedSenderId ?? source?.normalizedSenderId),
-    identityConfidence: promptPrincipal ? undefined : (context?.identityConfidence ?? source?.identityConfidence),
+    platformIdentityId:
+      humanActor?.platformIdentityId ??
+      (promptPrincipal ? undefined : (context?.platformIdentityId ?? source?.platformIdentityId)),
+    rawSenderId:
+      humanActor?.rawSenderId ?? (promptPrincipal ? undefined : (context?.rawSenderId ?? source?.rawSenderId)),
+    normalizedSenderId:
+      humanActor?.normalizedSenderId ??
+      (promptPrincipal ? undefined : (context?.normalizedSenderId ?? source?.normalizedSenderId)),
+    identityConfidence:
+      humanActor?.identityConfidence ??
+      (promptPrincipal ? undefined : (context?.identityConfidence ?? source?.identityConfidence)),
     accountId: context?.accountId ?? source?.accountId,
     chatId: context?.chatId ?? source?.chatId,
     threadId: source?.threadId,
     sourceMessageId: source?.sourceMessageId,
-    senderName: turnOrigin
-      ? turnOrigin.producer === "session-relay"
-        ? (turnOrigin.session?.name ?? turnOrigin.principal.id)
-        : turnOrigin.principal.id
-      : context?.senderName,
+    senderName: human
+      ? cleanStringValue(human.caller.metadata?.actorDisplayName)
+      : turnOrigin
+        ? turnOrigin.producer === "session-relay"
+          ? (turnOrigin.session?.name ?? turnOrigin.principal.id)
+          : turnOrigin.principal.id
+        : context?.senderName,
     groupName: context?.groupName,
   };
 }
@@ -866,6 +895,7 @@ function buildRuntimeContextMetadata(options: {
 }): Record<string, unknown> {
   const actorMetadata = buildRuntimeContextActorMetadata(options.prompt, options.resolvedSource);
   const turnOrigin = resolveRuntimeTurnOrigin(options.prompt._turnOrigin);
+  const human = resolveHumanRequestCaller(options.prompt);
   return {
     runtimeProvider: options.runtimeProviderId,
     runtimeModel: options.model,
@@ -887,6 +917,9 @@ function buildRuntimeContextMetadata(options: {
     ...(options.replyTarget ? { [TURN_REPLY_TARGET_METADATA_KEY]: options.replyTarget } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
     ...(turnOrigin ? { turnOrigin } : {}),
+    ...(human
+      ? { humanRequest: { callerContextId: human.caller.contextId, originContextId: human.originContextId } }
+      : {}),
     ...(options.prompt._cron && options.prompt._jobId
       ? { cronRunAuthority: readCronRunAuthority(options.prompt._cronAuthority, options.prompt._jobId) }
       : {}),

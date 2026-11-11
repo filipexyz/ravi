@@ -17,6 +17,8 @@ applies_to:
   - src/router
   - src/session-trace
   - src/triggers
+  - src/runtime/human-request.ts
+  - src/runtime/runtime-request-context.ts
 owners:
   - ravi-dev
 status: draft
@@ -167,6 +169,37 @@ Rules:
 - `session_participants` MUST be updated from observed runtime activity, not from assumed one-human-per-session semantics.
 - Tool permission checks that depend on "who is speaking" SHOULD use an explicit active actor context derived from the latest resolved actor/floor state.
 - Tool permission checks MUST NOT parse raw prompt text or session names to infer identity when structured actor metadata is available.
+
+## Human Requests Forwarded Through Bootstrap Or Relay
+
+- A work handoff (`session.bootstrap`, or session-relay `send`, `ask`,
+  `execute`) MUST retain the verified requesting contact when its trusted
+  producer records the authenticated `callerContextId`. The runtime actor
+  MUST be `contact:<id>`; `turnOrigin.principal` MUST still name the forwarding
+  agent. Producer provenance and runtime capacity classification do not change.
+- Proof MUST come from that exact persisted, host-issued `turn-runtime`
+  snapshot: resolved contact actor and matching principal, agent identity
+  authority, matching producing agent/session, and human inbound provenance.
+  Chained work MUST trace back to the same human inbound, with bounded,
+  acyclic ancestry. A CLI child, supplied actor fields, display name, requester
+  card label, cached participant or session's latest speaker MUST NOT supply
+  this proof. A bootstrap without it remains an agent/automation turn.
+- `inform`, `answer`, `session.return`, cron, observer and other automation
+  notifications MUST NOT inherit human authority from a previous request.
+- Ordinary turn completion/rotation MAY leave an admitted handoff usable.
+  Explicit revocation, permission-profile reduction, missing/cyclic ancestry,
+  and a deleted, blocked or opted-out contact MUST invalidate human handoffs.
+  Invalid human handoffs MUST receive zero capabilities, never fall back to
+  the receiving agent's ambient ceiling.
+- A verified handoff MUST intersect the receiving agent's capabilities and
+  contact/chat policy with the producing turn's capability snapshot. It MUST
+  record `humanRequest.callerContextId` and `humanRequest.originContextId` for
+  audit, without exposing credential keys.
+- Bases and Console access MUST use the verified requester (and the existing
+  Console link/role checks). Attribution alone MUST NOT unlock personal or
+  shared connectors: their direct-request/consent policy remains separate.
+- Historical agent-only records MUST NOT be backfilled from the last human
+  or a guessed requester. Missing evidence requires a fresh verified request.
 
 ## Interaction Projections
 

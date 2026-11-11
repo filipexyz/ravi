@@ -25,3 +25,5 @@
 - Normal completion followed by session reset MUST revoke surviving children
   and grandchildren without revoking unrelated sessions; ordinary launch
   reclamation with `cascade: false` MUST preserve those children.
+
+- `src/runtime/runtime-request-context.test.ts` checks a CLI child cannot erase host lineage with custom metadata and impersonate a human root turn for bootstrap/relay authority.

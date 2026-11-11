@@ -136,6 +136,14 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    cloud-run clients) build, marked by its class, never to an
    `ACTOR_UNKNOWN` a Console response carries, which keeps the catalog copy
    whatever its `details` say.
+   A verified human work handoff follows the attribution contract in
+   `contacts/identity-graph/message-session-attribution`: it MUST pass the
+   human requester to Bases/access while retaining the agent producer for
+   audit. An agent-only relay remains refused. Remote transport MUST preserve
+   the bounded public `ACTOR_UNKNOWN` message, suggested action, typed refusal
+   reason and request correlation, never replace them with generic
+   "Remote command was blocked by policy." Raw Console errors still pass
+   through the local catalog mapper before remote projection.
 7. `rows update`, `rows archive`, and `rows restore` MUST require exactly one
    of `--expected-version <n>` or `--last-write-wins`, checked before any
    Console call.

@@ -69,6 +69,14 @@ When a message or session is attributed to the wrong identity:
 
 ## Backfill
 
+Before backfilling a bootstrap/relay, compare the initiating context with the
+child runtime context. Check `turnOrigin.callerContextId`, producing agent
+and session, resolved contact, human provenance and revocations. A valid work
+handoff keeps `actorPrincipal=contact:<id>` and `humanRequest`, while
+`turnOrigin.principal` names the agent. Missing evidence remains agent-only.
+Do not widen permissions or use `context issue --with-session-actor` as a
+workaround. Never infer an actor from the last session participant.
+
 Existing records may be backfilled when raw provenance is sufficient:
 
 - set `actor_type='unknown'` when only raw ids exist

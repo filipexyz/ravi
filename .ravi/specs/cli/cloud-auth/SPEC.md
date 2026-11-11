@@ -226,9 +226,12 @@ Console credits the write to that person through this installation's
 - A turn another turn produced (a session relay, a Slack thread bootstrap,
   report or return) whose producing turn acted for a contact MUST send that
   contact, read from the daemon's record of the producing context
-  (`relayCallerContactId`), even though the relayed turn itself names an
-  agent. A contact's request never goes out as the operator alone by being
-  relayed.
+  (`relayCallerContactId`). Verified work handoffs preserve a human runtime
+  actor under `contacts/identity-graph/message-session-attribution`; the
+  forwarding agent remains producer provenance. Notifications keep their
+  agent actor and existing local refusals. A contact's request MUST NOT gain
+  the operator's account by being relayed; a requester verified as the
+  operator follows the ordinary operator classification.
 - `/api/cli/auth/**` and `/api/cli/me` MUST NOT carry it.
 - A failure to classify the turn MUST NOT fail the call; it sends no header.
 
