@@ -14,8 +14,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
-import { buildDaemonPm2StartArgs } from "../../daemon-stdin.js";
+import { basename, delimiter, join } from "node:path";
+import { buildChannelsPm2StartArgs, buildDaemonPm2StartArgs } from "../../daemon-stdin.js";
 import { resolveManagedRuntimeTargetFromPackageRoot } from "../../managed-runtime.js";
 import {
   buildManagedRuntimeRebindPlan,
@@ -189,7 +189,7 @@ else if (args[0] === "start") {
   writeRuntimeBootReceipt({ ...observeRuntimeBoot({ bundlePath, runningVersion, envFile }), schemaVersion: 1, name, pid, startedAt });
   if (name === "ravi") writeFileSync(join(process.env.RAVI_STATE_DIR, "runtime-processes", "schema-owner-" + pid + ".json"), JSON.stringify({protocol:1,pid,phase:"ready",observedAt:startedAt}));
   entries.push({ name, pm_id: name === "ravi" ? 0 : 1, pid, pm2_env: {
-    status: "online", pm_exec_path: name === "ravi" ? bundlePath : args[1], pm_cwd: process.cwd(),
+    status: "online", pm_exec_path: name === "ravi" ? bundlePath : process.env.RAVI_PM2_EXECUTABLE, pm_cwd: process.cwd(),
     args: args.slice(args.indexOf("--") + 1), pm_uptime: startedAt, created_at: startedAt,
   } });
 } else if (args[0] !== "save") process.exit(1);
@@ -201,6 +201,7 @@ writeFileSync(snapshotPath, JSON.stringify(entries));
     ...process.env,
     PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
     RAVI_REPO: checkout,
+    PM2_HOME: join(root, "pm2-home"),
     RAVI_STATE_DIR: stateDir,
     RAVI_SUPPRESS_AUDIT_EVENTS: "1",
   };
@@ -625,7 +626,7 @@ describe("update command helpers", () => {
         { name: "ravi-channels", status: "online", pid: 20, createdAt: 1 },
       ],
       target,
-      "/usr/bin/bun",
+      process.execPath,
     );
 
     expect(
@@ -643,7 +644,38 @@ describe("update command helpers", () => {
     expect(plan[2]).toMatchObject({ cwd: target.cwd });
     expect(plan[2]?.args).toEqual(buildDaemonPm2StartArgs({ bundlePath: target.bundlePath }));
     expect(plan[3]).toMatchObject({ cwd: target.cwd });
-    expect(plan[3]?.args.slice(0, 2)).toEqual(["start", "/usr/bin/bun"]);
+    expect(plan[3]?.args).toEqual(
+      buildChannelsPm2StartArgs({ bundlePath: target.bundlePath, bunPath: process.execPath }),
+    );
+  });
+
+  it.each(["name", "namespace"] as const)("rejects a PM2 Bun %s collision before runtime mutations", async (field) => {
+    const runtime = createRuntimePackage();
+    const services = [
+      pm2Process("ravi", runtime.bundlePath, runtime.root, { pid: 10, createdAt: 1 }),
+      pm2Process("ravi-channels", runtime.bundlePath, runtime.root, { pid: 20, createdAt: 1 }),
+    ];
+    const unrelated = { ...services[0]!, name: "unrelated", pm_id: 9, pid: 90, [field]: basename(process.execPath) };
+    const mutations: string[][] = [];
+    try {
+      await expect(
+        rebindManagedRuntimeProcesses(
+          services.map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
+          runtime.target,
+          {
+            getProcesses: () => [...services, unrelated],
+            runnerEnv: () => ({}),
+            run: async (_command, args) => {
+              mutations.push(args);
+              return { success: true, output: "" };
+            },
+          },
+        ),
+      ).rejects.toThrow("conflicts with an existing PM2 process or namespace");
+      expect(mutations).toEqual([]);
+    } finally {
+      runtime.cleanup();
+    }
   });
 
   it("removes stopped stale entries without starting them", () => {
@@ -653,7 +685,7 @@ describe("update command helpers", () => {
         { name: "ravi-channels", status: "stopped", pid: 0, createdAt: 1 },
       ],
       { bundlePath: "/new/dist/bundle/index.js", cwd: "/new", version: "3.2.0" },
-      "/usr/bin/bun",
+      process.execPath,
     );
     expect(plan.filter((step) => step.action === "start").map((step) => step.processName)).toEqual(["ravi"]);
     expect(plan.map((step) => step.action)).toEqual(["delete", "delete", "start", "save"]);
@@ -731,7 +763,7 @@ describe("update command helpers", () => {
             processes.map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
             runtime.target,
             {
-              bunPath: "/usr/bin/bun",
+              bunPath: process.execPath,
               runnerEnv: () => ({ RAVI_CHANNELS_CONSUME_OUTBOUND: "1" }),
               pidAlive: () => true,
               schemaPhase: (process) => (process.pid === 11 ? "ready" : null),
@@ -765,7 +797,7 @@ describe("update command helpers", () => {
                   if (name === "ravi-channels") {
                     expect(options?.env?.RAVI_CHANNELS_CONSUME_OUTBOUND).toBe("1");
                   }
-                  expect(options?.env?.RAVI_PM2_EXECUTABLE).toBe("/usr/bin/bun");
+                  expect(options?.env?.RAVI_PM2_EXECUTABLE).toBe(process.execPath);
                 }
                 return { success: true, output: "" };
               },
@@ -778,7 +810,9 @@ describe("update command helpers", () => {
             "delete 1",
             buildDaemonPm2StartArgs({ bundlePath: runtime.bundlePath }).slice(0, 2).join(" "),
             "save --force",
-            "start /usr/bin/bun",
+            buildChannelsPm2StartArgs({ bundlePath: runtime.bundlePath, bunPath: process.execPath })
+              .slice(0, 2)
+              .join(" "),
             "save --force",
           ]);
         } finally {

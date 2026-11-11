@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { which } from "bun";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -12,9 +13,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { buildPm2Env, clearedPm2ContextEnv } from "./pm2.js";
+import { basename, join } from "node:path";
+import { buildPm2Env, clearedPm2ContextEnv, parsePm2Processes } from "./pm2.js";
 import {
+  buildChannelsPm2Env,
+  buildChannelsPm2StartArgs,
   buildDaemonPm2StartArgs,
   isDaemonRunArgv,
   maybeNeuterDaemonStdin,
@@ -278,6 +281,19 @@ describe("daemon PM2 inert-stdin launch", () => {
     expect(PM2_INERT_STDIN_SHELL_COMMAND).not.toContain(stateDir);
   });
 
+  it("rejects a local Bun-name collision and unsupported canonical binary names before PM2 starts", () => {
+    const bundlePath = join(stateDir, "dist", "bundle", "index.js");
+    writeFileSync(join(stateDir, basename(process.execPath)), "conflicting package file");
+    expect(() => buildChannelsPm2StartArgs({ bundlePath })).toThrow("shadows the selected Bun executable");
+    for (const filename of ["unsupported bun", "all"]) {
+      const unsupported = join(stateDir, filename);
+      writeFileSync(unsupported, "fixture");
+      expect(() => buildChannelsPm2StartArgs({ bundlePath, bunPath: unsupported })).toThrow(
+        "unsupported Bun executable filename",
+      );
+    }
+  });
+
   it("makes Bun fd 0 /dev/null when launched through the shell on an idle socketpair", async () => {
     const probe = await runShellAgainstIdleSocketpair();
     expect(probe.timedOut).toBe(false);
@@ -310,14 +326,19 @@ if (process.env.RAVI_REQUIRE_PM2_TEST === "1" && !isolatedPm2Executable) {
 }
 
 it.skipIf(!isolatedPm2Executable)(
-  "preserves exact daemon argv, inert stdin and standby ownership through real PM2 package replacement",
+  "preserves daemon and channels identity without context through real PM2 package replacement",
   async () => {
     const pm2 = isolatedPm2Executable!;
     const packageRoot = join(stateDir, ".bun", "install", "ravi 'package\" with spaces");
     const bundlePath = join(packageRoot, "dist", "bundle", "index.js");
-    const output = join(stateDir, "process.json");
-    const bunPath = join(stateDir, "ravi 'bun\" executable");
-    symlinkSync(process.execPath, bunPath);
+    const output = (role: string) => join(stateDir, `${role}.json`);
+    const contextKeys = Object.keys(clearedPm2ContextEnv());
+    const bunDir = join(stateDir, "ravi 'bun\" executable");
+    mkdirSync(bunDir);
+    const executable = join(bunDir, basename(process.execPath));
+    copyFileSync(process.execPath, executable);
+    const bunPath = join(stateDir, "ravi 'bun\" alias");
+    symlinkSync(executable, bunPath);
     const pm2Home = mkdtempSync("/tmp/ravi-pm2-");
     const env = {
       PATH: process.env.PATH,
@@ -333,21 +354,18 @@ it.skipIf(!isolatedPm2Executable)(
       writeFileSync(
         bundlePath,
         `import { readSync, writeFileSync } from "node:fs";
-         writeFileSync(${JSON.stringify(output)}, JSON.stringify({
-           pid: process.pid, ppid: process.ppid, argv: process.argv,
+         writeFileSync(${JSON.stringify(stateDir)} + "/" + process.argv[2] + ".json", JSON.stringify({
+           pid: process.pid, ppid: process.ppid, argv: process.argv, cwd: process.cwd(),
            stdinBytes: readSync(0, Buffer.alloc(1)),
-           context: process.env.RAVI_CONTEXT_KEY,
-           gateway: process.env.RAVI_GATEWAY_URL,
-           gatewayInternal: process.env.RAVI_GATEWAY_INTERNAL,
-           handoff: process.env.RAVI_DAEMON_RESTART_HANDOFF,
+           contextKeys: ${JSON.stringify(contextKeys)}.filter(key => Object.hasOwn(process.env, key)),
          }));
          setInterval(() => {}, 1000);`,
       );
     };
-    const waitForProcess = async (previousPid?: number) => {
+    const waitForProcess = async (role: "daemon" | "channels", previousPid?: number) => {
       for (let attempt = 0; attempt < 100; attempt++) {
-        if (existsSync(output)) {
-          const processInfo = JSON.parse(readFileSync(output, "utf8"));
+        if (existsSync(output(role))) {
+          const processInfo = JSON.parse(readFileSync(output(role), "utf8"));
           if (processInfo.pid !== previousPid) return processInfo;
         }
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -366,51 +384,105 @@ it.skipIf(!isolatedPm2Executable)(
     try {
       writePackage();
       expect(
-        pm2Command(["ping"], {
-          RAVI_CONTEXT_KEY: "stale-manager-context",
-          RAVI_GATEWAY_URL: "unix:///stale-manager-gateway.sock",
-          RAVI_GATEWAY_INTERNAL: "1",
-          RAVI_DAEMON_RESTART_HANDOFF: "1",
-        }).status,
+        pm2Command(["ping"], Object.fromEntries(contextKeys.map((key) => [key, "stale-manager-context"]))).status,
       ).toBe(0);
       const args = buildDaemonPm2StartArgs({ bundlePath });
       const serviceEnv = { ...clearedPm2ContextEnv(), RAVI_PM2_EXECUTABLE: bunPath };
       const started = pm2Command(args, serviceEnv);
       expect(started.status).toBe(0);
-      const first = await waitForProcess();
+      const first = await waitForProcess("daemon");
       expect(first).toMatchObject({
-        argv: [process.execPath, realpathSync(bundlePath), "daemon", "run"],
+        argv: [realpathSync(executable), realpathSync(bundlePath), "daemon", "run"],
         stdinBytes: 0,
-        context: "",
-        gateway: "",
-        gatewayInternal: "",
-        handoff: "",
+        cwd: realpathSync(packageRoot),
+        contextKeys: [],
       });
       expect(first.ppid).toBe(Number(readFileSync(join(pm2Home, "pm2.pid"), "utf8")));
       const [registration] = JSON.parse(pm2Command(["jlist"]).stdout);
       expect(registration).toMatchObject({
         name: "ravi",
         pid: first.pid,
-        pm2_env: { pm_exec_path: bundlePath, exec_interpreter: "/bin/sh", args: ["daemon", "run"] },
+        pm2_env: {
+          pm_exec_path: bundlePath,
+          pm_cwd: packageRoot,
+          exec_interpreter: "/bin/sh",
+          args: ["daemon", "run"],
+        },
       });
+
+      for (const key of contextKeys) expect(registration.pm2_env[key]).toBe("");
+      const channelArgs = buildChannelsPm2StartArgs({ bundlePath, bunPath });
+      expect(pm2Command(channelArgs, { ...serviceEnv, ...buildChannelsPm2Env(bunPath) }).status).toBe(0);
+      const firstChannels = await waitForProcess("channels");
+      expect(firstChannels).toMatchObject({
+        argv: [realpathSync(executable), realpathSync(bundlePath), "channels", "run"],
+        stdinBytes: 0,
+        cwd: realpathSync(packageRoot),
+        contextKeys: [],
+      });
+      const channelRegistration = JSON.parse(pm2Command(["jlist"]).stdout).find(
+        (p: { name: string }) => p.name === "ravi-channels",
+      );
+      expect(channelRegistration).toMatchObject({
+        pid: firstChannels.pid,
+        pm2_env: {
+          pm_exec_path: realpathSync(executable),
+          pm_cwd: packageRoot,
+          exec_interpreter: "/bin/sh",
+          args: [bundlePath, "channels", "run"],
+        },
+      });
+      for (const key of contextKeys) expect(channelRegistration.pm2_env[key]).toBe("");
+
+      for (const collision of ["name", "namespace"] as const) {
+        const name = collision === "name" ? basename(executable) : "unrelated-sleeper";
+        const namespace = collision === "namespace" ? basename(executable) : "default";
+        expect(
+          pm2Command([
+            "start",
+            "/bin/sleep",
+            "--name",
+            name,
+            "--namespace",
+            namespace,
+            "--interpreter",
+            "none",
+            "--",
+            "120",
+          ]).status,
+        ).toBe(0);
+        const snapshot = parsePm2Processes(pm2Command(["jlist"]).stdout);
+        const sleeper = snapshot.find((process) => process.name === name)!;
+        expect(sleeper.pid).toBeGreaterThan(0);
+        expect(() => buildChannelsPm2StartArgs({ bundlePath, bunPath, processes: snapshot })).toThrow(
+          "conflicts with an existing PM2 process or namespace",
+        );
+        expect(parsePm2Processes(pm2Command(["jlist"]).stdout).map((process) => process.pid)).toEqual(
+          snapshot.map((process) => process.pid),
+        );
+        expect(pm2Command(["delete", String(sleeper.pm_id)]).status).toBe(0);
+      }
 
       rmSync(packageRoot, { recursive: true, force: true });
       writePackage();
       expect(pm2Command(["restart", "ravi"]).status).toBe(0);
-      const second = await waitForProcess(first.pid);
+      const second = await waitForProcess("daemon", first.pid);
       expect(second.argv).toEqual(first.argv);
       expect(second.stdinBytes).toBe(0);
-      expect(second.context).toBe("");
-      expect(second.gateway).toBe("");
+      expect(second.contextKeys).toEqual([]);
+      expect(pm2Command(["restart", "ravi-channels"]).status).toBe(0);
+      const secondChannels = await waitForProcess("channels", firstChannels.pid);
+      expect(secondChannels.argv).toEqual(firstChannels.argv);
+      expect(secondChannels.stdinBytes).toBe(0);
+      expect(secondChannels.contextKeys).toEqual([]);
       const forcedArgs = [...args];
       forcedArgs.splice(1, 0, "--force");
       expect(pm2Command(forcedArgs, serviceEnv).status).toBe(0);
-      const standby = await waitForProcess(second.pid);
+      const standby = await waitForProcess("daemon", second.pid);
       expect(standby.argv).toEqual(second.argv);
       expect(standby.stdinBytes).toBe(0);
-      expect(standby.context).toBe("");
-      expect(standby.gateway).toBe("");
-      const registrations = JSON.parse(pm2Command(["jlist"]).stdout);
+      expect(standby.contextKeys).toEqual([]);
+      const registrations = JSON.parse(pm2Command(["jlist"]).stdout).filter((p: { name: string }) => p.name === "ravi");
       expect(registrations).toHaveLength(2);
       expect(registrations.map((p: { pid: number }) => p.pid).sort()).toEqual([second.pid, standby.pid].sort());
       expect(

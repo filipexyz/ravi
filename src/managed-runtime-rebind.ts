@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { which } from "bun";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -11,7 +12,7 @@ import {
   type ManagedRuntimeProcessSnapshot,
   type ManagedRuntimeTarget,
 } from "./managed-runtime.js";
-import { buildDaemonPm2StartArgs } from "./daemon-stdin.js";
+import { buildChannelsPm2Env, buildChannelsPm2StartArgs, buildDaemonPm2StartArgs } from "./daemon-stdin.js";
 import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
 import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
@@ -66,7 +67,9 @@ function runCommand(command: string, args: string[], options: RunOptions = {}): 
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(command, args, {
+      const executable = which(command, { PATH: process.env.PATH });
+      if (!executable) throw new Error(`${command} executable is unavailable in the caller PATH`);
+      child = spawn(executable, args, {
         cwd: options.cwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...(options.env ?? process.env), FORCE_COLOR: options.stream === false ? "0" : "1" },
@@ -94,6 +97,7 @@ export function buildManagedRuntimeRebindPlan(
   previousProcesses: ManagedRuntimeProcessSnapshot[],
   target: ManagedRuntimeTarget,
   bunPath = process.execPath,
+  processes: Pm2Process[] = [],
 ): ManagedRuntimeRebindStep[] {
   const daemon = previousProcesses.find((process) => process.name === PM2_PROCESS_NAME);
   const channels = previousProcesses.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
@@ -122,7 +126,7 @@ export function buildManagedRuntimeRebindPlan(
     plan.push({
       action: "start",
       processName: CHANNELS_PM2_PROCESS_NAME,
-      args: ["start", bunPath, "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"],
+      args: buildChannelsPm2StartArgs({ bundlePath: target.bundlePath, bunPath, processes }),
       cwd: target.cwd,
     });
   }
@@ -218,7 +222,7 @@ export async function rebindManagedRuntimeProcesses(
   }
 
   // Prepare launch arguments and runner settings before any PM2 mutation.
-  const plan = buildManagedRuntimeRebindPlan(previousProcesses, target, bunPath);
+  const plan = buildManagedRuntimeRebindPlan(previousProcesses, target, bunPath, initial);
   const runtimeEnv = buildPm2Env({
     RAVI_BUNDLE: target.bundlePath,
     RAVI_DAEMON_CWD: target.cwd,
@@ -226,7 +230,7 @@ export async function rebindManagedRuntimeProcesses(
   });
   runtimeEnv[MANAGED_RUNTIME_REBIND_ENV] = "";
   runtimeEnv.RAVI_REPO = existsSync(join(target.cwd, ".git")) ? target.cwd : "";
-  const runnerEnv = (dependencies.runnerEnv ?? buildRunnerPm2Env)();
+  const runnerEnv = { ...(dependencies.runnerEnv ?? buildRunnerPm2Env)(), ...buildChannelsPm2Env(bunPath) };
   const execute = async (args: string[], env = runtimeEnv, cwd?: string): Promise<number> => {
     const result = await run("pm2", args, { cwd, env, stream: false });
     return result.success ? 0 : 1;

@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
-import { homedir, userInfo } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalStatePath } from "../db/state-boundary.js";
 import { findRaviPackageRoot } from "../managed-runtime.js";
+import { resolveAccountHome } from "../utils/account-home.js";
 import { getContext, hasRuntimeInvocationContext } from "./context.js";
 
 const codePath = fileURLToPath(import.meta.url);
@@ -37,15 +38,7 @@ export function usesInstalledOperatorTransport(
     return false;
   const root = findRaviPackageRoot(options.modulePath ?? codePath);
   if (!root || existsSync(join(root, "src")) || existsSync(join(root, ".git"))) return false;
-  let home = options.homeDir;
-  if (!home) {
-    try {
-      home = userInfo().homedir;
-    } catch {
-      // no-cause: Without an OS account home, fail closed and keep operator recovery transport disabled.
-      return false;
-    }
-  }
+  const home = options.homeDir ?? resolveAccountHome();
   if (!home) return false;
   const selectedHome = env.HOME || options.homeDir || homedir();
   const state = env.RAVI_STATE_DIR || join(selectedHome, ".ravi");

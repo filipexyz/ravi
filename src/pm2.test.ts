@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
-import { buildPm2Env, parsePm2Processes } from "./pm2.js";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildPm2Env, parsePm2Processes, runPm2 } from "./pm2.js";
 
 describe("buildPm2Env", () => {
   it("overwrites retained PM2 context with empty values while preserving service settings", () => {
@@ -101,4 +104,31 @@ describe("PM2 process start identity", () => {
       )[0]?.startedAt,
     ).toBeNull();
   });
+});
+
+it("resolves PM2 before applying the pinned Bun executable PATH", () => {
+  const root = mkdtempSync(join(tmpdir(), "ravi-pm2-path-"));
+  const originalPath = process.env.PATH;
+  const selected = join(root, "selected");
+  const pinned = join(root, "pinned");
+  mkdirSync(selected);
+  mkdirSync(pinned);
+  for (const [directory, exitCode] of [
+    [selected, 7],
+    [pinned, 61],
+  ] as const) {
+    const executable = join(directory, "pm2");
+    writeFileSync(executable, `#!/bin/sh\nexit ${exitCode}\n`);
+    chmodSync(executable, 0o755);
+  }
+  try {
+    process.env.PATH = selected;
+    expect(runPm2(["fixture"], { PATH: pinned, PM2_HOME: join(root, "manager") }).status).toBe(7);
+    process.env.PATH = join(root, "missing");
+    expect(runPm2(["fixture"], { PATH: pinned, PM2_HOME: join(root, "manager") }).status).toBe(1);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

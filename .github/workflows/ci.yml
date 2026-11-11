@@ -129,7 +129,7 @@ jobs:
         env:
           RAVI_REQUIRE_PM2_TEST: "1"
           RAVI_STATE_DIR: ${{ runner.temp }}/ravi-launcher-tests
-        run: bun test --timeout 30000 src/daemon-stdin.test.ts
+        run: bun test --timeout 30000 src/daemon-stdin.test.ts src/cli/operator-runtime.test.ts src/utils/account-home.test.ts
 
   retained-preload:
     name: Retained preload guard contracts

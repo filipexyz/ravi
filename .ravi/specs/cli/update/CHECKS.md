@@ -22,7 +22,14 @@
 - `bun test src/daemon-stdin.test.ts src/pm2.test.ts` MUST cover package
   replacement, paths containing `bun`, spaces and quotes, forced standby
   registration that preserves the predecessor, and explicit
-  clearing of context inherited from the PM2 manager.
+  clearing of context inherited from the PM2 manager. The real-PM2 fixture MUST
+  run both daemon and channels launchers, assert every denied context key is
+  absent in the application environment while PM2 retains empty tombstones,
+  and verify channels registration and application argv match the state boundary.
+  It MUST execute a copied Bun binary under a directory with spaces and quotes,
+  with the installed package cwd preserved. A filename collision MUST fail
+  before the existing runner is deleted. PM2 name/namespace collisions MUST
+  also fail before rebind mutations and preserve unrelated process PIDs.
 - `daemon start --json` MUST launch with the same Bun executable and cleared
   runtime/session environment as text mode; quiet lifecycle execution MUST NOT
   depend on launcher variables already existing in the caller environment.

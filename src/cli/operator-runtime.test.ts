@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveAccountHome } from "../utils/account-home.js";
 import { runWithContext } from "./context.js";
 import { isLocalRecoveryCommand, usesInstalledOperatorTransport } from "./operator-runtime.js";
 
@@ -27,6 +29,49 @@ const options = { modulePath: installed, homeDir, runtimeInvocation: false };
 afterAll(() => rmSync(fixture, { recursive: true, force: true }));
 
 describe("installed operator transport", () => {
+  it("keeps an actual Bun process with overridden HOME isolated without injecting account home", () => {
+    const accountHome = resolveAccountHome();
+    expect(accountHome).toBeString();
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("RAVI_")));
+    const result = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        [
+          `import { usesInstalledOperatorTransport } from ${JSON.stringify(new URL("./operator-runtime.ts", import.meta.url).href)};`,
+          `import { resolveHostCliGatewayStateDirs } from ${JSON.stringify(new URL("./remote-gateway.ts", import.meta.url).href)};`,
+          `import { resolveAccountHome } from ${JSON.stringify(new URL("../utils/account-home.ts", import.meta.url).href)};`,
+          'import { join } from "node:path";',
+          `const options = { modulePath: ${JSON.stringify(installed)} };`,
+          "const accountHome = resolveAccountHome();",
+          "console.log(JSON.stringify({",
+          "  accountHome, selectedHome: process.env.HOME,",
+          "  implicit: usesInstalledOperatorTransport(process.env, options),",
+          "  isolated: usesInstalledOperatorTransport({ ...process.env, RAVI_STATE_DIR: join(process.env.HOME, '.ravi') }, options),",
+          "  explicit: usesInstalledOperatorTransport({ ...process.env, RAVI_STATE_DIR: join(accountHome, '.ravi') }, options),",
+          "  gateway: resolveHostCliGatewayStateDirs(),",
+          "}));",
+        ].join("\n"),
+      ],
+      {
+        cwd: fixture,
+        env: { ...env, HOME: homeDir, USERPROFILE: homeDir, RAVI_SUPPRESS_AUDIT_EVENTS: "1" },
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      accountHome,
+      selectedHome: homeDir,
+      implicit: false,
+      isolated: false,
+      explicit: true,
+      gateway: [join(accountHome!, ".ravi")],
+    });
+    expect(existsSync(join(stateDir, "ravi.db"))).toBe(false);
+  });
+
   it("selects the gateway only for installed code targeting canonical real state", () => {
     expect(usesInstalledOperatorTransport({}, options)).toBe(true);
     expect(usesInstalledOperatorTransport({ RAVI_STATE_DIR: stateDir }, options)).toBe(true);

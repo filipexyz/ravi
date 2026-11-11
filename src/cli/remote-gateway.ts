@@ -25,8 +25,8 @@ import { errorDiagnostic } from "../utils/error-diagnostic.js";
 
 import { projectDiagnosticContext, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { request as httpRequest } from "node:http";
-import { userInfo } from "node:os";
 import { join } from "node:path";
+import { resolveAccountHome } from "../utils/account-home.js";
 import {
   HOST_CLI_GATEWAY_ENV,
   HOST_CLI_GATEWAY_INTERNAL_ENV,
@@ -221,21 +221,8 @@ export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env
 export function resolveHostCliGatewayStateDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   const explicit = env.RAVI_STATE_DIR?.trim();
   if (explicit) return [explicit];
-  const accountHome = accountHomedir();
+  const accountHome = resolveAccountHome();
   return accountHome ? [join(accountHome, ".ravi")] : [];
-}
-
-/**
- * Home directory from the passwd entry. `os.homedir()` is not a fallback: it
- * reads `$HOME`. Without a passwd entry (some containers) nothing is probed,
- * so the daemon must publish `RAVI_STATE_DIR`, or the command fails closed.
- */
-function accountHomedir(): string | null {
-  try {
-    return userInfo().homedir || null;
-  } catch {
-    return null;
-  }
 }
 
 /**

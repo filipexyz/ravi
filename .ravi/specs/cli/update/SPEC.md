@@ -51,7 +51,20 @@ normative: true
   state boundary without relaxing its identity checks.
 - Daemon and channel registration MUST clear inherited session, gateway and
   supervisor routing context, including context retained by the PM2 manager.
-  Starting a service MUST NOT turn it into a remote CLI invocation.
+  Starting a service MUST NOT turn it into a remote CLI invocation. PM2
+  registration MUST overwrite retained context with empty tombstones, and the
+  shell launcher MUST unset those keys before executing Bun. The application
+  MUST receive absent context keys; an explicit empty context key is invalid
+  broker caller identity and MUST NOT be accepted as local authority.
+- The channels launcher MUST preserve its existing PM2 identity: canonical Bun
+  executable and exactly `[bundle, "channels", "run"]` arguments. Its shell
+  MUST clear context before exec without routing through PM2's Bun container.
+  Bun installation directories containing spaces and quotes MUST remain valid.
+  The launcher MUST pin executable lookup to canonical Bun, retain the package
+  working directory, and reject an unsupported canonical executable filename
+  or a conflicting package-local filename/PM2 process name/namespace before
+  stopping any process. PM2
+  itself MUST be resolved in the original caller PATH before Bun PATH is pinned.
 - Operator CLI commands targeting real state MUST use the authenticated
   installed gateway for stateful authorization/execution. Local lifecycle and
   recovery operations MUST remain usable when the daemon is unavailable,

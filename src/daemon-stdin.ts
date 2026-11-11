@@ -16,9 +16,9 @@
  */
 
 import { dlopen, FFIType } from "bun:ffi";
-import { closeSync, openSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
-import { PM2_PROCESS_NAME } from "./pm2.js";
+import { closeSync, existsSync, openSync, realpathSync } from "node:fs";
+import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
+import { CHANNELS_PM2_PROCESS_NAME, clearedPm2ContextEnv, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
 
 const STDIN_FD = 0;
 
@@ -27,7 +27,9 @@ const STDIN_FD = 0;
  * containing `bun` (including `.bun` and `bundle`) as its Bun process container.
  * Dynamic paths travel through the environment and argv, never shell source.
  */
-export const PM2_INERT_STDIN_SHELL_COMMAND = 'exec "$RAVI_PM2_EXECUTABLE" "$0" "$@" < /dev/null';
+const clearPm2Context = `unset ${Object.keys(clearedPm2ContextEnv()).join(" ")};`;
+export const PM2_INERT_STDIN_SHELL_COMMAND = `${clearPm2Context} exec "$RAVI_PM2_EXECUTABLE" "$0" "$@" < /dev/null`;
+export const PM2_CHANNELS_SHELL_COMMAND = `${clearPm2Context} exec "$0" "$@" < /dev/null`;
 
 export type DaemonStdinNeuterResult = { replaced: true; path: string } | { replaced: false; reason: string };
 
@@ -108,6 +110,52 @@ export function buildDaemonPm2StartArgs(input: { bundlePath: string }): string[]
     `-c '${PM2_INERT_STDIN_SHELL_COMMAND}'`,
     "--",
     "daemon",
+    "run",
+  ];
+}
+
+export function buildChannelsPm2Env(bunPath = process.execPath): Record<string, string> {
+  const executable = realpathSync(bunPath);
+  return {
+    RAVI_PM2_EXECUTABLE: executable,
+    PATH: `${dirname(executable)}${delimiter}${process.env.PATH ?? ""}`,
+  };
+}
+
+export function buildChannelsPm2StartArgs(input: {
+  bundlePath: string;
+  bunPath?: string;
+  processes?: readonly Pick<Pm2Process, "name" | "namespace">[];
+}): string[] {
+  const cwd = resolve(dirname(input.bundlePath), "../..");
+  const executable = realpathSync(input.bunPath ?? process.execPath);
+  const script = basename(executable);
+  if (script === "all" || !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(script)) {
+    throw new Error(`Cannot register channels with PM2: unsupported Bun executable filename ${JSON.stringify(script)}`);
+  }
+  if (input.processes?.some((process) => process.name === script || process.namespace === script)) {
+    throw new Error(
+      `Cannot register channels with PM2: Bun filename ${script} conflicts with an existing PM2 process or namespace`,
+    );
+  }
+  const localScript = join(cwd, script);
+  if (existsSync(localScript) && realpathSync(localScript) !== executable) {
+    throw new Error(`Cannot register channels with PM2: ${localScript} shadows the selected Bun executable`);
+  }
+  return [
+    "start",
+    script,
+    "--cwd",
+    cwd,
+    "--name",
+    CHANNELS_PM2_PROCESS_NAME,
+    "--interpreter",
+    "/bin/sh",
+    "--interpreter-args",
+    `-c '${PM2_CHANNELS_SHELL_COMMAND}'`,
+    "--",
+    input.bundlePath,
+    "channels",
     "run",
   ];
 }
