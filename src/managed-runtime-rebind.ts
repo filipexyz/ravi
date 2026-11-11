@@ -295,6 +295,7 @@ export async function rebindManagedRuntimeProcesses(
             process.kill(pid, 0);
             return true;
           } catch {
+            // no-cause: A failed liveness probe cannot prove a supervised successor, so preserve the predecessor.
             return false;
           }
         }),

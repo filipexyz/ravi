@@ -42,6 +42,7 @@ export function usesInstalledOperatorTransport(
     try {
       home = userInfo().homedir;
     } catch {
+      // no-cause: Without an OS account home, fail closed and keep operator recovery transport disabled.
       return false;
     }
   }
