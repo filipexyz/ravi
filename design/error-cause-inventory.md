@@ -537,24 +537,24 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/cron.ts | 1144 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
 | cli | src/cli/commands/cron.ts | 1218 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
 | cli | src/cli/commands/cron.ts | 1270 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
-| cli | src/cli/commands/daemon.ts | 84 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:3661f8aaa31983deeb62b36d |
-| cli | src/cli/commands/daemon.ts | 126 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:83e88e29b98541a715ba95c9 |
-| cli | src/cli/commands/daemon.ts | 129 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:5c67dde5c37f215d912cdf0d |
-| cli | src/cli/commands/daemon.ts | 163 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:3252e4a28013452b12c3c4af |
-| cli | src/cli/commands/daemon.ts | 294 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:8c46f6c2c9d709aec06f9076 |
-| cli | src/cli/commands/daemon.ts | 306 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:a527c5a32df9264c19ab5413 |
-| cli | src/cli/commands/daemon.ts | 318 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:dd10ae5178a34c12024603b0 |
-| cli | src/cli/commands/daemon.ts | 353 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:52ce28b9b543b169cdcaf263 |
-| cli | src/cli/commands/daemon.ts | 419 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:41c1753c0e9e0105aea8a86f |
-| cli | src/cli/commands/daemon.ts | 620 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:070335abc5483ffaf0c14e30 |
-| cli | src/cli/commands/daemon.ts | 1021 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:cbe7daa72f79d5478b19d0de |
-| cli | src/cli/commands/daemon.ts | 1030 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:cd10c9495b22b133bc3c50d0 |
-| cli | src/cli/commands/daemon.ts | 1060 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:58d15d82603876ef39620ef8 |
-| cli | src/cli/commands/daemon.ts | 1137 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:618944c2ca2f9fbc08441979 |
-| cli | src/cli/commands/daemon.ts | 1307 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
-| cli | src/cli/commands/daemon.ts | 1316 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
-| cli | src/cli/commands/daemon.ts | 1330 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
-| cli | src/cli/commands/daemon.ts | 1379 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:0660b09c86856c038928eec6 |
+| cli | src/cli/commands/daemon.ts | 92 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:3661f8aaa31983deeb62b36d |
+| cli | src/cli/commands/daemon.ts | 134 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:83e88e29b98541a715ba95c9 |
+| cli | src/cli/commands/daemon.ts | 137 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:5c67dde5c37f215d912cdf0d |
+| cli | src/cli/commands/daemon.ts | 171 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:3252e4a28013452b12c3c4af |
+| cli | src/cli/commands/daemon.ts | 302 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:8c46f6c2c9d709aec06f9076 |
+| cli | src/cli/commands/daemon.ts | 314 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:a527c5a32df9264c19ab5413 |
+| cli | src/cli/commands/daemon.ts | 326 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:dd10ae5178a34c12024603b0 |
+| cli | src/cli/commands/daemon.ts | 361 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:52ce28b9b543b169cdcaf263 |
+| cli | src/cli/commands/daemon.ts | 427 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:41c1753c0e9e0105aea8a86f |
+| cli | src/cli/commands/daemon.ts | 628 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:070335abc5483ffaf0c14e30 |
+| cli | src/cli/commands/daemon.ts | 1029 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:cbe7daa72f79d5478b19d0de |
+| cli | src/cli/commands/daemon.ts | 1038 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:cd10c9495b22b133bc3c50d0 |
+| cli | src/cli/commands/daemon.ts | 1068 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:58d15d82603876ef39620ef8 |
+| cli | src/cli/commands/daemon.ts | 1145 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:618944c2ca2f9fbc08441979 |
+| cli | src/cli/commands/daemon.ts | 1315 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
+| cli | src/cli/commands/daemon.ts | 1324 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
+| cli | src/cli/commands/daemon.ts | 1338 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
+| cli | src/cli/commands/daemon.ts | 1387 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:0660b09c86856c038928eec6 |
 | cli | src/cli/commands/db.ts | 54 | triaged-follow-up | catch-without-binding | src/cli/commands/db.ts:ecaa7a4be44ef9cca7f3dd7d |
 | cli | src/cli/commands/db.ts | 81 | triaged-follow-up | catch-without-binding | src/cli/commands/db.ts:79cdb8bf8b319d593d64cdde |
 | cli | src/cli/commands/db.ts | 97 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/db.ts:0fa4c8eccad90392c776790f |

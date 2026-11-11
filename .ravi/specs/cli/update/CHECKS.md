@@ -23,6 +23,9 @@
   replacement, paths containing `bun`, spaces and quotes, forced standby
   registration that preserves the predecessor, and explicit
   clearing of context inherited from the PM2 manager.
+- `daemon start --json` MUST launch with the same Bun executable and cleared
+  runtime/session environment as text mode; quiet lifecycle execution MUST NOT
+  depend on launcher variables already existing in the caller environment.
 - `bun test src/cli/operator-runtime.test.ts src/cli/registry-operator-gateway.test.ts`
   MUST prove that installed operator commands reach the authenticated gateway,
   isolated source commands stay local, and runtime contexts cannot obtain an
