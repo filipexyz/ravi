@@ -601,11 +601,15 @@ export type RuntimeEvent =
     } & RuntimeEventBase)
   | ({
       type: "turn.failed";
+      /** Affirmative provider evidence that this attempt executed no model/tool work. */
+      preExecutionRejected?: boolean;
+      providerSessionId?: string;
+      session?: RuntimeSessionState;
       usage?: RuntimeUsage;
       error: string;
       recoverable?: boolean;
       /** Canonical failure class used by the host to apply bounded, replay-safe recovery. */
-      failureKind?: "transport";
+      failureKind?: "transport" | "provider_capacity_exhausted" | "provider_capacity_retry_unsafe";
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({

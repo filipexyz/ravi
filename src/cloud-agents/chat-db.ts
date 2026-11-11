@@ -12,19 +12,23 @@
  *   (`ravi cloud runs start --bind-thread`). One active binding per thread key;
  *   it ends when the run ends.
  *
- * Tables are created lazily, like `task-runs-db.ts`.
+ * The daemon prepares these tables; channels validates same-release readiness.
  */
 
 import type { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 
+import { initializeStateSchema } from "../db/schema-owner.js";
 import { getDb } from "../router/router-db.js";
-
-const ensured = new WeakSet<Database>();
 
 function db(): Database {
   const database = getDb();
-  if (!ensured.has(database)) {
+  ensureCloudChatSchema(database);
+  return database;
+}
+
+export function ensureCloudChatSchema(database: Database = getDb()): void {
+  initializeStateSchema(database, "cloud-chat", () => {
     database.exec(`
       CREATE TABLE IF NOT EXISTS cloud_delivery_items (
         item_id TEXT PRIMARY KEY,
@@ -101,9 +105,7 @@ function db(): Database {
     if (!approvalColumns.some((column) => column.name === "card_sent_at")) {
       database.exec("ALTER TABLE cloud_chat_approvals ADD COLUMN card_sent_at INTEGER");
     }
-    ensured.add(database);
-  }
-  return database;
+  });
 }
 
 // ---------------------------------------------------------------------------

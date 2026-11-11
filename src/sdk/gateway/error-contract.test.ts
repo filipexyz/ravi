@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { ContractError, expectedErrorToContractError } from "../../cli/agent-contract.js";
@@ -50,7 +51,10 @@ class FailureCommands {
       "Fixture not found. Select an existing fixture.",
       1,
       {
-        suggestedAction: "List the available fixtures before retrying",
+        ...errorDiagnostic("Fixture not found. Select an existing fixture.", { operation: "failure expected" }),
+        ...{
+          suggestedAction: "List the available fixtures before retrying",
+        },
       },
     );
   }
@@ -177,7 +181,7 @@ describe("gateway error contract end to end", () => {
     expect(remote.details.suggestedAction).toBe("List the available fixtures before retrying");
   });
 
-  it("correlates a private stack/cause with a safe HTTP 500 and CLI requestId", async () => {
+  it("preserves the exception cause through HTTP 500 and remote CLI with requestId", async () => {
     const stderr = spyOn(process.stderr, "write").mockImplementation((() => true) as never);
     try {
       const response = (await handleGatewayRequest(request("failure/internal"), ctx))!;
@@ -185,12 +189,15 @@ describe("gateway error contract end to end", () => {
       const remote = await relay(response, "failure internal");
       const log = stderr.mock.calls.map((call) => String(call[0])).join("");
       expect(log).toContain(String(remote.details.requestId));
-      expect(log).toContain("stack=");
+      expect(log).not.toContain("stack=");
       expect(log).toContain("fixture_table");
-      expect(log).toContain("error-contract.test.ts");
+      expect(log).not.toContain("error-contract.test.ts");
       expect(remote.code).toBe("UNHANDLED_ERROR");
       expect(remote.details.retryable).toBe(false);
-      expect(JSON.stringify(remote.envelope())).not.toContain("fixture_table");
+      expect(remote.details.cause).toBe("Database lookup failed\nCaused by: no such table: fixture_table");
+      expect(remote.details.context).toEqual({ operation: "failure internal" });
+      expect(log).toContain(String(remote.details.cause));
+      expect(JSON.stringify(remote.envelope())).not.toContain("error-contract.test.ts");
       expect(log).not.toContain("caller-secret");
     } finally {
       stderr.mockRestore();
@@ -305,6 +312,8 @@ describe("gateway error contract end to end", () => {
       expect(logs).toContain(first);
       expect(logs).toContain(second);
       expect(logs).toContain("suppressed=2");
+      expect(logs).toContain("Cannot load fixture\nCaused by: database password=[redacted:password]");
+      expect(logs).not.toContain("stack=");
       for (const secret of [
         "not-for-logs",
         "opaque-secret",

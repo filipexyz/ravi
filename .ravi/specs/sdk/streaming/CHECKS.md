@@ -65,6 +65,14 @@ voltam para o dispatcher single-shot.
 
 4. **Auth obrigatória em /api/v1/_stream/**: request sem Bearer retorna 401.
 
+4b. **Paridade com erros do gateway na abertura**: contexto expirado retorna
+    `401 CONTEXT_EXPIRED`; revogado (inclusive também expirado) ou desconhecido,
+    `401 AUTH_REQUIRED`; contexto vivo sem grant, `403 PERMISSION_DENIED` com
+    `error.cause` nomeando a permissão. Recusas não iniciam subscribe, não
+    emitem audit de abertura e não expõem a chave. Contexto vivo autorizado
+    abre SSE e entrega eventos. Regressão com registry real e estado isolado:
+    `bun test --preload ./src/test/isolated-runtime-preload.ts src/sdk/gateway/streaming/`.
+
 5. **Audit envelope casado**: `sdk.gateway.stream.opened` sempre tem
    `sdk.gateway.stream.closed` correspondente em até 1 hora.
 

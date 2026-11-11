@@ -90,7 +90,9 @@ describe("usage exit taxonomy smoke", () => {
       op: "tasks list",
       error: {
         code: "USAGE_ERROR",
-        message: "error: unknown option '--token=[REDACTED]'",
+        message: "error: unknown option '--token=[redacted:token]",
+        cause: "error: unknown option '--token=[redacted:token]",
+        context: { code: "commander.unknownOption", operation: "tasks list" },
       },
     });
   });
@@ -108,7 +110,9 @@ describe("usage exit taxonomy smoke", () => {
       op: "tasks list",
       error: {
         code: "USAGE_ERROR",
-        message: "error: unknown option '--token=[REDACTED]'",
+        message: "error: unknown option '--token=[redacted:token]",
+        cause: "error: unknown option '--token=[redacted:token]",
+        context: { code: "commander.unknownOption", operation: "tasks list" },
       },
     });
   });
@@ -187,7 +191,7 @@ describe("usage exit taxonomy smoke", () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toBe("Binary resource was not found.\n");
+    expect(result.stderr).toBe("Binary resource was not found.\noperation: audio blob\n");
     expect(result.stderr).not.toContain("__contract_missing_audio_blob__");
   });
 
@@ -195,7 +199,7 @@ describe("usage exit taxonomy smoke", () => {
     const result = runCli(["audio", "generate"], { RAVI_AGENT_ID: undefined });
     expect(result.status).toBe(2);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toBe("Provide text or --text-file.\n");
+    expect(result.stderr).toBe("Provide text or --text-file.\noperation: audio generate\n");
   });
 
   it("renders legacy handler failures as one canonical JSON envelope", () => {

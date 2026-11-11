@@ -6924,7 +6924,7 @@ class ChannelsStartReturn {
 ChannelsStartReturn channelsStartReturnFromJson(Object? json) => ChannelsStartReturn.fromJsonValue(json);
 
 class ChannelsStatusReturn {
-  const ChannelsStatusReturn({required this.channels, this.health, required this.pm2Available, required this.processName, required this.processes, this.runner});
+  const ChannelsStatusReturn({required this.channels, this.health, required this.pm2Available, required this.processName, required this.processes, this.runner, required this.runtime, required this.warnings});
 
   final RaviJson channels;
   final RaviJson? health;
@@ -6932,6 +6932,8 @@ class ChannelsStatusReturn {
   final String processName;
   final List<RaviJson> processes;
   final RaviJson? runner;
+  final RaviJson runtime;
+  final List<String> warnings;
 
   factory ChannelsStatusReturn.fromJson(Map<String, Object?> json) {
     return ChannelsStatusReturn(
@@ -6941,6 +6943,8 @@ class ChannelsStatusReturn {
       processName: raviJsonAsString(json["processName"]),
       processes: raviJsonAsList(json["processes"], RaviJson.from),
       runner: json["runner"] == null ? null : RaviJson.from(json["runner"]),
+      runtime: RaviJson.from(json["runtime"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -11365,6 +11369,88 @@ class CredentialsPoliciesExplainReturn {
 
 CredentialsPoliciesExplainReturn credentialsPoliciesExplainReturnFromJson(Object? json) => CredentialsPoliciesExplainReturn.fromJsonValue(json);
 
+class CredentialsRequestOptions {
+  const CredentialsRequestOptions({this.backend, this.execute, this.label, this.reason, this.scopes, this.user});
+
+  final String? backend;
+  final bool? execute;
+  final String? label;
+  final String? reason;
+  final String? scopes;
+  final String? user;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (backend != null) {
+      into["backend"] = RaviJson.from(backend);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+    if (scopes != null) {
+      into["scopes"] = RaviJson.from(scopes);
+    }
+    if (user != null) {
+      into["user"] = RaviJson.from(user);
+    }
+  }
+}
+
+class CredentialsRequestReturn {
+  const CredentialsRequestReturn({required this.delivery, required this.expiresAt, required this.requestId, required this.target});
+
+  final String delivery;
+  final double expiresAt;
+  final String requestId;
+  final String target;
+
+  factory CredentialsRequestReturn.fromJson(Map<String, Object?> json) {
+    return CredentialsRequestReturn(
+      delivery: raviJsonAsString(json["delivery"]),
+      expiresAt: raviJsonAsDouble(json["expiresAt"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      target: raviJsonAsString(json["target"]),
+    );
+  }
+
+  static CredentialsRequestReturn fromJsonValue(Object? json) {
+    return CredentialsRequestReturn.fromJson(raviJsonObject(json, "CredentialsRequestReturn"));
+  }
+}
+
+CredentialsRequestReturn credentialsRequestReturnFromJson(Object? json) => CredentialsRequestReturn.fromJsonValue(json);
+
+class CredentialsRequestStatusReturn {
+  const CredentialsRequestStatusReturn({required this.activation, this.receipt, required this.requestId, required this.status, required this.target});
+
+  final String activation;
+  final String? receipt;
+  final String requestId;
+  final String status;
+  final String target;
+
+  factory CredentialsRequestStatusReturn.fromJson(Map<String, Object?> json) {
+    return CredentialsRequestStatusReturn(
+      activation: raviJsonAsString(json["activation"]),
+      receipt: json["receipt"] == null ? null : raviJsonAsString(json["receipt"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      status: raviJsonAsString(json["status"]),
+      target: raviJsonAsString(json["target"]),
+    );
+  }
+
+  static CredentialsRequestStatusReturn fromJsonValue(Object? json) {
+    return CredentialsRequestStatusReturn.fromJson(raviJsonObject(json, "CredentialsRequestStatusReturn"));
+  }
+}
+
+CredentialsRequestStatusReturn credentialsRequestStatusReturnFromJson(Object? json) => CredentialsRequestStatusReturn.fromJsonValue(json);
+
 class CrmAccountReturn {
   const CrmAccountReturn({required this.crm, required this.target});
 
@@ -13560,7 +13646,7 @@ class DaemonStartReturn {
 DaemonStartReturn daemonStartReturnFromJson(Object? json) => DaemonStartReturn.fromJsonValue(json);
 
 class DaemonStatusReturn {
-  const DaemonStatusReturn({required this.infrastructure, required this.pm2Available, required this.processName, required this.processes, required this.ravi, required this.runtime});
+  const DaemonStatusReturn({required this.infrastructure, required this.pm2Available, required this.processName, required this.processes, required this.ravi, required this.runtime, required this.warnings});
 
   final Map<String, RaviJson> infrastructure;
   final bool pm2Available;
@@ -13568,6 +13654,7 @@ class DaemonStatusReturn {
   final List<Map<String, RaviJson>> processes;
   final Map<String, RaviJson> ravi;
   final RaviJson runtime;
+  final List<String> warnings;
 
   factory DaemonStatusReturn.fromJson(Map<String, Object?> json) {
     return DaemonStatusReturn(
@@ -13577,6 +13664,7 @@ class DaemonStatusReturn {
       processes: raviJsonAsList(json["processes"], raviJsonAsRaviJsonMap),
       ravi: raviJsonAsRaviJsonMap(json["ravi"]),
       runtime: RaviJson.from(json["runtime"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -20787,6 +20875,80 @@ class PermissionsStatusReturn {
 
 PermissionsStatusReturn permissionsStatusReturnFromJson(Object? json) => PermissionsStatusReturn.fromJsonValue(json);
 
+class PrPublishOptions {
+  const PrPublishOptions({this.base, this.bodyFile, this.dryRun, this.execute, this.expectSha, this.repo, this.title});
+
+  final String? base;
+  final String? bodyFile;
+  final bool? dryRun;
+  final bool? execute;
+  final String? expectSha;
+  final String? repo;
+  final String? title;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (base != null) {
+      into["base"] = RaviJson.from(base);
+    }
+    if (bodyFile != null) {
+      into["bodyFile"] = RaviJson.from(bodyFile);
+    }
+    if (dryRun != null) {
+      into["dryRun"] = RaviJson.from(dryRun);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectSha != null) {
+      into["expectSha"] = RaviJson.from(expectSha);
+    }
+    if (repo != null) {
+      into["repo"] = RaviJson.from(repo);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+  }
+}
+
+class PrPublishReturn {
+  const PrPublishReturn({required this.attemptId, required this.base, required this.checks, required this.follow, required this.head, required this.localSha, required this.pr, required this.publicationId, required this.remoteSha, required this.repo, required this.treeSha});
+
+  final String attemptId;
+  final String base;
+  final RaviJson checks;
+  final RaviJson follow;
+  final String head;
+  final String localSha;
+  final RaviJson pr;
+  final String publicationId;
+  final String remoteSha;
+  final String repo;
+  final String treeSha;
+
+  factory PrPublishReturn.fromJson(Map<String, Object?> json) {
+    return PrPublishReturn(
+      attemptId: raviJsonAsString(json["attemptId"]),
+      base: raviJsonAsString(json["base"]),
+      checks: RaviJson.from(json["checks"]),
+      follow: RaviJson.from(json["follow"]),
+      head: raviJsonAsString(json["head"]),
+      localSha: raviJsonAsString(json["localSha"]),
+      pr: RaviJson.from(json["pr"]),
+      publicationId: raviJsonAsString(json["publicationId"]),
+      remoteSha: raviJsonAsString(json["remoteSha"]),
+      repo: raviJsonAsString(json["repo"]),
+      treeSha: raviJsonAsString(json["treeSha"]),
+    );
+  }
+
+  static PrPublishReturn fromJsonValue(Object? json) {
+    return PrPublishReturn.fromJson(raviJsonObject(json, "PrPublishReturn"));
+  }
+}
+
+PrPublishReturn prPublishReturnFromJson(Object? json) => PrPublishReturn.fromJsonValue(json);
+
 class ProjectsCreateOptions {
   const ProjectsCreateOptions({this.console, this.defaultPageSite, this.description, this.execute, this.name, this.visibility});
 
@@ -22358,7 +22520,7 @@ class RuntimeEnvSetOptions {
 }
 
 class RuntimeEnvSetReturn {
-  const RuntimeEnvSetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});
+  const RuntimeEnvSetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value, this.warnings});
 
   final String action;
   final bool daemonReloadRequired;
@@ -22370,6 +22532,7 @@ class RuntimeEnvSetReturn {
   final bool redacted;
   final bool secret;
   final RaviJson value;
+  final List<String>? warnings;
 
   factory RuntimeEnvSetReturn.fromJson(Map<String, Object?> json) {
     return RuntimeEnvSetReturn(
@@ -22383,6 +22546,7 @@ class RuntimeEnvSetReturn {
       redacted: raviJsonAsBool(json["redacted"]),
       secret: raviJsonAsBool(json["secret"]),
       value: RaviJson.from(json["value"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -22394,7 +22558,7 @@ class RuntimeEnvSetReturn {
 RuntimeEnvSetReturn runtimeEnvSetReturnFromJson(Object? json) => RuntimeEnvSetReturn.fromJsonValue(json);
 
 class RuntimeEnvUnsetReturn {
-  const RuntimeEnvUnsetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});
+  const RuntimeEnvUnsetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value, this.warnings});
 
   final String action;
   final bool daemonReloadRequired;
@@ -22406,6 +22570,7 @@ class RuntimeEnvUnsetReturn {
   final bool redacted;
   final bool secret;
   final RaviJson value;
+  final List<String>? warnings;
 
   factory RuntimeEnvUnsetReturn.fromJson(Map<String, Object?> json) {
     return RuntimeEnvUnsetReturn(
@@ -22419,6 +22584,7 @@ class RuntimeEnvUnsetReturn {
       redacted: raviJsonAsBool(json["redacted"]),
       secret: raviJsonAsBool(json["secret"]),
       value: RaviJson.from(json["value"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -25240,6 +25406,64 @@ SessionsSetTtlReturn sessionsSetTtlReturnFromJson(Object? json) => raviJsonAsRav
 typedef SessionsSubscriptionsReturn = Map<String, RaviJson>;
 
 SessionsSubscriptionsReturn sessionsSubscriptionsReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class SessionsThreadConfigureOptions {
+  const SessionsThreadConfigureOptions({this.effort, this.model, this.provider, this.session, this.thinking});
+
+  final String? effort;
+  final String? model;
+  final String? provider;
+  final String? session;
+  final String? thinking;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
+    if (model != null) {
+      into["model"] = RaviJson.from(model);
+    }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+    if (thinking != null) {
+      into["thinking"] = RaviJson.from(thinking);
+    }
+  }
+}
+
+class SessionsThreadConfigureReturn {
+  const SessionsThreadConfigureReturn({required this.actionId, required this.after, required this.appliesOn, required this.before, required this.changed, required this.status, required this.thread});
+
+  final String actionId;
+  final RaviJson after;
+  final String appliesOn;
+  final RaviJson before;
+  final bool changed;
+  final String status;
+  final RaviJson thread;
+
+  factory SessionsThreadConfigureReturn.fromJson(Map<String, Object?> json) {
+    return SessionsThreadConfigureReturn(
+      actionId: raviJsonAsString(json["actionId"]),
+      after: RaviJson.from(json["after"]),
+      appliesOn: raviJsonAsString(json["appliesOn"]),
+      before: RaviJson.from(json["before"]),
+      changed: raviJsonAsBool(json["changed"]),
+      status: raviJsonAsString(json["status"]),
+      thread: RaviJson.from(json["thread"]),
+    );
+  }
+
+  static SessionsThreadConfigureReturn fromJsonValue(Object? json) {
+    return SessionsThreadConfigureReturn.fromJson(raviJsonObject(json, "SessionsThreadConfigureReturn"));
+  }
+}
+
+SessionsThreadConfigureReturn sessionsThreadConfigureReturnFromJson(Object? json) => SessionsThreadConfigureReturn.fromJsonValue(json);
 
 class SessionsThreadSendOptions {
   const SessionsThreadSendOptions({this.session});

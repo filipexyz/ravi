@@ -136,6 +136,7 @@ ravi sessions close-thread [--return "<result>"]
 ravi sessions report "<progress>"
 ravi sessions threads [--all] [--json]
 ravi sessions thread-send <thread> "<instructions>"
+ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <model|clear>] [--effort <level|clear>] [--thinking <level|clear>] [--json]
 ```
 
 - Both commands infer the current session and Slack surface from tool context.
@@ -154,12 +155,74 @@ ravi sessions thread-send <thread> "<instructions>"
   `THREAD_NOT_STARTED`, `THREAD_SESSION_MISSING`; also
   `THREAD_PARENT_MISSING` and `THREAD_PARENT_RETURN_PENDING`. The remote relay
   renders local copy for each code.
+- Empty `report` and `thread-send` messages, including messages empty after
+  literal line-break decoding and trimming, MUST refuse with `USAGE_ERROR`,
+  exit `2`, before publishing or changing lifecycle state.
+- The shared error path for `report`, `close-thread`, `thread-send`, and
+  `thread-configure` MUST preserve the original throwable and nested causes.
+  Typed refusals retain their code, exit, and suggested action; unexpected
+  failures reach the shared CLI boundary for classification as `UNHANDLED_ERROR` or
+  `SQLITE_CAPACITY`, rather than a message-only `COMMAND_FAILED`.
 - A thread record can outlive its child session. `threads` MUST mark that
   thread with `childSessionMissing: true` and MUST NOT report it as unstarted.
 - Renaming a session MUST update the thread registry's saved child and parent
   names, so an open thread stays bound to its child's current name.
   A rename MUST refuse a name that an open thread saves for another child
   session, even when that child session no longer exists.
+
+## Runtime configuration by the parent
+
+- `sessions thread-configure` MUST resolve and authorize the calling channel-root
+  parent before looking up a child. An explicit `--session` MUST NOT impersonate
+  a parent the caller cannot modify.
+- The target MUST belong to that parent's persisted Slack lifecycle, be started
+  (`open` or `closed`), and resolve to the recorded child of the same agent.
+  Unknown, unrelated, missing, or mismatched children MUST NOT fall back to a
+  generic session mutation or be recreated. A child MUST NOT configure siblings.
+  A parent attached to several channels MUST use its persisted Slack thread
+  binding, rather than its historical origin channel, as ownership evidence.
+- This operation grants only configuration of `provider`, `model`, `effort`, and
+  `thinking` for that child. It MUST NOT grant generic session access or modify
+  authority, propagate agent defaults, or enable reset/delete/rename/history.
+- One or more of `provider`, `model`, `effort`, and `thinking` are required;
+  selecting the parent with `session` does not satisfy this requirement.
+  CLI and published request schemas MUST represent the same inclusive
+  requirement. Omitted fields preserve their current override; `clear` removes
+  that field's override. Thinking accepts `off|normal|verbose|clear`, ignoring
+  surrounding whitespace and case; effort uses the canonical runtime effort
+  levels.
+- The complete candidate provider/model pair and every supplied value MUST be
+  validated before any write. A provider change MUST preserve the additional
+  agent-configuration authority required by `sessions set-provider`; parenthood
+  alone MUST NOT bypass a provider's tool-control boundary.
+- The lifecycle binding, child identity, and configuration MUST be checked and
+  persisted atomically. Clearing provider MUST follow the configured agent
+  default, and incompatible provider continuity state MUST follow the same
+  handling as `sessions set-provider`. Durable history and subscriptions remain.
+- Readback MUST confirm the persisted fields and return only the thread/runtime
+  summary plus prior/current overrides, `changed`, and `appliesOn: "next-turn"`.
+  It MUST NOT expose a full session record or assert that the current turn already
+  uses the new configuration. Failed validation/authorization MUST NOT write
+  runtime configuration. Permission-denial audit MUST survive a failed operation;
+  a provider guard evaluated before the transaction MUST be revalidated against
+  the relevant identity/provider state under the write lock.
+- Configuration MUST NOT publish a prompt, interrupt the current turn, restart a
+  daemon, reopen a closed thread, or overwrite the original creation request.
+  Repeating the same patch MUST report `changed: false`.
+- An already-running provider's completion or telemetry MUST NOT overwrite the
+  provider materialized by a later `clear` or restore incompatible native state.
+  The old turn still records its output and usage; the next turn uses the saved
+  configuration. Unchanged or compatible provider continuity MUST still persist.
+- An authorized capacity retry MUST retain its original logical input cohort and
+  budget while the current handle owns the slot; a queued successor uses saved
+  provider configuration after that logical request completes. Failed-turn native
+  state and backoff telemetry MUST obey the same ownership/configuration guards.
+  Restoring a scheduled retry after daemon restart MUST respect current persisted
+  provider intent ahead of the older snapshot's provider hint, without restoring
+  incompatible native state or admitting successors into the retry cohort.
+- The action discovery surface MUST advertise `thread.configure` and its
+  command/constraints to an authorized parent. Generic session setters keep
+  their existing authorization rules.
 
 ## Root Card
 
@@ -211,3 +274,25 @@ The existing thread reconciler also drains decision effects. Exact origin bindin
 - An orphan close MUST require modify authority over the child or its recorded parent. Missing, ambiguous and unauthorized references MUST be cloaked as `SESSION_NOT_FOUND`; public copy MUST distinguish this condition from an execution failure without revealing private names.
 - Closing an orphan uses the same card update, pending-decision guard, close sequence, parent-return delivery and idempotency as a live child.
 - Existing orphan cards are reconciled by this same close command; no deployment-time destructive cleanup or recreation is authorized by this fix.
+
+## Turn attention
+
+- The existing gateway startup/30-second lifecycle reconciliation owns the persisted `slack_thread_turn_health` observation. `sessions threads` only reads it as additive nullable `turnHealth`; lifecycle `status` retains its existing meaning. No separate timer or overlay detector.
+- Observation states are `idle`, `running`, `interrupted`, `attention`, `closed`. An attention reason is `no_signal`, `no_reply`, `owner_lost` or `failed`. Each observation includes canonical `turnId`, `since`, `lastSignalAt` and `checkedAt`. Closing wins; a new turn is a new occurrence.
+- Missing `session_turns.completed_at` MUST never be hidden by partial or final-looking output. After 15 minutes without provider/trace progress, report `no_signal`, never assert death. An open tool retains the runtime's declared inactivity budget. Host lease heartbeats are ownership, not progress.
+- Only the current runtime owner MAY update the live turn's progress signal. Late events from a replaced provider MUST NOT overwrite the successor's `turnId` or `lastSignalAt`.
+- Provider progress for owned attempts MUST be visible to every reconciler sharing the database. A bounded `runtime_turn_progress` watermark MUST bind the exact attempt, physical turn, session and boot; writes MUST validate running/unclaimed attempt ownership, live boot/attempt leases, and the latest turn/attempt before and after the write. Only real provider events advance it. Lease heartbeats MUST NOT advance it, and a process-local signal MUST NOT override the persisted owner fence. Sampling MAY coalesce events for five seconds; silence detection MUST include that uncertainty allowance even when a trace arrives just after the sampled watermark.
+- `owner_lost` requires a running `runtime_turn_attempts` row whose lease expired, or whose `runtime_boot_epochs` owner is absent, inactive or expired. No lease evidence means no claim of owner loss.
+- With `completed_at`, interrupted/aborted turns become `interrupted`; failures/timeouts become `attention/failed`. A complete turn is `idle` for terminal `output_state=final|silent` or a canonical-turn-correlated final response/delivery. Otherwise, after a 60-second delivery grace, it is `attention/no_reply`.
+- A correlated final response/delivery MAY contain only media. Positive media count MUST NOT replace the final-answer, non-error and completed-turn requirements; commentary, failed delivery and unfinished work remain non-final.
+- Persist one notification receipt per physical turn, claim publication atomically, and use a stable transport message id. Repeated ticks, restart, or a reason change on the same turn MUST NOT produce another successful parent notice. Failed publication retries that same id. Recheck close/new-turn before publishing through the existing `session.return` path.
+- Before publishing, freeze the complete attention envelope in `slack_thread_attention_notices`, keyed by immutable `eventId` and unique lifecycle request/physical turn. Retries MUST preserve its original text, reason, routing and `callerContextId`. A broker ACK MUST NOT suppress retries of still-pending admissions: stream TTL may expire before broker dedup, so a dedup ACK can represent no deliverable message. The existing tick retries pending occurrences at most once per 30 seconds while they remain the current open attention; accepting/admitted/uncertain/refused receipts do not create this retry loop. Publication receipt and runtime admission are independent: a consumer MUST atomically claim that event before handing it to the runtime, validate the exact producer-owned envelope and canonical parent identity and executor, revalidate them after asynchronous dispatcher preflight and at cold launch, bind any live or starting runtime to the canonical session key captured at launch (never a reused display name), bypass volatile debounce, refuse missing-executor fallback, and dispatch the frozen envelope. Unknown or divergent receipts MUST fail closed, even when a forged envelope also carries task or decision metadata.
+- Admission receipts MUST survive reason changes, later child turns, database reopen and the broker dedup window. `accepting`, `admitted` and `uncertain` MUST NOT be automatically replayed or reset by lease expiry. Only a typed refusal proving no provider handoff MAY return the event to retryable `refused`; the existing capacity inbox retains exhausted refusals. A crash during consumer handoff remains explicit uncertainty requiring trace inspection, not proof of either delivery or permission to replay. No heuristic historical backfill is authorized.
+- Attention notices MUST carry the authority context from the exact observed physical turn. The persisted adapter request and context MUST bind to the child session and agent; missing, ambiguous or mismatched evidence MUST leave attention visible without publishing an unbounded parent turn. Ordinary context rotation retains the historical narrowing snapshot; the existing relay resolver applies permission revocations.
+- This observation MUST NOT abort, replay, synthesize a terminal event, close work, or infer PR/task completion. Reconcile bounded fair batches of 100 threads per tick; `checkedAt` makes observation age explicit.
+
+## Durable subscribers at close
+
+- Closing MUST refuse atomically with `THREAD_TRIGGERS_PENDING` when a trigger addresses the child by name or key in `replySession` and the shared activation verdict is `active` (including `enabled`). The refusal MUST list offending trigger ids and explain `ravi triggers set <id> replySession <parent-session>`.
+- Refusal MUST leave lifecycle status, close sequence, parent return and card untouched. The same guard applies after child pruning. Disabled, invalid-filter, blocked-topic and unbound-agent triggers MUST NOT block close.
+- Repointing is explicit for arbitrary triggers; close MUST NOT silently change their recipients. After handoff, close MAY proceed. The remote CLI MUST retain actionable ids without forwarding arbitrary remote text.

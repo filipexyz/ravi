@@ -1,4 +1,4 @@
-export type CredentialBackend = "keychain" | "vault";
+export type CredentialBackend = "file" | "keychain" | "vault";
 
 export type CredentialConnectionStatus = "active" | "disabled";
 

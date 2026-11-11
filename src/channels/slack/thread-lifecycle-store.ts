@@ -1,4 +1,8 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { CliExpectedError } from "../../cli/expected-error.js";
+import { ContractError } from "../../cli/agent-contract.js";
+import { resolveTriggerActivation } from "../../triggers/activation.js";
+import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../../db/write-retry.js";
 import { getDb } from "../../router/router-db.js";
@@ -202,8 +206,8 @@ export function findSlackThreadLifecycleByChildSession(childSessionKey: string):
 }
 
 /** The lifecycle survives session pruning; names must resolve unambiguously. */
-export function findSlackThreadLifecycleByChildRef(ref: string): SlackThreadLifecycleRecord | null {
-  const rows = getDb()
+export function findSlackThreadLifecycleByChildRef(ref: string, database = getDb()): SlackThreadLifecycleRecord | null {
+  const rows = database
     .prepare(`SELECT * FROM slack_thread_lifecycle
       WHERE child_session_key = ? OR child_session_name = ? OR request_id = ? LIMIT 2`)
     .all(ref, ref, ref) as SlackThreadLifecycleRow[];
@@ -494,6 +498,34 @@ export function closeSlackThreadLifecycle(input: {
       }
       if (!existing) {
         throw new Error(`Slack thread lifecycle not found for session: ${input.childSessionKey}`);
+      }
+      // Read under the same write lock as the close: a durable subscriber must
+      // be handed off explicitly before its recipient can finish.
+      const triggerIds = dbListTriggers()
+        .filter(
+          (trigger) =>
+            !!trigger.replySession &&
+            (trigger.replySession === existing.childSessionKey || trigger.replySession === existing.childSessionName) &&
+            resolveTriggerActivation(trigger).state === "active",
+        )
+        .map((trigger) => trigger.id);
+      if (triggerIds.length) {
+        throw new ContractError(
+          "sessions close-thread",
+          "THREAD_TRIGGERS_PENDING",
+          `Thread still receives active triggers: ${triggerIds.join(", ")}.`,
+          1,
+          {
+            ...errorDiagnostic(`Thread still receives active triggers: ${triggerIds.join(", ")}.`, {
+              operation: "sessions close-thread",
+            }),
+            ...{
+              triggerIds,
+              suggestedAction:
+                "Repoint each trigger with ravi triggers set <id> replySession <parent-session>, verify the destination, then retry sessions close-thread.",
+            },
+          },
+        );
       }
       const pending = database
         .query(`SELECT 1 FROM decisions d WHERE d.origin_type='thread' AND d.origin_id=?

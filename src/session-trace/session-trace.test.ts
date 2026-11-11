@@ -4,13 +4,14 @@ import { attachChatToSession, getOrCreateSession, updateSessionName } from "../r
 import { dbUpsertChat, getDb, closeRouterDb } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
-import { recordAdapterRequestTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
+import { recordAdapterRequestTrace, recordTerminalTurnTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
 import {
   getLatestSessionTurn,
   getSessionTraceBlob,
   getSessionTurn,
   listRecentSessionEventsByType,
   recordSessionEvent,
+  recordSessionBlob,
   upsertSessionTurn,
 } from "./session-trace-db.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
@@ -37,6 +38,151 @@ describe("session trace query", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("persists only normalized failure diagnostics in trace events and artifacts", () => {
+    const cause = "provider returned 401 on POST /v1/audio; cookie=session=fixture-cookie; private-tail";
+    const projectedCause = "provider returned 401 on POST /v1/audio; cookie=[redacted:cookie]";
+    const failure = {
+      code: "PROVIDER_DENIED",
+      message: "Upload failed",
+      cause,
+      context: { operation: "media send", provider: "omni", status: 401 },
+      body: { transcript: "PRIVATE_BODY" },
+      stack: "PRIVATE_STACK",
+      extra: "PRIVATE_FIELD",
+    };
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      eventType: "tool.error",
+      eventGroup: "tool",
+      payloadJson: failure,
+      error: cause,
+      preview: cause,
+    });
+    const blob = recordSessionBlob({ kind: "tool.error", contentJson: failure });
+    const stored = querySessionTrace({ session: "trace-limit", limit: 10 }).events.find((item) => item.id === event.id);
+    expect(stored?.payloadJson).toEqual({
+      code: "PROVIDER_DENIED",
+      message: "Upload failed",
+      cause: projectedCause,
+      context: failure.context,
+    });
+    expect(stored?.error).toBe(projectedCause);
+    expect(stored?.preview).toBe(projectedCause);
+    expect(getSessionTraceBlob(blob.sha256)?.contentJson).toEqual(stored?.payloadJson);
+    for (const secret of ["fixture-cookie", "private-tail", "PRIVATE_BODY", "PRIVATE_STACK", "PRIVATE_FIELD"])
+      expect(JSON.stringify({ stored, blob })).not.toContain(secret);
+  });
+
+  it("keeps typed failure lifecycle controls and uses the event's original cause", () => {
+    const controls = {
+      reason: "no_agent",
+      stage: "dispatch",
+      agentId: "main",
+      userFacing: true,
+      abort_reason: "runtime_credential_rate_limited",
+      autoRecovered: false,
+      recoverable: true,
+      suppressedRecoverable: false,
+      credentialRetry: true,
+      credentialFailureKind: "rate_limited",
+      recoveryKind: "provider_session_missing",
+      resumeStashedMessages: true,
+      userResponseSuppressed: false,
+      is_error: true,
+      restartAttempts: 2,
+      stashedQueueSize: 0,
+      previousModel: "openai/gpt-5.5",
+      nextModel: "openai/gpt-4.1",
+      strategy: "direct-set",
+      fallback: "restart-next-turn",
+    };
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "dispatch.intake_failed",
+      eventGroup: "dispatch",
+      error: "Runtime prompt intake failed (no_agent)",
+      payloadJson: { ...controls, arbitrary: "PRIVATE_FIELD", body: "PRIVATE_BODY", stack: "PRIVATE_STACK" },
+    });
+    expect(event.payloadJson).toEqual({
+      ...controls,
+      message: "Runtime prompt intake failed (no_agent)",
+      cause: "Runtime prompt intake failed (no_agent)",
+      context: {},
+    });
+    expect(JSON.stringify(event.payloadJson)).not.toContain("PRIVATE_");
+  });
+
+  it("preserves the canonical redaction marker in diagnostic artifacts", () => {
+    const blob = recordSessionBlob({
+      kind: "tool.error",
+      contentJson: { message: "provider denied", cause: "OPENAI_API_KEY=PRIVATE_CREDENTIAL" },
+    });
+    expect(getSessionTraceBlob(blob.sha256)?.contentJson).toEqual({
+      message: "provider denied",
+      cause: "OPENAI_API_KEY=[redacted:openai_api_key]",
+      context: {},
+    });
+  });
+
+  it("rejects secret or malformed lifecycle controls without reading arbitrary properties", () => {
+    let unknownReads = 0;
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "turn.failed",
+      eventGroup: "turn",
+      error: "provider denied",
+      payloadJson: {
+        reason: "no_agent?key=PRIVATE_QUERY",
+        stage: "PRIVATE_STAGE",
+        agentId: "sk-PRIVATE_IDENTIFIER",
+        autoRecovered: "PRIVATE_BOOLEAN",
+        restartAttempts: Infinity,
+        stashedQueueSize: -1,
+        previousModel: "model?key=PRIVATE_QUERY",
+        nextModel: "sk-PRIVATE_MODEL",
+        strategy: "PRIVATE_STRATEGY",
+        fallback: "PRIVATE_FALLBACK",
+        get recoverable() {
+          throw new Error("PRIVATE_GETTER");
+        },
+        get arbitrary() {
+          unknownReads++;
+          throw new Error("PRIVATE_UNKNOWN_GETTER");
+        },
+      },
+    });
+    expect(event.payloadJson).toEqual({ message: "provider denied", cause: "provider denied", context: {} });
+    expect(unknownReads).toBe(0);
+  });
+
+  it("normalizes a provider event's cause without retaining raw bodies or headers", () => {
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "turn.failed",
+      eventGroup: "turn",
+      error: "model unavailable",
+      payloadJson: {
+        recoverable: false,
+        rawEvent: {
+          message: "provider returned 401; cookie=PRIVATE_COOKIE; PRIVATE_TAIL",
+          status: 401,
+          body: { transcript: "PRIVATE_BODY" },
+          headers: { authorization: "PRIVATE_HEADER" },
+          stack: "PRIVATE_STACK",
+          arbitrary: "PRIVATE_FIELD",
+        },
+      },
+    });
+    expect(event.payloadJson).toEqual({
+      recoverable: false,
+      message: "model unavailable",
+      cause: "model unavailable\nCaused by: provider returned 401; cookie=[redacted:cookie]",
+      context: { status: 401 },
+    });
+    expect(JSON.stringify(event.payloadJson)).not.toContain("PRIVATE_");
   });
 
   it("applies stream suppression before the bounded timeline limit", () => {
@@ -325,6 +471,35 @@ describe("session turn usage and output state", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("keeps explicit terminal silence distinct from missing terminal after database reopen", () => {
+    const sessionKey = "agent:main:silence";
+    for (const turnId of ["silent", "unterminated"]) {
+      upsertSessionTurn({ turnId, sessionKey, status: "running", startedAt: 1000, updatedAt: 1000 });
+    }
+    recordTerminalTurnTrace({
+      sessionKey,
+      turnId: "silent",
+      status: "complete",
+      eventType: "turn.complete",
+      outputState: "silent",
+      completedAt: 2000,
+    });
+    closeRouterDb();
+    expect(getSessionTurn("silent")).toMatchObject({
+      status: "complete",
+      outputState: "silent",
+      completedAt: 2000,
+    });
+    expect(getSessionTurn("unterminated")).toMatchObject({
+      status: "running",
+      outputState: null,
+      completedAt: null,
+    });
+    expect(querySessionTrace({ session: sessionKey }).turns.find((turn) => turn.turnId === "silent")?.outputState).toBe(
+      "silent",
+    );
   });
 
   it("keeps unreported usage as NULL, never 0, and round-trips the output state", () => {

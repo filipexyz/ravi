@@ -16,7 +16,7 @@ omni-nats       NATS with JetStream on :4222, installed by `ravi setup` through 
 omni-api        Omni API on :8882 (WhatsApp, Telegram, Discord)
 ```
 
-- The daemon spawns no child processes. It connects to NATS at `NATS_URL` (default `nats://127.0.0.1:4222`) and to Omni via `OMNI_API_URL`/`OMNI_API_KEY` or `~/.omni/config.json`; without Omni only native channels deliver. `ravi daemon start` does not start `ravi-channels`, and the text output of `ravi daemon status` does not list it (`--json` does).
+- The daemon spawns no child processes. It connects to NATS at `NATS_URL` (default `nats://127.0.0.1:4222`) and to Omni via `OMNI_API_URL`/`OMNI_API_KEY` or `~/.omni/config.json`; without Omni only native channels deliver. `ravi daemon start` does not start `ravi-channels`, and `ravi daemon status` reports both processes, their boot versions and file freshness.
 - Inbound messages (Omni and Slack) become prompts on `ravi.session.<name>.prompt` (stream `SESSION_PROMPTS`). Slack replies go out on `ravi.channel.outbound.*` (stream `CHANNEL_OUTBOUND`), consumed by `ravi-channels`. Omni's subjects (`message.received.{channelType}.{instanceId}`, `reaction.received.*`, `instance.*`) never carry Slack.
 - State is SQLite under `RAVI_STATE_DIR` (default `~/.ravi`); `ravi.db` holds agents, instances, routes, sessions, contacts, triggers and settings. The daemon loads `~/.ravi/.env` over the process environment; the CLI loads it without overriding. Logs are PM2's (`ravi daemon logs --path`). Each agent's `cwd` holds its `AGENTS.md` and optional `HEARTBEAT.md`.
 
@@ -53,20 +53,16 @@ bun run test         # the CI suite, including SDK, OpenAPI, Swift and Dart drif
 bun test <path>      # one focused suite
 ```
 
-- Pre-commit runs Biome on staged files. Pre-push runs `bun run sdk:check` (on drift it regenerates and blocks until you commit), then build, typecheck and `bun run test`. Never use `--no-verify`.
+- Pre-commit runs Biome on staged files. Ordinary pre-push runs SDK/build/typecheck/full tests on development machines. On production hosts run focused checks in isolated state and use `ravi pr publish --repo filipexyz/ravi --base dev --title "..." --body-file <file>` (preview), then `--execute`; see CONTRIBUTING.md. Full validation remains mandatory in PR CI. Never disable hooks or use `--no-verify`.
+- Publication, including preview, requires an authenticated publishing Ravi session through the gateway/agent. Bare operator execution and `--reply-session` are removed (breaking change); never bypass the journal.
+- After publishing through the Git Data API, create or update the ready PR from the publishing Ravi session and register its standard CI follow. Verify the uploaded tree/SHA and record the literal publication commands in the PR. Do not claim persistent follow-up before the watcher exists.
 - Changing a command's flags or return schema changes the generated SDKs and `openapi.json`/`docs/openapi.json`; `CONTRIBUTING.md` lists the regenerate commands.
 - `src/cli/execute-consumers.test.ts` checks exact command strings in `README.md`, `AGENTS.md`, skills and docs. When a command gains or loses its `--execute` brake, update that test and those files.
-- Try the CLI without touching a live install: `HOME=$(mktemp -d) ./bin/ravi <group> <command> --help`.
+- Try source commands with isolated `RAVI_STATE_DIR="$(mktemp -d)"`; avoid the auto-building wrapper on production hosts. Real-state schema initialization belongs only to the installed PM2 daemon by process identity; channels validates the same-release schema before serving and never migrates; CLI/build/tests/worktrees must select isolated state explicitly and cannot opt in to real state. No new launcher flag is needed. All new writable SQLite constructors must use `openStateDatabase` from `src/db/state-boundary.ts`.
 
-The daemon and the channel runner run the built bundle, so `src/` changes need a build and a restart. `ravi daemon restart` re-registers the daemon with the bundle of the CLI you invoke, so restart through `./bin/ravi` to run this checkout. CLI config writes (agents, instances, routes, triggers, cron) need no restart: they emit refresh events such as `ravi.config.changed`. Editing `~/.ravi/.env` needs a daemon restart.
+For source runtime testing, use an isolated foreground daemon only on a dedicated development machine/container without live credentials and with a separate NATS/JetStream server. See CONTRIBUTING.md for that flow. An isolated state directory does not isolate shared PM2 names or broker consumers. Do not use checkout `daemon start`, `daemon restart`, `daemon dev` or `channels restart`, and do not link the checkout over the installed CLI.
 
-```bash
-./bin/ravi daemon restart -m "<reason>"   # -m is required; -b runs bun run build first
-./bin/ravi channels restart -b            # after changing src/channels; refused unless the daemon runs the same bundle
-./bin/ravi daemon dev                     # rebuilds on every src/ change; apply with daemon restart
-./bin/ravi sessions send teste-main "lista os agentes" -a main -w   # try a change on a live agent
-./bin/ravi sessions trace teste-main --explain
-```
+Installed service lifecycle is separate: use the installed CLI matching the live daemon bundle and verify package/process identity before an authorized restart. A checkout restart re-registers its own bundle before that process can refuse real-state access; it can therefore replace the live service even with the state guard enabled. Repository changes do not authorize deployment or restart. CLI config writes (agents, instances, routes, triggers, cron) emit refresh events and need no restart.
 
 ## CLI Runtime Hierarchy
 

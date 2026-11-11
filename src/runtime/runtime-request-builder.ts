@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { getRecentHistory } from "../db.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
@@ -21,7 +22,11 @@ import { isSessionRelayTurn } from "./turn-origin.js";
 import { buildTurnReplyTarget } from "./turn-reply-target.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { createRuntimeMessageGenerator, pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
+import {
+  createRuntimeMessageGenerator,
+  pickRuntimeTurnAuthorityEnvelope,
+  type RuntimeMessageGeneratorOptions,
+} from "./delivery-queue.js";
 import { commitRenderedSignals, releaseRenderedSignals, renderSignalsForTurn } from "../signals/render.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
@@ -53,6 +58,7 @@ import {
   buildRuntimeRequestContext,
   buildRuntimeRequestEnv,
   refreshRuntimeRequestContextForTurn,
+  startActiveRuntimeRequestContextLease,
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
@@ -137,6 +143,8 @@ export interface RuntimeStartRequestBuildOptions {
   defaultRuntimeProviderId: RuntimeProviderId;
   crashRecovery: RuntimeCrashRecoveryCoordinator;
   modelBrokerPlanClaim?: ClaimedRuntimeModelBrokerPlan;
+  onCapacityRetryExhausted?: RuntimeMessageGeneratorOptions["onCapacityRetryExhausted"];
+  onCapacityRetryCancelled?: RuntimeMessageGeneratorOptions["onCapacityRetryCancelled"];
 }
 
 export interface RuntimeStartRequestBuildResult {
@@ -652,6 +660,7 @@ async function buildRuntimeStartRequestInternal(
         })
       : undefined;
   let recoveryPending = Boolean(recovery);
+  let recoveryPendingIds: Set<string> | undefined;
   recordRuntimeTraceEvent({
     sessionKey: dbSessionKey,
     sessionName,
@@ -814,6 +823,12 @@ async function buildRuntimeStartRequestInternal(
   // Set by transformTurnPrompt and read by the trace of the same turn.
   let turnSignals: RuntimeTraceAdapterRequestInput["signals"] = null;
   const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
+    // A restored retry can expire before its first handoff. Its startup lease
+    // is then abandoned by the host; a successor must reserve its own attempt.
+    if (initialModelBrokerAttemptAvailable && credentialResolution.attemptBinding?.modelBrokerAttemptTerminal) {
+      initialModelBrokerAttemptAvailable = false;
+      pendingModelBrokerTurnId = undefined;
+    }
     const turnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
     let planned: ClaimedRuntimeModelBrokerPlan | undefined;
     if (turnPrompt?._modelBrokerTurnId && modelBrokerSelection) {
@@ -986,11 +1001,16 @@ async function buildRuntimeStartRequestInternal(
       return runtimeResolution;
     }
   };
+  let stopActiveContextLease: (() => void) | undefined;
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,
     session: streamingSession,
     stashedMessages,
+    onCapacityRetryExhausted: options.onCapacityRetryExhausted,
+    onCapacityRetryCancelled: options.onCapacityRetryCancelled,
     beforeTurnStart: (input) => {
+      stopActiveContextLease?.();
+      stopActiveContextLease = undefined;
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
       const turnPrompt = queuedTurnPrompt ?? prompt;
       const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
@@ -1089,11 +1109,43 @@ async function buildRuntimeStartRequestInternal(
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
       streamingSession.currentBridgeTurnId = boundTurnPrompt._bridgeTurnId;
+      stopActiveContextLease = startActiveRuntimeRequestContextLease({
+        runtimeContext,
+        dbSessionKey,
+        sessionName,
+        sessionCwd,
+        agent,
+        prompt: boundTurnPrompt,
+        runtimeProviderId,
+        model: streamingSession.currentModel || effectiveModel,
+        runtimeResolution: turnRuntimeResolution,
+        resolvedSource: turnSource,
+        approvalSource,
+        isActive: () => streamingSession.turnActive && !streamingSession.done,
+        signal: streamingSession.abortController.signal,
+      });
     },
-    transformTurnPrompt: ({ combinedPrompt }) => {
-      // Only the first physical turn needs the transcript. Keep the original
-      // queued message/authority/delivery id intact, and trace the actual input.
-      if (recoveryPending && recovery) {
+    afterTurnEnd: () => {
+      stopActiveContextLease?.();
+      stopActiveContextLease = undefined;
+    },
+    transformTurnPrompt: ({ combinedPrompt, deliverableMessages }) => {
+      const retriesRecoveredCapacityRequest =
+        deliverableMessages.length > 0 &&
+        deliverableMessages.every(
+          (message) =>
+            message.providerCapacityRetry !== undefined &&
+            message.pendingId !== undefined &&
+            recoveryPendingIds?.has(message.pendingId),
+        );
+      // Capacity rejection did not consume the recovered context. Keep it on
+      // retries of that logical input, without adding it to a successor.
+      if (recovery && (recoveryPending || retriesRecoveredCapacityRequest)) {
+        if (recoveryPending) {
+          recoveryPendingIds = new Set(
+            deliverableMessages.flatMap((message) => (message.pendingId ? [message.pendingId] : [])),
+          );
+        }
         combinedPrompt = `${recovery.prompt}\n\n# Current Request\n${combinedPrompt}`;
         recoveryPending = false;
       }
@@ -1291,9 +1343,10 @@ export function resolveRuntimeCredentialUpstreamProvider(
   return undefined;
 }
 
-function buildRuntimeCredentialProfileEnv(
+export function buildRuntimeCredentialProfileEnv(
   runtimeProviderId: RuntimeProviderId,
-  binding: RuntimeCredentialAttemptBinding | undefined,
+  binding: Pick<RuntimeCredentialAttemptBinding, "authProfileRef"> | undefined,
+  env: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> | undefined {
   const authProfileRef = binding?.authProfileRef?.trim();
   if (!authProfileRef) return undefined;
@@ -1302,9 +1355,18 @@ function buildRuntimeCredentialProfileEnv(
     return { CODEX_HOME: profilePath };
   }
   if (runtimeProviderId === "claude") {
+    // Claude Code keys its stored login on whether CLAUDE_CONFIG_DIR is set, not
+    // only on the directory it names. Naming the default directory explicitly
+    // makes it look for a different login than the one the operator created by
+    // logging in normally, so the default profile must stay implicit.
+    if (!env.CLAUDE_CONFIG_DIR?.trim() && isDefaultClaudeProfilePath(profilePath)) return undefined;
     return { CLAUDE_CONFIG_DIR: profilePath };
   }
   return undefined;
+}
+
+function isDefaultClaudeProfilePath(profilePath: string): boolean {
+  return resolve(profilePath) === resolve(homedir(), ".claude");
 }
 
 function assertModelBrokerAttemptBinding(binding: RuntimeCredentialAttemptBinding | null): void {

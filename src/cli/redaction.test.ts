@@ -1,6 +1,7 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import { ContractError } from "./agent-contract.js";
-import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
+import { projectPublicIssues, publicValidationFieldName, sanitizePublicValue } from "./redaction.js";
 
 describe("public contract redaction", () => {
   it("sanitizes content, contextual secrets and paths without mutating safe metadata", () => {
@@ -74,6 +75,24 @@ describe("public contract redaction", () => {
     ]);
   });
 
+  it("projects unknown-key validation into bounded field paths without echoing unsafe names", () => {
+    const issues = projectPublicIssues([
+      {
+        path: ["input"],
+        code: "unrecognized_keys",
+        keys: ["json", "subjects", "PRIVATE_EXTRA_FIELD_6JQ8", "rctx_secret_fixture", "ctx_secret_fixture"],
+        message: "Unrecognized keys including PRIVATE_EXTRA_FIELD_6JQ8",
+      },
+    ]);
+    expect(issues).toEqual([
+      { path: ["input", "json"], code: "unrecognized_keys", message: "Unknown field." },
+      { path: ["input", "subjects"], code: "unrecognized_keys", message: "Unknown field." },
+      { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+      { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+      { path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." },
+    ]);
+  });
+
   it("redacts compound secret keys without matching unrelated words", () => {
     expect(
       sanitizePublicValue({
@@ -99,6 +118,22 @@ describe("public contract redaction", () => {
       key: "custom.secretary",
       value: "Alice",
     });
+  });
+
+  it("hides secret-named unknown fields even when they fit the public identifier grammar", () => {
+    const keys = ["password-hunter2", "api_key_fixture", "clientSecretFixture", "token-fixture", "credential"];
+    for (const key of keys) expect(publicValidationFieldName(key)).toBeUndefined();
+    const issues = projectPublicIssues([{ path: ["input"], code: "unrecognized_keys", keys }]);
+    expect(issues).toEqual(
+      keys.map(() => ({ path: ["input", "<unknown>"], code: "unrecognized_keys", message: "Unknown field." })),
+    );
+    for (const key of keys) expect(JSON.stringify(issues)).not.toContain(key);
+  });
+
+  it("retains ordinary field identifiers without overmatching secret-related words", () => {
+    for (const key of ["json", "subjects", "secretary", "passwordless"]) {
+      expect(publicValidationFieldName(key)).toBe(key);
+    }
   });
 
   it("preserves typed secret metadata while redacting plural secret containers", () => {
@@ -175,21 +210,25 @@ describe("public contract redaction", () => {
     });
   });
 
-  it("applies the same aliases to ContractError details", () => {
+  it("drops non-allowlisted ContractError details while preserving normalized diagnosis", () => {
     const error = new ContractError("demo run", "COMMAND_FAILED", "Command failed.", 1, {
-      cwd: "C:/private/customer/project",
-      outputDir: "C:/private/customer/output",
-      endpoint: "https://example.com/SENTINEL_SECRET_7M4Q/result?token=private",
-      credential: "SENTINEL_SECRET_7M4Q",
-      credentials: "SENTINEL_SECRET_7M4Q",
+      ...errorDiagnostic("Provider rejected the command; token=CONTRACT_SECRET_798", { operation: "demo run" }),
+      ...{
+        cwd: "C:/private/customer/project",
+        outputDir: "C:/private/customer/output",
+        endpoint: "https://example.com/SENTINEL_SECRET_7M4Q/result?token=private",
+        credential: "SENTINEL_SECRET_7M4Q",
+        credentials: "SENTINEL_SECRET_7M4Q",
+      },
     });
 
     expect(error.details).toEqual({
-      cwd: "[REDACTED:path]",
-      outputDir: "[REDACTED:path]",
-      endpoint: "https://example.com",
-      credential: "[REDACTED]",
-      credentials: "[REDACTED]",
+      cause: "Provider rejected the command; token=[redacted:token]",
+      context: { operation: "demo run" },
     });
+    const envelope = JSON.stringify(error.envelope());
+    expect(envelope).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(envelope).not.toContain("CONTRACT_SECRET_798");
+    expect(envelope).not.toContain("C:/private/customer");
   });
 });

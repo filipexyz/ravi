@@ -25,6 +25,12 @@ function harness(input: {
   pidAlive?: (pid: number) => boolean;
   mustBeDetached?: boolean;
   insideTree?: boolean;
+  schemaPhase?: (
+    process: ManagedDaemonProcess,
+    processes: ManagedDaemonProcess[],
+    calls: string[],
+  ) => "waiting" | "owned" | "ready" | null;
+  onWait?: (processes: ManagedDaemonProcess[], calls: string[]) => void;
 }) {
   const calls: string[] = [];
   const processes = input.processes.map((process) => ({ ...process }));
@@ -72,8 +78,13 @@ function harness(input: {
             }
             return pid > 0;
           }),
+        schemaPhase: (process) =>
+          input.schemaPhase?.(process, processes, calls) ?? (input.schemaPhase ? null : "ready"),
         now: time.now,
-        wait: time.wait,
+        wait: async (ms) => {
+          await time.wait(ms);
+          input.onWait?.(processes, calls);
+        },
         readyTimeoutMs: 1_000,
         detachTimeoutMs: 400,
         pollMs: 200,
@@ -147,6 +158,7 @@ describe("performSupervisedDaemonRestart", () => {
           return 0;
         },
         pidAlive: () => true,
+        schemaPhase: () => "ready",
         now: time.now,
         wait: time.wait,
         readyTimeoutMs: 1_000,
@@ -239,5 +251,114 @@ describe("performSupervisedDaemonRestart", () => {
     expect(result.predecessorPreserved).toBe(true);
     expect(test.calls).toEqual(["start force=true", "save", "delete 5"]);
     expect(test.processes.map((process) => process.pmId)).toEqual([4]);
+  });
+
+  it("preserves the predecessor when PM2 is online but the successor has no schema phase", async () => {
+    const test = harness({ processes: [predecessor], schemaPhase: () => null });
+    const result = await test.run();
+
+    expect(result.code).toBe("successor_not_supervised");
+    expect(result.predecessorPreserved).toBe(true);
+    expect(test.calls).toEqual(["start force=true", "delete 5"]);
+  });
+
+  it("cuts over from supervised standby and confirms readiness only after predecessor stop", async () => {
+    const test = harness({
+      processes: [predecessor],
+      schemaPhase: (_process, processes, calls) => {
+        const phase = processes.some((process) => process.pmId === predecessor.pmId) ? "waiting" : "ready";
+        calls.push(`phase ${phase}`);
+        return phase;
+      },
+    });
+    const result = await test.run();
+
+    expect(result.ok).toBe(true);
+    const stopIndex = test.calls.indexOf("delete 4");
+    expect(test.calls.slice(0, stopIndex)).toContain("phase waiting");
+    expect(test.calls.slice(0, stopIndex)).not.toContain("phase ready");
+    expect(test.calls.slice(stopIndex).filter((call) => call === "phase ready").length).toBeGreaterThanOrEqual(2);
+    expect(test.calls.indexOf("save")).toBeLessThan(stopIndex);
+    expect(test.calls.lastIndexOf("save")).toBeGreaterThan(stopIndex);
+  });
+
+  it("fails after cutover when ownership never becomes ready", async () => {
+    const test = harness({ processes: [predecessor], schemaPhase: () => "owned" });
+    const result = await test.run();
+
+    expect(result).toMatchObject({ ok: false, code: "successor_not_ready", predecessorPreserved: false });
+    expect(test.calls).toEqual(["start force=true", "save", "delete 4"]);
+  });
+
+  it("requires readiness on cold start as well", async () => {
+    const test = harness({ processes: [], schemaPhase: () => "waiting" });
+    const result = await test.run();
+
+    expect(result).toMatchObject({ ok: false, code: "successor_not_ready", predecessorPreserved: false });
+    expect(test.calls).toEqual(["start force=false"]);
+  });
+
+  it("refuses a replaced PID carrying only the previous process's phase before cutover", async () => {
+    const test = harness({
+      processes: [predecessor],
+      schemaPhase: (process) => (process.pid === 200 ? "ready" : null),
+      onWait: (processes) => {
+        const successor = processes.find((process) => process.pmId === 5);
+        if (successor) successor.pid = 201;
+      },
+    });
+    const result = await test.run();
+
+    expect(result.ok).toBe(false);
+    expect(result.predecessorPreserved).toBe(true);
+    expect(test.calls).not.toContain("delete 4");
+  });
+
+  it("does not complete a restart when PM2 reuses the successor id for another PID", async () => {
+    const test = harness({
+      processes: [predecessor],
+      onWait: (processes, calls) => {
+        if (!calls.includes("delete 4")) return;
+        const successor = processes.find((process) => process.pmId === 5);
+        if (successor) successor.pid = 201;
+      },
+    });
+    const result = await test.run();
+
+    expect(result).toMatchObject({ ok: false, code: "successor_lost", predecessorPreserved: false });
+    expect(test.calls).toContain("start force=false");
+  });
+
+  it("rejects a changed process start time even if the PM2 id and PID match", async () => {
+    const test = harness({
+      processes: [predecessor],
+      onWait: (processes, calls) => {
+        if (!calls.includes("delete 4")) return;
+        const successor = processes.find((process) => process.pmId === 5);
+        if (successor) successor.startedAt = 123;
+      },
+    });
+    const result = await test.run();
+
+    expect(result).toMatchObject({ ok: false, code: "successor_lost", predecessorPreserved: false });
+  });
+
+  it("does not describe a replacement as recovered until it reaches readiness", async () => {
+    const test = harness({
+      processes: [predecessor],
+      dropSuccessorOnDelete: true,
+      schemaPhase: (process) => (process.pid === 300 ? "owned" : "ready"),
+    });
+    const result = await test.run();
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "successor_lost",
+      changed: false,
+      successorPmId: null,
+      predecessorPreserved: false,
+    });
+    expect(result.message).toContain("replacement did not reach readiness");
+    expect(test.calls.filter((call) => call === "save")).toHaveLength(1);
   });
 });

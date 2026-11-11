@@ -1,4 +1,8 @@
+import { recordManagedRuntimeBoot } from "../runtime-process-identity.js";
 import { closeAllRaviDbs } from "../db/close-all.js";
+import { canonicalStatePath, runAsSchemaConsumer } from "../db/state-boundary.js";
+import { getCredentialsDbPath } from "../credentials/store.js";
+import { getRaviStateDir } from "../utils/paths.js";
 import { closeNats, connectNats, getNats } from "../nats.js";
 import { configStore } from "../config-store.js";
 import { logger, type LogLevel } from "../utils/logger.js";
@@ -133,6 +137,10 @@ export class ChannelRunner {
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
   async start(): Promise<void> {
+    return runAsSchemaConsumer(() => this.startAsConsumer());
+  }
+
+  private async startAsConsumer(): Promise<void> {
     if (this.running) {
       log.warn("Channel runner already started");
       return;
@@ -143,6 +151,16 @@ export class ChannelRunner {
     this.adapterStatuses.clear();
 
     const env = this.options.env ?? process.env;
+    // Stores resolve paths from process.env, even when a driver has custom options.
+    if (
+      canonicalStatePath(getRaviStateDir(env)) !== canonicalStatePath(getRaviStateDir(process.env)) ||
+      canonicalStatePath(getCredentialsDbPath(env)) !== canonicalStatePath(getCredentialsDbPath(process.env))
+    ) {
+      throw new Error(
+        "STATE_PATH_MISMATCH: channel options and process stores must select the same state and credentials",
+      );
+    }
+    (await import("../db/runtime-state.js")).assertRuntimeStateReady(process.env);
     await connectNats(this.options.natsUrl ?? env.NATS_URL ?? "nats://127.0.0.1:4222", {
       explicit: true,
       retry: true,
@@ -197,6 +215,10 @@ export class ChannelRunner {
   }
 
   async stop(): Promise<void> {
+    return runAsSchemaConsumer(() => this.stopAsConsumer());
+  }
+
+  private async stopAsConsumer(): Promise<void> {
     if (!this.running) return;
     this.running = false;
     await this.healthResponder?.stop();
@@ -230,6 +252,10 @@ export class ChannelRunner {
   }
 
   status(): ChannelRunnerStatus {
+    return runAsSchemaConsumer(() => this.statusAsConsumer());
+  }
+
+  private statusAsConsumer(): ChannelRunnerStatus {
     return {
       running: this.running,
       startedAt: this.startedAt,
@@ -377,7 +403,7 @@ export function startChannelOutboundReceiptPruner(options: ChannelOutboundReceip
   const scheduleInterval = options.setInterval ?? setInterval;
   const cancelInterval = options.clearInterval ?? clearInterval;
   const timer = scheduleInterval(() => {
-    runChannelOutboundLedgerMaintenance(now(), { receiptStore: store, publishOutboxStore });
+    runAsSchemaConsumer(() => runChannelOutboundLedgerMaintenance(now(), { receiptStore: store, publishOutboxStore }));
   }, intervalMs);
   timer.unref?.();
 
@@ -404,6 +430,8 @@ export function resolveChannelRunnerLogLevel(env: NodeJS.ProcessEnv = process.en
 
 export async function runChannelRunnerFromEnv(): Promise<void> {
   logger.setLevel(resolveChannelRunnerLogLevel());
+  if (!recordManagedRuntimeBoot("ravi-channels"))
+    log.warn("Could not record process boot identity; runtime alignment will remain unverified");
   const runner = await startChannelRunner({
     consumeOutbound: process.env.RAVI_CHANNELS_CONSUME_OUTBOUND !== "0",
   });

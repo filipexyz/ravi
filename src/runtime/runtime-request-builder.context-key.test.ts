@@ -76,6 +76,7 @@ function emptyRuntimeSession(): RuntimeSessionHandle {
 
 function streamingSession(prompt: string): RuntimeHostStreamingSession {
   return {
+    sessionKey: SESSION_KEY,
     agentId: AGENT_ID,
     queryHandle: emptyRuntimeSession(),
     starting: false,
@@ -211,6 +212,8 @@ describe("runtime request first-turn context key", () => {
 
     streaming.pendingMessages.push(createQueuedRuntimeUserMessage({ prompt: "second turn", source }));
     streaming.onTurnComplete?.();
+    // Terminal settlement revokes immediately, even while the generator is suspended at yield.
+    expect(resolveRuntimeContext(publishedKey, { touch: false })).toBeNull();
     await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
 
     expect(runtimeEnv.RAVI_CONTEXT_KEY).not.toBe(publishedKey);
@@ -220,6 +223,7 @@ describe("runtime request first-turn context key", () => {
 
     streaming.done = true;
     streaming.onTurnComplete?.();
+    expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })).toBeNull();
     await runtimeRequest.prompt.return(undefined);
   });
 });

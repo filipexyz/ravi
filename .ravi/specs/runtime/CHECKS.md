@@ -16,6 +16,7 @@
   do not emit `tool.result_delivered` (Grok/Claude/Pi), `tool.completed` also
   arms the after-tool inactivity watch so a mid-utterance plus tool cannot
   hang without a terminal.
+- `bun test src/bot.runtime-guards.test.ts` verifies that a native Slack backend turn emits exactly one media response envelope targeted at its source thread without duplicating backend-owned text; this fixture does not prove Slack transport delivery. The fixture MUST persist a matching canonical human input and accepted ingress receipt rather than inventing an unbacked `_channelBackend` binding; the runtime's durable-origin validation remains enabled.
 - `turn.complete` persists provider state, tokens, trace terminal state, and assistant message.
 - `turn.interrupted` clears response text and keeps pending prompt queue.
 - `turn.failed` emits user-facing error unless suppressed by internal interrupt recovery.
@@ -44,7 +45,7 @@
 - Explicit session abort cancels a running tool (safe or unsafe) through the provider interrupt and ends the turn immediately; it defers only while a completed tool result is still being delivered to the provider.
 - Prompt-lane interrupts (`immediate_interrupt`, `after_tool`) still wait for an unsafe tool to finish before superseding the turn.
 - After-task barriers remain blocked while an active task binding exists.
-- `bun test src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts src/runtime/session-trace.test.ts` covers yielding a WhatsApp tool turn to queued Slack input, preserving later input order, then continuing the unfinished WhatsApp request with its original target and a fresh delivery id.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/delivery-queue.test.ts src/runtime/session-dispatcher.test.ts src/runtime/session-trace.test.ts` covers a Slack DM X active while default chat Y queues a thread notification: X completes first, replies only to X, and subsequent prompts run in FIFO order without interruption, artificial continuation or a duplicate answer to Y.
 - A cross-thread continuation retains its original actor, authority, task/model overrides and channel binding. Repeated interrupt requests do not duplicate the continuation; pending continuations remain in restart stashes after tools have run.
 - Explicit abort removes yielded continuations from both pending and restart queues and interrupts their original logical channel requests, including when the active turn belongs to another chat and tool-result delivery defers the abort. Unrelated pending requests survive; later stashing cannot resurrect the cancelled work.
 - `bun test src/channels/runtime-events.test.ts` verifies that an interrupted or racing completed physical turn leaves the yielded logical channel request open, and only the resumed response produces its terminal output.

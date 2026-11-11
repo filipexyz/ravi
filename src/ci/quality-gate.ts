@@ -20,9 +20,10 @@ const REQUIRED_COMPANIONS = ["WHY.md", "RUNBOOK.md", "CHECKS.md"] as const;
  */
 export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/health.ts": ["src/channels/health.test.ts"],
-  "src/channels/runner.ts": ["src/channels/runner.test.ts"],
+  "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    "src/db/schema-owner.test.ts",
     "src/channels/presence-consumer.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
@@ -33,6 +34,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/runner.test.ts",
     "src/channels/session-prompt.test.ts",
     "src/channels/slack/media.test.ts",
+    // Automatic media receipts: durable suppression recovery and no-resend ambiguity fences.
+    "src/channels/slack/automatic-media-output.test.ts",
     "src/channels/slack/socket-mode.test.ts",
     // `channels start` liveness: PM2-online runner probed on its PID health subject, stale ones bounced.
     "src/channels/runner-liveness.test.ts",
@@ -42,8 +45,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/text-send.test.ts",
     // Slack Web API client: `ok: false` answers become structured SLACK_<ERROR> errors.
     "src/channels/slack/client.test.ts",
+    // Private credential modals: exact destination, replay receipts and payload isolation.
+    "src/channels/slack/credential-intake.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
+    // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
+    "src/channels/slack/thread-runtime.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
     "src/channels/slack/markdown-layout.test.ts",
     "src/channels/slack/markdown-delivery.test.ts",
@@ -60,7 +67,17 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Headless Omni stub: presence/renew no-ops when Omni is not installed.
     "src/omni/stub-consumer.test.ts",
   ],
+  "src/db.ts": ["src/db.test.ts", "src/db/journal-mode-retry.test.ts"],
+  "src/db/schema-owner.ts": ["src/db/schema-owner.test.ts", "src/db/schema-lock.test.ts"],
+  "src/db/schema-lock.ts": ["src/db/schema-lock.test.ts"],
+  "src/db/daemon-schema-owner.ts": ["src/db/schema-lock.test.ts", "src/cli/commands/daemon-schema-cutover.test.ts"],
+  "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
+  "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
+    // Daemon/consumer initialization exercises the router's journal/schema boundary.
+    "src/db/schema-owner.test.ts",
+    "src/db/journal-mode-retry.test.ts",
+    "src/router/state-boundary.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
     "src/router/router.test.ts",
@@ -71,6 +88,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/route-sticky-attach.test.ts",
     // Route CRUD persistence: pattern normalize, dmScope updates, soft-delete.
     "src/router/router-db.routes.test.ts",
+    // Context authority metadata preserves provenance; revocations compose with caller transactions.
+    "src/router/router-db.contexts.test.ts",
     // Channel compaction notices stay off unless announceCompaction is true.
     "src/router/router-db.announce-compaction.test.ts",
     // Daemon restart ledger records resume vs notice, only for published events.
@@ -91,6 +110,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Reset refusal must still settle its captured logical request under ownership fences.
+    "src/runtime/host-event-loop.reset-failure.test.ts",
+    // Real host/generator retention, owner and cancellation fences under memory-only isolation.
+    "src/runtime/direct-interrupted-retention.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
     // Signals piggyback: the transformTurnPrompt seam in the delivery queue.
@@ -105,6 +128,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/runtime-selection.test.ts",
     // Agent default vs last-used runtime_provider rematerialize.
     "src/runtime/agent-session-runtime-sync.test.ts",
+    // A later thread runtime configuration survives the active provider's completion.
+    "src/runtime/thread-provider-config.test.ts",
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-resolver.test.ts",
     "src/runtime/session-trace.test.ts",
@@ -173,6 +198,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   ],
   "src/hooks/": [
     "src/hooks/gh-watch.test.ts",
+    "src/hooks/gh-pr-publish.test.ts",
     "src/hooks/gh-follow-sweep.test.ts",
     // Promoção de comando longo para job: a reescrita que evita prender o turno.
     "src/hooks/jobs-promote.test.ts",
@@ -181,6 +207,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/hooks/tool-safety.test.ts",
     // Ravi Page links: browser, WebFetch and shell fetches go to `ravi pages read`.
     "src/hooks/pages-link-guard.test.ts",
+  ],
+  "src/pr/": [
+    "src/pr/service.test.ts",
+    "src/pr/journal.test.ts",
+    "src/pr/context.test.ts",
+    "src/pr/follow-health.test.ts",
+    "src/cli/commands/pr.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": [
@@ -205,8 +238,19 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // A revoked context held in memory no longer authorizes host tools.
     "src/runtime/context-liveness.test.ts",
   ],
-  "src/apps/": ["src/apps/router.test.ts"],
-  "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
+  "src/apps/": [
+    "src/apps/router.test.ts",
+    "src/apps/youtube/client.test.ts",
+    "src/apps/youtube/credential-authority.test.ts",
+  ],
+  "src/apps/router.ts": ["src/apps/router.test.ts"],
+  "src/apps/youtube/": ["src/apps/youtube/client.test.ts", "src/apps/youtube/credential-authority.test.ts"],
+  "src/devin/": [
+    "src/devin/client.test.ts",
+    "src/devin/store.test.ts",
+    "src/db/schema-owner.test.ts",
+    "src/db/journal-mode-retry.test.ts",
+  ],
 };
 
 export interface SpecGateError {

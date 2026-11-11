@@ -28,7 +28,7 @@ normative: true
 
 Status: draft
 Owner: dev
-Last updated: 2026-05-05
+Last updated: 2026-11-04
 
 ## Intent
 
@@ -57,6 +57,22 @@ with the same contract and a Dart-native API shape.
 - Generated clients MUST expose nested namespaces from `groupSegments`.
 - Generated method names MUST be deterministic and language-idiomatic.
 - Positional args SHOULD remain positional method parameters.
+- Language identifiers MUST be separate from wire names: TypeScript argument
+  parameters and their body value references MUST use the existing `camelCase`
+  naming helper; request body keys MUST preserve the raw registry `arg.name`.
+  For example, `@Arg("request-id")` becomes parameter `requestId` and body
+  `{ "request-id": requestId }`, matching Swift/Dart and the gateway dispatcher.
+- Normalized positional identifiers MUST remain distinct from each other and
+  from a trailing `options` bag. TypeScript MUST allocate stable suffixes for
+  collisions in registry positional-index order: reserve `options` if a bag is
+  present, prefer the camelCase spelling, then try `_2`, `_3`, etc. until unused.
+  Suffixes MUST affect only local variables, never raw body/schema keys or the
+  declared registry names. Reject names that remain invalid parameter bindings
+  after conversion, including async/strict reserved names (`Class` → `class`,
+  `Await` → `await`, `Arguments` → `arguments`). This restriction MUST apply to
+  parameter bindings, not keyword property/method names.
+- Input schema and OpenAPI keys MUST retain raw registry names. Language naming
+  MUST NOT introduce new gateway aliases or change request validation.
 - Options SHOULD collapse into one trailing options object or struct.
 - Commands with no args and no options SHOULD generate zero-argument methods.
 - Commands with no `@Returns` MUST return a generic JSON/unknown type in that
@@ -105,9 +121,19 @@ implementation concerns unless a dedicated runtime-port spec exists.
   package version.
 - Registry hash MUST change when the generated client surface changes.
 
+- TypeScript optional positional arguments before a required options bag MUST use `T | undefined` while retaining the normalized local identifier and original wire key.
+
 ## Checks
 
 - Every backend MUST have unit tests for deterministic emit.
+- TypeScript tests MUST parse/import an emitted kebab-case argument fixture and
+  invoke its methods to verify both symbol binding and raw request body keys.
+  Fixtures MUST cover optional/variadic arguments, normalization collisions,
+  and the generated `options` parameter.
+- The checked-in TypeScript client MUST have a cheap import/syntax regression
+  check. Root `tsconfig.json` includes `src/**/*`, not `packages/**/*`; passing
+  the root typecheck is not proof that the generated SDK is valid. Drift checks
+  establish equality to the generator, not syntactic or symbol correctness.
 - Every backend SHOULD have a mock-registry snapshot test for method naming,
   options bags, variadic args, binary returns, and unknown returns.
 - Every backend SHOULD have at least one gateway roundtrip test when the

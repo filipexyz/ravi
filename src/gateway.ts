@@ -34,7 +34,7 @@ import { extractKnowledgeMarkers, handleKnowledgeMarkers } from "./knowledge/mar
 import { KNOWLEDGE_CURATOR_CHANNEL } from "./knowledge/types.js";
 import { isEmptyOrExactSilentText, isExactSilentTokenText, isSilentTokenText, SILENT_TOKEN } from "./silent-token.js";
 import { unlink } from "node:fs/promises";
-import { nats } from "./nats.js";
+import { nats, flushNats as flushNatsConnection } from "./nats.js";
 import type { ResponseContentPart, ResponseMediaAttachment, ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
@@ -70,6 +70,8 @@ import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
+import { deliverSlackAutomaticMedia } from "./channels/slack/automatic-media-output.js";
+import { finalizeStoredSlackApprovalDelivery } from "./approval/service.js";
 import { sendSlackPrivateCards, sendSlackText } from "./channels/slack/text-send.js";
 import { SessionResponseQueue } from "./gateway-response-order.js";
 
@@ -419,6 +421,7 @@ export class Gateway {
     this.subscribeToRuntimeEvents();
     this.subscribeToDeliveryObservations();
     this.subscribeToDirectSend();
+    this.subscribeToApprovalFinalization();
     this.subscribeToReactions();
     this.subscribeToMessageDelete();
     this.subscribeToMessageEdit();
@@ -1143,6 +1146,17 @@ export class Gateway {
     }
   }
 
+  /**
+   * Traces a response, handles Knowledge markers and attempts its deliverable
+   * parts sequentially. Non-chat destinations, missing target/emit identity,
+   * silence and empty content produce dropped observations rather than sends.
+   * Original media descriptors and media-only ordinals survive normalization
+   * for frozen-manifest validation. Automatic generated files are cleaned only
+   * when every media part returns a cleanup candidate, preserving shared paths
+   * when a member remains pending, unknown or failed. Part delivery is not a
+   * transaction: a later failure cannot undo earlier remote output, and this
+   * handler supplies no durable publication/replay queue for media.
+   */
   private async handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void> {
     this.recordResponseTrace(sessionName, response);
 
@@ -1219,14 +1233,35 @@ export class Gateway {
       return;
     }
 
+    // Native bot manifests fingerprint the host's exact descriptors. Keep
+    // optional fields (for example voiceNote:false) across normalization.
+    const originalMediaParts =
+      response._automaticOutputOrigin && Array.isArray(response.content)
+        ? response.content.flatMap((part) =>
+            part?.type === "media" && normalizeResponseMediaAttachment(part.media) ? [part.media] : [],
+          )
+        : [];
+    let mediaIndex = 0;
+    const automaticMediaCleanup: ResponseMediaAttachment[] = [];
     for (let index = 0; index < deliverableParts.length; index++) {
       const part = deliverableParts[index]!;
       if (part.type === "media") {
+        const ordinal = mediaIndex++;
+        const originalMedia = originalMediaParts[ordinal] ?? part.media;
         const media =
           guarded && part.media.caption
             ? { ...part.media, caption: guardTextForGuardedSession(part.media.caption, guarded).text }
             : part.media;
-        await this.deliverResponseMediaPart(sessionName, response, target, media, index);
+        const cleanup = await this.deliverResponseMediaPart(
+          sessionName,
+          response,
+          target,
+          media,
+          index,
+          originalMedia,
+          ordinal,
+        );
+        if (cleanup) automaticMediaCleanup.push(cleanup);
       } else {
         await this.deliverResponseTextPart(
           sessionName,
@@ -1237,6 +1272,17 @@ export class Gateway {
           deliverableParts.length,
           guarded,
         );
+      }
+    }
+    // A complete manifest may contain distinct parts referencing the same
+    // local file. Keep bytes until every part is settled; retryable/unknown
+    // bundles retain their files, while confirmed receipts never upload again.
+    if (automaticMediaCleanup.length === mediaIndex) {
+      const paths = new Set<string>();
+      for (const media of automaticMediaCleanup) {
+        if (paths.has(media.filePath)) continue;
+        paths.add(media.filePath);
+        await this.cleanupResponseMediaFile(media);
       }
     }
   }
@@ -1267,6 +1313,15 @@ export class Gateway {
     };
   }
 
+  /**
+   * Applies the Knowledge egress guard before constructing a part response or
+   * publishing/sending text. Native output enters the durable outbox and reports
+   * queued, policy-suppressed or failed publication separately; queued is not
+   * provider acceptance. A deferred publication reports its retry time, while
+   * a thrown local-outbox error is reported as nonretryable.
+   * Other transports send through Omni and schedule TTS after delivery telemetry.
+   * Drops and caught failures are observations, not a successful-send return value.
+   */
   private async deliverResponseTextPart(
     sessionName: string,
     response: ResponseMessage,
@@ -1306,7 +1361,15 @@ export class Gateway {
       }
       try {
         const published = await publishChannelOutboundJobDurably(built.job);
-        if (published.ok) {
+        if (published.ok && published.disposition === "suppressed") {
+          await emitDelivery({
+            status: "dropped",
+            reason: published.record.suppressionReason ?? "outbound_policy",
+            policyDisposition: "suppressed",
+            jobId: built.job.jobId,
+            target,
+          });
+        } else if (published.ok) {
           await emitDelivery({
             status: "queued",
             reason: "native_channel_outbound",
@@ -1406,13 +1469,32 @@ export class Gateway {
     }
   }
 
+  /**
+   * Routes automatic Slack media through manifest admission and durable receipt
+   * recovery before the ordinary event-deduplicated Slack/Omni send path.
+   * Returns a cleanup candidate only for automatic delivered or policy-suppressed
+   * outcomes, including a previously persisted delivery; this does not imply a
+   * fresh upload. Pending, unknown and failed outcomes retain their source files.
+   * Ordinary sends clean generated files per part after delivery telemetry.
+   *
+   * @param originalMedia Descriptor frozen before any Knowledge caption filtering.
+   * @param mediaIndex Ordinal within the complete media set, unlike partIndex,
+   * which also counts text parts in the deliverable response.
+   */
   private async deliverResponseMediaPart(
     sessionName: string,
     response: ResponseMessage,
     target: NonNullable<ResponseMessage["target"]>,
     media: ResponseMediaAttachment,
     partIndex: number,
-  ): Promise<void> {
+    originalMedia: ResponseMediaAttachment = media,
+    mediaIndex = 0,
+  ): Promise<ResponseMediaAttachment | undefined> {
+    /**
+     * Adds normalized media metadata and the visible part index to observations,
+     * preserving a canonical receipt key supplied by automatic delivery instead
+     * of replacing it with the attachment's optional idempotency key.
+     */
     const emitDelivery = (data: Record<string, unknown>) =>
       this.emitDeliveryEvent(sessionName, response, {
         ...data,
@@ -1420,11 +1502,54 @@ export class Gateway {
         mediaType: media.type,
         filename: media.filename,
         mimeType: media.mimeType,
-        idempotencyKey: media.idempotencyKey,
+        idempotencyKey: data.idempotencyKey ?? media.idempotencyKey,
         partIndex,
       });
     const channel = target.channel.toLowerCase();
     const t0 = Date.now();
+
+    if (response._automaticOutputOrigin || response._automaticTerminalResponseId) {
+      const automatic = await deliverSlackAutomaticMedia(
+        { sessionName, response, target, media: { ...originalMedia, ...media }, originalMedia, mediaIndex },
+        {
+          /**
+           * Uploads to the destination authorized by the automatic-media helper,
+           * passing its verified Buffer intact so the mutable path is not reread.
+           */
+          send: ({ target: authorizedTarget, media: authorizedMedia, fileBytes }) =>
+            sendSlackMedia(
+              {
+                accountId: authorizedTarget.accountId,
+                chatId: authorizedTarget.chatId,
+                threadId: authorizedTarget.threadId,
+                filePath: authorizedMedia.filePath,
+                fileBytes,
+                filename: authorizedMedia.filename,
+                caption: authorizedMedia.caption,
+              },
+              { authority: { kind: "internal-service", service: "slack-delivery" } },
+            ),
+          /**
+           * Adds elapsed time to the receipt helper's observation. Connection
+           * flush confirmation remains the separate flushTelemetry callback.
+           */
+          emitDelivery: (data) => emitDelivery({ ...data, durationMs: Date.now() - t0 }),
+          flushTelemetry: flushNatsConnection,
+        },
+      );
+      if (automatic.handled) {
+        if (automatic.status === "delivered") {
+          if (automatic.newlySent) {
+            this.recordOutboundContactInteraction(sessionName, target);
+            this.schedulePostDeliveryPresenceRenewal(sessionName, target);
+          }
+          return media;
+        } else if (automatic.status === "suppressed") {
+          return media;
+        }
+        return;
+      }
+    }
 
     if (this.wasResponseMediaDelivered(sessionName, media.idempotencyKey, target)) {
       log.info("Skipping already delivered response media", {
@@ -1444,14 +1569,17 @@ export class Gateway {
 
     try {
       if (channel === "slack") {
-        const delivered = await sendSlackMedia({
-          accountId: target.accountId,
-          chatId: target.chatId,
-          threadId: target.threadId,
-          filePath: media.filePath,
-          filename: media.filename,
-          caption: media.caption,
-        });
+        const delivered = await sendSlackMedia(
+          {
+            accountId: target.accountId,
+            chatId: target.chatId,
+            threadId: target.threadId,
+            filePath: media.filePath,
+            filename: media.filename,
+            caption: media.caption,
+          },
+          { authority: { kind: "internal-service", service: "slack-delivery" } },
+        );
         this.recordOutboundContactInteraction(sessionName, target);
         this.schedulePostDeliveryPresenceRenewal(sessionName, target);
         await emitDelivery({
@@ -1840,6 +1968,36 @@ export class Gateway {
     );
   }
 
+  private subscribeToApprovalFinalization(): void {
+    this.subscribe(
+      "approvalFinalization",
+      ["ravi.outbound.approval.finalize"],
+      async (event) => {
+        await this.handleApprovalFinalizationEvent(event.data as Record<string, unknown>);
+      },
+      { queue: "ravi-gateway" },
+    );
+  }
+
+  private async handleApprovalFinalizationEvent(data: Record<string, unknown>): Promise<void> {
+    // This internal operation cannot choose an account, target or message body.
+    // A terminal approval and its durable delivery are its complete authority.
+    let response: Record<string, unknown>;
+    try {
+      if (typeof data.requestId !== "string" || typeof data.messageId !== "string") {
+        throw new Error("Invalid approval finalization request.");
+      }
+      await finalizeStoredSlackApprovalDelivery({ requestId: data.requestId, messageId: data.messageId });
+      response = { success: true };
+    } catch {
+      // no-cause: Approval delivery errors may contain provider credentials; emit only the fixed failure notice.
+      response = { success: false, error: "Slack approval finalization failed." };
+    }
+    if (typeof data.replyTopic === "string" && /^ravi\._reply\.[A-Za-z0-9-]+$/.test(data.replyTopic)) {
+      await this.emitEvent(data.replyTopic, response);
+    }
+  }
+
   private async handleDirectSendEvent(data: DirectSendRequest): Promise<void> {
     // Knowledge egress guard for packet conversations, text and poll alike.
     const guarded = guardedSessionForChat(data.channel, data.to);
@@ -1970,14 +2128,17 @@ export class Gateway {
 
     if (data.privateTo) {
       try {
-        const result = await sendSlackPrivateCards({
-          accountId: resolved.accountId,
-          chatId: data.to,
-          text,
-          userIds: data.privateTo,
-          blocks: data.blocks ?? [],
-          ...(data.threadId ? { threadId: data.threadId } : {}),
-        });
+        const result = await sendSlackPrivateCards(
+          {
+            accountId: resolved.accountId,
+            chatId: data.to,
+            text,
+            userIds: data.privateTo,
+            blocks: data.blocks ?? [],
+            ...(data.threadId ? { threadId: data.threadId } : {}),
+          },
+          { authority: { kind: "internal-service", service: "slack-delivery" } },
+        );
         log.info("Native private cards delivered", {
           accountId: resolved.accountId,
           delivered: result.deliveries.length,
@@ -2007,14 +2168,17 @@ export class Gateway {
     }
 
     try {
-      const delivered = await sendSlackText({
-        accountId: resolved.accountId,
-        chatId: data.to,
-        text,
-        ...(data.threadId ? { threadId: data.threadId } : {}),
-        ...(data.blocks ? { blocks: data.blocks } : {}),
-        ...(knowledgeGuarded ? { unfurlLinks: false } : {}),
-      });
+      const delivered = await sendSlackText(
+        {
+          accountId: resolved.accountId,
+          chatId: data.to,
+          text,
+          ...(data.threadId ? { threadId: data.threadId } : {}),
+          ...(data.blocks ? { blocks: data.blocks } : {}),
+          ...(knowledgeGuarded ? { unfurlLinks: false } : {}),
+        },
+        { authority: { kind: "internal-service", service: "slack-delivery" } },
+      );
       log.info("Native direct send delivered", {
         accountId: resolved.accountId,
         provider: resolved.provider,
@@ -2342,13 +2506,16 @@ export class Gateway {
       const resolved = resolveOutboundAccount(data.accountId, { channel: data.channel });
       if (resolved.kind === "native") {
         if (resolved.provider !== "slack" || !resolved.credentialConfigured) return;
-        await sendSlackMedia({
-          accountId: data.accountId,
-          chatId: data.chatId,
-          filePath: data.filePath,
-          filename: data.filename,
-          ...(data.caption ? { caption: data.caption } : {}),
-        });
+        await sendSlackMedia(
+          {
+            accountId: data.accountId,
+            chatId: data.chatId,
+            filePath: data.filePath,
+            filename: data.filename,
+            ...(data.caption ? { caption: data.caption } : {}),
+          },
+          { authority: { kind: "internal-service", service: "slack-delivery" } },
+        );
         log.info("Native media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
         return;
       }

@@ -44,6 +44,14 @@
       thread's name under another key), and the remote relay MUST show local
       copy for them instead of "Remote command failed."
       (`src/cli/commands/sessions.test.ts`, `src/cli/remote-gateway.test.ts`).
+- [ ] Empty and whitespace-only `report`/`thread-send` messages, including
+      literal `\n` decoded to an empty message, MUST yield `USAGE_ERROR`, exit
+      `2`, without publishing or changing lifecycle state
+      (`src/cli/commands/sessions.test.ts`, `src/channels/slack/thread-lifecycle.test.ts`).
+- [ ] `thread-configure`, `close-thread`, `report`, and `thread-send` MUST pass
+      the original throwable and nested cause to the shared CLI boundary.
+      Verify `UNHANDLED_ERROR`, `SQLITE_CAPACITY`, and unchanged typed refusal
+      codes, exit codes, and suggested actions (`src/cli/commands/sessions.test.ts`).
 - [ ] `thread.list` MUST mark an open thread whose child session is gone with
       `childSessionMissing: true`, and `thread-send` to it MUST fail with
       `THREAD_SESSION_MISSING` (`src/channels/slack/thread-lifecycle.test.ts`).
@@ -69,3 +77,64 @@ bun run build
 
 - `bun test src/channels/slack/thread-lifecycle.test.ts` closes a pruned child by its durable request id without recreating the session, is idempotent, and closes only the selected request when child keys collide.
 - `bun test src/cli/commands/sessions.test.ts` cloaks missing, ambiguous and unauthorized orphan references as SESSION_NOT_FOUND and requires modify authority before exposing or closing the card.
+
+## Turn attention
+
+- Runtime dispatcher/intake tests MUST reject missing/replaced attention executors, bypass a live parent's debounce, recheck the pinned parent after asynchronous preflight and during cold launch, and refuse a live/starting runtime bound to another canonical key even when name, agent and provider match.
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/channels/slack/thread-attention-admission.test.ts` terminates a real publisher process after fake-broker acceptance and before its publication receipt, both before and after consumer admission. After advancing beyond the simulated two-minute broker dedup window and publication lease, a fresh process MUST admit one logical notice without loss. A restart at 90 seconds (after the 60-second stream TTL but inside dedup) followed by 121 seconds MUST also deliver once. Retry envelope/authority MUST stay identical across a reason change; late copies after a later physical turn MUST remain fenced.
+- The same admission suite MUST cover concurrent consumers, database reopen, typed capacity refusal, uncertain/accepting outcomes, unknown receipts, divergent target/authority/turn/source and injected execution metadata. Uncertain work MUST never call the runtime again.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/turn-progress.test.ts` MUST run owner and reconciler in separate processes over shared isolated state: recent provider activity prevents false `no_signal`; heartbeat alone and legitimate silence do not. Replaced attempt/boot/turn, recovery claims and lease expiry during the write MUST fence stale progress. Sampling MUST not report silence prematurely.
+- `bun test src/channels/slack/thread-turn-health.test.ts src/channels/slack/thread-lifecycle.test.ts` covers missing terminals, partial output before a tool, long legitimate tools/provider activity, expired ownership leases, human interruption, intentional silence, completed turns without final return, channel-only replies, and close during a tool.
+- Two ticks across a database reopen, concurrent ticks, and `no_signal` becoming `owner_lost` MUST publish one notice per turn. Publication failure MUST retry with the same message id; a new turn may produce a new notice.
+- An attention notice from a restricted child MUST preserve its exact caller context and keep the parent narrowed after ordinary context rotation. Missing, ambiguous, wrong-session, wrong-agent or wrong-kind authority MUST publish nothing and leave attention visible.
+- Listing MUST return the stored observation unchanged until reconciliation; the strict CLI return schema MUST accept old summaries and preserve the new additive `turnHealth`.
+- The runtime provider-activity test MUST prove that real activity updates the matching canonical turn's signal without emitting a public activity event.
+- A completed automatic media-only reply with a frozen final manifest MUST remain `idle` after the delivery grace. Media in commentary, errors, failed delivery or an unfinished turn MUST NOT satisfy final-reply evidence.
+- `src/runtime/session-trace.test.ts` MUST preserve a successor's live signal when an old provider emits activity after ownership changes, while retaining the current-owner control.
+
+## Durable subscribers at close
+
+- [ ] `bun test src/channels/slack/thread-lifecycle.test.ts` refuses close for active triggers addressed by name/key and after pruning; handoff permits closure without prior side effects.
+- [ ] Inactive activation verdicts and unrelated reply sessions do not block close.
+- [ ] `bun test src/cli/commands/sessions.test.ts src/cli/remote-gateway.test.ts` preserves the refusal code, ids and repoint guidance across CLI/gateway.
+- [ ] `bun test src/triggers/__tests__/runner-named-session.test.ts` reloads the repointed trigger, closes the child, and delivers a CI event to the parent with the root source and incremented fire count.
+
+## Parent runtime configuration
+
+- Pause a real host event loop on a fake active provider, clear provider/model
+  through the parent, then complete that turn. Verify fresh next-turn selection
+  and native continuity, with no interrupt/restart and intact output/usage.
+
+- A parent attached to Slack from another channel MUST configure its owned Slack
+  thread using persisted lifecycle identity; a historical channel is not a deny.
+- A denied provider change MUST preserve its permission-denial audit while
+  leaving runtime fields untouched. A changed authorization snapshot MUST refuse
+  configuration before any runtime write.
+
+- An authorized root parent configures only its persisted child with
+  `sessions thread-configure`; the old generic `set-effort` still requires its
+  original scope. Verify real persisted readback and next-turn application.
+- Cover child name/key/request id/thread timestamp, another parent, sibling
+  caller, missing child, agent mismatch, and explicit unauthorized `--session`.
+- Cover atomic provider/model updates, invalid provider/model/effort/thinking,
+  empty patches, provider authority, `clear`, no-op, and closed-thread behavior.
+- The real registry and generated request schemas MUST reject thread-only and
+  thread-plus-session inputs, accept each runtime option individually and
+  several together, and preserve omitted overrides. Thinking MUST accept
+  `off|normal|verbose|clear` with case/whitespace variants and reject unknown,
+  empty, whitespace-only, null, and non-string values. Generated SDK signatures
+  MUST retain the thread and option fields and require the options bag. The
+  TypeScript union enforces at least one field; Swift/Dart constructors still
+  allow an explicit empty bag, so server validation remains required there.
+- Failed validation/authorization leaves all fields unchanged; successful
+  configuration leaves history/subscriptions/status intact and publishes nothing.
+- Generic reset/delete/rename/read remain unauthorized without their own grant.
+- Run the focused thread runtime and sessions command suites in separate
+  disposable-state processes, plus scope and gateway authorization regressions.
+
+- `src/runtime/thread-provider-config.test.ts` MUST cover clear before capacity
+  failure, clear during backoff, ownership replacement before failure/during wait,
+  and clear before/after a retry snapshot. Verify isolated retry input, preserved
+  retry budget, once-only authority release, no native-state resurrection, and
+  successor delivery on the newly configured provider.

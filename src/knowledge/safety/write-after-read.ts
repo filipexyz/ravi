@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 // Write-after-read (contract §11.4). A turn that read unapproved Knowledge
 // (meeting speech, page text: anything below `approved`) may have been steered
 // by it, so before that turn sends something out of the org, now or later, the
@@ -234,9 +235,14 @@ export function writeAfterReadContractError(
     "This action needs the operator's approval because the turn read unapproved Knowledge.",
     CONTRACT_EXIT_POLICY,
     {
-      retryable: decision.issues[0] === WRITE_AFTER_READ_ISSUE,
-      ...(decision.approvalId ? { approvalId: decision.approvalId } : {}),
-      issues: decision.issues,
+      ...errorDiagnostic("This action needs the operator's approval because the turn read unapproved Knowledge.", {
+        operation: op,
+      }),
+      ...{
+        retryable: decision.issues[0] === WRITE_AFTER_READ_ISSUE,
+        ...(decision.approvalId ? { approvalId: decision.approvalId } : {}),
+        issues: decision.issues,
+      },
     },
   );
 }

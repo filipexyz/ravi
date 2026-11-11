@@ -46,3 +46,25 @@ sqlite3 ~/.ravi/ravi.db "SELECT request_id, status, parent_session_key, child_se
 
 
 If close reports `THREAD_DECISIONS_PENDING`, run `ravi decisions list --thread <child-session> --json`, then `ravi decisions show <decision-id> --json`. Answer from the authorized parent/operator. A recorded answer with failed delivery uses `ravi decisions retry <decision-id> --execute`; uncertainty requires operator trace inspection and `decisions resolve-delivery`.
+
+## Close refused by active triggers
+
+For `THREAD_TRIGGERS_PENDING`, inspect every id in `triggerIds` with `ravi triggers show <id> --json`. Repoint each to its durable owner using `ravi triggers set <id> replySession <parent-session>`, inspect the saved target and activation verdict, then retry `ravi sessions close-thread`. Do not disable a live CI follow merely to close its thread. Generated `gh-follow` subscriptions use the parent automatically; maintenance repairs old thread targets, including closed/pruned children.
+
+## Configure a child's runtime
+
+From the authorized channel-root parent, find the child with
+`ravi sessions threads --all --json`, then use:
+
+```bash
+ravi sessions thread-configure <thread> --effort ultra --json
+ravi sessions thread-configure <thread> --provider codex --model gpt-6-astra --json
+ravi sessions thread-configure <thread> --effort clear --json
+```
+
+Inspect `changed`, the prior/current overrides, and `thread.runtime` in the
+readback. The configuration applies on the next turn; this command does not
+start one. An existing closed thread remains closed. `--session <parent>` is
+only for an operator/context already authorized to modify that parent.
+Provider changes retain the separate agent-configuration authority check.
+The operation does not authorize generic history access or session management.

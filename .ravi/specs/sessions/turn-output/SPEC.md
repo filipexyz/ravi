@@ -62,6 +62,20 @@ materialized text.
 
 ## Invariants
 
+- Runtime response and delivery envelopes MUST carry `traceTurnId`, the physical
+  `session_turns.turn_id`, independently of provider-native ids and channel request
+  ids. Trace writers MUST persist it in `session_events.turn_id`.
+- Automatic media released from an accepted terminal manifest MUST retain that
+  terminal's captured physical `traceTurnId`, even if its notification retires
+  the owner or changes live trace state before media release.
+- The final-manifest media emitter MUST mark the release as `final_answer`.
+  Response/delivery traces MUST preserve factual media counts and this phase
+  without treating arbitrary uploads or commentary as a final answer.
+- Explicit silence (`@@SILENT@@`, heartbeat OK, or an explicit no-response utterance)
+  MUST be recorded as `output_state = 'silent'` only with a completed turn and no
+  final utterance. Silence MUST NOT synthesize completion. A tool started after
+  the silence marker invalidates that marker as the turn's intended outcome.
+
 1. Every non-silent utterance MUST be materialized, **whatever its class**.
    Delivery is never a precondition for history.
 2. Materialization MUST record the class. A `commentary` row is visible in history

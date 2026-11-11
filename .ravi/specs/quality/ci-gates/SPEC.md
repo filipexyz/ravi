@@ -37,6 +37,9 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 - CI MUST validate changed specs with `ravi specs get <spec_id> --mode full --json` and `ravi specs get <spec_id> --mode checks --json`.
 - CI MUST fail on spec id/path/kind mismatch, invalid frontmatter, missing required companion, or empty/non-verifiable CHECKS for changed specs.
 - Runtime/consumer changes MUST include or trigger focused tests.
+- Tests sharing a Bun process MUST preserve the complete export surface of shared
+  modules. Use scoped publisher injection with per-test cleanup when available;
+  `mock.restore()` alone MUST NOT be treated as restoration of `mock.module()`.
 - The session-dispatcher state-isolation regression MUST run in its own process
   with a disposable outer state directory and a test-only SQLite preload that
   rejects production state paths before opening them. Even a caught rejection
@@ -65,6 +68,10 @@ The following source paths are considered runtime/consumer paths that require fo
 High-risk channel lifecycle files MUST also map to their own focused health,
 runner, or Socket Mode test so an unrelated channel test cannot satisfy their
 coverage requirement.
+
+## Production-host publication
+
+The production-host publication path is `ravi pr publish`, governed by `cli/pr`; its runtime state access follows `quality/state-boundary`. Before publication, run focused tests and this spec/coverage gate in isolated state without build/full-suite work locally. Full build, typecheck, lint and tests MUST remain in PR CI. An impossible local hook MUST NOT become a reason to disable hooks or waive CI. CI MUST supply isolated state, and test cleanup MUST preserve its enclosing harness directory.
 
 ## Validation
 

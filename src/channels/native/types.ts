@@ -9,6 +9,8 @@ export interface NativeTextDeliveryRequest {
   readonly text: string;
   /** `markdown`: `text` is the agent's Markdown, rendered by the adapter. Absent: already in the channel's format. */
   readonly format?: "markdown";
+  /** Internal consumer assertion after validating a native bot's frozen terminal manifest. Never copied from a job. */
+  readonly _trustedFrozenTarget?: true;
 }
 
 export interface NativeTextDeliveryResult {

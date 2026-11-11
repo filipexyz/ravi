@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -56,13 +57,16 @@ function parseProviderFilter(op: string, source?: string, asJson?: boolean): Rav
     return normalized;
   }
   contractFail(op, "USAGE_ERROR", `Invalid source provider: ${source}. Use all, claude, or agents.`, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction: `Re-run '${op}' with source one of: ${PROVIDER_FILTERS.join(", ")}`,
-      acceptedValues: [...PROVIDER_FILTERS],
-      suggestions: suggestSimilar(normalized, [...PROVIDER_FILTERS]),
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: `Re-run '${op}' with source one of: ${PROVIDER_FILTERS.join(", ")}`,
+        acceptedValues: [...PROVIDER_FILTERS],
+        suggestions: suggestSimilar(normalized, [...PROVIDER_FILTERS]),
+      },
     },
+    diagnostic: errorDiagnostic(`Invalid source provider: ${source}. Use all, claude, or agents.`, { operation: op }),
   });
 }
 

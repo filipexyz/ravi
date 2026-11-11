@@ -56,20 +56,24 @@ mock.module("../../permissions/scope.js", () => ({
 
 const { SessionRuntimeCommands } = await import("./sessions-runtime.js");
 const { ContractError } = await import("../agent-contract.js");
+const { contractErrorResponse } = await import("../../sdk/gateway/errors.js");
 type SessionRuntimeCommandsInstance = InstanceType<typeof SessionRuntimeCommands>;
 
 async function captureLogs<T>(run: () => Promise<T>): Promise<{ result: T; output: string }> {
   const lines: string[] = [];
   const originalLog = console.log;
+  const originalError = console.error;
   console.log = (...args: unknown[]) => {
     lines.push(args.map((arg) => String(arg)).join(" "));
   };
+  console.error = console.log;
 
   try {
     const result = await run();
     return { result, output: lines.join("\n") };
   } finally {
     console.log = originalLog;
+    console.error = originalError;
   }
 }
 
@@ -191,7 +195,7 @@ describe("SessionRuntimeCommands", () => {
 
     await expect(
       commands.followUp("missing", "faz isso depois", undefined, undefined, undefined, true),
-    ).rejects.toThrow("Session not found: missing");
+    ).rejects.toThrow("Session not found, or not visible to this context.");
     expect(requestReplyCalls).toHaveLength(0);
   });
 
@@ -284,7 +288,9 @@ describe("SessionRuntimeCommands", () => {
     canModify = false;
     const commands = new SessionRuntimeCommands();
 
-    await expect(commands.rollback("dev-main", "1")).rejects.toThrow("Session not found: dev-main");
+    await expect(commands.rollback("dev-main", "1")).rejects.toThrow(
+      "Session not found, or not visible to this context.",
+    );
     expect(requestReplyCalls).toHaveLength(0);
   });
 
@@ -331,6 +337,9 @@ describe("SessionRuntimeCommands", () => {
       scopeEnforced = enforced;
       const error = await captureError(() => new SessionRuntimeCommands().steer("legacy-alias", "injected"));
       expect(error.code).toBe("SESSION_NOT_FOUND");
+      expect(error.envelope().error.cause).toBe("Session not found, or not visible to this context.");
+      expect(JSON.stringify(error.envelope())).not.toContain("legacy-alias");
+      expect(JSON.stringify(error.envelope())).not.toContain(resolvedSession?.sessionKey);
     }
     expect(requestReplyCalls).toEqual([]);
   });
@@ -365,17 +374,61 @@ describe("SessionRuntimeCommands", () => {
     });
   });
 
-  it("keeps --json printing the typed result", async () => {
+  it.each([true, false])("normalizes runtime control failures before output and gateway (json=%s)", async (asJson) => {
+    const expectedCause =
+      "Runtime turn rejected by provider; https://provider.example.test/control?[redacted:url-query]\nCookie: [redacted:cookie]";
     requestReplyResult = {
-      result: { ok: false, operation: "turn.steer", code: "RUNTIME_CONTROL_DISABLED", error: "disabled" },
+      result: {
+        ok: false,
+        operation: "turn.steer",
+        code: "RUNTIME_CONTROL_DISABLED",
+        error:
+          "Runtime turn rejected by provider; https://provider.example.test/control?key=RUNTIME_QUERY_SECRET\nCookie: session=RUNTIME_COOKIE_SECRET; refresh=RUNTIME_COOKIE_TAIL",
+        state: { provider: "codex", activeTurn: true },
+        data: { private: "RUNTIME_PRIVATE_PAYLOAD" },
+      },
     };
 
-    const { result, output } = await captureLogs(() =>
-      new SessionRuntimeCommands().steer("dev-main", "x", undefined, undefined, undefined, true),
-    );
+    const { result: error, output } = await captureLogs(async () => {
+      try {
+        await new SessionRuntimeCommands().steer("dev-main", "x", undefined, undefined, undefined, asJson);
+      } catch (caught) {
+        return caught as InstanceType<typeof ContractError>;
+      }
+      throw new Error("expected the runtime control to fail");
+    });
 
-    expect(result).toMatchObject({ ok: false, code: "RUNTIME_CONTROL_DISABLED" });
-    expect(output).toContain('"code": "RUNTIME_CONTROL_DISABLED"');
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.envelope()).toMatchObject({
+      success: false,
+      op: "sessions runtime steer",
+      error: {
+        code: "RUNTIME_CONTROL_DISABLED",
+        message: expectedCause,
+        cause: expectedCause,
+        context: { operation: "sessions runtime steer", provider: "codex" },
+      },
+    });
+    if (asJson) expect(JSON.parse(output)).toEqual(error.envelope());
+    else expect(output).toContain(expectedCause);
+
+    const response = contractErrorResponse(error);
+    expect(response.status).toBe(422);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      success: false,
+      error: { code: "RUNTIME_CONTROL_DISABLED", cause: expectedCause, context: error.details.context },
+    });
+    for (const secret of [
+      "RUNTIME_QUERY_SECRET",
+      "RUNTIME_COOKIE_SECRET",
+      "RUNTIME_COOKIE_TAIL",
+      "RUNTIME_PRIVATE_PAYLOAD",
+    ]) {
+      expect(output).not.toContain(secret);
+      expect(JSON.stringify(error.envelope())).not.toContain(secret);
+      expect(JSON.stringify(body)).not.toContain(secret);
+    }
   });
 
   it("maps a reply timeout to RUNTIME_CONTROL_TIMEOUT without raw text, retryable only for reads", async () => {
@@ -392,14 +445,16 @@ describe("SessionRuntimeCommands", () => {
     expect(read.message).not.toContain("ravi.session.runtime.control");
   });
 
-  it("maps any other reply rejection to RUNTIME_CONTROL_UNAVAILABLE instead of an unhandled error", async () => {
-    requestReplyError = new Error("PRIVATE_DAEMON_TEXT");
+  it("preserves the normalized reply rejection beneath RUNTIME_CONTROL_UNAVAILABLE", async () => {
+    requestReplyError = new Error("NATS connection closed; token=PRIVATE_DAEMON_TOKEN");
 
     const error = await captureError(() => new SessionRuntimeCommands().read("dev-main"));
 
     expect(error).toBeInstanceOf(ContractError);
     expect(error.code).toBe("RUNTIME_CONTROL_UNAVAILABLE");
-    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_DAEMON_TEXT");
+    expect(error.envelope().error.cause).toBe("NATS connection closed; token=[redacted:token]");
+    expect(error.envelope().error.context).toMatchObject({ operation: "sessions runtime read" });
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_DAEMON_TOKEN");
   });
 
   it("does not mark a daemon error reply retryable for a mutating control", async () => {
@@ -425,6 +480,8 @@ describe("SessionRuntimeCommands", () => {
     expect(missing.code).toBe("SESSION_NOT_FOUND");
     expect(hidden.code).toBe("SESSION_NOT_FOUND");
     expect(hidden.envelope()).toEqual(missing.envelope());
+    expect(JSON.stringify(hidden.envelope())).not.toContain("other");
+    expect(JSON.stringify(hidden.envelope())).not.toContain("agent:dev:main");
     expect(requestReplyCalls).toHaveLength(0);
   });
 });

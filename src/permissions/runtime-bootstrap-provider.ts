@@ -110,7 +110,7 @@ function shouldSuppressRuntimeBootstrap(
   return false;
 }
 
-function bootstrapCapabilitiesFor(subjectType: string): ContextCapability[] {
+export function bootstrapCapabilitiesFor(subjectType: string): ContextCapability[] {
   const source = `runtime-bootstrap:${subjectType}`;
   return [
     { permission: "use", objectType: "tool", objectId: "*", source },

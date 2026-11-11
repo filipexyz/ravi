@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Contacts Commands - Contact management CLI (v2 with identities)
  */
@@ -13,6 +14,7 @@ import {
   platformIdentityLinkReturnSchema,
 } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
+import { resolvePendingContact } from "../pending-contact.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -402,11 +404,11 @@ function assertCanReadContactTimeline(op: string, contactRef: string, asJson?: b
   assertCanReadContact(op, contactRef, asJson);
 }
 
-function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string }): boolean {
+function canViewPendingAccountEntry(entry: { accountId: string; phone: string; pendingKind?: string }): boolean {
   const scopeCtx = getScopeContext();
   if (!isScopeEnforced(scopeCtx)) return true;
   if (entry.pendingKind === "chat") return canWriteContacts(scopeCtx);
-  const contact = getContact(entry.phone);
+  const { contact } = resolvePendingContact(entry);
   return contact ? canReadContactRecord(scopeCtx, contact) : canWriteContacts(scopeCtx);
 }
 
@@ -425,11 +427,14 @@ function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string
 function failContactNotFound(op: string, contactRef: string, asJson?: boolean): never {
   const candidates = filterVisibleContacts(getAllContacts()).flatMap((contact) => [contact.id, contact.name ?? ""]);
   contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the contact id/identity (see suggestions for similar visible contacts)",
-      suggestions: suggestSimilar(contactRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the contact id/identity (see suggestions for similar visible contacts)",
+        suggestions: suggestSimilar(contactRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Contact not found: ${contactRef}`, { operation: op }),
   });
 }
 
@@ -557,7 +562,7 @@ export class ContactsCommands {
       accountPendingContacts: accountPendingContacts.map((entry) => ({
         ...entry,
         type: entry.chatType,
-        contact: serializeContactMaybe(getContact(entry.phone)),
+        contact: serializeContactMaybe(resolvePendingContact(entry).contact),
       })),
       pendingChats: pendingChats.map((entry) => ({
         ...entry,
@@ -567,7 +572,7 @@ export class ContactsCommands {
       accountPending: accountPending.map((entry) => ({
         ...entry,
         type: entry.chatType,
-        contact: entry.pendingKind === "contact" ? serializeContactMaybe(getContact(entry.phone)) : null,
+        contact: entry.pendingKind === "contact" ? serializeContactMaybe(resolvePendingContact(entry).contact) : null,
       })),
     };
     if (asJson) {
@@ -597,15 +602,15 @@ export class ContactsCommands {
       console.log("  ------------  --------------------  ---------------------------------   ----------");
       for (const entry of accountPendingContacts) {
         const acct = entry.accountId.padEnd(12);
-        const contact = getContact(entry.phone);
+        const { contact, channel } = resolvePendingContact(entry);
         const name = (contact?.name || entry.name || "-").slice(0, 20).padEnd(20);
         const identities = contact
           ? formatIdentitiesShort(contact, 35).padEnd(35)
-          : `phone ${entry.phone}`.slice(0, 35).padEnd(35);
+          : `${channel} ${entry.phone}`.slice(0, 35).padEnd(35);
         const since = new Date(entry.updatedAt).toISOString().split("T")[0];
         console.log(`  ${acct}  ${name}  ${identities}   ${since}`);
       }
-      console.log("\nApprove: ravi instances pending approve <instance> <phone>");
+      console.log("\nApprove: ravi instances pending approve <instance> <identity>");
       console.log("Add route: ravi instances routes add <instance> <pattern> <agent>");
     }
 
@@ -1793,10 +1798,16 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!channel) {
-      contractFail("contacts link-agent", "USAGE_ERROR", "--channel is required", { asJson, exitCode: 2 });
+      contractFail("contacts link-agent", "USAGE_ERROR", "--channel is required", {
+        ...{ asJson, exitCode: 2 },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
+      });
     }
     if (!platformUserId) {
-      contractFail("contacts link-agent", "USAGE_ERROR", "--id is required", { asJson, exitCode: 2 });
+      contractFail("contacts link-agent", "USAGE_ERROR", "--id is required", {
+        ...{ asJson, exitCode: 2 },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
+      });
     }
     const scopeCtx = getScopeContext();
     const targetAgent = dbGetAgent(agentId);
@@ -1806,8 +1817,11 @@ export class ContactsCommands {
     if (!targetVisible) {
       const candidates = filterVisibleAgents(scopeCtx, dbListAgents()).flatMap((agent) => [agent.id, agent.name]);
       contractFail("contacts link-agent", "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
-        asJson,
-        details: { suggestions: suggestSimilar(agentId, candidates, 3) },
+        ...{
+          asJson,
+          details: { suggestions: suggestSimilar(agentId, candidates, 3) },
+        },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
       });
     }
 

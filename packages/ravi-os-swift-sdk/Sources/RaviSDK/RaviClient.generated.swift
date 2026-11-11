@@ -191,6 +191,10 @@ public final class RaviClient {
     PermissionsNamespace(transport: transport)
   }
 
+  public var pr: PrNamespace {
+    PrNamespace(transport: transport)
+  }
+
   public var projects: ProjectsNamespace {
     ProjectsNamespace(transport: transport)
   }
@@ -2649,6 +2653,20 @@ public struct CredentialsNamespace: Sendable {
   public var policies: CredentialsPoliciesNamespace {
     CredentialsPoliciesNamespace(transport: transport)
   }
+
+  public func request(_ target: String, _ options: CredentialsRequestOptions = .init()) async throws -> CredentialsRequestReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["target"] = try RaviJSON.fromEncodable(target)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials"], command: "request", body: requestBody, as: CredentialsRequestReturn.self)
+  }
+
+  public func requestStatus(_ target: String, _ requestId: String) async throws -> CredentialsRequestStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["target"] = try RaviJSON.fromEncodable(target)
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    return try await transport.call(groupSegments: ["credentials"], command: "request-status", body: requestBody, as: CredentialsRequestStatusReturn.self)
+  }
 }
 
 public struct CredentialsConnectionsNamespace: Sendable {
@@ -4882,6 +4900,20 @@ public struct PermissionsNamespace: Sendable {
   }
 }
 
+public struct PrNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func publish(_ options: PrPublishOptions = .init()) async throws -> PrPublishReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["pr"], command: "publish", body: requestBody, as: PrPublishReturn.self)
+  }
+}
+
 public struct ProjectsNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -5932,6 +5964,13 @@ public struct SessionsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     return try await transport.call(groupSegments: ["sessions"], command: "subscriptions", body: requestBody, as: SessionsSubscriptionsReturn.self)
+  }
+
+  public func threadConfigure(_ thread: String, _ options: SessionsThreadConfigureOptions) async throws -> SessionsThreadConfigureReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["thread"] = try RaviJSON.fromEncodable(thread)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "thread-configure", body: requestBody, as: SessionsThreadConfigureReturn.self)
   }
 
   public func threadSend(_ thread: String, _ message: String, _ options: SessionsThreadSendOptions = .init()) async throws -> SessionsThreadSendReturn {

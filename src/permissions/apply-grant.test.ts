@@ -10,7 +10,13 @@ import { dbGetContactChatGrant, dbListContactChatGrants } from "../permissions/c
 import { dbCreateAgent, dbUpsertChat } from "../router/router-db.js";
 import { dbCreateTagDefinition, dbGetTagDefinition } from "../tags/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { applyPermissionGrant } from "./apply-grant.js";
+import {
+  createRuntimeContext,
+  issueRuntimeContext,
+  resolveRuntimeContext,
+  revokeRuntimeContext,
+} from "../runtime/context-registry.js";
+import { applyPermissionGrant, upsertPermissionProfileDefinition } from "./apply-grant.js";
 
 const CAPABILITY = { permission: "use", objectType: "tool", objectId: "Bash" };
 
@@ -38,6 +44,61 @@ describe("apply permission grant", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("revokes profile-derived snapshots on removal but preserves them on additive and label-only updates", () => {
+    const profile = "permission-direct-snapshot";
+    upsertPermissionProfileDefinition({ profile, capabilities: [CAPABILITY] });
+    const contexts = [
+      `contact-policy:contact:${contactId}:tag:${profile}`,
+      `contact-policy:contact:${contactId}:chat:${chatA}:profile:${profile}`,
+    ].map((source) => createRuntimeContext({ capabilities: [{ ...CAPABILITY, source }] }));
+    const unrelated = createRuntimeContext({
+      capabilities: [{ ...CAPABILITY, source: `contact-policy:contact:${contactId}:tag:${profile}-other` }],
+    });
+    const colonProfiles = [
+      `contact-policy:contact:${contactId}:tag:permission-x:tag:${profile}`,
+      `contact-policy:contact:${contactId}:chat:${chatA}:profile:permission-x:profile:${profile}`,
+    ].map((source) => createRuntimeContext({ capabilities: [{ ...CAPABILITY, source }] }));
+    const added = { permission: "read", objectType: "skills", objectId: "show" };
+    upsertPermissionProfileDefinition({ profile, capabilities: [CAPABILITY, added] });
+    upsertPermissionProfileDefinition({ profile, capabilities: [CAPABILITY, added], label: "New label" });
+    for (const context of contexts) expect(resolveRuntimeContext(context.contextKey, { touch: false })).not.toBeNull();
+
+    upsertPermissionProfileDefinition({ profile, capabilities: [added] });
+    for (const context of contexts) expect(resolveRuntimeContext(context.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(unrelated.contextKey, { touch: false })).not.toBeNull();
+    for (const context of colonProfiles)
+      expect(resolveRuntimeContext(context.contextKey, { touch: false })).not.toBeNull();
+    expect(readProfileCapabilityStrings(profile)).toEqual(["read:skills:show"]);
+  });
+
+  it("revokes live descendants behind rotated roots and actor projections", () => {
+    const profile = "permission-rotated-profile";
+    upsertPermissionProfileDefinition({ profile, capabilities: [CAPABILITY] });
+    const root = createRuntimeContext({
+      capabilities: [{ ...CAPABILITY, source: "effective" }],
+      metadata: { userOverlayGrants: [`${profile}@chat:${chatA}`] },
+    });
+    const child = issueRuntimeContext({ parent: root, cliName: "fixture-child", inheritCapabilities: true });
+    const projection = createRuntimeContext({
+      capabilities: [{ ...CAPABILITY, source: "effective" }],
+      metadata: { actorProjection: { sourceContextId: root.contextId } },
+    });
+    const projectedChild = issueRuntimeContext({
+      parent: projection,
+      cliName: "fixture-projection-child",
+      inheritCapabilities: true,
+    });
+    revokeRuntimeContext(root.contextId, { cascade: false });
+    expect(resolveRuntimeContext(root.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(projection.contextKey, { touch: false })).toBeNull();
+    for (const context of [child, projectedChild])
+      expect(resolveRuntimeContext(context.contextKey, { touch: false })).not.toBeNull();
+
+    upsertPermissionProfileDefinition({ profile, capabilities: [] });
+    for (const context of [child, projectedChild])
+      expect(resolveRuntimeContext(context.contextKey, { touch: false })).toBeNull();
   });
 
   it("applies a chat scoped exact grant: profile, chat grant and agent ceiling", () => {

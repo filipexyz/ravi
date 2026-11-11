@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Library agent definitions from the CLI: `ravi agents search|install|update|publish`
  * (`ravi agents show <ref>` lives with `agents show` in agents.ts).
@@ -81,9 +82,12 @@ function requireAgentRef(op: string, value: string, asJson?: boolean) {
   if (ref) return ref;
   const message = `Not a valid Library ref: ${String(value ?? "").slice(0, 120)}. Use org/<slug> or <project>/<slug> (a-z, 0-9 and -).`;
   contractFail(op, "LIBRARY_REF_INVALID", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: { suggestedAction: "Copy the ref from: ravi agents search <words> --json" },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: "Copy the ref from: ravi agents search <words> --json" },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -481,11 +485,14 @@ export class AgentsLibraryCommands {
     }
     if (!scope?.trim()) {
       contractFail("agents publish", "USAGE_ERROR", "Pass --scope org or --scope <project-slug>.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Choose who gets the agent: --scope org (every project) or --scope <project-slug>",
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Choose who gets the agent: --scope org (every project) or --scope <project-slug>",
+          },
         },
+        diagnostic: errorDiagnostic("Pass --scope org or --scope <project-slug>.", { operation: "agents publish" }),
       });
     }
     return withLibraryContract("agents publish", asJson, async () => {
@@ -649,9 +656,12 @@ export class AgentsLibraryCommands {
     const wanted = state?.trim().toLowerCase();
     if (wanted !== undefined && wanted !== "" && wanted !== "on" && wanted !== "off") {
       contractFail("agents requests", "USAGE_ERROR", "The state is on or off.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: `ravi agents requests ${id} on --execute, or ravi agents requests ${id} off` },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: `ravi agents requests ${id} on --execute, or ravi agents requests ${id} off` },
+        },
+        diagnostic: errorDiagnostic("The state is on or off.", { operation: "agents requests" }),
       });
     }
     if (wanted && runtimeLibraryCaller()) {
@@ -722,9 +732,12 @@ export class AgentsLibraryCommands {
     const wanted = state?.trim().toLowerCase();
     if (wanted !== undefined && wanted !== "" && wanted !== "on" && wanted !== "off") {
       contractFail("agents listing", "USAGE_ERROR", "The state is on or off.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: `ravi agents listing ${id} on --execute, or ravi agents listing ${id} off` },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: `ravi agents listing ${id} on --execute, or ravi agents listing ${id} off` },
+        },
+        diagnostic: errorDiagnostic("The state is on or off.", { operation: "agents listing" }),
       });
     }
     if (wanted && runtimeLibraryCaller()) {

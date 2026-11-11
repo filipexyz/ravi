@@ -106,6 +106,28 @@ ravi bases list --project <ref>                 # one-off override
 
 Commands you type in your own shell run as the local operator, with full authority. The same commands run by an agent are checked against that agent's permissions, and a denial is published on `ravi.audit.denied`. See [Permissions](/guides/permissions).
 
+Commands may explicitly disallow local-operator execution. `ravi pr publish`
+requires an authenticated Ravi session through the gateway/agent, including
+preview. The session determines the durable destination for CI follow.
+
+**Breaking change:** bare operator publication and `pr publish --reply-session`
+have been removed. Remove that argument from CLI/SDK callers and run publication
+from an authorized Ravi session. Otherwise the command exits 1 with
+`PERMISSION_DENIED`: `pr publish requires an authenticated session context; run
+through the gateway/agent.` A local socket or reply-session name cannot prove
+identity, and `ravi login` does not currently issue a publication runtime context.
+
+From the publishing session's clean, committed worktree:
+
+```bash
+ravi pr publish --repo owner/repo --base dev --title "Fix parser" --body-file /tmp/pr.md --dry-run --json
+ravi pr publish --repo owner/repo --base dev --title "Fix parser" --body-file /tmp/pr.md --expect-sha <full-local-sha> --execute --json
+```
+
+Preview exits 3 and writes nothing. `--execute` confirms publication; it does
+not authenticate the caller or grant permission. A successful result verifies
+the uploaded SHA/tree, ready PR and active CI follow; CI may still be pending.
+
 Some commands that change agents, instances and routes refuse to run when the `ravi` you call is a different build from the running daemon (`CLI/runtime mismatch detected`). Use the same install the daemon runs, or restart the daemon after an update.
 
 ## Command map

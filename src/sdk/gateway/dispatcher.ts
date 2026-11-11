@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Generic dispatcher for the SDK gateway.
  *
@@ -41,6 +42,7 @@ import {
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import { parseCallerCwd } from "../../cli/caller-cwd.js";
+import { projectPublicIssues, publicValidationFieldName } from "../../cli/redaction.js";
 import { enforceWriteAfterRead, writeAfterReadContractError } from "../../knowledge/safety/write-after-read.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
@@ -370,8 +372,11 @@ async function usageErrorResult(
 ): Promise<DispatchResult> {
   const op = commandOperation(group, cmd.command);
   const error = new ContractError(op, "USAGE_ERROR", `Invalid input for ${op}.`, CONTRACT_EXIT_USAGE, {
-    suggestedAction: `Correct the request body and retry ${op}`,
-    issues: redactValidationIssues(cmd, issues),
+    ...errorDiagnostic(`Invalid input for ${op}.`, { operation: op }),
+    ...{
+      suggestedAction: `Correct the request body and retry ${op}`,
+      issues: redactValidationIssues(cmd, issues),
+    },
   });
   const outcome = contractFailureOutcome(error);
   const audit = buildAuditEvent(cmd, tool, {}, outcome, startedAt, lineage, error.exitCode, error.code);
@@ -456,8 +461,8 @@ function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResul
   }
 
   if (unknownKeys.length > 0) {
-    const issues: JsonIssue[] = unknownKeys.map(() => ({
-      path: ["<unknown>"],
+    const issues: JsonIssue[] = unknownKeys.slice(0, 32).map((key) => ({
+      path: [publicValidationFieldName(key) ?? "<unknown>"],
       code: "unrecognized_keys",
       message: `Unknown field for ${cmd.fullName}.`,
     }));
@@ -525,6 +530,12 @@ function validateAndPack(cmd: CommandRegistryEntry, input: NormalizedInput): Pac
 
 function pushIssues(target: JsonIssue[], prefix: (string | number)[], issues: ZodIssue[]): void {
   for (const issue of issues) {
+    if (issue.code === "unrecognized_keys") {
+      for (const projected of projectPublicIssues([issue]) ?? []) {
+        target.push({ ...projected, path: [...prefix, ...projected.path] });
+      }
+      continue;
+    }
     target.push({
       path: [...prefix, ...issue.path.map(coerceKey)],
       code: issue.code,

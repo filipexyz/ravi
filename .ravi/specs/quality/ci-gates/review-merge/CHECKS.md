@@ -5,8 +5,21 @@ kind: feature
 domain: quality
 capability: ci-gates
 feature: review-merge
-status: active
+status: archived
 ---
+
+## RETIRED — 2026-11-04 (decisão do operador)
+
+Este gate **não está em vigor**. O workflow `.github/workflows/review-gate.yml` foi removido de `dev` e o ruleset que o tornava obrigatório já havia sido deletado em 2026-10-31. Nada neste spec deve ser tratado como requisito de merge.
+
+Regras válidas hoje:
+- Nenhum check de review é obrigatório. Em `dev` o único status obrigatório é `Quality Gate`.
+- Revisão independente continua sendo **disciplina escrita no corpo do PR**, não um check que bloqueia.
+- NÃO reintroduzir este gate, o workflow, o ruleset ou um "machine user" aprovador sem pedido explícito do operador. Reativar por conta própria já falhou e é considerado defeito.
+- O código (`src/ci/review-gate.cjs`, testes, `.github/review-gate-ruleset.json`) fica no repositório apenas como material inerte, para o dia em que o operador quiser retomar.
+
+O restante deste documento descreve o desenho original, mantido para memória. Nenhuma linha abaixo é normativa enquanto este status for `archived`.
+
 
 # Verification
 

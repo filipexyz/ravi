@@ -199,7 +199,7 @@ export async function rebindManagedRuntimeProcesses(
   dependencies: ManagedRuntimeRebindDependencies = {},
 ): Promise<boolean> {
   const run = dependencies.run ?? runCommand;
-  const getProcesses = dependencies.getProcesses ?? getPm2Processes;
+  const getProcesses = dependencies.getProcesses ?? (() => getPm2Processes({ strict: true }));
   const bunPath = dependencies.bunPath ?? process.execPath;
   const stdinWrapperPath = ensurePm2InertStdinWrapper(target.bundlePath);
   const plan = buildManagedRuntimeRebindPlan(previousProcesses, target, bunPath, stdinWrapperPath);

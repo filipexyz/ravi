@@ -4,6 +4,7 @@ import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
 import {
   ensureContactFromInbound,
+  getContactById,
   isSlackHumanUserId,
   resolvePlatformIdentity,
   saveAccountPending,
@@ -77,6 +78,12 @@ import {
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
+import {
+  handleCredentialIntakeEnvelope,
+  isCredentialIntakeEnvelope,
+  type CredentialIntakeDependencies,
+} from "./credential-intake.js";
+import { extractSlackMessageText } from "./message-content.js";
 import { slackInboundReactionFromEnvelope } from "./reactions.js";
 import {
   acceptSlackInboundEnvelope,
@@ -214,6 +221,9 @@ export interface SlackSocketModeServiceOptions {
   readonly getRouterConfig?: () => RouterConfig;
   readonly publishPrompt?: PublishPrompt;
   readonly publishInteraction?: PublishInteraction;
+  /** Secret-bearing modals are supported only over direct Socket Mode. */
+  readonly credentialIntakeEnabled?: boolean;
+  readonly credentialIntakeDependencies?: Partial<CredentialIntakeDependencies>;
   readonly openWebSocket?: WebSocketFactory;
   readonly reconnectDelayMs?: number;
   /** Interval between successful heartbeat round-trips. */
@@ -324,8 +334,21 @@ export class SlackTextDelivery implements NativeTextDelivery {
     return supportsSlackTarget(target, this.scope);
   }
 
+  /**
+   * Posts to a target already selected by the caller. The internal
+   * _trustedFrozenTarget flag preserves its thread instead of reapplying the
+   * channel-root policy; callers must validate that frozen destination first.
+   * A positive Knowledge guard disables unfurls and document artifacts; lookup
+   * errors fall back to ordinary rendering. Returns the first post's identity
+   * with additional timestamps and document outcomes in raw metadata.
+   * Rendering/provider errors propagate and can follow partial remote output;
+   * this method does not persist delivery receipts or roll back earlier posts.
+   */
   async deliverText(request: NativeTextDeliveryRequest): Promise<NativeTextDeliveryResult> {
-    const threadTs = this.routingPolicy.threadReplyMode === "channel_root" ? undefined : request.target.threadId;
+    const threadTs =
+      !request._trustedFrozenTarget && this.routingPolicy.threadReplyMode === "channel_root"
+        ? undefined
+        : request.target.threadId;
     // Packet conversations post with unfurls off, so no link preview leaks page content.
     let guarded = false;
     try {
@@ -823,8 +846,20 @@ export class SlackSocketModeService {
 
   async handleEnvelope(
     envelope: SlackSocketEnvelope,
-    ack: (envelopeId: string) => Promise<void> | void = async () => {},
+    ack: (envelopeId: string, payload?: Record<string, unknown>) => Promise<void> | void = async () => {},
   ): Promise<"duplicate" | "ignored" | "processed"> {
+    if (isCredentialIntakeEnvelope(envelope)) {
+      await handleCredentialIntakeEnvelope({
+        envelope,
+        accountId: this.options.accountId,
+        instanceId: this.options.instanceId ?? this.options.accountId,
+        directSocketMode: this.options.credentialIntakeEnabled !== false,
+        client: this.webClient,
+        ack,
+        dependencies: this.options.credentialIntakeDependencies,
+      });
+      return "processed";
+    }
     const envelopeId = cleanSlackId(envelope.envelope_id);
     const messageEvent = envelopeEvent(envelope);
     if (envelopeId && messageEvent && isSlackMessageEventStructurallyEligible(messageEvent)) {
@@ -1173,8 +1208,8 @@ export class SlackSocketModeService {
     const envelope = JSON.parse(text) as SlackSocketEnvelope;
     if (envelope.type === "hello") return "hello";
     if (envelope.type === "disconnect") return "disconnect";
-    await this.handleEnvelope(envelope, async (envelopeId) => {
-      socket.send(JSON.stringify({ envelope_id: envelopeId }));
+    await this.handleEnvelope(envelope, async (envelopeId, payload) => {
+      socket.send(JSON.stringify({ envelope_id: envelopeId, ...(payload ? { payload } : {}) }));
     });
     return null;
   }
@@ -1229,6 +1264,17 @@ export class SlackSocketModeService {
     }
   }
 
+  /**
+   * Normalizes eligible message events, retaining team/sender provenance and
+   * configured thread projection without granting actor or route authority.
+   * Bot candidates need an origin team and a resolved local identity. Present
+   * authorizations must be an array whose extracted team ids include the local
+   * team; without that field, exactly one legacy installation team must match.
+   * This extraction does not validate every authorization entry. Self echoes,
+   * missing identities and unsupported events return null, as do messages with
+   * neither nonblank extracted text nor normalized files. Human messages use
+   * cached bot identity or start background discovery without waiting for auth.test.
+   */
   private async normalizeEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {
     const event = envelopeEvent(envelope);
     if (!event || !isSlackMessageEventStructurallyEligible(event)) return null;
@@ -1286,7 +1332,6 @@ export class SlackSocketModeService {
       shouldIgnoreSlackMessageEvent(event, {
         selfBotId: localBotIdentity?.botId,
         selfUserId: localBotIdentity?.userId,
-        botMessageAliasesByChat: this.routingPolicy.botMessageAliasesByChat,
       })
     ) {
       return null;
@@ -1300,7 +1345,7 @@ export class SlackSocketModeService {
 
     const thread = resolveSlackThreadContext(event, this.routingPolicy);
     const eventTimeMs = payload?.event_time ? payload.event_time * 1000 : slackTsToMs(ts);
-    const text = typeof event.text === "string" ? event.text : "";
+    const text = extractSlackMessageText(event);
     const files = normalizeSlackFiles(event.files);
     if (!text.trim() && files.length === 0) return null;
 
@@ -1820,9 +1865,26 @@ export class SlackSocketModeService {
     const inboundPolicy = isGroup
       ? (routePolicy ?? instanceConfig?.groupPolicy ?? "open")
       : (routePolicy ?? instanceConfig?.dmPolicy ?? "open");
+    let approvedDmContact = false;
+    if (!isGroup && !explicitRoute && inboundPolicy === "pairing" && matched && message.senderKind !== "bot") {
+      const actor = resolveSlackActorIdentity({
+        chatId: canonicalChat.id,
+        instanceAliases,
+        platformUserId: message.slackUserId ?? message.userId,
+        senderKind: message.senderKind,
+      });
+      const contact = actor.contactId ? getContactById(actor.contactId) : null;
+      approvedDmContact = Boolean(
+        contact?.status === "allowed" &&
+          !contact.opt_out &&
+          (!contact.allowedAgents?.length || contact.allowedAgents.includes(matched.agentId)),
+      );
+    }
     const needsReview =
       !matched ||
-      (!explicitRoute && ((isGroup && inboundPolicy === "allowlist") || (!isGroup && inboundPolicy === "pairing")));
+      (!explicitRoute &&
+        ((isGroup && inboundPolicy === "allowlist") ||
+          (!isGroup && inboundPolicy === "pairing" && !approvedDmContact)));
     if (needsReview) {
       await this.holdSlackSenderForReview({
         message,
@@ -2785,6 +2847,7 @@ export async function createSlackNativeRuntimeFromEnv(
     channels,
     channel: options.channel,
     resolveSecret: options.resolveSecret,
+    authority: { kind: "internal-service", service: "slack-channel-runtime" },
   });
   if (!credentials) {
     log.warn("Slack native runtime disabled: configure a Slack channel with brokered credentials");
@@ -2816,6 +2879,7 @@ export async function createSlackNativeRuntimeFromEnv(
     instanceId: credentials.instanceId,
     routingPolicy,
     webClient,
+    credentialIntakeEnabled: !credentials.gateway,
   });
   const socketMode = credentials.gateway
     ? new SlackGatewayModeService({

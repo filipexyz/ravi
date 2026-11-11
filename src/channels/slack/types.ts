@@ -1,13 +1,11 @@
 export type SlackSubscriptionScope = "chat" | "thread" | "chat_and_thread";
 export type SlackThreadReplyMode = "same_thread" | "channel_root" | "policy_default";
 export type SlackRootReplyMode = "channel_root" | "new_thread" | "policy_default";
-export type SlackBotMessageAliasesByChat = Readonly<Record<string, readonly string[]>>;
 
 export interface SlackRoutingPolicy {
   readonly subscriptionScope: SlackSubscriptionScope;
   readonly threadReplyMode: SlackThreadReplyMode;
   readonly rootReplyMode: SlackRootReplyMode;
-  readonly botMessageAliasesByChat: SlackBotMessageAliasesByChat;
 }
 
 export interface SlackThreadContext {
@@ -53,6 +51,7 @@ export interface SlackEventPayload {
   readonly user?: string;
   readonly bot_id?: string;
   readonly text?: string;
+  readonly blocks?: readonly unknown[];
   readonly ts?: string;
   readonly thread_ts?: string;
   readonly team?: string;

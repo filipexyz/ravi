@@ -1,3 +1,5 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { logger } from "../../utils/logger.js";
 /**
  * Session Commands - manage agent sessions
  */
@@ -78,7 +80,8 @@ import {
 } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
-import { enforceCliCommandAccess } from "../command-access.js";
+import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
+import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
@@ -117,6 +120,7 @@ import {
   summarizeSlackThread,
 } from "../../channels/slack/thread-lifecycle.js";
 import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
+import { configureSlackThreadRuntime } from "../../channels/slack/thread-runtime.js";
 import { decodeLiteralLineBreaks } from "../../channels/slack/thread-text.js";
 import { assessSessionThreadIdentity } from "../../router/thread-identity.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
@@ -429,6 +433,18 @@ const sessionCreateThreadReturnSchema = z
   .strict();
 const slackThreadSummarySchema = z
   .object({
+    turnHealth: z
+      .object({
+        turnId: z.string().nullable(),
+        state: z.enum(["idle", "running", "interrupted", "attention", "closed"]),
+        reason: z.enum(["no_signal", "no_reply", "owner_lost", "failed"]).nullable(),
+        since: z.number(),
+        lastSignalAt: z.number().nullable(),
+        checkedAt: z.number(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     requestId: z.string(),
     title: z.string().nullable(),
     status: z.enum(["queued", "root_delivered", "starting", "open", "closed", "failed"]),
@@ -437,6 +453,8 @@ const slackThreadSummarySchema = z
     childSessionName: z.string().nullable(),
     childSessionMissing: z.boolean(),
     openDecisionCount: z.number(),
+    pendingAnswerCount: z.number(),
+    uncertainAnswerCount: z.number(),
     slackThreadTs: z.string().nullable(),
     link: z.string().nullable(),
     runtime: z
@@ -466,7 +484,7 @@ const slackThreadSummarySchema = z
     }),
   })
   .strict();
-const sessionThreadsReturnSchema = z
+export const sessionThreadsReturnSchema = z
   .object({
     parentSession: z.object({
       sessionKey: z.string(),
@@ -498,6 +516,31 @@ const sessionThreadSendReturnSchema = z
     thread: slackThreadSummarySchema,
   })
   .strict();
+const threadRuntimeOverridesSchema = z
+  .object({
+    provider: z.string().nullable(),
+    model: z.string().nullable(),
+    effort: z.string().nullable(),
+    thinking: z.string().nullable(),
+  })
+  .strict();
+const sessionThreadConfigureReturnSchema = z
+  .object({
+    status: z.literal("configured"),
+    actionId: z.literal("thread.configure"),
+    changed: z.boolean(),
+    appliesOn: z.literal("next-turn"),
+    thread: slackThreadSummarySchema,
+    before: threadRuntimeOverridesSchema,
+    after: threadRuntimeOverridesSchema,
+  })
+  .strict();
+const THREAD_CONFIGURE_COMMAND_ACCESS = {
+  kind: "mutate",
+  resource: "sessions",
+  action: "thread-configure",
+  risk: "medium",
+} as const;
 const sessionCloseThreadReturnSchema = z
   .object({
     status: z.literal("closed"),
@@ -564,7 +607,7 @@ export function buildSessionDeleteMessageCommand(sessionRef: string, messageRef:
 }
 
 function quoteCliArg(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[$`]/g, "\\$&")}"`;
 }
 
 export function buildCurrentSessionEditMessageCommand(messageRef: string, text = "<new-text>"): string {
@@ -615,13 +658,15 @@ export function buildSessionActionsPromptHint(): string {
     `To edit an own outbound text message, run \`${buildCurrentSessionEditMessageCommand("<message-id>", "novo texto")}\`.`,
     `When \`media.send\` is listed as available, send a local file with \`${buildCurrentSessionMediaSendCommand("<file-path>")}\`.`,
     `To create a Slack work branch, run \`${buildCurrentSessionCreateThreadCommand()}\`; omit \`--model\` to inherit the normal model.`,
+    "When `thread.configure` is available, use `usage.tools.configureThread` to configure one owned child for its next turn.",
     `Inside a Slack thread, close silently with \`${buildCurrentSessionCloseThreadCommand()}\` or return a result with \`${buildCurrentSessionCloseThreadCommand("<result>")}\`.`,
     "For reactions, stickers, media, transcript reads, and recaps, follow the command-specific `usage.tools` constraints.",
     "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
   ].join("\n");
 }
 
-function buildSessionActionToolHints(): Record<string, Record<string, unknown>> {
+function buildSessionActionToolHints(sessionRef: string): Record<string, Record<string, unknown>> {
+  const configureThreadCommand = `ravi sessions thread-configure <thread-session> --session ${quoteCliArg(sessionRef)} --effort ultra --json`;
   return {
     deleteMessage: {
       id: "message.delete",
@@ -782,6 +827,20 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "A closed thread reopens.",
       ],
       promptHint: 'Use `ravi sessions thread-send <thread-session> "<instructions>"` to steer a thread.',
+    },
+    configureThread: {
+      id: "thread.configure",
+      tool: "ravi sessions thread-configure",
+      command: configureThreadCommand,
+      useWhen: "Configure the runtime of a Slack thread owned by this parent session.",
+      constraints: [
+        "Use only from the channel-root parent, with a target listed by sessions threads.",
+        "Set provider, model, effort or thinking; omitted fields remain, and clear removes an override.",
+        "Provider changes retain their separate agent-configuration authority check.",
+        "Read the persisted before/after values and thread.runtime; the change applies on the next turn.",
+        "This does not start a turn or grant generic session modification or history access.",
+      ],
+      promptHint: `Use \`${configureThreadCommand}\` to configure an owned child directly. Set provider and model together when changing providers. The current turn keeps its runtime.`,
     },
   };
 }
@@ -1137,7 +1196,7 @@ function sessionActionToolFields(
 function buildSessionActionsPayload(session: SessionEntry, options: { limit?: number } = {}): Record<string, unknown> {
   const ref = sessionActionRef(session);
   const limit = options.limit ?? 10;
-  const toolHints = buildSessionActionToolHints();
+  const toolHints = buildSessionActionToolHints(ref);
   const promptHint = buildSessionActionsPromptHint();
   const subscriptions = listSessionSubscriptions(session.sessionKey).map((subscription) => {
     const chat = dbGetChat(subscription.chatId);
@@ -1166,6 +1225,29 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
   });
   const surfaces = buildSessionActionSurfaces(session, chatIds);
   const runtimeMediaSendCapabilities = resolveRuntimeMediaSendCapabilities(getContext()?.context);
+  const scopeCtx = getScopeContext();
+  const runtimeContext = getContext()?.context;
+  const canConfigureThread =
+    slackThreadParentSessionKey(session.sessionKey) === session.sessionKey &&
+    surfaces.some((surface) => surface.channel.toLowerCase() === "slack" && surface.chatType !== "thread") &&
+    (!isScopeEnforced(scopeCtx) || canModifySession(scopeCtx, ref)) &&
+    (!runtimeContext ||
+      listCliCommandAccessCandidates({
+        group: "sessions",
+        command: "thread-configure",
+        access: THREAD_CONFIGURE_COMMAND_ACCESS,
+        input: {},
+        source: "tool",
+      }).some((candidate) =>
+        canWithCapabilities(
+          runtimeContext.capabilities ?? [],
+          candidate.permission,
+          candidate.objectType,
+          candidate.objectId,
+        ),
+      ));
+  const configureThreadHints = toolHints.configureThread;
+  if (!canConfigureThread) delete toolHints.configureThread;
   const actionAvailability = new Map(
     CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
       const availabilityBySurface = surfaces.map((surface) => {
@@ -1231,6 +1313,21 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
           availabilityBySurface: resolved.availabilityBySurface.map(serializeChatActionAvailability),
         };
       }),
+      {
+        id: "thread.configure",
+        status: canConfigureThread ? "available" : "unavailable",
+        description: "Configure runtime options for one of this parent session's Slack threads.",
+        ...(canConfigureThread
+          ? {
+              command: configureThreadHints.command,
+              promptHint: configureThreadHints.promptHint,
+              constraints: configureThreadHints.constraints,
+            }
+          : {
+              unavailableReasonCode: "parent_runtime_configuration_unavailable",
+              unavailableReason: "Runtime configuration requires an authorized Slack channel-root parent.",
+            }),
+      },
       {
         id: "session.read",
         status: "available",
@@ -2054,19 +2151,25 @@ function formatWaitTimeoutError(sessionName: string): string {
 
 function failSessionUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: { suggestedAction },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
 function failSessionRelay(op: string, error: unknown, asJson?: boolean): never {
   if (error instanceof ContractError) throw error;
   contractFail(op, "SESSION_RELAY_FAILED", publicRuntimeFailureDetail(error), {
-    asJson,
-    details: {
-      suggestedAction: "Confirm the daemon and NATS runtime are available, then retry",
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Confirm the daemon and NATS runtime are available, then retry",
+      },
     },
+    diagnostic: errorDiagnostic(error, { operation: op }),
   });
 }
 
@@ -2893,16 +2996,18 @@ function assertSlackThreadChildSession(action: "thread.report" | "thread.close",
   );
 }
 
-/** Keep a typed thread refusal; anything else stays a plain command failure. */
+/** Preserve typed refusals and original throwables for classification at the CLI boundary. */
 function rethrowSlackThreadError(error: unknown): never {
-  if (error instanceof CliExpectedError) throw error;
-  fail(error instanceof Error ? error.message : String(error));
+  throw error;
 }
 
-function failSessionNotFound(op: string, ref: string, asJson?: boolean): never {
-  contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${ref}`, {
-    asJson,
-    details: { suggestedAction: "List visible sessions with: ravi sessions list --json" },
+function failSessionNotFound(op: string, _ref: string, asJson?: boolean): never {
+  contractFail(op, "SESSION_NOT_FOUND", "Session not found, or not visible to this context.", {
+    ...{
+      asJson,
+      details: { suggestedAction: "List visible sessions with: ravi sessions list --json" },
+    },
+    diagnostic: errorDiagnostic("Session not found, or not visible to this context.", { operation: op }),
   });
 }
 
@@ -3682,26 +3787,7 @@ export class SessionCommands {
     // (Claude gates every SDK tool; Codex hooks only the shell), so an agent
     // turn needs agent-configuration authority to pick one. Clearing returns
     // to the agent's configured provider and stays open, as does picking it.
-    const configuredAgent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId];
-    // The same resolution the launch path uses: agent provider, model preset,
-    // then the runtime.defaultProvider setting.
-    let configuredProvider: string;
-    try {
-      configuredProvider = resolveAgentRuntimeDefaultProvider(configuredAgent ?? {});
-    } catch {
-      configuredProvider = configuredAgent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
-    }
-    if (
-      propagate !== true &&
-      providerOverride &&
-      providerOverride !== s.runtimeProviderOverride &&
-      providerOverride !== configuredProvider
-    ) {
-      assertAgentDefaultsWriteAuthorized(s.agentId, {
-        message: `Permission denied: the runtime provider decides which tool gate applies to ${s.name ?? s.sessionKey} and needs the authority of 'ravi agents set'`,
-        suggestedAction: "Ask an operator to set the provider",
-      });
-    }
+    if (propagate !== true) assertSessionProviderSelectionAuthorized(s, providerOverride);
 
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
@@ -6205,18 +6291,24 @@ export class SessionCommands {
 
     if (completionState.kind === "failed" || completionState.kind === "interrupted") {
       contractFail("sessions send", "SESSION_RUNTIME_FAILED", publicRuntimeFailureDetail(completionState.error), {
-        asJson: options.asJson,
-        details: {
-          suggestedAction: "Inspect the target session runtime and retry",
+        ...{
+          asJson: options.asJson,
+          details: {
+            suggestedAction: "Inspect the target session runtime and retry",
+          },
         },
+        diagnostic: errorDiagnostic(publicRuntimeFailureDetail(completionState.error), { operation: "sessions send" }),
       });
     }
     if (completionState.kind === "timeout") {
       contractFail("sessions send", "SESSION_WAIT_TIMEOUT", formatWaitTimeoutError(sessionName), {
-        asJson: options.asJson,
-        details: {
-          suggestedAction: "Retry when the target session is running, or omit --wait",
+        ...{
+          asJson: options.asJson,
+          details: {
+            suggestedAction: "Retry when the target session is running, or omit --wait",
+          },
         },
+        diagnostic: errorDiagnostic(formatWaitTimeoutError(sessionName), { operation: "sessions send" }),
       });
     }
 
@@ -6863,13 +6955,20 @@ export class SessionCommands {
         const name = thread.childSessionName ?? thread.requestId;
         const title = thread.title ? ` — ${thread.title}` : "";
         const pending = thread.parentReturn.pending ? " (return pending)" : "";
+        const health = thread.turnHealth ? `; ${thread.turnHealth.reason ?? thread.turnHealth.state}` : "";
         const missing = thread.childSessionMissing ? " (session missing)" : "";
         const decisions = thread.openDecisionCount ? ` (${thread.openDecisionCount} decisions pending)` : "";
+        const answers = thread.pendingAnswerCount
+          ? ` (${thread.pendingAnswerCount} ${thread.pendingAnswerCount === 1 ? "resposta" : "respostas"} aguardando admissão)`
+          : "";
+        const uncertain = thread.uncertainAnswerCount
+          ? ` (${thread.uncertainAnswerCount} ${thread.uncertainAnswerCount === 1 ? "entrega incerta" : "entregas incertas"})`
+          : "";
         const runtime = [thread.runtime.provider, thread.runtime.model, thread.runtime.effort]
           .filter((value): value is string => Boolean(value))
           .join(" · ");
         console.log(
-          `  [${thread.status}] ${name}${title}${pending}${missing}${decisions}${runtime ? ` (${runtime})` : ""}`,
+          `  [${thread.status}${health}] ${name}${title}${pending}${missing}${decisions}${answers}${uncertain}${runtime ? ` (${runtime})` : ""}`,
         );
       }
     }
@@ -6898,8 +6997,7 @@ export class SessionCommands {
     asJson?: boolean,
   ) {
     if (!message.trim()) {
-      fail("Report message is required");
-      return;
+      throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
     }
     const target = sessionOverride?.trim() || resolveCurrentSessionRef();
     if (!target) {
@@ -6961,8 +7059,7 @@ export class SessionCommands {
     asJson?: boolean,
   ) {
     if (!message.trim()) {
-      fail("Thread message is required");
-      return;
+      throw new CliExpectedError("Thread message is required", "USAGE_ERROR", 2);
     }
     const target = sessionOverride?.trim() || resolveCurrentSessionRef();
     if (!target) {
@@ -7002,6 +7099,65 @@ export class SessionCommands {
       const name = result.record.childSessionName ?? result.record.requestId;
       console.log(`Sent to ${name}${result.reopened ? " (reopened)" : ""}`);
     }
+    return payload;
+  }
+
+  @Command({
+    name: "thread-configure",
+    description: "Configure runtime options for a Slack thread owned by this parent session",
+    requiredAnyOfOptions: ["provider", "model", "effort", "thinking"],
+  })
+  @CommandAccess(THREAD_CONFIGURE_COMMAND_ACCESS)
+  threadConfigure(
+    @Arg("thread", { description: "Owned thread session name, key, request id or Slack thread ts" })
+    thread: string,
+    @Option({ flags: "--provider <provider>", description: "Runtime provider id, or clear to use the agent default" })
+    provider?: string,
+    @Option({ flags: "--model <model>", description: "Runtime model selector, or clear to remove the override" })
+    model?: string,
+    @Option({ flags: "--effort <level>", description: "Reasoning effort, or clear to remove the override" })
+    effort?: string,
+    @Option({
+      flags: "--thinking <level>",
+      description: "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+      schema: z
+        .string()
+        .regex(/^\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\s*$/)
+        .optional(),
+    })
+    thinking?: string,
+    @Option({ flags: "--session <nameOrKey>", description: "Explicit authorized parent (defaults to current session)" })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      throw new CliExpectedError(
+        "No current parent session found. Run inside the owning Slack session or pass --session <parent>.",
+        "USAGE_ERROR",
+        2,
+      );
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
+      failSessionNotFound("sessions thread-configure", target, asJson);
+    }
+    let payload: ReturnType<typeof configureSlackThreadRuntime>;
+    try {
+      payload = configureSlackThreadRuntime(
+        { parentSession: session, ref: thread, provider, model, effort, thinking },
+        assertSessionProviderSelectionAuthorized,
+      );
+    } catch (error) {
+      rethrowSlackThreadError(error);
+    }
+    if (shouldReturnStructuredResult(asJson)) return returnStructuredResult(payload, asJson);
+    console.log(
+      `Runtime ${payload.changed ? "configured" : "unchanged"} for ${payload.thread.childSessionName ?? payload.thread.requestId}. Applies on the next turn.`,
+    );
     return payload;
   }
 
@@ -7069,8 +7225,13 @@ export class SessionCommands {
         "MESSAGE_NOT_FOUND",
         `Message not found or is not an own message for session: ${ref}`,
         {
-          asJson,
-          details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+          ...{
+            asJson,
+            details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+          },
+          diagnostic: errorDiagnostic(`Message not found or is not an own message for session: ${ref}`, {
+            operation: "sessions delete-message",
+          }),
         },
       );
     }
@@ -7250,8 +7411,13 @@ export class SessionCommands {
         "MESSAGE_NOT_FOUND",
         `Message not found or is not an own message for session: ${ref}`,
         {
-          asJson,
-          details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+          ...{
+            asJson,
+            details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+          },
+          diagnostic: errorDiagnostic(`Message not found or is not an own message for session: ${ref}`, {
+            operation: "sessions edit-message",
+          }),
         },
       );
     }
@@ -7451,11 +7617,35 @@ declareCommandReturns(SessionCommands, {
   setThinking: commandEnvelopeReturnSchema,
   setTtl: commandEnvelopeReturnSchema,
   subscriptions: commandEnvelopeReturnSchema,
+  threadConfigure: sessionThreadConfigureReturnSchema,
   threadSend: sessionThreadSendReturnSchema,
   threads: sessionThreadsReturnSchema,
   trace: commandEnvelopeReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });
+
+function assertSessionProviderSelectionAuthorized(session: SessionEntry, providerOverride: string | null): void {
+  const configuredAgent = getAgent(session.agentId) ?? loadRouterConfig().agents[session.agentId];
+  let configuredProvider: string;
+  try {
+    configuredProvider = resolveAgentRuntimeDefaultProvider(configuredAgent ?? {});
+  } catch (error) {
+    logger.child("cli:sessions").warn("Could not resolve the default provider for session authorization", {
+      diagnostic: errorDiagnostic(error, { operation: "session_provider_selection_authorization" }),
+    });
+    configuredProvider = configuredAgent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
+  }
+  if (
+    providerOverride &&
+    providerOverride !== session.runtimeProviderOverride &&
+    providerOverride !== configuredProvider
+  ) {
+    assertAgentDefaultsWriteAuthorized(session.agentId, {
+      message: `Permission denied: the runtime provider decides which tool gate applies to ${session.name ?? session.sessionKey} and needs the authority of 'ravi agents set'`,
+      suggestedAction: "Ask an operator to set the provider",
+    });
+  }
+}
 
 /**
  * `--propagate` rewrites the agent's defaults and moves every sibling session,
@@ -7513,8 +7703,11 @@ function assertThreadHandoffAuthorized(mayCreate: boolean, asJson?: boolean): vo
     });
     if (!access.allowed) {
       contractFail("sessions send", "PERMISSION_DENIED", access.errorMessage, {
-        asJson,
-        details: { ...(access.denialDetails ?? {}) },
+        ...{
+          asJson,
+          details: { ...(access.denialDetails ?? {}) },
+        },
+        diagnostic: errorDiagnostic(access.errorMessage, { operation: "sessions send" }),
       });
     }
   }

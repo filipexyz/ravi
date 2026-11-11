@@ -1,5 +1,7 @@
+import { configureStateJournalMode, initializeStateSchema } from "./db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "./db/state-boundary.js";
 import { isBridgeSessionRef } from "./bridge/isolation.js";
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { getRaviStateDir } from "./utils/paths.js";
@@ -16,8 +18,9 @@ export function getChatDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return resolveDbPath(env);
 }
 
-function getDb(): Database {
+export function getDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (db !== null && dbPath === nextDbPath) {
     return db;
   }
@@ -27,13 +30,26 @@ function getDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  db = new Database(nextDbPath);
+  const opened = openStateDatabase(nextDbPath);
+  try {
+    // WAL mode for concurrent read/write access (CLI + daemon)
+    configureStateJournalMode(opened);
+    opened.exec("PRAGMA busy_timeout = 5000");
+    initializeStateSchema(opened, "chat", () => initializeChatSchema(opened));
+  } catch (error) {
+    try {
+      opened.close();
+    } catch {
+      // no-cause: Cleanup must not replace the setup error rethrown below; the handle was never cached.
+    }
+    throw error;
+  }
+  db = opened;
   dbPath = nextDbPath;
+  return db;
+}
 
-  // WAL mode for concurrent read/write access (CLI + daemon)
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA busy_timeout = 5000");
-
+function initializeChatSchema(db: Database): void {
   // Initialize schema
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -56,8 +72,8 @@ function getDb(): Database {
   // Migration: add sdk_session_id column if missing (existing DBs)
   try {
     db.exec("ALTER TABLE messages ADD COLUMN sdk_session_id TEXT");
-  } catch {
-    // column already exists
+  } catch (error) {
+    if (!(error instanceof Error) || !/duplicate column name/i.test(error.message)) throw error;
   }
   for (const column of [
     "agent_id",
@@ -73,8 +89,8 @@ function getDb(): Database {
   ]) {
     try {
       db.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`);
-    } catch {
-      // column already exists
+    } catch (error) {
+      if (!(error instanceof Error) || !/duplicate column name/i.test(error.message)) throw error;
     }
   }
 
@@ -84,8 +100,6 @@ function getDb(): Database {
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_agent_chat ON messages(agent_id, chat_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_source_message ON messages(source_message_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_turn ON messages(session_id, turn_id)");
-
-  return db;
 }
 
 export interface Message {

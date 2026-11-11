@@ -17,6 +17,14 @@ rg -n "saveAccountPending|No route|contact_intake|ensureContactFromInbound|crm_c
 
 ## Runtime Tests
 
+### Slack Pending Approval Round Trip
+
+- Run `bun test --preload ./src/test/isolated-runtime-preload.ts src/cli/commands/instances-pending.test.ts src/channels/slack/socket-mode.test.ts`.
+- With intake `off` or `pending`, send an unknown Slack human DM into pairing, approve its pending entry, and send another DM without adding a route. Verify the canonical Slack identity, null primary phone, and resolved contact actor in the prompt/message ledger.
+- Verify pending-only rows from before the fix are correctly labeled and approved, including selection by DM id and repeated approval.
+- Verify a matching digits-only phone or identical Slack user id in a different workspace is not approved or shown as the pending contact.
+- Verify an agent-owned identity or conflicting configured aliases refuses approval and retains pending state.
+
 ### New Human DM Without Route
 
 Given:

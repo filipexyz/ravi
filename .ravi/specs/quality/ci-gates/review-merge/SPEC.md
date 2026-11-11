@@ -5,14 +5,34 @@ kind: feature
 domain: quality
 capability: ci-gates
 feature: review-merge
-status: active
-normative: true
+status: archived
+normative: false
 applies_to:
   - src/ci/review-gate.cjs
   - src/ci/review-gate.test.ts
   - .github/workflows/review-gate.yml
   - .github/review-gate-ruleset.json
 ---
+
+## RETIRED — 2026-11-04 (decisão do operador)
+
+Este gate **não está em vigor**. O workflow `.github/workflows/review-gate.yml` foi removido de `dev` e o ruleset que o tornava obrigatório já havia sido deletado em 2026-10-31. Nada neste spec deve ser tratado como requisito de merge.
+
+Regras válidas hoje:
+- Nenhum check de review é obrigatório. Em `dev` o único status obrigatório é `Quality Gate`.
+- Revisão independente continua sendo **disciplina escrita no corpo do PR**, não um check que bloqueia.
+- NÃO reintroduzir este gate, o workflow, o ruleset ou um "machine user" aprovador sem pedido explícito do operador. Reativar por conta própria já falhou e é considerado defeito.
+- O código (`src/ci/review-gate.cjs`, testes, `.github/review-gate-ruleset.json`) fica no repositório apenas como material inerte, para o dia em que o operador quiser retomar.
+
+O restante deste documento descreve o desenho original, mantido para memória. Nenhuma linha abaixo é normativa enquanto este status for `archived`.
+
+### Confirmação pós-merge — 2026-11-04 18:16 BRT
+
+- `#805` mergeado em `dev` como squash `c7cf7ce` (`c7cf7ce60a3d961d79f0ce104003a849a4b12911`).
+- `.github/workflows/review-gate.yml` não existe mais em `dev`: a listagem de workflows do repositório traz apenas `CI`, `PR Description`, `Release`, `SDK Release`, `Deploy Site` e `Version And Publish`.
+- Nenhum check `Review Gate` / `Review Gate Tests` volta a aparecer em PR nova; o estado anterior era `disabled_manually`, agora o workflow não existe.
+- Verificado por leitura direta da árvore de `dev` e da API de Actions em 04/11/2026 18:20 BRT.
+
 
 # Review Merge Gate
 

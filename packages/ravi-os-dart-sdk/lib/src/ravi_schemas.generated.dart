@@ -34790,6 +34790,10 @@ class RaviSchemas {
             "ingressRequestId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
               "type": "string"
+            },
+            "traceTurnId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
             }
           },
           "required": [
@@ -35479,6 +35483,19 @@ class RaviSchemas {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -35489,8 +35506,44 @@ class RaviSchemas {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -35515,6 +35568,9 @@ class RaviSchemas {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -35538,8 +35594,37 @@ class RaviSchemas {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -35551,7 +35636,19 @@ class RaviSchemas {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -35859,12 +35956,330 @@ class RaviSchemas {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -36183,6 +36598,19 @@ class RaviSchemas {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -36193,8 +36621,44 @@ class RaviSchemas {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -36219,6 +36683,9 @@ class RaviSchemas {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -36242,8 +36709,37 @@ class RaviSchemas {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -36255,7 +36751,19 @@ class RaviSchemas {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -36563,12 +37071,330 @@ class RaviSchemas {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -36616,6 +37442,19 @@ class RaviSchemas {
     "channels": {
       "additionalProperties": false,
       "properties": {
+        "bundlePath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "codeStale": {
+          "type": "boolean"
+        },
         "cpu": {
           "anyOf": [
             {
@@ -36626,8 +37465,44 @@ class RaviSchemas {
             }
           ]
         },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diskVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "envStale": {
+          "type": "boolean"
+        },
+        "identityVerified": {
+          "type": "boolean"
+        },
         "managed": {
           "type": "boolean"
+        },
+        "matchesCli": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "memoryBytes": {
           "anyOf": [
@@ -36652,6 +37527,9 @@ class RaviSchemas {
         "name": {
           "type": "string"
         },
+        "online": {
+          "type": "boolean"
+        },
         "pid": {
           "anyOf": [
             {
@@ -36675,8 +37553,37 @@ class RaviSchemas {
         "running": {
           "type": "boolean"
         },
+        "runningVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "status": {
           "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -36688,7 +37595,19 @@ class RaviSchemas {
         "pmId",
         "cpu",
         "memoryBytes",
-        "memoryMb"
+        "memoryMb",
+        "online",
+        "bundlePath",
+        "cwd",
+        "runningVersion",
+        "diskVersion",
+        "startedAt",
+        "stale",
+        "codeStale",
+        "envStale",
+        "identityVerified",
+        "warnings",
+        "matchesCli"
       ],
       "type": "object"
     },
@@ -36996,12 +37915,330 @@ class RaviSchemas {
           "type": "null"
         }
       ]
+    },
+    "runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "enum": [
+            "aligned",
+            "drifted",
+            "unknown",
+            "not_running"
+          ],
+          "type": "string"
+        },
+        "channels": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "online",
+            "status",
+            "pid",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
+          ],
+          "type": "object"
+        },
+        "cli": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "bundlePath",
+            "cwd",
+            "version"
+          ],
+          "type": "object"
+        },
+        "daemon": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "online",
+            "status",
+            "pid",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "alignment",
+        "cli",
+        "daemon",
+        "channels"
+      ],
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
     "pm2Available",
     "processName",
     "channels",
+    "runtime",
+    "warnings",
     "processes"
   ],
   "type": "object"
@@ -37066,6 +38303,19 @@ class RaviSchemas {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -37076,8 +38326,44 @@ class RaviSchemas {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -37102,6 +38388,9 @@ class RaviSchemas {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -37125,8 +38414,37 @@ class RaviSchemas {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -37138,7 +38456,19 @@ class RaviSchemas {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -37446,12 +38776,330 @@ class RaviSchemas {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -61817,6 +63465,7 @@ class RaviSchemas {
           "properties": {
             "backend": {
               "enum": [
+                "file",
                 "keychain",
                 "vault"
               ],
@@ -61919,6 +63568,7 @@ class RaviSchemas {
           "properties": {
             "backend": {
               "enum": [
+                "file",
                 "keychain",
                 "vault"
               ],
@@ -62038,6 +63688,7 @@ class RaviSchemas {
         "properties": {
           "backend": {
             "enum": [
+              "file",
               "keychain",
               "vault"
             ],
@@ -62187,6 +63838,7 @@ class RaviSchemas {
       "properties": {
         "backend": {
           "enum": [
+            "file",
             "keychain",
             "vault"
           ],
@@ -62319,6 +63971,127 @@ class RaviSchemas {
     "action",
     "requiredCapabilities",
     "approval"
+  ],
+  "type": "object"
+}
+''';
+
+  static const credentialsRequestInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "backend": {
+      "default": "file",
+      "description": "Connection secret backend: file (default), keychain or vault",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Send the private invitation; otherwise dry-run (exit 3)",
+      "type": "boolean"
+    },
+    "label": {
+      "description": "Human-readable credential label",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why the credential is needed (never include a secret)",
+      "type": "string"
+    },
+    "scopes": {
+      "description": "Provider scopes, informational; does not grant Ravi permissions",
+      "type": "string"
+    },
+    "target": {
+      "description": "env:<key>, connection:<provider>:<connection> or remote:<destination>:<KEY>",
+      "type": "string"
+    },
+    "user": {
+      "description": "Slack user who will provide the credential privately",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "type": "object"
+}
+''';
+
+  static const credentialsRequestReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "delivery": {
+      "const": "ephemeral",
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "number"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target",
+    "expiresAt",
+    "delivery"
+  ],
+  "type": "object"
+}
+''';
+
+  static const credentialsRequestStatusInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "description": "Opaque request ID returned by credentials request",
+      "type": "string"
+    },
+    "target": {
+      "description": "remote:<destination>:<KEY>",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target"
+  ],
+  "type": "object"
+}
+''';
+
+  static const credentialsRequestStatusReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "activation": {
+      "const": "not_requested",
+      "type": "string"
+    },
+    "receipt": {
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target",
+    "status",
+    "activation"
   ],
   "type": "object"
 }
@@ -66169,6 +67942,9 @@ class RaviSchemas {
                 }
               ]
             },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cwd": {
               "anyOf": [
                 {
@@ -66178,6 +67954,22 @@ class RaviSchemas {
                   "type": "null"
                 }
               ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
             },
             "managed": {
               "type": "boolean"
@@ -66208,10 +68000,7 @@ class RaviSchemas {
                 }
               ]
             },
-            "status": {
-              "type": "string"
-            },
-            "version": {
+            "runningVersion": {
               "anyOf": [
                 {
                   "type": "string"
@@ -66220,6 +68009,28 @@ class RaviSchemas {
                   "type": "null"
                 }
               ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -66230,7 +68041,14 @@ class RaviSchemas {
             "pid",
             "bundlePath",
             "cwd",
-            "version",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
             "matchesCli"
           ],
           "type": "object"
@@ -66289,6 +68107,9 @@ class RaviSchemas {
                 }
               ]
             },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cwd": {
               "anyOf": [
                 {
@@ -66298,6 +68119,22 @@ class RaviSchemas {
                   "type": "null"
                 }
               ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
             },
             "managed": {
               "type": "boolean"
@@ -66328,10 +68165,7 @@ class RaviSchemas {
                 }
               ]
             },
-            "status": {
-              "type": "string"
-            },
-            "version": {
+            "runningVersion": {
               "anyOf": [
                 {
                   "type": "string"
@@ -66340,6 +68174,28 @@ class RaviSchemas {
                   "type": "null"
                 }
               ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -66350,7 +68206,14 @@ class RaviSchemas {
             "pid",
             "bundlePath",
             "cwd",
-            "version",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
             "matchesCli"
           ],
           "type": "object"
@@ -66363,6 +68226,12 @@ class RaviSchemas {
         "channels"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -66371,6 +68240,7 @@ class RaviSchemas {
     "ravi",
     "infrastructure",
     "runtime",
+    "warnings",
     "processes"
   ],
   "type": "object"
@@ -94471,6 +96341,179 @@ class RaviSchemas {
 }
 ''';
 
+  static const prPublishInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Required existing target branch",
+      "type": "string"
+    },
+    "bodyFile": {
+      "description": "UTF-8 PR description, relative to caller cwd; required for a new PR",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Preview only; also the default without --execute (exit 3)",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Publish externally and reconcile CI follow",
+      "type": "boolean"
+    },
+    "expectSha": {
+      "description": "Require this full local commit SHA (default: capture HEAD)",
+      "type": "string"
+    },
+    "repo": {
+      "description": "Required github.com destination; must match origin",
+      "type": "string"
+    },
+    "title": {
+      "description": "Required for a new PR; existing PR text is preserved",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const prPublishReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "attemptId": {
+      "type": "string"
+    },
+    "base": {
+      "maxLength": 255,
+      "minLength": 1,
+      "pattern": "^[^\\s\\x00-\\x1f~^:?*[\\\\]+$",
+      "type": "string"
+    },
+    "checks": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "success",
+            "failure"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "count"
+      ],
+      "type": "object"
+    },
+    "follow": {
+      "additionalProperties": false,
+      "properties": {
+        "ciWatchId": {
+          "type": "string"
+        },
+        "replySession": {
+          "type": "string"
+        },
+        "triggerId": {
+          "type": "string"
+        },
+        "verifiedAt": {
+          "type": "string"
+        },
+        "watchId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "watchId",
+        "ciWatchId",
+        "triggerId",
+        "replySession",
+        "verifiedAt"
+      ],
+      "type": "object"
+    },
+    "head": {
+      "maxLength": 255,
+      "minLength": 1,
+      "pattern": "^[^\\s\\x00-\\x1f~^:?*[\\\\]+$",
+      "type": "string"
+    },
+    "localSha": {
+      "pattern": "^[a-f0-9]{40}$",
+      "type": "string"
+    },
+    "pr": {
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "ready": {
+          "const": true,
+          "type": "boolean"
+        },
+        "reused": {
+          "type": "boolean"
+        },
+        "url": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "url",
+        "reused",
+        "ready"
+      ],
+      "type": "object"
+    },
+    "publicationId": {
+      "type": "string"
+    },
+    "remoteSha": {
+      "pattern": "^[a-f0-9]{40}$",
+      "type": "string"
+    },
+    "repo": {
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$",
+      "type": "string"
+    },
+    "treeSha": {
+      "pattern": "^[a-f0-9]{40}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "publicationId",
+    "attemptId",
+    "repo",
+    "base",
+    "head",
+    "localSha",
+    "remoteSha",
+    "treeSha",
+    "pr",
+    "follow",
+    "checks"
+  ],
+  "type": "object"
+}
+''';
+
   static const projectsCreateInputSchema = r'''
 {
   "additionalProperties": false,
@@ -97376,6 +99419,12 @@ class RaviSchemas {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -97460,6 +99509,12 @@ class RaviSchemas {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -98777,6 +100832,12 @@ class RaviSchemas {
               "type": "null"
             }
           ]
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -108025,50 +110086,306 @@ class RaviSchemas {
 }
 ''';
 
-  static const sessionsThreadSendInputSchema = r'''
+  static const sessionsThreadConfigureInputSchema = r'''
 {
   "additionalProperties": false,
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "effort",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "thinking",
+        "thread"
+      ],
+      "type": "object"
+    }
+  ],
   "properties": {
-    "message": {
-      "description": "Instructions for the thread session",
+    "effort": {
+      "description": "Reasoning effort, or clear to remove the override",
+      "type": "string"
+    },
+    "model": {
+      "description": "Runtime model selector, or clear to remove the override",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id, or clear to use the agent default",
       "type": "string"
     },
     "session": {
-      "description": "Explicit owning session (defaults to current session)",
+      "description": "Explicit authorized parent (defaults to current session)",
+      "type": "string"
+    },
+    "thinking": {
+      "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+      "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
       "type": "string"
     },
     "thread": {
-      "description": "Thread session name, request id or Slack thread ts (see ravi sessions threads)",
+      "description": "Owned thread session name, key, request id or Slack thread ts",
       "type": "string"
     }
   },
   "required": [
-    "message",
     "thread"
   ],
   "type": "object"
 }
 ''';
 
-  static const sessionsThreadSendReturnSchema = r'''
+  static const sessionsThreadConfigureReturnSchema = r'''
 {
   "additionalProperties": false,
   "properties": {
     "actionId": {
-      "const": "thread.send",
+      "const": "thread.configure",
       "type": "string"
     },
-    "messageId": {
+    "after": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "effort",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "appliesOn": {
+      "const": "next-turn",
       "type": "string"
     },
-    "reopened": {
+    "before": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "effort",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "changed": {
       "type": "boolean"
     },
-    "requestId": {
-      "type": "string"
-    },
     "status": {
-      "const": "published",
+      "const": "configured",
       "type": "string"
     },
     "thread": {
@@ -108138,6 +110455,9 @@ class RaviSchemas {
             "pending"
           ],
           "type": "object"
+        },
+        "pendingAnswerCount": {
+          "type": "number"
         },
         "requestId": {
           "type": "string"
@@ -108301,6 +110621,82 @@ class RaviSchemas {
             }
           ]
         },
+        "turnHealth": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "checkedAt": {
+                  "type": "number"
+                },
+                "lastSignalAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "no_signal",
+                        "no_reply",
+                        "owner_lost",
+                        "failed"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "since": {
+                  "type": "number"
+                },
+                "state": {
+                  "enum": [
+                    "idle",
+                    "running",
+                    "interrupted",
+                    "attention",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                "turnId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "turnId",
+                "state",
+                "reason",
+                "since",
+                "lastSignalAt",
+                "checkedAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uncertainAnswerCount": {
+          "type": "number"
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -108314,6 +110710,402 @@ class RaviSchemas {
         "childSessionName",
         "childSessionMissing",
         "openDecisionCount",
+        "pendingAnswerCount",
+        "uncertainAnswerCount",
+        "slackThreadTs",
+        "link",
+        "runtime",
+        "createdAt",
+        "updatedAt",
+        "closedAt",
+        "parentReturn"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "actionId",
+    "changed",
+    "appliesOn",
+    "thread",
+    "before",
+    "after"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsThreadSendInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "description": "Instructions for the thread session",
+      "type": "string"
+    },
+    "session": {
+      "description": "Explicit owning session (defaults to current session)",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Thread session name, request id or Slack thread ts (see ravi sessions threads)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message",
+    "thread"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsThreadSendReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "actionId": {
+      "const": "thread.send",
+      "type": "string"
+    },
+    "messageId": {
+      "type": "string"
+    },
+    "reopened": {
+      "type": "boolean"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "const": "published",
+      "type": "string"
+    },
+    "thread": {
+      "additionalProperties": false,
+      "properties": {
+        "childSessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "childSessionMissing": {
+          "type": "boolean"
+        },
+        "childSessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openDecisionCount": {
+          "type": "number"
+        },
+        "parentReturn": {
+          "additionalProperties": false,
+          "properties": {
+            "pending": {
+              "type": "boolean"
+            },
+            "requested": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested",
+            "pending"
+          ],
+          "type": "object"
+        },
+        "pendingAnswerCount": {
+          "type": "number"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "type": "string"
+            },
+            "effortSource": {
+              "type": "string"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "providerSource": {
+              "type": "string"
+            },
+            "requested": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "thinking": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "thinkingSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "provider",
+            "providerSource",
+            "model",
+            "modelSource",
+            "effort",
+            "effortSource",
+            "thinking",
+            "thinkingSource",
+            "requested"
+          ],
+          "type": "object"
+        },
+        "slackThreadTs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "action",
+            "inbound"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "root_delivered",
+            "starting",
+            "open",
+            "closed",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turnHealth": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "checkedAt": {
+                  "type": "number"
+                },
+                "lastSignalAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "no_signal",
+                        "no_reply",
+                        "owner_lost",
+                        "failed"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "since": {
+                  "type": "number"
+                },
+                "state": {
+                  "enum": [
+                    "idle",
+                    "running",
+                    "interrupted",
+                    "attention",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                "turnId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "turnId",
+                "state",
+                "reason",
+                "since",
+                "lastSignalAt",
+                "checkedAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uncertainAnswerCount": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestId",
+        "title",
+        "status",
+        "source",
+        "childSessionKey",
+        "childSessionName",
+        "childSessionMissing",
+        "openDecisionCount",
+        "pendingAnswerCount",
+        "uncertainAnswerCount",
         "slackThreadTs",
         "link",
         "runtime",
@@ -108445,6 +111237,9 @@ class RaviSchemas {
               "pending"
             ],
             "type": "object"
+          },
+          "pendingAnswerCount": {
+            "type": "number"
           },
           "requestId": {
             "type": "string"
@@ -108608,6 +111403,82 @@ class RaviSchemas {
               }
             ]
           },
+          "turnHealth": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "checkedAt": {
+                    "type": "number"
+                  },
+                  "lastSignalAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no_signal",
+                          "no_reply",
+                          "owner_lost",
+                          "failed"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "since": {
+                    "type": "number"
+                  },
+                  "state": {
+                    "enum": [
+                      "idle",
+                      "running",
+                      "interrupted",
+                      "attention",
+                      "closed"
+                    ],
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "state",
+                  "reason",
+                  "since",
+                  "lastSignalAt",
+                  "checkedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uncertainAnswerCount": {
+            "type": "number"
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -108621,6 +111492,8 @@ class RaviSchemas {
           "childSessionName",
           "childSessionMissing",
           "openDecisionCount",
+          "pendingAnswerCount",
+          "uncertainAnswerCount",
           "slackThreadTs",
           "link",
           "runtime",

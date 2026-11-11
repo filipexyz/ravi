@@ -30,3 +30,20 @@ Suggestions come from the full instance list because instances have no
 per-agent cloak — `instances list` exposes every name (tag filter aside), so
 enriching NOT_FOUND with real names/instanceIds leaks nothing, unlike the
 scoped domains (contacts, sessions) that filter candidates by visibility.
+
+## Pending chat identity and existing damaged routes
+
+Phone normalization discarded letters in Slack channel ids before approval
+created a route. The command reported success and removed the pending entry,
+but Slack's allowlist still held the chat because the numeric route did not
+match. The same lossy normalization in pending lookup could select a different
+chat sharing the same digits. Pending review now reuses `normalizeRoutePattern`
+instead of introducing another channel-specific normalizer.
+
+Approval does not rename or delete old numeric routes automatically. Digit
+extraction is not reversible, different chats can collide, and routes do not
+record enough provenance to distinguish a damaged approval from an intentional
+numeric rule. Repair uses the original full chat id to create the canonical
+route, even if the old approval consumed its pending entry. Remove a damaged
+route explicitly only after establishing its origin and verifying the new
+route with `routes explain`; the route soft-delete remains recoverable.

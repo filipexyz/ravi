@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { dbCreateAgent } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { followFingerprint } from "../../pr/follow-health.js";
 
 afterAll(() => mock.restore());
 
@@ -65,7 +66,7 @@ mock.module("../../omni/session-stream.js", () => ({
 }));
 
 const { TriggerRunner } = await import("../runner.js");
-const { dbCreateTrigger, dbDeleteTrigger, dbGetTrigger } = await import("../triggers-db.js");
+const { dbCreateTrigger, dbDeleteTrigger, dbGetTrigger, dbUpdateTrigger } = await import("../triggers-db.js");
 
 let stateDir: string | null = null;
 let runner: InstanceType<typeof TriggerRunner> | null = null;
@@ -116,6 +117,29 @@ afterEach(async () => {
 });
 
 describe("TriggerRunner deleted triggers", () => {
+  it("reports only the configuration loaded by the runner, never an unconsumed DB update", async () => {
+    const trigger = createTrigger("publication-health", "ravi.test.health");
+    runner = new TriggerRunner();
+    expect(runner.publicationFollowHealth(trigger.id).fingerprint).toBeNull();
+    await runner.start();
+    await waitFor(() => channels.has(trigger.topic));
+    expect(runner.publicationFollowHealth(trigger.id)).toMatchObject({
+      running: true,
+      fingerprint: followFingerprint(trigger),
+    });
+    const updated = dbUpdateTrigger(trigger.id, { replySession: "new-publisher" });
+    expect(updated).toBeTruthy();
+    expect(runner.publicationFollowHealth(trigger.id).fingerprint).not.toBe(
+      followFingerprint(dbGetTrigger(trigger.id)!),
+    );
+    await waitFor(() => channels.has("ravi.triggers.refresh"));
+    emit("ravi.triggers.refresh", {});
+    await waitFor(
+      () => runner!.publicationFollowHealth(trigger.id).fingerprint === followFingerprint(dbGetTrigger(trigger.id)!),
+    );
+    await runner.stop();
+    expect(runner.publicationFollowHealth(trigger.id)).toMatchObject({ running: false, fingerprint: null });
+  });
   it("does not fire a deleted trigger on the next event of its removed topic", async () => {
     const kept = createTrigger("kept", "ravi.test.kept");
     const deleted = createTrigger("deleted", "ravi.test.deleted");

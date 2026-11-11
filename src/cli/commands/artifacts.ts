@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Artifacts Commands - generic Ravi artifact ledger.
  */
@@ -19,6 +20,7 @@ import {
 import { resolveCallerPath } from "../caller-cwd.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
+import { redactAbsolutePathsInText } from "../payload-error-message.js";
 import {
   artifactCreateReturnSchema,
   artifactDetailsReturnSchema,
@@ -288,23 +290,29 @@ function displayArtifactPath(path: string): string {
 
 function failArtifactInput(op: string, message: string, issues: ArtifactInputIssue[], asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: 2,
-    details: {
-      suggestedAction: `Correct the command input and retry '${op}'.`,
-      ...(issues.length > 0 ? { issues } : {}),
+    ...{
+      asJson,
+      exitCode: 2,
+      details: {
+        suggestedAction: `Correct the command input and retry '${op}'.`,
+        ...(issues.length > 0 ? { issues } : {}),
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
 function failArtifactPath(op: string, code: string, message: string, asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: 2,
-    details: {
-      suggestedAction: `Pass an existing, readable local path to --path; relative paths resolve against the caller working directory. Then retry '${op}'.`,
-      issues: [{ path: ["path"], code, message }],
+    ...{
+      asJson,
+      exitCode: 2,
+      details: {
+        suggestedAction: `Pass an existing, readable local path to --path; relative paths resolve against the caller working directory. Then retry '${op}'.`,
+        issues: [{ path: ["path"], code, message }],
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -391,7 +399,9 @@ function failOnArtifactInputError(op: string, error: unknown, asJson?: boolean):
     failArtifactInput(op, message, issues, asJson);
   }
   if (error instanceof ArtifactInputError) {
-    const message = sanitizePublicContractMessage(error.message) ?? "Artifact input was invalid.";
+    const message = redactAbsolutePathsInText(
+      sanitizePublicContractMessage(error.message) ?? "Artifact input was invalid.",
+    );
     failArtifactInput(op, message, [{ path: error.field ? [error.field] : [], code: "invalid", message }], asJson);
   }
 }
@@ -408,9 +418,12 @@ function withArtifactInputContract<T>(op: string, asJson: boolean | undefined, r
 
 function failArtifactUsage(op: string, message: string, asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: 2,
-    details: { suggestedAction: `Inspect the command input and retry '${op}'.` },
+    ...{
+      asJson,
+      exitCode: 2,
+      details: { suggestedAction: `Inspect the command input and retry '${op}'.` },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -497,11 +510,14 @@ function failArtifactNotFound(op: string, artifactRef: string, asJson?: boolean,
   // exposing artifact titles or content.
   const candidates = readOnlyCandidates ?? listArtifactsPage({ limit: 40 }).items.map((artifact) => artifact.id);
   contractFail(op, "ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the artifact id (see suggestions; list with: ravi artifacts list --json)",
-      suggestions: suggestSimilar(artifactRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the artifact id (see suggestions; list with: ravi artifacts list --json)",
+        suggestions: suggestSimilar(artifactRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Artifact not found: ${artifactRef}`, { operation: op }),
   });
 }
 
@@ -518,8 +534,14 @@ function failArtifactVersionNotFound(
     "ARTIFACT_VERSION_NOT_FOUND",
     `Artifact version not found: ${artifactRef}${versionNumber !== undefined ? ` v${versionNumber}` : ""}`,
     {
-      asJson,
-      details: { suggestedAction: `List versions with: ravi artifacts versions ${artifactRef} --json` },
+      ...{
+        asJson,
+        details: { suggestedAction: `List versions with: ravi artifacts versions ${artifactRef} --json` },
+      },
+      diagnostic: errorDiagnostic(
+        `Artifact version not found: ${artifactRef}${versionNumber !== undefined ? ` v${versionNumber}` : ""}`,
+        { operation: op },
+      ),
     },
   );
 }

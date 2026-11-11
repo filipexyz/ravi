@@ -33,3 +33,28 @@
     canonical-rejected delivery record is published, its receipt terminates
     with the structural error, and bookkeeping retry never makes a second
     provider call.
+
+## Internal Egress Version 2 Updates
+
+Both `runtime_event` and `output` require egress version 2. Use the same runtime
+bundle for the daemon and channel runner; mixed-version egress is unsupported.
+Follow the existing [managed update coordination](../../permissions/provider-runtime/RUNBOOK.md#validate-update-coordination)
+and [mixed-version recovery](../../permissions/provider-runtime/RUNBOOK.md#recover-a-mixed-version-channel-runner)
+procedures. Do not add a v1 fallback or remove output restrictions.
+
+Keep three checks separate:
+
+1. Intake: coordinated updates stop channel intake before transitioning the
+   daemon and restore the previously running managed processes. This does not
+   prove that accepted turns or egress calls have drained.
+2. In-flight work: distinguish persisted terminal state from durable outbound
+   acceptance. Inspect existing outbound jobs independently. An unknown handoff
+   outcome does not prove that no job was saved and does not authorize resending.
+3. Readiness: confirm the daemon and runner use the intended bundle, inspect
+   runner and adapter health, and verify a new inbound turn completes. PM2
+   reporting online alone does not prove the egress path is ready.
+
+A rejected runtime notification does not roll back terminal persistence or
+prevent the independent terminal-output attempt. Commentary rejected before
+outbound publication has not entered the delivery retry path. The coordinated
+restart procedure is not a guarantee of lossless delivery for work in flight.

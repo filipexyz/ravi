@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Instances Commands - Central config entity for all channels/accounts
  *
@@ -79,9 +80,11 @@ import {
   listAccountPending,
   removeAccountPending,
   allowContact,
-  normalizePhone,
+  isSlackHumanUserId,
+  upsertContactFromPlatformIdentity,
   type AccountPendingEntry,
 } from "../../contacts.js";
+import { resolvePendingContact } from "../pending-contact.js";
 import {
   detachRouteBookkeepingSubscriptions,
   listRouteStickyOverrides,
@@ -112,23 +115,24 @@ function emitConfigChanged() {
 
 function normalizePendingChatPattern(entry: Pick<AccountPendingEntry, "phone" | "chatId" | "isGroup">): string {
   const raw = (entry.chatId || entry.phone || "").trim();
-  const normalized = normalizePhone(raw);
+  const normalized = normalizeRoutePattern(raw);
   if (normalized.startsWith("group:")) return normalized;
-  if (entry.isGroup) {
-    const bareGroupId = (normalized || raw).replace(/^group:/, "").replace(/@.*$/, "");
-    if (/^\d+(?:-\d+)?$/.test(bareGroupId)) return `group:${bareGroupId}`;
-  }
-  return normalized || raw;
+  return entry.isGroup ? `group:${normalized}` : normalized;
 }
 
 function findPendingReviewEntry(instanceName: string, ref: string): AccountPendingEntry | null {
-  const normalizedRef = normalizePhone(ref);
+  const normalizedRef = normalizeRoutePattern(ref);
   return (
     listAccountPending(instanceName).find((entry) => {
       if (entry.phone === ref || entry.chatId === ref) return true;
-      const entryPhone = normalizePhone(entry.phone);
-      const entryChat = entry.chatId ? normalizePhone(entry.chatId) : "";
-      return Boolean(normalizedRef && (entryPhone === normalizedRef || entryChat === normalizedRef));
+      const entryPhone = normalizeRoutePattern(entry.phone);
+      const entryChat = entry.chatId ? normalizeRoutePattern(entry.chatId) : "";
+      return Boolean(
+        normalizedRef &&
+          (entryPhone === normalizedRef ||
+            entryChat === normalizedRef ||
+            (entry.isGroup && normalizePendingChatPattern(entry) === normalizedRef)),
+      );
     }) ?? null
   );
 }
@@ -167,11 +171,14 @@ function resolveInstanceByNameOrId(value: string) {
 function failInstanceNotFound(op: string, ref: string, asJson?: boolean): never {
   const candidates = dbListInstances().flatMap((inst) => [inst.name, inst.instanceId ?? null]);
   contractFail(op, "INSTANCE_NOT_FOUND", `Instance not found: ${ref}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the instance name (see suggestions; list with: ravi instances list --json)",
-      suggestions: suggestSimilar(ref, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the instance name (see suggestions; list with: ravi instances list --json)",
+        suggestions: suggestSimilar(ref, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Instance not found: ${ref}`, { operation: op }),
   });
 }
 
@@ -179,11 +186,14 @@ function failInstanceNotFound(op: string, ref: string, asJson?: boolean): never 
 function failRouteNotFound(op: string, name: string, pattern: string, asJson?: boolean): never {
   const candidates = dbListRoutes(name).map((route) => route.pattern);
   contractFail(op, "ROUTE_NOT_FOUND", `Route not found: ${pattern} (instance: ${name})`, {
-    asJson,
-    details: {
-      suggestedAction: `Check the route pattern (see suggestions; list with: ravi routes list ${name} --json)`,
-      suggestions: suggestSimilar(pattern, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: `Check the route pattern (see suggestions; list with: ravi routes list ${name} --json)`,
+        suggestions: suggestSimilar(pattern, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Route not found: ${pattern} (instance: ${name})`, { operation: op }),
   });
 }
 
@@ -1339,14 +1349,19 @@ export class InstancesCommands {
       return payload;
     } else {
       contractFail("instances restore", "INSTANCE_NOT_FOUND", `Instance not found in deleted records: ${name}`, {
-        asJson,
-        details: {
-          suggestedAction: "Check deleted instances (see suggestions; list with: ravi instances deleted --json)",
-          suggestions: suggestSimilar(
-            name,
-            dbListDeletedInstances().map((inst) => inst.name),
-          ),
+        ...{
+          asJson,
+          details: {
+            suggestedAction: "Check deleted instances (see suggestions; list with: ravi instances deleted --json)",
+            suggestions: suggestSimilar(
+              name,
+              dbListDeletedInstances().map((inst) => inst.name),
+            ),
+          },
         },
+        diagnostic: errorDiagnostic(`Instance not found in deleted records: ${name}`, {
+          operation: "instances restore",
+        }),
       });
     }
   }
@@ -1481,12 +1496,17 @@ export class InstancesCommands {
         settled = true;
         try {
           contractFail("instances connect", "INSTANCE_CONNECT_TIMEOUT", "Timed out waiting for instance connection.", {
-            asJson,
-            details: {
-              retryable: true,
-              timeoutSeconds: TIMEOUT_MS / 1_000,
-              suggestedAction: `Check the provider connection, then retry: ravi instances connect ${name}`,
+            ...{
+              asJson,
+              details: {
+                retryable: true,
+                timeoutSeconds: TIMEOUT_MS / 1_000,
+                suggestedAction: `Check the provider connection, then retry: ravi instances connect ${name}`,
+              },
             },
+            diagnostic: errorDiagnostic("Timed out waiting for instance connection.", {
+              operation: "instances connect",
+            }),
           });
         } catch (error) {
           reject(error);
@@ -1975,14 +1995,20 @@ export class InstancesRoutesCommands {
         "ROUTE_NOT_FOUND",
         `Route not found in deleted records: ${routePattern} (instance: ${name})`,
         {
-          asJson,
-          details: {
-            suggestedAction: "Check deleted routes (see suggestions; list with: ravi instances routes deleted --json)",
-            suggestions: suggestSimilar(
-              routePattern,
-              dbListDeletedRoutes(name).map((route) => route.pattern),
-            ),
+          ...{
+            asJson,
+            details: {
+              suggestedAction:
+                "Check deleted routes (see suggestions; list with: ravi instances routes deleted --json)",
+              suggestions: suggestSimilar(
+                routePattern,
+                dbListDeletedRoutes(name).map((route) => route.pattern),
+              ),
+            },
           },
+          diagnostic: errorDiagnostic(`Route not found in deleted records: ${routePattern} (instance: ${name})`, {
+            operation: "instances routes restore",
+          }),
         },
       );
     }
@@ -2211,7 +2237,7 @@ export class InstancesPendingCommands {
         console.log("\n  Next page:");
         console.log(`    ${pagination.nextCommand}`);
       }
-      console.log(`\n  Approve contact: ravi instances pending approve ${name} <phone>`);
+      console.log(`\n  Approve contact: ravi instances pending approve ${name} <identity>`);
       console.log(`  Approve chat:    ravi instances pending approve ${name} <chat> --agent <agent>`);
     }
     return payload;
@@ -2228,7 +2254,7 @@ export class InstancesPendingCommands {
     const instance = dbGetInstance(name);
     if (!instance) failInstanceNotFound("instances pending approve", name, asJson);
     const pending = findPendingReviewEntry(name, contact);
-    const normalizedContact = normalizePhone(contact);
+    const normalizedContact = normalizeRoutePattern(contact);
     const isChatApproval = pending?.pendingKind === "chat" || normalizedContact.startsWith("group:");
 
     if (isChatApproval) {
@@ -2297,7 +2323,32 @@ export class InstancesPendingCommands {
       return payload;
     }
 
-    allowContact(contact);
+    if (instance.channel === "slack") {
+      // The supplied ref can be a DM chat id or a case-insensitive lookup. The
+      // pending row retains the original Slack sender, including for old rows.
+      const senderId = pending?.phone ?? contact.trim().toUpperCase();
+      const resolved = resolvePendingContact({ accountId: name, phone: senderId });
+      if (!isSlackHumanUserId(senderId) || resolved.ambiguous || resolved.identity?.ownerType === "agent") {
+        const message = "Approval requires an unambiguous Slack human identity in this instance.";
+        contractFail("instances pending approve", "CONTACT_IDENTITY_UNRESOLVED", message, {
+          asJson,
+          diagnostic: errorDiagnostic(message, { operation: "instances pending approve" }),
+        });
+      }
+      if (resolved.contact) {
+        allowContact(resolved.contact.id);
+      } else {
+        upsertContactFromPlatformIdentity({
+          channel: "slack",
+          instanceId: resolved.instanceId,
+          platformUserId: senderId,
+          name: pending?.name,
+          status: "allowed",
+        });
+      }
+    } else {
+      allowContact(contact);
+    }
     const removedPending = pending ? removeAccountPending(name, pending.phone) : removeAccountPending(name, contact);
     const payload = {
       status: "approved" as const,

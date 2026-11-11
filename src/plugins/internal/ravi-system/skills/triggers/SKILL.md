@@ -36,6 +36,8 @@ ravi triggers test <id> --execute                    # emite o evento sintético
 ravi triggers rm <id> --execute                      # deleta de verdade
 ```
 
+Para repontar o destinatário de um follow antes de fechar sua thread: `ravi triggers set <id> replySession <sessão-pai>`. Confira o destino com `ravi triggers show <id> --json`.
+
 Chaves de `set`: name, message, shell, exec, timeout, env-file, on-error, topic, agent, session, cooldown, debounce, filter.
 
 ### Criar

@@ -52,6 +52,9 @@
 - Attach/detach during a running turn MUST NOT redirect that turn's captured
   reply target.
 - Different source chats and threads MUST run as separate serialized turns.
+- With Slack DM X active and default output Y, a thread return from Y MUST NOT
+  interrupt X at tool completion. X's answer MUST be emitted once to X and
+  never to Y; queued work follows after the terminal event without replaying X.
 - `ravi sessions mute`, `unmute`, `focus`, and related state MUST NOT exist.
 - `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts src/channels/slack/socket-mode.test.ts src/router/route-sticky-attach.test.ts src/channels/backend.test.ts`
   SHOULD pass after changing attach behavior.

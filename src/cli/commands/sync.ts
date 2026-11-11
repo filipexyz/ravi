@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
@@ -193,11 +194,14 @@ export class SyncCommands {
       // so similarity suggestions would be noise — point at the status surface
       // instead.
       contractFail("sync inspect", "SYNC_RECORD_NOT_FOUND", `Sync row not found: ${id}`, {
-        asJson,
-        details: {
-          suggestedAction:
-            "Check the id: sync outbox/inbox ids come from sync push/pull output; see counts with: ravi sync status --json",
+        ...{
+          asJson,
+          details: {
+            suggestedAction:
+              "Check the id: sync outbox/inbox ids come from sync push/pull output; see counts with: ravi sync status --json",
+          },
         },
+        diagnostic: errorDiagnostic(`Sync row not found: ${id}`, { operation: "sync inspect" }),
       });
     }
     const payload = { found: true, ...result };

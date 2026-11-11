@@ -1,7 +1,8 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   ensureFollowWatchProducer,
   ensureGhWatchFollow,
+  resolveGhFollowContext,
   ensureRepoWatch,
   findExistingGhFollowTrigger,
   ghFollowFilter,
@@ -13,6 +14,20 @@ import {
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
 import type { Trigger, TriggerInput } from "../triggers/index.js";
 import type { WatchRecord } from "../watch/types.js";
+
+import { registerInboundSlackThread, closeSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
+import { getOrCreateSession, deleteSession } from "../router/sessions.js";
+import { dbCreateTrigger, dbGetTrigger } from "../triggers/triggers-db.js";
+import { runGhFollowMaintenance } from "./gh-follow-sweep.js";
+import { createIsolatedRaviState, cleanupIsolatedRaviState } from "../test/ravi-state.js";
+
+let stateDir: string | null = null;
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-gh-follow-owner-");
+});
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+});
 
 function watch(overrides: Partial<WatchRecord> = {}): WatchRecord {
   return {
@@ -477,6 +492,7 @@ describe("gh watch follow", () => {
         return trigger();
       },
       emitTriggersRefresh: async () => {},
+      updateTrigger: () => true,
     };
 
     const first = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: { sessionName: "dev" } }, deps);
@@ -494,13 +510,18 @@ describe("gh watch follow", () => {
 
   it("refreshes the instructions of an existing follow", async () => {
     const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
-    const stale = trigger({ message: "Activity on o/r#7. Tell the user what changed.", filter: "old" });
+    const stale = trigger({
+      message: "Activity on o/r#7. Tell the user what changed.",
+      filter: "old",
+      topic: "ravi.watch.github.*",
+    });
 
     const result = await ensureGhWatchFollow(
       { repo: "o/r", prNumber: 7, context: { sessionName: "dev" } },
       {
         listWatches: () => ({ items: [watch()] }) as never,
         listTriggers: () => [stale],
+        emitTriggersRefresh: async () => {},
         updateTrigger: (id, patch) => {
           updates.push({ id, patch: patch as Record<string, unknown> });
           return true;
@@ -514,6 +535,7 @@ describe("gh watch follow", () => {
     expect(updates).toHaveLength(1);
     expect(String(updates[0].patch.message)).toContain("comment");
     expect(updates[0].patch.filter).toBe(ghFollowFilter("o/r", 7));
+    expect(updates[0].patch.topic).toBe("ravi.watch.github.>");
   });
 
   it("does not create a trigger without a PR number", async () => {
@@ -922,5 +944,98 @@ describe("gh watch observation", () => {
     await observeGhBashCommand("ls x\\;gh pr edit 7 -R o/r", { cwd: "/repo", sessionName: "main" }, d);
     expect(tokenizeShellCommand("ls x\\;gh")).toEqual(["ls", "x;gh"]);
     expect(work).toBe(0);
+  });
+});
+
+describe("durable PR follow owner", () => {
+  function seed() {
+    getOrCreateSession("parent-key", "agent-test", "/tmp/follow-test", { name: "parent" });
+    getOrCreateSession("parent-key:thread:1.2", "agent-test", "/tmp/follow-test", { name: "child" });
+    return registerInboundSlackThread({
+      parentSessionKey: "parent-key",
+      parentSessionName: "parent",
+      childSessionKey: "parent-key:thread:1.2",
+      childSessionName: "child",
+      accountId: "slack-account",
+      instanceId: "slack-instance",
+      platformChatId: "C123",
+      threadCanonicalChatId: "thread-chat",
+      providerThreadId: "1.2",
+    });
+  }
+  const deps = { listWatches: () => ({ items: [watch()] }) as never, emitTriggersRefresh: async () => {} };
+  const childContext = {
+    sessionName: "child",
+    source: { channel: "slack", accountId: "slack-account", chatId: "C123#1.2", threadId: "1.2" },
+  };
+
+  it("creates a follow at the parent, with root fallback, and allows the child to close", async () => {
+    const record = seed();
+    const result = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: childContext }, deps);
+    expect(dbGetTrigger(result.triggerId!)!).toMatchObject({
+      replySession: "parent",
+      replySource: { channel: "slack", accountId: "slack-account", chatId: "C123" },
+    });
+    expect(dbGetTrigger(result.triggerId!)!.replySource?.threadId).toBeUndefined();
+    expect(closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! }).changed).toBe(true);
+  });
+
+  it("resolves a delayed creation after the child has closed and been pruned", async () => {
+    const record = seed();
+    closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! });
+    deleteSession(record.childSessionKey!);
+    const result = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: childContext }, deps);
+    expect(dbGetTrigger(result.triggerId!)!.replySession).toBe("parent");
+  });
+
+  it("reconciles an existing follow using its saved parent, not the new observer", async () => {
+    seed();
+    const old = dbCreateTrigger({
+      name: "gh-follow:o/r#7",
+      topic: "ravi.watch.github.>",
+      message: "old",
+      session: "main",
+      replySession: "child",
+      replySource: childContext.source,
+    });
+    const result = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: { sessionName: "unrelated" } }, deps);
+    expect(result.triggerId).toBe(old.id);
+    expect(result.triggerRepaired).toBe(true);
+    expect(dbGetTrigger(old.id)!.replySession).toBe("parent");
+    expect(dbGetTrigger(old.id)!.replySource?.chatId).toBe("C123");
+  });
+
+  it("maintenance repairs a closed child's legacy follow and refreshes the runner", async () => {
+    const record = seed();
+    closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! });
+    const old = dbCreateTrigger({
+      name: "gh-follow:o/r#7",
+      topic: "ravi.watch.github.>",
+      message: "old",
+      session: "main",
+      replySession: "child",
+      replySource: childContext.source,
+    });
+    let refreshes = 0;
+    const result = await runGhFollowMaintenance({
+      readPending: () => [],
+      listPrStates: () => new Map([[7, "OPEN"]]),
+      listWatches: () => [],
+      ensureWatches: async () => {},
+      emitTriggersRefresh: async () => {
+        refreshes++;
+      },
+    });
+    expect(result.triggersRepaired).toBe(1);
+    expect(refreshes).toBe(1);
+    expect(dbGetTrigger(old.id)!.replySession).toBe("parent");
+  });
+
+  it("fails closed when a known thread has no parent or an unknown thread has no lifecycle", () => {
+    seed();
+    deleteSession("parent-key");
+    expect(() => resolveGhFollowContext(childContext)).toThrow("parent session is missing");
+    expect(() => resolveGhFollowContext({ sessionKey: "missing:thread:1.2" })).toThrow("lifecycle is missing");
+    expect(resolveGhFollowContext({ sessionName: "normal" })).toEqual({ sessionName: "normal" });
   });
 });

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Metrics CLI - daily roll-ups of cost + activity from session_events / cost_events.
  */
@@ -122,12 +123,15 @@ const METRICS_BY_DIMENSIONS = ["agent", "agent-model", "date"] as const;
 
 function failMetricsUsage(op: string, message: string, acceptedValues: readonly string[], asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
-      acceptedValues: [...acceptedValues],
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
+        acceptedValues: [...acceptedValues],
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 

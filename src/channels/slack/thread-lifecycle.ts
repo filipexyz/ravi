@@ -1,10 +1,11 @@
-import { listDecisions } from "../../decisions/store.js";
+import { getDecisionWaitSummary, listDecisions } from "../../decisions/store.js";
 import { dbGetContext, getDb } from "../../router/router-db.js";
 import { randomUUID } from "node:crypto";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
+import { prepareThreadAttentionNotice } from "./thread-attention-admission.js";
 import { publishChannelOutboundJobDurably } from "../outbound-publish-outbox.js";
 import { buildChannelChatActionJob, type ChannelOutboundJob } from "../outbound-stream.js";
 import {
@@ -56,6 +57,16 @@ import {
   type SlackThreadLifecycleRecord,
 } from "./thread-lifecycle-store.js";
 import type { SlackThreadCardState } from "./thread-card.js";
+import { getLatestSessionTurn } from "../../session-trace/session-trace-db.js";
+import { observeThreadTurn } from "./thread-turn-health.js";
+import {
+  claimThreadTurnNotice,
+  finishThreadTurnNotice,
+  getThreadTurnHealth,
+  listThreadTurnHealthCandidates,
+  saveThreadTurnHealth,
+  type ThreadTurnHealth,
+} from "./thread-turn-health-store.js";
 
 const log = logger.child("channels:slack:thread-lifecycle");
 const SLACK_THREAD_CREATED_TOPIC = "ravi.inbound.thread.created";
@@ -83,6 +94,7 @@ export const SLACK_THREAD_ERROR_CODES = [
   "THREAD_PARENT_MISSING",
   "THREAD_PARENT_RETURN_PENDING",
   "THREAD_DECISIONS_PENDING",
+  "THREAD_TRIGGERS_PENDING",
   "THREAD_MODEL_INVALID",
 ] as const;
 export type SlackThreadErrorCode = (typeof SLACK_THREAD_ERROR_CODES)[number];
@@ -97,6 +109,7 @@ export function slackThreadError(code: SlackThreadErrorCode, message: string, su
 }
 
 export interface SlackThreadLifecycleDependencies {
+  now?: () => number;
   publishPrompt: PromptPublisher;
   publishEvent: EventPublisher;
   /** Publishes the root card update; without it the card is left as is. */
@@ -235,7 +248,107 @@ export async function reconcileSlackThreadLifecycle(
     publishPrompt: dependencies.publishPrompt,
     publishOutbound: dependencies.publishOutbound ?? publishChannelOutboundJobDurably,
   });
+  // One owner: the gateway's existing startup/30s reconciliation. Lists never call observeThreadTurn.
+  failures += await reconcileThreadTurnHealth(dependencies);
   return { creations, parentReturns, failures };
+}
+
+/** Resolve authority from this physical attempt, never the session's later active context. */
+function observedTurnCallerContextId(childSessionKey: string, turnId: string): string {
+  const child = getSession(childSessionKey);
+  const requests = getDb()
+    .prepare(`
+      SELECT session_key, json_extract(payload_json, '$.context_id') AS context_id
+      FROM session_events WHERE turn_id = ? AND event_type = 'adapter.request'
+      ORDER BY seq ASC, id ASC LIMIT 2
+    `)
+    .all(turnId) as Array<{ session_key: string; context_id: unknown }>;
+  const request = requests.length === 1 ? requests[0] : undefined;
+  const caller = typeof request?.context_id === "string" ? dbGetContext(request.context_id) : null;
+  if (
+    !child ||
+    request?.session_key !== childSessionKey ||
+    !caller ||
+    caller.kind !== "turn-runtime" ||
+    caller.sessionKey !== childSessionKey ||
+    caller.agentId !== child.agentId
+  ) {
+    throw new Error(`Slack thread attention authority unavailable for turn: ${turnId}`);
+  }
+  // A completed turn's revoked key still identifies its historical narrowing snapshot.
+  // The existing relay resolver also applies later permission-profile revocations.
+  return caller.contextId;
+}
+
+async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDependencies): Promise<number> {
+  let failures = 0;
+  for (const requestId of listThreadTurnHealthCandidates()) {
+    let claimId: string | null = null;
+    const now = dependencies.now?.() ?? Date.now();
+    try {
+      const record = getSlackThreadLifecycle(requestId);
+      if (!record) continue;
+      saveThreadTurnHealth(requestId, observeThreadTurn(record, now));
+      const health = getThreadTurnHealth(requestId)!;
+      if (health.state !== "attention" || !health.turnId || !record.childSessionKey || !record.providerThreadId)
+        continue;
+      claimId = claimThreadTurnNotice(requestId, health.turnId, now);
+      if (!claimId) continue;
+      // Fence a concurrent close/reopen/new turn before publishing the observation.
+      if (
+        getSlackThreadLifecycle(requestId)?.status !== "open" ||
+        getLatestSessionTurn(record.childSessionKey)?.turnId !== health.turnId
+      ) {
+        finishThreadTurnNotice(requestId, claimId, false, now);
+        continue;
+      }
+      const parent = getSession(record.parentSessionKey);
+      if (!parent) throw new Error(`Slack thread parent session not found: ${record.parentSessionKey}`);
+      const messageId = `slack-thread-attention:${requestId}:${health.turnId}`;
+      const description = {
+        no_signal: "Sem sinal do turno há pelo menos 15 minutos. Isso não comprova morte do provider.",
+        no_reply: "O turno terminou sem resposta final nem silêncio intencional.",
+        owner_lost: "O turno ficou sem dono válido: lease da tentativa ou do runtime expirado/encerrado.",
+        failed: "O turno registrou falha ou timeout.",
+      }[health.reason!];
+      await publishChannelSessionPrompt(
+        {
+          sessionName: parent.name ?? parent.sessionKey,
+          action: "session.return",
+          principal: resolveChannelLifecyclePrincipal("session.return", record.childSessionKey),
+          callerContextId: observedTurnCallerContextId(record.childSessionKey, health.turnId),
+          payload: {
+            prompt: buildSlackThreadParentNotice(record, "precisa de atenção.", "Estado", description),
+            _agentId: parent.agentId,
+            source: buildSlackThreadParentSource(record, record.providerThreadId),
+            deliveryBarrier: "after_tool",
+            deliveryBarrierSource: "default",
+            _slackThreadLifecycle: {
+              eventId: messageId,
+              eventType: "thread.attention",
+              requestId,
+              parentSessionKey: record.parentSessionKey,
+              childSessionKey: record.childSessionKey,
+              childSessionName: record.childSessionName,
+              turnId: health.turnId,
+              reason: health.reason,
+            },
+          },
+          options: { messageId },
+        },
+        async (sessionName, payload, options) => {
+          const frozen = prepareThreadAttentionNotice(requestId, claimId!, sessionName, payload, now);
+          await dependencies.publishPrompt(sessionName, frozen, options);
+        },
+      );
+      finishThreadTurnNotice(requestId, claimId, true, now);
+    } catch (error) {
+      failures++;
+      if (claimId) finishThreadTurnNotice(requestId, claimId, false, now);
+      log.warn("Failed to reconcile Slack thread turn health", { requestId, error: errorMessage(error) });
+    }
+  }
+  return failures;
 }
 
 export function registerSlackThreadInboundLifecycle(input: {
@@ -463,6 +576,7 @@ export interface SlackThreadRuntimeSummary {
 }
 
 export interface SlackThreadSummary {
+  turnHealth: ThreadTurnHealth | null;
   requestId: string;
   title: string | null;
   status: SlackThreadLifecycleRecord["status"];
@@ -475,6 +589,8 @@ export interface SlackThreadSummary {
    */
   childSessionMissing: boolean;
   openDecisionCount: number;
+  pendingAnswerCount: number;
+  uncertainAnswerCount: number;
   slackThreadTs: string | null;
   link: string | null;
   runtime: SlackThreadRuntimeSummary;
@@ -528,6 +644,7 @@ export function slackThreadLink(record: SlackThreadLifecycleRecord): string | un
 
 export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackThreadSummary {
   return {
+    turnHealth: getThreadTurnHealth(record.requestId),
     requestId: record.requestId,
     title: slackThreadTitle(record) ?? null,
     status: record.status,
@@ -535,7 +652,7 @@ export function summarizeSlackThread(record: SlackThreadLifecycleRecord): SlackT
     childSessionKey: record.childSessionKey ?? null,
     childSessionName: record.childSessionName ?? null,
     childSessionMissing: isSlackThreadChildMissing(record),
-    openDecisionCount: listDecisions({ type: "thread", id: record.requestId }, true).length,
+    ...getDecisionWaitSummary({ type: "thread", id: record.requestId }),
     slackThreadTs: record.providerThreadId ?? null,
     link: slackThreadLink(record) ?? null,
     runtime: summarizeSlackThreadRuntime(record),
@@ -648,7 +765,7 @@ export async function reportSlackThreadProgress(
   dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<SlackThreadReportResult> {
   const text = message.trim();
-  if (!text) throw new Error("Report message is required");
+  if (!text) throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
   const record = ensureSlackThreadLifecycleForSession(session);
   if (!record.providerThreadId) {
     throw slackThreadError("THREAD_NOT_STARTED", `Slack thread has not started yet: ${record.requestId}`);
@@ -670,7 +787,7 @@ export async function reportSlackThreadProgress(
       payload: {
         prompt: buildSlackThreadParentNotice(record, "reporta progresso.", "Progresso", text),
         source: buildSlackThreadParentSource(record, record.providerThreadId),
-        deliveryBarrier: "after_tool",
+        deliveryBarrier: "after_response",
         deliveryBarrierSource: "default",
         _slackThreadLifecycle: {
           eventId: messageId,
@@ -705,7 +822,7 @@ export async function sendSlackThreadMessage(
   dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<SlackThreadSendResult> {
   const text = input.message.trim();
-  if (!text) throw new Error("Thread message is required");
+  if (!text) throw new CliExpectedError("Thread message is required", "USAGE_ERROR", 2);
   const parent = input.parentSession;
   if (slackThreadParentSessionKey(parent.sessionKey) !== parent.sessionKey) {
     throw slackThreadError(
