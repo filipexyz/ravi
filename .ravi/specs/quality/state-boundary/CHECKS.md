@@ -26,6 +26,8 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - Refusal occurs before SQLite creates a file or initializes schema. Existing sentinel data/schema survive a refused destructive initializer.
 - Symlink aliases, dangling file links, hardlinks and the legacy DB path cannot evade the boundary.
 - Original dispatcher recovery cases own isolated fixtures and pass without a harness wrapper.
+- `src/permissions/runtime-bootstrap-provider.test.ts` and `src/hooks/gh-follow-sweep.test.ts` pass in fresh processes without an inherited `RAVI_STATE_DIR`, and each fixture restores the enclosing selection when one exists.
+- `bun test src/ci/pre-push.test.ts` verifies temporary state in CI and release jobs and its propagation through the real pre-push hook, using a lightweight checker instead of running the full suite locally.
 - `bun test src/pr/service.test.ts src/pr/journal.test.ts` verifies the canonical publisher and state journal; the complete publication contract is checked by `cli/pr`.
 - #766/#767 are the negative publication case: matching trees and unchanged shared config do not legalize per-command hooksPath bypass.
 - Full build/typecheck/lint/suite remain in PR CI. Shared `.githooks` and hook config stay untouched.

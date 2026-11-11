@@ -20,6 +20,9 @@ applies_to:
   - src/router/router-db.ts
   - src/test/ravi-state.ts
   - .github/workflows/ci.yml
+  - .github/workflows/version.yml
+  - src/permissions/runtime-bootstrap-provider.test.ts
+  - src/hooks/gh-follow-sweep.test.ts
 ---
 
 # Real State and Process Roles
@@ -44,6 +47,8 @@ applies_to:
 - Channel preflight MUST validate the canonical state and credential paths that the stores actually use. Divergent injected and process paths MUST refuse before NATS; equivalent path aliases MUST remain valid.
 - No new confirmation flag, launcher variable, environment classification or configuration-before-release step is required. A legitimate installed daemon MUST retain access based on its process identity.
 - Fixture cleanup MUST restore the enclosing `RAVI_STATE_DIR`, including absence. This repair is independent of the opening guard.
+- Every test that can reach state, including capability materialization and injected maintenance with remaining default dependencies, MUST create its own isolated fixture. It MUST pass without an enclosing `RAVI_STATE_DIR`; CI isolation MUST NOT conceal missing fixture ownership.
+- CI and release jobs that run source checks directly or through Git hooks MUST supply temporary job-scoped `RAVI_STATE_DIR`. The real-state guard MUST remain enforced in CI; missing isolation is a caller defect, not a reason to admit the runner's default state.
 - Symlink aliases, dangling links and legacy default DB paths MUST be protected. Hardlinked databases MUST be refused because SQLite WAL identity is path-based.
 - This is an accident boundary, not an OS sandbox against code with full filesystem access. New unguarded constructors MUST be rejected in review.
 

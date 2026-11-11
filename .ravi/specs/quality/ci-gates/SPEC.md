@@ -12,6 +12,7 @@ tags:
   - governance
 applies_to:
   - .github/workflows/ci.yml
+  - .github/workflows/version.yml
   - .ravi/specs
   - src/specs
   - src/ci
@@ -36,6 +37,8 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 - CI MUST validate changed specs with `ravi specs get <spec_id> --mode full --json` and `ravi specs get <spec_id> --mode checks --json`.
 - CI MUST fail on spec id/path/kind mismatch, invalid frontmatter, missing required companion, or empty/non-verifiable CHECKS for changed specs.
 - Runtime/consumer changes MUST include or trigger focused tests.
+- Both the Quality Gate job and Version And Publish job MUST declare `RAVI_STATE_DIR` under the runner's temporary directory at job scope, so source commands and inherited pre-push hooks share an isolated outer sandbox. Regression checks MUST reject a missing selection and a hook that drops it.
+- Release verification MUST include successful tag push and npm publication under the intended dist-tag. A successful branch CI or version commit alone does not prove that release succeeded.
 - Tests sharing a Bun process MUST preserve the complete export surface of shared
   modules. Use scoped publisher injection with per-test cleanup when available;
   `mock.restore()` alone MUST NOT be treated as restoration of `mock.module()`.

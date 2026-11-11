@@ -27,6 +27,8 @@ status: active
 
 ## CI Integration Checks
 
+- `bun test src/ci/pre-push.test.ts` parses both workflows, rejects missing temporary job state, and executes the real pre-push hook with a checker that asserts every check inherits that state. Removing either job's selection fails the regression.
+- A release run after the final `dev` CI succeeds must push its version tag, finish Version And Publish successfully, and expose that version as `ravi.bot@next` in the npm registry.
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/tasks/` passes
   with observer, checkpoint and thread-core suites in the same process.
 - Each of `observer.test.ts` and `checkpoint-runner.test.ts`, run alone in a
