@@ -121,6 +121,9 @@ Expected:
 - `src/runtime/runtime-request-context.test.ts` covers queued and chained
   handoffs, speaker changes, spoofed/derived callers, revocations, authority
   ceilings and notification exclusion; personal/shared connectors remain denied.
+- The same suite MUST reject an already admitted child after ancestor
+  revocation or contact block, preserve explicit revocation across real lease
+  shutdown, and preserve connector restrictions through actor projection.
 
 ```bash
 bun test src/omni/consumer-context.test.ts src/gateway-session-trace.test.ts

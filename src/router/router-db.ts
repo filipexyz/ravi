@@ -2,6 +2,7 @@ import { configureStateJournalMode, initializeStateSchema } from "../db/schema-o
 import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { migrateDecisions } from "../decisions/schema.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
+import { isOrdinaryTurnCompletionRevocation } from "../runtime/context-revocation.js";
 /**
  * Router Database - SQLite-backed configuration storage
  *
@@ -10675,7 +10676,7 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
   }
 
   const db = getDb();
-  const reasonNote = options.reason?.trim();
+  const reasonNote = options.reason?.trim() || "context_revoked";
   const reasonKey = "revocationReason";
   const cascadeKey = "cascadedFrom";
   const cascadeFlagKey = "revokedViaCascade";
@@ -10690,7 +10691,13 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
       const metadata: Record<string, unknown> = {
         ...(target.metadata ?? {}),
       };
-      if (reasonNote) {
+      // Terminal cleanup must never turn an explicit withdrawal back into a
+      // benign completion and thereby revive already queued human work.
+      if (
+        !target.revokedAt ||
+        isOrdinaryTurnCompletionRevocation(metadata[reasonKey]) ||
+        !isOrdinaryTurnCompletionRevocation(reasonNote)
+      ) {
         metadata[reasonKey] = reasonNote;
       }
       if (target.contextId !== root.contextId) {

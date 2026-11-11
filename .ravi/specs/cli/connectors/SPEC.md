@@ -120,6 +120,9 @@ for connector management and exec in every mode (`owner`, `person_asking`,
 `shared`); delegation of work alone is not direct consent in the destination
 chat. The classifier exposes `delegatedRequester` only for attribution, never
 as an exec `candidate`. A direct human turn still uses the ordinary policy.
+The classifier MUST also inspect the live source of a session-actor projection;
+copying identity fields MUST NOT discard handoff restrictions. Attribution
+MUST revalidate the human caller chain and contact before each protected call.
 
 3a. Where a turn's answer goes. The runtime records it on the turn context
    each time a turn starts (`turnReplyTarget`, `src/runtime/turn-reply-target.ts`,

@@ -37,7 +37,11 @@ import {
   revokeRuntimeContext,
 } from "./context-registry.js";
 import { pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
-import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
+import {
+  buildRuntimeRequestContext,
+  refreshRuntimeRequestContextForTurn,
+  startActiveRuntimeRequestContextLease,
+} from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin, buildSignalTurnOrigin } from "./turn-origin.js";
@@ -2460,7 +2464,7 @@ describe("verified human work handoffs", () => {
     const contact = createContact({ phone, name: "Requester" });
     const prompt = promptForContact(contact.id, "Read the project database in a new work thread");
     const caller = runtimeFor(prompt);
-    return { contact, caller };
+    return { contact, caller, prompt };
   }
 
   function handoff(caller: Turn, action: Action = "execute", override: Partial<RuntimeLaunchPrompt> = {}) {
@@ -2631,6 +2635,101 @@ describe("verified human work handoffs", () => {
       expectHumanAuthorityRefused(handoff(child));
     }
   });
+
+  it("lease completion cannot erase an explicit revocation and readmit queued work", () => {
+    const { caller, prompt } = humanTurn();
+    const controller = new AbortController();
+    const stop = startActiveRuntimeRequestContextLease({
+      runtimeContext: caller,
+      agent: originAgent,
+      dbSessionKey: caller.sessionKey!,
+      sessionName: caller.sessionName!,
+      sessionCwd: originAgent.cwd,
+      prompt,
+      resolvedSource: prompt.source,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      signal: controller.signal,
+      isActive: () => true,
+    });
+    try {
+      revokeRuntimeContext(caller.contextId, { cascade: false, reason: "operator_revoked" });
+      expectHumanAuthorityRefused(handoff(caller));
+      stop();
+      expect(dbGetContext(caller.contextId)?.metadata?.revocationReason).toBe("operator_revoked");
+      expectHumanAuthorityRefused(handoff(caller));
+    } finally {
+      stop();
+    }
+  });
+
+  it.each(["ancestor-revocation", "blocked-contact"] as const)(
+    "an admitted child rechecks %s at every Bases call with cached or fresh context",
+    (cause) => {
+      const { caller, contact } = humanTurn();
+      const child = handoff(caller);
+      expect(accessFor(child)).toMatchObject({ kind: "contact", contactId: contact.id });
+      if (cause === "ancestor-revocation") {
+        revokeRuntimeContext(caller.contextId, { cascade: false, reason: "operator_revoked" });
+      } else {
+        blockContact("5511900098001");
+      }
+      // The child owns a separate live token: rejecting the operation must
+      // follow request lineage, not wait for the next lease heartbeat.
+      expect(resolveRuntimeContext(child.contextKey, { touch: false })?.contextId).toBe(child.contextId);
+      expect(accessFor(child).kind).toBe("refused");
+      expect(accessFor(dbGetContext(child.contextId)!).kind).toBe("refused");
+    },
+  );
+
+  it.each([false, true])(
+    "session actor projection preserves the handoff's connector restrictions (owner=%s)",
+    (isOwner) => {
+      const { caller, contact } = humanTurn();
+      const child = handoff(caller);
+      if (isOwner) {
+        dbUpdateContextMetadata(child.contextId, {
+          ...child.metadata,
+          consoleUserId: "operator-user",
+          consoleOrgId: "test-org",
+        });
+      }
+      const admin = createRuntimeContext({
+        kind: "admin-bootstrap",
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      });
+      const projected = issueRuntimeContext({
+        parent: admin,
+        cliName: "projected-human-request",
+        inheritCapabilities: true,
+        identity: {
+          agentId: workerAgent.id,
+          sessionKey: child.sessionKey,
+          sessionName: child.sessionName,
+          projectSessionActor: true,
+        },
+      });
+      expect(accessFor(projected)).toMatchObject(
+        isOwner ? { kind: "operator" } : { kind: "contact", contactId: contact.id },
+      );
+      for (const mode of ["owner", "person_asking", "shared"] as const) {
+        for (const useShared of [false, true]) {
+          expect(
+            resolveConnectorExecRoute({
+              ...connectorDeps(projected),
+              provider: "gmail",
+              getAgentMode: () => mode,
+              useShared,
+            }).ok,
+          ).toBe(false);
+        }
+      }
+      expect(resolveOperatorTurn({ ...connectorDeps(projected), action: "change connector mode" }).ok).toBe(false);
+      revokeRuntimeContext(caller.contextId, { cascade: false, reason: "operator_revoked" });
+      expect(accessFor(projected).kind).toBe("refused");
+    },
+  );
 
   it.each([false, true])(
     "Bases attribution does not authorize connectors for a forwarded human (owner=%s)",

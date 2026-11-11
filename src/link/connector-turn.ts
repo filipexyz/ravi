@@ -48,6 +48,8 @@ import {
 } from "../runtime/context-registry.js";
 import { RAVI_AUTOMATION_PRINCIPAL_ENV, readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import { readTurnReplyTarget } from "../runtime/turn-reply-target.js";
+import { resolveHumanRequestCaller } from "../runtime/human-request.js";
+import { resolveRuntimeTurnOrigin } from "../runtime/turn-origin.js";
 import { connectorModeArg, readAgentConnectorMode, type ConnectorUseMode } from "./connector-mode.js";
 
 export type ConnectorSpeakerKind = "terminal" | "owner" | "contact" | "agent" | "automation";
@@ -257,7 +259,19 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
     const resolved = stringField(metadata, "actorResolution") === "resolved";
     const isOwner = resolved && isOwnerUser(owner, consoleUserId, stringField(metadata, "consoleOrgId"));
     const conversation = surface?.type === "chat" ? "group" : surface?.type === "dm" ? "dm" : null;
-    if (resolved && objectField(metadata, "humanRequest")) {
+    const requestMetadata = projectionSource?.metadata ?? metadata;
+    if (resolved && objectField(requestMetadata, "humanRequest")) {
+      const origin = resolveRuntimeTurnOrigin(requestMetadata.turnOrigin);
+      const requester = origin ? resolveHumanRequestCaller({ _turnOrigin: origin }) : null;
+      if (!requester || requester.contactId !== principalId) {
+        return {
+          ...notOwner(
+            actorPrincipal,
+            "The forwarded human request is no longer valid. Ask again from a current verified turn.",
+          ),
+          ended: true,
+        };
+      }
       return {
         ...notOwner(
           actorPrincipal,

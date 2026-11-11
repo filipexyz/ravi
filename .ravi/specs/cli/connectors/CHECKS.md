@@ -308,3 +308,5 @@
   owner refuses subsequent protected calls.
 
 - `src/runtime/runtime-request-context.test.ts` checks delegated human requests stay refused for connector management and exec in owner, person_asking and shared modes, including explicit shared selection, while Bases preserves the requester.
+- Actor projections MUST preserve the source's connector refusal, and Bases
+  MUST refuse already admitted children after ancestor revocation or contact block.

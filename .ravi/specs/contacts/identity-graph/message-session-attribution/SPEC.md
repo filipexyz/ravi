@@ -198,6 +198,11 @@ Rules:
 - Bases and Console access MUST use the verified requester (and the existing
   Console link/role checks). Attribution alone MUST NOT unlock personal or
   shared connectors: their direct-request/consent policy remains separate.
+- Protected calls MUST revalidate the exact human ancestry and current contact
+  eligibility, including calls from a live child admitted before revocation.
+  Session-actor projections MUST retain the source turn's handoff restrictions.
+  Normal terminal cleanup MUST NOT overwrite an explicit withdrawal with a
+  benign completion reason and thereby revive queued work.
 - Historical agent-only records MUST NOT be backfilled from the last human
   or a guessed requester. Missing evidence requires a fresh verified request.
 

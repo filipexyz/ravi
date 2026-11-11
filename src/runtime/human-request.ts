@@ -4,18 +4,13 @@ import { AGENT_IDENTITY_AUTHORITY_MODE } from "../permissions/agent-identity-per
 import { TURN_SCOPED_AUTHORITY_KIND } from "../permissions/delegation.js";
 import type { RuntimeLaunchPrompt, RuntimeTurnOriginMetadata } from "./message-types.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
+import { isOrdinaryTurnCompletionRevocation } from "./context-revocation.js";
 
 export interface HumanRequestCaller {
   caller: ContextRecord;
   contactId: string;
   originContextId: string;
 }
-
-const COMPLETED_TURN_REASONS = new Set([
-  "turn_context_rotated",
-  "turn_context_completed",
-  "stale_turn_context_reclaimed",
-]);
 
 /** Work handoffs preserve a human request; notifications and returns do not. */
 export function isWorkHandoff(origin: RuntimeTurnOriginMetadata): boolean {
@@ -54,7 +49,7 @@ export function resolveHumanRequestCaller(prompt: Pick<RuntimeLaunchPrompt, "_tu
       caller.agentId !== origin.principal.id ||
       (origin.producer === "session-relay" && origin.session?.key && origin.session.key !== caller.sessionKey) ||
       typeof meta.permissionProfileRevokedAt === "number" ||
-      (caller.revokedAt && !COMPLETED_TURN_REASONS.has(String(meta.revocationReason)))
+      (caller.revokedAt && !isOrdinaryTurnCompletionRevocation(meta.revocationReason))
     )
       return null;
 
