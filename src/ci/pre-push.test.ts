@@ -10,9 +10,10 @@ type WorkflowJob = {
   steps: Array<{ name?: string; run?: string; env?: Record<string, string> }>;
 };
 
-for (const [workflow, jobName, command] of [
-  ["ci.yml", "quality-gate", "bun run test"],
-  ["version.yml", "version-and-publish", "git push origin"],
+for (const [workflow, jobName, command, stateName] of [
+  ["ci.yml", "quality-gate", "bun run test", "ravi-ci-state"],
+  ["version.yml", "version-and-publish", "git push origin", "ravi-version-state"],
+  ["sdk-release.yml", "release", "git push origin", "ravi-sdk-release-state"],
 ] as const) {
   it(`${workflow} supplies temporary state to the suite and Git hooks`, () => {
     const document = YAML.parse(
@@ -51,7 +52,7 @@ for (const [workflow, jobName, command] of [
       // Load the output exactly as the runner does for later steps. A plain
       // shell export would not survive this step and must fail the regression.
       const assignments = readFileSync(envFile, "utf8").trim().split("\n");
-      const expectedStateDir = join(dir, workflow === "ci.yml" ? "ravi-ci-state" : "ravi-version-state");
+      const expectedStateDir = join(dir, stateName);
       expect(assignments).toEqual([`RAVI_STATE_DIR=${expectedStateDir}`]);
       const stateDir = assignments[0]!.slice("RAVI_STATE_DIR=".length);
       const log = join(dir, "checks");
