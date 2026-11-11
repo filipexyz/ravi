@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { buildRuntimeRequestContext } from "../../runtime/runtime-request-context.js";
+import { createContact } from "../../contacts.js";
+import { accessActorFromTurn } from "../../access/actor.js";
+import { resolveConnectorTurn } from "../../link/connector-turn.js";
 import { recordSessionEvent, upsertSessionTurn } from "../../session-trace/session-trace-db.js";
 import { admitThreadAttention } from "./thread-attention-admission.js";
 import { classifyRuntimeSessionStartLane } from "../../runtime/session-pool.js";
@@ -48,6 +52,110 @@ afterEach(async () => {
 });
 
 describe("Slack thread lifecycle", () => {
+  it("preserves the verified human requester through durable thread bootstrap into Bases authority", async () => {
+    const agent = { id: "ravi", cwd: "/tmp/ravi" };
+    dbCreateAgent(agent);
+    getOrCreateSession("ravi-parent", agent.id, agent.cwd, { name: "ravi-parent", chatType: "channel" });
+    const contact = createContact({ phone: "5511900000099", name: "Human requester" });
+    const rootChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-instance-1",
+      platformChatId: "C123",
+      chatType: "channel",
+    });
+    const humanPrompt: RuntimeLaunchPrompt = {
+      prompt: "List the project bases in a work thread",
+      source: {
+        channel: "slack",
+        accountId: "ravi-slack",
+        instanceId: "slack-instance-1",
+        chatId: "C123",
+        canonicalChatId: rootChat.id,
+        sourceMessageId: "1712999999.000100",
+        actorType: "contact",
+        contactId: contact.id,
+      },
+      context: {
+        channelId: "slack",
+        channelName: "Slack",
+        accountId: "ravi-slack",
+        chatId: "C123",
+        messageId: "1712999999.000100",
+        senderId: "U_REQUESTER",
+        actorType: "contact",
+        contactId: contact.id,
+        isGroup: true,
+        timestamp: Date.now(),
+      },
+    };
+    const runtimeResolution = {
+      options: {},
+      sources: { model: null, effort: null, thinking: null },
+      hasTaskRuntimeContext: false,
+    };
+    const parent = buildRuntimeRequestContext({
+      dbSessionKey: "ravi-parent",
+      sessionName: "ravi-parent",
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: humanPrompt,
+      resolvedSource: humanPrompt.source,
+      runtimeProviderId: "codex",
+      model: "test-model",
+      runtimeResolution,
+    }).runtimeContext;
+    expect(parent.metadata).toMatchObject({
+      actorPrincipal: `contact:${contact.id}`,
+      actorResolution: "resolved",
+      turnProvenance: { origin: "human" },
+    });
+    const fixture = seedPendingCreation({ initiatorContextId: parent.contextId });
+    const prompts: RuntimeLaunchPrompt[] = [];
+    const result = await finalizeSlackThreadCreation(fixture.requestId, {
+      publishPrompt: mock(async (_session: string, payload: Record<string, unknown>) => {
+        prompts.push(payload as unknown as RuntimeLaunchPrompt);
+      }),
+      publishEvent: mock(async () => {}),
+    });
+    expect(prompts).toHaveLength(1);
+    const prompt = prompts[0]!;
+    expect(prompt._turnOrigin).toMatchObject({
+      producer: "channel",
+      action: "session.bootstrap",
+      principal: { type: "agent", id: agent.id },
+      callerContextId: parent.contextId,
+    });
+    const child = buildRuntimeRequestContext({
+      dbSessionKey: result.childSessionKey!,
+      sessionName: result.childSessionName!,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt,
+      resolvedSource: prompt.source,
+      runtimeProviderId: "codex",
+      model: "test-model",
+      runtimeResolution,
+    }).runtimeContext;
+    expect(child.metadata).toMatchObject({
+      actorPrincipal: `contact:${contact.id}`,
+      actorResolution: "resolved",
+      actor: { actorType: "contact", contactId: contact.id },
+      turnOrigin: { producer: "channel", action: "session.bootstrap", principal: { type: "agent", id: agent.id } },
+      turnProvenance: { origin: "agent", background: true },
+    });
+    const turn = resolveConnectorTurn({
+      runtimeContext: { present: true, record: child },
+      activeUserId: "operator-user",
+      activeOrgId: "test-org",
+      ownerName: "Operator",
+    });
+    expect(accessActorFromTurn(turn, { getAgentName: () => "Ravi" })).toMatchObject({
+      kind: "contact",
+      contactId: contact.id,
+      agent: { id: agent.id },
+    });
+  });
+
   it("reconciles a published but unadmitted attention until its consumer accepts the frozen occurrence", async () => {
     dbCreateAgent({ id: "ravi", cwd: "/tmp/ravi" });
     const fixture = seedPendingCreation();

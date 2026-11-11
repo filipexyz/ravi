@@ -2,6 +2,12 @@
 
 ## Checks
 
+- `src/cli/remote-gateway.test.ts` MUST preserve the public `ACTOR_UNKNOWN`
+  message, action, typed reason and correlation over HTTP, and strip unsafe
+  details; errors from Console MUST retain locally mapped catalog copy.
+- `src/channels/slack/thread-lifecycle.test.ts` MUST retain the verified
+  human requester through bootstrap and classify that contact for Bases.
+
 - The first `ravi bases …` call in an agent session MUST return
   `RAVI_SKILL_REQUIRED` naming `ravi-system-bases` and deliver the skill; the
   retry MUST pass. `bases_rows_query` MUST resolve the same gate.

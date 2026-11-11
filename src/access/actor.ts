@@ -91,6 +91,11 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
     if (turn.speaker.kind === "agent") return refused(turn.actorPrincipal, { kind: "agent_relay" });
     return { kind: "operator", ...agentOf(turn, deps) };
   }
+  const requester = result.delegatedRequester;
+  if (requester?.speaker.kind === "owner") return { kind: "operator", ...agentOf(requester, deps) };
+  if (requester?.speaker.kind === "contact" && requester.speaker.contactId) {
+    return { kind: "contact", contactId: requester.speaker.contactId, ...agentOf(requester, deps) };
+  }
   // The operator's own relay, refused by the connector rule only for where
   // the session posts its answer.
   if (result.relay?.speaker.kind === "owner") return { kind: "operator", ...agentOf(result.relay, deps) };
