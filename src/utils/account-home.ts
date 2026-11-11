@@ -23,8 +23,9 @@ export function resolveAccountHome(
   const command = platform === "darwin" ? "/usr/bin/dscacheutil" : platform === "linux" ? "/usr/bin/getent" : null;
   if (!command) return null;
   const args = platform === "darwin" ? ["-q", "user", "-a", "uid", String(uid)] : ["passwd", String(uid)];
+  const lookup: AccountLookup = options.lookup ?? spawnSync;
   try {
-    const result = (options.lookup ?? spawnSync)(command, args, {
+    const result = lookup(command, args, {
       encoding: "utf8",
       timeout: 2_000,
       maxBuffer: 16_384,

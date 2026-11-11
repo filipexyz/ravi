@@ -2135,7 +2135,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | tui | src/tui/index.tsx | 15 | fixed | binding retained / no recognized error surface | src/tui/index.tsx:e9e34e915d63b949a11bf3f4 |
 | tui | src/tui/lib/input-history.ts | 14 | triaged-follow-up | catch-without-binding | src/tui/lib/input-history.ts:307d7d7adaa92d5a3705559b |
 | tui | src/tui/lib/input-history.ts | 24 | triaged-follow-up | catch-without-binding | src/tui/lib/input-history.ts:c2418d294c4b5fca100de629 |
-| utils | src/utils/account-home.ts | 43 | no-cause | Missing or invalid OS account evidence disables implicit real-state transport. | src/utils/account-home.ts:0a27194e3f3a6cd9fbc44887 |
+| utils | src/utils/account-home.ts | 44 | no-cause | Missing or invalid OS account evidence disables implicit real-state transport. | src/utils/account-home.ts:0a27194e3f3a6cd9fbc44887 |
 | utils | src/utils/error-reporting.ts | 13 | no-cause | A failed diagnostic sink cannot replace the original operation's result or primary error. | src/utils/error-reporting.ts:6f6428cb5d4d6361066be7a3 |
 | utils | src/utils/logger.ts | 96 | triaged-follow-up | catch-without-binding | src/utils/logger.ts:935ba522170a6a284b28cb9f |
 | utils | src/utils/logger.ts | 208 | triaged-follow-up | catch-without-binding | src/utils/logger.ts:97f59f76dcee4f8994d1c0ee |

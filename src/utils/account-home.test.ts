@@ -24,7 +24,7 @@ describe("OS account home lookup", () => {
           uid: 501,
           lookup: (actualCommand, actualArgs, options) => {
             expect(actualCommand).toBe(command);
-            expect(actualArgs).toEqual(args);
+            expect(actualArgs).toEqual([...args]);
             expect(options).toEqual({
               encoding: "utf8",
               timeout: 2_000,
