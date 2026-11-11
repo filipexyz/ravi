@@ -11,22 +11,44 @@ export const CHANNELS_PM2_PROCESS_NAME = "ravi-channels";
 const PM2_ENV_DENYLIST = [
   "RAVI_CONTEXT_KEY",
   "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND",
+  "RAVI_GATEWAY_URL",
+  "RAVI_GATEWAY_INTERNAL",
+  "RAVI_HOST_CLI_GATEWAY",
+  "RAVI_DAEMON_RESTART_HANDOFF",
+  "RAVI_DAEMON_RESTART_HANDOFF_WORKER",
   "RAVI_SESSION_KEY",
   "RAVI_SESSION_NAME",
+  "RAVI_SESSION_TOKEN",
+  "RAVI_SESSION_CALLBACK_URL",
   "RAVI_AGENT_ID",
   "RAVI_CHANNEL",
   "RAVI_ACCOUNT_ID",
+  "RAVI_INSTANCE_ID",
+  "RAVI_CANONICAL_CHAT_ID",
   "RAVI_CHAT_ID",
   "RAVI_THREAD_ID",
   "RAVI_SLACK_CONNECTION",
   "RAVI_SLACK_CONNECTIONS",
   "RAVI_SLACK_CREDENTIAL_CONNECTION",
+  "RAVI_TASK_ID",
+  "RAVI_TASK_PROFILE_ID",
+  "RAVI_TASK_SESSION",
+  "RAVI_TASK_WORKSPACE",
+  "RAVI_TASK_ACTOR",
 ] as const;
 
+export function clearedPm2ContextEnv(): Record<string, string> {
+  // PM2 merges environments on restart; omitted keys retain their old values.
+  return Object.fromEntries(PM2_ENV_DENYLIST.map((key) => [key, ""]));
+}
+
 export function buildPm2Env(envOverrides?: Record<string, string>): Record<string, string> {
-  const env = { ...process.env, ...(envOverrides ?? {}) } as Record<string, string>;
-  for (const key of PM2_ENV_DENYLIST) delete env[key];
-  return env;
+  return {
+    ...process.env,
+    RAVI_PM2_EXECUTABLE: process.execPath,
+    ...envOverrides,
+    ...clearedPm2ContextEnv(),
+  } as Record<string, string>;
 }
 
 /**

@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertDatabaseTargetAllowed, openStateDatabase, type DatabaseBoundaryOptions } from "../db/state-boundary.js";
+import { buildDaemonPm2StartArgs } from "../daemon-stdin.js";
 import { buildManagedRuntimeRebindPlan } from "../managed-runtime-rebind.js";
 
 const dirs: string[] = [];
@@ -37,10 +38,18 @@ function fixture() {
   } satisfies DatabaseBoundaryOptions;
 }
 function daemon(options: ReturnType<typeof fixture>): DatabaseBoundaryOptions {
+  const args = buildDaemonPm2StartArgs({ bundlePath: options.argv[1] });
   return {
     ...options,
     registeredProcesses: () => [
-      { pid: 1234, name: "ravi", pm2_env: { pm_exec_path: options.argv[1], args: ["daemon", "run"] } },
+      {
+        pid: 1234,
+        name: args[args.indexOf("--name") + 1],
+        pm2_env: {
+          pm_exec_path: resolve(args[args.indexOf("--cwd") + 1], args[1]),
+          args: args.slice(args.indexOf("--") + 1),
+        },
+      },
     ],
   };
 }

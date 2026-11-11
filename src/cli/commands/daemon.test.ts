@@ -259,7 +259,7 @@ describe("daemon runtime target", () => {
     const tempRoot = makeTempDir("ravi-daemon-restart-once-");
     const fakeBinDir = join(tempRoot, "bin");
     const fakePm2Path = join(fakeBinDir, "pm2");
-    const fakeBundlePath = join(tempRoot, "runtime", "index.js");
+    const fakeBundlePath = join(tempRoot, "runtime", "dist", "bundle", "index.js");
     const pm2LogPath = join(tempRoot, "pm2.log");
     const childMarkerPath = join(tempRoot, "handoff-child.log");
 
@@ -300,11 +300,12 @@ describe("daemon runtime target", () => {
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     expect(result.status).toBe(0);
+    expect(existsSync(join(tempRoot, "state", "ravi.db"))).toBe(false);
     expect(result.stdout).not.toContain('"mode": "handoff"');
     const pm2Log = readFileSync(pm2LogPath, "utf8");
-    expect(pm2Log).toContain(`start ${realpathSync(fakeBundlePath)}`);
-    expect(pm2Log).toContain("ravi-pm2-stdin");
-    expect(pm2Log).toContain("--interpreter-args bun");
+    expect(pm2Log).toContain(`start dist/bundle/index.js --cwd ${realpathSync(join(tempRoot, "runtime"))}`);
+    expect(pm2Log).toContain("--interpreter /bin/sh");
+    expect(pm2Log).toContain('exec "$RAVI_PM2_EXECUTABLE" "$0" "$@" < /dev/null');
     expect(pm2Log).toContain("daemon run");
     expect(pm2Log).toContain("save --force");
     expect(existsSync(childMarkerPath)).toBe(false);

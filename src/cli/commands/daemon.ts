@@ -29,7 +29,7 @@ import {
   daemonMutationReturnSchema,
   daemonStatusReturnSchema,
 } from "./operational-return-schemas.js";
-import { buildDaemonPm2StartArgs, ensurePm2InertStdinWrapper, maybeNeuterDaemonStdin } from "../../daemon-stdin.js";
+import { buildDaemonPm2StartArgs, maybeNeuterDaemonStdin } from "../../daemon-stdin.js";
 import {
   DAEMON_RESTART_HANDOFF_ENV,
   DAEMON_RESTART_HANDOFF_WORKER_ENV,
@@ -149,6 +149,9 @@ function writeRestartReason(
     ...(targetSession ? { sessionName: targetSession } : {}),
   };
   writeFileSync(RESTART_REASON_FILE, JSON.stringify(payload));
+  // The installed operator hands this file to the daemon; only runtime code
+  // may persist the epoch in the real database.
+  if (!hasRuntimeInvocationContext()) return;
   try {
     dbUpsertDaemonRestartEpoch({
       restartEpoch,
@@ -383,12 +386,8 @@ function requirePm2() {
   }
 }
 
-function startDaemonPm2Args(bundlePath: string, options: { force?: boolean; bunPath?: string } = {}): string[] {
-  const args = buildDaemonPm2StartArgs({
-    bundlePath,
-    bunPath: options.bunPath ?? "bun",
-    stdinWrapperPath: ensurePm2InertStdinWrapper(bundlePath),
-  });
+function startDaemonPm2Args(bundlePath: string, options: { force?: boolean } = {}): string[] {
+  const args = buildDaemonPm2StartArgs({ bundlePath });
   // A supervised standby has to exist before the running owner is stopped.
   // PM2 refuses that unless the start is forced; the old pm id is deleted later.
   if (options.force) args.splice(1, 0, "--force");

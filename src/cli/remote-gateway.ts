@@ -160,11 +160,13 @@ export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env, op 
 export interface ResolveRemoteGatewayConfigOptions {
   probeSocket?: (socketPath: string) => Promise<boolean>;
   stateDir?: string;
+  /** Set only after the CLI has verified installed operator provenance. */
+  installedOperator?: boolean;
 }
 
 /**
  * Resolve an explicit HTTP(S)/unix gateway, or auto-bridge to the host unix
- * socket when this process is an isolated CLI (`RAVI_CONTEXT_KEY`) and the
+ * socket for runtime contexts or a verified installed operator when the
  * socket is actually connectable. Never auto-sets a loopback HTTP URL.
  */
 export async function resolveRemoteGatewayConfig(
@@ -181,7 +183,7 @@ export async function resolveAutoHostCliGateway(
   env: NodeJS.ProcessEnv = process.env,
   options: ResolveRemoteGatewayConfigOptions = {},
 ): Promise<RemoteGatewayConfig | null> {
-  if (!shouldAutoUseHostCliGateway(env)) return null;
+  if (!shouldAutoUseHostCliGateway(env, options.installedOperator)) return null;
   const stateDirs = options.stateDir ? [options.stateDir] : resolveHostCliGatewayStateDirs(env);
   const probe = options.probeSocket ?? probeUnixSocket;
   for (const stateDir of stateDirs) {
@@ -200,12 +202,12 @@ export async function resolveAutoHostCliGateway(
   return null;
 }
 
-export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env): boolean {
+export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env, installedOperator = false): boolean {
   if (env[REMOTE_GATEWAY_URL_ENV]?.trim()) return false;
   const disabled = env[HOST_CLI_GATEWAY_ENV]?.trim();
   if (disabled === "0" || disabled?.toLowerCase() === "false" || disabled?.toLowerCase() === "off") return false;
   if (env[HOST_CLI_GATEWAY_INTERNAL_ENV]?.trim() === "1") return false;
-  return Boolean(env.RAVI_CONTEXT_KEY?.trim());
+  return Boolean(env.RAVI_CONTEXT_KEY?.trim()) || installedOperator;
 }
 
 /**
@@ -245,23 +247,17 @@ export function requiresRemoteGateway(env: NodeJS.ProcessEnv = process.env): boo
   return Boolean(env.RAVI_CONTEXT_KEY?.trim());
 }
 
-export function gatewayRequiredError(op: string): ContractError {
-  return new ContractError(
-    op,
-    "GATEWAY_REQUIRED",
-    "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.",
-    1,
-    {
-      ...errorDiagnostic(
-        "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.",
-        { operation: op },
-      ),
-      ...{
-        retryable: true,
-        suggestedAction: `Start the Ravi daemon so its host CLI gateway socket is available, or set ${REMOTE_GATEWAY_URL_ENV}`,
-      },
+export function gatewayRequiredError(op: string, installedOperator = false): ContractError {
+  const message = installedOperator
+    ? "This command requires the installed Ravi gateway, and none is reachable."
+    : "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.";
+  return new ContractError(op, "GATEWAY_REQUIRED", message, 1, {
+    ...errorDiagnostic(message, { operation: op }),
+    ...{
+      retryable: true,
+      suggestedAction: `Start the Ravi daemon so its host CLI gateway socket is available, or set ${REMOTE_GATEWAY_URL_ENV}`,
     },
-  );
+  });
 }
 
 /**

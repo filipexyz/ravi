@@ -44,3 +44,21 @@ normative: true
   restore the inherited environment and leave the caller's receipts untouched.
 - This restart mandate belongs to the explicit `update` operation. Status
   reads and env-file mutations MUST NOT automatically restart processes.
+- Managed launchers MUST survive replacement of the installed package. PM2
+  MUST execute the daemon bundle directly through the inert-stdin launcher,
+  without selecting its Bun container because a parent directory contains
+  `bun`. The launched argv and process registration MUST satisfy the existing
+  state boundary without relaxing its identity checks.
+- Daemon and channel registration MUST clear inherited session, gateway and
+  supervisor routing context, including context retained by the PM2 manager.
+  Starting a service MUST NOT turn it into a remote CLI invocation.
+- Operator CLI commands targeting real state MUST use the authenticated
+  installed gateway for stateful authorization/execution. Local lifecycle and
+  recovery operations MUST remain usable when the daemon is unavailable,
+  without opening or migrating real databases. Runtime contexts MUST never
+  gain an operator fallback.
+- Update MUST prepare and validate its launcher before disrupting managed
+  processes, and wait for the new daemon's exact-release readiness before
+  starting channel consumers. A failed candidate MUST NOT be reported as
+  recovered based only on PM2 online or a boot receipt. Recovery MUST preserve
+  schema ownership and MUST NOT imply a database rollback.

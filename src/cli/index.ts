@@ -45,6 +45,8 @@ import { requireTuiSessionName } from "../tui/session-arg.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation } from "../apps/router.js";
 import { cliOnlyCommandError, REMOTE_GATEWAY_URL_ENV, requiresRemoteGateway } from "./remote-gateway.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
+import { runWithContext } from "./context.js";
+import { usesInstalledOperatorTransport } from "./operator-runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -220,16 +222,18 @@ program
   .option("--json", "Print a machine-readable result")
   .action(async (options: RaviUpdateOptions) => {
     refuseRootCommandInRuntimeSession("update", options.json);
-    await runWithCliAudit(
-      {
-        group: "_root",
-        name: "update",
-        tool: "root_update",
-        input: { ...options },
-        closeLazyConnection: true,
-      },
-      () => runUpdate(options),
-    );
+    const update = () =>
+      runWithCliAudit(
+        {
+          group: "_root",
+          name: "update",
+          tool: "root_update",
+          input: { ...options },
+          closeLazyConnection: true,
+        },
+        () => runUpdate(options),
+      );
+    await (usesInstalledOperatorTransport() ? runWithContext({}, update) : update());
   });
 
 program

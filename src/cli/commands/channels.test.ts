@@ -3,6 +3,7 @@ import { listen, spawn } from "bun";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -197,6 +198,7 @@ describe("channels runner lifecycle", () => {
     const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
 
     expect(result.status).toBe(0);
+    expect(existsSync(join(runtime.env.RAVI_STATE_DIR!, "ravi.db"))).toBe(false);
     expect(result.stderr).toBe("");
     expect(pm2Log).toContain("delete ravi-channels");
     expect(pm2Log).toContain(`start bun --name ravi-channels -- ${realpathSync(runtime.bundlePath)} channels run`);
@@ -217,6 +219,7 @@ describe("channels runner lifecycle", () => {
       const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
 
       expect(result.status).toBe(0);
+      expect(existsSync(join(runtime.env.RAVI_STATE_DIR!, "ravi.db"))).toBe(false);
       expect(JSON.parse(result.stdout)).toMatchObject({
         action: "start",
         changed: true,
