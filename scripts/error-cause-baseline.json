@@ -4784,13 +4784,6 @@
       "count": 2
     },
     {
-      "id": "src/runtime/pi-provider.ts:34b9c38c69af594fd4930df4",
-      "file": "src/runtime/pi-provider.ts",
-      "boundary": "runtime-chat",
-      "rule": "rejection-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/runtime/pi-provider.ts:4ad88940138da1f4005af257",
       "file": "src/runtime/pi-provider.ts",
       "boundary": "runtime-chat",
@@ -4809,13 +4802,6 @@
       "file": "src/runtime/pi-provider.ts",
       "boundary": "runtime-chat",
       "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/runtime/pi-provider.ts:9127d3306352b38b743cb5da",
-      "file": "src/runtime/pi-provider.ts",
-      "boundary": "runtime-chat",
-      "rule": "rejection-without-binding",
       "count": 1
     },
     {
@@ -5919,7 +5905,7 @@
     }
   ],
   "totals": {
-    "violations": 885,
+    "violations": 883,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5985,7 +5971,7 @@
       "src/prox/calls": 5,
       "src/reference": 1,
       "src/router": 24,
-      "src/runtime": 99,
+      "src/runtime": 97,
       "src/sandbox": 3,
       "src/sdk/gateway": 9,
       "src/sdk/gateway/streaming": 6,

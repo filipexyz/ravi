@@ -58,6 +58,7 @@ class FakePiRpcTransport implements PiRpcTransport {
   closeCalls = 0;
 
   async start(input: PiRpcStartInput): Promise<void> {
+    if (this.closed) throw new Error("Cannot restart a closed Pi test transport");
     this.starts.push({ ...input, env: { ...input.env } });
     if (this.emitPermissionHandshake) {
       this.pushEvent(createPiPermissionHooksReadyEvent(`hooks-ready-${this.starts.length}`) as PiRpcEvent);
@@ -65,6 +66,7 @@ class FakePiRpcTransport implements PiRpcTransport {
   }
 
   async send(command: PiRpcCommand): Promise<PiRpcResponse> {
+    if (this.closed) throw new Error("Pi RPC transport closed");
     this.commands.push(command);
     const response = await this.responseFor?.(command);
     if (response) {
@@ -80,6 +82,7 @@ class FakePiRpcTransport implements PiRpcTransport {
   async close(): Promise<void> {
     this.closed = true;
     this.closeCalls++;
+    this.events.end();
   }
 
   drainPendingEvents(): PiRpcEvent[] {
@@ -1540,12 +1543,161 @@ describe("Pi runtime provider", () => {
       ).events,
     );
     expect(attempts).toBe(2);
+    expect(transport.starts).toHaveLength(1);
     expect(transport.commands.filter((command) => command.type === "prompt").map((command) => command.message)).toEqual(
       ["first", "retry"],
     );
     expect(events.filter((event) => event.type === "turn.failed")).toEqual([
       expect.objectContaining({ rawEvent: { type: "thinking.switch_failed", level: "off" } }),
     ]);
+    expect(events.find((event) => event.type === "turn.failed")).not.toHaveProperty("failureKind");
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+  });
+
+  it("recovers a rejected initial resumed thinking switch on a fresh transport for the next turn", async () => {
+    const transports: FakePiRpcTransport[] = [];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => {
+          const transport = new FakePiRpcTransport();
+          const rejectThinking = transports.length === 0;
+          transports.push(transport);
+          transport.responseFor = (command) => {
+            if (command.type === "get_state") {
+              return piResponse(command, {
+                model: { provider: "openai", id: "gpt-5.5" },
+                sessionFile: "/tmp/pi-thinking-recovery.jsonl",
+              });
+            }
+            if (command.type === "set_thinking_level" && rejectThinking) {
+              return { ...defaultResponse(command), success: false, error: "switch rejected" };
+            }
+            if (command.type === "prompt") {
+              transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+            }
+            return defaultResponse(command);
+          };
+          return transport;
+        },
+      }).startSession(
+        createStartRequest("unused", {
+          effort: "none",
+          resume: "/tmp/pi-thinking-recovery.jsonl",
+          prompt: twoPrompts("rejected", "retry"),
+        }),
+      ).events,
+    );
+    expect(transports).toHaveLength(2);
+    expect(transports[0]?.closed).toBe(true);
+    expect(transports[0]?.starts).toHaveLength(1);
+    expect(transports[0]?.commands.filter((command) => command.type === "prompt")).toEqual([]);
+    expect(transports[1]?.commands).toContainEqual(
+      expect.objectContaining({
+        type: "switch_session",
+        sessionPath: "/tmp/pi-thinking-recovery.jsonl",
+      }),
+    );
+    expect(transports[1]?.commands).toContainEqual(
+      expect.objectContaining({ type: "set_thinking_level", level: "off" }),
+    );
+    expect(
+      transports
+        .flatMap((transport) => transport.commands)
+        .filter((command) => command.type === "prompt")
+        .map((command) => command.message),
+    ).toEqual(["retry"]);
+    expect(events.filter((event) => event.type === "turn.failed")).toEqual([
+      expect.objectContaining({ recoverable: true, rawEvent: { type: "thinking.switch_failed", level: "off" } }),
+    ]);
+    expect(events.find((event) => event.type === "turn.failed")).not.toHaveProperty("failureKind");
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(1);
+  });
+
+  it.each([
+    "Pi RPC transport is not connected",
+    "Pi RPC transport closed",
+    "Pi RPC process closed",
+    "Pi RPC process exited with code 1",
+  ])("replaces a disconnected live thinking transport before the next prompt: %s", async (error) => {
+    const transports: FakePiRpcTransport[] = [];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => {
+          const transport = new FakePiRpcTransport();
+          const disconnectOnThinking = transports.length === 0;
+          transports.push(transport);
+          transport.responseFor = async (command) => {
+            if (command.type === "get_state") {
+              return piResponse(command, {
+                model: { provider: "openai", id: "gpt-5.5" },
+                sessionFile: "/tmp/pi-thinking-recovery.jsonl",
+              });
+            }
+            if (command.type === "set_thinking_level" && disconnectOnThinking) {
+              await transport.close();
+              throw new Error(error);
+            }
+            if (command.type === "prompt") {
+              transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+            }
+            return defaultResponse(command);
+          };
+          return transport;
+        },
+      }).startSession(
+        createStartRequest("unused", {
+          prompt: (async function* () {
+            yield promptMessage("first");
+            yield { ...promptMessage("disconnected"), runtimeOptions: { effort: "none" } };
+            yield { ...promptMessage("retry"), runtimeOptions: { effort: "none" } };
+          })(),
+        }),
+      ).events,
+    );
+    expect(transports).toHaveLength(2);
+    expect(transports[0]?.closed).toBe(true);
+    expect(transports[0]?.starts).toHaveLength(1);
+    expect(transports[1]?.starts[0]?.thinkingLevel).toBe("off");
+    expect(transports[1]?.commands).toContainEqual(
+      expect.objectContaining({
+        type: "switch_session",
+        sessionPath: "/tmp/pi-thinking-recovery.jsonl",
+      }),
+    );
+    expect(
+      transports
+        .flatMap((transport) => transport.commands)
+        .filter((command) => command.type === "prompt")
+        .map((command) => command.message),
+    ).toEqual(["first", "retry"]);
+    expect(events.filter((event) => event.type === "turn.failed")).toEqual([
+      expect.objectContaining({
+        recoverable: true,
+        failureKind: "transport",
+        rawEvent: { type: "thinking.switch_failed", level: "off" },
+      }),
+    ]);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(2);
+  });
+
+  it("emits an initial resumed thinking failure without reusing a closed transport when no factory exists", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) =>
+      command.type === "set_thinking_level"
+        ? { ...defaultResponse(command), success: false, error: "switch rejected" }
+        : defaultResponse(command);
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("unused", {
+          resume: "/tmp/pi-thinking-recovery.jsonl",
+          prompt: twoPrompts("rejected", "cannot retry"),
+        }),
+      ).events,
+    );
+    expect(transport.closed).toBe(true);
+    expect(transport.starts).toHaveLength(1);
+    expect(transport.commands.filter((command) => command.type === "prompt")).toEqual([]);
+    expect(events).toEqual([expect.objectContaining({ type: "turn.failed", recoverable: true })]);
   });
 
   it("switches the live Pi model per turn with set_model", async () => {

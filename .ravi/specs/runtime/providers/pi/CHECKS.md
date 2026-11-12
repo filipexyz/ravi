@@ -31,6 +31,8 @@
 - A pre-start thinking control is queued for spawn. Resume reapplies the requested thinking level after switching session, and per-turn effort restores it after an intervening live control.
 - A model control queued during startup from a non-reasoning model to a reasoning-capable model reapplies the requested thinking preference before the first prompt, even when the original spawn clamped it to off.
 - A rejected thinking switch sends no prompt for that turn and is retried on the next matching turn.
+- A rejected initial resumed thinking switch emits a recoverable failure, closes its transport, and lets the next turn succeed through a fresh factory transport. The failed prompt reaches neither transport.
+- A live disconnected thinking switch emits a transport-classified failure, invalidates readiness, and resumes the next turn on a fresh transport. Ordinary live RPC rejection keeps the original transport. Strict fake transports reject sends and starts after close; closed queues are not reused.
 - Resume validates cwd and session file before using Pi state.
 - Startup sends `set_steering_mode all` unless `get_state` already reports `steeringMode=all`.
 - A `turn.steer` accepted before provider startup is buffered and flushed to Pi before the first `prompt`.

@@ -93,6 +93,17 @@ const PI_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
 
 type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
+class PiThinkingLevelSwitchError extends Error {
+  constructor(
+    readonly level: PiThinkingLevel,
+    cause: unknown,
+  ) {
+    super(`Pi could not switch thinking to ${level}: ${cause instanceof Error ? cause.message : String(cause)}`, {
+      cause,
+    });
+  }
+}
+
 interface PiModel {
   id?: unknown;
   provider?: unknown;
@@ -869,6 +880,18 @@ async function* runPiTurns(
   // Last env that actually reached a live Pi process. Do not update this until
   // start/handshake succeeds — a failed respawn must retry the new key.
   let appliedManagedEnvSignature: string | undefined;
+  let transportNeedsReplacement = false;
+
+  const discardTransport = async () => {
+    transportNeedsReplacement = true;
+    state.started = false;
+    state.permissionHooksReady = false;
+    state.appliedModel = undefined;
+    state.appliedThinkingLevel = undefined;
+    await transport.close().catch((error) => {
+      log.warn("Pi transport cleanup failed", { error });
+    });
+  };
 
   const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
     if (pendingStartupEvents.length > 0) {
@@ -916,7 +939,7 @@ async function* runPiTurns(
       );
       state.permissionHooksReady = true;
     } catch (error) {
-      await transport.close().catch(() => {});
+      await discardTransport();
       throw error;
     }
     appliedManagedEnvSignature = buildPiManagedRuntimeEnvSignature(nextEnv);
@@ -927,9 +950,10 @@ async function* runPiTurns(
     if (!options.canRestartTransport || abortSignal.aborted) {
       return false;
     }
-    await transport.close().catch(() => {});
+    await discardTransport();
     transport = createTransport();
     state.transport = transport;
+    transportNeedsReplacement = false;
     await startTransport();
     return true;
   };
@@ -937,6 +961,12 @@ async function* runPiTurns(
   // Codex-parity ensure: compare against the last *successful* spawn, rematerialize
   // hooks, and respawn when managed RAVI_* (including RAVI_CONTEXT_KEY) changed.
   const ensurePiRpcReady = async (): Promise<boolean> => {
+    if (transportNeedsReplacement) {
+      if (!(await restartTransport())) {
+        throw new Error("Pi RPC transport cannot replace its closed process");
+      }
+      return true;
+    }
     const nextSignature = desiredManagedEnvSignature();
     const envChanged = appliedManagedEnvSignature !== undefined && appliedManagedEnvSignature !== nextSignature;
     if (state.started && !envChanged) {
@@ -1012,20 +1042,23 @@ async function* runPiTurns(
           }
         }
         if (state.requestedThinkingLevel && state.requestedThinkingLevel !== state.appliedThinkingLevel) {
-          try {
-            await applyPiThinkingLevel(transport, state, state.requestedThinkingLevel);
-          } catch (error) {
-            yield {
-              type: "turn.failed",
-              error: `Pi could not switch thinking to ${state.requestedThinkingLevel}: ${error instanceof Error ? error.message : String(error)}`,
-              recoverable: true,
-              rawEvent: { type: "thinking.switch_failed", level: state.requestedThinkingLevel },
-            };
-            continue;
-          }
+          await applyPiThinkingLevel(transport, state, state.requestedThinkingLevel);
         }
       } catch (error) {
-        const firstStart = !state.started;
+        if (error instanceof PiThinkingLevelSwitchError) {
+          const disconnected = isPiTransportDisconnectedError(error.cause);
+          if (disconnected && !transportNeedsReplacement) await discardTransport();
+          yield {
+            type: "turn.failed",
+            error: error.message,
+            recoverable: true,
+            ...(disconnected ? { failureKind: "transport" as const } : {}),
+            rawEvent: { type: "thinking.switch_failed", level: error.level },
+          };
+          if (transportNeedsReplacement && !options.canRestartTransport) return;
+          continue;
+        }
+        const firstStart = appliedManagedEnvSignature === undefined;
         if (!isPiPermissionBridgeError(error) && firstStart) {
           throw error;
         }
@@ -1648,7 +1681,12 @@ async function applyPiThinkingLevel(
   state: PiSessionRuntimeState,
   level: PiThinkingLevel,
 ): Promise<PiRpcResponse> {
-  const response = await sendPiCommand(transport, { type: "set_thinking_level", level });
+  let response: PiRpcResponse;
+  try {
+    response = await sendPiCommand(transport, { type: "set_thinking_level", level });
+  } catch (error) {
+    throw new PiThinkingLevelSwitchError(level, error);
+  }
   state.appliedThinkingLevel = level;
   state.currentState = await readPiState(transport, state.currentState);
   return response;
