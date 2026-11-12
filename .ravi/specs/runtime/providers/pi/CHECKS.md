@@ -27,6 +27,10 @@
 - `setModel()` after start sends `set_model` and subsequent prompt metadata uses the new model without a session reset.
 - Resume/cold start reapplies the requested model with `set_model` when `get_state` still reports the previous session-file model.
 - A failed `set_model` RPC throws and is not treated as applied.
+- Every canonical effort maps deterministically at spawn and live controls (`none` -> `off`, `max`/`ultra` -> `xhigh`); explicit thinking off wins. Native capability clamps remain visible in persisted session metadata.
+- A pre-start thinking control is queued for spawn. Resume reapplies the requested thinking level after switching session, and per-turn effort restores it after an intervening live control.
+- A model control queued during startup from a non-reasoning model to a reasoning-capable model reapplies the requested thinking preference before the first prompt, even when the original spawn clamped it to off.
+- A rejected thinking switch sends no prompt for that turn and is retried on the next matching turn.
 - Resume validates cwd and session file before using Pi state.
 - Startup sends `set_steering_mode all` unless `get_state` already reports `steeringMode=all`.
 - A `turn.steer` accepted before provider startup is buffered and flushed to Pi before the first `prompt`.

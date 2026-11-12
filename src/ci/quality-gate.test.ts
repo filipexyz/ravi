@@ -403,6 +403,15 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/channels/"]);
   });
 
+  it("accepts focused Slack thread health regressions for attention retry changes", () => {
+    const source = ["src/channels/slack/thread-lifecycle.ts", "src/channels/slack/thread-turn-health-store.ts"];
+
+    expect(runCoverageGate(source).ok).toBe(false);
+    const covered = runCoverageGate([...source, "src/channels/slack/thread-turn-health.test.ts"]);
+    expect(covered.ok).toBe(true);
+    expect(covered.triggeredPrefixes).toEqual(["src/channels/"]);
+  });
+
   it("requires a focused native channel test in the diff", () => {
     const missing = runCoverageGate(["src/channels/slack/socket-mode.ts"]);
     const covered = runCoverageGate(["src/channels/slack/socket-mode.ts", "src/channels/slack/socket-mode.test.ts"]);

@@ -95,7 +95,9 @@ Pi can execute tools in parallel natively, but Ravi MUST NOT advertise parallel 
 - `setModel` before RPC start records the requested model and MUST apply it on spawn (`--model`) without reporting success for a command that was never sent.
 - After resume/`switch_session`, the adapter MUST send `set_model` before the next `prompt` when `get_state` omits the model or reports a model that differs from the requested session override.
 - A failed `set_model` RPC MUST throw. Hosts MUST NOT record `session.model_changed` as `applied` for that failure.
-- `set_thinking_level` maps Ravi effort/thinking into Pi thinking levels.
+- `set_thinking_level` maps Ravi effort/thinking into Pi thinking levels: `none` maps to `off`, `max` and `ultra` map to `xhigh`, and `minimal` through `xhigh` retain their value. Explicit `thinking=off` takes precedence. Pi applies its own model capability clamp; persisted session metadata MUST retain the native `get_state.thinkingLevel`, not claim that the requested Ravi effort was executed unchanged.
+- Thinking controls before startup MUST queue the requested preference for spawn. Resume MUST reapply that preference after `switch_session`, which can restore older thinking settings. Per-turn effort and live controls MUST share the same applied preference tracking; a failed thinking switch MUST fail the turn before sending its prompt rather than silently using the old level.
+- A model switch during startup MUST invalidate the spawn thinking preference just like a live model switch: Pi may have clamped it for the previous model. Reapply the requested preference before the first prompt under the new model.
 - `compact` is provider-native compaction and MUST emit `status: compacting` while active.
 - `switch_session`, `new_session`, `fork`, and `clone` are provider-native controls but MUST NOT be exposed as Ravi fork/resume until session semantics are tested and mapped to `runtime/session-continuity/forks`.
 - `get_messages` and `get_last_assistant_text` may support `thread.read`-style controls.

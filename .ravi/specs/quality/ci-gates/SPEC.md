@@ -71,6 +71,9 @@ High-risk channel lifecycle files MUST also map to their own focused health,
 runner, or Socket Mode test so an unrelated channel test cannot satisfy their
 coverage requirement.
 
+The focused Slack thread health suite MUST count as channel coverage for thread
+health observation, durable attention claims, and publication retry behavior.
+
 ## Production-host publication
 
 The production-host publication path is `ravi pr publish`, governed by `cli/pr`; its runtime state access follows `quality/state-boundary`. Before publication, run focused tests and this spec/coverage gate in isolated state without build/full-suite work locally. Full build, typecheck, lint and tests MUST remain in PR CI. An impossible local hook MUST NOT become a reason to disable hooks or waive CI. CI MUST supply isolated state, and test cleanup MUST preserve its enclosing harness directory.

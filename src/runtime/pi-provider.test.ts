@@ -1179,6 +1179,8 @@ describe("Pi runtime provider", () => {
       "get_state",
       "set_model",
       "get_state",
+      "set_thinking_level",
+      "get_state",
       "set_steering_mode",
       "get_session_stats",
       "prompt",
@@ -1315,7 +1317,235 @@ describe("Pi runtime provider", () => {
       },
     });
 
-    expect(transport.commands).toEqual([expect.objectContaining({ type: "set_thinking_level", level: "xhigh" })]);
+    expect(transport.commands).toEqual([]);
+  });
+
+  it.each([
+    ["none", "off"],
+    ["minimal", "minimal"],
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"],
+    ["max", "xhigh"],
+    ["ultra", "xhigh"],
+  ] as const)("maps canonical %s effort to Pi %s at spawn", async (effort, level) => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+      }
+      return defaultResponse(command);
+    };
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("test", { effort })).events,
+    );
+    expect(transport.starts[0]?.thinkingLevel).toBe(level);
+  });
+
+  it("queues canonical thinking controls for spawn and rejects unknown levels", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+      }
+      return defaultResponse(command);
+    };
+    const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("test"));
+    await expect(handle.control?.({ operation: "thinking.set", text: "ultra" })).resolves.toMatchObject({
+      ok: true,
+      data: { response: { data: { queued: true } } },
+    });
+    await expect(handle.control?.({ operation: "thinking.set", text: "unknown" })).resolves.toMatchObject({
+      ok: false,
+    });
+    expect(transport.commands).toEqual([]);
+    await collectRuntimeEvents(handle.events);
+    expect(transport.starts[0]?.thinkingLevel).toBe("xhigh");
+  });
+
+  it("lets explicit thinking off override canonical ultra effort", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+      }
+      return defaultResponse(command);
+    };
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("test", { effort: "ultra", thinking: "off" }),
+      ).events,
+    );
+    expect(transport.starts[0]?.thinkingLevel).toBe("off");
+  });
+
+  it("applies a thinking control queued while initial startup is in flight", async () => {
+    const transport = new FakePiRpcTransport();
+    const session: { handle?: RuntimeSessionHandle } = {};
+    let queued = false;
+    let nativeThinking = "high";
+    transport.responseFor = async (command) => {
+      if (command.type === "set_thinking_level") nativeThinking = String(command.level);
+      if (command.type === "get_state") {
+        if (!queued) {
+          queued = true;
+          await expect(session.handle?.control?.({ operation: "thinking.set", text: "none" })).resolves.toMatchObject({
+            ok: true,
+            data: { response: { data: { queued: true } } },
+          });
+        }
+        return piResponse(command, { thinkingLevel: nativeThinking });
+      }
+      if (command.type === "prompt") {
+        expect(nativeThinking).toBe("off");
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+      }
+      return defaultResponse(command);
+    };
+    session.handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("test"));
+    await collectRuntimeEvents(session.handle.events);
+    expect(transport.starts[0]?.thinkingLevel).toBe("high");
+    expect(transport.commands.filter((command) => command.type === "set_thinking_level")).toEqual([
+      expect.objectContaining({ level: "off" }),
+    ]);
+  });
+
+  it("reapplies thinking after a model control queued during startup changes model capabilities", async () => {
+    const transport = new FakePiRpcTransport();
+    const session: { handle?: RuntimeSessionHandle } = {};
+    let queued = false;
+    let nativeModel = "gpt-4.1";
+    let nativeThinking = "off";
+    transport.responseFor = async (command) => {
+      if (command.type === "set_model") nativeModel = String(command.modelId);
+      if (command.type === "set_thinking_level") {
+        nativeThinking = nativeModel === "gpt-5.5" ? String(command.level) : "off";
+      }
+      if (command.type === "get_state") {
+        if (!queued) {
+          queued = true;
+          await expect(
+            session.handle?.control?.({ operation: "model.set", text: "openai/gpt-5.5" }),
+          ).resolves.toMatchObject({
+            ok: true,
+            data: { response: { data: { queued: true } } },
+          });
+        }
+        return piResponse(command, {
+          model: { provider: "openai", id: nativeModel },
+          thinkingLevel: nativeThinking,
+        });
+      }
+      if (command.type === "prompt") {
+        expect(nativeModel).toBe("gpt-5.5");
+        expect(nativeThinking).toBe("xhigh");
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+      }
+      return defaultResponse(command);
+    };
+    session.handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("test", { model: "openai/gpt-4.1", effort: "ultra" }),
+    );
+    const events = await collectRuntimeEvents(session.handle.events);
+    expect(transport.starts[0]?.model).toBe("gpt-4.1");
+    expect(transport.starts[0]?.thinkingLevel).toBe("xhigh");
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(1);
+    const commands = transport.commands.map((command) => command.type);
+    expect(commands.indexOf("set_model")).toBeLessThan(commands.indexOf("set_thinking_level"));
+    expect(commands.indexOf("set_thinking_level")).toBeLessThan(commands.indexOf("prompt"));
+  });
+
+  it("restores per-turn effort after a live thinking control and retains Pi's native clamp", async () => {
+    const transport = new FakePiRpcTransport();
+    let nativeThinking = "high";
+    const session: { handle?: RuntimeSessionHandle } = {};
+    transport.responseFor = (command) => {
+      if (command.type === "set_thinking_level")
+        nativeThinking = command.level === "xhigh" ? "high" : String(command.level);
+      if (command.type === "get_state")
+        return piResponse(command, { sessionId: "pi-effort", thinkingLevel: nativeThinking });
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+      }
+      return defaultResponse(command);
+    };
+    session.handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("unused", {
+        effort: "ultra",
+        prompt: (async function* () {
+          yield { ...promptMessage("first"), runtimeOptions: { effort: "ultra" } };
+          await session.handle?.control?.({ operation: "thinking.set", text: "none" });
+          yield { ...promptMessage("second"), runtimeOptions: { effort: "ultra" } };
+          yield { ...promptMessage("third"), runtimeOptions: { effort: "ultra" } };
+        })(),
+      }),
+    );
+    const events = await collectRuntimeEvents(session.handle!.events);
+    expect(
+      transport.commands.filter((command) => command.type === "set_thinking_level").map((command) => command.level),
+    ).toEqual(["off", "xhigh"]);
+    const completed = events.filter((event) => event.type === "turn.complete");
+    expect(completed).toHaveLength(3);
+    expect(completed.at(-1)).toMatchObject({ session: { params: { thinkingLevel: "high" } } });
+  });
+
+  it("reapplies thinking after a resumed session restores its older preference", async () => {
+    const transport = new FakePiRpcTransport();
+    let nativeThinking = "high";
+    transport.responseFor = (command) => {
+      if (command.type === "get_state")
+        return piResponse(command, { sessionId: "pi-effort", thinkingLevel: nativeThinking });
+      if (command.type === "set_thinking_level") nativeThinking = String(command.level);
+      if (command.type === "prompt") {
+        expect(nativeThinking).toBe("off");
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+      }
+      return defaultResponse(command);
+    };
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("test", {
+          effort: "none",
+          resume: "/tmp/pi-test-session.jsonl",
+        }),
+      ).events,
+    );
+    const commands = transport.commands.map((command) => command.type);
+    expect(commands.indexOf("switch_session")).toBeLessThan(commands.indexOf("set_thinking_level"));
+    expect(commands.indexOf("set_thinking_level")).toBeLessThan(commands.indexOf("prompt"));
+  });
+
+  it("fails a rejected thinking switch before the prompt and retries the next matching turn", async () => {
+    const transport = new FakePiRpcTransport();
+    let attempts = 0;
+    transport.responseFor = (command) => {
+      if (command.type === "set_thinking_level" && ++attempts === 1) {
+        return { ...defaultResponse(command), success: false, error: "switch rejected" };
+      }
+      if (command.type === "prompt") {
+        transport.pushEvent({ type: "agent_end", messages: [assistantMessage("ok")] });
+      }
+      return defaultResponse(command);
+    };
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("unused", {
+          prompt: (async function* () {
+            yield promptMessage("first");
+            yield { ...promptMessage("rejected"), runtimeOptions: { effort: "none" } };
+            yield { ...promptMessage("retry"), runtimeOptions: { effort: "none" } };
+          })(),
+        }),
+      ).events,
+    );
+    expect(attempts).toBe(2);
+    expect(transport.commands.filter((command) => command.type === "prompt").map((command) => command.message)).toEqual(
+      ["first", "retry"],
+    );
+    expect(events.filter((event) => event.type === "turn.failed")).toEqual([
+      expect.objectContaining({ rawEvent: { type: "thinking.switch_failed", level: "off" } }),
+    ]);
   });
 
   it("switches the live Pi model per turn with set_model", async () => {

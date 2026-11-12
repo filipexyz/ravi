@@ -213,6 +213,9 @@ interface PiSessionRuntimeState {
   requestedModel?: string;
   /** The model the live Pi process runs with, set after a spawn or a successful `set_model`. */
   appliedModel?: string;
+  requestedThinkingLevel?: PiThinkingLevel;
+  /** Last accepted preference; Pi may clamp the effective level in currentState. */
+  appliedThinkingLevel?: PiThinkingLevel;
   transport?: PiRpcTransport;
   pendingSteers: string[];
   /** Latest context fill, used to rewrite a prompt timeout that is really saturation. */
@@ -337,6 +340,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
         permissionHooksReady: false,
         started: false,
         requestedModel: input.model,
+        requestedThinkingLevel: toPiThinkingLevel(input.effort, input.thinking),
         transport: initialTransport,
         pendingSteers: [],
         contextSaturation: null,
@@ -847,12 +851,11 @@ async function* runPiTurns(
     permissionHooksReadyTimeoutMs: number;
   },
 ): AsyncGenerator<RuntimeEvent> {
-  const thinkingLevel = toPiThinkingLevel(input.effort, input.thinking);
   const abortSignal = input.abortController.signal;
   const startInput: PiRpcStartInput = {
     cwd: input.cwd,
     env: resolvePiRpcProcessEnv(input),
-    thinkingLevel,
+    thinkingLevel: state.requestedThinkingLevel,
     systemPromptAppend: input.systemPromptAppend,
     extensionPath: materializePiPermissionExtensionFile(),
     ...(input.allowedSkills && input.allowedSkills.length > 0 ? { disableNativeSkillDiscovery: true } : {}),
@@ -866,8 +869,6 @@ async function* runPiTurns(
   // Last env that actually reached a live Pi process. Do not update this until
   // start/handshake succeeds — a failed respawn must retry the new key.
   let appliedManagedEnvSignature: string | undefined;
-  // Thinking level the live Pi process runs with.
-  let appliedThinkingLevel = startInput.thinkingLevel;
 
   const takeNextPiEvent = async (): Promise<IteratorResult<PiRpcEvent>> => {
     if (pendingStartupEvents.length > 0) {
@@ -890,13 +891,18 @@ async function* runPiTurns(
   const startTransport = async () => {
     const nextEnv = snapshotDesiredPiRpcSpawn();
     refreshPiStartInputModel(startInput, state.requestedModel ?? input.model, input.modelBroker);
+    startInput.thinkingLevel = state.requestedThinkingLevel;
     try {
       await transport.start(startInput);
       state.permissionHooksReady = false;
       eventIterator = transport.events[Symbol.asyncIterator]();
       const resumed = await resumePiSessionIfNeeded(transport, input, state.currentState);
       state.currentState = await readPiState(transport, state.currentState);
+      state.appliedThinkingLevel = startInput.thinkingLevel;
       await applyPiRequestedModelAfterStart(transport, state, input.modelBroker, { force: resumed });
+      if (resumed && state.requestedThinkingLevel) {
+        await applyPiThinkingLevel(transport, state, state.requestedThinkingLevel);
+      }
       await configurePiQueueModes(transport, state);
       await flushPendingPiSteers(transport, state);
       if (!transport.writeMessage) {
@@ -969,6 +975,7 @@ async function* runPiTurns(
         ? toPiThinkingLevel(promptMessage.runtimeOptions.effort, promptMessage.runtimeOptions.thinking)
         : undefined;
       if (turnThinkingLevel) {
+        state.requestedThinkingLevel = turnThinkingLevel;
         startInput.thinkingLevel = turnThinkingLevel;
       }
       // The model is per turn too, unless a model broker leases it. A (re)spawn
@@ -1004,17 +1011,17 @@ async function* runPiTurns(
             continue;
           }
         }
-        if (spawned) {
-          appliedThinkingLevel = startInput.thinkingLevel;
-        } else if (turnThinkingLevel && turnThinkingLevel !== appliedThinkingLevel) {
+        if (state.requestedThinkingLevel && state.requestedThinkingLevel !== state.appliedThinkingLevel) {
           try {
-            await sendPiCommand(transport, { type: "set_thinking_level", level: turnThinkingLevel });
-            appliedThinkingLevel = turnThinkingLevel;
+            await applyPiThinkingLevel(transport, state, state.requestedThinkingLevel);
           } catch (error) {
-            log.warn("pi thinking level switch failed; keeping the current level", {
-              level: turnThinkingLevel,
-              error,
-            });
+            yield {
+              type: "turn.failed",
+              error: `Pi could not switch thinking to ${state.requestedThinkingLevel}: ${error instanceof Error ? error.message : String(error)}`,
+              recoverable: true,
+              rawEvent: { type: "thinking.switch_failed", level: state.requestedThinkingLevel },
+            };
+            continue;
           }
         }
       } catch (error) {
@@ -1509,6 +1516,7 @@ async function controlPiRuntime(
         }
         const response = await sendPiCommand(transport, resolvePiSetModelCommand(model, modelBroker));
         state.appliedModel = model;
+        state.appliedThinkingLevel = undefined;
         return okControl(request, response, buildState());
       }
       case "thinking.set": {
@@ -1516,7 +1524,23 @@ async function controlPiRuntime(
         if (!level) {
           return failControl(request, "Missing or invalid thinking level for Pi thinking.set", buildState());
         }
-        return okControl(request, await sendPiCommand(transport, { type: "set_thinking_level", level }), buildState());
+        if (!state.started) {
+          state.requestedThinkingLevel = level;
+          return okControl(
+            request,
+            {
+              type: "response",
+              command: "set_thinking_level",
+              success: true,
+              queued: true,
+              data: { queued: true, reason: "provider_starting" },
+            },
+            buildState(),
+          );
+        }
+        const response = await applyPiThinkingLevel(transport, state, level);
+        state.requestedThinkingLevel = level;
+        return okControl(request, response, buildState());
       }
       case "session.new":
         return okControl(request, await sendPiCommand(transport, { type: "new_session" }), buildState());
@@ -1617,6 +1641,17 @@ async function readPiState(
   } catch {
     return fallback;
   }
+}
+
+async function applyPiThinkingLevel(
+  transport: PiRpcTransport,
+  state: PiSessionRuntimeState,
+  level: PiThinkingLevel,
+): Promise<PiRpcResponse> {
+  const response = await sendPiCommand(transport, { type: "set_thinking_level", level });
+  state.appliedThinkingLevel = level;
+  state.currentState = await readPiState(transport, state.currentState);
+  return response;
 }
 
 async function configurePiQueueModes(transport: PiRpcTransport, state: PiSessionRuntimeState): Promise<void> {
@@ -1833,6 +1868,7 @@ async function applyPiSetModel(
     throw new Error(`Pi set_model did not apply ${model}`);
   }
   state.appliedModel = model;
+  state.appliedThinkingLevel = undefined;
 }
 
 async function applyPiRequestedModelAfterStart(
@@ -2325,6 +2361,8 @@ function normalizePiThinkingLevel(value?: string): PiThinkingLevel | undefined {
     return undefined;
   }
   const normalized = value.trim().toLowerCase();
+  if (normalized === "none") return "off";
+  if (normalized === "max" || normalized === "ultra") return "xhigh";
   if (
     normalized === "off" ||
     normalized === "minimal" ||
