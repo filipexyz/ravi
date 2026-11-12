@@ -80,6 +80,13 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   services while removing optional fields absent from the new snapshot,
   including `revokedAt` and `source`. A live key in storage is insufficient if
   host tools still see stale revocation or surface state from the previous turn.
+- Listing active contexts MUST select expiry candidates through the expiry
+  index before loading historical context payloads. Retained expired history
+  MUST NOT require a full payload scan on each global active-context lookup.
+  Both expiry and revocation remain active only when absent, zero, or strictly
+  later than the lookup timestamp. Agent, session and kind filters, descending
+  creation order, and explicit `includeInactive` inspection MUST be preserved.
+  This optimization MUST NOT cache authority decisions or delete audit history.
 
 ## Acceptance
 

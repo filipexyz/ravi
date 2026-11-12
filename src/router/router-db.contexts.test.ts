@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   type ContextRecord,
   dbCreateAgent,
   dbCreateContext,
   dbGetContext,
+  dbListContexts,
   dbRenewActiveContext,
   dbRevokeContextCascade,
   dbUpdateContextMetadata,
@@ -63,6 +64,94 @@ describe("context metadata and transactional revocation persistence", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("lists active contexts at exact expiry and revocation boundaries without changing their records", () => {
+    const now = 1_000_000;
+    const clock = spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const timestamps = [undefined, 0, now - 1, now, now + 1];
+      const records: ContextRecord[] = [];
+      for (const expiresAt of timestamps) {
+        for (const revokedAt of timestamps) {
+          records.push(
+            createContext(`boundary-${records.length}`, {
+              createdAt: 1_000 + records.length,
+              expiresAt,
+              revokedAt,
+            }),
+          );
+        }
+      }
+      const active = records.filter(
+        (record) => (!record.expiresAt || record.expiresAt > now) && (!record.revokedAt || record.revokedAt > now),
+      );
+
+      expect(dbListContexts()).toEqual([...active].reverse());
+      expect(active).toHaveLength(9);
+      expect(dbListContexts({ includeInactive: true })).toEqual([...records].reverse());
+      for (const record of records) expect(dbGetContext(record.contextId)).toEqual(record);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("stops listing authority immediately after revocation while retaining its audit record", () => {
+    const original = createContext("revoke-after-list", { expiresAt: Date.now() + 60_000 });
+    expect(dbListContexts()).toEqual([original]);
+
+    const revoked = dbRevokeContextCascade(original.contextId, { reason: "operator_revoked" }).context;
+
+    expect(dbListContexts()).toEqual([]);
+    expect(dbListContexts({ includeInactive: true })).toEqual([revoked]);
+    expect(dbGetContext(original.contextId)).toEqual(revoked);
+  });
+
+  it("preserves agent, session and kind filters for both active and historical context inspection", () => {
+    const now = 1_000_000;
+    const clock = spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const otherAgent = "other-context-agent";
+      const otherSession = `agent:${otherAgent}:test`;
+      dbCreateAgent({ id: otherAgent, cwd: "/tmp/context-storage-test" });
+      getOrCreateSession(otherSession, otherAgent, "/tmp/context-storage-test", { name: "other-context-session" });
+      const records: ContextRecord[] = [];
+      for (const agentId of [AGENT_ID, otherAgent]) {
+        for (const sessionKey of [SESSION_KEY, otherSession]) {
+          for (const kind of ["turn-runtime", "cli-runtime"]) {
+            for (const expiresAt of [now - 1, now + 1]) {
+              records.push(
+                createContext(`filtered-${records.length}`, {
+                  agentId,
+                  sessionKey,
+                  kind,
+                  expiresAt,
+                  createdAt: 1_000 + records.length,
+                }),
+              );
+            }
+          }
+        }
+      }
+      for (const agentId of [undefined, AGENT_ID, "missing-agent"]) {
+        for (const sessionKey of [undefined, SESSION_KEY, "missing-session"]) {
+          for (const kind of [undefined, "turn-runtime", "missing-kind"]) {
+            for (const includeInactive of [false, true]) {
+              const expected = records.filter(
+                (record) =>
+                  (!agentId || record.agentId === agentId) &&
+                  (!sessionKey || record.sessionKey === sessionKey) &&
+                  (!kind || record.kind === kind) &&
+                  (includeInactive || (record.expiresAt ?? 0) > now),
+              );
+              expect(dbListContexts({ agentId, sessionKey, kind, includeInactive })).toEqual([...expected].reverse());
+            }
+          }
+        }
+      }
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("marks historical authority withdrawn without changing provenance, capabilities or lifecycle timestamps", () => {

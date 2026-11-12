@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { executeWrite } from "../../db/write-retry.js";
 import { getDb } from "../../router/router-db.js";
 
+const THREAD_NOTICE_FAILURE_RETRY_MS = 5 * 60_000;
+
 export type ThreadTurnState = "idle" | "running" | "interrupted" | "attention" | "closed";
 export type ThreadTurnReason = "no_signal" | "no_reply" | "owner_lost" | "failed";
 
@@ -54,6 +56,7 @@ export function saveThreadTurnHealth(requestId: string, health: ThreadTurnHealth
         THEN since_at ELSE excluded.since_at END,
       claim_id = CASE WHEN turn_id IS excluded.turn_id THEN claim_id ELSE NULL END,
       claim_expires_at = CASE WHEN turn_id IS excluded.turn_id THEN claim_expires_at ELSE NULL END,
+      notice_retry_after = CASE WHEN turn_id IS excluded.turn_id THEN notice_retry_after ELSE NULL END,
       turn_id = excluded.turn_id, state = excluded.state, reason = excluded.reason,
       last_signal_at = excluded.last_signal_at, checked_at = excluded.checked_at
   `)
@@ -87,9 +90,10 @@ export function claimThreadTurnNotice(requestId: string, turnId: string, now: nu
         )
       ))
       AND (claim_id IS NULL OR claim_expires_at <= ?)
+      AND (notice_retry_after IS NULL OR notice_retry_after <= ?)
       AND EXISTS (SELECT 1 FROM slack_thread_lifecycle l WHERE l.request_id = ? AND l.status = 'open')
   `)
-        .run(claimId, now + 60_000, requestId, turnId, now - 30_000, now, requestId).changes > 0,
+        .run(claimId, now + 60_000, requestId, turnId, now - 30_000, now, now, requestId).changes > 0,
     { label: "thread-turn-health-claim" },
   );
   return claimed ? claimId : null;
@@ -104,10 +108,18 @@ export function finishThreadTurnNotice(requestId: string, claimId: string, deliv
     UPDATE slack_thread_turn_health
     SET notified_turn_id = CASE WHEN ? THEN turn_id ELSE notified_turn_id END,
         notified_at = CASE WHEN ? THEN ? ELSE notified_at END,
+        notice_retry_after = ?,
         claim_id = NULL, claim_expires_at = NULL
     WHERE request_id = ? AND claim_id = ?
   `)
-        .run(delivered ? 1 : 0, delivered ? 1 : 0, now, requestId, claimId),
+        .run(
+          delivered ? 1 : 0,
+          delivered ? 1 : 0,
+          now,
+          delivered ? null : now + THREAD_NOTICE_FAILURE_RETRY_MS,
+          requestId,
+          claimId,
+        ),
     { label: "thread-turn-health-finish" },
   );
 }

@@ -49,6 +49,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/credential-intake.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
+    "src/channels/slack/thread-turn-health.test.ts",
     // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
     "src/channels/slack/thread-runtime.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
