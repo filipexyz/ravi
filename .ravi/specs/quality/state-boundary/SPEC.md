@@ -38,6 +38,15 @@ applies_to:
 - Cached prepared statements MUST revalidate the selected database through `getDb()` before reuse. Changing isolated state MUST invalidate the old statements; losing state selection MUST refuse instead of reading or writing the old state.
 - Legacy migration MUST validate the database and every existing WAL/SHM source before its first rename. A refused hardlink or protected source MUST leave the entire legacy file set unmoved.
 - Access to real state MUST be authorized by process role: installed runtime code, actual PID registered by PM2, matching executable/arguments and process manager parent. Environment names, inherited `pm_id`, cwd or argv alone MUST NOT authorize it.
+- A missing default `PM2_HOME/pm2.pid` MUST NOT by itself refuse an installed
+  runtime. Only when that file is absent, the actual live parent's PM2 God
+  Daemon title and canonical PM2 home MAY establish supervisor identity before
+  querying the registry. A present invalid/unreadable/mismatching PID file
+  MUST still refuse. This fallback MUST retain every PID/name/entrypoint/argument
+  check and MUST NOT accept inherited PM2 labels or a boot receipt as authority.
+- PM2 registry parsing MUST tolerate leading version/diagnostic banners while
+  rejecting malformed, truncated or non-array JSON. A failed registry query
+  MUST NOT authorize real state or expose the secret-bearing registry output.
 - Identity validation MUST match the canonical launcher for each role: daemon registers the bundle with `daemon run`; channels registers the running Bun executable with `<bundle> channels run`. The exact arguments, bundle and executable MUST be checked; launcher-generated channel registration MUST be covered by regression tests.
 - The identity check MUST use the code's location. A package containing `src` or `.git`, unknown code provenance, CLI, build, worktree or test execution MUST NOT gain real-state access by inheriting runtime environment or explicitly naming the real directory.
 - Outside the registered runtime, commands MUST select isolated state explicitly, normally with `RAVI_STATE_DIR` on the command. Losing that variable MUST refuse real-state access instead of silently opening the default. Errors MUST show the variable, a command example and the installed daemon gateway alternative.

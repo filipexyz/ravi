@@ -11,6 +11,13 @@
 5. A stopped runner stays stopped. When native channels are enabled, follow
    the warning with `ravi channels start` if intake should be active.
 
+A PM2 manager/client version warning on `jlist` stdout does not invalidate the
+following JSON and does not require `pm2 update` as a Ravi prerequisite.
+Diagnose a state guard refusal separately: a missing default manager PID file
+uses live parent verification as documented by `quality/state-boundary`.
+Do not revert the inert-stdin launcher or fabricate boot receipts to grant
+access; neither is the guard's authority.
+
 The daemon uses `/bin/sh` with a constant inert-stdin command, with the exact
 Bun executable supplied separately in the launch environment. No generated
 launcher inside the replaceable package is required. Package paths containing

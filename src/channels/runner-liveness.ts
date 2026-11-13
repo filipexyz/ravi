@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { parsePm2Jlist } from "../pm2-output.js";
 import { CHANNELS_PM2_PROCESS_NAME, getPm2Process, isPm2Available, type Pm2Process } from "../pm2.js";
 import {
   probeChannelRunnerHealth,
@@ -72,10 +73,7 @@ export function readChannelRunnerPm2ProcessAsync(): Promise<Pm2Process | undefin
     execFile("pm2", ["jlist"], { encoding: "utf-8", timeout: 15_000 }, (error, stdout) => {
       if (error) return resolve(undefined);
       try {
-        const list: unknown = JSON.parse(stdout.trim() || "[]");
-        const entry = Array.isArray(list)
-          ? (list as Array<Record<string, any>>).find((item) => item?.name === CHANNELS_PM2_PROCESS_NAME)
-          : undefined;
+        const entry = parsePm2Jlist(stdout).find((item) => item.name === CHANNELS_PM2_PROCESS_NAME);
         if (!entry) return resolve(undefined);
         resolve({
           name: CHANNELS_PM2_PROCESS_NAME,

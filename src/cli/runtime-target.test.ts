@@ -1,5 +1,18 @@
 import { describe, expect, it } from "bun:test";
+import { OUTDATED_PM2_BANNER, runWithPm2Jlist } from "../test/pm2-jlist.js";
 import { getSessionsSendRuntimeMismatchWarning, matchesLiveDaemonRuntime } from "./runtime-target.js";
+
+it("keeps runtime mismatch detection active when PM2 emits its version warning", () => {
+  const daemonBundle = "/fixture/installed/index.js";
+  const entry = { name: "ravi", pid: process.pid + 1, pm2_env: { status: "online", pm_exec_path: daemonBundle } };
+  const result = runWithPm2Jlist(
+    OUTDATED_PM2_BANNER + JSON.stringify([entry]),
+    `import { inspectCliRuntimeTarget } from ${JSON.stringify(new URL("./runtime-target.ts", import.meta.url).href)};
+     console.log(JSON.stringify(inspectCliRuntimeTarget().daemon));`,
+  );
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ online: true, execPath: daemonBundle, matchesCli: false });
+});
 
 describe("matchesLiveDaemonRuntime", () => {
   it("accepts an in-process gateway invocation hosted by the live daemon", () => {

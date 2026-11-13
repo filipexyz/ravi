@@ -6,6 +6,7 @@
 
 import { execSync, spawnSync } from "node:child_process";
 import { which } from "bun";
+import { parsePm2Jlist } from "./pm2-output.js";
 
 export const PM2_PROCESS_NAME = "ravi";
 export const CHANNELS_PM2_PROCESS_NAME = "ravi-channels";
@@ -117,8 +118,7 @@ export interface Pm2Process {
  * Parse pm2 jlist output into structured data.
  */
 export function parsePm2Processes(raw: string): Pm2Process[] {
-  if (!raw.trim() || raw.trim() === "[]") return [];
-  const list = JSON.parse(raw);
+  const list = parsePm2Jlist(raw);
   return list.map((p: any) => ({
     name: p.name,
     namespace: typeof p.pm2_env?.namespace === "string" ? p.pm2_env.namespace : undefined,
