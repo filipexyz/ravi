@@ -5,6 +5,7 @@ import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSy
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parsePm2Jlist } from "../pm2-output.js";
 
 export class StateDatabaseError extends Error {
   readonly code = "REAL_STATE_ACCESS_REFUSED";
@@ -58,25 +59,44 @@ export interface RegisteredRuntimeProcess {
   pm2_env?: { pm_exec_path?: string; args?: string[] };
 }
 
-function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
-  // The CLI can auto-start PM2. Do not invoke it for an unmanaged foreground
-  // process: its actual parent must already be the recorded live PM2 manager.
+function hasPm2Parent(): boolean {
+  const pm2Home = process.env.PM2_HOME || join(homedir(), ".pm2");
+  // The CLI can auto-start PM2. Check the actual parent before invoking it,
+  // without trusting inherited pm_id/name or the child app's PID file.
   try {
-    const managerPid = Number(
-      readFileSync(join(process.env.PM2_HOME || join(homedir(), ".pm2"), "pm2.pid"), "utf8").trim(),
-    );
-    if (!Number.isInteger(managerPid) || managerPid <= 1 || process.ppid !== managerPid) return [];
-  } catch {
-    // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
-    return [];
+    const managerPid = Number(readFileSync(join(pm2Home, "pm2.pid"), "utf8").trim());
+    return Number.isInteger(managerPid) && managerPid > 1 && process.ppid === managerPid;
+  } catch (cause) {
+    // PM2 may have no default PID file (for example, PM2_PID_FILE_PATH was
+    // customized). A present but unreadable/mismatched file still fails closed.
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") return false;
   }
+  if (process.ppid <= 1) return false;
+  const parent = spawnSync("/bin/ps", ["-ww", "-p", String(process.ppid), "-o", "args="], {
+    encoding: "utf8",
+    timeout: 2000,
+    maxBuffer: 64 * 1024,
+  });
+  if (parent.error || parent.status !== 0) return false;
+  // This is the live parent process title, not a caller-supplied env label.
+  const home = /^PM2 v[^:\s]+: God Daemon \(([^\r\n]+)\)$/.exec(parent.stdout.trim())?.[1];
+  if (!home || !isAbsolute(home)) return false;
+  try {
+    return canonicalStatePath(home) === canonicalStatePath(pm2Home);
+  } catch {
+    // no-cause: An unverifiable manager home cannot establish runtime identity.
+    return false;
+  }
+}
+
+function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
+  if (!hasPm2Parent()) return [];
   // Query the process manager, not inherited pm_id/name environment variables.
   // Bounded and read-only; stdout contains env secrets, so it never gets logged.
   const result = spawnSync("pm2", ["jlist"], { encoding: "utf8", timeout: 2000, maxBuffer: 8 * 1024 * 1024 });
   if (result.error || result.status !== 0) return [];
   try {
-    const rows: unknown = JSON.parse(result.stdout);
-    return Array.isArray(rows) ? rows : [];
+    return parsePm2Jlist(result.stdout) as RegisteredRuntimeProcess[];
   } catch {
     // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
     return [];

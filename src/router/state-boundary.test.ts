@@ -19,6 +19,7 @@ import { join, resolve } from "node:path";
 import { assertDatabaseTargetAllowed, openStateDatabase, type DatabaseBoundaryOptions } from "../db/state-boundary.js";
 import { buildChannelsPm2Env, buildDaemonPm2StartArgs } from "../daemon-stdin.js";
 import { buildManagedRuntimeRebindPlan } from "../managed-runtime-rebind.js";
+import { OUTDATED_PM2_BANNER } from "../test/pm2-jlist.js";
 
 const dirs: string[] = [];
 function fixture() {
@@ -128,58 +129,76 @@ it("accepts only an installed daemon whose actual PID and executable match PM2; 
   expect(() => assertDatabaseTargetAllowed(join(options.homeDir, "ravi", "ravi.db"), options)).toThrow();
 });
 
-it("launches the installed daemon without a new env; PM2 identity loss, CLI, test, build and worktree launches refuse actionably", () => {
-  const options = fixture();
-  const realState = join(options.homeDir, ".ravi");
-  mkdirSync(realState);
-  copyFileSync(resolve(import.meta.dir, "../db/state-boundary.ts"), options.modulePath);
-  const entry = options.argv[1];
-  const target = join(realState, "ravi.db");
-  writeFileSync(
-    entry,
-    `import { openStateDatabase } from './state-boundary.ts';
+it.each([false, true])(
+  "launches the installed daemon with PM2 banner=%s; identity loss, CLI, test, build and worktree launches refuse",
+  (banner) => {
+    const options = fixture();
+    const realState = join(options.homeDir, ".ravi");
+    mkdirSync(realState);
+    copyFileSync(resolve(import.meta.dir, "../db/state-boundary.ts"), options.modulePath);
+    copyFileSync(
+      resolve(import.meta.dir, "../pm2-output.ts"),
+      join(options.homeDir, "release", "dist", "pm2-output.ts"),
+    );
+    const entry = options.argv[1];
+    const target = join(realState, "ravi.db");
+    writeFileSync(
+      entry,
+      `import { openStateDatabase } from './state-boundary.ts';
     const db = openStateDatabase(${JSON.stringify(target)}, undefined, { homeDir: ${JSON.stringify(options.homeDir)} });
     db.exec('CREATE TABLE IF NOT EXISTS launched (id TEXT)'); db.close();`,
-  );
-  const bin = join(options.homeDir, "bin");
-  mkdirSync(bin);
-  const pm2Home = join(options.homeDir, "pm2");
-  mkdirSync(pm2Home);
-  writeFileSync(join(pm2Home, "pm2.pid"), String(process.pid));
-  const pm2 = join(bin, "pm2");
-  const register = (valid: boolean) => {
-    writeFileSync(
-      pm2,
-      `#!/usr/bin/env bun\nconsole.log(JSON.stringify([{pid:process.ppid${valid ? "" : "+1"},name:'ravi',pm2_env:{pm_exec_path:${JSON.stringify(entry)},args:['daemon','run']}}]));\n`,
     );
-    chmodSync(pm2, 0o755);
-  };
-  const launch = (args = ["daemon", "run"], extra: NodeJS.ProcessEnv = {}) =>
-    spawnSync(process.execPath, [entry, ...args], {
-      env: { PATH: `${bin}:${process.env.PATH}`, PM2_HOME: pm2Home, ...extra },
-      encoding: "utf8",
-      timeout: 5000,
-    });
-  register(false);
-  const refused = launch();
-  expect(refused.status).not.toBe(0);
-  expect(refused.stderr).toContain('RAVI_STATE_DIR="$(mktemp -d)" bun <command>');
-  expect(refused.stderr).toContain("installed daemon gateway");
-  expect(existsSync(target)).toBe(false);
-  register(true);
-  expect(launch().status).toBe(0);
-  const check = new Database(target, { readonly: true });
-  expect(check.query("SELECT name FROM sqlite_master WHERE name='launched'").get()).toEqual({ name: "launched" });
-  check.close();
-  expect(launch(["agents", "list"], { RAVI_STATE_DIR: realState, pm_id: "1", name: "ravi" }).status).not.toBe(0);
-  expect(launch(["daemon", "run"], { NODE_ENV: "test" }).status).not.toBe(0);
-  const release = join(options.homeDir, "release");
-  mkdirSync(join(release, "src"));
-  expect(launch().status).not.toBe(0);
-  rmSync(join(release, "src"), { recursive: true });
-  writeFileSync(join(release, ".git"), "gitdir: /fixture/worktree");
-  expect(launch().status).not.toBe(0);
-});
+    const bin = join(options.homeDir, "bin");
+    mkdirSync(bin);
+    const pm2Home = join(options.homeDir, "pm2");
+    mkdirSync(pm2Home);
+    writeFileSync(join(pm2Home, "pm2.pid"), String(process.pid));
+    const pm2 = join(bin, "pm2");
+    const register = (valid: boolean) => {
+      writeFileSync(
+        pm2,
+        `#!/usr/bin/env bun\n${banner ? `console.log(${JSON.stringify(OUTDATED_PM2_BANNER)});` : ""}\nconsole.log(JSON.stringify([{pid:process.ppid${valid ? "" : "+1"},name:'ravi',pm2_env:{pm_exec_path:${JSON.stringify(entry)},args:['daemon','run']}}]));\n`,
+      );
+      chmodSync(pm2, 0o755);
+    };
+    const launch = (args = ["daemon", "run"], extra: NodeJS.ProcessEnv = {}) =>
+      spawnSync(process.execPath, [entry, ...args], {
+        env: { PATH: `${bin}:${process.env.PATH}`, PM2_HOME: pm2Home, ...extra },
+        encoding: "utf8",
+        timeout: 5000,
+      });
+    register(false);
+    const refused = launch();
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain('RAVI_STATE_DIR="$(mktemp -d)" bun <command>');
+    expect(refused.stderr).toContain("installed daemon gateway");
+    expect(existsSync(target)).toBe(false);
+    register(true);
+    expect(launch().status).toBe(0);
+    const check = new Database(target, { readonly: true });
+    expect(check.query("SELECT name FROM sqlite_master WHERE name='launched'").get()).toEqual({ name: "launched" });
+    check.close();
+    expect(launch(["agents", "list"], { RAVI_STATE_DIR: realState, pm_id: "1", name: "ravi" }).status).not.toBe(0);
+    expect(launch(["daemon", "run"], { NODE_ENV: "test" }).status).not.toBe(0);
+    for (const content of ["not-a-pid", String(process.pid + 1), ""]) {
+      writeFileSync(join(pm2Home, "pm2.pid"), content);
+      expect(launch().status).not.toBe(0);
+    }
+    rmSync(join(pm2Home, "pm2.pid"));
+    // A foreground child with inherited PM2 labels is still not PM2-managed.
+    expect(
+      launch(["daemon", "run"], { pm_id: "0", name: "ravi", PM2_DAEMON_TITLE: `PM2 v7.1.2: God Daemon (${pm2Home})` })
+        .status,
+    ).not.toBe(0);
+    writeFileSync(join(pm2Home, "pm2.pid"), String(process.pid));
+    const release = join(options.homeDir, "release");
+    mkdirSync(join(release, "src"));
+    expect(launch().status).not.toBe(0);
+    rmSync(join(release, "src"), { recursive: true });
+    writeFileSync(join(release, ".git"), "gitdir: /fixture/worktree");
+    expect(launch().status).not.toBe(0);
+  },
+);
 
 it("leaves schema/data intact when a non-daemon attempts destructive initialization", () => {
   const options = fixture();

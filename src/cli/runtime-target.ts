@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { parsePm2Jlist } from "../pm2-output.js";
 import { getRaviDbPath, dbGetInstance } from "../router/router-db.js";
 
 type DaemonRuntimeInfo = {
@@ -65,7 +66,7 @@ function readDaemonRuntimeInfo(): DaemonRuntimeInfo {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    const list = JSON.parse(raw) as Array<Record<string, any>>;
+    const list = parsePm2Jlist(raw);
     const ravi = list.find((entry) => entry?.name === "ravi");
     const status = ravi?.pm2_env?.status;
     const execPath = safeRealpath(ravi?.pm2_env?.pm_exec_path ?? null);

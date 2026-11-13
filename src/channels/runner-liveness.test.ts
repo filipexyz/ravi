@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import { OUTDATED_PM2_BANNER, runWithPm2Jlist } from "../test/pm2-jlist.js";
 import { createChannelRunnerHealthSnapshot } from "./health.js";
 import {
   decideChannelRunnerStartAction,
@@ -7,6 +8,17 @@ import {
   scheduleChannelRunnerLivenessReport,
   STALE_CHANNEL_RUNNER_HEALTH_REASONS,
 } from "./runner-liveness.js";
+
+it("reads channel liveness despite PM2's version warning", () => {
+  const entry = { name: "ravi-channels", pid: 5661, pm_id: 2, pm2_env: { status: "online" } };
+  const result = runWithPm2Jlist(
+    OUTDATED_PM2_BANNER + JSON.stringify([entry]),
+    `import { readChannelRunnerPm2ProcessAsync } from ${JSON.stringify(new URL("./runner-liveness.ts", import.meta.url).href)};
+     console.log(JSON.stringify(await readChannelRunnerPm2ProcessAsync()));`,
+  );
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ name: "ravi-channels", pid: 5661, status: "online" });
+});
 
 const HEALTHY_SNAPSHOT = createChannelRunnerHealthSnapshot({
   running: true,
