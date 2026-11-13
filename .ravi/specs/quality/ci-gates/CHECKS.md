@@ -9,6 +9,12 @@ status: active
 
 # CI Quality Gates Checks
 
+## npm Release Authentication Checks
+
+- `bun test src/ci/npm-release-workflows.test.ts src/ci/pre-push.test.ts` executes the release shell steps with fake registry commands and isolated state: no-token publish/dist-tag, optional token fallback logging, nonzero authentication failures, job permissions, Node/npm selection and SDK state isolation.
+- `actionlint .github/workflows/*.yml` validates the release workflows.
+- Package owners follow the exact npmjs.com configuration in `CONTRIBUTING.md`; both packages require their own workflow filename and direct-publish/dist-tag allowed actions. PR validation MUST NOT publish a package, dispatch a release or change package trust/secrets.
+
 ## Spec Gate Checks
 
 - `ravi specs sync --json` succeeds for the full spec tree including `quality/ci-gates`.

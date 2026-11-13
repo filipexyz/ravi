@@ -8,6 +8,60 @@ This guide covers building Ravi from source, running the checks CI runs, and sen
 - After CI passes on a push to `dev`, the "Version And Publish" workflow bumps the version, tags it and publishes the package to npm as `ravi.bot@next` (when the push changed publishable files). Pushes to `main` publish `ravi.bot@latest`.
 - The version bump is a CI commit (`chore(version): bump to <version> [skip ci]`). Do not edit `version` in `package.json` yourself.
 
+### npm trusted publishing setup (package owner)
+
+Both release workflows use GitHub-hosted runners, Node 24 and pinned npm 11.21.1.
+The publish job has `id-token: write`. Bun still installs and builds dependencies;
+`npm publish` publishes both `ravi.bot` and `@ravi-os/sdk` with provenance.
+The SDK manifest identifies this repository and its package directory for provenance.
+
+**Manual prerequisite — Luís, or an npm maintainer who can change each package's
+settings, must configure both packages on npmjs.com.** This is separate from
+merging a workflow change; no secret or package policy is changed by the PR.
+
+1. Open **Packages → ravi.bot → Settings → Trusted publishing → Add trusted publisher → GitHub Actions**.
+   Set **Organization or user** to `filipexyz`, **Repository** to `ravi`, and
+   **Workflow filename** to `version.yml` (filename only). Leave **Environment name**
+   empty; this workflow does not use a GitHub environment.
+2. Enable **Allow npm publish** and **Allow npm dist-tag**. New configurations allow
+   staged publishing by default; this workflow requires direct publication and
+   dist-tag management as separate allowed actions.
+3. Repeat for **Packages → @ravi-os/sdk → Settings → Trusted publishing** with the
+   same owner/repository, filename **`sdk-release.yml`**, no environment, and both
+   allowed actions enabled.
+4. Arrange the first authorized release within **2 days** of creating each
+   configuration. npm expires configurations that have not completed a successful
+   first publish in that window. An expired configuration must be recreated.
+
+OIDC supports `npm dist-tag` starting with npm 11.21.0 (or 12.2.0 on npm 12),
+provided **Allow npm dist-tag** is enabled. That is why these workflows pin a
+newer version than the 11.5.1 minimum for publishing. The existing-version branch
+uses the same OIDC-first authentication as a new publish; it does not require a
+permanent token exception.
+
+During migration, the existing `NPM_TOKEN` secret remains an optional fallback,
+passed only to the publish step as `NODE_AUTH_TOKEN` through setup-node's npmrc.
+npm attempts OIDC first even when that token is present. Each job announces
+whether fallback is available; `--loglevel verbose` exposes npm's `oidc`
+diagnostic: `Successfully retrieved and set token` means OIDC was established;
+an exchange failure leaves the configured token as fallback. No token value is
+printed. If the token is absent, the job still attempts OIDC. Authentication and
+2FA errors (including `EOTP`) fail the job; fallback does not bypass npm's token
+policy. If OIDC exchange succeeds but the operation is denied, npm fails
+that operation rather than retrying it with the static token.
+
+After configuration, verify **each package** from its own authorized release:
+OIDC exchange succeeds in the logs, publication/provenance succeeds, and
+`npm view ravi.bot dist-tags --json` or `npm view @ravi-os/sdk dist-tags --json`
+points the intended tag to the released version. `npm whoami` does not validate
+trusted publishing. Only after that verification should a separately authorized
+cleanup remove the static token or change publishing policies. Do not dispatch a
+release merely to validate a workflow PR.
+
+References: [npm trusted publishers](https://docs.npmjs.com/trusted-publishers/),
+[OIDC dist-tags](https://docs.npmjs.com/trusted-publishers/#managing-dist-tags-with-trusted-publishing),
+[setup-node trusted publishing](https://github.com/actions/setup-node/blob/main/docs/advanced-usage.md#publishing-to-npm-with-trusted-publisher-oidc).
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) (CI uses 1.3.11). Use Bun for every package operation: `bun install`, `bun add`, `bun remove`.
