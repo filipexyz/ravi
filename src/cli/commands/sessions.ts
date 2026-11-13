@@ -338,6 +338,59 @@ export const sessionSetModelReturnSchema = z.object({
   notification: z.object({}).passthrough().optional(),
   ...sessionAgentDefaultDiffReturnSchema,
 });
+const sessionRuntimeConfigSnapshotReturnSchema = z
+  .object({
+    runtimeProviderOverride: z.string().nullable(),
+    modelOverride: z.string().nullable(),
+    effortOverride: z.string().nullable(),
+    thinkingLevel: z.string().nullable(),
+  })
+  .strict();
+const sessionRuntimeProbeReturnSchema = z
+  .object({
+    ok: z.boolean(),
+    provider: z.string(),
+    model: z.string(),
+    effort: z.string().optional(),
+    thinking: z.string().optional(),
+    durationMs: z.number(),
+    credentialId: z.string().optional(),
+    credentialLabel: z.string().optional(),
+    error: z.string().optional(),
+    timedOut: z.boolean().optional(),
+  })
+  .strict();
+export const sessionRuntimeUpdateReturnSchema = z
+  .object({
+    action: z.literal("update"),
+    session: z.object({ sessionKey: z.string(), sessionName: z.string().nullable() }).strict(),
+    changed: z
+      .object({ provider: z.boolean(), model: z.boolean(), effort: z.boolean(), thinking: z.boolean() })
+      .strict(),
+    before: sessionRuntimeConfigSnapshotReturnSchema,
+    after: sessionRuntimeConfigSnapshotReturnSchema,
+    effective: z
+      .object({
+        provider: z.string(),
+        model: z.string().nullable(),
+        effort: z.string().nullable(),
+        thinking: z.string().nullable(),
+      })
+      .strict(),
+    /** Null when --skip-probe applied the change without proof. */
+    probe: sessionRuntimeProbeReturnSchema.nullable(),
+    rolledBack: z.boolean(),
+    /** A concurrent update replaced this configuration while the probe ran. */
+    superseded: z.boolean(),
+    clearedProviderSession: z.boolean(),
+    rematerializedToAgentRuntime: z.boolean(),
+    notification: z
+      .object({ topic: z.string(), delivered: z.boolean(), error: z.string().nullable() })
+      .strict()
+      .optional(),
+    appliesOn: z.literal("next-turn-runtime-restart"),
+  })
+  .strict();
 const sessionCommandTargetReturnSchema = z
   .object({
     sessionKey: z.string(),
@@ -7831,6 +7884,7 @@ declareCommandReturns(SessionCommands, {
   threadSend: sessionThreadSendReturnSchema,
   threads: sessionThreadsReturnSchema,
   trace: commandEnvelopeReturnSchema,
+  update: sessionRuntimeUpdateReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });
 

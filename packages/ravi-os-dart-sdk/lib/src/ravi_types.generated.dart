@@ -25607,6 +25607,80 @@ typedef SessionsTraceReturn = Map<String, RaviJson>;
 
 SessionsTraceReturn sessionsTraceReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class SessionsUpdateOptions {
+  const SessionsUpdateOptions({this.effort, this.model, this.probeTimeout, this.provider, this.skipProbe, this.thinking});
+
+  final String? effort;
+  final String? model;
+  final String? probeTimeout;
+  final String? provider;
+  final bool? skipProbe;
+  final String? thinking;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
+    if (model != null) {
+      into["model"] = RaviJson.from(model);
+    }
+    if (probeTimeout != null) {
+      into["probeTimeout"] = RaviJson.from(probeTimeout);
+    }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
+    if (skipProbe != null) {
+      into["skipProbe"] = RaviJson.from(skipProbe);
+    }
+    if (thinking != null) {
+      into["thinking"] = RaviJson.from(thinking);
+    }
+  }
+}
+
+class SessionsUpdateReturn {
+  const SessionsUpdateReturn({required this.action, required this.after, required this.appliesOn, required this.before, required this.changed, required this.clearedProviderSession, required this.effective, this.notification, required this.probe, required this.rematerializedToAgentRuntime, required this.rolledBack, required this.session, required this.superseded});
+
+  final String action;
+  final RaviJson after;
+  final String appliesOn;
+  final RaviJson before;
+  final RaviJson changed;
+  final bool clearedProviderSession;
+  final RaviJson effective;
+  final RaviJson? notification;
+  final RaviJson probe;
+  final bool rematerializedToAgentRuntime;
+  final bool rolledBack;
+  final RaviJson session;
+  final bool superseded;
+
+  factory SessionsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return SessionsUpdateReturn(
+      action: raviJsonAsString(json["action"]),
+      after: RaviJson.from(json["after"]),
+      appliesOn: raviJsonAsString(json["appliesOn"]),
+      before: RaviJson.from(json["before"]),
+      changed: RaviJson.from(json["changed"]),
+      clearedProviderSession: raviJsonAsBool(json["clearedProviderSession"]),
+      effective: RaviJson.from(json["effective"]),
+      notification: json["notification"] == null ? null : RaviJson.from(json["notification"]),
+      probe: RaviJson.from(json["probe"]),
+      rematerializedToAgentRuntime: raviJsonAsBool(json["rematerializedToAgentRuntime"]),
+      rolledBack: raviJsonAsBool(json["rolledBack"]),
+      session: RaviJson.from(json["session"]),
+      superseded: raviJsonAsBool(json["superseded"]),
+    );
+  }
+
+  static SessionsUpdateReturn fromJsonValue(Object? json) {
+    return SessionsUpdateReturn.fromJson(raviJsonObject(json, "SessionsUpdateReturn"));
+  }
+}
+
+SessionsUpdateReturn sessionsUpdateReturnFromJson(Object? json) => SessionsUpdateReturn.fromJsonValue(json);
+
 typedef SessionsVisibilityReturn = Map<String, RaviJson>;
 
 SessionsVisibilityReturn sessionsVisibilityReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);

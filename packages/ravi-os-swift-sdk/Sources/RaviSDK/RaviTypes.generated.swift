@@ -30021,6 +30021,102 @@ public struct SessionsTraceOptions: Codable, Sendable {
 
 public typealias SessionsTraceReturn = [String: RaviJSON]
 
+public struct SessionsUpdateOptions: Codable, Sendable {
+  public var effort: String?
+  public var model: String?
+  public var probeTimeout: String?
+  public var provider: String?
+  public var skipProbe: Bool?
+  public var thinking: String?
+
+  public init(effort: String? = nil, model: String? = nil, probeTimeout: String? = nil, provider: String? = nil, skipProbe: Bool? = nil, thinking: String? = nil) {
+    self.effort = effort
+    self.model = model
+    self.probeTimeout = probeTimeout
+    self.provider = provider
+    self.skipProbe = skipProbe
+    self.thinking = thinking
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case effort = "effort"
+    case model = "model"
+    case probeTimeout = "probeTimeout"
+    case provider = "provider"
+    case skipProbe = "skipProbe"
+    case thinking = "thinking"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.effort {
+      body["effort"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.model {
+      body["model"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.probeTimeout {
+      body["probeTimeout"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.provider {
+      body["provider"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.skipProbe {
+      body["skipProbe"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.thinking {
+      body["thinking"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsUpdateReturn: Codable, Sendable {
+  public var action: String
+  public var after: RaviJSON
+  public var appliesOn: String
+  public var before: RaviJSON
+  public var changed: RaviJSON
+  public var clearedProviderSession: Bool
+  public var effective: RaviJSON
+  public var notification: RaviJSON?
+  public var probe: RaviJSON
+  public var rematerializedToAgentRuntime: Bool
+  public var rolledBack: Bool
+  public var session: RaviJSON
+  public var superseded: Bool
+
+  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: RaviJSON, clearedProviderSession: Bool, effective: RaviJSON, notification: RaviJSON? = nil, probe: RaviJSON, rematerializedToAgentRuntime: Bool, rolledBack: Bool, session: RaviJSON, superseded: Bool) {
+    self.action = action
+    self.after = after
+    self.appliesOn = appliesOn
+    self.before = before
+    self.changed = changed
+    self.clearedProviderSession = clearedProviderSession
+    self.effective = effective
+    self.notification = notification
+    self.probe = probe
+    self.rematerializedToAgentRuntime = rematerializedToAgentRuntime
+    self.rolledBack = rolledBack
+    self.session = session
+    self.superseded = superseded
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case after = "after"
+    case appliesOn = "appliesOn"
+    case before = "before"
+    case changed = "changed"
+    case clearedProviderSession = "clearedProviderSession"
+    case effective = "effective"
+    case notification = "notification"
+    case probe = "probe"
+    case rematerializedToAgentRuntime = "rematerializedToAgentRuntime"
+    case rolledBack = "rolledBack"
+    case session = "session"
+    case superseded = "superseded"
+  }
+}
+
 public typealias SessionsVisibilityReturn = [String: RaviJSON]
 
 public struct SettingsDeleteOptions: Codable, Sendable {

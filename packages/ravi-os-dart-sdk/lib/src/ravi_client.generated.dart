@@ -8460,6 +8460,18 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsUpdateReturn> update(String nameOrKey, [SessionsUpdateOptions options = const SessionsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["nameOrKey"] = RaviJson.from(nameOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "update",
+      body: requestBody,
+      decode: sessionsUpdateReturnFromJson,
+    );
+  }
+
   Future<SessionsVisibilityReturn> visibility(String nameOrKey) async {
     final requestBody = <String, RaviJson>{};
     requestBody["nameOrKey"] = RaviJson.from(nameOrKey);
