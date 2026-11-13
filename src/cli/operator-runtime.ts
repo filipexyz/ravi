@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { canonicalStatePath } from "../db/state-boundary.js";
 import { findRaviPackageRoot } from "../managed-runtime.js";
 import { resolveAccountHome } from "../utils/account-home.js";
-import { getContext, hasRuntimeInvocationContext } from "./context.js";
+import { getContext, hasRuntimeInvocationContext, type ToolContext } from "./context.js";
 
 const codePath = fileURLToPath(import.meta.url);
 const RECOVERY_COMMANDS = new Set([
@@ -51,4 +51,26 @@ export function isLocalRecoveryCommand(group: string, command: string): boolean 
 
 export function isManagedRuntimeEntry(group: string, command: string): boolean {
   return command === "run" && (group === "daemon" || group === "channels");
+}
+
+const LOCAL_CREDENTIAL_COMMANDS = new Set(["list", "add", "set-default", "remove"]);
+const localCredentialContexts = new WeakSet<ToolContext>();
+
+export function isLocalCredentialCommand(group: string, command: string): boolean {
+  return group === "context_credentials" && LOCAL_CREDENTIAL_COMMANDS.has(command);
+}
+
+/** Called only after installed operator provenance was verified by the registry.
+ * Object identity, never an env/metadata flag, carries the selected transport.
+ * The empty context also prevents resolving the default credential in local SQLite.
+ */
+export function createLocalCredentialOperatorContext(): ToolContext {
+  const context: ToolContext = {};
+  localCredentialContexts.add(context);
+  return context;
+}
+
+export function isLocalCredentialOperatorContext(): boolean {
+  const context = getContext({ localOnly: true });
+  return context !== undefined && localCredentialContexts.has(context);
 }

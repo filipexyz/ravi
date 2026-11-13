@@ -33,7 +33,13 @@ import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./comm
 import { emitCliAuditEvent } from "./audit.js";
 import { getContext, runWithContext } from "./context.js";
 import { omitRenderingFlags } from "./registry-snapshot.js";
-import { isLocalRecoveryCommand, isManagedRuntimeEntry, usesInstalledOperatorTransport } from "./operator-runtime.js";
+import {
+  createLocalCredentialOperatorContext,
+  isLocalCredentialCommand,
+  isLocalRecoveryCommand,
+  isManagedRuntimeEntry,
+  usesInstalledOperatorTransport,
+} from "./operator-runtime.js";
 import {
   codexHookTransportFailure,
   dispatchRemoteCodexBashHook,
@@ -254,8 +260,13 @@ function registerCommand(
 
     const installedOperator = usesInstalledOperatorTransport();
     const localRecovery = installedOperator && isLocalRecoveryCommand(groupName, cmdMeta.name);
+    const localCredentials = installedOperator && isLocalCredentialCommand(groupName, cmdMeta.name);
     const operatorGateway =
-      installedOperator && !localRecovery && !cliOnly && !isManagedRuntimeEntry(groupName, cmdMeta.name);
+      installedOperator &&
+      !localRecovery &&
+      !localCredentials &&
+      !cliOnly &&
+      !isManagedRuntimeEntry(groupName, cmdMeta.name);
 
     let remoteConfig: RemoteGatewayConfig | null;
     try {
@@ -312,7 +323,12 @@ function registerCommand(
       process.exit(error.exitCode);
     }
 
-    await runWithContext(localRecovery ? {} : (getContext() ?? {}), async () => {
+    const handlerContext = localCredentials
+      ? createLocalCredentialOperatorContext()
+      : localRecovery
+        ? {}
+        : (getContext() ?? {});
+    await runWithContext(handlerContext, async () => {
       const accessResult = enforceCliCommandAuthorization({
         group: groupName,
         command: cmdMeta.name,

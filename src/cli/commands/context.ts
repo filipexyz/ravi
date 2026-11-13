@@ -3,8 +3,23 @@ import "reflect-metadata";
 import { pagesLinkGuardReason } from "../../hooks/pages-link-guard.js";
 import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
-import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  ContractError,
+  CONTRACT_EXIT_USAGE,
+  contractDryRun,
+  contractFail,
+  pickFields,
+  renderContractError,
+  suggestSimilar,
+} from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
+import { isLocalCredentialOperatorContext } from "../operator-runtime.js";
+import {
+  dispatchRemote,
+  gatewayRequiredError,
+  remoteGatewayErrorToContractError,
+  resolveRemoteGatewayConfig,
+} from "../remote-gateway.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   contextAuthorizeReturnSchema,
@@ -1182,7 +1197,7 @@ export class ContextCredentialsCommands {
 
   @Command({ name: "add", description: "Add a runtime context-key to the local credentials store" })
   @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "add", risk: "medium" })
-  add(
+  async add(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--label <label>", description: "Human label (defaults to hostname)" }) label?: string,
     @Option({ flags: "--set-default", description: "Mark this entry as the default" }) setDefault = false,
@@ -1191,7 +1206,9 @@ export class ContextCredentialsCommands {
     if (!contextKey.startsWith("rctx_")) {
       fail(`Expected an rctx_* key, got "${contextKey.slice(0, 8)}..."`);
     }
-    const record = resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+    const record = isLocalCredentialOperatorContext()
+      ? await this.validateCredentialWithGateway(contextKey, asJson)
+      : resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path) ?? emptyCredentialsFile();
     const entry = {
@@ -1293,6 +1310,58 @@ export class ContextCredentialsCommands {
       console.log(`Removed ${contextKey} from ${payload.path}`);
     }
     return payload;
+  }
+
+  private async validateCredentialWithGateway(contextKey: string, asJson: boolean) {
+    const operation = "context credentials add";
+    try {
+      const config = await resolveRemoteGatewayConfig(process.env, operation, { installedOperator: true });
+      if (!config) throw gatewayRequiredError(operation, true);
+      // Authenticate the candidate itself: adding the first credential must not
+      // need an existing default, and the daemon must never receive a file write.
+      const result = await dispatchRemote({
+        groupSegments: ["context"],
+        command: "whoami",
+        body: { json: true },
+        config,
+        contextKey,
+        cwd: process.cwd(),
+      });
+      const remoteError = remoteGatewayErrorToContractError(operation, result);
+      if (remoteError) throw remoteError;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(result.body);
+      } catch {
+        // no-cause: JSON SyntaxError can quote credential-bearing response text; refuse validation without echoing that payload or writing the store.
+        throw new ContractError(
+          operation,
+          "GATEWAY_RESPONSE_INVALID",
+          "Credential validation returned invalid JSON.",
+          1,
+        );
+      }
+      const parsed = contextWhoamiReturnSchema.safeParse(payload);
+      if (!parsed.success || parsed.data.status !== "active") {
+        throw new ContractError(
+          operation,
+          "GATEWAY_RESPONSE_INVALID",
+          "Credential validation did not return an active context.",
+          1,
+        );
+      }
+      return parsed.data;
+    } catch (cause) {
+      const error =
+        cause instanceof ContractError
+          ? cause
+          : new ContractError(operation, "SERVER_UNAVAILABLE", "Credential validation through the gateway failed.", 1, {
+              ...errorDiagnostic(cause, { operation }),
+              retryable: true,
+            });
+      renderContractError(error, asJson);
+      throw error;
+    }
   }
 
   private loadCredentialsOrFail(path: string): CredentialsFile | null {
