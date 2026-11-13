@@ -37,6 +37,37 @@ afterEach(() => {
 });
 
 describe("model catalog", () => {
+  test("lists the supported Fable versions without changing the default", () => {
+    expect(listRuntimeModels("claude").map((model) => model.id)).toEqual([
+      "sonnet",
+      "haiku",
+      "opus",
+      "claude-fable-5",
+      "claude-fable-5-1",
+      "claude-fable-5-2",
+    ]);
+    expect(getDefaultModelForProvider("claude")).toBe("sonnet");
+  });
+
+  test.each(["claude-fable-5", "claude-fable-5-1", "claude-fable-5-2"])(
+    "preserves the selected Fable version %s",
+    (model) => {
+      expect(resolvePreferredRuntimeModel("claude", model)).toBe(model);
+      expect(modelProviderMismatch("claude", model)).toBeNull();
+    },
+  );
+
+  test.each(["fable", "claude-mythos-5", " FABLE "])("resolves the Fable 5 alias %s", (alias) => {
+    expect(resolvePreferredRuntimeModel("claude", alias)).toBe("claude-fable-5");
+    expect(modelProviderMismatch("claude", alias)).toBeNull();
+  });
+
+  test("keeps the Fable alias on its owning runtime", () => {
+    expect(resolvePreferredRuntimeModel("grok", "fable")).toBe("grok-4");
+    expect(modelProviderMismatch("codex", "fable")).toContain("Claude alias");
+    expect(modelProviderMismatch("pi", "fable")).toContain("Claude alias");
+  });
+
   test("parses visible codex models sorted by priority", () => {
     const dir = mkdtempSync(join(tmpdir(), "ravi-codex-models-"));
     tempDirs.push(dir);

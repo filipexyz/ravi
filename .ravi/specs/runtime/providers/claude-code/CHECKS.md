@@ -2,6 +2,9 @@
 
 ## Required Tests
 
+- SSH and NATS spawn factories strip both SDK encodings of local plugin paths
+  and setting sources, preserving following model/effort/output arguments;
+  verify with `bun test src/remote-spawn.test.ts src/remote-spawn-nats.test.ts`.
 - Stream delta maps to `text.delta`.
 - Assistant text maps to `assistant.message`.
 - Assistant tool-use maps to `tool.started`.
@@ -26,6 +29,18 @@
 - Gateway derivation follows the listener's configuration precedence: an
   explicitly empty HTTP port disables fallback to the webhook port, and HTTP
   and webhook host values are trimmed before selecting the IPv6 loopback URL.
+
+## Model Compatibility Acceptance
+
+- `bun test src/runtime/claude-provider.test.ts src/runtime/model-catalog.test.ts`
+  covers Fable 5, 5-1 and 5-2 plus `fable` and `claude-mythos-5`, preserving the
+  requested model and the `off`/`normal`/`verbose` thinking contract. Sonnet still
+  receives disabled thinking for `off`.
+- With the updated installed SDK, create a Ravi session using
+  `--provider claude --model claude-fable-5-2`, send a unique response marker,
+  and verify the returned text plus the session's successful terminal turn.
+  Record the SDK version and tested commit in the PR; unit tests are not this
+  real-session acceptance proof.
 
 ## Regression Cases
 

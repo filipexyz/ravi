@@ -49,7 +49,7 @@ export interface NatsRemoteSpawnDeps {
 /**
  * Filter SDK args for remote execution.
  * - Strips the local CLI entry point (cli.js / sdk.mjs)
- * - Removes --plugin-dir <path> (local paths won't exist on worker)
+ * - Removes --plugin-dir and --plugin-dir-no-mcp (local paths won't exist on worker)
  * - Removes --setting-sources (project settings are local)
  */
 function filterArgs(args: string[]): string[] {
@@ -69,15 +69,11 @@ function filterArgs(args: string[]): string[] {
       continue;
     }
 
-    // Skip --plugin-dir <path> (local paths won't exist on worker)
-    if (arg === "--plugin-dir") {
-      skipNext = true;
-      continue;
-    }
-
-    // Skip --setting-sources (project settings are local)
-    if (arg === "--setting-sources") {
-      skipNext = true;
+    // The SDK uses --flag=value; local paths/settings must also be stripped
+    // when supplied as --flag <value>, without consuming the next unrelated arg.
+    const flag = arg.split("=", 1)[0];
+    if (flag === "--plugin-dir" || flag === "--plugin-dir-no-mcp" || flag === "--setting-sources") {
+      skipNext = !arg.includes("=");
       continue;
     }
 

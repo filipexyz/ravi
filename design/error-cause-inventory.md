@@ -1613,19 +1613,19 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | prox | src/prox/calls/provider.ts | 205 | triaged-follow-up | catch-without-binding | src/prox/calls/provider.ts:8eefdb31353417422533fbc6 |
 | prox | src/prox/calls/tool-bridge.ts | 473 | triaged-follow-up | surface-bypasses-constructor | src/prox/calls/tool-bridge.ts:f9fbd49ded847c2c4b0003cf |
 | reference | src/reference/context-cli.ts | 169 | triaged-follow-up | catch-without-binding | src/reference/context-cli.ts:1d204ec417f462ded05d7fb6 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 142 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:5b4acb9367ce323922ecb486 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 154 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:494cff509af819c60c2a099d |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 179 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:723b4910531e53c415a5e8b3 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 202 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:723b4910531e53c415a5e8b3 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 196 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:708ae041ef8f5e0622677b30 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 227 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:978d637e7bc79c6ea4985f38 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 241 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:30b08c1ff238defa748312f9 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 253 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:2e5efdf458b2e3a76652eb48 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 262 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:30b08c1ff238defa748312f9 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 318 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:399c43a03f3b135330e93f68 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 323 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:399c43a03f3b135330e93f68 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 330 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:399c43a03f3b135330e93f68 |
-| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 438 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:fec2a33306a07217552e32a2 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 138 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:5b4acb9367ce323922ecb486 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 150 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:494cff509af819c60c2a099d |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 175 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:723b4910531e53c415a5e8b3 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 198 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:723b4910531e53c415a5e8b3 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 192 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:708ae041ef8f5e0622677b30 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 223 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:978d637e7bc79c6ea4985f38 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 237 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:30b08c1ff238defa748312f9 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 249 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:2e5efdf458b2e3a76652eb48 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 258 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:30b08c1ff238defa748312f9 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 314 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:399c43a03f3b135330e93f68 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 319 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:399c43a03f3b135330e93f68 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 326 | triaged-follow-up | catch-without-binding | src/remote-spawn-nats.ts:399c43a03f3b135330e93f68 |
+| remote-spawn-nats.ts | src/remote-spawn-nats.ts | 434 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:fec2a33306a07217552e32a2 |
 | router | src/router/omni-ignore.ts | 26 | triaged-follow-up | catch-without-binding | src/router/omni-ignore.ts:191c630af8fd4faef6445a11 |
 | router | src/router/route-sticky-attach.ts | 151 | triaged-follow-up | catch-without-binding | src/router/route-sticky-attach.ts:50fa963b296b2b1ea3739b55 |
 | router | src/router/router-db.ts | 1296 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:1147e88bd94f408a57fef14d |
@@ -1676,11 +1676,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/claude-provider.ts | 77 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:5496eef9c9b7fa7f8d6b6156 |
 | runtime-chat | src/runtime/claude-provider.ts | 212 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:9d4e5964b65ef32089434597 |
 | runtime-chat | src/runtime/claude-provider.ts | 322 | triaged-follow-up | surface-bypasses-constructor | src/runtime/claude-provider.ts:c87f1bef17e8b8a309a993be |
-| runtime-chat | src/runtime/claude-provider.ts | 536 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:6d18d7ebccabe9139b6a2ee5 |
-| runtime-chat | src/runtime/claude-provider.ts | 552 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:b5e9e796752073002dc5b599 |
-| runtime-chat | src/runtime/claude-provider.ts | 561 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:69932255b8c315b086374bbe |
-| runtime-chat | src/runtime/claude-provider.ts | 590 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c8db2d688d57db26d5cf0203 |
-| runtime-chat | src/runtime/claude-provider.ts | 634 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c052a49e78bea02b1938b8c1 |
+| runtime-chat | src/runtime/claude-provider.ts | 542 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:6d18d7ebccabe9139b6a2ee5 |
+| runtime-chat | src/runtime/claude-provider.ts | 558 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:b5e9e796752073002dc5b599 |
+| runtime-chat | src/runtime/claude-provider.ts | 567 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:69932255b8c315b086374bbe |
+| runtime-chat | src/runtime/claude-provider.ts | 596 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c8db2d688d57db26d5cf0203 |
+| runtime-chat | src/runtime/claude-provider.ts | 640 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c052a49e78bea02b1938b8c1 |
 | runtime-chat | src/runtime/codex-hooks.ts | 75 | triaged-follow-up | surface-bypasses-constructor | src/runtime/codex-hooks.ts:89a5335abd4cd41f644216f8 |
 | runtime-chat | src/runtime/codex-hooks.ts | 256 | triaged-follow-up | catch-without-binding | src/runtime/codex-hooks.ts:594f21aaeee7103da4806304 |
 | runtime-chat | src/runtime/codex-hooks.ts | 307 | triaged-follow-up | catch-without-binding | src/runtime/codex-hooks.ts:fce4d98698ce879e6feebbc4 |
@@ -1823,7 +1823,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/model-broker-materializer.ts | 224 | fixed | binding retained / no recognized error surface | src/runtime/model-broker-materializer.ts:603a5aac4be8c1cae6977be9 |
 | runtime-chat | src/runtime/model-broker-materializer.ts | 228 | triaged-follow-up | catch-without-binding | src/runtime/model-broker-materializer.ts:328854997034dfbe96ad4d97 |
 | runtime-chat | src/runtime/model-broker.ts | 348 | triaged-follow-up | catch-without-binding | src/runtime/model-broker.ts:c458c33af921185233b8c309 |
-| runtime-chat | src/runtime/model-catalog.ts | 261 | triaged-follow-up | catch-without-binding | src/runtime/model-catalog.ts:0adcd64c0cd06692bb6a46e6 |
+| runtime-chat | src/runtime/model-catalog.ts | 280 | triaged-follow-up | catch-without-binding | src/runtime/model-catalog.ts:0adcd64c0cd06692bb6a46e6 |
 | runtime-chat | src/runtime/observation-plane.ts | 462 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38 |
 | runtime-chat | src/runtime/observation-plane.ts | 471 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:36058302af01275a6693381c |
 | runtime-chat | src/runtime/observation-plane.ts | 576 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e |
