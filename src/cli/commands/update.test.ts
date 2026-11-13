@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { serve } from "bun";
 import { spawnSync } from "node:child_process";
 import {
@@ -10,7 +10,9 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,7 +26,7 @@ import {
   rebindManagedRuntimeProcesses,
 } from "../../managed-runtime-rebind.js";
 import type { Pm2Process } from "../../pm2.js";
-import { observeRuntimeBoot, writeRuntimeBootReceipt } from "../../runtime-process-identity.js";
+import { observeRuntimeBoot, readRuntimeBootReceipt, writeRuntimeBootReceipt } from "../../runtime-process-identity.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import {
   buildSourceUpdateOutcome,
@@ -774,7 +776,7 @@ describe("update command helpers", () => {
                   processes = processes.filter((process) => String(process.pm_id) !== args[1]);
                 } else if (args[0] === "start") {
                   const name = args[args.indexOf("--name") + 1] as "ravi" | "ravi-channels";
-                  const startedAt = Date.now();
+                  const startedAt = Math.ceil(statSync(runtime.bundlePath).mtimeMs) + 1;
                   const pid = name === "ravi" ? 11 : 21;
                   processes.push(
                     pm2Process(name, runtime.bundlePath, runtime.root, {
@@ -788,6 +790,7 @@ describe("update command helpers", () => {
                       bundlePath: runtime.bundlePath,
                       runningVersion: runtime.target.version,
                       envFile: join(getRaviStateDir(), ".env"),
+                      now: startedAt,
                     }),
                     schemaVersion: 1,
                     name,
@@ -865,12 +868,19 @@ async function exerciseRebind(input: {
   stoppedChannels?: boolean;
   replaceDaemon?: "afterSupervision" | "afterChannels" | "duringFinalSave";
   replacementReady?: boolean;
+  bundleMtimeMs?: number;
 }) {
   const previousStateDir = process.env.RAVI_STATE_DIR;
   const stateDir = mkdtempSync(join(tmpdir(), "ravi-rebind-order-"));
   process.env.RAVI_STATE_DIR = stateDir;
   const old = createRuntimePackage("3.1.0");
   const target = createRuntimePackage("3.2.0");
+  if (input.bundleMtimeMs !== undefined) {
+    utimesSync(target.bundlePath, input.bundleMtimeMs / 1_000, input.bundleMtimeMs / 1_000);
+  }
+  // Filesystem timestamps and Date.now() need not have the same precision.
+  // Simulated boot must follow the bundle write, then use the fixture clock.
+  const bootEpoch = Math.ceil(statSync(target.bundlePath).mtimeMs) + 1;
   let processes = [
     pm2Process("ravi", old.bundlePath, old.root, {
       pid: 10,
@@ -893,7 +903,7 @@ async function exerciseRebind(input: {
   let replaced = false;
   const replaceDaemon = () => {
     const current = processes.find((process) => process.name === "ravi")!;
-    const startedAt = (current.startedAt ?? Date.now()) + 1;
+    const startedAt = Math.max(current.startedAt ?? bootEpoch, bootEpoch + time) + 1;
     const replacement = { ...current, pid: current.pid + 1_000, startedAt };
     processes = processes.map((process) => (process === current ? replacement : process));
     writeRuntimeBootReceipt({
@@ -901,12 +911,14 @@ async function exerciseRebind(input: {
         bundlePath: target.bundlePath,
         runningVersion: "3.2.0",
         envFile: join(stateDir, ".env"),
+        now: startedAt,
       }),
       schemaVersion: 1,
       name: "ravi",
       pid: replacement.pid,
       startedAt,
     });
+    expect(readRuntimeBootReceipt(replacement)).not.toBeNull();
     replaced = true;
     pendingReplacement = false;
     events.push("replace:ravi");
@@ -965,7 +977,7 @@ async function exerciseRebind(input: {
             }
             const pmId = nextPmId++;
             const pid = 100 + pmId;
-            const startedAt = Date.now();
+            const startedAt = bootEpoch + time;
             processes.push(
               pm2Process(name, target.bundlePath, target.root, { pm_id: pmId, pid, startedAt, createdAt: startedAt }),
             );
@@ -974,6 +986,7 @@ async function exerciseRebind(input: {
                 bundlePath: target.bundlePath,
                 runningVersion: input.wrongVersion ? "3.1.0" : "3.2.0",
                 envFile: join(stateDir, ".env"),
+                now: startedAt,
               }),
               schemaVersion: 1,
               name,
@@ -1000,6 +1013,21 @@ async function exerciseRebind(input: {
 }
 
 describe("managed update cutover readiness", () => {
+  it.each([false, true])(
+    "keeps readiness at an explicit filesystem clock (stoppedChannels=%s)",
+    async (stoppedChannels) => {
+      const clock = spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+      try {
+        const result = await exerciseRebind({ stoppedChannels, bundleMtimeMs: 1_700_000_001_000 });
+        expect(result.ok).toBe(true);
+        expect(result.processes.every((process) => process.startedAt! > 1_700_000_001_000)).toBe(true);
+        expect(result.events.includes("start:ravi-channels")).toBe(!stoppedChannels);
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
   it("preserves the running daemon and intake when the candidate fails to start", async () => {
     const result = await exerciseRebind({ failStart: true });
     expect(result.ok).toBe(false);

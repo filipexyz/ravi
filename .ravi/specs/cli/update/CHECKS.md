@@ -42,3 +42,7 @@
   before ownership transfers. Post-cutover recovery MUST verify readiness.
 - Rebind tests MUST delay daemon readiness and prove channels have not started;
   missing readiness or a wrong process incarnation MUST fail the update.
+- Simulated rebind starts MUST follow the target bundle's observed filesystem
+  timestamp, independently of wall-clock precision or skew. Boot observations
+  MUST use the same fixture clock as PM2 start times. Replacement tests MUST
+  prove the replacement receipt is valid before testing incarnation rejection.
