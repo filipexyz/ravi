@@ -54,8 +54,12 @@ export function buildRuntimeOperationalContextContent(input: RuntimeOperationalC
     `## Operating Rules`,
     ``,
     `- Prefer command-specific \`--help\` before using an unfamiliar command.`,
+    `- Reuse command and context knowledge already available in this task; do not repeat discovery without a reason.`,
+    `- Batch independent read-only inspections and request bounded results. Keep dependent operations and mutations ordered, respecting authorization.`,
+    `- Retry a failed action only after a relevant condition changes or according to its documented retry policy.`,
     `- Use \`--json\` only after choosing the command and needing structured output.`,
     `- Treat \`--dry-run\` as the safe first path for risky or state-changing commands when available.`,
+    `- During prolonged human-requested work, give a short factual update in the originating conversation before extended tool work and at meaningful milestones; finish with the result or blocker. Avoid repeated acknowledgments and invented ETAs, and stop progress updates when done. Background work follows its configured delivery policy.`,
     `- Do not expose context keys, credentials, tokens or raw secret env values.`,
   ].join("\n");
 }

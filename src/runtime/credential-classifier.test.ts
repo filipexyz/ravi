@@ -146,6 +146,36 @@ describe("runtime credential classifier", () => {
     });
   });
 
+  it.each([{ providerCode: "rate_limit" }, { httpStatus: 429 }, {}])(
+    "keeps Claude weekly account quota out of transient capacity retries: %j",
+    (envelope) => {
+      const signal = classifyRuntimeCredentialFailure({
+        runtimeProvider: "claude",
+        message: "Claude provider error (rate_limit): You've hit your weekly limit · resets 10am (America/Sao_Paulo)",
+        headers: { "retry-after": "3600", "anthropic-ratelimit-requests-reset": "2026-11-13T13:00:00Z" },
+        ...envelope,
+      });
+      expect(signal).toMatchObject({
+        kind: "quota_exhausted",
+        scope: "account",
+        retryableByCredential: true,
+        retryAfterMs: 3_600_000,
+        resetAt: Date.parse("2026-11-13T13:00:00Z"),
+      });
+      expect(isRuntimeProviderCapacityFailure(signal)).toBe(false);
+    },
+  );
+
+  it("does not infer exhausted quota from a generic weekly-limit mention", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      providerCode: "rate_limit",
+      message: "Request throttled; see the documentation for weekly limits",
+    });
+    expect(signal.kind).toBe("rate_limited");
+    expect(isRuntimeProviderCapacityFailure(signal)).toBe(true);
+  });
+
   it("classifies Claude result frames by api_error_status and usage text", () => {
     expect(
       classifyRuntimeCredentialFailure({

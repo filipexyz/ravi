@@ -15,8 +15,7 @@ on:
         default: dev
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: version-${{ github.event.workflow_run.head_branch || github.event.inputs.branch || 'manual' }}
@@ -73,6 +72,9 @@ jobs:
   version-and-publish:
     name: Version And Publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     needs: check-changes
     timeout-minutes: 50
     if: >-
@@ -102,6 +104,19 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.11"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      # OIDC publish needs >=11.5.1; OIDC dist-tag needs >=11.21.0.
+      - name: Install npm with trusted publishing support
+        run: |
+          npm install --global npm@11.21.1
+          node --version
+          npm --version
 
       # git push runs the same pre-push suite as development pushes.
       - name: Isolate Ravi state
@@ -165,23 +180,24 @@ jobs:
 
       - name: Publish to npm
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # npm prefers OIDC; setup-node's npmrc supplies this only as fallback.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
           NPM_TAG: ${{ steps.target.outputs.npm_tag }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if [ -z "$NPM_TOKEN" ]; then
-            echo "NPM_TOKEN not set; skipping npm publish"
-            exit 0
+          set -euo pipefail
+          echo "npm auth: OIDC preferred; verbose oidc logs show exchange success or failure."
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::notice::NPM_TOKEN fallback enabled if OIDC exchange fails; token/2FA errors still fail this job."
+          else
+            echo "npm auth: OIDC only (NPM_TOKEN fallback unavailable)."
           fi
 
           PACKAGE=$(jq -r '.name' package.json)
           if npm view "${PACKAGE}@${VERSION}" version >/dev/null 2>&1; then
             echo "Version ${VERSION} already exists. Moving dist-tag ${NPM_TAG}."
-            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-            npm dist-tag add "${PACKAGE}@${VERSION}" "${NPM_TAG}"
+            npm dist-tag add "${PACKAGE}@${VERSION}" "${NPM_TAG}" --loglevel verbose
           else
-            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-            npm publish --access public --tag "${NPM_TAG}" --provenance
+            npm publish --access public --tag "${NPM_TAG}" --provenance --loglevel verbose
           fi

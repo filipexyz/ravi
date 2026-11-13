@@ -341,10 +341,10 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
           await dependencies.publishPrompt(sessionName, frozen, options);
         },
       );
-      finishThreadTurnNotice(requestId, claimId, true, now);
+      finishThreadTurnNotice(requestId, claimId, true, dependencies.now?.() ?? Date.now());
     } catch (error) {
       failures++;
-      if (claimId) finishThreadTurnNotice(requestId, claimId, false, now);
+      if (claimId) finishThreadTurnNotice(requestId, claimId, false, dependencies.now?.() ?? Date.now());
       log.warn("Failed to reconcile Slack thread turn health", { requestId, error: errorMessage(error) });
     }
   }

@@ -2013,7 +2013,8 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       notified_turn_id TEXT,
       notified_at INTEGER,
       claim_id TEXT,
-      claim_expires_at INTEGER
+      claim_expires_at INTEGER,
+      notice_retry_after INTEGER
     );
 
     -- Occurrence receipts outlive the mutable current-health row and transport dedup window.
@@ -3106,6 +3107,17 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     log.info("Added model_preset_id column to agents table");
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
+
+  const threadHealthColumns = db.prepare("PRAGMA table_info(slack_thread_turn_health)").all() as Array<{
+    name: string;
+  }>;
+  if (!threadHealthColumns.some((c) => c.name === "notice_retry_after")) {
+    try {
+      db.exec("ALTER TABLE slack_thread_turn_health ADD COLUMN notice_retry_after INTEGER");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+    }
+  }
 
   // Migration: turn-output marker (`final` | `incomplete`) on session_turns.
   const sessionTurnColumns = db.prepare("PRAGMA table_info(session_turns)").all() as Array<{ name: string }>;
@@ -10547,7 +10559,12 @@ export function dbListContexts(options: ListContextsOptions = {}): ContextRecord
   if (!options.includeInactive) {
     where.push("(revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)");
     params.push(now);
-    where.push("(expires_at IS NULL OR expires_at = 0 OR expires_at > ?)");
+    // Select expiry candidates first so creation-order sorting cannot scan all historical payloads.
+    where.push(`context_id IN (
+      SELECT context_id FROM contexts WHERE expires_at IS NULL
+      UNION ALL SELECT context_id FROM contexts WHERE expires_at = 0
+      UNION ALL SELECT context_id FROM contexts WHERE expires_at > ?
+    )`);
     params.push(now);
   }
 

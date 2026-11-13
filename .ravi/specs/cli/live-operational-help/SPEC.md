@@ -84,3 +84,20 @@ The operational section should point agents to:
 - Do not dump the full raw system prompt in root help.
 - Do not expose secrets.
 - Do not implement a complete permission-to-command explanation engine yet.
+
+## Efficient Task Execution
+
+The shared operating rules MUST guide agents to reuse command/context knowledge
+already available in the current task, batch independent read-only inspections,
+and request bounded results. Dependent operations and mutations MUST remain
+ordered according to their prerequisites and authorization requirements.
+
+An unchanged failed action MUST NOT be retried without a relevant change or a
+documented retry policy. This guidance does not override runtime backoff rules.
+
+For prolonged human-requested work, agents SHOULD give a short factual progress
+update in the originating conversation before extended tool work and at meaningful
+milestones, followed by a clear result or blocker. They MUST avoid repetitive
+acknowledgments, invented completion estimates, and progress after completion.
+Background work retains its configured delivery policy. These are prompt
+instructions, not timing guarantees or new outbound notification mechanisms.
