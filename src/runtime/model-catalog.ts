@@ -333,6 +333,7 @@ function readCodexModelSlugs(cachePath = defaultCodexCachePath()): string[] {
       .map((entry) => entry.slug?.trim())
       .filter((slug): slug is string => Boolean(slug && slug.length > 0));
   } catch {
+    // no-cause: An unreadable or malformed models cache means there is no authoritative codex list, so enforcement stays permissive instead of failing writes.
     return [];
   }
 }

@@ -180,7 +180,9 @@ export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<Ru
 
     const timer = setTimeout(() => {
       timedOut = true;
-      void handle.interrupt().catch(() => {});
+      void handle.interrupt().catch(() => {
+        // no-cause: The probe result already reports the timeout; a failed interrupt must not replace it and the abort below still tears the turn down.
+      });
       abortController.abort();
     }, timeoutMs);
 
@@ -216,7 +218,9 @@ export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<Ru
     } finally {
       clearTimeout(timer);
       abortController.abort();
-      await handle.close?.().catch(() => {});
+      await handle.close?.().catch(() => {
+        // no-cause: Teardown of an already-settled probe; a close failure must not replace the recorded probe outcome.
+      });
     }
   } catch (error) {
     settled = fail(error instanceof Error ? error.message : String(error));
