@@ -47,6 +47,24 @@ const CLAUDE_MODEL_OPTIONS: RuntimeModelOption[] = [
     description: "Highest-capability Claude model for harder tasks.",
     priority: 2,
   },
+  {
+    id: "claude-fable-5",
+    name: "Fable 5",
+    description: "Fable 5 with adaptive thinking.",
+    priority: 3,
+  },
+  {
+    id: "claude-fable-5-1",
+    name: "Fable 5.1",
+    description: "Fable 5.1 with adaptive thinking.",
+    priority: 4,
+  },
+  {
+    id: "claude-fable-5-2",
+    name: "Fable 5.2",
+    description: "Fable 5.2 with adaptive thinking.",
+    priority: 5,
+  },
 ];
 
 const FALLBACK_CODEX_MODEL_OPTIONS: RuntimeModelOption[] = [
@@ -79,7 +97,7 @@ const GROK_MODEL_OPTIONS: RuntimeModelOption[] = [
   },
 ];
 
-const CLAUDE_MODEL_ALIASES = new Set(["opus", "sonnet", "haiku"]);
+const CLAUDE_MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "fable"]);
 
 const PROVIDER_OPTIONS: RuntimeProviderOption[] = [
   {
@@ -232,6 +250,7 @@ function normalizeRuntimeModel(provider: RuntimeProviderId, model: string | null
 
   if (provider === "claude") {
     const lower = value.toLowerCase();
+    if (lower === "fable" || lower === "claude-mythos-5") return "claude-fable-5";
     if (lower.includes("sonnet")) return "sonnet";
     if (lower.includes("haiku")) return "haiku";
     if (lower.includes("opus")) return "opus";

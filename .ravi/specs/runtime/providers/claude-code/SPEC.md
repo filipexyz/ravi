@@ -105,6 +105,24 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - `setModel` MUST update current and subsequent turns; if native live switch fails, the next query MUST still use the requested model.
 - Claude native `forkSession` MUST NOT be treated as arbitrary prompt-history fork unless the SDK exposes a tested cursor that maps to Ravi prompt atoms.
 
+## Model Compatibility
+
+- SSH and NATS remote spawn MUST remove local-only `--plugin-dir`,
+  `--plugin-dir-no-mcp`, and `--setting-sources` options in both `--flag value`
+  and `--flag=value` encodings. Removing an equals-form option MUST NOT consume
+  the following argument; model, effort, and output options MUST be preserved.
+- The bundled SDK MUST support the model ids advertised by the runtime catalog.
+  Fable support includes `claude-fable-5`, `claude-fable-5-1`, and
+  `claude-fable-5-2`; existing `fable` and `claude-mythos-5` aliases MUST remain
+  accepted without being redirected to a different model family.
+- These Fable versions and aliases MUST NOT receive `thinking: { type:
+  "disabled" }` when Ravi requests `thinking=off`. The provider MUST omit that
+  override, preserve adaptive thinking with display `omitted` for `normal`, and
+  preserve adaptive thinking with display `summarized` for `verbose`.
+- Adding an advertised model or upgrading its SDK support MUST include a real
+  Ravi session round-trip with the explicit provider and model. Compilation and
+  mocked provider tests alone MUST NOT be recorded as live acceptance.
+
 ## Validation
 
 - `bun test src/runtime/*provider.test.ts`
