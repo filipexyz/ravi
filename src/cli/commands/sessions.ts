@@ -79,6 +79,12 @@ import {
   listRegisteredRuntimeProviderIds,
 } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import {
+  applySessionRuntimeUpdate,
+  parseSessionRuntimeUpdateAxes,
+  SessionRuntimeUpdateError,
+} from "../../runtime/session-runtime-update.js";
+import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
@@ -4164,6 +4170,198 @@ export class SessionCommands {
     }
 
     console.log("Note: takes effect on next session start (reset or daemon restart).");
+  }
+
+  @Command({
+    name: "update",
+    description:
+      "Atomically update session provider/model/effort/thinking, prove the result with a live provider turn, and roll back on failure",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "update",
+    risk: "medium",
+    consoleScope: "session",
+    resourceId: "nameOrKey",
+  })
+  async update(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({
+      flags: "--provider <provider>",
+      description: `Runtime provider (${listRegisteredRuntimeProviderIds().join("|")}) or 'clear' to remove the override`,
+    })
+    provider?: string,
+    @Option({
+      flags: "--model <model>",
+      description: "Model id for the effective provider, or 'clear' to remove the override",
+    })
+    model?: string,
+    @Option({
+      flags: "--effort <level>",
+      description: `Reasoning effort (${formatRuntimeEffortLevels()}) or 'clear'`,
+    })
+    effort?: string,
+    @Option({
+      flags: "--thinking <level>",
+      description: "Thinking level (off|normal|verbose) or 'clear'",
+    })
+    thinking?: string,
+    @Option({
+      flags: "--skip-probe",
+      description: "Apply without the liveness probe (no rollback protection)",
+    })
+    skipProbe?: boolean,
+    @Option({
+      flags: "--probe-timeout <seconds>",
+      description: `Liveness probe timeout in seconds (default ${Math.round(DEFAULT_RUNTIME_PROBE_TIMEOUT_MS / 1000)})`,
+    })
+    probeTimeout?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Fail fast: every requested axis is parsed and validated before any write.
+    let axes: ReturnType<typeof parseSessionRuntimeUpdateAxes>;
+    try {
+      axes = parseSessionRuntimeUpdateAxes({
+        ...(provider !== undefined ? { provider } : {}),
+        ...(model !== undefined ? { model } : {}),
+        ...(effort !== undefined ? { effort } : {}),
+        ...(thinking !== undefined ? { thinking } : {}),
+      });
+    } catch (error) {
+      if (error instanceof SessionRuntimeUpdateError) {
+        fail(error.message);
+        return;
+      }
+      throw error;
+    }
+
+    let probeTimeoutMs: number | undefined;
+    if (probeTimeout !== undefined) {
+      const seconds = Number.parseInt(probeTimeout, 10);
+      if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 600) {
+        fail(`Invalid --probe-timeout: ${probeTimeout}. Use a number of seconds between 1 and 600.`);
+        return;
+      }
+      probeTimeoutMs = seconds * 1000;
+    }
+
+    if (axes.provider?.set) {
+      assertSessionProviderSelectionAuthorized(s, axes.provider.set);
+    }
+
+    const label = s.name ?? s.sessionKey;
+    const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
+
+    let result: Awaited<ReturnType<typeof applySessionRuntimeUpdate>>;
+    try {
+      result = await applySessionRuntimeUpdate({
+        session: s,
+        agent,
+        axes,
+        probe: skipProbe !== true,
+        ...(probeTimeoutMs ? { probeTimeoutMs } : {}),
+      });
+    } catch (error) {
+      if (error instanceof SessionRuntimeUpdateError) {
+        fail(error.message);
+        return;
+      }
+      throw error;
+    }
+
+    if (result.rolledBack) {
+      const probeError = result.probe?.error ?? "probe failed";
+      contractFail(
+        "sessions update",
+        "RUNTIME_PROBE_FAILED",
+        `Liveness probe failed for ${result.effective.provider}/${result.effective.model ?? "(default model)"}; restored the previous runtime config for ${label}. Probe error: ${probeError}`,
+        {
+          ...{
+            asJson,
+            details: {
+              session: { sessionKey: result.sessionKey, sessionName: result.sessionName },
+              effective: result.effective,
+              probe: result.probe,
+              rolledBack: true,
+              restored: result.after,
+              suggestedAction:
+                "Pick a model/provider this installation can run (see the probe error), then retry ravi sessions update",
+            },
+          },
+          diagnostic: errorDiagnostic(probeError, { operation: "sessions update" }),
+        },
+      );
+    }
+
+    // The live daemon only hears about the model after the probe proved it.
+    let notification = { delivered: false, error: null as string | null };
+    if (result.changed.model) {
+      const event: SessionModelChangedEvent = {
+        sessionKey: s.sessionKey,
+        sessionName: label,
+        modelOverride: result.after.modelOverride,
+        effectiveModel: result.effective.model ?? resolveEffectiveSessionModel(s, result.after.modelOverride),
+        changedAt: Date.now(),
+      };
+      try {
+        await nats.emit(SESSION_MODEL_CHANGED_TOPIC, event);
+        notification = { delivered: true, error: null };
+      } catch (err) {
+        notification = { delivered: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    if (!asJson) {
+      const changedAxes = Object.entries(result.changed)
+        .filter(([, changed]) => changed)
+        .map(([axis]) => axis)
+        .join(", ");
+      console.log(`Updated ${changedAxes} for: ${label}`);
+      console.log(
+        `Effective runtime: provider=${result.effective.provider} model=${result.effective.model ?? "(default)"} effort=${result.effective.effort ?? "(default)"} thinking=${result.effective.thinking ?? "(default)"}`,
+      );
+      if (result.probe) {
+        console.log(`Liveness probe passed in ${Math.round(result.probe.durationMs / 1000)}s.`);
+      } else {
+        console.log("Liveness probe skipped (--skip-probe): this change is unproven.");
+      }
+      if (result.clearedProviderSession) {
+        console.log("Cleared incompatible provider session state; the next turn starts fresh on the new provider.");
+      }
+      console.log("Note: takes effect on the next turn; active runtime restarts when the selection changes.");
+    }
+
+    if (shouldReturnStructuredResult(asJson)) {
+      const payload = {
+        action: "update",
+        session: { sessionKey: result.sessionKey, sessionName: result.sessionName },
+        changed: result.changed,
+        before: result.before,
+        after: result.after,
+        effective: result.effective,
+        probe: result.probe,
+        rolledBack: false,
+        clearedProviderSession: result.clearedProviderSession,
+        rematerializedToAgentRuntime: result.rematerializedToAgentRuntime,
+        ...(result.changed.model ? { notification: { topic: SESSION_MODEL_CHANGED_TOPIC, ...notification } } : {}),
+        appliesOn: "next-turn-runtime-restart",
+      };
+      return returnStructuredResult(payload, asJson);
+    }
   }
 
   @Command({ name: "reset", description: "Reset a session (fresh start)" })

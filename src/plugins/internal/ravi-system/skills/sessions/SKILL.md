@@ -98,6 +98,13 @@ ravi sessions set-provider <name> <provider|clear>
 # Definir thinking level
 ravi sessions set-thinking <name> <level>
 
+# Atualizar provider/model/effort/thinking de uma vez, com prova de vida e rollback.
+# Valida tudo antes de gravar (modelo fora do catálogo é recusado nomeando os válidos),
+# aplica, roda um turno real de prova e, se a prova falhar, restaura o estado anterior.
+ravi sessions update <name> --provider claude --model sonnet --effort ultra --thinking off
+# Eixos são opcionais ('clear' limpa o override); --skip-probe aplica sem prova (sem rollback);
+# --probe-timeout <s> ajusta o limite da prova (default 120s).
+
 # Resetar sessão (limpa conversa, mantém config; sem --execute é dry-run, exit 3)
 ravi sessions reset <name> --execute
 

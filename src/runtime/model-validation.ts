@@ -1,4 +1,4 @@
-import { modelProviderMismatch } from "./model-catalog.js";
+import { checkRuntimeModelInCatalog, modelProviderMismatch, type RuntimeModelCatalogOptions } from "./model-catalog.js";
 import type { RuntimeProviderId } from "./types.js";
 
 export interface RuntimeModelValidationResult {
@@ -34,7 +34,11 @@ const PI_PROVIDER_ONLY_MODEL_SELECTORS = new Set([
   "zai",
 ]);
 
-export function validateRuntimeModelSelector(providerId: string, model: string): RuntimeModelValidationResult {
+export function validateRuntimeModelSelector(
+  providerId: string,
+  model: string,
+  options: RuntimeModelCatalogOptions = {},
+): RuntimeModelValidationResult {
   const value = model.trim();
   if (!value) {
     return { ok: false, error: "Invalid model: value cannot be empty" };
@@ -49,6 +53,15 @@ export function validateRuntimeModelSelector(providerId: string, model: string):
   if (mismatch) return { ok: false, error: mismatch };
 
   if (providerId !== "pi") {
+    // Fail fast at write time: a model this installation's catalog does not
+    // know would otherwise be stored and only fail, masked, on the first turn.
+    const catalog = checkRuntimeModelInCatalog(providerId as RuntimeProviderId, value, options);
+    if (catalog.authoritative && !catalog.exists) {
+      return {
+        ok: false,
+        error: `Unknown ${providerId} model: '${value}' is not in this installation's model catalog. Valid models: ${catalog.validIds.join(", ")}.`,
+      };
+    }
     return { ok: true };
   }
 

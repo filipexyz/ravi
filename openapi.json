@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "957ca2d6b4adf2a7"
+    "version": "939c1aebca9debbd"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -126242,6 +126242,87 @@
         },
         "security": [],
         "summary": "Read the SQLite session trace timeline",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/update": {
+      "post": {
+        "description": "Accepts a runtime context key on the ordinary gateway, or a signed Console delegation on the dedicated Console listener within the declared resource scope.",
+        "operationId": "sessions.update",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "effort": {
+                    "description": "Reasoning effort (none|minimal|low|medium|high|xhigh|max|ultra) or 'clear'",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "Model id for the effective provider, or 'clear' to remove the override",
+                    "type": "string"
+                  },
+                  "nameOrKey": {
+                    "description": "Session name or key",
+                    "type": "string"
+                  },
+                  "probeTimeout": {
+                    "description": "Liveness probe timeout in seconds (default 120)",
+                    "type": "string"
+                  },
+                  "provider": {
+                    "description": "Runtime provider (claude|codex|grok|pi) or 'clear' to remove the override",
+                    "type": "string"
+                  },
+                  "skipProbe": {
+                    "description": "Apply without the liveness probe (no rollback protection)",
+                    "type": "boolean"
+                  },
+                  "thinking": {
+                    "description": "Thinking level (off|normal|verbose) or 'clear'",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "nameOrKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "consoleDelegation": []
+          }
+        ],
+        "summary": "Atomically update session provider/model/effort/thinking, prove the result with a live provider turn, and roll back on failure",
         "tags": [
           "sessions"
         ]
