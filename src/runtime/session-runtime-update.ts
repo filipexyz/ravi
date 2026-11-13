@@ -14,11 +14,21 @@
  * Destructive finalization (clearing provider continuity when the provider
  * changed, rematerializing agent defaults after a clear) is deferred until the
  * probe passed: rollback never has to reconstruct destroyed state.
+ *
+ * Concurrency: every apply bumps the session's persisted runtime-config
+ * revision, and both the rollback and the destructive finalization are
+ * conditional on still owning (revision + all four persisted values) what this
+ * update wrote. A concurrent update that lands while the probe runs supersedes
+ * this one: nothing is restored or destroyed over the newer configuration
+ * (lost-update finding on #829).
  */
 
 import {
-  clearProviderSession,
+  bumpSessionRuntimeProviderConfigRevision,
+  clearProviderSessionIfRuntimeConfigOwned,
   resolveSession,
+  restoreSessionRuntimeConfigIfOwned,
+  sessionRuntimeConfigOwned,
   updateSessionEffortOverride,
   updateSessionModelOverride,
   updateSessionRuntimeProviderOverride,
@@ -71,6 +81,12 @@ export interface SessionRuntimeUpdateResult {
   effective: SessionRuntimeEffectiveSelection;
   probe: RuntimeProbeResult | null;
   rolledBack: boolean;
+  /**
+   * A concurrent update replaced this configuration while the probe ran. The
+   * newer configuration was left untouched: no rollback, no destructive
+   * finalization, and the caller must not announce this update as current.
+   */
+  superseded: boolean;
   clearedProviderSession: boolean;
   rematerializedToAgentRuntime: boolean;
 }
@@ -97,7 +113,10 @@ export interface SessionRuntimeUpdateDeps {
   updateModelOverride: typeof updateSessionModelOverride;
   updateEffortOverride: typeof updateSessionEffortOverride;
   updateThinkingLevel: typeof updateSessionThinkingLevel;
-  clearProviderSession: typeof clearProviderSession;
+  bumpConfigRevision: typeof bumpSessionRuntimeProviderConfigRevision;
+  restoreIfOwned: typeof restoreSessionRuntimeConfigIfOwned;
+  configOwned: typeof sessionRuntimeConfigOwned;
+  clearProviderSessionIfOwned: typeof clearProviderSessionIfRuntimeConfigOwned;
   rematerializeSessionToAgentRuntime: typeof rematerializeSessionToAgentRuntime;
   readSession: (sessionKey: string) => SessionEntry | null;
   probe: (request: RuntimeProbeRequest) => Promise<RuntimeProbeResult>;
@@ -110,7 +129,10 @@ function defaultDeps(): SessionRuntimeUpdateDeps {
     updateModelOverride: updateSessionModelOverride,
     updateEffortOverride: updateSessionEffortOverride,
     updateThinkingLevel: updateSessionThinkingLevel,
-    clearProviderSession,
+    bumpConfigRevision: bumpSessionRuntimeProviderConfigRevision,
+    restoreIfOwned: restoreSessionRuntimeConfigIfOwned,
+    configOwned: sessionRuntimeConfigOwned,
+    clearProviderSessionIfOwned: clearProviderSessionIfRuntimeConfigOwned,
     rematerializeSessionToAgentRuntime,
     readSession: resolveSession,
     probe: probeRuntimeTurn,
@@ -272,22 +294,23 @@ export async function applySessionRuntimeUpdate(
     }
   }
 
-  const restore = (): void => {
-    if (touched.provider)
-      deps.updateProviderOverride(session.sessionKey, toProviderOverride(before.runtimeProviderOverride));
-    if (touched.model) deps.updateModelOverride(session.sessionKey, before.modelOverride);
-    if (touched.effort) deps.updateEffortOverride(session.sessionKey, toEffortOverride(before.effortOverride));
-    if (touched.thinking) deps.updateThinkingLevel(session.sessionKey, before.thinkingLevel);
-  };
-
-  // Apply every requested axis together.
+  // Apply every requested axis together, and make the apply observable: the
+  // provider setter bumps the persisted runtime-config revision on its own;
+  // every other combination bumps it explicitly, so one atomic update is
+  // exactly one revision step and concurrent updates always see each other.
   if (touched.provider) deps.updateProviderOverride(session.sessionKey, toProviderOverride(axes.provider?.set ?? null));
   if (touched.model) deps.updateModelOverride(session.sessionKey, axes.model?.set ?? null);
   if (touched.effort) deps.updateEffortOverride(session.sessionKey, toEffortOverride(axes.effort?.set ?? null));
   if (touched.thinking) deps.updateThinkingLevel(session.sessionKey, axes.thinking?.set ?? null);
+  if (!touched.provider) deps.bumpConfigRevision(session.sessionKey);
 
   const persisted = deps.readSession(session.sessionKey);
   const persistedSession: SessionEntry = persisted ?? ({ ...session, ...hypothetical } as SessionEntry);
+  // Ownership of this update: the persisted revision right after the apply,
+  // plus the four persisted values it wrote. Rollback and destructive
+  // finalization only act while both still hold.
+  const written = snapshotOf(persistedSession);
+  const ownedRevision = persistedSession.runtimeProviderConfigRevision ?? 0;
   const effectiveSelection = resolveEffectiveSessionRuntime({
     session: {
       agentId: persistedSession.agentId,
@@ -323,39 +346,48 @@ export async function applySessionRuntimeUpdate(
     });
 
     if (!probeResult.ok) {
-      restore();
+      // Conditional rollback: restore only while this update still owns the
+      // persisted configuration. A concurrent update that landed during the
+      // probe wins; overwriting it with this update's past would lose it.
+      const restored = deps.restoreIfOwned(session.sessionKey, ownedRevision, written, before);
       const after = deps.readSession(session.sessionKey);
       return {
         sessionKey: session.sessionKey,
         sessionName: session.name ?? null,
         changed: touched,
         before,
-        after: after ? snapshotOf(after) : before,
+        after: after ? snapshotOf(after) : restored ? before : written,
         effective,
         probe: probeResult,
-        rolledBack: true,
+        rolledBack: restored,
+        superseded: !restored,
         clearedProviderSession: false,
         rematerializedToAgentRuntime: false,
       };
     }
   }
 
-  // Destructive finalization only after the selection proved alive.
+  // Destructive finalization only after the selection proved alive — and only
+  // while this update still owns the persisted configuration. A superseded
+  // update must not clear the continuity of, or rematerialize over, the
+  // configuration that replaced it.
+  let superseded = !deps.configOwned(session.sessionKey, ownedRevision, written);
   let clearedProviderSession = false;
   const newProvider = axes.provider?.set ?? null;
   if (
+    !superseded &&
     touched.provider &&
     newProvider &&
     session.providerSessionId &&
     session.runtimeProvider &&
     session.runtimeProvider !== newProvider
   ) {
-    deps.clearProviderSession(session.sessionKey);
-    clearedProviderSession = true;
+    clearedProviderSession = deps.clearProviderSessionIfOwned(session.sessionKey, ownedRevision, written);
+    superseded = !clearedProviderSession;
   }
 
   let rematerializedToAgentRuntime = false;
-  if (touched.provider && newProvider === null && agent) {
+  if (!superseded && touched.provider && newProvider === null && agent) {
     const cleared = deps.readSession(session.sessionKey);
     if (cleared) {
       rematerializedToAgentRuntime = Boolean(deps.rematerializeSessionToAgentRuntime(cleared, agent));
@@ -372,6 +404,7 @@ export async function applySessionRuntimeUpdate(
     effective,
     probe: probeResult,
     rolledBack: false,
+    superseded,
     clearedProviderSession,
     rematerializedToAgentRuntime,
   };

@@ -4283,12 +4283,15 @@ export class SessionCommands {
       throw error;
     }
 
-    if (result.rolledBack) {
-      const probeError = result.probe?.error ?? "probe failed";
+    if (result.probe && !result.probe.ok) {
+      const probeError = result.probe.error ?? "probe failed";
+      const outcome = result.rolledBack
+        ? `restored the previous runtime config for ${label}`
+        : `a concurrent runtime update replaced this configuration during the probe, so nothing was restored — the newer update owns ${label} now`;
       contractFail(
         "sessions update",
         "RUNTIME_PROBE_FAILED",
-        `Liveness probe failed for ${result.effective.provider}/${result.effective.model ?? "(default model)"}; restored the previous runtime config for ${label}. Probe error: ${probeError}`,
+        `Liveness probe failed for ${result.effective.provider}/${result.effective.model ?? "(default model)"}; ${outcome}. Probe error: ${probeError}`,
         {
           ...{
             asJson,
@@ -4296,10 +4299,12 @@ export class SessionCommands {
               session: { sessionKey: result.sessionKey, sessionName: result.sessionName },
               effective: result.effective,
               probe: result.probe,
-              rolledBack: true,
+              rolledBack: result.rolledBack,
+              superseded: result.superseded,
               restored: result.after,
-              suggestedAction:
-                "Pick a model/provider this installation can run (see the probe error), then retry ravi sessions update",
+              suggestedAction: result.rolledBack
+                ? "Pick a model/provider this installation can run (see the probe error), then retry ravi sessions update"
+                : "Inspect the session's current runtime (ravi sessions show) before retrying; a newer update already changed it",
             },
           },
           diagnostic: errorDiagnostic(probeError, { operation: "sessions update" }),
@@ -4307,9 +4312,10 @@ export class SessionCommands {
       );
     }
 
-    // The live daemon only hears about the model after the probe proved it.
+    // The live daemon only hears about the model after the probe proved it —
+    // and never about a configuration a concurrent update already replaced.
     let notification = { delivered: false, error: null as string | null };
-    if (result.changed.model) {
+    if (result.changed.model && !result.superseded) {
       const event: SessionModelChangedEvent = {
         sessionKey: s.sessionKey,
         sessionName: label,
@@ -4339,6 +4345,11 @@ export class SessionCommands {
       } else {
         console.log("Liveness probe skipped (--skip-probe): this change is unproven.");
       }
+      if (result.superseded) {
+        console.log(
+          "Note: a concurrent runtime update has since replaced this configuration; the newer update governs the session now.",
+        );
+      }
       if (result.clearedProviderSession) {
         console.log("Cleared incompatible provider session state; the next turn starts fresh on the new provider.");
       }
@@ -4355,6 +4366,7 @@ export class SessionCommands {
         effective: result.effective,
         probe: result.probe,
         rolledBack: false,
+        superseded: result.superseded,
         clearedProviderSession: result.clearedProviderSession,
         rematerializedToAgentRuntime: result.rematerializedToAgentRuntime,
         ...(result.changed.model ? { notification: { topic: SESSION_MODEL_CHANGED_TOPIC, ...notification } } : {}),

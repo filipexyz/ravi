@@ -22,56 +22,100 @@ function baseSession(overrides: Partial<SessionEntry> = {}): SessionEntry {
   } as SessionEntry;
 }
 
+interface HarnessValues {
+  runtimeProviderOverride: string | null;
+  modelOverride: string | null;
+  effortOverride: string | null;
+  thinkingLevel: string | null;
+}
+
 interface Harness {
   deps: Partial<SessionRuntimeUpdateDeps>;
   calls: string[];
   record: () => SessionEntry;
   probeRequests: RuntimeProbeRequest[];
+  /** Simulate a concurrent `sessions update` landing: writes values and bumps the revision. */
+  concurrentUpdate: (values: Partial<HarnessValues>) => void;
 }
 
 function makeHarness(options: {
   initial: SessionEntry;
   probe?: (request: RuntimeProbeRequest) => RuntimeProbeResult;
 }): Harness {
-  const state: Record<string, unknown> = {
-    runtimeProviderOverride: options.initial.runtimeProviderOverride,
-    modelOverride: options.initial.modelOverride,
-    effortOverride: options.initial.effortOverride,
-    thinkingLevel: options.initial.thinkingLevel,
+  const values: HarnessValues = {
+    runtimeProviderOverride: options.initial.runtimeProviderOverride ?? null,
+    modelOverride: options.initial.modelOverride ?? null,
+    effortOverride: options.initial.effortOverride ?? null,
+    thinkingLevel: options.initial.thinkingLevel ?? null,
   };
+  let revision = options.initial.runtimeProviderConfigRevision ?? 0;
   const calls: string[] = [];
   const probeRequests: RuntimeProbeRequest[] = [];
   const read = (): SessionEntry =>
     ({
       ...options.initial,
-      runtimeProviderOverride: state.runtimeProviderOverride ?? undefined,
-      modelOverride: state.modelOverride ?? undefined,
-      effortOverride: state.effortOverride ?? undefined,
-      thinkingLevel: state.thinkingLevel ?? undefined,
+      runtimeProviderOverride: values.runtimeProviderOverride ?? undefined,
+      modelOverride: values.modelOverride ?? undefined,
+      effortOverride: values.effortOverride ?? undefined,
+      thinkingLevel: values.thinkingLevel ?? undefined,
+      runtimeProviderConfigRevision: revision,
     }) as SessionEntry;
+  const owned = (ownedRevision: number, written: HarnessValues): boolean =>
+    revision === ownedRevision &&
+    values.runtimeProviderOverride === written.runtimeProviderOverride &&
+    values.modelOverride === written.modelOverride &&
+    values.effortOverride === written.effortOverride &&
+    values.thinkingLevel === written.thinkingLevel;
   return {
     calls,
     probeRequests,
     record: read,
+    concurrentUpdate: (next) => {
+      Object.assign(values, next);
+      revision += 1;
+      calls.push("concurrent-update");
+    },
     deps: {
       updateProviderOverride: (_key, value) => {
-        state.runtimeProviderOverride = value ?? undefined;
+        values.runtimeProviderOverride = value ?? null;
+        // Mirror the real store: the provider setter bumps the config revision.
+        revision += 1;
         calls.push(`set:provider=${value}`);
       },
       updateModelOverride: (_key, value) => {
-        state.modelOverride = value ?? undefined;
+        values.modelOverride = value ?? null;
         calls.push(`set:model=${value}`);
       },
       updateEffortOverride: (_key, value) => {
-        state.effortOverride = value ?? undefined;
+        values.effortOverride = value ?? null;
         calls.push(`set:effort=${value}`);
       },
       updateThinkingLevel: (_key, value) => {
-        state.thinkingLevel = value ?? undefined;
+        values.thinkingLevel = value ?? null;
         calls.push(`set:thinking=${value}`);
       },
-      clearProviderSession: () => {
+      bumpConfigRevision: () => {
+        revision += 1;
+        calls.push("bumpConfigRevision");
+      },
+      restoreIfOwned: (_key, ownedRevision, written, restore) => {
+        if (!owned(ownedRevision, written as HarnessValues)) {
+          calls.push("restoreIfOwned:superseded");
+          return false;
+        }
+        Object.assign(values, restore);
+        revision += 1;
+        calls.push("restoreIfOwned:restored");
+        return true;
+      },
+      configOwned: (_key, ownedRevision, written) => owned(ownedRevision, written as HarnessValues),
+      clearProviderSessionIfOwned: (_key, ownedRevision, written) => {
+        if (!owned(ownedRevision, written as HarnessValues)) {
+          calls.push("clearProviderSession:superseded");
+          return false;
+        }
         calls.push("clearProviderSession");
+        return true;
       },
       rematerializeSessionToAgentRuntime: () => {
         calls.push("rematerialize");
@@ -223,24 +267,77 @@ describe("applySessionRuntimeUpdate", () => {
     });
 
     expect(result.rolledBack).toBe(true);
+    expect(result.superseded).toBe(false);
     expect(result.probe?.ok).toBe(false);
     expect(result.probe?.error).toContain("Not logged in");
     expect(result.clearedProviderSession).toBe(false);
     expect(harness.calls).not.toContain("clearProviderSession");
-    // Apply then restore, for exactly the touched axes.
+    // Apply, then one conditional restore that still owned the config.
     expect(harness.calls).toEqual([
       "set:provider=claude",
       "set:model=opus",
       "set:effort=low",
-      "set:provider=null",
-      "set:model=deepseek/deepseek-flash",
-      "set:effort=high",
+      "restoreIfOwned:restored",
     ]);
     const after = harness.record();
     expect(after.runtimeProviderOverride ?? null).toBeNull();
     expect(after.modelOverride).toBe("deepseek/deepseek-flash");
     expect(after.effortOverride).toBe("high");
     expect(result.after).toEqual(result.before);
+  });
+
+  it("leaves a concurrent update in place when its own probe fails (lost-update guard)", async () => {
+    const session = baseSession();
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => {
+        // Update B lands while A's probe is in flight and finishes successfully.
+        harness.concurrentUpdate({ runtimeProviderOverride: "claude", modelOverride: "opus" });
+        return { ok: false, provider: request.provider, model: request.model, durationMs: 3, error: "boom" };
+      },
+    });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { provider: { set: "claude" }, model: { set: "sonnet" } },
+      deps: harness.deps,
+    });
+
+    // A's failed probe must NOT overwrite B's successful opus update.
+    expect(result.rolledBack).toBe(false);
+    expect(result.superseded).toBe(true);
+    expect(harness.calls).toContain("restoreIfOwned:superseded");
+    const after = harness.record();
+    expect(after.modelOverride).toBe("opus");
+    expect(after.runtimeProviderOverride).toBe("claude");
+    expect(result.after.modelOverride).toBe("opus");
+  });
+
+  it("skips destructive finalization when a concurrent update superseded a successful probe", async () => {
+    const session = baseSession();
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => {
+        harness.concurrentUpdate({ runtimeProviderOverride: "codex", modelOverride: "gpt-6-astra" });
+        return { ok: true, provider: request.provider, model: request.model, durationMs: 3 };
+      },
+    });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { provider: { set: "claude" }, model: { set: "sonnet" } },
+      deps: harness.deps,
+    });
+
+    expect(result.superseded).toBe(true);
+    expect(result.rolledBack).toBe(false);
+    // The newer configuration keeps its provider continuity and its values.
+    expect(result.clearedProviderSession).toBe(false);
+    expect(harness.calls).not.toContain("clearProviderSession");
+    expect(harness.calls).not.toContain("rematerialize");
+    expect(harness.record().runtimeProviderOverride).toBe("codex");
   });
 
   it("skips the probe when disabled and reports the change as unproven", async () => {

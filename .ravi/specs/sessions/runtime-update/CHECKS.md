@@ -16,6 +16,8 @@ Validates:
 - A failed probe MUST restore every touched axis, run no destructive finalization, and report `rolledBack: true`
 - A passed probe MUST allow deferred finalization (provider-continuity clear, agent rematerialization)
 - The probe MUST settle its credential attempt and report terminal provider errors verbatim
+- A concurrent update landing during the probe MUST supersede this one: failed probe restores nothing (`superseded: true`, the newer values survive), successful probe skips continuity clear/rematerialization, and no model-changed notification is emitted for a superseded update
+- The conditional restore MUST be a single statement gated on revision + all four persisted values (`restoreSessionRuntimeConfigIfOwned`)
 
 ## Write-path Enforcement
 

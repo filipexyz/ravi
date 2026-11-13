@@ -93,11 +93,27 @@ It does NOT own:
   bulk-administrative flows, not as the default.
 - The model-changed live notification (`ravi.session.model.changed`) is only
   emitted after the probe passed, so a live daemon never hot-switches onto an
-  unproven selection.
+  unproven selection — and never for an update a concurrent writer already
+  replaced.
+- Concurrent updates must not lose each other (lost-update finding on #829).
+  Every apply advances the session's persisted
+  `runtime_provider_config_revision` exactly once (the provider setter bumps on
+  its own; other axis combinations bump explicitly). Rollback is a single
+  conditional statement that only applies while the persisted revision AND all
+  four persisted values still equal what this update wrote; destructive
+  finalization (continuity clear, rematerialization) is gated by the same
+  ownership condition. A superseded update reports `superseded: true`, restores
+  nothing, destroys nothing, and announces nothing.
 
-## Known window
+## Known windows
 
-Between apply and a failed probe's rollback, a concurrent inbound turn can
-start on the unproven selection. The window is seconds wide and ends in the
-prior state; removing it entirely would require a session-level write lock,
-deliberately out of scope here.
+- Between apply and a failed probe's rollback, a concurrent inbound turn can
+  start on the unproven selection. The window is seconds wide and ends in the
+  prior state; removing it entirely would require a session-level write lock,
+  deliberately out of scope here.
+- Ownership is revision + exact values. A concurrent bare `set-model`/
+  `set-effort`/`set-thinking` (which do not bump the revision) is detected by
+  the value comparison; the residual blind spot is a concurrent writer that
+  wrote byte-identical values without bumping the revision, where a failed
+  probe's rollback also erases that identical write. Two concurrent
+  `ravi sessions update` runs always detect each other through the revision.
