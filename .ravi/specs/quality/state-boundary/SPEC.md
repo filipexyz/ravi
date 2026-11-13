@@ -19,6 +19,9 @@ applies_to:
   - src/pr/journal.ts
   - src/router/router-db.ts
   - src/test/ravi-state.ts
+  - src/utils/account-home.ts
+  - src/cli/operator-runtime.ts
+  - src/cli/remote-gateway.ts
   - .github/workflows/ci.yml
   - .github/workflows/version.yml
   - src/permissions/runtime-bootstrap-provider.test.ts
@@ -38,6 +41,8 @@ applies_to:
 - Identity validation MUST match the canonical launcher for each role: daemon registers the bundle with `daemon run`; channels registers the running Bun executable with `<bundle> channels run`. The exact arguments, bundle and executable MUST be checked; launcher-generated channel registration MUST be covered by regression tests.
 - The identity check MUST use the code's location. A package containing `src` or `.git`, unknown code provenance, CLI, build, worktree or test execution MUST NOT gain real-state access by inheriting runtime environment or explicitly naming the real directory.
 - Outside the registered runtime, commands MUST select isolated state explicitly, normally with `RAVI_STATE_DIR` on the command. Losing that variable MUST refuse real-state access instead of silently opening the default. Errors MUST show the variable, a command example and the installed daemon gateway alternative.
+- An installed operator CLI targeting canonical real state MUST send stateful commands through the existing authenticated gateway, without opening local SQLite for credential resolution or authorization. Explicit isolated state remains local. A narrow local lifecycle/status path MAY use the existing operator provider without databases so a stopped daemon can be recovered; runtime contexts and explicit remote invocations MUST NOT gain that fallback.
+- Operator transport classification and implicit host gateway discovery MUST resolve the OS account home by the process UID independently of `HOME`, `USERPROFILE` and Bun's environment-sensitive `userInfo().homedir`. A `HOME` override alone MUST NOT promote isolated operator state to real state or redirect runtime gateway discovery. Missing or invalid OS account lookup MUST fail closed; explicit `RAVI_STATE_DIR` remains the selected gateway location.
 - Only the installed daemon role may initialize real-state schemas. Before becoming ready it MUST initialize all runtime stores and record each component's successful initialization for the exact package version. This role boundary does not serialize concurrent daemon processes; see the accepted limitation below.
 - The registered installed `ravi-channels` process MAY open existing stores for normal traffic but MUST NOT create, migrate or repair schemas. Its store initializers MUST only validate the ready marker and MUST NOT execute migration callbacks, persistent journal-mode changes or legacy file moves.
 - Human-bridge state and the PR publication journal MUST use the same opening guard and schema ownership. Daemon bootstrap MUST prepare bridge and publication schemas; channels MUST validate them without running DDL. Cached bridge handles MUST remain bound to the selected state path.

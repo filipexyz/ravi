@@ -1,24 +1,24 @@
 import { spawn } from "node:child_process";
+import { which } from "bun";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { buildRunnerPm2Env } from "./channels/pm2-env.js";
 import {
   managedRuntimeMatchesTarget,
+  managedRuntimeBundlePath,
   normalizeRuntimePath,
   resolveManagedRuntimeTargetFromPackageRoot,
   type ManagedRuntimeProcessSnapshot,
   type ManagedRuntimeTarget,
 } from "./managed-runtime.js";
-import {
-  buildDaemonPm2StartArgs,
-  defaultPm2InertStdinWrapperPath,
-  ensurePm2InertStdinWrapper,
-} from "./daemon-stdin.js";
+import { buildChannelsPm2Env, buildChannelsPm2StartArgs, buildDaemonPm2StartArgs } from "./daemon-stdin.js";
+import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
+import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
 
 const MANAGED_RUNTIME_REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
-const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 30_000;
+const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 90_000;
 
 type RunResult = {
   success: boolean;
@@ -56,13 +56,20 @@ type ManagedRuntimeRebindDependencies = {
   getProcesses?: () => Pm2Process[];
   runnerEnv?: () => Record<string, string>;
   bunPath?: string;
+  schemaPhase?: (process: ManagedDaemonProcess) => "waiting" | "owned" | "ready" | null;
+  pidAlive?: (pid: number) => boolean;
+  now?: () => number;
+  wait?: (ms: number) => Promise<void>;
+  readyTimeoutMs?: number;
 };
 
 function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(command, args, {
+      const executable = which(command, { PATH: process.env.PATH });
+      if (!executable) throw new Error(`${command} executable is unavailable in the caller PATH`);
+      child = spawn(executable, args, {
         cwd: options.cwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...(options.env ?? process.env), FORCE_COLOR: options.stream === false ? "0" : "1" },
@@ -90,7 +97,7 @@ export function buildManagedRuntimeRebindPlan(
   previousProcesses: ManagedRuntimeProcessSnapshot[],
   target: ManagedRuntimeTarget,
   bunPath = process.execPath,
-  stdinWrapperPath = defaultPm2InertStdinWrapperPath(target.bundlePath),
+  processes: Pm2Process[] = [],
 ): ManagedRuntimeRebindStep[] {
   const daemon = previousProcesses.find((process) => process.name === PM2_PROCESS_NAME);
   const channels = previousProcesses.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
@@ -111,11 +118,7 @@ export function buildManagedRuntimeRebindPlan(
     plan.push({
       action: "start",
       processName: PM2_PROCESS_NAME,
-      args: buildDaemonPm2StartArgs({
-        bundlePath: target.bundlePath,
-        bunPath,
-        stdinWrapperPath,
-      }),
+      args: buildDaemonPm2StartArgs({ bundlePath: target.bundlePath }),
       cwd: target.cwd,
     });
   }
@@ -123,7 +126,7 @@ export function buildManagedRuntimeRebindPlan(
     plan.push({
       action: "start",
       processName: CHANNELS_PM2_PROCESS_NAME,
-      args: ["start", bunPath, "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"],
+      args: buildChannelsPm2StartArgs({ bundlePath: target.bundlePath, bunPath, processes }),
       cwd: target.cwd,
     });
   }
@@ -198,40 +201,139 @@ export async function rebindManagedRuntimeProcesses(
   target: ManagedRuntimeTarget,
   dependencies: ManagedRuntimeRebindDependencies = {},
 ): Promise<boolean> {
+  if (previousProcesses.length === 0) return true;
   const run = dependencies.run ?? runCommand;
   const getProcesses = dependencies.getProcesses ?? (() => getPm2Processes({ strict: true }));
   const bunPath = dependencies.bunPath ?? process.execPath;
-  const stdinWrapperPath = ensurePm2InertStdinWrapper(target.bundlePath);
-  const plan = buildManagedRuntimeRebindPlan(previousProcesses, target, bunPath, stdinWrapperPath);
-  if (plan.length === 0) return true;
+  const phase = dependencies.schemaPhase ?? readDaemonSchemaPhase;
+  const daemon = previousProcesses.find((process) => process.name === PM2_PROCESS_NAME);
+  const channels = previousProcesses.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
+  if (channels?.status === "online" && daemon?.status !== "online") return false;
 
-  const runtimeEnv = buildPm2Env({ RAVI_BUNDLE: target.bundlePath, RAVI_DAEMON_CWD: target.cwd });
-  delete runtimeEnv[MANAGED_RUNTIME_REBIND_ENV];
-  if (existsSync(join(target.cwd, ".git"))) runtimeEnv.RAVI_REPO = target.cwd;
-  else delete runtimeEnv.RAVI_REPO;
-  const runnerEnv = (dependencies.runnerEnv ?? buildRunnerPm2Env)();
+  const initial = getProcesses();
+  for (const previous of previousProcesses) {
+    const matches = initial.filter((process) => process.name === previous.name);
+    if (
+      matches.length !== 1 ||
+      matches[0]!.pid !== previous.pid ||
+      (previous.createdAt !== null && matches[0]!.createdAt !== previous.createdAt)
+    )
+      return false;
+  }
 
-  for (const step of plan) {
-    if (step.action === "save") continue;
-    const env =
-      step.action === "start" && step.processName === CHANNELS_PM2_PROCESS_NAME
-        ? { ...runtimeEnv, ...runnerEnv }
-        : runtimeEnv;
-    const result = await run("pm2", step.args, {
-      cwd: step.action === "start" ? step.cwd : undefined,
-      env,
-      stream: false,
+  // Prepare launch arguments and runner settings before any PM2 mutation.
+  const plan = buildManagedRuntimeRebindPlan(previousProcesses, target, bunPath, initial);
+  const runtimeEnv = buildPm2Env({
+    RAVI_BUNDLE: target.bundlePath,
+    RAVI_DAEMON_CWD: target.cwd,
+    RAVI_PM2_EXECUTABLE: bunPath,
+  });
+  runtimeEnv[MANAGED_RUNTIME_REBIND_ENV] = "";
+  runtimeEnv.RAVI_REPO = existsSync(join(target.cwd, ".git")) ? target.cwd : "";
+  const runnerEnv = { ...(dependencies.runnerEnv ?? buildRunnerPm2Env)(), ...buildChannelsPm2Env(bunPath) };
+  const execute = async (args: string[], env = runtimeEnv, cwd?: string): Promise<number> => {
+    const result = await run("pm2", args, { cwd, env, stream: false });
+    return result.success ? 0 : 1;
+  };
+  const save = () => execute(["save", "--force"]);
+  const remove = async (name: string): Promise<number> => {
+    for (const process of getProcesses().filter((entry) => entry.name === name)) {
+      if ((await execute(["delete", String(process.pm_id)])) !== 0) return 1;
+    }
+    return 0;
+  };
+  const asManaged = (process: Pm2Process): ManagedDaemonProcess => ({
+    name: process.name,
+    pmId: process.pm_id,
+    pid: process.pid,
+    status: process.status,
+    startedAt: process.startedAt ?? undefined,
+  });
+  const predecessor = initial.find((process) => process.name === PM2_PROCESS_NAME);
+  const coordinated = predecessor?.status === "online" && phase(asManaged(predecessor)) === "ready";
+  let readyDaemon: ManagedDaemonProcess | undefined;
+  const daemonStillReady = (processes: Pm2Process[]): boolean => {
+    const expected = readyDaemon;
+    if (!expected) return daemon?.status !== "online";
+    const current = processes.find(
+      (process) =>
+        process.name === PM2_PROCESS_NAME &&
+        process.pm_id === expected.pmId &&
+        process.pid === expected.pid &&
+        (process.startedAt ?? undefined) === expected.startedAt,
+    );
+    return Boolean(
+      current &&
+        current.status === "online" &&
+        phase(asManaged(current)) === "ready" &&
+        managedRuntimeMatchesTarget([daemon!], processes, target),
+    );
+  };
+
+  // Legacy owners do not hold the schema lock. They cannot coexist with a new
+  // writer, even while PM2 reports both processes online.
+  if (!coordinated) {
+    if ((await remove(CHANNELS_PM2_PROCESS_NAME)) !== 0) return false;
+    if ((await remove(PM2_PROCESS_NAME)) !== 0) return false;
+  }
+
+  const daemonStart = plan.find((step) => step.action === "start" && step.processName === PM2_PROCESS_NAME);
+  if (daemonStart) {
+    const result = await performSupervisedDaemonRestart({
+      list: () =>
+        getProcesses()
+          .filter((process) => process.name === PM2_PROCESS_NAME)
+          .map(asManaged),
+      start: ({ force }) => {
+        const args = [...daemonStart.args];
+        if (force) args.splice(args.indexOf("--"), 0, "--force");
+        return execute(args, runtimeEnv, target.cwd);
+      },
+      deletePmId: (pmId) => execute(["delete", String(pmId)]),
+      save,
+      beforePredecessorStop: () => remove(CHANNELS_PM2_PROCESS_NAME),
+      pidAlive:
+        dependencies.pidAlive ??
+        ((pid) => {
+          try {
+            process.kill(pid, 0);
+            return true;
+          } catch {
+            // no-cause: A failed liveness probe cannot prove a supervised successor, so preserve the predecessor.
+            return false;
+          }
+        }),
+      schemaPhase: (candidate) => {
+        const current = getProcesses().find(
+          (process) => process.pm_id === candidate.pmId && process.pid === candidate.pid,
+        );
+        if (
+          !current ||
+          normalizeRuntimePath(managedRuntimeBundlePath(current)) !== normalizeRuntimePath(target.bundlePath)
+        )
+          return null;
+        return phase(candidate);
+      },
+      now: dependencies.now,
+      wait: dependencies.wait,
+      readyTimeoutMs: dependencies.readyTimeoutMs,
     });
-    if (!result.success) return false;
+    if (!result.ok || !result.readySuccessor) return false;
+    readyDaemon = result.readySuccessor;
+    if (!daemonStillReady(getProcesses())) return false;
   }
 
+  const channelStart = plan.find((step) => step.action === "start" && step.processName === CHANNELS_PM2_PROCESS_NAME);
+  if (
+    channelStart &&
+    (await execute(channelStart.args, buildPm2Env({ ...runtimeEnv, ...runnerEnv }), target.cwd)) !== 0
+  )
+    return false;
   if (!(await waitForManagedRuntimeTarget(previousProcesses, target, getProcesses))) return false;
-  const saveStep = plan.find((step) => step.action === "save");
-  if (saveStep) {
-    const saved = await run("pm2", saveStep.args, { env: runtimeEnv, stream: false });
-    if (!saved.success) return false;
-  }
-  return managedRuntimeMatchesTarget(previousProcesses, getProcesses(), target);
+  if (!daemonStillReady(getProcesses())) return false;
+  if ((await save()) !== 0) return false;
+  const finalProcesses = getProcesses();
+  return daemonStillReady(finalProcesses) && managedRuntimeMatchesTarget(previousProcesses, finalProcesses, target);
 }
 
 export function buildManagedRuntimeRebindSupervisorInvocation(

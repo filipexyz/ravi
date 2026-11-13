@@ -115,6 +115,29 @@ jobs:
           # exempts the focused-coverage check; every other gate is unchanged.
           QUALITY_GATE_REVERT: ${{ contains(github.event.pull_request.labels.*.name, 'revert') || startsWith(github.event.pull_request.title, 'revert') }}
 
+  managed-runtime-launcher:
+    name: Managed runtime launcher / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+      - name: Install locked dependencies and the regression PM2 version
+        run: |
+          bun install --frozen-lockfile
+          bun add -g pm2@6.0.14
+      - name: Verify package replacement and restart with real isolated PM2
+        env:
+          RAVI_REQUIRE_PM2_TEST: "1"
+          RAVI_STATE_DIR: ${{ runner.temp }}/ravi-launcher-tests
+        run: bun test --timeout 30000 src/daemon-stdin.test.ts src/cli/operator-runtime.test.ts src/utils/account-home.test.ts
+
   retained-preload:
     name: Retained preload guard contracts
     runs-on: macos-latest

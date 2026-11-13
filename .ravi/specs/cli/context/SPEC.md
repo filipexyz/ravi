@@ -78,6 +78,17 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
     capability when available. Transport exceptions MUST preserve their cause.
     Redact only secret values with `[redacted]`; do not replace a known denial
     with a list of hypothetical causes. The hook remains fail closed.
+14. For a verified installed operator using canonical state, `context
+    credentials list/add/set-default/remove` MUST keep persistence in the
+    client's selected credentials file. `list`, `set-default`, and `remove`
+    MUST work without a reachable gateway or a default credential and MUST
+    NOT resolve that default through local SQLite. A missing store lists empty.
+    `add` MUST validate the candidate key through authenticated gateway
+    `context whoami`, using that candidate as the bearer; only then may it
+    write the client file. No validation/auth/transport/response failure may
+    write either credentials file or fall back to local SQLite. Existing
+    runtime and explicit remote invocations MUST NOT gain a local operator
+    fallback. No arbitrary environment or client file path is forwarded.
 
 ## Write classification (brake decision per op)
 

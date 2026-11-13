@@ -1,7 +1,7 @@
 import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
-import { userInfo } from "node:os";
 import { join } from "node:path";
+import { resolveAccountHome } from "../utils/account-home.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { TurnRefusalError } from "../cloud-auth/turn-refusal.js";
 import { contractErrorResponse } from "../sdk/gateway/errors.js";
@@ -2143,7 +2143,9 @@ describe("gateway requirement for runtime context keys", () => {
   });
 
   it("probes only the account home, never $HOME", async () => {
-    const accountDir = join(userInfo().homedir, ".ravi");
+    const accountHome = resolveAccountHome();
+    expect(accountHome).toBeString();
+    const accountDir = join(accountHome!, ".ravi");
     expect(resolveHostCliGatewayStateDirs({ HOME: "/tmp/agent-controlled" })).toEqual([accountDir]);
     const probed: string[] = [];
     const config = await resolveRemoteGatewayConfig(

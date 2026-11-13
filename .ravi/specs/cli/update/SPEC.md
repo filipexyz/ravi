@@ -44,3 +44,34 @@ normative: true
   restore the inherited environment and leave the caller's receipts untouched.
 - This restart mandate belongs to the explicit `update` operation. Status
   reads and env-file mutations MUST NOT automatically restart processes.
+- Managed launchers MUST survive replacement of the installed package. PM2
+  MUST execute the daemon bundle directly through the inert-stdin launcher,
+  without selecting its Bun container because a parent directory contains
+  `bun`. The launched argv and process registration MUST satisfy the existing
+  state boundary without relaxing its identity checks.
+- Daemon and channel registration MUST clear inherited session, gateway and
+  supervisor routing context, including context retained by the PM2 manager.
+  Starting a service MUST NOT turn it into a remote CLI invocation. PM2
+  registration MUST overwrite retained context with empty tombstones, and the
+  shell launcher MUST unset those keys before executing Bun. The application
+  MUST receive absent context keys; an explicit empty context key is invalid
+  broker caller identity and MUST NOT be accepted as local authority.
+- The channels launcher MUST preserve its existing PM2 identity: canonical Bun
+  executable and exactly `[bundle, "channels", "run"]` arguments. Its shell
+  MUST clear context before exec without routing through PM2's Bun container.
+  Bun installation directories containing spaces and quotes MUST remain valid.
+  The launcher MUST pin executable lookup to canonical Bun, retain the package
+  working directory, and reject an unsupported canonical executable filename
+  or a conflicting package-local filename/PM2 process name/namespace before
+  stopping any process. PM2
+  itself MUST be resolved in the original caller PATH before Bun PATH is pinned.
+- Operator CLI commands targeting real state MUST use the authenticated
+  installed gateway for stateful authorization/execution. Local lifecycle and
+  recovery operations MUST remain usable when the daemon is unavailable,
+  without opening or migrating real databases. Runtime contexts MUST never
+  gain an operator fallback.
+- Update MUST prepare and validate its launcher before disrupting managed
+  processes, and wait for the new daemon's exact-release readiness before
+  starting channel consumers. A failed candidate MUST NOT be reported as
+  recovered based only on PM2 online or a boot receipt. Recovery MUST preserve
+  schema ownership and MUST NOT imply a database rollback.
