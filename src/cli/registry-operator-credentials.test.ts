@@ -249,7 +249,7 @@ describe("installed operator client-local credentials", () => {
           response.setHeader("Content-Type", "application/json");
           response.end(
             failure === "malformed"
-              ? "not-json"
+              ? `not-json ${candidateKey}`
               : failure === "shape"
                 ? JSON.stringify({ contextId: "ctx_partial" })
                 : failure === "revoked"
@@ -262,6 +262,10 @@ describe("installed operator client-local credentials", () => {
       expect(readFileSync(clientPath, "utf8")).toBe(before);
       expect(output.join("\n")).not.toContain(candidateKey);
       expect(readFileSync(daemonPath, "utf8")).toBe(daemonBefore);
+      if (["malformed", "shape", "revoked"].includes(failure)) {
+        expect(output.join("\n")).toContain('"code": "GATEWAY_RESPONSE_INVALID"');
+        expect(output.join("\n")).not.toContain('"code": "SERVER_UNAVAILABLE"');
+      }
     },
   );
 });

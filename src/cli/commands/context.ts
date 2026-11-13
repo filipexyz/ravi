@@ -1339,6 +1339,10 @@ export class ContextCredentialsCommands {
           "GATEWAY_RESPONSE_INVALID",
           "Credential validation returned invalid JSON.",
           1,
+          {
+            cause: "The gateway credential-validation response was not valid JSON.",
+            context: { operation },
+          },
         );
       }
       const parsed = contextWhoamiReturnSchema.safeParse(payload);
@@ -1348,6 +1352,10 @@ export class ContextCredentialsCommands {
           "GATEWAY_RESPONSE_INVALID",
           "Credential validation did not return an active context.",
           1,
+          {
+            cause: "The gateway response did not describe a schema-valid active context.",
+            context: { operation },
+          },
         );
       }
       return parsed.data;

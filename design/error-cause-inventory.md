@@ -513,10 +513,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/context.ts | 743 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:59fbe5b5250b9fbf7b7287ee |
 | cli | src/cli/commands/context.ts | 759 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:054be8a44ab20de32e5f83d1 |
 | cli | src/cli/commands/context.ts | 818 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:4c5ea29d84502cbf36615a03 |
-| cli | src/cli/commands/context.ts | 1335 | no-cause | JSON SyntaxError can quote credential-bearing response text; refuse validation without echoing that payload or writing the store. | src/cli/commands/context.ts:77320b6f9a00c60a98f255e3 |
-| cli | src/cli/commands/context.ts | 1354 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:847f1166d5edee50839c8755 |
-| cli | src/cli/commands/context.ts | 1370 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:248cb7b578ea3b1cef16475f |
-| cli | src/cli/commands/context.ts | 1436 | triaged-follow-up | catch-without-binding | src/cli/commands/context.ts:13675f7c2a525496298cc5a1 |
+| cli | src/cli/commands/context.ts | 1335 | no-cause | JSON SyntaxError can quote credential-bearing response text; refuse validation without echoing that payload or writing the store. | src/cli/commands/context.ts:e186353d904d36b52beb8f79 |
+| cli | src/cli/commands/context.ts | 1362 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:847f1166d5edee50839c8755 |
+| cli | src/cli/commands/context.ts | 1378 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:248cb7b578ea3b1cef16475f |
+| cli | src/cli/commands/context.ts | 1444 | triaged-follow-up | catch-without-binding | src/cli/commands/context.ts:13675f7c2a525496298cc5a1 |
 | cli | src/cli/commands/credential-destinations.ts | 104 | no-cause | Cursor parser failures can echo caller input; return only the fixed usage code. | src/cli/commands/credential-destinations.ts:9d088776b067dc340af7639e |
 | cli | src/cli/commands/credential-destinations.ts | 247 | fixed | binding retained / no recognized error surface | src/cli/commands/credential-destinations.ts:8e5e3f36eb72aa1265e99b33 |
 | cli | src/cli/commands/credential-destinations.ts | 344 | fixed | binding retained / no recognized error surface | src/cli/commands/credential-destinations.ts:0cf9f8d68c4470cba11172ba |
