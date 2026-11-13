@@ -121,6 +121,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/signals/delivery-seam.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
+    // Fail-fast model existence (catalog-driven) on every runtime write path.
+    "src/runtime/model-validation.test.ts",
+    // Liveness probe: terminal turn events, timeout, credential settlement.
+    "src/runtime/runtime-probe.test.ts",
+    // Atomic update: validate-before-write, probe pass/fail, full rollback.
+    "src/runtime/session-runtime-update.test.ts",
     "src/runtime/context-registry.test.ts",
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/observation-plane.test.ts",

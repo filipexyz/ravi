@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-import { resolve } from "node:path";
 import { getRecentHistory } from "../db.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
@@ -89,6 +87,11 @@ import {
 } from "./model-broker-planning.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import { isolateSelectedClaudeAuthEnv } from "./credential-secret-shape.js";
+import {
+  buildRuntimeCredentialProfileEnv,
+  formatRuntimeCredentialResolutionFailure,
+} from "./credential-profile-env.js";
+export { buildRuntimeCredentialProfileEnv, formatRuntimeCredentialResolutionFailure };
 import { logger } from "../utils/logger.js";
 import type {
   RuntimeApprovalResult,
@@ -1343,32 +1346,6 @@ export function resolveRuntimeCredentialUpstreamProvider(
   return undefined;
 }
 
-export function buildRuntimeCredentialProfileEnv(
-  runtimeProviderId: RuntimeProviderId,
-  binding: Pick<RuntimeCredentialAttemptBinding, "authProfileRef"> | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): Record<string, string> | undefined {
-  const authProfileRef = binding?.authProfileRef?.trim();
-  if (!authProfileRef) return undefined;
-  const profilePath = expandHomePath(authProfileRef);
-  if (runtimeProviderId === "codex") {
-    return { CODEX_HOME: profilePath };
-  }
-  if (runtimeProviderId === "claude") {
-    // Claude Code keys its stored login on whether CLAUDE_CONFIG_DIR is set, not
-    // only on the directory it names. Naming the default directory explicitly
-    // makes it look for a different login than the one the operator created by
-    // logging in normally, so the default profile must stay implicit.
-    if (!env.CLAUDE_CONFIG_DIR?.trim() && isDefaultClaudeProfilePath(profilePath)) return undefined;
-    return { CLAUDE_CONFIG_DIR: profilePath };
-  }
-  return undefined;
-}
-
-function isDefaultClaudeProfilePath(profilePath: string): boolean {
-  return resolve(profilePath) === resolve(homedir(), ".claude");
-}
-
 function assertModelBrokerAttemptBinding(binding: RuntimeCredentialAttemptBinding | null): void {
   if (
     !binding ||
@@ -1381,23 +1358,4 @@ function assertModelBrokerAttemptBinding(binding: RuntimeCredentialAttemptBindin
   ) {
     throw new Error("Refusing a model-broker attempt that contains local credential material.");
   }
-}
-
-function expandHomePath(value: string): string {
-  if (value === "~") return homedir();
-  if (value.startsWith("~/")) return `${homedir()}${value.slice(1)}`;
-  return value;
-}
-
-function formatRuntimeCredentialResolutionFailure(
-  runtimeProviderId: RuntimeProviderId,
-  model: string | undefined,
-  rejected: Array<{ label: string; reason: string }>,
-): string {
-  const reasonSummary = rejected
-    .slice(0, 5)
-    .map((item) => `${item.label}: ${item.reason}`)
-    .join("; ");
-  const suffix = reasonSummary ? ` Rejected credentials: ${reasonSummary}.` : "";
-  return `No managed runtime credential could be resolved for provider ${runtimeProviderId}${model ? ` model ${model}` : ""}.${suffix}`;
 }

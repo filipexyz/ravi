@@ -242,6 +242,52 @@ export function modelProviderMismatch(
   return null;
 }
 
+export interface RuntimeModelCatalogCheck {
+  /** This installation has an authoritative model list for the provider. */
+  authoritative: boolean;
+  exists: boolean;
+  validIds: string[];
+}
+
+/**
+ * Catalog membership for an explicit model selection.
+ *
+ * Write paths call this so a model the installed runtime does not know is
+ * refused when it is written, naming the valid ids, instead of failing masked
+ * on the session's first turn (2026-11-13 `fable-5-2` incident). Providers
+ * with an open model space (Pi selectors, Codex without its models cache)
+ * stay permissive: there is no trustworthy local list to enforce there, so
+ * only the cross-vendor rules in `modelProviderMismatch` apply.
+ */
+export function checkRuntimeModelInCatalog(
+  provider: RuntimeProviderId,
+  model: string | null | undefined,
+  options: RuntimeModelCatalogOptions = {},
+): RuntimeModelCatalogCheck {
+  const open: RuntimeModelCatalogCheck = { authoritative: false, exists: true, validIds: [] };
+  const value = model?.trim();
+  if (!value) return open;
+
+  if (provider === "claude" || provider === "grok") {
+    const ids = listRuntimeModels(provider, options).map((entry) => entry.id);
+    const normalized = normalizeRuntimeModel(provider, value) ?? value;
+    const exists = ids.some((id) => id.toLowerCase() === normalized.toLowerCase());
+    return { authoritative: true, exists, validIds: ids };
+  }
+
+  if (provider === "codex") {
+    // Existence uses every cached slug: a hidden/legacy model still runs, it
+    // is only absent from selection menus. Suggestions prefer listed models.
+    const slugs = readCodexModelSlugs(options.codexCachePath);
+    if (slugs.length === 0) return open;
+    const listed = readCodexModelOptions(options.codexCachePath).map((entry) => entry.id);
+    const exists = slugs.some((slug) => slug.toLowerCase() === value.toLowerCase());
+    return { authoritative: true, exists, validIds: listed.length > 0 ? listed : slugs };
+  }
+
+  return open;
+}
+
 function normalizeRuntimeModel(provider: RuntimeProviderId, model: string | null | undefined): string | null {
   const value = model?.trim();
   if (!value) {
@@ -259,8 +305,41 @@ function normalizeRuntimeModel(provider: RuntimeProviderId, model: string | null
   return value;
 }
 
-function readCodexModelOptions(cachePath = join(homedir(), ".codex", "models_cache.json")): RuntimeModelOption[] {
-  if (!existsSync(cachePath)) {
+/**
+ * Default location of the Codex models cache for this installation.
+ *
+ * `RAVI_CODEX_MODELS_CACHE` pins it explicitly. Under `bun test`
+ * (NODE_ENV=test) there is no default: the developer machine's ~/.codex must
+ * not leak into tests, which pass `codexCachePath` when they want a cache.
+ * `CODEX_HOME` is honored because profile-bound Codex sessions run with it.
+ */
+function defaultCodexCachePath(): string | null {
+  const explicit = process.env.RAVI_CODEX_MODELS_CACHE?.trim();
+  if (explicit) return explicit;
+  if (process.env.NODE_ENV === "test") return null;
+  const codexHome = process.env.CODEX_HOME?.trim();
+  return join(codexHome || join(homedir(), ".codex"), "models_cache.json");
+}
+
+function readCodexModelSlugs(cachePath = defaultCodexCachePath()): string[] {
+  if (!cachePath || !existsSync(cachePath)) {
+    return [];
+  }
+
+  try {
+    const raw = readFileSync(cachePath, "utf8");
+    const parsed = JSON.parse(raw) as CodexModelCache;
+    return (parsed.models ?? [])
+      .map((entry) => entry.slug?.trim())
+      .filter((slug): slug is string => Boolean(slug && slug.length > 0));
+  } catch {
+    // no-cause: An unreadable or malformed models cache means there is no authoritative codex list, so enforcement stays permissive instead of failing writes.
+    return [];
+  }
+}
+
+function readCodexModelOptions(cachePath = defaultCodexCachePath()): RuntimeModelOption[] {
+  if (!cachePath || !existsSync(cachePath)) {
     return [];
   }
 
