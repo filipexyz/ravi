@@ -16,10 +16,10 @@ import {
 } from "../../managed-runtime.js";
 import { managedRuntimeSnapshot, runManagedRuntimeRebindSupervisor } from "../../managed-runtime-rebind.js";
 import { CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "../../pm2.js";
-import { dbListChannels } from "../../router/router-db.js";
 import type { ChannelConfig } from "../../router/router-db.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import { dispatchRemote, resolveContextKeyForRemote, resolveRemoteGatewayConfig } from "../remote-gateway.js";
 
 export type UpdateChannel = "latest" | "next";
 export type InstallationType = "source" | "bun" | "npm" | "unknown";
@@ -493,7 +493,7 @@ export function resolveUpdatedManagedRuntimeTarget(preferredPackageRoot?: string
  */
 export function nativeChannelRunnerUpdateWarning(
   previousProcesses: Pm2Process[],
-  listChannels: () => ChannelConfig[] = dbListChannels,
+  listChannels: () => Pick<ChannelConfig, "enabled">[],
 ): string | null {
   let enabled: number;
   try {
@@ -505,6 +505,54 @@ export function nativeChannelRunnerUpdateWarning(
   const runner = previousProcesses.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
   if (runner?.status === "online") return null;
   return `${enabled} native channel(s) are enabled but ${CHANNELS_PM2_PROCESS_NAME} is not running, so their replies stay queued; start it with \`ravi channels start\` and check \`ravi doctor --domain channels\`.`;
+}
+
+export async function readNativeChannelRunnerUpdateWarning(previousProcesses: Pm2Process[]): Promise<string | null> {
+  if (previousProcesses.some((process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.status === "online"))
+    return null;
+  try {
+    const contextKey = resolveContextKeyForRemote();
+    if (!contextKey) return null;
+    const config = await resolveRemoteGatewayConfig(process.env, "update", { installedOperator: true });
+    if (!config) return null;
+    const deadline = Date.now() + 2_000;
+    let offset = 0;
+    while (Date.now() < deadline) {
+      const response = await dispatchRemote({
+        config,
+        contextKey,
+        groupSegments: ["channels"],
+        command: "list",
+        body: { json: true, limit: "500", offset: String(offset), fields: "enabled" },
+        timeoutMs: Math.max(1, deadline - Date.now()),
+      });
+      if (!response.ok) return null;
+      const payload: unknown = JSON.parse(response.body);
+      if (!payload || typeof payload !== "object" || !("items" in payload) || !Array.isArray(payload.items))
+        return null;
+      if (
+        payload.items.some(
+          (item: unknown) => item && typeof item === "object" && (!("enabled" in item) || item.enabled !== false),
+        )
+      )
+        return `Native channels are enabled but ${CHANNELS_PM2_PROCESS_NAME} is not running, so their replies stay queued; start it with \`ravi channels start\` and check \`ravi doctor --domain channels\`.`;
+      const pagination = "pagination" in payload ? payload.pagination : null;
+      if (
+        !pagination ||
+        typeof pagination !== "object" ||
+        !("nextOffset" in pagination) ||
+        typeof pagination.nextOffset !== "number" ||
+        !Number.isSafeInteger(pagination.nextOffset) ||
+        pagination.nextOffset <= offset
+      )
+        return null;
+      offset = pagination.nextOffset;
+    }
+    return null;
+  } catch {
+    // no-cause: Optional intake warning must not initialize local state or fail a completed update when the gateway is unavailable.
+    return null;
+  }
 }
 
 async function reconcileManagedRuntime(
@@ -691,7 +739,7 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
       reporter.line("  drift until that install is updated too.");
     }
     outcome.warnings.push(...reportManagedRuntimeWarnings(target, reporter));
-    const runnerWarning = nativeChannelRunnerUpdateWarning(previousProcesses);
+    const runnerWarning = await readNativeChannelRunnerUpdateWarning(previousProcesses);
     if (runnerWarning) {
       outcome.warnings.push(runnerWarning);
       reporter.warn(`Warning: ${runnerWarning}`);
@@ -765,7 +813,7 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
 
   const { restarted, runtime } = await reconcileManagedRuntime(previousProcesses, target, reporter);
   warnings.push(...reportManagedRuntimeWarnings(target, reporter));
-  const runnerWarning = nativeChannelRunnerUpdateWarning(previousProcesses);
+  const runnerWarning = await readNativeChannelRunnerUpdateWarning(previousProcesses);
   if (runnerWarning) {
     warnings.push(runnerWarning);
     reporter.warn(`Warning: ${runnerWarning}`);

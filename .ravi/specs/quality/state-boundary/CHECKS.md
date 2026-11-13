@@ -23,6 +23,8 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - A subprocess representing the installed daemon opens fixture real state with no new env/confirmation flag when its actual PID/entrypoint match the fixture PM2 registry. Missing/mismatching identity refuses actionably.
 - The canonical managed-runtime launcher generates the admitted channel PM2 registration (`bun <bundle> channels run`). A mismatched PID, name, interpreter, bundle, role, command or additional arguments MUST refuse real-state access.
 - CLI, tests, source/build code and linked worktrees refuse the same path even with inherited PM2 env and daemon-looking argv. Explicit isolated state remains usable.
+- `bun test src/cli/operator-runtime.test.ts src/cli/registry-operator-gateway.test.ts` verifies installed operator gateway routing, isolated source execution, database-free offline recovery, and no recovery fallback for runtime context keys or explicit remote gateways.
+- `bun test src/utils/account-home.test.ts src/cli/operator-runtime.test.ts src/cli/remote-gateway.test.ts` exercises UID-based account lookup and a real Bun subprocess with overridden `HOME`, no inherited `RAVI_STATE_DIR` and no injected `homeDir`: isolated operator transport stays local, while implicit runtime gateway discovery uses the OS account directory. Unavailable/malformed account lookups fail closed.
 - Refusal occurs before SQLite creates a file or initializes schema. Existing sentinel data/schema survive a refused destructive initializer.
 - Symlink aliases, dangling file links, hardlinks and the legacy DB path cannot evade the boundary.
 - Original dispatcher recovery cases own isolated fixtures and pass without a harness wrapper.

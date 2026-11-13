@@ -29,7 +29,7 @@ import {
   daemonMutationReturnSchema,
   daemonStatusReturnSchema,
 } from "./operational-return-schemas.js";
-import { buildDaemonPm2StartArgs, ensurePm2InertStdinWrapper, maybeNeuterDaemonStdin } from "../../daemon-stdin.js";
+import { buildDaemonPm2StartArgs, maybeNeuterDaemonStdin } from "../../daemon-stdin.js";
 import {
   DAEMON_RESTART_HANDOFF_ENV,
   DAEMON_RESTART_HANDOFF_WORKER_ENV,
@@ -39,7 +39,15 @@ import {
   performSupervisedDaemonRestart,
   shouldHandoffDaemonRestart,
 } from "../daemon-restart-supervision.js";
-import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
+import {
+  buildPm2Env,
+  isPm2Available,
+  runPm2,
+  isRaviRunning,
+  getRaviPid,
+  getPm2Processes,
+  PM2_PROCESS_NAME,
+} from "../../pm2.js";
 import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
@@ -149,6 +157,9 @@ function writeRestartReason(
     ...(targetSession ? { sessionName: targetSession } : {}),
   };
   writeFileSync(RESTART_REASON_FILE, JSON.stringify(payload));
+  // The installed operator hands this file to the daemon; only runtime code
+  // may persist the epoch in the real database.
+  if (!hasRuntimeInvocationContext()) return;
   try {
     dbUpsertDaemonRestartEpoch({
       restartEpoch,
@@ -195,7 +206,7 @@ function runPm2Quiet(args: string[], options: { cwd?: string } = {}): { status: 
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
     cwd: options.cwd,
-    env: process.env as Record<string, string>,
+    env: buildPm2Env(),
   });
   return { status: result.status ?? 1 };
 }
@@ -383,12 +394,8 @@ function requirePm2() {
   }
 }
 
-function startDaemonPm2Args(bundlePath: string, options: { force?: boolean; bunPath?: string } = {}): string[] {
-  const args = buildDaemonPm2StartArgs({
-    bundlePath,
-    bunPath: options.bunPath ?? "bun",
-    stdinWrapperPath: ensurePm2InertStdinWrapper(bundlePath),
-  });
+function startDaemonPm2Args(bundlePath: string, options: { force?: boolean } = {}): string[] {
+  const args = buildDaemonPm2StartArgs({ bundlePath });
   // A supervised standby has to exist before the running owner is stopped.
   // PM2 refuses that unless the start is forced; the old pm id is deleted later.
   if (options.force) args.splice(1, 0, "--force");

@@ -1746,13 +1746,6 @@
       "count": 1
     },
     {
-      "id": "src/cli/remote-gateway.ts:c5ef9f575c42ea0e677fbf2c",
-      "file": "src/cli/remote-gateway.ts",
-      "boundary": "relay",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/cli/runtime-target.ts:863230d57a244c76b7fe3ddb",
       "file": "src/cli/runtime-target.ts",
       "boundary": "cli",
@@ -5905,7 +5898,7 @@
     }
   ],
   "totals": {
-    "violations": 883,
+    "violations": 882,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5923,7 +5916,7 @@
       "src/channels/native": 7,
       "src/channels/slack": 15,
       "src/ci": 1,
-      "src/cli": 34,
+      "src/cli": 33,
       "src/cli/commands": 144,
       "src/cloud-agents": 30,
       "src/cloud-auth": 11,

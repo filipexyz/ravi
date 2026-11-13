@@ -1,4 +1,5 @@
 import { afterEach, expect, it } from "bun:test";
+import { which } from "bun";
 import { Database } from "bun:sqlite";
 import { spawnSync } from "node:child_process";
 import {
@@ -16,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertDatabaseTargetAllowed, openStateDatabase, type DatabaseBoundaryOptions } from "../db/state-boundary.js";
+import { buildChannelsPm2Env, buildDaemonPm2StartArgs } from "../daemon-stdin.js";
 import { buildManagedRuntimeRebindPlan } from "../managed-runtime-rebind.js";
 
 const dirs: string[] = [];
@@ -37,10 +39,18 @@ function fixture() {
   } satisfies DatabaseBoundaryOptions;
 }
 function daemon(options: ReturnType<typeof fixture>): DatabaseBoundaryOptions {
+  const args = buildDaemonPm2StartArgs({ bundlePath: options.argv[1] });
   return {
     ...options,
     registeredProcesses: () => [
-      { pid: 1234, name: "ravi", pm2_env: { pm_exec_path: options.argv[1], args: ["daemon", "run"] } },
+      {
+        pid: 1234,
+        name: args[args.indexOf("--name") + 1],
+        pm2_env: {
+          pm_exec_path: resolve(args[args.indexOf("--cwd") + 1], args[1]),
+          args: args.slice(args.indexOf("--") + 1),
+        },
+      },
     ],
   };
 }
@@ -55,7 +65,7 @@ function channelsFromLauncher(options: ReturnType<typeof fixture>) {
   const entry = {
     pid: 1234,
     name: "ravi-channels",
-    pm2_env: { pm_exec_path: start.args[1], args },
+    pm2_env: { pm_exec_path: which(start.args[1], { PATH: buildChannelsPm2Env().PATH }) ?? "missing-bun", args },
   };
   return {
     ...options,
