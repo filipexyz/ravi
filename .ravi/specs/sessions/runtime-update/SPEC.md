@@ -69,14 +69,24 @@ It does NOT own:
 
 ## Rules
 
-- The single source of truth for model existence is the runtime catalog
+- The single source of truth for model recognition is the runtime catalog
   (`src/runtime/model-catalog.ts`). Write paths MUST NOT grow private model
   lists.
-- Enforcement applies only where an authoritative local list exists: the
-  Claude and Grok catalogs are compiled in; the Codex catalog is the
-  installation's models cache (`$CODEX_HOME/models_cache.json`, overridable
-  with `RAVI_CODEX_MODELS_CACHE`). Hidden cache entries still exist and are
-  accepted; suggestions name the listed ones.
+- Fail fast MUST NOT become a closed catalog. The write path refuses what can
+  never work: empty or malformed values, and families the provider does not
+  route (cross-vendor shapes via `modelProviderMismatch`; unknown families via
+  the catalog's family check). A KNOWN family with an UNKNOWN version
+  (claude-fable-9, claude-mythos-6, claude-sonnet-7, grok-99) passes through
+  intact — the provider owns model resolution and fallback, and a version it
+  refuses surfaces in the liveness probe with rollback. The local list
+  recognizes families and names listed models in refusals; it never forbids a
+  new version of a family that exists.
+- First-class aliases (sonnet/opus/haiku, fable) keep resolving as before.
+- Codex is different: the installation's models cache
+  (`$CODEX_HOME/models_cache.json`, overridable with
+  `RAVI_CODEX_MODELS_CACHE`) is the account's real model list, so unknown
+  slugs are refused there. Hidden cache entries still exist and are accepted;
+  suggestions name the listed ones.
 - Providers with an open model space (Pi selectors, Codex without a cache,
   unknown provider ids) stay permissive; only the cross-vendor rules of
   `modelProviderMismatch` apply there.

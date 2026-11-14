@@ -48,29 +48,47 @@ describe("validateRuntimeModelSelector", () => {
     expect(validateRuntimeModelSelector("pi", "kimi-coding/kimi-for-coding")).toEqual({ ok: true });
   });
 
-  describe("catalog existence (fail fast at write time)", () => {
-    it("refuses a claude model this installation's catalog does not know, naming the valid ids", () => {
-      // 2026-11-13 incident: `--provider claude --model fable-5-2` was written
-      // and only died, masked, on the thread's first turn.
-      const result = validateRuntimeModelSelector("claude", "fable-9-9");
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain("fable-9-9");
-      expect(result.error).toContain("Valid models:");
-      expect(result.error).toContain("sonnet");
-    });
-
-    it("accepts claude aliases and full ids that normalize into the catalog", () => {
-      for (const model of ["sonnet", "opus", "haiku", "claude-sonnet-4-5-20250929", "claude-3-5-haiku-latest"]) {
-        expect(validateRuntimeModelSelector("claude", model)).toEqual({ ok: true });
+  describe("model family check (fail fast without a closed catalog)", () => {
+    it("refuses a model from a family this provider does not run, naming families and listed models", () => {
+      for (const model of ["claude-zeppelin-9", "zeppelin-9", "claude-9"]) {
+        const result = validateRuntimeModelSelector("claude", model);
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain(model);
+        expect(result.error).toContain("Known model families:");
+        expect(result.error).toContain("fable");
+        expect(result.error).toContain("Listed models:");
+        expect(result.error).toContain("sonnet");
       }
     });
 
-    it("refuses a grok model outside the catalog, naming the valid ids", () => {
-      const result = validateRuntimeModelSelector("grok", "grok-99");
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain("grok-99");
-      expect(result.error).toContain("grok-4");
+    it("passes a future version of a known family through to the provider", () => {
+      // The provider owns model resolution and fallback; a version it refuses
+      // surfaces in the liveness probe with rollback. The local list must not
+      // forbid new versions of families that exist (fable-5-2 lesson, part 2).
+      for (const model of ["claude-fable-9", "claude-mythos-6", "claude-sonnet-7", "fable-9-9", "grok-99"]) {
+        const provider = model.startsWith("grok") ? "grok" : "claude";
+        expect(validateRuntimeModelSelector(provider, model)).toEqual({ ok: true });
+      }
+    });
+
+    it("accepts first-class aliases and full ids that normalize into the catalog", () => {
+      for (const model of [
+        "sonnet",
+        "opus",
+        "haiku",
+        "fable",
+        "claude-sonnet-4-5-20250929",
+        "claude-3-5-haiku-latest",
+      ]) {
+        expect(validateRuntimeModelSelector("claude", model)).toEqual({ ok: true });
+      }
       expect(validateRuntimeModelSelector("grok", "grok-4")).toEqual({ ok: true });
+    });
+
+    it("refuses malformed model names before any catalog logic", () => {
+      for (const model of ["model`rm`", "só nét", "claude\tfable"]) {
+        expect(validateRuntimeModelSelector("claude", model).ok).toBe(false);
+      }
     });
 
     it("enforces the codex models cache when present, staying open without one", () => {

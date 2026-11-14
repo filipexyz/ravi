@@ -193,17 +193,43 @@ describe("applySessionRuntimeUpdate", () => {
     expect(harness.calls).toEqual([]);
   });
 
-  it("fails fast on a model the installed catalog does not know, writing nothing", async () => {
+  it("fails fast on a model family the provider does not run, writing nothing", async () => {
     const harness = makeHarness({ initial: baseSession() });
     await expect(
       applySessionRuntimeUpdate({
         session: baseSession(),
         agent: null,
-        axes: { provider: { set: "claude" }, model: { set: "fable-9-9" } },
+        axes: { provider: { set: "claude" }, model: { set: "claude-zeppelin-9" } },
         deps: harness.deps,
       }),
     ).rejects.toMatchObject({ code: "INVALID_MODEL" });
     expect(harness.calls).toEqual([]);
+  });
+
+  it("writes a future version of a known family and lets the probe arbitrate it", async () => {
+    const session = baseSession();
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => ({
+        ok: false,
+        provider: request.provider,
+        model: request.model,
+        durationMs: 3,
+        error: "model not found: claude-fable-9",
+      }),
+    });
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { provider: { set: "claude" }, model: { set: "claude-fable-9" } },
+      deps: harness.deps,
+    });
+    // The write passed fail-fast (known family), the provider refused it in
+    // the live probe, and the rollback restored the previous configuration.
+    expect(harness.probeRequests[0]?.model).toBe("claude-fable-9");
+    expect(result.rolledBack).toBe(true);
+    expect(result.probe?.error).toContain("model not found");
+    expect(harness.record().modelOverride).toBe("deepseek/deepseek-flash");
   });
 
   it("applies all axes atomically, probes the persisted effective runtime, then finalizes", async () => {

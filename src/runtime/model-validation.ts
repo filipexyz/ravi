@@ -46,6 +46,12 @@ export function validateRuntimeModelSelector(
   if (/\s/.test(value)) {
     return { ok: false, error: `Invalid model: '${model}' cannot contain whitespace` };
   }
+  if (!/^[A-Za-z0-9._:/-]+$/.test(value)) {
+    return {
+      ok: false,
+      error: `Invalid model: '${value}' contains unsupported characters. Use the provider's model id (letters, digits, '.', '_', ':', '/', '-').`,
+    };
+  }
 
   const mismatch = ["claude", "codex", "pi", "grok"].includes(providerId)
     ? modelProviderMismatch(providerId as RuntimeProviderId, value)
@@ -53,14 +59,19 @@ export function validateRuntimeModelSelector(
   if (mismatch) return { ok: false, error: mismatch };
 
   if (providerId !== "pi") {
-    // Fail fast at write time: a model this installation's catalog does not
-    // know would otherwise be stored and only fail, masked, on the first turn.
+    // Fail fast at write time — without a closed catalog. What gets refused
+    // is what can never work: a family this provider does not route, or (for
+    // Codex) a slug absent from this installation's account cache. A known
+    // family with an unknown version passes through intact; the provider owns
+    // model resolution, and a version it refuses surfaces in the liveness
+    // probe with rollback.
     const catalog = checkRuntimeModelInCatalog(providerId as RuntimeProviderId, value, options);
     if (catalog.authoritative && !catalog.exists) {
-      return {
-        ok: false,
-        error: `Unknown ${providerId} model: '${value}' is not in this installation's model catalog. Valid models: ${catalog.validIds.join(", ")}.`,
-      };
+      const error =
+        catalog.knownFamilies.length > 0
+          ? `Unknown ${providerId} model: '${value}' does not belong to any model family this provider runs. Known model families: ${catalog.knownFamilies.join(", ")}. Listed models: ${catalog.validIds.join(", ")}.`
+          : `Unknown ${providerId} model: '${value}' is not in this installation's models cache. Listed models: ${catalog.validIds.join(", ")}.`;
+      return { ok: false, error };
     }
     return { ok: true };
   }

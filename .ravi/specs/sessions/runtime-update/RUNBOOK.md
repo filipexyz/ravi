@@ -13,15 +13,16 @@ ravi sessions update <session> --provider claude --model sonnet --effort ultra -
 
 ## When the write is refused immediately
 
-The error names the invalid value and the valid ones, e.g.:
+The error names the invalid value, the known families and the listed models, e.g.:
 
 ```
-Unknown claude model: 'fable-9-9' is not in this installation's model catalog. Valid models: sonnet, haiku, opus.
+Unknown claude model: 'zeppelin-9' does not belong to any model family this provider runs. Known model families: fable, haiku, mythos, opus, sonnet. Listed models: ...
 ```
 
-- Model missing from the Claude/Grok list → the catalog
-  (`src/runtime/model-catalog.ts`) is compiled in; new models arrive with the
-  provider SDK bump PR that teaches the installation to run them.
+- Refusal means the FAMILY is unknown (or the value is malformed/cross-vendor).
+  A known family with an unknown version (claude-fable-9, claude-sonnet-7)
+  is NOT refused: it passes to the provider, and a version the provider cannot
+  run fails in the liveness probe with rollback — read the probe error.
 - Codex model refused → the installation's models cache disagrees
   (`$CODEX_HOME/models_cache.json` or `~/.codex/models_cache.json`; override
   with `RAVI_CODEX_MODELS_CACHE`). Refresh it by running the Codex CLI once.

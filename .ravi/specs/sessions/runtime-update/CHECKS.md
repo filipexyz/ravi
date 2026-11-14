@@ -8,7 +8,7 @@ bun test src/runtime/model-validation.test.ts src/runtime/runtime-probe.test.ts 
 
 Validates:
 
-- A model absent from the Claude/Grok catalog or the Codex models cache MUST be refused, naming the valid ids
+- A model from a family the provider does not run MUST be refused, naming the known families and listed models; a KNOWN family with an UNKNOWN version MUST pass through (the probe arbitrates it); Codex slugs absent from the installation's models cache MUST be refused
 - Open-space providers (Pi selectors, Codex without a cache) MUST stay permissive beyond cross-vendor rules
 - Under `NODE_ENV=test` the default Codex cache path MUST be disabled (tests opt in with `codexCachePath`)
 - `parseSessionRuntimeUpdateAxes` MUST refuse invalid provider/model/effort/thinking naming valid values; `clear` clears

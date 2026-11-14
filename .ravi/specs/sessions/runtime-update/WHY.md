@@ -26,6 +26,17 @@ models (the bump PR updates the catalog beside it). A private allowlist inside
 the validation layer would drift from the catalog and reintroduce the original
 failure with two owners instead of one.
 
+## Why family recognition, not a closed catalog
+
+Anthropic resolves model names and fallbacks provider-side, so a local id list
+is always behind reality: enforcing exact membership would refuse every future
+version (claude-fable-9, claude-mythos-6, claude-sonnet-7) and turn fail-fast
+into the very failure it exists to prevent. The write path therefore refuses
+only what can never work — malformed values, cross-vendor shapes, families the
+provider does not route — and lets a known family with an unknown version pass
+intact. The wrong-version failure belongs to the liveness probe, which reports
+the provider's real error and rolls the session back.
+
 ## Why apply → probe → rollback (not probe-first)
 
 The probe must prove the runtime the next turn will launch with — the one

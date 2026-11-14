@@ -247,32 +247,82 @@ export interface RuntimeModelCatalogCheck {
   authoritative: boolean;
   exists: boolean;
   validIds: string[];
+  /** Model families this provider is known to route (claude/grok only). */
+  knownFamilies: string[];
 }
 
 /**
- * Catalog membership for an explicit model selection.
+ * Model families Anthropic routes that this installation does not list as
+ * selectable options (Fable and Mythos share the same underlying model; the
+ * Mythos ids resolve provider-side). Family recognition only — never an id
+ * list: a version the local catalog has not heard of still passes through.
+ */
+const CLAUDE_FAMILY_SIBLINGS = ["mythos"];
+
+/**
+ * The family is the first alphabetic token of the name, skipping the "claude"
+ * vendor prefix ("claude-3-5-sonnet-20240620" → sonnet, "grok-4-fast" → grok,
+ * "fable-9-9" → fable). Suffix tokens (latest, fast) never count as families.
+ */
+function modelFamilyOf(value: string): string | null {
+  for (const token of value.toLowerCase().split(/[^a-z]+/)) {
+    if (!token) continue;
+    if (token === "claude") continue;
+    return token;
+  }
+  return null;
+}
+
+function knownModelFamilies(provider: RuntimeProviderId, ids: string[]): Set<string> {
+  const families = new Set<string>();
+  for (const id of ids) {
+    const family = modelFamilyOf(id);
+    if (family) families.add(family);
+  }
+  if (provider === "claude") {
+    for (const sibling of CLAUDE_FAMILY_SIBLINGS) families.add(sibling);
+  }
+  return families;
+}
+
+/**
+ * Catalog check for an explicit model selection — fail fast WITHOUT becoming
+ * a closed catalog.
  *
- * Write paths call this so a model the installed runtime does not know is
- * refused when it is written, naming the valid ids, instead of failing masked
- * on the session's first turn (2026-11-13 `fable-5-2` incident). Providers
- * with an open model space (Pi selectors, Codex without its models cache)
- * stay permissive: there is no trustworthy local list to enforce there, so
- * only the cross-vendor rules in `modelProviderMismatch` apply.
+ * Write paths refuse what can never work: an empty value, or a family this
+ * provider does not route (the cross-vendor rules in `modelProviderMismatch`
+ * cover the other vendors' shapes). A KNOWN family with an UNKNOWN version
+ * (claude-fable-9, claude-mythos-6, claude-sonnet-7) passes through intact:
+ * the provider owns model resolution and fallback, and a version it refuses
+ * surfaces in the liveness probe with rollback — the right mechanism for
+ * that failure. The local list recognizes families and names the listed
+ * models in refusals; it must never forbid a new version of a family that
+ * exists (origin: 2026-11-13 `fable-5-2` incident, where the opposite
+ * failure — accepting a value and dying masked on the first turn — was
+ * fixed by the probe, not by freezing the catalog).
+ *
+ * Providers with an open model space (Pi selectors, Codex without its models
+ * cache) stay permissive; the Codex cache is this installation's real account
+ * list, so unknown slugs there are refused.
  */
 export function checkRuntimeModelInCatalog(
   provider: RuntimeProviderId,
   model: string | null | undefined,
   options: RuntimeModelCatalogOptions = {},
 ): RuntimeModelCatalogCheck {
-  const open: RuntimeModelCatalogCheck = { authoritative: false, exists: true, validIds: [] };
+  const open: RuntimeModelCatalogCheck = { authoritative: false, exists: true, validIds: [], knownFamilies: [] };
   const value = model?.trim();
   if (!value) return open;
 
   if (provider === "claude" || provider === "grok") {
     const ids = listRuntimeModels(provider, options).map((entry) => entry.id);
+    const families = knownModelFamilies(provider, ids);
+    const knownFamilies = [...families].sort();
     const normalized = normalizeRuntimeModel(provider, value) ?? value;
-    const exists = ids.some((id) => id.toLowerCase() === normalized.toLowerCase());
-    return { authoritative: true, exists, validIds: ids };
+    const listed = ids.some((id) => id.toLowerCase() === normalized.toLowerCase());
+    const family = modelFamilyOf(value);
+    const familyRecognized = family !== null && families.has(family);
+    return { authoritative: true, exists: listed || familyRecognized, validIds: ids, knownFamilies };
   }
 
   if (provider === "codex") {
@@ -282,7 +332,7 @@ export function checkRuntimeModelInCatalog(
     if (slugs.length === 0) return open;
     const listed = readCodexModelOptions(options.codexCachePath).map((entry) => entry.id);
     const exists = slugs.some((slug) => slug.toLowerCase() === value.toLowerCase());
-    return { authoritative: true, exists, validIds: listed.length > 0 ? listed : slugs };
+    return { authoritative: true, exists, validIds: listed.length > 0 ? listed : slugs, knownFamilies: [] };
   }
 
   return open;
