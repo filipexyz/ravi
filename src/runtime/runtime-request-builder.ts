@@ -20,12 +20,14 @@ import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { isSessionRelayTurn } from "./turn-origin.js";
 import { buildTurnReplyTarget } from "./turn-reply-target.js";
+import { triggerAuthorityLendsOwner } from "../triggers/authority.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import {
   createRuntimeMessageGenerator,
   pickRuntimeTurnAuthorityEnvelope,
   type RuntimeMessageGeneratorOptions,
+  withoutSharedTriggerAuthority,
 } from "./delivery-queue.js";
 import { commitRenderedSignals, releaseRenderedSignals, renderSignalsForTurn } from "../signals/render.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
@@ -1012,7 +1014,8 @@ async function buildRuntimeStartRequestInternal(
       stopActiveContextLease?.();
       stopActiveContextLease = undefined;
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
-      const turnPrompt = queuedTurnPrompt ?? prompt;
+      // A trigger's owner goes only with the one fire it was published with.
+      const turnPrompt = withoutSharedTriggerAuthority(queuedTurnPrompt ?? prompt, input.deliverableMessages.length);
       const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
       streamingSession.currentSource = turnSource ? { ...turnSource } : undefined;
       const replyResolution = resolveSessionOutputTargetPreserving({
@@ -1023,10 +1026,19 @@ async function buildRuntimeStartRequestInternal(
         allowDefaultOutput: !turnPrompt._cliDestination,
         previous: streamingSession.lastBoundReplyTarget ?? streamingSession.currentReplyTarget,
       });
+      // A turn that lends its trigger's owner's authority (in the session the
+      // runner sent the fire to) is bound, from the start, to where it
+      // answers: with no chat bound it posts nowhere, so a chat attached to
+      // the session later never receives what it read.
+      const pinsNoAnswer =
+        triggerAuthorityLendsOwner(turnPrompt._triggerAuthority) &&
+        turnPrompt._triggerAuthority?.ownSessionKey === dbSessionKey &&
+        !replyResolution.target;
       streamingSession.suppressChatEmit =
         Boolean(turnPrompt._cliDestination) ||
         Boolean(turnPrompt._observation) ||
-        isObserverRuntimeSessionName(sessionName);
+        isObserverRuntimeSessionName(sessionName) ||
+        pinsNoAnswer;
       streamingSession.currentReplyTarget = replyResolution.target ? { ...replyResolution.target } : null;
       if (replyResolution.target) {
         streamingSession.lastBoundReplyTarget = { ...replyResolution.target };

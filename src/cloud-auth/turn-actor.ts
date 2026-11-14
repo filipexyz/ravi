@@ -48,12 +48,38 @@ function relayCallerContactId(): string | null {
 }
 
 /**
+ * One classification for a call that must both admit the turn and name its
+ * actor, so the two can never disagree: the refusal when the turn may not
+ * act, else the contact it acts for (null for the operator, and outside a
+ * runtime turn).
+ */
+export function resolveTurnActor(
+  env: NodeJS.ProcessEnv = process.env,
+  deps: AccessActorDeps = {},
+): { refusal: TurnRefusal | null; contactId: string | null } {
+  if (!deps.actor && !inRuntimeTurn(env)) return { refusal: null, contactId: null };
+  try {
+    const decision = resolveAccessActor({ ...deps, turn: { ...deps.turn, env } });
+    if (decision.kind === "refused") {
+      return {
+        refusal: { reason: decision.reason ?? { kind: "unknown" }, actorPrincipal: decision.actorPrincipal },
+        contactId: null,
+      };
+    }
+    return { refusal: null, contactId: decision.kind === "contact" ? decision.contactId : null };
+  } catch {
+    // no-cause: a turn that cannot be classified is refused as unknown, never served as the operator
+    return { refusal: { reason: { kind: "unknown" }, actorPrincipal: "unknown" }, contactId: null };
+  }
+}
+
+/**
  * A runtime turn is running this command: the CLI carries `RAVI_CONTEXT_KEY`,
  * or the daemon is running it for a turn (its gateway and in-process tools
  * set the context; the daemon's own environment has no key), or a shell cron
  * the daemon spawned (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`), so a
- * job someone else owns is refused instead of acting as the operator. Shell
- * triggers and jobs have no owner yet and are not covered.
+ * job someone else owns is refused instead of acting as the operator. A shell
+ * trigger's process and a job's are not covered: no owner is enforced on them.
  */
 export function inRuntimeTurn(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env[RAVI_CONTEXT_KEY_ENV]?.trim()) return true;

@@ -34,6 +34,33 @@ Verify:
 - `src/triggers/__tests__/activation.test.ts` passes: `resolveTriggerActivation()` returns `invalid_filter` even for disabled triggers, and `blocked_topic` for internal `ravi.session.*` topics.
 - `src/triggers/__tests__/filter.test.ts` passes: a compiled invalid filter returns `false` for every event.
 
+## Trigger Owner
+
+```bash
+bun test src/triggers/__tests__/ownership.test.ts src/triggers/__tests__/runner-owner.test.ts src/triggers/__tests__/triggers-db.test.ts
+bun test src/router/router-db.trigger-session-check.test.ts src/router/sessions.test.ts
+bun test src/cli/commands/triggers.test.ts
+bun test src/cli/commands/sessions.test.ts
+bun test src/runtime/delivery-queue.test.ts src/runtime/runtime-request-builder.trigger-owner.test.ts
+bun test --preload ./src/test/isolated-runtime-preload.ts src/runtime/session-dispatcher.test.ts
+```
+
+- An owner given on create MUST persist; `unknown` and blank MUST store none; a row with no owner MUST read as `unknown` and MUST NOT act as the operator. The `owner_principal` migration MUST add the column with no owner for existing rows and survive the session CHECK rebuild.
+- `dbUpdateTrigger` MUST keep the owner for `cooldownMs`, `shellTimeoutMs` and `enabled: false`, clear it on every other change unless `keepOwnerFor` is the stored owner, and never write an owner.
+- The runner MUST publish `_triggerAuthority` for the stored row only while it is the subscribed definition: an edit not reloaded yet, a change by someone else and a deleted row MUST carry `unknown`, and a test fire MUST carry the owner only when `initiator` is the owner.
+- An `isolated` trigger a person owns MUST run in `agent:<agent>:trigger:<id>:own`, found by key alone and going by that key as its only name (no other session can be created with it, named or renamed to it, also after the own session is deleted; the own session cannot be renamed; it starts after whatever the journal holds under the name); the snapshot's `ownSessionKey` MUST be that key. A trigger nobody owns MUST keep the plain session, its plain name and `ownSessionKey: null`, as MUST the agent's main session and a named session.
+- A trigger that loses its owner MUST fire into the plain session from the next fire on, before the runner reloads it too, and the own session MUST receive nothing more.
+- A fire reaching an own session by name, by key or by a value from the event MUST be skipped, the same owner's included; a `main` trigger whose reply session is an own session MUST run in the main session; the plain session of a trigger nobody owns MUST still take other triggers' fires.
+- A trigger's session key MUST be recognized only in its three exact forms (not a thread or anything else derived from one), and `getOrCreateSession` MUST refuse to create one for anyone but the trigger runner while returning an existing one to anybody.
+- A fire whose snapshot lends authority MUST NOT share a turn with another prompt (pending queue and debounce, either order), MUST NOT take held `!!` text or a deferred bootstrap, MUST NOT be steered, and a folded turn MUST carry no snapshot. A person's trigger fired into a session that is not its own MUST be delivered as before.
+- Through the real turn start, a fire that lends authority and has no chat bound MUST record `turnReplyTarget: none` and post to no chat, also after a chat is attached to its session during the turn.
+- `ravi triggers add` and `set session` MUST refuse another trigger's own session as a literal target, and `add` MUST default to `main` when run in one. `ravi triggers show` MUST print the name of the session an `isolated` trigger runs in once it exists.
+- The intake MUST admit into an own session only its trigger's fires and the runtime's restart notice that names that session, never a failed shell command's notice (`src/runtime/session-dispatcher.test.ts`); hooks MUST NOT run for it (`src/hooks-runtime/runner.test.ts`).
+- The audit event of a command run in an own session MUST NOT fire a trigger, and one run in any other session MUST (`src/triggers/__tests__/runner.test.ts`, `src/sdk/gateway/dispatcher.test.ts`).
+- A trigger on a wildcard topic MUST NOT fire on `ravi.session.*`, `ravi._reply.*` or `ravi.worker.*` events and MUST fire on any other; a shell trigger's failure notice MUST NOT be sent into an own session, and `--on-error` MUST refuse one (`src/triggers/__tests__/runner-owner.test.ts`, `src/cli/commands/triggers.test.ts`).
+- `ravi triggers add|set|enable|show` MUST carry `ownerPrincipal`, `runsAsOperator` and `ownsSession`; `set` by anyone but the owner, and `enable` by anyone but the owner or the operator, MUST clear the owner and warn once, in JSON and in text; the operator enabling someone else's trigger MUST keep its owner; `test` MUST emit `initiator`.
+- What a trigger turn may do with its owner is checked in `cli/bases` CHECKS (6b).
+
 ## Fail-Closed Runtime
 
 A persisted enabled trigger whose filter does not compile (for example `data.branch == main`):

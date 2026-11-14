@@ -50,6 +50,7 @@ import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 import { readCronRunAuthority } from "../cron/authority.js";
+import { readTriggerRunAuthority } from "../triggers/authority.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
 import { isRuntimeContextLive } from "./context-liveness.js";
 import { isWorkHandoff, resolveHumanRequestCaller } from "./human-request.js";
@@ -922,6 +923,11 @@ function buildRuntimeContextMetadata(options: {
       : {}),
     ...(options.prompt._cron && options.prompt._jobId
       ? { cronRunAuthority: readCronRunAuthority(options.prompt._cronAuthority, options.prompt._jobId) }
+      : {}),
+    ...(options.prompt._trigger && options.prompt._triggerId
+      ? {
+          triggerRunAuthority: readTriggerRunAuthority(options.prompt._triggerAuthority, options.prompt._triggerId),
+        }
       : {}),
     ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),

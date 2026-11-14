@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
+import { isTriggerOwnSessionKey } from "../triggers/authority.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
@@ -544,6 +545,9 @@ export class CronRunner {
    */
   private resolveReplySessionName(replySession: string): string | null {
     const session = resolveSession(replySession);
+    // A trigger's own session runs that trigger's fires only: a job whose
+    // reply session is one runs in the agent's main session instead.
+    if (isTriggerOwnSessionKey(session?.sessionKey)) return null;
     return session?.name ?? null;
   }
 

@@ -18,6 +18,7 @@ import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
+import { isTriggerOwnSessionKey, triggerOfSessionKey } from "../../triggers/authority.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   agentSessionRematerializeReportSchema,
@@ -47,6 +48,7 @@ import {
   deleteSession,
   resetSession,
   getOrCreateSession,
+  isReservedSessionKey,
   updateSessionDisplayName,
   renameSessionName,
   updateSessionModelOverride,
@@ -5995,6 +5997,12 @@ export class SessionCommands {
         return null;
       }
 
+      // A trigger's own session is created by the trigger, never by name.
+      if (isReservedSessionKey(nameOrKey)) {
+        fail(`Session name ${nameOrKey} is reserved for the trigger that creates it. Use another name.`);
+        return null;
+      }
+
       const agentCwd = expandHome(agent.cwd);
       getOrCreateSession(nameOrKey, createWithAgent, agentCwd, {
         name: nameOrKey,
@@ -6105,6 +6113,18 @@ export class SessionCommands {
   }
 
   /**
+   * A trigger's own session runs that trigger's fires only. Said here, instead
+   * of publishing a prompt the daemon then drops.
+   */
+  private assertSessionTakesPrompts(session: SessionEntry): void {
+    if (!isTriggerOwnSessionKey(session.sessionKey)) return;
+    const name = session.name ?? session.sessionKey;
+    fail(
+      `Session ${name} is the own session of trigger ${triggerOfSessionKey(session.sessionKey)}: only that trigger's fires run there. Read it with: ravi sessions read ${name}`,
+    );
+  }
+
+  /**
    * Fire-and-forget emit to a session.
    */
   private async emitToSession(
@@ -6120,6 +6140,7 @@ export class SessionCommands {
     cliDestination = false,
     asJson?: boolean,
   ): Promise<void> {
+    this.assertSessionTakesPrompts(session);
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
@@ -6161,6 +6182,7 @@ export class SessionCommands {
       asJson?: boolean;
     } = {},
   ): Promise<number> {
+    this.assertSessionTakesPrompts(session);
     let responseLength = 0;
     let settled = false;
     let settleCompletion: ((state: StreamTerminalState) => void) | undefined;

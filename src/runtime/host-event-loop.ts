@@ -82,7 +82,7 @@ import {
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
-import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { createQueuedRuntimeUserMessage, withoutTriggerAuthority } from "./delivery-queue.js";
 import {
   canRetainDirectInterruptedRequest,
   captureDirectInterruptedRequest,
@@ -5139,7 +5139,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             prompt: recovery.prompt,
             deliveryBarrier: "after_tool",
             deliveryBarrierSource: "inferred",
-            ...streaming.currentTurnAuthority,
+            // The recovery prompt restates the session's recent history, other
+            // senders' queued messages included: it is no longer the trigger
+            // fire's own text, so the recovered turn carries no trigger owner.
+            ...withoutTriggerAuthority(streaming.currentTurnAuthority ?? {}),
             _channelBackend: streaming.currentChannelBackend,
             source: streaming.currentSource,
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,

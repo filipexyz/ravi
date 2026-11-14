@@ -98,6 +98,13 @@ describe("audited operational error controls", () => {
     expect(JSON.stringify(controls)).not.toContain("full-access --apply");
   });
 
+  it("names the refused routine only when it is a cron job or a trigger", () => {
+    expect(envelope({ routine: "cron" }).routine).toBe("cron");
+    expect(envelope({ routine: "trigger" }).routine).toBe("trigger");
+    expect(envelope({ routine: "shell" }).routine).toBeUndefined();
+    expect(envelope({ routine: { kind: "trigger" } }).routine).toBeUndefined();
+  });
+
   it("retains typed recovery and publication metadata without forwarding nested payloads", () => {
     const result = envelope({
       runId: "run_123",

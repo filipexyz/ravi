@@ -109,7 +109,7 @@ instead of inventing local suggestions that would require extra remote calls.
 | `agent:<id>` (relay from another agent), `automation:session:*` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only with a valid admission snapshot eligible for operator authority, whose captured owner is `operator` (including normalized legacy NULL) or an existing, unblocked contact still linked to the active Console user and org: speaker `automation`, routine `cron`; missing snapshots and revoked owners block. Live ownership transfers never reclassify the run (see `cron`) |
 | `automation:heartbeat` | allowed: speaker `automation`, routine `heartbeat` |
-| `automation:trigger:*`, `automation:job:*`, `automation:observer:*`, `session-followup`, `daemon-restart`, any other principal | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
+| `automation:trigger:*`, `automation:job:*`, `automation:observer:*`, `session-followup`, `daemon-restart`, any other principal | blocked `CONNECTOR_SPEAKER_NOT_OWNER`. A trigger turn stays blocked whoever owns the trigger; the blocked result only carries the owner the runner admitted, whether the turn runs in the trigger's own session and whether its answer stays with that owner (`triggerOwner`), which Bases alone reads (cli/bases 6b) |
 | Compartment `chat:<id>` (group) for a contact turn, the owner included | blocked `CONNECTOR_GROUP_BLOCKED` |
 | An allowed routine or relay that answers into a chat: its compartment is `chat:<id>` or `dm:<id>`, or its recorded `turnReplyTarget` is a chat, or (a relay) the target was `unresolved` and the session now has an output attachment | allowed with conversation `dm` only when every `chats` row for that chat is a `dm` that resolves to one contact linked to the active Console user and org; otherwise blocked `CONNECTOR_GROUP_BLOCKED` (a relay keeps `speakerIsOwner`) |
 | An operator relay with no chat compartment and no readable `turnReplyTarget`, or an `unresolved` one without a session to read | blocked `CONNECTOR_GROUP_BLOCKED`: Ravi cannot tell who reads the answer |
@@ -668,8 +668,10 @@ for the row (empty for connections made with the current connect flow).
   terminal. The marker closes that path, but a shell command written by a
   contact can still unset it itself (`env -u`, a script file); the bash hook
   only blocks literal `RAVI_*` overrides. Rule 13b closes it for crons by
-  refusing shell jobs that do not act as the operator; shell triggers and
-  `ravi jobs run` still have no owner model.
+  refusing shell jobs that do not act as the operator; a trigger records
+  the turn that created it as its owner, which only Bases reads for its
+  agent turns (cli/bases 6b), and no owner is enforced on shell triggers or
+  `ravi jobs run`.
 - Before the origin check, the session-goal wake (`execute`, no caller)
   looked like the operator's own `ravi sessions send`.
 - Open policy gaps: heartbeat turns have no owner (HEARTBEAT.md can be edited

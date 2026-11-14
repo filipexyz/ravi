@@ -50,6 +50,7 @@ import { RAVI_AUTOMATION_PRINCIPAL_ENV, readSpawnedAutomationPrincipal } from ".
 import { readTurnReplyTarget } from "../runtime/turn-reply-target.js";
 import { resolveHumanRequestCaller } from "../runtime/human-request.js";
 import { resolveRuntimeTurnOrigin } from "../runtime/turn-origin.js";
+import { parseTriggerSessionKey, readTriggerRunAuthority } from "../triggers/authority.js";
 import { connectorModeArg, readAgentConnectorMode, type ConnectorUseMode } from "./connector-mode.js";
 
 export type ConnectorSpeakerKind = "terminal" | "owner" | "contact" | "agent" | "automation";
@@ -113,9 +114,37 @@ export type ConnectorTurnResult =
       delegatedRequester?: ConnectorTurn;
       /** A cron run refused because someone other than the owner owns the job. */
       routineOwner?: { kind: "cron"; id: string; ownerPrincipal: string };
+      /**
+       * The owner of the trigger that fired this turn, as the runner admitted
+       * it. A trigger turn stays refused here (connectors never serve one);
+       * this is attribution for Bases only, read with `triggerRoutines`.
+       */
+      triggerOwner?: TriggerTurnOwner;
       /** The turn (or the turn it was projected from) already ended. */
       ended?: boolean;
     };
+
+export interface TriggerTurnOwner {
+  id: string;
+  ownerPrincipal: string;
+  /** The snapshot said so and the owner still acts as the operator. */
+  actsAsOperator: boolean;
+  /**
+   * The turn runs in the trigger's own session (the one only this trigger's
+   * `isolated` fires enter), where the runner sent the fire, and no
+   * conversation is wired into it. False in a chat's session, the agent's
+   * main one, a named or templated session, another trigger's session, and
+   * the trigger's own session once a route sends chats into it or any chat is
+   * attached: the owner's authority is not lent inside a conversation.
+   */
+  ownSession: boolean;
+  /**
+   * The turn's answer is posted to no chat. False when it goes to one or
+   * cannot be told: what Bases
+   * returns must not reach a chat the owner did not ask from.
+   */
+  answersToOwner: boolean;
+}
 
 type BlockedTurn = Extract<ConnectorTurnResult, { ok: false }>;
 
@@ -344,14 +373,31 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
     };
   }
 
-  const verdict = classifyNonContactPrincipal(actorPrincipal, base, owner, deps, {
-    ...metadata,
-    // CLI children may supply metadata, but only a host-issued turn owns admission.
-    // A normal child inherits the turn through findActorContext; a forged actor
-    // on the child itself must not substitute a new cron snapshot.
-    cronRunAuthority: actorContext.kind === "turn-runtime" ? metadata.cronRunAuthority : undefined,
-  });
-  if (!verdict.ok) return verdict;
+  const verdict = classifyNonContactPrincipal(
+    actorPrincipal,
+    base,
+    owner,
+    deps,
+    {
+      ...metadata,
+      // CLI children may supply metadata, but only a host-issued turn owns admission.
+      // A normal child inherits the turn through findActorContext; a forged actor
+      // on the child itself must not substitute a new cron snapshot.
+      cronRunAuthority: actorContext.kind === "turn-runtime" ? metadata.cronRunAuthority : undefined,
+      triggerRunAuthority: actorContext.kind === "turn-runtime" ? metadata.triggerRunAuthority : undefined,
+    },
+    { key: sameSessionKey(actorContext.sessionKey, runtime.record.sessionKey), name: base.sessionName ?? null },
+  );
+  if (!verdict.ok) {
+    if (!verdict.triggerOwner) return verdict;
+    return {
+      ...verdict,
+      triggerOwner: {
+        ...verdict.triggerOwner,
+        answersToOwner: triggerAnswerStaysWithOwner(verdict.triggerOwner, metadata),
+      },
+    };
+  }
   const answer = resolveAnswerChat(surface, metadata, verdict.turn, {
     sessionKey: sameSessionKey(actorContext.sessionKey, runtime.record.sessionKey),
   });
@@ -642,6 +688,8 @@ function classifyNonContactPrincipal(
   owner: OwnerIdentity,
   deps: ConnectorTurnDeps,
   metadata: Record<string, unknown> | null,
+  /** The session this turn runs in: its key when the turn's contexts agree on one, and its name. */
+  turnSession: TurnSession = { key: null, name: null },
 ): ConnectorTurnResult {
   const separator = actorPrincipal.indexOf(":");
   const principalType = separator > 0 ? actorPrincipal.slice(0, separator) : actorPrincipal;
@@ -709,10 +757,21 @@ function classifyNonContactPrincipal(
         },
       };
     }
-    return notOwner(
+    const refusal = notOwner(
       actorPrincipal,
       `This turn was started by ${actorPrincipal}, not by ${owner.label}. Personal connections serve only ${owner.label}'s own requests: the terminal, their own direct chat, and routines they created.`,
     );
+    if (principalId.startsWith("trigger:") && principalId.length > "trigger:".length) {
+      const triggerOwner = admittedTriggerOwner(
+        principalId.slice("trigger:".length),
+        metadata,
+        owner,
+        deps,
+        turnSession,
+      );
+      return triggerOwner ? { ...refusal, triggerOwner } : refusal;
+    }
+    return refusal;
   }
 
   if (principalType === "agent" && principalId) {
@@ -723,6 +782,89 @@ function classifyNonContactPrincipal(
   }
 
   return notOwner(actorPrincipal, unknownTurnMessage(owner));
+}
+
+/** The session a turn runs in, as its contexts record it. */
+interface TurnSession {
+  key: string | null;
+  name: string | null;
+}
+
+/**
+ * The owner of the trigger behind a trigger turn, from the runner's snapshot.
+ * Nothing without a valid snapshot or when the contact who owns it is removed
+ * or blocked. `actsAsOperator` applies the cron test: the snapshot is the
+ * ceiling, and the owner must still act as the operator now. `ownSession`
+ * holds only in the session the runner sent the fire to, while nobody else's
+ * conversation is wired into it.
+ */
+function admittedTriggerOwner(
+  triggerId: string,
+  metadata: Record<string, unknown> | null,
+  owner: OwnerIdentity,
+  deps: ConnectorTurnDeps,
+  turnSession: TurnSession,
+): TriggerTurnOwner | null {
+  const authority = readTriggerRunAuthority(metadata?.triggerRunAuthority, triggerId);
+  if (!authority) return null;
+  if (authority.ownerPrincipal.startsWith("contact:")) {
+    const status = (deps.getContactStatus ?? readCronContactStatus)(authority.ownerPrincipal.slice("contact:".length));
+    if (!status || status === "blocked") return null;
+  }
+  return {
+    id: triggerId,
+    ownerPrincipal: authority.ownerPrincipal,
+    actsAsOperator: authority.ownerIsOperator && cronOwnerIsOperator(authority.ownerPrincipal, owner, deps),
+    // The runner sent the fire to the trigger's own session, this turn runs
+    // in that very session, the session is this trigger's own by its key, and
+    // no conversation is wired into it.
+    ownSession:
+      authority.ownSessionKey !== null &&
+      authority.ownSessionKey === turnSession.key &&
+      isOwnSessionOfTrigger(turnSession.key, triggerId) &&
+      triggerSessionIsUnshared({ key: turnSession.key, name: turnSession.name }),
+    // Decided by the caller, which knows where this turn answers.
+    answersToOwner: false,
+  };
+}
+
+/** Whether a session key is the own session of this very trigger. */
+function isOwnSessionOfTrigger(sessionKey: string, triggerId: string): boolean {
+  const key = parseTriggerSessionKey(sessionKey);
+  return key?.kind === "own" && key.triggerId === triggerId;
+}
+
+/**
+ * Whether no conversation is wired into a trigger's own session: no route
+ * sends chats into it by name and no chat is attached to it. A prompt from a
+ * chat is refused there at intake anyway (the session runs its trigger's
+ * fires only); this is what stops the owner's authority while one is
+ * attached, the owner's own included. Anything unreadable is shared.
+ */
+function triggerSessionIsUnshared(session: { key: string; name: string | null }): boolean {
+  try {
+    if (session.name && dbListRoutesBySessionName(session.name).length > 0) return false;
+    return dbListSessionChatSubscriptions(session.key).length === 0;
+  } catch {
+    // no-cause: a session that cannot be read cannot be shown to be the trigger's alone, so it is not
+    return false;
+  }
+}
+
+/**
+ * Whether a trigger turn's answer stays with the trigger's owner: it is
+ * posted to no chat.
+ *
+ * The reply target the runtime recorded when the turn started is the whole
+ * answer: a turn that lends its owner's authority is bound to it for good
+ * (with no chat bound it posts nowhere, and the runtime never looks for one
+ * later). A turn that started with a chat bound answers there even after
+ * that chat is detached, and one with no recorded target, or one still
+ * unresolved, cannot be told: neither stays with the owner.
+ */
+function triggerAnswerStaysWithOwner(trigger: TriggerTurnOwner, metadata: Record<string, unknown>): boolean {
+  if (readTurnReplyTarget(metadata)?.kind !== "none") return false;
+  return trigger.actsAsOperator || trigger.ownerPrincipal.startsWith("contact:");
 }
 
 /**

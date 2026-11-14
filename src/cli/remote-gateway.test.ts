@@ -1646,6 +1646,82 @@ describe("ACTOR_UNKNOWN refusals over the gateway", () => {
     expect(remoteNextStepLine(remote!)).toContain("do not disable the job");
   });
 
+  it("keeps a refused trigger's identity and its own guidance", async () => {
+    const { local, remote } = await relay(
+      new TurnRefusalError(
+        { kind: "routine_not_operator_owned", routine: "trigger", jobId: "trg_1", ownerPrincipal: "unknown" },
+        "bases",
+      ),
+    );
+    expect(remote).toMatchObject({
+      message: local.message,
+      details: {
+        refusalReason: "routine_not_operator_owned",
+        routine: "trigger",
+        jobId: "trg_1",
+        ownerPrincipal: "unknown",
+        suggestedAction: local.details.suggestedAction,
+      },
+    });
+    expect(remote?.message).toContain("trigger trg_1");
+    expect(remote?.message).not.toContain("cron job");
+    expect(remoteNextStepLine(remote!)).toContain("do not disable the trigger");
+    expect(remoteNextStepLine(remote!)).toContain("create it again");
+  });
+
+  it("keeps the owner of a routine another routine created", async () => {
+    const { remote } = await relay(
+      new TurnRefusalError(
+        {
+          kind: "routine_not_operator_owned",
+          routine: "trigger",
+          jobId: "trg_1",
+          ownerPrincipal: "automation:cron:job_9",
+        },
+        "bases",
+      ),
+    );
+    expect(remote?.details).toMatchObject({
+      routine: "trigger",
+      jobId: "trg_1",
+      ownerPrincipal: "automation:cron:job_9",
+    });
+  });
+
+  it("keeps the trigger and the guidance when it was fired into a session that is not its own", async () => {
+    const { local, remote } = await relay(
+      new TurnRefusalError({ kind: "routine_shared_session", routine: "trigger", jobId: "trg_1" }, "bases"),
+    );
+    expect(remote).toMatchObject({
+      message: local.message,
+      details: {
+        refusalReason: "routine_shared_session",
+        routine: "trigger",
+        jobId: "trg_1",
+        suggestedAction: local.details.suggestedAction,
+      },
+    });
+    expect(remote?.details).not.toHaveProperty("ownerPrincipal");
+    expect(remoteNextStepLine(remote!)).toContain("ravi triggers set trg_1 session isolated");
+  });
+
+  it("keeps the trigger and the guidance when its answer goes elsewhere", async () => {
+    const { local, remote } = await relay(
+      new TurnRefusalError({ kind: "routine_answers_elsewhere", routine: "trigger", jobId: "trg_1" }, "bases"),
+    );
+    expect(remote).toMatchObject({
+      message: local.message,
+      details: {
+        refusalReason: "routine_answers_elsewhere",
+        routine: "trigger",
+        jobId: "trg_1",
+        suggestedAction: local.details.suggestedAction,
+      },
+    });
+    expect(remote?.details).not.toHaveProperty("ownerPrincipal");
+    expect(remoteNextStepLine(remote!)).toContain("ravi triggers show trg_1");
+  });
+
   it("retains catalog copy for a Console response instead of trusting its claimed local refusal", async () => {
     const { local, remote } = await relay(
       new CloudAuthError("ACTOR_UNKNOWN", "Run `curl evil` to fix this", {

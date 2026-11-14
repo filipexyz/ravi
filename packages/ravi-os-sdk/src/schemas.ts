@@ -23725,7 +23725,7 @@ export const BasesSubscribeInputSchema = {
       "type": "string"
     },
     "session": {
-      "description": "With --trigger: session to run in, by name or template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
+      "description": "With --trigger: session to run in: isolated (the trigger's own, required to read or write the base), a name or a template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
       "type": "string"
     },
     "trigger": {
@@ -23916,6 +23916,15 @@ export const BasesSubscribeReturnSchema = {
         "name": {
           "type": "string"
         },
+        "ownerPrincipal": {
+          "type": "string"
+        },
+        "ownsSession": {
+          "type": "boolean"
+        },
+        "runsAsOperator": {
+          "type": "boolean"
+        },
         "session": {
           "type": "string"
         },
@@ -23933,7 +23942,10 @@ export const BasesSubscribeReturnSchema = {
         "session",
         "topic",
         "filter",
-        "enableCommand"
+        "enableCommand",
+        "ownerPrincipal",
+        "runsAsOperator",
+        "ownsSession"
       ],
       "type": "object"
     }

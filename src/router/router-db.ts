@@ -3485,6 +3485,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);
+  migrateTriggerOwner(db);
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -11804,6 +11805,15 @@ export function migrateTriggerDebounce(database: Database): void {
 }
 
 const LEGACY_TRIGGER_SESSION_CHECK = /\s*CHECK\s*\(\s*session\s+IN\s*\(\s*'main'\s*,\s*'isolated'\s*\)\s*\)/;
+
+/**
+ * `triggers.owner_principal`: who a trigger's agent turns act as in Bases.
+ * No backfill: a trigger written before owners were recorded stays without
+ * one and keeps acting as nobody.
+ */
+export function migrateTriggerOwner(database: Database): void {
+  ensureColumn(database, "triggers", "owner_principal", "TEXT");
+}
 
 /**
  * Older databases constrain `triggers.session` to main|isolated, but a trigger

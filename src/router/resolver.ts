@@ -7,7 +7,13 @@
 import type { RouterConfig, AgentConfig, RouteConfig, MatchedRoute, ResolvedRoute, DmScope } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName, slugify } from "./session-name.js";
-import { getOrCreateSession, getSession, updateSessionName, getSessionByName } from "./sessions.js";
+import {
+  getOrCreateSession,
+  getSession,
+  updateSessionName,
+  getSessionByName,
+  isSessionNameReserved,
+} from "./sessions.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router");
@@ -288,8 +294,20 @@ export function commitMatchedRoute(
   });
   let sessionName = existing.name;
 
+  // A name reserved for a trigger's session is not this session's to take:
+  // the message still gets a session, under the name it would have without it.
+  const forcedNameReserved =
+    !!forcedRouteSessionName && isSessionNameReserved(effectiveSessionKey, forcedRouteSessionName);
+  if (forcedNameReserved && !threadId) {
+    log.warn("Route forces a session name reserved for a trigger's session; keeping the session's own name", {
+      routeSession: forcedRouteSessionName,
+      sessionKey: effectiveSessionKey,
+      ...(route?.pattern ? { routePattern: route.pattern } : {}),
+    });
+  }
+
   // Route-forced session name takes precedence
-  if (forcedRouteSessionName && !threadId && existing.name !== forcedRouteSessionName) {
+  if (forcedRouteSessionName && !forcedNameReserved && !threadId && existing.name !== forcedRouteSessionName) {
     sessionName = forcedRouteSessionName;
     updateSessionName(effectiveSessionKey, sessionName);
   } else if (!sessionName) {

@@ -4588,6 +4588,9 @@ export type BasesSubscribeReturn = {
     filter: string;
     id: string;
     name: string;
+    ownerPrincipal: string;
+    ownsSession: boolean;
+    runsAsOperator: boolean;
     session: string;
     topic: string;
   };

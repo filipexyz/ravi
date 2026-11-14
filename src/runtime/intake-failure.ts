@@ -12,7 +12,12 @@ const log = logger.child("runtime:intake-failure");
 export const RUNTIME_PROMPT_INTAKE_FAILED_USER_MESSAGE =
   "This message could not be delivered to an agent. Please contact the operator.";
 
-export type RuntimePromptIntakeFailureReason = "no_agent";
+/**
+ * `no_agent`: the prompt's agent no longer exists. `trigger_own_session`: the
+ * prompt was sent to a trigger's own session, which runs that trigger's fires
+ * only.
+ */
+export type RuntimePromptIntakeFailureReason = "no_agent" | "trigger_own_session";
 
 export function isUserFacingPromptSource(source: RuntimeLaunchPrompt["source"] | undefined): boolean {
   const channel = source?.channel?.trim().toLowerCase();
