@@ -1678,11 +1678,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/claude-provider.ts | 77 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:5496eef9c9b7fa7f8d6b6156 |
 | runtime-chat | src/runtime/claude-provider.ts | 212 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:9d4e5964b65ef32089434597 |
 | runtime-chat | src/runtime/claude-provider.ts | 322 | triaged-follow-up | surface-bypasses-constructor | src/runtime/claude-provider.ts:c87f1bef17e8b8a309a993be |
-| runtime-chat | src/runtime/claude-provider.ts | 542 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:6d18d7ebccabe9139b6a2ee5 |
-| runtime-chat | src/runtime/claude-provider.ts | 558 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:b5e9e796752073002dc5b599 |
-| runtime-chat | src/runtime/claude-provider.ts | 567 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:69932255b8c315b086374bbe |
-| runtime-chat | src/runtime/claude-provider.ts | 596 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c8db2d688d57db26d5cf0203 |
-| runtime-chat | src/runtime/claude-provider.ts | 640 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c052a49e78bea02b1938b8c1 |
+| runtime-chat | src/runtime/claude-provider.ts | 536 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:6d18d7ebccabe9139b6a2ee5 |
+| runtime-chat | src/runtime/claude-provider.ts | 552 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:b5e9e796752073002dc5b599 |
+| runtime-chat | src/runtime/claude-provider.ts | 561 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:69932255b8c315b086374bbe |
+| runtime-chat | src/runtime/claude-provider.ts | 590 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c8db2d688d57db26d5cf0203 |
+| runtime-chat | src/runtime/claude-provider.ts | 634 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c052a49e78bea02b1938b8c1 |
 | runtime-chat | src/runtime/codex-hooks.ts | 75 | triaged-follow-up | surface-bypasses-constructor | src/runtime/codex-hooks.ts:89a5335abd4cd41f644216f8 |
 | runtime-chat | src/runtime/codex-hooks.ts | 256 | triaged-follow-up | catch-without-binding | src/runtime/codex-hooks.ts:594f21aaeee7103da4806304 |
 | runtime-chat | src/runtime/codex-hooks.ts | 307 | triaged-follow-up | catch-without-binding | src/runtime/codex-hooks.ts:fce4d98698ce879e6feebbc4 |
@@ -1825,7 +1825,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/model-broker-materializer.ts | 224 | fixed | binding retained / no recognized error surface | src/runtime/model-broker-materializer.ts:603a5aac4be8c1cae6977be9 |
 | runtime-chat | src/runtime/model-broker-materializer.ts | 228 | triaged-follow-up | catch-without-binding | src/runtime/model-broker-materializer.ts:328854997034dfbe96ad4d97 |
 | runtime-chat | src/runtime/model-broker.ts | 348 | triaged-follow-up | catch-without-binding | src/runtime/model-broker.ts:c458c33af921185233b8c309 |
-| runtime-chat | src/runtime/model-catalog.ts | 280 | triaged-follow-up | catch-without-binding | src/runtime/model-catalog.ts:0adcd64c0cd06692bb6a46e6 |
+| runtime-chat | src/runtime/model-catalog.ts | 265 | triaged-follow-up | catch-without-binding | src/runtime/model-catalog.ts:0adcd64c0cd06692bb6a46e6 |
 | runtime-chat | src/runtime/observation-plane.ts | 462 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38 |
 | runtime-chat | src/runtime/observation-plane.ts | 471 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:36058302af01275a6693381c |
 | runtime-chat | src/runtime/observation-plane.ts | 576 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e |

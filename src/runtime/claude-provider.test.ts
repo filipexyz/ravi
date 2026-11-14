@@ -688,7 +688,18 @@ describe("createClaudeRuntimeProvider", () => {
     expect(queryCalls[0]?.options.effort).toBe("max");
   });
 
-  for (const model of ["claude-fable-5", "claude-fable-5-1", "claude-fable-5-2", "fable", "claude-mythos-5"]) {
+  for (const model of [
+    "claude-fable-5",
+    "claude-fable-5-1",
+    "claude-fable-5-2",
+    "claude-fable-5-3",
+    "claude-fable-6",
+    "fable",
+    "fable-5-2",
+    " FABLE ",
+    "CLAUDE-FABLE-6",
+    "claude-mythos-5",
+  ]) {
     it.each(["off", "normal", "verbose"] as const)(
       `preserves adaptive thinking for ${model} (%s)`,
       async (thinking) => {
@@ -722,15 +733,18 @@ describe("createClaudeRuntimeProvider", () => {
     );
   }
 
-  it("still disables thinking for Sonnet", () => {
-    const options = buildClaudeQueryOptions(
-      makeStartRequest((async function* () {})(), { model: "sonnet", thinking: "off" }),
-      {},
-      {},
-    );
+  it.each(["sonnet", "claude-fableish-5", "my-fable-model", "future-model"])(
+    "still disables thinking for %s",
+    (model) => {
+      const options = buildClaudeQueryOptions(
+        makeStartRequest((async function* () {})(), { model, thinking: "off" }),
+        {},
+        {},
+      );
 
-    expect(options.thinking).toEqual({ type: "disabled" });
-  });
+      expect(options.thinking).toEqual({ type: "disabled" });
+    },
+  );
 
   it("updates active and subsequent query models without recreating the provider session", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-model" }];

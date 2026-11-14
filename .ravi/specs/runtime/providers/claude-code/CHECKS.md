@@ -33,9 +33,20 @@
 ## Model Compatibility Acceptance
 
 - `bun test src/runtime/claude-provider.test.ts src/runtime/model-catalog.test.ts`
-  covers Fable 5, 5-1 and 5-2 plus `fable` and `claude-mythos-5`, preserving the
-  requested model and the `off`/`normal`/`verbose` thinking contract. Sonnet still
-  receives disabled thinking for `off`.
+  covers unchanged selectors for `fable`, `claude-mythos-5`, and
+  `claude-fable-5-2`, as well as unknown ids, future versions and names that
+  contain `sonnet`, `opus` or `haiku`. Surrounding whitespace is trimmed.
+- Missing and blank names select the provider default; unknown ids pass through
+  even when a local display catalog exists. Incompatible-runtime cases retain
+  their existing fallback and validation behavior.
+- `bun test src/tui/components/ModelPicker.test.ts` renders the actual picker
+  with configured ids outside its display catalog, verifies the selected id
+  and next-runtime preview, then confirms unchanged or selects a different
+  catalog row. Missing/blank models retain the default behavior.
+- The same tests cover the `off`/`normal`/`verbose` adaptive thinking contract
+  for Fable 5, 5-1, 5-2, future versions, the short `fable` alias, and Mythos.
+  Sonnet and lookalikes such as `claude-fableish-5` and `my-fable-model` still
+  receive disabled thinking for `off`.
 - With the updated installed SDK, create a Ravi session using
   `--provider claude --model claude-fable-5-2`, send a unique response marker,
   and verify the returned text plus the session's successful terminal turn.
