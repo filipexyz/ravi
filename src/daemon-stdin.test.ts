@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { which } from "bun";
+import { Database } from "bun:sqlite";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
   copyFileSync,
@@ -331,6 +332,12 @@ it.skipIf(!isolatedPm2Executable)(
     const pm2 = isolatedPm2Executable!;
     const packageRoot = join(stateDir, ".bun", "install", "ravi 'package\" with spaces");
     const bundlePath = join(packageRoot, "dist", "bundle", "index.js");
+    const fixtureHome = join(stateDir, "account");
+    const fixtureDatabase = join(fixtureHome, ".ravi", "ravi.db");
+    mkdirSync(join(fixtureHome, ".ravi"), { recursive: true });
+    const seed = new Database(fixtureDatabase);
+    seed.exec("CREATE TABLE sentinel (value TEXT); INSERT INTO sentinel VALUES ('existing-installation')");
+    seed.close();
     const output = (role: string) => join(stateDir, `${role}.json`);
     const contextKeys = Object.keys(clearedPm2ContextEnv());
     const bunDir = join(stateDir, "ravi 'bun\" executable");
@@ -351,11 +358,21 @@ it.skipIf(!isolatedPm2Executable)(
     const writePackage = () => {
       mkdirSync(join(packageRoot, "dist", "bundle"), { recursive: true });
       writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "ravi.bot", type: "module" }));
+      copyFileSync(
+        new URL("./db/state-boundary.ts", import.meta.url),
+        join(packageRoot, "dist", "bundle", "state-boundary.ts"),
+      );
+      copyFileSync(new URL("./pm2-output.ts", import.meta.url), join(packageRoot, "dist", "pm2-output.ts"));
       writeFileSync(
         bundlePath,
         `import { readSync, writeFileSync } from "node:fs";
+         import { openStateDatabase } from "./state-boundary.ts";
+         const db = openStateDatabase(${JSON.stringify(fixtureDatabase)}, undefined, { homeDir: ${JSON.stringify(fixtureHome)} });
+         const sentinel = db.query("SELECT value FROM sentinel").get();
+         db.close();
          writeFileSync(${JSON.stringify(stateDir)} + "/" + process.argv[2] + ".json", JSON.stringify({
            pid: process.pid, ppid: process.ppid, argv: process.argv, cwd: process.cwd(),
+           sentinel,
            stdinBytes: readSync(0, Buffer.alloc(1)),
            contextKeys: ${JSON.stringify(contextKeys)}.filter(key => Object.hasOwn(process.env, key)),
          }));
@@ -386,6 +403,10 @@ it.skipIf(!isolatedPm2Executable)(
       expect(
         pm2Command(["ping"], Object.fromEntries(contextKeys.map((key) => [key, "stale-manager-context"]))).status,
       ).toBe(0);
+      const managerPid = Number(readFileSync(join(pm2Home, "pm2.pid"), "utf8"));
+      // Existing hosts can have a live PM2 with no default manager PID file.
+      // Keep the actual manager and its registry; only remove fixture metadata.
+      rmSync(join(pm2Home, "pm2.pid"));
       const args = buildDaemonPm2StartArgs({ bundlePath });
       const serviceEnv = { ...clearedPm2ContextEnv(), RAVI_PM2_EXECUTABLE: bunPath };
       const started = pm2Command(args, serviceEnv);
@@ -396,8 +417,9 @@ it.skipIf(!isolatedPm2Executable)(
         stdinBytes: 0,
         cwd: realpathSync(packageRoot),
         contextKeys: [],
+        sentinel: { value: "existing-installation" },
       });
-      expect(first.ppid).toBe(Number(readFileSync(join(pm2Home, "pm2.pid"), "utf8")));
+      expect(first.ppid).toBe(managerPid);
       const [registration] = JSON.parse(pm2Command(["jlist"]).stdout);
       expect(registration).toMatchObject({
         name: "ravi",
@@ -468,11 +490,13 @@ it.skipIf(!isolatedPm2Executable)(
       expect(pm2Command(["restart", "ravi"]).status).toBe(0);
       const second = await waitForProcess("daemon", first.pid);
       expect(second.argv).toEqual(first.argv);
+      expect(second.sentinel).toEqual({ value: "existing-installation" });
       expect(second.stdinBytes).toBe(0);
       expect(second.contextKeys).toEqual([]);
       expect(pm2Command(["restart", "ravi-channels"]).status).toBe(0);
       const secondChannels = await waitForProcess("channels", firstChannels.pid);
       expect(secondChannels.argv).toEqual(firstChannels.argv);
+      expect(secondChannels.sentinel).toEqual({ value: "existing-installation" });
       expect(secondChannels.stdinBytes).toBe(0);
       expect(secondChannels.contextKeys).toEqual([]);
       const forcedArgs = [...args];
@@ -495,6 +519,7 @@ it.skipIf(!isolatedPm2Executable)(
         ),
       ).toBe(true);
       expect(existsSync(join(stateDir, "ravi.db"))).toBe(false);
+      expect(existsSync(join(pm2Home, "pm2.pid"))).toBe(false);
     } finally {
       pm2Command(["kill"]);
       rmSync(pm2Home, { recursive: true, force: true });

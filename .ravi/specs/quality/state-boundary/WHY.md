@@ -22,6 +22,20 @@ An environment opt-in was rejected: it confuses environment with caller role, pr
 
 Installed code is established from the module's package root, not cwd. The caller's actual PID and entrypoint are checked against the live PM2 registry; its parent must already be PM2 before the bounded registry query, so identity inspection cannot bootstrap a process manager. Inherited process labels and daemon-looking argv are insufficient. No new launch configuration is introduced.
 
+## Missing PM2 manager PID file
+
+An existing installation had a live PM2 7.1.2 manager and its RPC socket but no
+default `pm2.pid`. The guard returned an empty registry before invoking PM2,
+so reinstalling the launcher or removing the CLI's version banner could not
+restore access. PM2 7 still attempts to write this file and supports a custom
+PID-file path; this is a missing-file dependency, not a general PM2 7 removal.
+
+The fallback verifies the actual parent process title and its canonical PM2
+home, then performs the unchanged live registration checks. Boot receipts are
+observability, written later by the runtime; the old inert-stdin shell wrapper
+never created or granted runtime identity. Restoring that wrapper would not
+repair the missing manager metadata.
+
 ## Single schema owner
 
 Allowing daemon and channels to migrate the same SQLite introduces a race disguised as authorization. Channels needs normal data writes, not schema ownership. A ready marker per component and exact release makes startup order observable: the daemon prepares state; channels refuses incompatible or unfinished state before serving. The schema split is explicit in each store, and an integration test compares the entire SQLite schema before and after a channels startup/open.

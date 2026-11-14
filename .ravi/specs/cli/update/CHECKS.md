@@ -3,6 +3,12 @@
 - `bun test src/cli/commands/update.test.ts` MUST pass.
 - A source-update fixture with two online siblings MUST invoke the rebind
   supervisor, replace both PIDs and verify new boot receipts before success.
+- This fixture MUST also converge with the actual PM2 7.1.1/7.1.2 version
+  warning preceding every `jlist` result. Parser/consumer regressions MUST
+  cover status, runtime target, channel settings and channel liveness.
+- The real-PM2 launcher regression MUST open existing fixture state after the
+  manager's default PID file is removed and preserve its sentinel after package
+  replacement. No production state or process manager may be used by the test.
 - Every receipt-writing fixture MUST own a disposable state directory, restore
   the caller's `RAVI_STATE_DIR` (including an absent value), and remove its state
   afterward. The managed rebind test MUST pass without an external state override.

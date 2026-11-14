@@ -28,6 +28,19 @@ The installed daemon owns real state by process identity, with no new launcher f
 
 ## Boot and upgrades
 
+If `PM2_HOME/pm2.pid` is absent, the guard verifies the actual parent with
+`ps -ww -p <ppid> -o args=` and requires the default PM2 God Daemon title for
+the same canonical PM2 home before querying the live registry. Do not use
+`pids/ravi-0.pid` as the manager PID: it identifies the application. A custom
+manager title with no default PID file remains unverifiable and fails closed.
+Inspect PID/PPID and paths only; never print the full registry or environment.
+
+The inert-stdin launcher does not write boot identity. Runtime code writes
+`runtime-processes/ravi.json` or `ravi-channels.json` later. Absence of a receipt
+does not explain a state-boundary refusal by itself: check supervisor identity
+and the registry query separately. A version banner is tolerated; invalid JSON
+or a failed query still refuses access.
+
 The daemon role owns schema initialization; this does not establish exclusivity between daemon processes. Start it first; it initializes the router, cloud-chat bindings/approvals, outbound publication outbox, Slack automatic-output circuit, contacts, chat, credentials, console scope, insights, knowledge, Devin, human-bridge and PR publication stores before serving. Each store or lazy component records the exact package version after successful initialization. Then start channels from that same installed release.
 
 For upgrades, stop the old channel runner before the daemon applies a new release's migrations, and start the new runner after daemon initialization. An already-running consumer is not a schema-migration coordinator.

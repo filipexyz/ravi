@@ -36,6 +36,9 @@ normative: true
 - An unreadable PM2 snapshot MUST fail closed; it MUST NOT be treated as an
   empty installation. Supervisor exit zero MUST be checked against live
   successor identities before the calling update reports success.
+- Leading PM2 version/diagnostic banners MUST NOT make an otherwise valid
+  `jlist` snapshot unreadable. All registry readers MUST share the parser and
+  reject malformed/truncated/non-array payloads without logging registry data.
 - Failed PM2 reads and build/reconciliation failures MUST retain their caught
   cause through the public diagnostic. A boot receipt persistence failure MUST
   emit a diagnostic warning while leaving the process identity unverifiable.

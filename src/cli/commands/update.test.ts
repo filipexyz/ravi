@@ -28,6 +28,7 @@ import {
 import type { Pm2Process } from "../../pm2.js";
 import { observeRuntimeBoot, readRuntimeBootReceipt, writeRuntimeBootReceipt } from "../../runtime-process-identity.js";
 import { getRaviStateDir } from "../../utils/paths.js";
+import { OUTDATED_PM2_BANNER } from "../../test/pm2-jlist.js";
 import {
   buildSourceUpdateOutcome,
   describePathCli,
@@ -73,6 +74,7 @@ function createSourceUpdateScenario(
     supervisor?: "rebind" | "noop";
     failRunnerStart?: boolean;
     failPm2Status?: boolean;
+    pm2Banner?: boolean;
   } = {},
 ) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "ravi-update-scenario-")));
@@ -177,6 +179,7 @@ appendFileSync(${JSON.stringify(pm2Calls)}, args.join(" ") + "\\n");
 let entries = JSON.parse(readFileSync(snapshotPath, "utf8"));
 if (args[0] === "jlist") {
   if (${Boolean(options.failPm2Status)}) process.exit(1);
+  if (${Boolean(options.pm2Banner)}) process.stdout.write(${JSON.stringify(OUTDATED_PM2_BANNER)});
   console.log(JSON.stringify(entries)); process.exit(0);
 }
 if (args[0] === "delete") entries = entries.filter(entry => String(entry.pm_id) !== args[1]);
@@ -500,37 +503,41 @@ describe("update command helpers", () => {
     }
   }, 60_000);
 
-  it("restarts and verifies both live siblings by default", () => {
-    const scenario = createSourceUpdateScenario({ linkPathToCheckout: true, managedProcesses: true });
-    try {
-      const result = scenario.run("--json");
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe("");
-      const payload = JSON.parse(result.stdout);
-      expect(payload).toMatchObject({
-        currentVersion: NEW_VERSION,
-        restarted: true,
-        runtime: { managed: true, rebound: true, version: NEW_VERSION },
-      });
-      const calls = readFileSync(scenario.pm2Calls, "utf8").trim().split("\n");
-      expect(calls.filter((call) => !call.startsWith("jlist")).map((call) => call.split(" ")[0])).toEqual([
-        "delete",
-        "delete",
-        "start",
-        "save",
-        "start",
-        "save",
-      ]);
-      expect(JSON.parse(readFileSync(scenario.pm2Snapshot, "utf8")).map((entry: { pid: number }) => entry.pid)).toEqual(
-        [800_001, 800_002],
-      );
-      expect(
-        payload.warnings.some((warning: string) => warning.includes("unverified") || warning.includes("stale code")),
-      ).toBe(false);
-    } finally {
-      scenario.cleanup();
-    }
-  }, 60_000);
+  it.each([false, true])(
+    "restarts and verifies both live siblings with PM2 banner=%s",
+    (pm2Banner) => {
+      const scenario = createSourceUpdateScenario({ linkPathToCheckout: true, managedProcesses: true, pm2Banner });
+      try {
+        const result = scenario.run("--json");
+        expect(result.status).toBe(0);
+        expect(result.stderr).toBe("");
+        const payload = JSON.parse(result.stdout);
+        expect(payload).toMatchObject({
+          currentVersion: NEW_VERSION,
+          restarted: true,
+          runtime: { managed: true, rebound: true, version: NEW_VERSION },
+        });
+        const calls = readFileSync(scenario.pm2Calls, "utf8").trim().split("\n");
+        expect(calls.filter((call) => !call.startsWith("jlist")).map((call) => call.split(" ")[0])).toEqual([
+          "delete",
+          "delete",
+          "start",
+          "save",
+          "start",
+          "save",
+        ]);
+        expect(
+          JSON.parse(readFileSync(scenario.pm2Snapshot, "utf8")).map((entry: { pid: number }) => entry.pid),
+        ).toEqual([800_001, 800_002]);
+        expect(
+          payload.warnings.some((warning: string) => warning.includes("unverified") || warning.includes("stale code")),
+        ).toBe(false);
+      } finally {
+        scenario.cleanup();
+      }
+    },
+    60_000,
+  );
 
   it("fails when the supervisor exits zero without replacing the live siblings", () => {
     const scenario = createSourceUpdateScenario({

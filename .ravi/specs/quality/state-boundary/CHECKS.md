@@ -21,6 +21,13 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 
 - Fake-home cleanup -> missing state -> `getSessionByName` fails before the guard and passes after it, without touching any real data. PR #768's fixture restoration remains integrated.
 - A subprocess representing the installed daemon opens fixture real state with no new env/confirmation flag when its actual PID/entrypoint match the fixture PM2 registry. Missing/mismatching identity refuses actionably.
+- `bun test src/daemon-stdin.test.ts` starts a private real PM2, removes only
+  its default manager PID file, and launches daemon/channels against an existing
+  fixture database through the real guard. Package replacement preserves the
+  sentinel data, exact argv, parent PID and registry identity without a PID file.
+- `bun test src/router/state-boundary.test.ts` accepts a valid installed PID
+  even with the real version banner, and refuses mismatched PID, invalid manager
+  PID files and a foreground parent with no PID file despite inherited labels.
 - The canonical managed-runtime launcher generates the admitted channel PM2 registration (`bun <bundle> channels run`). A mismatched PID, name, interpreter, bundle, role, command or additional arguments MUST refuse real-state access.
 - CLI, tests, source/build code and linked worktrees refuse the same path even with inherited PM2 env and daemon-looking argv. Explicit isolated state remains usable.
 - `bun test src/cli/operator-runtime.test.ts src/cli/registry-operator-gateway.test.ts` verifies installed operator gateway routing, isolated source execution, database-free offline recovery, and no recovery fallback for runtime context keys or explicit remote gateways.
