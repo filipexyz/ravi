@@ -113,9 +113,17 @@ The Claude Code provider adapts the current default cloud execution bridge into 
   the following argument; model, effort, and output options MUST be preserved.
 - The bundled SDK MUST support the model ids advertised by the runtime catalog.
   Fable support includes `claude-fable-5`, `claude-fable-5-1`, and
-  `claude-fable-5-2`; existing `fable` and `claude-mythos-5` aliases MUST remain
-  accepted without being redirected to a different model family.
-- These Fable versions and aliases MUST NOT receive `thinking: { type:
+  `claude-fable-5-2`. Model normalization MUST preserve the requested name
+  (apart from surrounding whitespace), including `fable`, `claude-mythos-5`,
+  explicit versions, and unknown ids. Alias resolution and fallback belong to
+  the provider; Ravi MUST NOT translate names by family substrings or pin an
+  alias to a catalog version. Mythos is a distinct model, not a Fable alias.
+- Preferred model resolution MUST NOT use the display catalog as an allowlist.
+  A nonempty name MUST pass through; only an absent or blank name selects the
+  provider default. Existing handling of incompatible runtimes remains.
+- The Fable family (the `fable` alias and names beginning with `fable-` or
+  `claude-fable-`, including future versions) and `claude-mythos-5` MUST NOT
+  receive `thinking: { type:
   "disabled" }` when Ravi requests `thinking=off`. The provider MUST omit that
   override, preserve adaptive thinking with display `omitted` for `normal`, and
   preserve adaptive thinking with display `summarized` for `verbose`.

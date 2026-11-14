@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  applyProviderModelRule,
   getDefaultModelForProvider,
   listRuntimeModels,
   modelProviderMismatch,
@@ -57,9 +58,22 @@ describe("model catalog", () => {
     },
   );
 
-  test.each(["fable", "claude-mythos-5", " FABLE "])("resolves the Fable 5 alias %s", (alias) => {
-    expect(resolvePreferredRuntimeModel("claude", alias)).toBe("claude-fable-5");
-    expect(modelProviderMismatch("claude", alias)).toBeNull();
+  test.each([
+    "fable",
+    "claude-mythos-5",
+    "claude-fable-5-2",
+    "claude-fable-5-3",
+    "claude-fable-6",
+    "fable-5-2",
+    "custom-model",
+    "private-sonnet-v2",
+    "private-opus-v2",
+    "private-haiku-v2",
+    " FABLE ",
+  ])("passes the requested model %s intact to its provider", (model) => {
+    expect(resolvePreferredRuntimeModel("claude", model)).toBe(model.trim());
+    expect(applyProviderModelRule("claude", model)).toBe(model.trim());
+    expect(modelProviderMismatch("claude", model)).toBeNull();
   });
 
   test("keeps the Fable alias on its owning runtime", () => {
@@ -116,9 +130,22 @@ describe("model catalog", () => {
     expect(resolvePreferredRuntimeModel("codex", "gpt-5.6-sol", { codexCachePath: cachePath })).toBe("gpt-5.6-sol");
   });
 
-  test("normalizes full claude ids to aliases", () => {
-    expect(resolvePreferredRuntimeModel("claude", "claude-opus-4-6")).toBe("opus");
-    expect(resolvePreferredRuntimeModel("claude", "claude-sonnet-4-6")).toBe("sonnet");
+  test.each(["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"])(
+    "preserves the explicit version in %s",
+    (model) => {
+      expect(resolvePreferredRuntimeModel("claude", model)).toBe(model);
+    },
+  );
+
+  test("does not use a partial provider catalog as an allowlist", () => {
+    expect(resolvePreferredRuntimeModel("codex", "future-model", { codexCachePath: "/missing/catalog.json" })).toBe(
+      "future-model",
+    );
+    expect(resolvePreferredRuntimeModel("grok", "grok-future")).toBe("grok-future");
+  });
+
+  test.each([undefined, null, "", "   "])("uses the provider default only for an absent model %s", (model) => {
+    expect(resolvePreferredRuntimeModel("claude", model)).toBe("sonnet");
   });
 
   test("falls back to provider default when model is incompatible", () => {
