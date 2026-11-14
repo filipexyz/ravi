@@ -39,6 +39,10 @@
 - Missing and blank names select the provider default; unknown ids pass through
   even when a local display catalog exists. Incompatible-runtime cases retain
   their existing fallback and validation behavior.
+- `bun test src/tui/components/ModelPicker.test.ts` renders the actual picker
+  with configured ids outside its display catalog, verifies the selected id
+  and next-runtime preview, then confirms unchanged or selects a different
+  catalog row. Missing/blank models retain the default behavior.
 - The same tests cover the `off`/`normal`/`verbose` adaptive thinking contract
   for Fable 5, 5-1, 5-2, future versions, the short `fable` alias, and Mythos.
   Sonnet and lookalikes such as `claude-fableish-5` and `my-fable-model` still

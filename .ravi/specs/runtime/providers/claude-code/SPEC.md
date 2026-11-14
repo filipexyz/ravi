@@ -19,6 +19,10 @@ applies_to:
   - src/runtime/host-hooks.ts
   - src/runtime/runtime-host-attachments.ts
   - src/runtime/*provider.test.ts
+  - src/runtime/model-catalog.ts
+  - src/runtime/model-catalog.test.ts
+  - src/tui/components/ModelPicker.tsx
+  - src/tui/components/ModelPicker.test.ts
   - src/remote-spawn.ts
   - src/remote-spawn.test.ts
 owners:
@@ -121,6 +125,11 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Preferred model resolution MUST NOT use the display catalog as an allowlist.
   A nonempty name MUST pass through; only an absent or blank name selects the
   provider default. Existing handling of incompatible runtimes remains.
+- The model picker MUST retain a configured compatible id missing from its
+  display catalog as a visible selected option. Confirming without choosing
+  another model MUST preserve that id; choosing a listed alternative MUST
+  apply the newly selected id. The current option MUST NOT alter the shared
+  catalog or leak into another provider's choices.
 - The Fable family (the `fable` alias and names beginning with `fable-` or
   `claude-fable-`, including future versions) and `claude-mythos-5` MUST NOT
   receive `thinking: { type:
