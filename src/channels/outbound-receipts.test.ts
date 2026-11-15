@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { Database } from "bun:sqlite";
 import { join } from "node:path";
+import { openStateDatabase } from "../db/state-boundary.js";
 import { closeRouterDb, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { prepareThreadFence } from "../threads/schema-fence.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS,
   claimChannelOutboundReceipt,
@@ -222,7 +223,10 @@ describe("channel outbound receipt ledger", () => {
 
   it("upgrades the pre-claim receipt schema before installing claim indexes", () => {
     if (!stateDir) throw new Error("isolated Ravi state was not created");
-    const legacyDb = new Database(join(stateDir, "ravi.db"));
+    const legacyDb = openStateDatabase(join(stateDir, "ravi.db"));
+    // Prepare the empty isolated fixture before introducing the old receipt
+    // schema; installing the fence on existing live state remains forbidden.
+    prepareThreadFence(legacyDb);
     legacyDb.exec(`
       CREATE TABLE channel_outbound_receipts (
         idempotency_key       TEXT PRIMARY KEY,
