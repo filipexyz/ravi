@@ -166,7 +166,7 @@ export function publishDeliveryBoot(input: {
     try {
       unlinkSync(temporary);
     } catch {
-      /* No temporary file after a failed create. */
+      // no-cause: Private temporary-file cleanup is best effort; only the immutable final file is evidence.
     }
   }
   return boot;
@@ -197,7 +197,7 @@ export function readVerifiedDeliveryBoot(input: {
     }
     return { relation: "known", boot };
   } catch {
-    // An orphan, inaccessible process/file or malformed declaration is never a health fallback.
+    // no-cause: Missing or unverifiable boot evidence deliberately returns unknown, never a health fallback.
     return { relation: "unknown", reason: "boot_evidence_unavailable" };
   }
 }

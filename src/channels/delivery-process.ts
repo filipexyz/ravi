@@ -103,7 +103,7 @@ export function observeDeliveryProcess(pid: number): DeliveryProcessObservation 
     if (!first || !second || JSON.stringify(first) !== JSON.stringify(second)) return null;
     return second;
   } catch {
-    // Inspection failure is unknown identity, never proof of a compatible live boot.
+    // no-cause: Kernel observation failure is unknown identity, never proof of a compatible live boot.
     return null;
   }
 }

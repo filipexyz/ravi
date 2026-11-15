@@ -110,7 +110,7 @@ export function createDeliveryCompatibilityGate(options: {
           : {}),
       };
     } catch {
-      // A failed observer is missing evidence, never permission to probe delivery by sending.
+      // no-cause: Failed observation is intentionally unknown evidence; it never permits an effect callback.
       return unknown("COMPATIBILITY_OBSERVATION_FAILED");
     }
   }
