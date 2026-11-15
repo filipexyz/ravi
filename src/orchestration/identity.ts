@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 export type ChatId = string;
 export type TaskId = string;
+export type ThreadId = string;
+export type DecisionId = string;
 export type CommitmentKey = string;
 export type OccurrenceKey = string;
 export type TaskOutcomeKind = "completed" | "failed";
@@ -26,8 +28,13 @@ export interface TaskResultOccurrence extends OccurrenceScopeV1 {
   outcomeVersion: number;
 }
 
-// thread_decision is deferred until the thread context/audience contract is available.
-export type OccurrenceIdentityV1 = RequirementOccurrence | TaskResultOccurrence;
+export interface ThreadDecisionOccurrence extends OccurrenceScopeV1 {
+  kind: "thread_decision";
+  threadId: ThreadId;
+  decisionRef: DecisionId;
+}
+
+export type OccurrenceIdentityV1 = RequirementOccurrence | TaskResultOccurrence | ThreadDecisionOccurrence;
 
 function requireFields(value: Record<string, unknown>, fields: readonly string[]): void {
   const keys = Reflect.ownKeys(value);
@@ -49,7 +56,16 @@ export function parseOccurrenceIdentity(input: unknown): OccurrenceIdentityV1 {
   const value = input as Record<string, unknown>;
   if (value.schemaVersion !== 1) throw new TypeError("Unsupported occurrence identity version");
   const chatId = requireId(value.chatId);
-  const taskId = requireId(value.taskId);
+  if (value.kind === "thread_decision") {
+    requireFields(value, ["schemaVersion", "kind", "chatId", "threadId", "decisionRef"]);
+    return {
+      schemaVersion: 1,
+      kind: "thread_decision",
+      chatId,
+      threadId: requireId(value.threadId),
+      decisionRef: requireId(value.decisionRef),
+    };
+  }
   if (value.kind === "requirement") {
     requireFields(value, [
       "schemaVersion",
@@ -67,7 +83,7 @@ export function parseOccurrenceIdentity(input: unknown): OccurrenceIdentityV1 {
       schemaVersion: 1,
       kind: "requirement",
       chatId,
-      taskId,
+      taskId: requireId(value.taskId),
       commitmentKey: requireId(value.commitmentKey),
       requirementKind: value.requirementKind,
       subjectId: requireId(value.subjectId),
@@ -89,7 +105,7 @@ export function parseOccurrenceIdentity(input: unknown): OccurrenceIdentityV1 {
       schemaVersion: 1,
       kind: "task_result",
       chatId,
-      taskId,
+      taskId: requireId(value.taskId),
       outcomeKind: value.outcomeKind,
       outcomeVersion: value.outcomeVersion,
     };
@@ -99,19 +115,29 @@ export function parseOccurrenceIdentity(input: unknown): OccurrenceIdentityV1 {
 
 function serializeIdentity(input: OccurrenceIdentityV1): string {
   const value = parseOccurrenceIdentity(input);
-  return JSON.stringify(
-    value.kind === "requirement"
-      ? [
-          "attention.occurrence.v1",
-          value.kind,
-          value.chatId,
-          value.commitmentKey,
-          value.taskId,
-          value.requirementKind,
-          value.subjectId,
-        ]
-      : ["attention.occurrence.v1", value.kind, value.chatId, value.taskId, value.outcomeKind, value.outcomeVersion],
-  );
+  switch (value.kind) {
+    case "requirement":
+      return JSON.stringify([
+        "attention.occurrence.v1",
+        value.kind,
+        value.chatId,
+        value.commitmentKey,
+        value.taskId,
+        value.requirementKind,
+        value.subjectId,
+      ]);
+    case "task_result":
+      return JSON.stringify([
+        "attention.occurrence.v1",
+        value.kind,
+        value.chatId,
+        value.taskId,
+        value.outcomeKind,
+        value.outcomeVersion,
+      ]);
+    case "thread_decision":
+      return JSON.stringify(["attention.occurrence.v1", value.kind, value.chatId, value.threadId, value.decisionRef]);
+  }
 }
 
 export function makeOccurrenceKey(identity: OccurrenceIdentityV1): OccurrenceKey {
