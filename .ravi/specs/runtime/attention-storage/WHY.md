@@ -1,5 +1,5 @@
 # Why
 
-A universal requirement key excluded ordinary task results with no dependency or decision. A kind discriminator alone would still allow incoherent rows unless the database enforces each complete shape. Two partial unique indexes make replay idempotent without relying on NULL uniqueness behavior.
+A universal requirement key excluded ordinary task results with no dependency or decision and decisions owned by a thread without a task. A kind discriminator alone would allow incoherent rows unless the database enforces each complete shape. Three partial unique indexes provide idempotence without relying on NULL uniqueness behavior.
 
-The final PR1 cut keeps task-scoped requirements and results. Task-free thread decisions need the context/audience contract of item 1 and will be added separately. Keeping storage disconnected from runtime makes this cut reviewable without granting attention or affecting paused followups.
+PR1 stores requirements, task results and task-free thread decisions. It accepts a literal result version and the existing persisted ThreadRecord.id. Producer work and future thread-ID normalization/migration remain with their respective PR2 owners. Keeping storage disconnected from runtime avoids enabling attention before the admission and delivery contracts are ready.

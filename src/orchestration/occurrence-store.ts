@@ -12,10 +12,11 @@ export function getOrCreateOccurrence(db: Database, input: OccurrenceIdentityV1)
   const key = makeOccurrenceKey(identity);
   return db
     .transaction(() => {
-      const row =
-        identity.kind === "requirement"
-          ? db
-              .query<{ occurrence_key: string }, [string, string, string, string, string, string]>(`
+      let row: { occurrence_key: string } | null;
+      switch (identity.kind) {
+        case "requirement":
+          row = db
+            .query<{ occurrence_key: string }, [string, string, string, string, string, string]>(`
           INSERT INTO chat_attention_occurrences
             (occurrence_key,kind,chat_id,commitment_key,task_id,requirement_kind,subject_id)
           VALUES (?,'requirement',?,?,?,?,?)
@@ -23,16 +24,18 @@ export function getOrCreateOccurrence(db: Database, input: OccurrenceIdentityV1)
           DO UPDATE SET occurrence_key=chat_attention_occurrences.occurrence_key
           RETURNING occurrence_key
         `)
-              .get(
-                key,
-                identity.chatId,
-                identity.commitmentKey,
-                identity.taskId,
-                identity.requirementKind,
-                identity.subjectId,
-              )
-          : db
-              .query<{ occurrence_key: string }, [string, string, string, string, number]>(`
+            .get(
+              key,
+              identity.chatId,
+              identity.commitmentKey,
+              identity.taskId,
+              identity.requirementKind,
+              identity.subjectId,
+            );
+          break;
+        case "task_result":
+          row = db
+            .query<{ occurrence_key: string }, [string, string, string, string, number]>(`
           INSERT INTO chat_attention_occurrences
             (occurrence_key,kind,chat_id,task_id,outcome_kind,outcome_version)
           VALUES (?,'task_result',?,?,?,?)
@@ -40,7 +43,21 @@ export function getOrCreateOccurrence(db: Database, input: OccurrenceIdentityV1)
           DO UPDATE SET occurrence_key=chat_attention_occurrences.occurrence_key
           RETURNING occurrence_key
         `)
-              .get(key, identity.chatId, identity.taskId, identity.outcomeKind, identity.outcomeVersion);
+            .get(key, identity.chatId, identity.taskId, identity.outcomeKind, identity.outcomeVersion);
+          break;
+        case "thread_decision":
+          row = db
+            .query<{ occurrence_key: string }, [string, string, string, string]>(`
+          INSERT INTO chat_attention_occurrences
+            (occurrence_key,kind,chat_id,thread_id,decision_ref)
+          VALUES (?,'thread_decision',?,?,?)
+          ON CONFLICT(kind,chat_id,thread_id,decision_ref) WHERE kind='thread_decision'
+          DO UPDATE SET occurrence_key=chat_attention_occurrences.occurrence_key
+          RETURNING occurrence_key
+        `)
+            .get(key, identity.chatId, identity.threadId, identity.decisionRef);
+          break;
+      }
       if (row?.occurrence_key !== key) throw new Error("Occurrence identity integrity mismatch");
       return key;
     })
