@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS chat_attention_occurrences (
       AND commitment_key IS NULL AND outcome_kind IS NULL AND outcome_version IS NULL)
   )
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_attention_blocker
+CREATE UNIQUE INDEX IF NOT EXISTS uq_attention_requirement
   ON chat_attention_occurrences(kind,chat_id,commitment_key,task_id,requirement_kind,subject_id)
   WHERE kind='requirement';
 CREATE UNIQUE INDEX IF NOT EXISTS uq_attention_task_result

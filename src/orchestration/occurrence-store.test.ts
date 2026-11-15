@@ -211,7 +211,7 @@ describe("occurrence storage", () => {
       )
       .all();
     expect(indexes).toEqual([
-      { name: "uq_attention_blocker", unique: 1, partial: 1 },
+      { name: "uq_attention_requirement", unique: 1, partial: 1 },
       { name: "uq_attention_task_result", unique: 1, partial: 1 },
       { name: "uq_attention_thread_decision", unique: 1, partial: 1 },
     ]);
