@@ -37,36 +37,40 @@ PR reconciliation and follow are internal helpers, not separate public commands.
   typed plan with no GitHub writes, journal, watch or trigger mutations.
   Combining the flags is usage error, exit 2. Failure/partial is exit 1;
   complete publication is exit 0. `--json` preserves the native error envelope.
-- Publication against runtime state requires an authenticated gateway context
-  and the installed daemon journal. A bare operator terminal without that
-  context is not a supported publication path; `--reply-session` does not
-  authenticate the caller or authorize local writable access to real state.
+- Publication writes the daemon-prepared journal in runtime state and has two
+  callers, told apart by the transport of the running context and never by
+  flags, environment or a credential file:
+  - **A Ravi session**, through the gateway/agent (transport `gateway` or
+    `tool`). It MUST carry a resolved authenticated runtime context bound to an
+    agent and a session. Session/source identity MUST come from that record,
+    not ambient aliases. CI follows the publishing session's durable origin,
+    and `--reply-session`, when given, MUST be that session. A runtime context
+    that belongs to no session MUST fail before body/worktree, GitHub, health
+    or journal IO with `PERMISSION_DENIED` (exit 1) and `pr publish requires an
+    authenticated session context; run through the gateway/agent.`, whatever
+    `--reply-session` names: it never becomes a terminal and never publishes
+    into another session.
+  - **The operator's terminal**, with the installed CLI and no runtime context
+    (`quality/state-boundary`). It acts as the local operator with admin
+    access and MUST pass `--reply-session <session>`: the session whose chat
+    receives the CI follow. That names a destination and grants no authority.
+    A missing flag MUST fail with `PUBLICATION_SESSION_REQUIRED` (exit 2); the
+    session MUST exist, be accessible and have a chat destination; all of it
+    is checked before body/worktree, GitHub, health or journal IO.
+  A CLI run from a source checkout or a worktree cannot open runtime state,
+  including the read of the reply session, so it cannot publish or preview.
 - Read the caller worktree and body file, never silently the gateway cwd.
-  Publication, including preview, MUST run through the gateway/agent with
-  a resolved authenticated runtime context bound to an agent and session.
-  Session/source identity MUST come from that record, not ambient aliases.
-  CI follows the publishing session's durable origin.
-- **Breaking change:** bare local operator publication and `--reply-session`
-  are removed. A reply destination is not authentication. CLI/SDK consumers
-  MUST remove this argument and publish from an authorized Ravi session.
-  Missing authenticated session authority MUST fail before body/worktree,
-  GitHub, health or journal IO, with `PERMISSION_DENIED` (exit 1) and the
-  actionable message: `pr publish requires an authenticated session context;
-  run through the gateway/agent.` Host ownership, a socket, environment
-  aliases, a credential file or a bootstrap admin key MUST NOT substitute
-  for the authenticated session boundary. No bare-operator login/exchange
-  is implemented; see WHY for the future prerequisite, not an available API.
+- A refusal MUST be shown to whoever ran the command. A gateway client and a
+  tool caller render the returned failure; in a terminal the command renders
+  it itself, once, as the JSON envelope or as text.
 - Declare `@CommandAccess(kind:mutate, resource:pr, action:publish, risk:high,
-  requiresConfirmation:true, localOperator:false)` and concrete `@Returns`;
-  no `@CliOnly`. The access note MUST survive local-operator refusal so the
-  caller sees the required execution path instead of a journal failure.
-  Authorization runs before filesystem/network reads and before effects.
-  `--execute` grants neither capability nor review approval. No auto-grants.
+  requiresConfirmation:true, localOperator:true)` and concrete `@Returns`;
+  no `@CliOnly`. Authorization runs before filesystem/network reads and
+  before effects. `--execute` grants neither capability nor review approval.
+  No auto-grants.
 - When authorization requires approval, response and permission-audit recovery
-  guidance MUST respect `localOperator:false`: request approval/reissuance from
-  the authority and retry through the authenticated gateway/agent session.
-  Neither surface may recommend running as the bare operator. Commands that
-  still allow local operators keep their existing recovery alternative.
+  guidance MUST name the same way out: request approval/reissuance from the
+  authority, or have the operator run the command.
 
 ## Integrity and supported scope
 

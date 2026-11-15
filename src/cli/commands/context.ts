@@ -14,12 +14,7 @@ import {
 } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { isLocalCredentialOperatorContext } from "../operator-runtime.js";
-import {
-  dispatchRemote,
-  gatewayRequiredError,
-  remoteGatewayErrorToContractError,
-  resolveRemoteGatewayConfig,
-} from "../remote-gateway.js";
+import { dispatchRemote, remoteGatewayErrorToContractError, resolveRemoteGatewayConfig } from "../remote-gateway.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   contextAuthorizeReturnSchema,
@@ -1207,7 +1202,7 @@ export class ContextCredentialsCommands {
       fail(`Expected an rctx_* key, got "${contextKey.slice(0, 8)}..."`);
     }
     const record = isLocalCredentialOperatorContext()
-      ? await this.validateCredentialWithGateway(contextKey, asJson)
+      ? await this.validateCredentialForOperator(contextKey, asJson)
       : resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path) ?? emptyCredentialsFile();
@@ -1312,11 +1307,32 @@ export class ContextCredentialsCommands {
     return payload;
   }
 
-  private async validateCredentialWithGateway(contextKey: string, asJson: boolean) {
+  /**
+   * The operator's terminal checks the candidate with the running daemon when
+   * its gateway is reachable, and against the state on this machine when it is
+   * not (a stopped daemon must not keep a credential from being stored).
+   */
+  private async validateCredentialForOperator(contextKey: string, asJson: boolean) {
     const operation = "context credentials add";
+    const refuse = (cause: unknown): never => {
+      const error =
+        cause instanceof ContractError
+          ? cause
+          : new ContractError(operation, "SERVER_UNAVAILABLE", "Credential validation through the gateway failed.", 1, {
+              ...errorDiagnostic(cause, { operation }),
+              retryable: true,
+            });
+      renderContractError(error, asJson);
+      throw error;
+    };
+    let config: Awaited<ReturnType<typeof resolveRemoteGatewayConfig>>;
     try {
-      const config = await resolveRemoteGatewayConfig(process.env, operation, { installedOperator: true });
-      if (!config) throw gatewayRequiredError(operation, true);
+      config = await resolveRemoteGatewayConfig(process.env, operation, { installedOperator: true });
+    } catch (cause) {
+      return refuse(cause);
+    }
+    if (!config) return resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+    try {
       // Authenticate the candidate itself: adding the first credential must not
       // need an existing default, and the daemon must never receive a file write.
       const result = await dispatchRemote({
@@ -1360,15 +1376,7 @@ export class ContextCredentialsCommands {
       }
       return parsed.data;
     } catch (cause) {
-      const error =
-        cause instanceof ContractError
-          ? cause
-          : new ContractError(operation, "SERVER_UNAVAILABLE", "Credential validation through the gateway failed.", 1, {
-              ...errorDiagnostic(cause, { operation }),
-              retryable: true,
-            });
-      renderContractError(error, asJson);
-      throw error;
+      return refuse(cause);
     }
   }
 

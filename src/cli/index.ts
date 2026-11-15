@@ -31,6 +31,7 @@ import {
   installUsageContract,
   renderContractError,
   sqliteCapacityToContractError,
+  stateNotReadyToContractError,
   unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
@@ -46,7 +47,7 @@ import { maybeRunAppAliasRoute, resolveAppAliasInvocation } from "../apps/router
 import { cliOnlyCommandError, REMOTE_GATEWAY_URL_ENV, requiresRemoteGateway } from "./remote-gateway.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
 import { runWithContext } from "./context.js";
-import { usesInstalledOperatorTransport } from "./operator-runtime.js";
+import { usesOperatorRecoveryPath } from "./operator-runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -233,7 +234,9 @@ program
         },
         () => runUpdate(options),
       );
-    await (usesInstalledOperatorTransport() ? runWithContext({}, update) : update());
+    // An update must work while state is not prepared for the running release:
+    // the operator's terminal runs it without resolving a credential from SQLite.
+    await (usesOperatorRecoveryPath() ? runWithContext({}, update) : update());
   });
 
 program
@@ -421,7 +424,9 @@ void bootstrapCli().catch(async (error: unknown) => {
     return;
   }
   const contractError =
-    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap", error);
+    stateNotReadyToContractError("cli bootstrap", error) ??
+    sqliteCapacityToContractError("cli bootstrap", error) ??
+    unexpectedErrorToContractError("cli bootstrap", error);
   renderContractError(contractError, process.argv.includes("--json"));
   await emitCliAuditEvent({
     group: "cli",

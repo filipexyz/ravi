@@ -363,6 +363,11 @@ it.skipIf(!isolatedPm2Executable)(
         join(packageRoot, "dist", "bundle", "state-boundary.ts"),
       );
       copyFileSync(new URL("./pm2-output.ts", import.meta.url), join(packageRoot, "dist", "pm2-output.ts"));
+      mkdirSync(join(packageRoot, "dist", "utils"), { recursive: true });
+      copyFileSync(
+        new URL("./utils/account-home.ts", import.meta.url),
+        join(packageRoot, "dist", "utils", "account-home.ts"),
+      );
       mkdirSync(join(packageRoot, "dist", "threads"), { recursive: true });
       mkdirSync(join(packageRoot, "dist", "db"), { recursive: true });
       copyFileSync(

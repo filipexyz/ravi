@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import packageInfo from "../../package.json" with { type: "json" };
-import { isSchemaConsumer, type DatabaseBoundaryOptions } from "./state-boundary.js";
+import { isInstalledOperatorCli, isSchemaConsumerOf, type DatabaseBoundaryOptions } from "./state-boundary.js";
+import { PREPARE_STATE_COMMAND } from "./state-readiness.js";
 import { withSchemaMigrationLock } from "./schema-lock.js";
 import {
   assertThreadFenceSchemaWriteAllowed,
@@ -15,8 +16,8 @@ export const STATE_SCHEMA_VERSION = `1:${packageInfo.version}`;
 const initialized = new WeakMap<Database, Set<string>>();
 
 /** Journal changes participate in schema exclusion, including first-file boot. */
-export function configureStateJournalMode(db: Database): void {
-  if (isSchemaConsumer()) return;
+export function configureStateJournalMode(db: Database, boundary?: DatabaseBoundaryOptions): void {
+  if (isSchemaConsumerOf(db.filename, boundary)) return;
   withSchemaMigrationLock(db, () => {
     prepareRegisteredThreadFence(db);
     assertThreadFenceSchemaWriteAllowed(db);
@@ -26,25 +27,29 @@ export function configureStateJournalMode(db: Database): void {
 
 export class StateSchemaNotReadyError extends Error {
   readonly code = "STATE_SCHEMA_NOT_READY";
-  constructor(component: string, options?: ErrorOptions) {
+  constructor(component: string, options?: ErrorOptions & { operatorCli?: boolean }) {
     super(
-      `STATE_SCHEMA_NOT_READY: ${component} is not initialized for this release. Start the installed daemon first, then start ravi-channels with the same release. The channel runner will not migrate state.`,
+      options?.operatorCli
+        ? `STATE_SCHEMA_NOT_READY: ${component} is not prepared for this release. The installed daemon prepares state when it starts: run \`${PREPARE_STATE_COMMAND}\`, then retry. The CLI never migrates state.`
+        : `STATE_SCHEMA_NOT_READY: ${component} is not initialized for this release. Start the installed daemon first, then start ravi-channels with the same release. The channel runner will not migrate state.`,
       options,
     );
   }
 }
 
-export function assertStateSchemaReady(db: Database, component: string): void {
+export function assertStateSchemaReady(db: Database, component: string, boundary?: DatabaseBoundaryOptions): void {
   assertThreadFenceSchemaWriteAllowed(db);
+  // Who is told what to do next: the operator at a terminal, or whoever starts the channel runner.
+  const operatorCli = isInstalledOperatorCli(boundary);
   try {
     const row = db.query("SELECT version FROM state_schema_versions WHERE component = ?").get(component) as {
       version: string;
     } | null;
     if (row?.version === STATE_SCHEMA_VERSION) return;
   } catch (error) {
-    throw new StateSchemaNotReadyError(component, { cause: error });
+    throw new StateSchemaNotReadyError(component, { cause: error, operatorCli });
   }
-  throw new StateSchemaNotReadyError(component);
+  throw new StateSchemaNotReadyError(component, { operatorCli });
 }
 
 /** Called only after guarded open. The consumer never executes the callback. */
@@ -54,8 +59,8 @@ export function initializeStateSchema(
   initialize: () => void,
   boundary?: DatabaseBoundaryOptions,
 ): void {
-  if (isSchemaConsumer(boundary)) {
-    assertStateSchemaReady(db, component);
+  if (isSchemaConsumerOf(db.filename, boundary)) {
+    assertStateSchemaReady(db, component, boundary);
     return;
   }
   prepareRegisteredThreadFence(db);

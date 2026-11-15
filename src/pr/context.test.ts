@@ -92,7 +92,50 @@ it("refuses absent sessions and sessions with no chat destination", () => {
   ).toThrow("unavailable in this scope");
   getDb().exec("UPDATE sessions SET last_to=NULL");
   expect(() => runWithContext(context, () => resolvePublicationContext())).toThrow("no chat destination");
-  expect(() => runWithContext({}, () => resolvePublicationContext())).toThrow(
-    "requires an authenticated session context",
-  );
+});
+it("lets a session name only itself as the reply session", () => {
+  for (const own of ["publisher", "agent:test:publisher"]) {
+    expect(runWithContext(context, () => resolvePublicationContext(own)).sessionKey).toBe("agent:test:publisher");
+  }
+  expect(() => runWithContext(context, () => resolvePublicationContext("other-session"))).toThrow("own session");
+});
+it("refuses a runtime context that belongs to no session, whatever reply session it names", () => {
+  const sessionless: ToolContext[] = [
+    { transport: "gateway" },
+    { transport: "tool", agentId: "test", sessionKey: "agent:test:publisher" },
+    { ...context, context: { ...context.context!, sessionKey: undefined, sessionName: undefined } },
+  ];
+  for (const candidate of sessionless) {
+    for (const reply of [undefined, "publisher", "agent:test:publisher"]) {
+      expect(() => runWithContext(candidate, () => resolvePublicationContext(reply))).toThrow(
+        "requires an authenticated session context",
+      );
+    }
+  }
+});
+it("lets the operator's terminal publish into the session it names, which is a destination and no more", () => {
+  const before = getDb().query("SELECT * FROM sessions").all();
+  // No transport: the terminal, acting as the local operator, with or without a stored credential.
+  const terminals: ToolContext[] = [{}, { ...context, transport: undefined, contextOrigin: "default-credential" }];
+  for (const terminal of terminals) {
+    for (const reply of ["publisher", "agent:test:publisher", " publisher "]) {
+      expect(runWithContext(terminal, () => resolvePublicationContext(reply))).toMatchObject({
+        agentId: "test",
+        sessionKey: "agent:test:publisher",
+        sessionName: "publisher",
+        source: { channel: "slack", accountId: "main", chatId: "C-test", threadId: "thread-1" },
+      });
+    }
+    // No destination, one that does not exist: refused before any publication IO.
+    expect(() => runWithContext(terminal, () => resolvePublicationContext())).toThrow("--reply-session <session>");
+    expect(() => runWithContext(terminal, () => resolvePublicationContext("  "))).toThrow("--reply-session <session>");
+    expect(() => runWithContext(terminal, () => resolvePublicationContext("missing"))).toThrow(
+      "unavailable in this scope",
+    );
+  }
+  // One with no chat.
+  getDb().exec("UPDATE sessions SET last_to=NULL");
+  expect(() => runWithContext({}, () => resolvePublicationContext("publisher"))).toThrow("no chat destination");
+  getDb().exec("UPDATE sessions SET last_to='C-test'");
+  expect(getDb().query("SELECT * FROM sessions").all()).toEqual(before);
 });

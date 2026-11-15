@@ -1,6 +1,8 @@
 import { Database } from "bun:sqlite";
 import { ContractError } from "../cli/agent-contract.js";
 import { getContext } from "../cli/context.js";
+import { assertDatabaseTargetAllowed } from "../db/state-boundary.js";
+import { localOperatorCan } from "../permissions/provider-runtime.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
 import { getRaviDbPath } from "../router/router-db.js";
 import { resolveGhFollowContext, type GhWatchFollowContext } from "../hooks/gh-watch.js";
@@ -30,6 +32,28 @@ export function requirePublicationRuntimeContext() {
   };
 }
 
+export type PublicationRuntimeContext = ReturnType<typeof requirePublicationRuntimeContext>;
+
+/**
+ * Who is publishing.
+ * - `session`: a Ravi session through the gateway/agent. Its identity comes
+ *   from the authenticated runtime record and it publishes into itself.
+ * - `terminal`: the operator's own terminal, with no runtime context behind
+ *   it. It acts as the local operator and names the session that receives the
+ *   CI follow.
+ * A runtime context never becomes a terminal: one with no session is refused
+ * (`requirePublicationRuntimeContext`), so it cannot name another session.
+ */
+export type PublicationCaller = { kind: "session"; context: PublicationRuntimeContext } | { kind: "terminal" };
+
+export function resolvePublicationCaller(): PublicationCaller {
+  const transport = getContext({ localOnly: true })?.transport;
+  if (transport === "gateway" || transport === "tool") {
+    return { kind: "session", context: requirePublicationRuntimeContext() };
+  }
+  return { kind: "terminal" };
+}
+
 /** Validate live ownership without bootstrapping or migrating state during preview. */
 export function resolvePublicationFollowContext(context: GhWatchFollowContext): GhWatchFollowContext {
   let database: Database | undefined;
@@ -56,14 +80,46 @@ export function resolvePublicationFollowContext(context: GhWatchFollowContext): 
   }
 }
 
-/** Read-only even in a fresh installation: preview must not bootstrap the runtime database. */
-export function resolvePublicationContext(): GhWatchFollowContext {
-  const context = requirePublicationRuntimeContext();
-  const target = (context.sessionKey ?? context.sessionName)!;
+/**
+ * Where the publication's CI follow reports. Read-only even in a fresh
+ * installation: preview must not bootstrap the runtime database.
+ *
+ * A session publishes into itself; `--reply-session`, when given, must be that
+ * session. The operator's terminal has no session, so it must name one. That
+ * is a destination and grants no authority: the authority is the local
+ * operator's own admin access.
+ */
+export function resolvePublicationContext(replySession?: string): GhWatchFollowContext {
+  const caller = resolvePublicationCaller();
+  const reply = replySession?.trim();
+  let target: string;
+  if (caller.kind === "session") {
+    const { sessionKey, sessionName } = caller.context;
+    if (reply && reply !== sessionKey && reply !== sessionName)
+      throw prError("USAGE_ERROR", "A session publication follows in its own session; omit --reply-session.", {}, 2);
+    target = (sessionKey ?? sessionName)!;
+  } else {
+    if (!reply)
+      throw prError(
+        "PUBLICATION_SESSION_REQUIRED",
+        "Name the session whose chat receives the CI follow: --reply-session <session>.",
+        { suggestedAction: "Rerun with --reply-session <session>; `ravi sessions list` shows the sessions." },
+        2,
+      );
+    if (!localOperatorCan("admin", "system", "*"))
+      throw prError(
+        "PERMISSION_DENIED",
+        "Publishing from a terminal takes the local operator's admin access; --reply-session names a destination and grants no authority.",
+      );
+    target = reply;
+  }
   if (!canAccessSession(getScopeContext(), target))
     throw prError("SESSION_NOT_FOUND", "Publishing session is unavailable in this scope.");
+  const contextSource = caller.kind === "session" ? caller.context.source : undefined;
   let database: Database | undefined;
   try {
+    // The session is read from runtime state, which a checkout or worktree never reaches.
+    assertDatabaseTargetAllowed(getRaviDbPath());
     database = new Database(getRaviDbPath(), { readonly: true, create: false });
     const row = database
       .query(`SELECT session_key,name,agent_id,last_channel,last_account_id,last_to,last_thread_id
@@ -78,8 +134,8 @@ export function resolvePublicationContext(): GhWatchFollowContext {
       last_thread_id: string | null;
     } | null;
     if (!row) throw prError("SESSION_NOT_FOUND", "Publishing session is unavailable in this scope.");
-    const source = context.source
-      ? context.source
+    const source = contextSource
+      ? contextSource
       : row.last_channel && row.last_account_id && row.last_to
         ? {
             channel: row.last_channel,

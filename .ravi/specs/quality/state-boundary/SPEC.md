@@ -25,6 +25,7 @@ applies_to:
   - src/managed-runtime-rebind.ts
   - src/gateway.ts
   - src/db/schema-owner.ts
+  - src/db/state-readiness.ts
   - src/db/runtime-state.ts
   - src/channels/runner.ts
   - src/channels/outbound-publish-outbox.ts
@@ -56,7 +57,10 @@ applies_to:
 - Every writable state constructor MUST use `openStateDatabase`. Pure path display and explicit readonly inspectors MUST NOT initialize schema.
 - Cached prepared statements MUST revalidate the selected database through `getDb()` before reuse. Changing isolated state MUST invalidate the old statements; losing state selection MUST refuse instead of reading or writing the old state.
 - Legacy migration MUST validate the database and every existing WAL/SHM source before its first rename. A refused hardlink or protected source MUST leave the entire legacy file set unmoved.
-- Access to real state MUST be authorized by process role: installed runtime code, actual PID registered by PM2, matching executable/arguments and process manager parent. Environment names, inherited `pm_id`, cwd or argv alone MUST NOT authorize it.
+- Access to real state MUST be authorized by process role, and there are three:
+  - the installed daemon and the installed channel runner: installed runtime code, actual PID registered by PM2, matching executable/arguments and process manager parent;
+  - the installed operator CLI: the process entry is the CLI bundle of an installed package, it carries no runtime context (`RAVI_CONTEXT_KEY`, `RAVI_GATEWAY_URL`, `RAVI_SESSION_KEY`, `RAVI_SESSION_NAME`, `RAVI_AGENT_ID`), it is not a `daemon run` / `channels run` entry and it does not run under `NODE_ENV=test`. A test runner is refused by its entry (its test file is not the bundle); the operator's own arguments MAY name anything, a test file included.
+  Environment names, inherited `pm_id`, cwd or argv alone MUST NOT authorize it: the operator role rests on where the running code is installed, and a runtime-context variable can only take that role away.
 - A missing default `PM2_HOME/pm2.pid` MUST NOT by itself refuse an installed
   runtime. Only when that file is absent, the actual live parent's PM2 God
   Daemon title and canonical PM2 home MAY establish supervisor identity before
@@ -68,10 +72,13 @@ applies_to:
   MUST NOT authorize real state or expose the secret-bearing registry output.
 - Identity validation MUST match the canonical launcher for each role: daemon registers the bundle with `daemon run`; channels registers the running Bun executable with `<bundle> channels run`. The exact arguments, bundle and executable MUST be checked; launcher-generated channel registration MUST be covered by regression tests.
 - The identity check MUST use the code's location. A package containing `src` or `.git`, unknown code provenance, CLI, build, worktree or test execution MUST NOT gain real-state access by inheriting runtime environment or explicitly naming the real directory.
-- Outside the registered runtime, commands MUST select isolated state explicitly, normally with `RAVI_STATE_DIR` on the command. Losing that variable MUST refuse real-state access instead of silently opening the default. Errors MUST show the variable, a command example and the installed daemon gateway alternative.
-- An installed operator CLI targeting canonical real state MUST send stateful commands through the existing authenticated gateway, without opening local SQLite for credential resolution or authorization. Explicit isolated state remains local. A narrow local lifecycle/status path MAY use the existing operator provider without databases so a stopped daemon can be recovered; runtime contexts and explicit remote invocations MUST NOT gain that fallback.
+- A source checkout, worktree, build or test MUST select isolated state explicitly, normally with `RAVI_STATE_DIR` on the command. Losing that variable MUST refuse real-state access instead of silently opening the default. Errors MUST show the variable, a command example and the installed daemon gateway alternative.
+- An installed operator CLI targeting canonical real state MUST run its commands in its own process, on that state: it resolves its credential, authorizes and executes locally, and is not sent to the daemon's gateway. It never prepares a store there: it MUST NOT create a database file, run a store's initialization or migration callback, take a schema lock, change the journal mode or move legacy files. A store that the daemon of the same release has not prepared (missing file, missing marker, marker of another release) MUST be refused with `STATE_SCHEMA_NOT_READY`, reported under that code with the command that fixes it (`ravi daemon restart -m "prepare state"`, or `ravi daemon start` on a first run). Explicit isolated state remains the CLI's own to prepare.
+  - For this CLI, real state is `~/.ravi` under `HOME` and under the account's own home (resolved by UID), so a `HOME` override cannot make it the process that prepares the account's real state.
+  - What it may still create: feature tables that a module creates on first use inside an already prepared database (`CREATE TABLE` / `CREATE INDEX IF NOT EXISTS`, added columns, the index replacements in `workflow-substrate` and `signals`). Every such path opens the database through the store's `getDb()`, which checks the store's marker for this release first, so the code that runs is the daemon's own release. No such path drops or rebuilds a table; a new lazy path that did MUST move into the store's initialization callback.
+- A narrow lifecycle/status path (`daemon` and `channels` `start|stop|restart|status|logs`, `update`) and the credential-file commands MUST work with no database at all, so a stopped or half-updated daemon can be recovered. That path MUST be chosen by the boundary's own view of the operator CLI on real state as well as by the provenance check, so access and recovery never disagree (a `HOME` that is not the account's home, an unavailable account lookup, a state directory inside `~/.ravi`). Runtime contexts and explicit remote invocations MUST NOT gain the local path: a process that carries `RAVI_CONTEXT_KEY` is authorized by the daemon that owns the context and fails closed with `GATEWAY_REQUIRED` when no gateway is reachable.
 - Operator transport classification and implicit host gateway discovery MUST resolve the OS account home by the process UID independently of `HOME`, `USERPROFILE` and Bun's environment-sensitive `userInfo().homedir`. A `HOME` override alone MUST NOT promote isolated operator state to real state or redirect runtime gateway discovery. Missing or invalid OS account lookup MUST fail closed; explicit `RAVI_STATE_DIR` remains the selected gateway location.
-- Only the installed daemon role may initialize real-state schemas. Before becoming ready it MUST initialize all runtime stores and record each component's successful initialization for the exact package version. This role boundary does not serialize concurrent daemon processes; see the accepted limitation below.
+- Only the installed daemon role may initialize real-state schemas. The operator CLI and the channel runner use what it prepared. Before becoming ready it MUST initialize all runtime stores and record each component's successful initialization for the exact package version. This role boundary does not serialize concurrent daemon processes; see the accepted limitation below.
 - The registered installed `ravi-channels` process MAY open existing stores for normal traffic but MUST NOT create, migrate or repair schemas. Its store initializers MUST only validate the ready marker and MUST NOT execute migration callbacks, persistent journal-mode changes or legacy file moves.
 - Human-bridge state and the PR publication journal MUST use the same opening guard and schema ownership. Daemon bootstrap MUST prepare bridge and publication schemas; channels MUST validate them without running DDL. Cached bridge handles MUST remain bound to the selected state path.
 - Lazy component schemas inside an already guarded database MUST follow the same ownership rule. The daemon MUST prepare cloud-chat bindings/approvals, the outbound publication outbox and Slack automatic-output circuit before readiness; channel preflight MUST validate each component marker. Their normal reads, reservation and retention operations MUST NOT create, rebuild or backfill schema from channels.
@@ -96,10 +103,11 @@ An outer transaction alone is not a valid repair: existing nested transactions
 and foreign-key toggles must be preserved, including avoiding unintended cascades
 during `credentials.migrateFileBackend` rebuilds.
 
-Publication against runtime state requires an authenticated gateway context and
-daemon journal. A bare operator terminal is unsupported; `--reply-session` does
-not authenticate it. The `cli/pr` contract documents this accepted limitation;
-no local writable-state fallback or new authority is provided here.
+Publication writes the daemon-prepared journal in real state. A Ravi session
+publishes through its gateway context; the operator's terminal publishes as the
+local operator and names the session that receives the CI follow with
+`--reply-session`, which is a destination and grants no authority. The `cli/pr`
+contract governs both.
 
 ## Publication on the live host
 

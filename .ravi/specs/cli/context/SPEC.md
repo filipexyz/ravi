@@ -83,10 +83,13 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
     client's selected credentials file. `list`, `set-default`, and `remove`
     MUST work without a reachable gateway or a default credential and MUST
     NOT resolve that default through local SQLite. A missing store lists empty.
-    `add` MUST validate the candidate key through authenticated gateway
-    `context whoami`, using that candidate as the bearer; only then may it
-    write the client file. No validation/auth/transport/response failure may
-    write either credentials file or fall back to local SQLite. Existing
+    `add` MUST validate the candidate key before it writes the client file:
+    through authenticated gateway `context whoami`, using that candidate as
+    the bearer, when the gateway is reachable; against the state on this
+    machine, read-only, when it is not (a stopped daemon must not keep the
+    operator from storing a credential). A reachable gateway's
+    validation/auth/transport/response failure MUST NOT fall back to local
+    state, and no failure may write either credentials file. Existing
     runtime and explicit remote invocations MUST NOT gain a local operator
     fallback. No arbitrary environment or client file path is forwarded.
 
