@@ -435,6 +435,143 @@ describe("native channel driver contract", () => {
     expect(manager.health()[0]).toMatchObject({ status: "failed", reason: "stop_failed" });
   });
 
+  it.each(["create", "start"] as const)(
+    "drain waits for suspended runtime %s and cleanup without starting another channel",
+    async (stage) => {
+      let entered!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let resume!: () => void;
+      const release = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      let cleanupEntered!: () => void;
+      const cleaning = new Promise<void>((resolve) => {
+        cleanupEntered = resolve;
+      });
+      let finishCleanup!: () => void;
+      const cleanup = new Promise<void>((resolve) => {
+        finishCleanup = resolve;
+      });
+      const registry = new NativeChannelDriverRegistry();
+      const driver = fullDriver();
+      const create = driver.createRuntime.bind(driver);
+      const start = mock(async () => {
+        if (stage === "start") {
+          entered();
+          await release;
+        }
+      });
+      const stop = mock(async () => {
+        cleanupEntered();
+        await cleanup;
+      });
+      const createRuntime = mock<typeof driver.createRuntime>(async (context) => {
+        if (stage === "create") {
+          entered();
+          await release;
+        }
+        return { ...(await create(context)), start, stop };
+      });
+      driver.createRuntime = createRuntime;
+      registry.register(driver);
+      const lease = hostLease();
+      const manager = new NativeChannelDriverManager({
+        channels: { a: channel("a"), b: channel("b") },
+        registry,
+        createHostLease: () => lease,
+      });
+      const starting = manager.start();
+      await pending;
+      let stopped = false;
+      const stopping = manager.stop({ requireDrain: true }).then(() => {
+        stopped = true;
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stopped).toBe(false);
+      resume();
+      await starting;
+      await cleaning;
+      expect(stopped).toBe(false);
+      expect(start).toHaveBeenCalledTimes(stage === "create" ? 0 : 1);
+      expect(createRuntime).toHaveBeenCalledTimes(1);
+      expect(lease.dispose).not.toHaveBeenCalled();
+      finishCleanup();
+      await stopping;
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(lease.dispose).toHaveBeenCalledTimes(1);
+      expect(manager.deliveries()).toEqual([]);
+      await expect(manager.start()).rejects.toThrow("WORK_DRAIN_ADMISSION_CLOSED");
+    },
+  );
+
+  it("strict partial drain removes stopped runtimes and retries only the retained failure", async () => {
+    const registry = new NativeChannelDriverRegistry();
+    const driver = fullDriver();
+    const create = driver.createRuntime.bind(driver);
+    const stopA = mock(async () => {});
+    const stopB = mock<() => Promise<void>>(async () => {
+      throw new Error("unpersisted receipt B");
+    });
+    let deliveryB: Awaited<ReturnType<typeof create>>["delivery"];
+    driver.createRuntime = async (context) => {
+      const runtime = await create(context);
+      const delivery = { ...runtime.delivery!, deliverText: mock(async () => ({ provider: "example" })) };
+      if (context.channel.name === "b") deliveryB = delivery;
+      return { ...runtime, delivery, stop: context.channel.name === "a" ? stopA : stopB };
+    };
+    registry.register(driver);
+    const leaseA = hostLease();
+    const leaseB = hostLease();
+    const manager = new NativeChannelDriverManager({
+      channels: { a: channel("a"), b: channel("b") },
+      registry,
+      createHostLease: (configured) => (configured.name === "a" ? leaseA : leaseB),
+    });
+    await manager.start();
+    await expect(manager.stop({ requireDrain: true })).rejects.toThrow("NATIVE_CHANNEL_DRAIN_UNPROVEN");
+    expect(leaseA.dispose).toHaveBeenCalledTimes(1);
+    expect(leaseB.dispose).not.toHaveBeenCalled();
+    expect(manager.deliveries()).toEqual([deliveryB!]);
+    expect(manager.health()).toEqual([
+      { id: "example:a:example-runtime-a", channelId: "example", status: "disconnected" },
+      { id: "example:b:example-runtime-a", channelId: "example", status: "failed", reason: "stop_failed" },
+    ]);
+    stopB.mockImplementation(async () => {});
+    await manager.stop({ requireDrain: true });
+    expect(stopA).toHaveBeenCalledTimes(1);
+    expect(stopB).toHaveBeenCalledTimes(2);
+    expect(leaseA.dispose).toHaveBeenCalledTimes(1);
+    expect(leaseB.dispose).toHaveBeenCalledTimes(1);
+    expect(manager.deliveries()).toEqual([]);
+  });
+
+  it("a failed startup rollback cannot certify strict drain or dispose the uncertain lease", async () => {
+    const registry = new NativeChannelDriverRegistry();
+    const driver = fullDriver();
+    const create = driver.createRuntime.bind(driver);
+    driver.createRuntime = async (context) => ({
+      ...(await create(context)),
+      start: async () => {
+        throw new Error("startup failed");
+      },
+      stop: async () => {
+        throw new Error("startup rollback failed");
+      },
+    });
+    registry.register(driver);
+    const lease = hostLease();
+    const manager = new NativeChannelDriverManager({
+      channels: { a: channel("a") },
+      registry,
+      createHostLease: () => lease,
+    });
+    await manager.start();
+    await expect(manager.stop({ requireDrain: true })).rejects.toThrow("NATIVE_CHANNEL_DRAIN_UNPROVEN");
+    expect(lease.dispose).not.toHaveBeenCalled();
+  });
+
   it("exposes only validated native inbound action handlers", async () => {
     const registry = new NativeChannelDriverRegistry();
     registry.register(inboundActionDriver());

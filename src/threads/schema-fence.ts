@@ -225,6 +225,9 @@ function mutateWithLease(
   sql: string,
   bindings: SQLQueryBindings[],
 ): Changes {
+  // A freeze is durable maintenance evidence, so it cannot inherit a caller's
+  // transaction. Recheck here because the proof verifier may have opened one.
+  if (purpose === "freeze") assertFreezeOwnsTransaction(db);
   assertThreadFenceReady(db);
   // prepare() compiles only the first statement; it never executes a suffix such
   // as '; COMMIT'. The supplied text is NEVER passed to Database.exec().
@@ -266,12 +269,18 @@ function mutateWithLease(
   }
 }
 
+function assertFreezeOwnsTransaction(db: Database): void {
+  if (db.inTransaction)
+    refused("Freeze must own its transaction. Commit or roll back the active transaction before retrying.");
+}
+
 /** This release exposes freeze only: no migration, thaw or canonical cutover. */
 export function freezeThreadWrites(
   db: Database,
   expectedEpoch: number,
   verifyMaintenance: ThreadFenceMaintenanceVerifier,
 ): ThreadSchemaFence {
+  assertFreezeOwnsTransaction(db);
   return withSchemaMigrationLock(db, () => {
     // External checks run BEFORE issuing the internal lease, never while a
     // callback could COMMIT it or change connection settings.

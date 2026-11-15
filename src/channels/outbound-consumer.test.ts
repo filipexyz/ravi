@@ -603,6 +603,54 @@ describe("channel outbound consumer", () => {
       await expect(consumer.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
     });
 
+    it.each(["persisted", "failed"] as const)(
+      "drain requires a claimed missing-adapter job's error record to persist: %s",
+      async (persistence) => {
+        const job = makeJob();
+        sqliteChannelOutboundReceiptStore.claim({
+          idempotencyKey: job.request.idempotencyKey,
+          requestFingerprint: channelOutboundRequestFingerprint(job),
+          owner: "previous-consumer",
+          jobId: job.jobId,
+          requestId: job.request.requestId,
+          sessionName: job.request.origin.sessionName,
+          provider: "slack",
+          now: 100,
+        });
+        const recordError = mock<ChannelOutboundReceiptStore["recordError"]>((...args) => {
+          if (persistence === "failed") throw new Error("receipt error persistence unavailable");
+          return sqliteChannelOutboundReceiptStore.recordError(...args);
+        });
+        const consumer = new ChannelOutboundConsumer({
+          deliveries: [],
+          emitEvent: async () => {},
+          flushNats: async () => {},
+          recordDeliveryTrace: () => null,
+          knowledgeGuard: () => null,
+          receiptStore: { ...sqliteChannelOutboundReceiptStore, recordError },
+        });
+        const message = { ack: mock(() => {}), nak: mock(() => {}) };
+        const result = await consumer.processMessage(job, message, 2);
+        expect(recordError).toHaveBeenCalledTimes(1);
+        expect(message.ack).not.toHaveBeenCalled();
+        expect(message.nak).toHaveBeenCalledWith(60_000);
+        expect(result).toMatchObject({ disposition: "nak", retryable: true, nakDelayMs: 60_000 });
+        expect(getChannelOutboundReceipt(job.request.idempotencyKey)?.state).toBe("claimed");
+        if (persistence === "failed") {
+          expect(result).toMatchObject({
+            phase: "receipt_write",
+            error: "No native delivery adapter registered for claimed channel: slack",
+          });
+          await expect(consumer.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+          expect(consumer.drainStatus().failures).toContain("outbound-receipt_write");
+        } else {
+          expect(result.phase).toBe("adapter_lookup");
+          expect(getChannelOutboundReceipt(job.request.idempotencyKey)?.lastErrorPhase).toBe("adapter_lookup");
+          expect(await consumer.requestDrain()).toMatchObject({ accepted: 1, completed: 1 });
+        }
+      },
+    );
+
     it("resumes terminal suppression after telemetry failure without sending or reopening the outbox", async () => {
       const job = makeJob();
       const fingerprint = channelOutboundRequestFingerprint(job);

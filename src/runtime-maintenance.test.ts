@@ -154,6 +154,23 @@ describe("runtime maintenance preparation", () => {
     expect(readRuntimeMaintenance(f.stateDir)?.phase).toBe("blocked");
   });
 
+  it("keeps the initial process identities when caller metadata changes during verification", async () => {
+    const f = fixture();
+    const initial = f.predecessors.map((entry) => ({ ...entry }));
+    await expect(
+      prepareRuntimeMaintenance({
+        ...f.input,
+        verifyCompletion: async (predecessor) => {
+          expect(Object.isFrozen(predecessor)).toBe(true);
+          f.predecessors[0]!.pid = 9999;
+          return f.input.verifyCompletion(predecessor);
+        },
+      }),
+    ).rejects.toThrow("REPLACEMENT_OBSERVED");
+    expect(f.stopped).toEqual([]);
+    expect(readRuntimeMaintenance(f.stateDir)?.predecessors).toEqual(initial);
+  });
+
   it("retains the interlock when inventory becomes unavailable instead of interpreting it as exit", async () => {
     const f = fixture();
     let reads = 0;

@@ -121,6 +121,8 @@ type AdapterStatus = ChannelAdapterHealth;
 
 export class ChannelRunner {
   private running = false;
+  private drainRequested = false;
+  private startupTask: Promise<void> | null = null;
   private readonly workDrain = new TrackedWorkDrain("channels.registered-components");
   private drainTask: Promise<void> | null = null;
   private startedAt: number | null = null;
@@ -143,11 +145,15 @@ export class ChannelRunner {
 
   async start(): Promise<void> {
     assertRuntimeMaintenanceInactive();
-    if (this.workDrain.status().phase !== "accepting") throw new Error("WORK_DRAIN_ADMISSION_CLOSED");
-    return runAsSchemaConsumer(() => this.startAsConsumer());
+    if (this.drainRequested || this.workDrain.status().phase !== "accepting") {
+      throw new Error("WORK_DRAIN_ADMISSION_CLOSED");
+    }
+    this.startupTask ??= Promise.resolve().then(() => runAsSchemaConsumer(() => this.startAsConsumer()));
+    return this.startupTask;
   }
 
   private async startAsConsumer(): Promise<void> {
+    if (this.drainRequested) return;
     if (this.running) {
       log.warn("Channel runner already started");
       return;
@@ -167,13 +173,18 @@ export class ChannelRunner {
         "STATE_PATH_MISMATCH: channel options and process stores must select the same state and credentials",
       );
     }
-    (await import("../db/runtime-state.js")).assertRuntimeStateReady(process.env);
+    const runtimeState = await import("../db/runtime-state.js");
+    if (this.drainRequested) return;
+    runtimeState.assertRuntimeStateReady(process.env);
     await connectNats(this.options.natsUrl ?? env.NATS_URL ?? "nats://127.0.0.1:4222", {
       explicit: true,
       retry: true,
     });
+    if (this.drainRequested) return;
     await configStore.startRefresh();
+    if (this.drainRequested) return;
     await ensureChannelOutboundInfrastructure();
+    if (this.drainRequested) return;
     runChannelOutboundLedgerMaintenance();
     this.stopReceiptPruner = startChannelOutboundReceiptPruner();
 
@@ -187,6 +198,7 @@ export class ChannelRunner {
     });
 
     await this.startNativeChannels(env);
+    if (this.drainRequested) return;
     this.stopBackendPublicationReconciler = startChannelBackendPublicationReconciler();
     this.backendEgressResponder = startChannelRunnerBackendEgressResponder({
       connection: getNats(),
@@ -232,21 +244,26 @@ export class ChannelRunner {
   requestDrain(timeoutMs?: number): Promise<WorkDrainProof> {
     return runAsSchemaConsumer(() => {
       if (!this.drainTask) {
+        this.drainRequested = true;
         this.running = false;
-        this.stopReceiptPruner?.();
-        this.stopReceiptPruner = null;
         this.drainTask = this.workDrain.run("registered-component-stops", async () => {
+          this.workDrain.beginDrain();
           // Start every admission stop before awaiting completion. Pending durable
           // queues remain untouched; accepted handlers must finish persistence.
-          const results = await Promise.allSettled([
-            this.stopBackendPublicationReconciler?.(),
-            this.outboundPublishReconciler?.stop(),
-            this.outboundConsumer?.stop(),
-            this.presenceConsumer?.stop(),
-            this.backendEgressResponder?.stop(),
-            this.inboundActionResponder?.stop(),
-            this.nativeChannelManager?.stop({ requireDrain: true }),
-          ]);
+          const stops: Array<() => unknown> = [
+            () => {
+              this.stopReceiptPruner?.();
+              this.stopReceiptPruner = null;
+            },
+            () => this.stopBackendPublicationReconciler?.(),
+            () => this.outboundPublishReconciler?.stop(),
+            () => this.outboundConsumer?.stop(),
+            () => this.presenceConsumer?.stop(),
+            () => this.backendEgressResponder?.stop(),
+            () => this.inboundActionResponder?.stop(),
+            () => this.nativeChannelManager?.stop({ requireDrain: true }),
+          ];
+          const results = await Promise.allSettled([...stops.map(async (stop) => stop()), this.startupTask]);
           const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
           if (failures.length)
             throw new AggregateError(failures, "CHANNEL_RUNNER_DRAIN_UNPROVEN", { cause: failures[0] });
@@ -258,7 +275,6 @@ export class ChannelRunner {
             code: "CHANNEL_RUNNER_DRAIN_UNPROVEN",
           });
         });
-        this.workDrain.beginDrain();
       }
       return this.workDrain.waitForDrain(timeoutMs);
     });
@@ -329,11 +345,13 @@ export class ChannelRunner {
       log.warn("Native channel driver configuration was rejected", { reason });
     }
 
+    if (this.drainRequested) return;
     this.nativeChannelManager = new NativeChannelDriverManager({
       channels: configStore.getConfig().channels ?? {},
       registry,
     });
     await this.nativeChannelManager.start();
+    if (this.drainRequested) return;
     this.inboundActionResponder = startChannelRunnerInboundActionResponder({
       connection: getNats(),
       handlers: this.nativeChannelManager.inboundActionHandlers(),

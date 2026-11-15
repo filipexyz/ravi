@@ -45,8 +45,7 @@ function parse(file: string, text: string): ts.SourceFile {
   );
 }
 
-function constants(source: ts.SourceFile): Map<string, ts.Expression> {
-  const declarations = new Map<string, ts.Expression>();
+function bindingCounts(source: ts.SourceFile): Map<string, number> {
   const bindings = new Map<string, number>();
   const bind = (name: ts.BindingName): void => {
     if (ts.isIdentifier(name)) bindings.set(name.text, (bindings.get(name.text) ?? 0) + 1);
@@ -64,6 +63,14 @@ function constants(source: ts.SourceFile): Map<string, ts.Expression> {
     )
       bind(node.name);
     else if (ts.isImportSpecifier(node) || ts.isNamespaceImport(node)) bind(node.name);
+  });
+  return bindings;
+}
+
+function constants(source: ts.SourceFile): Map<string, ts.Expression> {
+  const declarations = new Map<string, ts.Expression>();
+  const bindings = bindingCounts(source);
+  walk(source, (node) => {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
@@ -194,15 +201,8 @@ function wrapperImports(source: ts.SourceFile): Set<string> {
   }
   // Import spelling is insufficient if a local parameter or declaration shadows
   // the binding. Refuse ambiguous aliases instead of certifying the wrong call.
-  walk(source, (node) => {
-    if (
-      (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isFunctionDeclaration(node)) &&
-      node.name &&
-      ts.isIdentifier(node.name)
-    )
-      names.delete(node.name.text);
-  });
-  return names;
+  const bindings = bindingCounts(source);
+  return new Set([...names].filter((name) => bindings.get(name) === 1));
 }
 
 // The shared initializer also serves non-router databases. This is the only
@@ -474,6 +474,9 @@ describe("thread fence writer coverage", () => {
     `const table="sessions"; function mutate(table: string) { db.exec(\`UPDATE \${table} SET title=?\`); }`,
     `const table="sessions"; function mutate(table: string) { db.exec(\`UPDATE \${table} AS "quoted alias" SET title=?\`); }`,
     `const table="sessions"; function mutate({ table }: Input) { db.exec(\`UPDATE \${table} AS t SET title=?\`); }`,
+    `const table="sessions"; function mutate({ target: { table } }: Input) { db.exec(\`UPDATE \${table} AS t SET title=?\`); }`,
+    `const table="sessions"; function mutate([table]: Input) { db.exec(\`UPDATE \${table} AS t SET title=?\`); }`,
+    `const table="sessions"; function mutate() { const { target: table } = input; db.exec(\`UPDATE \${table} AS t SET title=?\`); }`,
     `const table="sessions"; function mutate() { let table = target(); db.exec(\`UPDATE \${table} AS t SET title=?\`); }`,
     `function unrelated() { const table="sessions"; } function mutate(table: string) { db.exec(\`UPDATE \${table} AS t SET title=?\`); }`,
   ])("does not resolve a dynamic target through an unrelated or shadowed constant: %s", (text) => {
@@ -503,6 +506,47 @@ describe("thread fence writer coverage", () => {
     ]) {
       expect(audit("src/future/new-store.ts", text, tables).length).toBeGreaterThan(0);
     }
+  });
+
+  it.each([
+    'function f({ runThreadMutation }) { runThreadMutation(db, "DELETE FROM threads"); }',
+    'function f() { const { runThreadMutation } = tools; runThreadMutation(db, "DELETE FROM threads"); }',
+    'function f({ execute: runThreadMutation }) { runThreadMutation(db, "DELETE FROM threads"); }',
+    'function f({ tools: { runThreadMutation } }) { runThreadMutation(db, "DELETE FROM threads"); }',
+    'function f([runThreadMutation]) { runThreadMutation(db, "DELETE FROM threads"); }',
+    'function f() { const [, { execute: runThreadMutation = fallback }] = tools; runThreadMutation(db, "DELETE FROM threads"); }',
+    'const f = ({ runThreadMutation }) => runThreadMutation(db, "DELETE FROM threads");',
+    'const f = function runThreadMutation() { runThreadMutation(db, "DELETE FROM threads"); };',
+  ])("rejects a wrapper import shadowed by another binding: %s", (body) => {
+    const text = `import { runThreadMutation } from "../threads/schema-fence.js"; ${body}`;
+    expect(audit("src/future/new-store.ts", text, tables).some((entry) => entry.reason.includes("protected DML"))).toBe(
+      true,
+    );
+  });
+
+  it("tracks local names of destructured bindings instead of their property names", () => {
+    const importedAlias = 'import { runThreadMutation as mutate } from "../threads/schema-fence.js";';
+    expect(
+      audit(
+        "src/future/new-store.ts",
+        `${importedAlias} function f({ execute: mutate }) { mutate(db, "DELETE FROM threads"); }`,
+        tables,
+      ).some((entry) => entry.reason.includes("protected DML")),
+    ).toBe(true);
+    expect(
+      audit(
+        "src/future/new-store.ts",
+        `${importedAlias} function f({ mutate: other }) { mutate(db, "DELETE FROM threads"); }`,
+        tables,
+      ),
+    ).toEqual([]);
+    expect(
+      audit(
+        "src/future/new-store.ts",
+        `const table="sessions"; function f({ table: other }) { db.exec(\`UPDATE \${table} SET title=?\`); }`,
+        tables,
+      ),
+    ).toEqual([]);
   });
 
   it("rejects an additional COMMIT even inside a legitimate transaction owner's function", () => {

@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 export const DEFAULT_WORK_DRAIN_TIMEOUT_MS = 10_000;
 
 export interface WorkDrainStatus {
@@ -25,12 +27,26 @@ export class TrackedWorkDrain {
   private completed = 0;
   private readonly pending = new Set<Promise<unknown>>();
   private readonly failures = new Set<string>();
+  private readonly activeWork = new AsyncLocalStorage<{ active: boolean }>();
 
   constructor(private readonly scope: string) {}
 
   run<T>(label: string, work: () => T | Promise<T>): Promise<T> {
     if (!this.accepting) return Promise.reject(new Error(`WORK_DRAIN_ADMISSION_CLOSED: ${this.scope}`));
+    return this.track(label, work);
+  }
+
+  /** Accounts for existing detached work without changing whether its callback executes. */
+  runContinuation<T>(label: string, work: () => T | Promise<T>): Promise<T> {
+    if (!this.accepting && !this.activeWork.getStore()?.active) {
+      this.recordFailure(`unowned-continuation:${label}`);
+    }
+    return this.track(label, work);
+  }
+
+  private track<T>(label: string, work: () => T | Promise<T>): Promise<T> {
     this.accepted += 1;
+    const admission = { active: true };
     let resolveTask!: (value: T | PromiseLike<T>) => void;
     let rejectTask!: (error: unknown) => void;
     const task = new Promise<T>((resolve, reject) => {
@@ -40,16 +56,19 @@ export class TrackedWorkDrain {
     this.pending.add(task);
     void task.then(
       () => {
+        admission.active = false;
         this.completed += 1;
         this.pending.delete(task);
       },
       () => {
+        // no-cause: This accounting observer latches failure; callers retain the original rejected task.
+        admission.active = false;
         this.recordFailure(label);
         this.pending.delete(task);
       },
     );
     try {
-      resolveTask(work());
+      resolveTask(this.activeWork.run(admission, work));
     } catch (error) {
       rejectTask(error);
     }
@@ -81,7 +100,10 @@ export class TrackedWorkDrain {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
-        Promise.allSettled([...this.pending]),
+        (async () => {
+          // Accepted handlers can register detached continuations while draining.
+          while (this.pending.size) await Promise.allSettled([...this.pending]);
+        })(),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             this.recordFailure("drain-timeout");

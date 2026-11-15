@@ -64,3 +64,11 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - Full suite/build/typecheck stay in CI; no production state, package upgrade or restart is part of these tests. PR2 privacy and canonical health JOIN checks remain outstanding.
 
 - `schema-fence-writers.test.ts` scans production source independently of store filenames. Unwrapped protected-table DML, a new unknown store or raw transaction control in protected mutation paths fail the audit; narrow exceptions name their reason. SQL transaction tests separately prove that an old writer cannot borrow an uncommitted lease, even with cached statements, an outer transaction, rollback or process crash.
+
+## PR1 drain and freeze regressions
+
+- A freeze inside an existing transaction, including one opened by its verifier, refuses before granting a lease; a successful freeze is committed and visible from another connection.
+- Missing adapter plus failed receipt persistence cannot produce a drain proof, even after NAK. Pending work with a persisted receipt remains eligible for ordinary redelivery.
+- A failed gateway drain still attempts the remaining component stops and makes shutdown exit nonzero; shared storage/broker handles are not closed while component completion is unproven.
+- The shared gateway counts caught send failures and in-flight TTS publication without changing payload, send order or retry. Existing Omni/WhatsApp behavior tests run unchanged.
+- A drain requested during runner startup cannot certify before startup cleanup or activate later consumers. Successfully stopped drivers leave the active set even if another driver's stop fails.

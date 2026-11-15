@@ -1,4 +1,6 @@
 import { assertRuntimeMaintenanceInactive } from "./runtime-maintenance.js";
+import { stopRuntimeComponents } from "./runtime/shutdown.js";
+import { reportErrorDiagnostic } from "./utils/error-reporting.js";
 /**
  * Ravi Daemon
  *
@@ -247,120 +249,104 @@ async function shutdown(signal: string, exitCode = 0) {
     process.exit(1);
   }, 15_000);
 
-  try {
-    // A restart must always be immediate: never drain in-flight turns. What we
-    // do instead is leave a restart intent behind so the next boot can tell the
-    // interrupted sessions to continue. When nothing wrote a reason file (plain
-    // `pm2 restart`, deploy, supervised bounce), synthesize one here and pass it
-    // to bot.stop so the per-session snapshots are recorded.
-    const restartInfo =
-      readRestartReasonInfo({ ensureEpoch: true }) ??
-      (() => {
-        const info: RestartReasonInfo = {
-          reason: "supervised_restart",
-          restartEpoch: newRestartEpoch(),
-          createdAt: Date.now(),
-        };
-        writeRestartReasonInfo(info);
-        return info;
-      })();
-
-    dbUpsertDaemonRestartEpoch({
-      restartEpoch: restartInfo.restartEpoch,
-      reason: restartInfo.reason,
-      callerSessionName: restartInfo.sessionName,
-      createdAt: restartInfo.createdAt,
-      updatedAt: Date.now(),
-    });
-
-    await humanBridge?.stop();
-    // Stop bot FIRST to abort SDK subprocesses
-    if (bot) {
-      log.info("Stopping bot (aborting SDK subprocesses)...");
-      await bot.stop(
-        restartInfo
-          ? {
-              restart: {
-                restartEpoch: restartInfo.restartEpoch,
-                reason: restartInfo.reason,
-              },
-            }
-          : undefined,
-      );
-      log.info("Bot stopped");
-    }
-
-    // Stop runners and release leadership so another daemon can take over
-    await stopInboxRunner();
-    await stopLinkRequestWatcher();
-    stopSlackApprovalClickFeedback();
-    await stopSyncRunner();
-    await stopLibraryPinRunner();
-    await stopLibraryRequestRunner();
-    await stopCloudTaskWatcher();
-    await stopCloudWorkerRunner();
-    await stopCloudDeliveryRunner();
-    stopCloudApprovalClicks();
-    await stopCalendarAssistantRunner();
-    await stopEphemeralRunner();
-    await stopHookRunner();
-    await stopTriggerRunner();
-    await stopHeartbeatRunner();
-    await stopCronRunner();
-    await stopSessionFollowupRunner();
-    await stopLocalWatchRunner();
-    await stopGhFollowMaintenanceRunner();
-    await stopJobsRunner();
-    await stopTaskCheckpointRunner();
-    await stopSignalsRunner();
-    stopKnowledgeLeaderRunners();
-    await releaseLeadership("runners");
-
-    // Stop gateway
-    if (gateway) {
-      await gateway.stop();
-    }
-
-    if (sessionAdapterBus) {
-      await sessionAdapterBus.stop();
-    }
-
-    if (workObjectNatsService) {
-      await workObjectNatsService.stop();
-    }
-
-    if (webhookHttpServer) {
-      await webhookHttpServer.stop();
-    }
-
-    if (hostCliGateway) {
-      await hostCliGateway.stop();
-      hostCliGateway = null;
-    }
-
-    // Stop omni consumer
-    if (omniConsumer) {
-      await omniConsumer.stop();
-    }
-
-    // Stop config store refresh
-    configStore.stop();
-    setChannelBackendEgressRequesterForRuntime();
-
-    // Close NATS connection
-    await closeNats();
-
-    // Close all SQLite handles AFTER bot/runners/gateway/omni have shut down,
-    // so writes-in-flight have settled. Best-effort: failures are logged but
-    // never block the shutdown sequence.
-    closeAllRaviDbs();
-  } catch (err) {
-    log.error("Error during shutdown", err);
-  }
+  let restartInfo: RestartReasonInfo | undefined;
+  const result = await stopRuntimeComponents(
+    [
+      {
+        name: "restart-checkpoint",
+        stop: () => {
+          // Preserve restart intent for interrupted turns; this is not proof
+          // that accepted work completed for a schema transition.
+          restartInfo =
+            readRestartReasonInfo({ ensureEpoch: true }) ??
+            (() => {
+              const info: RestartReasonInfo = {
+                reason: "supervised_restart",
+                restartEpoch: newRestartEpoch(),
+                createdAt: Date.now(),
+              };
+              writeRestartReasonInfo(info);
+              return info;
+            })();
+          dbUpsertDaemonRestartEpoch({
+            restartEpoch: restartInfo.restartEpoch,
+            reason: restartInfo.reason,
+            callerSessionName: restartInfo.sessionName,
+            createdAt: restartInfo.createdAt,
+            updatedAt: Date.now(),
+          });
+        },
+      },
+      { name: "human-bridge", stop: () => humanBridge?.stop() },
+      {
+        name: "bot",
+        stop: async () => {
+          if (!bot) return;
+          log.info("Stopping bot (aborting SDK subprocesses)...");
+          await bot.stop(
+            restartInfo
+              ? {
+                  restart: { restartEpoch: restartInfo.restartEpoch, reason: restartInfo.reason },
+                }
+              : undefined,
+          );
+          log.info("Bot stopped");
+        },
+      },
+      { name: "inbox", stop: stopInboxRunner },
+      { name: "link-request", stop: stopLinkRequestWatcher },
+      { name: "slack-approval-feedback", stop: stopSlackApprovalClickFeedback },
+      { name: "sync", stop: stopSyncRunner },
+      { name: "library-pin", stop: stopLibraryPinRunner },
+      { name: "library-request", stop: stopLibraryRequestRunner },
+      { name: "cloud-task", stop: stopCloudTaskWatcher },
+      { name: "cloud-worker", stop: stopCloudWorkerRunner },
+      { name: "cloud-delivery", stop: stopCloudDeliveryRunner },
+      { name: "cloud-approval", stop: stopCloudApprovalClicks },
+      { name: "calendar-assistant", stop: stopCalendarAssistantRunner },
+      { name: "ephemeral", stop: stopEphemeralRunner },
+      { name: "hook", stop: stopHookRunner },
+      { name: "trigger", stop: stopTriggerRunner },
+      { name: "heartbeat", stop: stopHeartbeatRunner },
+      { name: "cron", stop: stopCronRunner },
+      { name: "session-followup", stop: stopSessionFollowupRunner },
+      { name: "local-watch", stop: stopLocalWatchRunner },
+      { name: "github-follow", stop: stopGhFollowMaintenanceRunner },
+      { name: "jobs", stop: stopJobsRunner },
+      { name: "task-checkpoint", stop: stopTaskCheckpointRunner },
+      { name: "signals", stop: stopSignalsRunner },
+      { name: "knowledge", stop: stopKnowledgeLeaderRunners },
+      { name: "leadership", stop: () => releaseLeadership("runners") },
+      { name: "gateway", stop: () => gateway?.stop() },
+      { name: "session-adapters", stop: () => sessionAdapterBus?.stop() },
+      { name: "work-objects", stop: () => workObjectNatsService?.stop() },
+      { name: "webhook-http", stop: () => webhookHttpServer?.stop() },
+      {
+        name: "host-cli",
+        stop: async () => {
+          await hostCliGateway?.stop();
+          hostCliGateway = null;
+        },
+      },
+      { name: "omni-consumer", stop: () => omniConsumer?.stop() },
+      { name: "config-store", stop: () => configStore.stop() },
+      { name: "backend-egress", stop: () => setChannelBackendEgressRequesterForRuntime() },
+    ],
+    [
+      { name: "nats", stop: closeNats },
+      { name: "sqlite", stop: closeAllRaviDbs },
+    ],
+    exitCode,
+    (failure) => {
+      reportErrorDiagnostic(log, "Daemon shutdown component failed", failure.cause, {
+        operation: `shutdown.${failure.name}`,
+      });
+    },
+  );
 
   clearTimeout(shutdownTimeout);
-  log.info("Daemon stopped", { pid: process.pid });
-  process.exit(exitCode);
+  log.info("Daemon stopped", { pid: process.pid, exitCode: result.exitCode, unproven: result.failures.length });
+  process.exit(result.exitCode);
 }
 
 function restartAfterFatalRuntimeError(error: Error): void {

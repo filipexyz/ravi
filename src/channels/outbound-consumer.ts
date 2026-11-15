@@ -462,6 +462,7 @@ export async function processChannelOutboundJob(
       if (!receipt) return emitMissingAdapter(emitEvent, recordTrace, job, t0, deliveryAttempt);
       const delayMs = missingAdapterRetryDelayMs(deliveryAttempt);
       warnMissingAdapter(job.request.channelId, { jobId: job.jobId, deliveryAttempt, retryDelayMs: delayMs });
+      let receiptWriteFailed = false;
       try {
         receiptStore.recordError(
           receiptKey,
@@ -469,9 +470,10 @@ export async function processChannelOutboundJob(
           `No native delivery adapter registered for claimed channel: ${job.request.channelId}`,
         );
       } catch (error) {
-        log.warn("Failed to record missing adapter against native outbound receipt", {
-          jobId: job.jobId,
-          error: errorMessage(error),
+        receiptWriteFailed = true;
+        reportErrorDiagnostic(log, "Failed to record missing adapter against native outbound receipt", error, {
+          operation: "native.outbound.receipt_write",
+          code: "RECEIPT_WRITE_FAILED",
         });
       }
       return {
@@ -479,7 +481,7 @@ export async function processChannelOutboundJob(
         status: "failed",
         retryable: true,
         error: `No native delivery adapter registered for claimed channel: ${job.request.channelId}`,
-        phase: "adapter_lookup",
+        phase: receiptWriteFailed ? "receipt_write" : "adapter_lookup",
         nakDelayMs: delayMs,
       };
     }

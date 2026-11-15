@@ -57,4 +57,56 @@ describe("tracked work drain", () => {
     await task;
     expect((await drain.waitForDrain()).completed).toBe(1);
   });
+
+  it("awaits a detached continuation registered by an admitted handler after drain starts", async () => {
+    const drain = new TrackedWorkDrain("continuations");
+    const startChild = deferred();
+    const finishChild = deferred();
+    const handler = drain.run("handler", async () => {
+      await startChild.promise;
+      void drain.runContinuation("publication", () => finishChild.promise);
+    });
+    const proof = drain.waitForDrain();
+    startChild.resolve();
+    await handler;
+    expect(drain.status()).toMatchObject({ phase: "draining", accepted: 2, completed: 1, pending: 1 });
+    finishChild.resolve();
+    expect(await proof).toMatchObject({ accepted: 2, completed: 2 });
+  });
+
+  it("preserves a late callback from an ended admission but refuses drain proof", async () => {
+    const drain = new TrackedWorkDrain("expired-continuation");
+    const startChild = deferred();
+    let late!: Promise<unknown>;
+    let called = false;
+    await drain.run("handler", () => {
+      late = startChild.promise.then(() =>
+        drain.runContinuation("late", () => {
+          called = true;
+        }),
+      );
+    });
+    drain.beginDrain();
+    startChild.resolve();
+    await late;
+    expect(called).toBe(true);
+    await expect(drain.waitForDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+    expect(drain.status().failures).toEqual(["unowned-continuation:late"]);
+  });
+
+  it("retains a caught detached continuation failure after its parent finishes", async () => {
+    const drain = new TrackedWorkDrain("failed-continuation");
+    const finishChild = deferred();
+    let child!: Promise<void>;
+    await drain.run("handler", () => {
+      child = drain.runContinuation("publication", async () => {
+        await finishChild.promise;
+        throw new Error("publication failed");
+      });
+    });
+    finishChild.resolve();
+    await expect(child).rejects.toThrow("publication failed");
+    await expect(drain.waitForDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+    expect(drain.status().failures).toEqual(["publication"]);
+  });
 });

@@ -133,12 +133,13 @@ export async function prepareRuntimeMaintenance(input: {
   const stateDir = input.stateDir ?? getRaviStateDir();
   assertRuntimeMaintenanceInactive(stateDir);
   if (!input.verifyCompletion) throw new Error("RUNTIME_LEGACY_COMPLETION_PROOF_REQUIRED");
+  const predecessors = input.predecessors.map((entry) => ({ ...entry }));
   if (
     !/^[a-f0-9]{64}$/.test(input.targetBundleSha256) ||
-    input.predecessors.length !== 2 ||
-    new Set(input.predecessors.map((entry) => entry.name)).size !== 2 ||
-    new Set(input.predecessors.map((entry) => entry.pid)).size !== 2 ||
-    input.predecessors.some(
+    predecessors.length !== 2 ||
+    new Set(predecessors.map((entry) => entry.name)).size !== 2 ||
+    new Set(predecessors.map((entry) => entry.pid)).size !== 2 ||
+    predecessors.some(
       (entry) =>
         !["ravi", "ravi-channels"].includes(entry.name) ||
         !Number.isSafeInteger(entry.pid) ||
@@ -150,10 +151,7 @@ export async function prepareRuntimeMaintenance(input: {
   )
     throw new Error("RUNTIME_MAINTENANCE_IDENTITY_REQUIRED");
   const initial = input.list();
-  if (
-    initial.length !== 2 ||
-    input.predecessors.some((entry) => !initial.some((current) => sameProcess(entry, current)))
-  ) {
+  if (initial.length !== 2 || predecessors.some((entry) => !initial.some((current) => sameProcess(entry, current)))) {
     throw new Error("RUNTIME_MAINTENANCE_INVENTORY_UNPROVEN");
   }
   const directory = join(stateDir, "runtime-maintenance");
@@ -165,7 +163,7 @@ export async function prepareRuntimeMaintenance(input: {
     id: randomUUID(),
     phase: "draining",
     targetBundleSha256: input.targetBundleSha256,
-    predecessors: input.predecessors,
+    predecessors,
     completion: [],
     exitedPids: [],
   };
@@ -178,7 +176,7 @@ export async function prepareRuntimeMaintenance(input: {
   };
   try {
     for (const predecessor of record.predecessors) {
-      const proof = await input.verifyCompletion(predecessor);
+      const proof = await input.verifyCompletion(Object.freeze({ ...predecessor }));
       if (
         !sameProcess(proof.process, predecessor) ||
         proof.admissionsClosed !== true ||
@@ -188,7 +186,7 @@ export async function prepareRuntimeMaintenance(input: {
       ) {
         throw new Error("RUNTIME_MAINTENANCE_COMPLETION_UNPROVEN");
       }
-      record.completion.push(proof);
+      record.completion.push({ ...proof, process: { ...proof.process } });
       persist(record, stateDir);
     }
     assertUnchanged();
@@ -198,7 +196,7 @@ export async function prepareRuntimeMaintenance(input: {
     for (const name of ["ravi-channels", "ravi"] as const) {
       const predecessor = record.predecessors.find((entry) => entry.name === name)!;
       assertUnchanged();
-      await input.stop(predecessor);
+      await input.stop(Object.freeze({ ...predecessor }));
       let exited = false;
       for (let attempt = 0; attempt < (input.exitChecks ?? 50); attempt += 1) {
         assertUnchanged();

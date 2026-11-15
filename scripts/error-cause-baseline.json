@@ -353,13 +353,6 @@
       "count": 1
     },
     {
-      "id": "src/channels/native/driver.ts:43f34c69a5ddf124deecf607",
-      "file": "src/channels/native/driver.ts",
-      "boundary": "channels",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/channels/native/driver.ts:4d50f733fad5b2e1073beac3",
       "file": "src/channels/native/driver.ts",
       "boundary": "channels",
@@ -5877,7 +5870,7 @@
     }
   ],
   "totals": {
-    "violations": 879,
+    "violations": 878,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5892,7 +5885,7 @@
       "src/bug-report": 2,
       "src/calendar": 2,
       "src/channels": 24,
-      "src/channels/native": 6,
+      "src/channels/native": 5,
       "src/channels/slack": 15,
       "src/ci": 1,
       "src/cli": 33,

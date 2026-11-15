@@ -192,7 +192,7 @@ describe("thread SQL transactional writer fence", () => {
     noLease(legacy);
   });
 
-  it.each(THREAD_FENCED_TABLES)("guards INSERT/UPDATE/DELETE on %s, even on a registered raw handle", (table) => {
+  it.each([...THREAD_FENCED_TABLES])("guards INSERT/UPDATE/DELETE on %s, even on a registered raw handle", (table) => {
     const filename = path();
     const current = owner(filename);
     schema(current);
@@ -362,6 +362,62 @@ describe("thread SQL transactional writer fence", () => {
     expect(db.query("SELECT value FROM slack_thread_lifecycle").get()).toEqual({ value: "pending" });
     expect(db.query("SELECT value FROM decision_deliveries").get()).toEqual({ value: "pending" });
     noLease(db);
+  });
+
+  it("refuses freeze in an outer transaction before running its verifier", () => {
+    const filename = path();
+    const db = owner(filename);
+    schema(db);
+    const other = open(filename);
+    const before = readThreadSchemaFence(db);
+    let verified = false;
+    db.exec("BEGIN");
+    expect(() =>
+      freezeThreadWrites(db, 0, () => {
+        verified = true;
+      }),
+    ).toThrow("Freeze must own its transaction");
+    expect(verified).toBe(false);
+    expect(db.inTransaction).toBe(true);
+    expect(readThreadSchemaFence(db)).toEqual(before);
+    noLease(db);
+    db.exec("ROLLBACK");
+    expect(readThreadSchemaFence(db)).toEqual(before);
+    expect(readThreadSchemaFence(other)).toEqual(before);
+    noLease(other);
+  });
+
+  it("refuses a transaction opened by the freeze verifier without issuing a lease", () => {
+    const db = owner();
+    schema(db);
+    const before = readThreadSchemaFence(db);
+    expect(() =>
+      freezeThreadWrites(db, 0, () => {
+        db.exec("BEGIN IMMEDIATE");
+        noLease(db);
+      }),
+    ).toThrow("Freeze must own its transaction");
+    expect(db.inTransaction).toBe(true);
+    expect(readThreadSchemaFence(db)).toEqual(before);
+    noLease(db);
+    db.exec("ROLLBACK");
+    expect(readThreadSchemaFence(db)).toEqual(before);
+    expect(db.query("SELECT value FROM threads").get()).toEqual({ value: "pending" });
+    noLease(db);
+  });
+
+  it("commits freeze before returning success, visible from an independent connection", () => {
+    const filename = path();
+    const db = owner(filename);
+    schema(db);
+    const other = open(filename);
+    const frozen = freezeThreadWrites(db, 0, () => {});
+    expect(db.inTransaction).toBe(false);
+    expect(frozen).toEqual({ min_protocol: THREAD_WRITER_PROTOCOL, phase: "frozen", epoch: 1 });
+    expect(readThreadSchemaFence(other)).toEqual(frozen);
+    noLease(other);
+    expect(() => db.exec("ROLLBACK")).toThrow(/no transaction is active/i);
+    expect(readThreadSchemaFence(other)).toEqual(frozen);
   });
 
   it("serializes freeze after accepted reply/receipt transactions instead of declaring partial work drained", () => {

@@ -1361,13 +1361,19 @@ export class Gateway {
     if (guarded) text = guardTextForGuardedSession(text, guarded).text;
     const builtPart = this.buildTextPartResponse(response, text, partIndex, totalParts);
     const partResponse = text === unguardedText ? builtPart : { ...builtPart, response: text, error: undefined };
-    const emitDelivery = (data: Record<string, unknown>) =>
-      this.emitDeliveryEvent(sessionName, partResponse, {
+    const emitDelivery = (data: Record<string, unknown>) => {
+      if (data.status === "failed" && data.reason === "local_outbox_error") {
+        this.workDrain.recordFailure("response-native-outbox");
+      } else if (data.status === "failed" && data.reason === "send_error") {
+        this.workDrain.recordFailure("response-text-send");
+      }
+      return this.emitDeliveryEvent(sessionName, partResponse, {
         ...data,
         contentType: "text",
         partIndex,
         partCount: totalParts,
       });
+    };
 
     if (guarded && !text.trim()) {
       await emitDelivery({ status: "dropped", reason: "knowledge_egress", target });
@@ -1474,9 +1480,13 @@ export class Gateway {
         durationMs: Date.now() - t0,
         textLen: prepared.text.length,
       });
-      this.emitTtsForResponse(sessionName, response, prepared.text, target).catch((error) => {
-        log.warn("Failed to emit response TTS event", { sessionName, emitId: response._emitId, error });
-      });
+      this.workDrain
+        .runContinuation("response-tts-publication", () =>
+          this.emitTtsForResponse(sessionName, response, prepared.text, target),
+        )
+        .catch((error) => {
+          log.warn("Failed to emit response TTS event", { sessionName, emitId: response._emitId, error });
+        });
       log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
     } catch (err) {
       log.error("Failed to send response", { instanceId, chatId, error: err });
