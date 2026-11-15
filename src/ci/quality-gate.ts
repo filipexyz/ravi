@@ -23,6 +23,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    // Inactive delivery protocol/floor oracle and per-boot aggregate compatibility gate.
+    "src/channels/delivery-contract.test.ts",
+    "src/channels/delivery-boot.test.ts",
+    "src/channels/delivery-activation.test.ts",
     "src/db/schema-owner.test.ts",
     "src/channels/presence-consumer.test.ts",
     "src/channels/backend.test.ts",
