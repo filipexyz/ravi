@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import type { Database } from "bun:sqlite";
 import { getDb } from "../router/router-db.js";
 import { addThreadEntry, createThread, upsertThreadLink } from "../threads/service.js";
@@ -26,7 +27,9 @@ export function migrateTaskThreads(db: Database): void {
         true,
       );
       db.query("UPDATE tasks SET thread_id=? WHERE id=?").run(threadId, row.id);
-      db.query("UPDATE threads SET status=?,summary=?,closed_at=?,closed_reason=?,updated_at=? WHERE id=?").run(
+      runThreadMutation(
+        db,
+        "UPDATE threads SET status=?,summary=?,closed_at=?,closed_reason=?,updated_at=? WHERE id=?",
         threadStatus(row.status),
         row.summary,
         row.completed_at,
@@ -44,10 +47,14 @@ export function migrateTaskThreads(db: Database): void {
           now: row.completed_at ?? row.updated_at,
         });
     }
-    db.exec(`
+    runThreadMutation(
+      db,
+      `
       INSERT OR IGNORE INTO thread_links(id,thread_id,target_type,target_id,role,created_at,updated_at)
       SELECT 'trl_task_parent_' || child.id,child.thread_id,'thread',parent.thread_id,'parent',child.created_at,child.created_at
-      FROM tasks child JOIN tasks parent ON parent.id=child.parent_task_id;
+      FROM tasks child JOIN tasks parent ON parent.id=child.parent_task_id`,
+    );
+    db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_thread ON tasks(thread_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_creation_key ON tasks(creation_key) WHERE creation_key IS NOT NULL;
       CREATE TRIGGER IF NOT EXISTS tasks_require_thread_insert BEFORE INSERT ON tasks
@@ -128,20 +135,20 @@ function threadStatus(status: string): string {
 /** Called inside the task write: the task runtime is the sole lifecycle writer. */
 export function syncTaskThreadEvent(task: TaskRecord, event: TaskEvent): void {
   const terminal = task.status === "done" || task.status === "failed";
-  getDb()
-    .query(`UPDATE threads SET title=?,status=?,summary=?,current_assignee_type=?,current_assignee_id=?,
-    closed_at=?,closed_reason=?,updated_at=? WHERE id=?`)
-    .run(
-      task.title,
-      threadStatus(task.status),
-      task.summary ?? null,
-      task.assigneeAgentId ? "agent" : null,
-      task.assigneeAgentId ?? null,
-      task.completedAt ?? null,
-      terminal ? `task.${task.status}` : null,
-      event.createdAt,
-      task.threadId,
-    );
+  runThreadMutation(
+    getDb(),
+    `UPDATE threads SET title=?,status=?,summary=?,current_assignee_type=?,current_assignee_id=?,
+    closed_at=?,closed_reason=?,updated_at=? WHERE id=?`,
+    task.title,
+    threadStatus(task.status),
+    task.summary ?? null,
+    task.assigneeAgentId ? "agent" : null,
+    task.assigneeAgentId ?? null,
+    task.completedAt ?? null,
+    terminal ? `task.${task.status}` : null,
+    event.createdAt,
+    task.threadId,
+  );
   addThreadEntry({
     threadId: task.threadId,
     kind: event.type === "task.done" || event.type === "task.failed" ? "summary" : "status_change",

@@ -415,23 +415,29 @@ export class NativeChannelDriverManager {
     }
   }
 
-  async stop(): Promise<void> {
-    for (const active of [...this.active].reverse()) {
-      let reason: NativeChannelDriverFailureReason | undefined;
-      try {
-        await active.runtime.stop();
-      } catch {
-        reason = "stop_failed";
-      } finally {
-        active.lease.dispose();
-      }
-      this.statuses.set(active.healthId, {
-        id: active.healthId,
-        channelId: active.descriptor.provider,
-        status: reason ? "failed" : "disconnected",
-        ...(reason ? { reason } : {}),
-      });
-    }
+  async stop(options: { requireDrain?: boolean } = {}): Promise<void> {
+    const failures: unknown[] = [];
+    // Fence every adapter before awaiting any one adapter's accepted work.
+    await Promise.all(
+      [...this.active].reverse().map(async (active) => {
+        let reason: NativeChannelDriverFailureReason | undefined;
+        try {
+          await active.runtime.stop();
+        } catch (error) {
+          reason = "stop_failed";
+          failures.push(error);
+        } finally {
+          if (!reason || !options.requireDrain) active.lease.dispose();
+        }
+        this.statuses.set(active.healthId, {
+          id: active.healthId,
+          channelId: active.descriptor.provider,
+          status: reason ? "failed" : "disconnected",
+          ...(reason ? { reason } : {}),
+        });
+      }),
+    );
+    if (options.requireDrain && failures.length) throw new AggregateError(failures, "NATIVE_CHANNEL_DRAIN_UNPROVEN");
     this.active.length = 0;
     this.started = false;
   }
@@ -455,6 +461,7 @@ export class NativeChannelDriverManager {
   health(): ChannelAdapterHealth[] {
     const statuses = new Map(this.statuses);
     for (const active of this.active) {
+      if (statuses.get(active.healthId)?.reason === "stop_failed") continue;
       let health: NativeChannelRuntimeHealth;
       try {
         health = NativeChannelRuntimeHealthSchema.parse(active.runtime.health());

@@ -27,8 +27,9 @@ function fixture() {
   dirs.push(homeDir);
   const release = join(homeDir, "release");
   mkdirSync(join(release, "dist", "bundle"), { recursive: true });
+  mkdirSync(join(release, "dist", "db"), { recursive: true });
   writeFileSync(join(release, "package.json"), JSON.stringify({ name: "ravi.bot" }));
-  const modulePath = join(release, "dist", "bundle", "state-boundary.ts");
+  const modulePath = join(release, "dist", "db", "state-boundary.ts");
   const bundle = join(release, "dist", "bundle", "index.js");
   return {
     homeDir,
@@ -140,11 +141,18 @@ it.each([false, true])(
       resolve(import.meta.dir, "../pm2-output.ts"),
       join(options.homeDir, "release", "dist", "pm2-output.ts"),
     );
+    const fixtureDist = join(options.homeDir, "release", "dist");
+    mkdirSync(join(fixtureDist, "threads"));
+    copyFileSync(
+      resolve(import.meta.dir, "../threads/schema-fence.ts"),
+      join(fixtureDist, "threads", "schema-fence.ts"),
+    );
+    copyFileSync(resolve(import.meta.dir, "../db/schema-lock.ts"), join(fixtureDist, "db", "schema-lock.ts"));
     const entry = options.argv[1];
     const target = join(realState, "ravi.db");
     writeFileSync(
       entry,
-      `import { openStateDatabase } from './state-boundary.ts';
+      `import { openStateDatabase } from '../db/state-boundary.ts';
     const db = openStateDatabase(${JSON.stringify(target)}, undefined, { homeDir: ${JSON.stringify(options.homeDir)} });
     db.exec('CREATE TABLE IF NOT EXISTS launched (id TEXT)'); db.close();`,
     );

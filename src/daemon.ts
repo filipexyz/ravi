@@ -1,3 +1,4 @@
+import { assertRuntimeMaintenanceInactive } from "./runtime-maintenance.js";
 /**
  * Ravi Daemon
  *
@@ -409,6 +410,7 @@ async function checkNatsExposureAtBoot(natsUrl: string): Promise<void> {
 }
 
 export async function startDaemon() {
+  assertRuntimeMaintenanceInactive();
   acquireDaemonSchemaOwnership();
   maybeNeuterDaemonStdin();
   if (!recordManagedRuntimeBoot("ravi"))

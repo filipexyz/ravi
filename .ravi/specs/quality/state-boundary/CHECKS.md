@@ -54,3 +54,13 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - Programmatic runner startup, status, detached maintenance and native callbacks retain consumer restrictions without changing unrelated owner work. Consumer marker validation precedes a warmed owner cache, and consumer checks never warm that cache.
 - Divergent injected/process state or credential paths refuse before NATS. Canonically equivalent symlink paths remain accepted.
 - Checkout documentation separates foreground development from installed PM2 services and requires independent state, broker and credentials. Publication help requires authenticated gateway context; no bare-operator or concurrent-owner guarantee is made.
+
+## Thread preparation checks
+
+- Run focused `schema-fence`, `schema-owner` and `router/state-boundary` fixtures on isolated SQLite, including a cached obsolete connection, concurrent reply/receipt, failed initialization and pending rows. Protocol/frozen rejection precedes readiness changes.
+- Run `runtime/work-drain`, `gateway-drain` and touched channel tests: new admissions close synchronously, accepted work completes before DB/NATS close, caught receipt/reconciliation failures and timeouts block proof, durable queue items retain their identifiers.
+- Run `runtime-maintenance`: no external verifier means no stop; missing/partial inventory, duplicate PIDs, wrong identity/evidence and enabled legacy launchers refuse; stop success with live/unknown PID remains blocked; replacements preserve the interlock; both exited predecessors are required. Empty isolated state is allowed, canonical real and populated state cannot bootstrap automatically.
+- Verify entrypoint and command guards before schema opening, NATS intake and PM2 mutation. Test update refusal on unprepared state; no fallback suggests independent restarts to bypass the fence.
+- Full suite/build/typecheck stay in CI; no production state, package upgrade or restart is part of these tests. PR2 privacy and canonical health JOIN checks remain outstanding.
+
+- `schema-fence-writers.test.ts` scans production source independently of store filenames. Unwrapped protected-table DML, a new unknown store or raw transaction control in protected mutation paths fail the audit; narrow exceptions name their reason. SQL transaction tests separately prove that an old writer cannot borrow an uncommitted lease, even with cached statements, an outer transaction, rollback or process crash.

@@ -1,3 +1,5 @@
+import { assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
+import { TrackedWorkDrain, type WorkDrainProof, type WorkDrainStatus } from "../runtime/work-drain.js";
 import { recordManagedRuntimeBoot } from "../runtime-process-identity.js";
 import { closeAllRaviDbs } from "../db/close-all.js";
 import { canonicalStatePath, runAsSchemaConsumer } from "../db/state-boundary.js";
@@ -118,6 +120,8 @@ type AdapterStatus = ChannelAdapterHealth;
 
 export class ChannelRunner {
   private running = false;
+  private readonly workDrain = new TrackedWorkDrain("channels.registered-components");
+  private drainTask: Promise<void> | null = null;
   private startedAt: number | null = null;
   private outboundInfrastructureReady = false;
   private outboundPublishReconciler: ChannelOutboundPublishReconciler | null = null;
@@ -132,11 +136,13 @@ export class ChannelRunner {
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
   private backendEgressResponder: ChannelBackendEgressResponder | null = null;
-  private stopBackendPublicationReconciler: (() => void) | null = null;
+  private stopBackendPublicationReconciler: (() => Promise<WorkDrainProof>) | null = null;
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
   async start(): Promise<void> {
+    assertRuntimeMaintenanceInactive();
+    if (this.workDrain.status().phase !== "accepting") throw new Error("WORK_DRAIN_ADMISSION_CLOSED");
     return runAsSchemaConsumer(() => this.startAsConsumer());
   }
 
@@ -218,27 +224,50 @@ export class ChannelRunner {
     return runAsSchemaConsumer(() => this.stopAsConsumer());
   }
 
+  drainStatus(): WorkDrainStatus {
+    return this.workDrain.status();
+  }
+
+  requestDrain(timeoutMs?: number): Promise<WorkDrainProof> {
+    return runAsSchemaConsumer(() => {
+      if (!this.drainTask) {
+        this.running = false;
+        this.stopReceiptPruner?.();
+        this.stopReceiptPruner = null;
+        this.drainTask = this.workDrain.run("registered-component-stops", async () => {
+          // Start every admission stop before awaiting completion. Pending durable
+          // queues remain untouched; accepted handlers must finish persistence.
+          const results = await Promise.allSettled([
+            this.stopBackendPublicationReconciler?.(),
+            this.outboundPublishReconciler?.stop(),
+            this.outboundConsumer?.stop(),
+            this.presenceConsumer?.stop(),
+            this.backendEgressResponder?.stop(),
+            this.inboundActionResponder?.stop(),
+            this.nativeChannelManager?.stop({ requireDrain: true }),
+          ]);
+          const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+          if (failures.length) throw new AggregateError(failures, "CHANNEL_RUNNER_DRAIN_UNPROVEN");
+        });
+        // Keep the rejection available to waitForDrain without an unhandled task.
+        void this.drainTask.catch(() => {});
+        this.workDrain.beginDrain();
+      }
+      return this.workDrain.waitForDrain(timeoutMs);
+    });
+  }
+
   private async stopAsConsumer(): Promise<void> {
-    if (!this.running) return;
-    this.running = false;
+    log.info("Stopping channel runner", { pid: process.pid });
+    await this.requestDrain();
     await this.healthResponder?.stop();
     this.healthResponder = null;
-    this.stopReceiptPruner?.();
-    this.stopReceiptPruner = null;
-    this.stopBackendPublicationReconciler?.();
     this.stopBackendPublicationReconciler = null;
-    log.info("Stopping channel runner", { pid: process.pid });
-    await this.outboundPublishReconciler?.stop();
     this.outboundPublishReconciler = null;
-    await this.outboundConsumer?.stop();
     this.outboundConsumer = null;
-    await this.presenceConsumer?.stop();
     this.presenceConsumer = null;
-    await this.backendEgressResponder?.stop();
     this.backendEgressResponder = null;
-    await this.inboundActionResponder?.stop();
     this.inboundActionResponder = null;
-    await this.nativeChannelManager?.stop();
     this.nativeChannelManager = null;
     this.deliveries = [];
     this.actionDeliveries = [];
@@ -429,6 +458,7 @@ export function resolveChannelRunnerLogLevel(env: NodeJS.ProcessEnv = process.en
 }
 
 export async function runChannelRunnerFromEnv(): Promise<void> {
+  assertRuntimeMaintenanceInactive();
   logger.setLevel(resolveChannelRunnerLogLevel());
   if (!recordManagedRuntimeBoot("ravi-channels"))
     log.warn("Could not record process boot identity; runtime alignment will remain unverified");

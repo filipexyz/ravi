@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { RuntimeStartCapacityError } from "../runtime/start-admission.js";
 import { randomUUID } from "node:crypto";
 import { hasRuntimeInvocationContext } from "../cli/context.js";
@@ -56,11 +57,11 @@ export async function reconcileDecisionDeliveries(
   decisionId?: string,
 ): Promise<void> {
   const now = Date.now();
-  getDb()
-    .query(
-      "UPDATE decision_deliveries SET status='uncertain',last_error='ADMISSION_OUTCOME_UNKNOWN' WHERE status='accepting' AND claim_until<?",
-    )
-    .run(now);
+  runThreadMutation(
+    getDb(),
+    "UPDATE decision_deliveries SET status='uncertain',last_error='ADMISSION_OUTCOME_UNKNOWN' WHERE status='accepting' AND claim_until<?",
+    now,
+  );
   const rows = getDb()
     .query(`${SELECT} WHERE status IN ('pending','failed','published','publishing') AND next_attempt_at<=?
     AND (claim_until IS NULL OR claim_until<?) ${decisionId ? "AND decision_id=?" : ""} ORDER BY created_at LIMIT 25`)
@@ -71,10 +72,16 @@ export async function reconcileDecisionDeliveries(
 
 async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Promise<void> {
   const claim = randomUUID();
-  const won = getDb()
-    .query(`UPDATE decision_deliveries SET status='publishing',claim_id=?,claim_until=?,attempts=attempts+1
-    WHERE id=? AND status IN ('pending','failed','published','publishing') AND next_attempt_at<=? AND (claim_until IS NULL OR claim_until<?)`)
-    .run(claim, Date.now() + 60_000, candidate.id, Date.now(), Date.now()).changes;
+  const won = runThreadMutation(
+    getDb(),
+    `UPDATE decision_deliveries SET status='publishing',claim_id=?,claim_until=?,attempts=attempts+1
+    WHERE id=? AND status IN ('pending','failed','published','publishing') AND next_attempt_at<=? AND (claim_until IS NULL OR claim_until<?)`,
+    claim,
+    Date.now() + 60_000,
+    candidate.id,
+    Date.now(),
+    Date.now(),
+  ).changes;
   if (!won) return;
   // Another reconciler may have frozen a payload since the batch was read.
   const row = getDb().query(`${SELECT} WHERE id=?`).get(candidate.id) as DeliveryRow;
@@ -108,9 +115,13 @@ async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Prom
           });
       // Retries keep the exact outbox fingerprint even after a session rename.
       if (!row.payload)
-        getDb()
-          .query("UPDATE decision_deliveries SET payload_json=? WHERE id=? AND claim_id=?")
-          .run(JSON.stringify(job), row.id, claim);
+        runThreadMutation(
+          getDb(),
+          "UPDATE decision_deliveries SET payload_json=? WHERE id=? AND claim_id=?",
+          JSON.stringify(job),
+          row.id,
+          claim,
+        );
       const result = await deps.publishOutbound(job);
       if (result && typeof result === "object" && "ok" in result && result.ok === false)
         throw new Error("OUTBOUND_PENDING");
@@ -122,19 +133,23 @@ async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Prom
         messageId: row.transportMessageId ?? row.id,
       });
       // Publication is not admission. The consumer owns 'delivered'.
-      getDb()
-        .query(
-          "UPDATE decision_deliveries SET status='published',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error=NULL WHERE id=? AND claim_id=? AND status='publishing'",
-        )
-        .run(Date.now() + 60_000, row.id, claim);
+      runThreadMutation(
+        getDb(),
+        "UPDATE decision_deliveries SET status='published',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error=NULL WHERE id=? AND claim_id=? AND status='publishing'",
+        Date.now() + 60_000,
+        row.id,
+        claim,
+      );
     }
     await refreshDecisionCard(row.decisionId, deps);
   } catch {
-    getDb()
-      .query(
-        "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error='DELIVERY_FAILED' WHERE id=? AND claim_id=? AND status='publishing'",
-      )
-      .run(Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(row.attempts - 1, 4)), row.id, claim);
+    runThreadMutation(
+      getDb(),
+      "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error='DELIVERY_FAILED' WHERE id=? AND claim_id=? AND status='publishing'",
+      Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(row.attempts - 1, 4)),
+      row.id,
+      claim,
+    );
   }
 }
 
@@ -155,11 +170,14 @@ async function refreshDecisionCard(decisionId: string, deps: DecisionDeliveryDep
 }
 
 function finish(id: string, claim: string, status: "delivered" | "superseded") {
-  getDb()
-    .query(
-      "UPDATE decision_deliveries SET status=?,delivered_at=?,claim_id=NULL,claim_until=NULL,last_error=NULL WHERE id=? AND claim_id=?",
-    )
-    .run(status, Date.now(), id, claim);
+  runThreadMutation(
+    getDb(),
+    "UPDATE decision_deliveries SET status=?,delivered_at=?,claim_id=NULL,claim_until=NULL,last_error=NULL WHERE id=? AND claim_id=?",
+    status,
+    Date.now(),
+    id,
+    claim,
+  );
 }
 
 /** Validated at the consumer, before any runtime work, independently of JetStream's dedup window. */
@@ -189,7 +207,9 @@ export async function admitDecisionAnswer(
     }
     if (["delivered", "accepting", "uncertain"].includes(row.status)) return null;
     const claim = randomUUID();
-    db.query("UPDATE decision_deliveries SET status='accepting',claim_id=?,claim_until=? WHERE id=?").run(
+    runThreadMutation(
+      db,
+      "UPDATE decision_deliveries SET status='accepting',claim_id=?,claim_until=? WHERE id=?",
       claim,
       Date.now() + 300_000,
       id,
@@ -203,27 +223,24 @@ export async function admitDecisionAnswer(
     await refreshDecisionCard(claimed.decisionId, deps);
   } catch (error) {
     if (error instanceof DecisionDispatchRejectedError || error instanceof RuntimeStartCapacityError) {
-      getDb()
-        .query(
-          "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error=?,transport_message_id=? WHERE id=? AND claim_id=?",
-        )
-        .run(
-          Date.now() + 30_000,
-          error instanceof RuntimeStartCapacityError ? error.code : error.reason,
-          // This delivery was definitively refused before handoff. A new
-          // transport ID avoids suppressing the retry after the original ACK.
-          randomUUID(),
-          id,
-          claimed.claim,
-        );
+      runThreadMutation(
+        getDb(),
+        "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error=?,transport_message_id=? WHERE id=? AND claim_id=?",
+        Date.now() + 30_000,
+        error instanceof RuntimeStartCapacityError ? error.code : error.reason,
+        randomUUID(),
+        id,
+        claimed.claim,
+      );
       throw error;
     }
     // The runtime may have started before throwing. Repeating would risk executing twice.
-    getDb()
-      .query(
-        "UPDATE decision_deliveries SET status='uncertain',last_error='ADMISSION_OUTCOME_UNKNOWN' WHERE id=? AND claim_id=?",
-      )
-      .run(id, claimed.claim);
+    runThreadMutation(
+      getDb(),
+      "UPDATE decision_deliveries SET status='uncertain',last_error='ADMISSION_OUTCOME_UNKNOWN' WHERE id=? AND claim_id=?",
+      id,
+      claimed.claim,
+    );
     throw error;
   }
   return true;
@@ -236,11 +253,11 @@ export function resetFailedDecisionDeliveries(decisionId: string): void {
       "Runtime admission is uncertain. Inspect the session trace; do not replay this answer blindly.",
     );
   }
-  getDb()
-    .query(
-      "UPDATE decision_deliveries SET next_attempt_at=0 WHERE decision_id=? AND status IN ('pending','failed','published')",
-    )
-    .run(decisionId);
+  runThreadMutation(
+    getDb(),
+    "UPDATE decision_deliveries SET next_attempt_at=0 WHERE decision_id=? AND status IN ('pending','failed','published')",
+    decisionId,
+  );
 }
 
 /** Manual recovery is deliberately terminal/operator-only; a worker cannot guess away uncertainty. */
@@ -273,17 +290,21 @@ export function resolveUncertainDecisionDelivery(decisionId: string, outcome: st
   decisionWrite((db) => {
     validateDeliveryResolution(decisionId, outcome, evidence);
     const delivery = decisionDeliveries(decisionId).find((d) => d.kind === "answer" && d.status === "uncertain")!;
-    db.query(
+    runThreadMutation(
+      db,
       "UPDATE decision_deliveries SET status=?,claim_id=NULL,claim_until=NULL,next_attempt_at=0,delivered_at=?,last_error=NULL,transport_message_id=CASE WHEN ?='not_received' THEN ? ELSE transport_message_id END WHERE id=? AND status='uncertain'",
-    ).run(
       outcome === "received" ? "delivered" : "pending",
       outcome === "received" ? Date.now() : null,
       outcome,
       randomUUID(),
       delivery.id,
     );
-    db.query(
+    runThreadMutation(
+      db,
       "INSERT INTO decision_history(decision_id,type,actor,snapshot_json,created_at) VALUES (?,'delivery_resolved','operator',?,?)",
-    ).run(decisionId, JSON.stringify({ deliveryId: delivery.id, outcome, evidence: evidence.trim() }), Date.now());
+      decisionId,
+      JSON.stringify({ deliveryId: delivery.id, outcome, evidence: evidence.trim() }),
+      Date.now(),
+    );
   });
 }

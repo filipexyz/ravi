@@ -3,9 +3,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parsePm2Jlist } from "../pm2-output.js";
+import { registerThreadFenceConnection } from "../threads/schema-fence.js";
 
 export class StateDatabaseError extends Error {
   readonly code = "REAL_STATE_ACCESS_REFUSED";
@@ -200,12 +201,30 @@ export function openStateDatabase(
   boundary?: DatabaseBoundaryOptions,
 ): Database {
   assertDatabaseTargetAllowed(path, boundary);
-  if (isSchemaConsumer(boundary)) {
+  const consumer = isSchemaConsumer(boundary);
+  if (consumer) {
     if (!existsSync(path))
       throw new Error(
         "STATE_SCHEMA_NOT_READY: start the installed daemon first to initialize state, then start ravi-channels with the same release.",
       );
-    return new Database(path, { readwrite: !options?.readonly, ...options, create: false });
   }
-  return new Database(path, options);
+  const database = new Database(
+    path,
+    consumer ? { readwrite: !options?.readonly, ...options, create: false } : options,
+  );
+  try {
+    if (path !== ":memory:" && path !== "" && basename(canonicalStatePath(path)) === "ravi.db") {
+      // Separate publication/console handles and schema consumers share the
+      // bootstrap boundary. Registration grants no SQL lease and changes no schema.
+      registerThreadFenceConnection(database, (context) => {
+        const { assertThreadFenceBootstrapAuthorized } =
+          require("../runtime-maintenance.js") as typeof import("../runtime-maintenance.js");
+        return assertThreadFenceBootstrapAuthorized(context);
+      });
+    }
+    return database;
+  } catch (cause) {
+    database.close();
+    throw cause;
+  }
 }

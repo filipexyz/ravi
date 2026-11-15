@@ -1,3 +1,4 @@
+import { assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
 /**
  * Load environment from ~/.ravi/.env
  * This file must be imported FIRST before any other modules.
@@ -45,4 +46,5 @@ if (existsSync(envFile)) {
 
 // Before command authorization/config reads can lazily initialize a database.
 // A replacement stays PM2-supervised here without opening SQLite or NATS.
+if (isDaemon || isChannelRunner) assertRuntimeMaintenanceInactive();
 if (isDaemon) acquireDaemonSchemaOwnership();

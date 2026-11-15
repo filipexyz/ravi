@@ -1,3 +1,4 @@
+import { TrackedWorkDrain, type WorkDrainProof, type WorkDrainStatus } from "../runtime/work-drain.js";
 import { createHash, randomUUID } from "node:crypto";
 import { StringCodec } from "nats";
 import { flushNats as flushNatsConnection, nats, getNats } from "../nats.js";
@@ -125,6 +126,7 @@ export interface AckableChannelOutboundMessage {
 
 export class ChannelOutboundConsumer {
   private running = false;
+  private readonly workDrain = new TrackedWorkDrain("channels.outbound-jobs-and-receipts");
   private loopPromise: Promise<void> | null = null;
   private lastMessageAt: number | undefined;
   private lastError: ChannelOutboundConsumerRuntimeStatus["lastError"] | undefined;
@@ -132,17 +134,50 @@ export class ChannelOutboundConsumer {
   constructor(private readonly options: ChannelOutboundConsumerOptions) {}
 
   start(): void {
+    if (this.workDrain.status().phase !== "accepting") throw new Error("WORK_DRAIN_ADMISSION_CLOSED");
     if (this.running) return;
     this.running = true;
     this.loopPromise = this.runLoop();
   }
 
-  async stop(): Promise<void> {
+  drainStatus(): WorkDrainStatus {
+    return this.workDrain.status();
+  }
+
+  requestDrain(timeoutMs?: number): Promise<WorkDrainProof> {
     this.running = false;
-    await this.loopPromise?.catch((error) => {
-      log.debug("Channel outbound consumer stopped after loop error", { error });
-    });
+    this.workDrain.beginDrain();
+    return this.workDrain.waitForDrain(timeoutMs);
+  }
+
+  async stop(): Promise<void> {
+    await this.requestDrain();
+    await this.loopPromise;
     this.loopPromise = null;
+  }
+
+  /** Admitted work owns its receipt/callback and broker acknowledgement until completion. */
+  processMessage(
+    job: ChannelOutboundJob,
+    message: AckableChannelOutboundMessage,
+    deliveryAttempt?: number,
+  ): Promise<ChannelOutboundProcessingResult> {
+    return this.workDrain.run("outbound-job", async () => {
+      const result = await processChannelOutboundJob(job, {
+        ...this.options,
+        deliveryAttempt: deliveryAttempt ?? this.options.deliveryAttempt,
+      });
+      // A durable queue can remain pending. An attempted send/callback with an
+      // error needs reconciliation evidence; an empty promise set is not proof.
+      if (this.options.persistDelivery === false && result.status === "delivered" && !job.request.origin.automatic) {
+        this.workDrain.recordFailure("outbound-receipt-disabled");
+      }
+      if (result.error && result.phase !== "adapter_lookup") {
+        this.workDrain.recordFailure(`outbound-${result.phase ?? "unknown"}`);
+      }
+      acknowledgeChannelOutboundMessage(message, result);
+      return result;
+    });
   }
 
   isConsuming(): boolean {
@@ -185,15 +220,12 @@ export class ChannelOutboundConsumer {
             job = JSON.parse(sc.decode(msg.data)) as ChannelOutboundJob;
           } catch (error) {
             log.error("Failed to parse channel outbound job", { subject: msg.subject, error });
+            this.workDrain.recordFailure("invalid-outbound-job");
             msg.ack();
             continue;
           }
 
-          const result = await processChannelOutboundJob(job, {
-            ...this.options,
-            deliveryAttempt: msg.info.deliveryCount,
-          });
-          acknowledgeChannelOutboundMessage(msg, result);
+          await this.processMessage(job, msg, msg.info.deliveryCount);
         }
       } catch (error) {
         if (!this.shouldContinue()) break;

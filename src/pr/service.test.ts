@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmodSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -60,7 +61,7 @@ describe("publication lifecycle across object upload", () => {
     async (kind) => {
       f = publicationFixture();
       const input = kind === "root-missing" ? f.input() : threadInput();
-      if (kind === "missing") getDb().exec("DELETE FROM slack_thread_lifecycle");
+      if (kind === "missing") runThreadMutation(getDb(), "DELETE FROM slack_thread_lifecycle");
       if (kind === "ambiguous")
         registerInboundSlackThread({
           parentSessionKey: "agent:test:publisher",
@@ -87,7 +88,7 @@ describe("publication lifecycle across object upload", () => {
   it("checks again between preview and execute, without uploading or moving the branch", async () => {
     f = publicationFixture();
     const prepared = await preparePublication(threadInput(), f.request);
-    getDb().exec("DELETE FROM slack_thread_lifecycle");
+    runThreadMutation(getDb(), "DELETE FROM slack_thread_lifecycle");
     f.calls.length = 0;
     await expect(executePublication(prepared, f.request, f.options)).rejects.toMatchObject({
       code: "PUBLICATION_SESSION_REQUIRED",
@@ -102,7 +103,7 @@ describe("publication lifecycle across object upload", () => {
     const prepared = await preparePublication(threadInput(), f.request);
     const request: GithubRequest = async (endpoint, method, body) => {
       const value = await f.request(endpoint, method, body);
-      if (method === "POST") getDb().exec("DELETE FROM slack_thread_lifecycle");
+      if (method === "POST") runThreadMutation(getDb(), "DELETE FROM slack_thread_lifecycle");
       return value;
     };
     await expect(executePublication(prepared, request, f.options)).rejects.toMatchObject({

@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import {
   migrateTaskThreads,
   createTaskThread,
@@ -1055,7 +1056,7 @@ export function dbRollbackTaskCreation(task: TaskRecord): void {
   getDb()
     .transaction(() => {
       getDb().query("DELETE FROM tasks WHERE id=? AND status='open'").run(task.id);
-      getDb().query("DELETE FROM threads WHERE id=?").run(task.threadId);
+      runThreadMutation(getDb(), "DELETE FROM threads WHERE id=?", task.threadId);
     })
     .immediate();
 }

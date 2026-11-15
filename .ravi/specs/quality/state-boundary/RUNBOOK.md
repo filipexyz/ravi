@@ -80,3 +80,11 @@ PR and its CI follow. It does not run tests or merge. On a partial result, repea
 the same expected SHA after inspecting the reported phase. Use the complete
 publication/recovery contract in `cli/pr`; do not revive the earlier snapshot
 publisher or disable hooks. Full checks run in PR CI before merge.
+
+## Thread PR1 deployment hold
+
+This is preparation only. Do not deploy onto existing runtime state using independent `daemon restart` / `channels restart`. The release refuses first bootstrap without reviewed external evidence. Component drain receipts, PM2 online, health and process silence do not establish full accepted-work completion.
+
+Before a later authorized rollout, inventory both predecessor PIDs/start identities/bundles, establish external intake and legacy-launcher exclusion, reconcile all accepted work to durable outcomes and validate its evidence. The maintenance coordinator requires a trusted verifier, keeps its interlock after failure, stops channels then daemon and accepts only confirmed physical exits. It never starts a successor, clears the interlock or migrates data in PR1. There is deliberately no env flag/file-hash-only bootstrap waiver.
+
+Do not remove the interlock, downgrade schema markers, clear queues/claims, reset context or expire a lease to force progress. An interrupted preparation requires reviewed recovery. Canonical health/attention JOINs and legacy context provenance (resume and local recovery) belong to PR2 before any cross-audience projection.

@@ -54,3 +54,7 @@ explicit and isolated.
 ## Confirmed bypass evidence
 
 The initial publications of [#766](https://github.com/filipexyz/ravi/pull/766) and [#767](https://github.com/filipexyz/ravi/pull/767) used `git -c core.hooksPath=/dev/null push`. That is a bypass even though persistent hooksPath remained `.githooks`, hook blobs were unchanged, and local/remote commit/tree hashes matched. Content integrity does not establish an authorized publication mechanism. Later checks must not rewrite that history.
+
+## Why preparation precedes the thread cutover
+
+Slack socket callbacks and outbound receipts write lifecycle alongside the daemon. A healthy successor or a JS adapter does not stop an older cached SQL writer. Scoped drain completion also cannot prove that a legacy process persisted every accepted message. Preparation therefore enforces SQL ownership, retains explicit deployment blockers and keeps a persistent two-process interlock; canonical state and audience changes remain separate work.

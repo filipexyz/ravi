@@ -580,8 +580,8 @@ async function reconcileManagedRuntime(
     const warnings = managedRuntimeWarnings(buildManagedRuntimeIdentity(currentProcesses, target.bundlePath));
     fail(
       "Ravi updated, but PM2 did not converge on the updated runtime. " +
-        'Reconcile ravi with `ravi daemon restart -m "reconcile update"` and ravi-channels with `ravi channels restart`; ' +
-        "then run `ravi daemon status` before resuming traffic." +
+        "Deployment remains blocked. Inspect preparation/interlock evidence and both process identities; " +
+        "do not bypass this result with independent daemon/channels restarts." +
         (warnings.length ? ` ${warnings.join(" ")}` : ""),
     );
   }

@@ -1,3 +1,5 @@
+import * as closeAllDbs from "../db/close-all.js";
+import * as natsConnection from "../nats.js";
 import { describe, expect, it, mock, spyOn } from "bun:test";
 import * as runtimeIdentity from "../runtime-process-identity.js";
 import {
@@ -666,6 +668,59 @@ describe("managed runner boot identity", () => {
     } finally {
       start.mockRestore();
       receipt.mockRestore();
+    }
+  });
+});
+
+describe("channel runner drain", () => {
+  it("keeps databases open until every component has completed drain", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const nativeStop = mock(async () => pending);
+    const outboundStop = mock(async () => {});
+    const closeDbs = spyOn(closeAllDbs, "closeAllRaviDbs").mockImplementation(() => {});
+    const closeBroker = spyOn(natsConnection, "closeNats").mockImplementation(async () => {});
+    try {
+      const runner = new ChannelRunner();
+      const internals = runner as unknown as {
+        nativeChannelManager: { stop: typeof nativeStop };
+        outboundConsumer: { stop: typeof outboundStop };
+      };
+      internals.nativeChannelManager = { stop: nativeStop };
+      internals.outboundConsumer = { stop: outboundStop };
+      const stopping = runner.stop();
+      expect(nativeStop).toHaveBeenCalledWith({ requireDrain: true });
+      expect(outboundStop).toHaveBeenCalledTimes(1);
+      expect(closeDbs).not.toHaveBeenCalled();
+      expect(closeBroker).not.toHaveBeenCalled();
+      finish();
+      await stopping;
+      expect(closeDbs).toHaveBeenCalledTimes(1);
+      expect(closeBroker).toHaveBeenCalledTimes(1);
+    } finally {
+      closeDbs.mockRestore();
+      closeBroker.mockRestore();
+    }
+  });
+
+  it("does not close databases or broker when a component lacks drain proof", async () => {
+    const closeDbs = spyOn(closeAllDbs, "closeAllRaviDbs").mockImplementation(() => {});
+    const closeBroker = spyOn(natsConnection, "closeNats").mockImplementation(async () => {});
+    try {
+      const runner = new ChannelRunner();
+      (runner as unknown as { nativeChannelManager: { stop(): Promise<void> } }).nativeChannelManager = {
+        stop: async () => {
+          throw new Error("unpersisted callback");
+        },
+      };
+      await expect(runner.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+      expect(closeDbs).not.toHaveBeenCalled();
+      expect(closeBroker).not.toHaveBeenCalled();
+    } finally {
+      closeDbs.mockRestore();
+      closeBroker.mockRestore();
     }
   });
 });

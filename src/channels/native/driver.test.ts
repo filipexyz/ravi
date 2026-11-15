@@ -412,6 +412,29 @@ describe("native channel driver contract", () => {
     ]);
   });
 
+  it("strict drain propagates adapter failure and retains its lease", async () => {
+    const registry = new NativeChannelDriverRegistry();
+    const driver = fullDriver();
+    const create = driver.createRuntime.bind(driver);
+    driver.createRuntime = async (context) => ({
+      ...(await create(context)),
+      stop: async () => {
+        throw new Error("pending receipt");
+      },
+    });
+    registry.register(driver);
+    const lease = hostLease();
+    const manager = new NativeChannelDriverManager({
+      channels: { "example-channel-a": channel() },
+      registry,
+      createHostLease: () => lease,
+    });
+    await manager.start();
+    await expect(manager.stop({ requireDrain: true })).rejects.toThrow("NATIVE_CHANNEL_DRAIN_UNPROVEN");
+    expect(lease.dispose).not.toHaveBeenCalled();
+    expect(manager.health()[0]).toMatchObject({ status: "failed", reason: "stop_failed" });
+  });
+
   it("exposes only validated native inbound action handlers", async () => {
     const registry = new NativeChannelDriverRegistry();
     registry.register(inboundActionDriver());

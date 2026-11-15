@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   publishGhPr,
@@ -306,7 +307,7 @@ describe("Git Data API publication boundary", () => {
           (phase === "before-follow" && endpoint.endsWith("/pulls") && method === "POST") ||
           (phase === "verification" && endpoint.endsWith("/pulls/9"))
         ) {
-          getDb().query("DELETE FROM slack_thread_lifecycle WHERE child_session_key=?").run(childKey);
+          runThreadMutation(getDb(), "DELETE FROM slack_thread_lifecycle WHERE child_session_key=?", childKey);
         }
         return result;
       };

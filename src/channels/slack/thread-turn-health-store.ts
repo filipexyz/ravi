@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../../threads/schema-fence.js";
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../../db/write-retry.js";
 import { getDb } from "../../router/router-db.js";
@@ -46,8 +47,9 @@ export function saveThreadTurnHealth(requestId: string, health: ThreadTurnHealth
   executeWrite(
     getDb(),
     (db) =>
-      db
-        .prepare(`
+      runThreadMutation(
+        db,
+        `
     INSERT INTO slack_thread_turn_health
       (request_id, turn_id, state, reason, since_at, last_signal_at, checked_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -59,16 +61,15 @@ export function saveThreadTurnHealth(requestId: string, health: ThreadTurnHealth
       notice_retry_after = CASE WHEN turn_id IS excluded.turn_id THEN notice_retry_after ELSE NULL END,
       turn_id = excluded.turn_id, state = excluded.state, reason = excluded.reason,
       last_signal_at = excluded.last_signal_at, checked_at = excluded.checked_at
-  `)
-        .run(
-          requestId,
-          health.turnId,
-          health.state,
-          health.reason,
-          health.since,
-          health.lastSignalAt,
-          health.checkedAt,
-        ),
+  `,
+        requestId,
+        health.turnId,
+        health.state,
+        health.reason,
+        health.since,
+        health.lastSignalAt,
+        health.checkedAt,
+      ),
     { label: "thread-turn-health-save" },
   );
 }
@@ -78,8 +79,9 @@ export function claimThreadTurnNotice(requestId: string, turnId: string, now: nu
   const claimed = executeWrite(
     getDb(),
     (db) =>
-      db
-        .prepare(`
+      runThreadMutation(
+        db,
+        `
     UPDATE slack_thread_turn_health SET claim_id = ?, claim_expires_at = ?
     WHERE request_id = ? AND turn_id = ? AND state = 'attention'
       AND (notified_turn_id IS NOT turn_id OR (
@@ -92,8 +94,16 @@ export function claimThreadTurnNotice(requestId: string, turnId: string, now: nu
       AND (claim_id IS NULL OR claim_expires_at <= ?)
       AND (notice_retry_after IS NULL OR notice_retry_after <= ?)
       AND EXISTS (SELECT 1 FROM slack_thread_lifecycle l WHERE l.request_id = ? AND l.status = 'open')
-  `)
-        .run(claimId, now + 60_000, requestId, turnId, now - 30_000, now, now, requestId).changes > 0,
+  `,
+        claimId,
+        now + 60_000,
+        requestId,
+        turnId,
+        now - 30_000,
+        now,
+        now,
+        requestId,
+      ).changes > 0,
     { label: "thread-turn-health-claim" },
   );
   return claimed ? claimId : null;
@@ -103,23 +113,23 @@ export function finishThreadTurnNotice(requestId: string, claimId: string, deliv
   executeWrite(
     getDb(),
     (db) =>
-      db
-        .prepare(`
+      runThreadMutation(
+        db,
+        `
     UPDATE slack_thread_turn_health
     SET notified_turn_id = CASE WHEN ? THEN turn_id ELSE notified_turn_id END,
         notified_at = CASE WHEN ? THEN ? ELSE notified_at END,
         notice_retry_after = ?,
         claim_id = NULL, claim_expires_at = NULL
     WHERE request_id = ? AND claim_id = ?
-  `)
-        .run(
-          delivered ? 1 : 0,
-          delivered ? 1 : 0,
-          now,
-          delivered ? null : now + THREAD_NOTICE_FAILURE_RETRY_MS,
-          requestId,
-          claimId,
-        ),
+  `,
+        delivered ? 1 : 0,
+        delivered ? 1 : 0,
+        now,
+        delivered ? null : now + THREAD_NOTICE_FAILURE_RETRY_MS,
+        requestId,
+        claimId,
+      ),
     { label: "thread-turn-health-finish" },
   );
 }

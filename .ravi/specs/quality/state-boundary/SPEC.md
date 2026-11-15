@@ -8,6 +8,11 @@ status: active
 normative: true
 applies_to:
   - src/db/state-boundary.ts
+  - src/threads/schema-fence.ts
+  - src/runtime-maintenance.ts
+  - src/runtime/work-drain.ts
+  - src/managed-runtime-rebind.ts
+  - src/gateway.ts
   - src/db/schema-owner.ts
   - src/db/runtime-state.ts
   - src/channels/runner.ts
@@ -95,3 +100,15 @@ no local writable-state fallback or new authority is provided here.
 Missing development/real-state boundaries turn convenience into state corruption: cleanup can remove an initial sandbox and lazy initialization can run unreleased migrations on real data. The caller's process role must be checked at the actual opening boundary.
 
 An impossible hook creates a culture of bypass. The sanctioned lightweight publisher makes the allowed path explicit while keeping full validation in CI.
+
+## Thread writer preparation (PR1)
+
+- Both `ravi` and `ravi-channels` write thread lifecycle state. Readiness and schema-owner roles MUST NOT be treated as a writer fence.
+- Every current writer MUST present its compiled protocol at the SQL boundary. `runThreadMutation` owns one prepared DML and an uncommitted lease inside `BEGIN IMMEDIATE` or an existing transaction savepoint; it deletes the lease before returning or committing. It accepts no callback, uses no TTL and never executes caller SQL with `exec`. A missing/obsolete writer, including a previously prepared statement on another connection, MUST fail before protected DML or readiness invalidation. Authorization committed by another connection MUST NOT authorize a legacy writer.
+- The durable thread fence carries a monotonic protocol floor, phase and epoch. This preparation serves `legacy_ready` only and may freeze writes; it MUST NOT backfill, drop legacy lifecycle state, switch to canonical state or thaw a failed migration.
+- First installation on populated or canonical real state MUST require external verification of accepted-work persistence/completion, closed admissions, disabled legacy launchers and physical exit of both predecessor identities. The first release has no automatic legacy authorizer: missing evidence is a deployment blocker, not permission to infer success from startup or health.
+- Drain receipts MUST state their component scope. Gateway/Slack/outbound completion MUST NOT certify untracked daemon work. Caught callback failures, incomplete receipts and drain timeouts remain unproven; late completion alone MUST NOT erase that outcome.
+- Maintenance MUST keep a durable exclusive interlock. Both CLI controls and process entrypoints MUST reject starts/restarts while it exists, including PM2 auto-restarts of prepared binaries. Old binaries require an external launcher interlock; they cannot be assumed to understand the new file.
+- Both completions MUST be verified before stopping either process. Stop channels first, then daemon, checking inventories and physical PID absence. Only ESRCH proves absence; EPERM, reused PIDs, replacement processes, failed inventory queries and timeouts MUST keep maintenance blocked. No successor or migration may be authorized by a successful stop command alone.
+- Durably queued work, event/destination IDs, receipts and claims MUST survive preparation. Preparation MUST NOT delete queues, reinterpret expiration as non-delivery or retransmit results.
+- Canonical JOINs in health/attention (including `thread-attention-admission.ts`) and effective-context provenance for legacy resume/local recovery remain mandatory PR2 gates. PR1 does not implement or certify cross-audience projection.

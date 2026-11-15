@@ -1,3 +1,4 @@
+import { TrackedWorkDrain, type WorkDrainProof, type WorkDrainStatus } from "./runtime/work-drain.js";
 /**
  * Channel Gateway (omni-backed)
  *
@@ -403,6 +404,7 @@ export class Gateway {
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
   private slackThreadReconciliationTimer?: ReturnType<typeof setInterval>;
+  private readonly workDrain = new TrackedWorkDrain("gateway.handlers-and-slack-reconciliation");
 
   constructor(options: GatewayOptions) {
     this.omniSender = options.omniSender;
@@ -414,6 +416,7 @@ export class Gateway {
   }
 
   async start(): Promise<void> {
+    if (this.workDrain.status().phase !== "accepting") throw new Error("WORK_DRAIN_ADMISSION_CLOSED");
     log.info("Starting gateway...");
     this.running = true;
 
@@ -432,6 +435,7 @@ export class Gateway {
     await this.reconcileSlackThreads().catch((error) => {
       log.warn("Initial Slack thread lifecycle reconciliation failed", { error });
     });
+    if (!this.running) return;
     this.slackThreadReconciliationTimer = setInterval(() => {
       this.reconcileSlackThreads().catch((error) => {
         log.warn("Slack thread lifecycle reconciliation failed", { error });
@@ -442,9 +446,25 @@ export class Gateway {
     log.info("Gateway started");
   }
 
+  drainStatus(): WorkDrainStatus {
+    return this.workDrain.status();
+  }
+
+  requestDrain(timeoutMs?: number): Promise<WorkDrainProof> {
+    this.running = false;
+    this.workDrain.beginDrain();
+    this.clearPostDeliveryRenewals();
+    this.clearInterruptedPresenceStops();
+    if (this.slackThreadReconciliationTimer) {
+      clearInterval(this.slackThreadReconciliationTimer);
+      this.slackThreadReconciliationTimer = undefined;
+    }
+    return this.workDrain.waitForDrain(timeoutMs);
+  }
+
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
-    this.running = false;
+    await this.requestDrain();
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
     this.runtimeActivitySequences.clear();
@@ -1022,6 +1042,7 @@ export class Gateway {
 
     if (data.actionId === "thread.create") {
       await handleSlackThreadCreationDelivery(data).catch((error) => {
+        this.workDrain.recordFailure("thread-create-delivery-callback");
         log.warn("Failed to finalize Slack thread create delivery", {
           sessionName,
           requestId: data.requestId ?? data.jobId,
@@ -1053,11 +1074,14 @@ export class Gateway {
     this.schedulePostDeliveryPresenceRenewal(sessionName, outboundTarget, "native-delivery-renew");
   }
 
-  private async reconcileSlackThreads(): Promise<void> {
-    const result = await reconcileSlackThreadLifecycle();
-    if (result.creations > 0 || result.parentReturns > 0 || result.failures > 0) {
-      log.info("Reconciled Slack thread lifecycle", result);
-    }
+  private reconcileSlackThreads(): Promise<void> {
+    return this.workDrain.run("slack-thread-reconciliation", async () => {
+      const result = await reconcileSlackThreadLifecycle();
+      if (result.failures > 0) this.workDrain.recordFailure("slack-thread-reconciliation-record");
+      if (result.creations > 0 || result.parentReturns > 0 || result.failures > 0) {
+        log.info("Reconciled Slack thread lifecycle", result);
+      }
+    });
   }
 
   private isTerminalRuntimeEvent(type: string | undefined, _status?: string, nativeEvent?: string): boolean {
@@ -1813,6 +1837,7 @@ export class Gateway {
     handler: (event: { topic: string; data: unknown }) => Promise<void>,
     opts?: { queue?: string },
   ): void {
+    if (!this.running) return;
     if (this.activeSubscriptions.has(key)) {
       log.warn(`${key} subscription already active, skipping duplicate`);
       return;
@@ -1825,9 +1850,11 @@ export class Gateway {
           if (!this.running) break;
           // Fire-and-forget: don't block the subscription loop on slow handlers
           // (e.g. omni sender timeouts shouldn't stall all other events)
-          handler(event).catch((err) => {
-            log.error(`${key} handler error`, { error: err });
-          });
+          this.workDrain
+            .run(`subscription:${key}`, () => handler(event))
+            .catch((err) => {
+              log.error(`${key} handler error`, { error: err });
+            });
         }
       } catch (err) {
         if (this.running) {
