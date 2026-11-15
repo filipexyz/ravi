@@ -269,13 +269,6 @@
       "count": 1
     },
     {
-      "id": "src/channels/backend-egress.ts:6243cf0ad21583fb9b7a9f94",
-      "file": "src/channels/backend-egress.ts",
-      "boundary": "channels",
-      "rule": "rejection-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/channels/health.ts:05f821802cff049921afba21",
       "file": "src/channels/health.ts",
       "boundary": "channels",
@@ -368,13 +361,6 @@
     },
     {
       "id": "src/channels/native/driver.ts:4d50f733fad5b2e1073beac3",
-      "file": "src/channels/native/driver.ts",
-      "boundary": "channels",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/channels/native/driver.ts:5cef50069c09c3ce767cb5d8",
       "file": "src/channels/native/driver.ts",
       "boundary": "channels",
       "rule": "catch-without-binding",
@@ -2218,13 +2204,6 @@
       "id": "src/db/write-retry.ts:2678de187797463c8ed583e4",
       "file": "src/db/write-retry.ts",
       "boundary": "db",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/decisions/delivery.ts:0c0e6a25b357dad417a2494f",
-      "file": "src/decisions/delivery.ts",
-      "boundary": "decisions",
       "rule": "catch-without-binding",
       "count": 1
     },
@@ -5898,7 +5877,7 @@
     }
   ],
   "totals": {
-    "violations": 882,
+    "violations": 879,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5912,8 +5891,8 @@
       "src/bridge": 4,
       "src/bug-report": 2,
       "src/calendar": 2,
-      "src/channels": 25,
-      "src/channels/native": 7,
+      "src/channels": 24,
+      "src/channels/native": 6,
       "src/channels/slack": 15,
       "src/ci": 1,
       "src/cli": 33,
@@ -5926,7 +5905,7 @@
       "src/crm": 1,
       "src/cron": 5,
       "src/db": 2,
-      "src/decisions": 3,
+      "src/decisions": 2,
       "src/devin": 2,
       "src/ephemeral": 2,
       "src/eval": 3,

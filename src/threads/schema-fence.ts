@@ -61,7 +61,9 @@ function assertSynchronousProof(result: unknown): void {
   ) {
     // A rejected async verifier is already invalid evidence. Consume its
     // rejection so refusing synchronously does not create an unhandled rejection.
-    void Promise.resolve(result).catch(() => undefined);
+    void Promise.resolve(result).catch(() => {
+      // no-cause: Async proof is refused synchronously below; this observer only prevents a later unhandled rejection.
+    });
   }
   refused(
     "Proof verifiers must complete synchronously and return undefined; async evidence cannot authorize mutation.",

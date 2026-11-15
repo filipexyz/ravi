@@ -228,7 +228,10 @@ export function startChannelBackendEgressResponder(options: {
     }
   })();
 
-  void loop.catch(() => workDrain.recordFailure("responder-loop"));
+  void loop.catch(() => {
+    // no-cause: This observer only latches failure; stop awaits the original loop and propagates its rejection.
+    workDrain.recordFailure("responder-loop");
+  });
 
   return {
     async stop(): Promise<void> {

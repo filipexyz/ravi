@@ -13,6 +13,8 @@ import { publishChannelOutboundJobDurably } from "../channels/outbound-publish-o
 import { getDecision, decisionWrite } from "./store.js";
 import { requireDecisionThread } from "./service.js";
 import { DecisionError, DecisionDispatchRejectedError } from "./model.js";
+import { logger } from "../utils/logger.js";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
 
 export interface DecisionDelivery {
   id: string;
@@ -142,7 +144,10 @@ async function deliver(candidate: DeliveryRow, deps: DecisionDeliveryDeps): Prom
       );
     }
     await refreshDecisionCard(row.decisionId, deps);
-  } catch {
+  } catch (error) {
+    reportErrorDiagnostic(logger, "Decision delivery failed", error, {
+      operation: "decisions.delivery.publish",
+    });
     runThreadMutation(
       getDb(),
       "UPDATE decision_deliveries SET status='failed',claim_id=NULL,claim_until=NULL,next_attempt_at=?,last_error='DELIVERY_FAILED' WHERE id=? AND claim_id=? AND status='publishing'",

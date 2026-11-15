@@ -8,6 +8,7 @@ import { getRaviStateDir } from "../utils/paths.js";
 import { closeNats, connectNats, getNats } from "../nats.js";
 import { configStore } from "../config-store.js";
 import { logger, type LogLevel } from "../utils/logger.js";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
 import {
   startNativeInboundChannelActionResponder,
   type NativeInboundChannelActionResponder,
@@ -247,10 +248,16 @@ export class ChannelRunner {
             this.nativeChannelManager?.stop({ requireDrain: true }),
           ]);
           const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
-          if (failures.length) throw new AggregateError(failures, "CHANNEL_RUNNER_DRAIN_UNPROVEN");
+          if (failures.length)
+            throw new AggregateError(failures, "CHANNEL_RUNNER_DRAIN_UNPROVEN", { cause: failures[0] });
         });
-        // Keep the rejection available to waitForDrain without an unhandled task.
-        void this.drainTask.catch(() => {});
+        // Drain proof retains the failure latch; report the original component causes.
+        void this.drainTask.catch((error) => {
+          reportErrorDiagnostic(log, "Channel runner drain failed", error, {
+            operation: "channel runner drain",
+            code: "CHANNEL_RUNNER_DRAIN_UNPROVEN",
+          });
+        });
         this.workDrain.beginDrain();
       }
       return this.workDrain.waitForDrain(timeoutMs);
