@@ -184,15 +184,33 @@ export class PrCommands {
     const deadline = createPublicationDeadline(publicationBudgetMs(0));
     signal = deadline.signal;
     const request = this.dependencies.github(signal);
-    let measured = false;
+    const measure = async () => {
+      try {
+        return await preparePublication(
+          { cwd, repo, base, title, body, expectSha, context: publisher },
+          request,
+          new LocalGit(cwd, signal),
+        );
+      } catch (error) {
+        // The budget ended before the upload was measured: say so instead of reporting unknown progress.
+        if (error instanceof ContractError && error.code === "PUBLICATION_TIMEOUT")
+          throw publicationTimeoutError(
+            {
+              phase: "preflight",
+              budgetMs: publicationBudgetMs(0),
+              objectsUploaded: 0,
+              objectCount: null,
+              bytesUploaded: 0,
+              uploadBytes: null,
+            },
+            error.details,
+          );
+        throw error;
+      }
+    };
     try {
-      const prepared = await preparePublication(
-        { cwd, repo, base, title, body, expectSha, context: publisher },
-        request,
-        new LocalGit(cwd, signal),
-      );
+      const prepared = await measure();
       deadline.setBudget(publicationBudgetMs(prepared.plan.uploadBytes));
-      measured = true;
       await this.dependencies.health();
       if (!execute) contractDryRun("pr publish", prepared.plan, { asJson });
       const provenance = buildAuditContextProvenance(context);
@@ -218,15 +236,6 @@ export class PrCommands {
           `GitHub refused preflight (HTTP ${error.status}). Check repository access and credentials.`,
           { retryable: error.status >= 500 || error.status === 429 },
         );
-      if (error instanceof ContractError && error.code === "PUBLICATION_TIMEOUT" && !measured)
-        throw publicationTimeoutError({
-          phase: "preflight",
-          budgetMs: publicationBudgetMs(0),
-          objectsUploaded: 0,
-          objectCount: null,
-          bytesUploaded: 0,
-          uploadBytes: null,
-        });
       throw error;
     } finally {
       deadline.dispose();
