@@ -7,7 +7,7 @@ import { resolveAccessActor } from "../access/actor.js";
 import { writeCachedActorBinding } from "../cloud-auth/actor-bindings.js";
 import { type AgentConfig } from "../router/index.js";
 import { dbCanonicalizeDmChatForContact, dbUpsertChat } from "../router/router-db.js";
-import { attachChatToSession, getOrCreateSession, resolveSession } from "../router/sessions.js";
+import { attachChatToSession, getOrCreateSession, resetSession, resolveSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { TriggerRunAuthority } from "../triggers/authority.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -243,6 +243,65 @@ describe("a trigger fire that lends its owner's authority, from the start of its
       reason: { kind: "routine_shared_session", routine: "trigger", jobId: TRIGGER_ID },
     });
     await turn.end();
+  });
+
+  it("bases_under_public_a_do_not_reach_attached_chat_b", async () => {
+    // Fire 1: nobody reads the answer (public A), so the turn acts in Bases
+    // as the owner. What it read stays in the session's history.
+    const first = await startTurn({ sessionKey: OWN_SESSION, sessionName: OWN_SESSION_NAME, prompt: fire(snapshot()) });
+    expect(first.bases()).toEqual({ kind: "operator" });
+    expect(first.metadata.turnReplyTarget).toEqual({ kind: "none" });
+    expect(resolveSession(OWN_SESSION)?.triggerOwnerLentAt).toBeNumber();
+    await first.end();
+
+    // Between fires, someone attaches their chat as the session's output (public B).
+    const ana = directChat(ANA_JID, "c_ana", "user_ana");
+    attachOutput(OWN_SESSION, ana.id);
+
+    // Fire 2 starts on a fresh runtime (nothing kept in memory): the history
+    // it continues was read for nobody but the owner, so chat B gets no
+    // answer from it, and the turn reads nothing new as the owner either.
+    const second = await startTurn({
+      sessionKey: OWN_SESSION,
+      sessionName: OWN_SESSION_NAME,
+      prompt: fire(snapshot()),
+    });
+    expect(second.streaming.suppressChatEmit).toBe(true);
+    expect(second.streaming.currentReplyTarget ?? null).toBeNull();
+    expect(second.streaming.lastBoundReplyTarget ?? null).toBeNull();
+    expect(second.metadata.turnReplyTarget).toEqual({ kind: "none" });
+    expect(second.bases()).toMatchObject({
+      kind: "refused",
+      reason: { kind: "routine_shared_session", routine: "trigger", jobId: TRIGGER_ID },
+    });
+    await second.end();
+
+    // A fire that lends nothing is held to the same history.
+    const third = await startTurn({
+      sessionKey: OWN_SESSION,
+      sessionName: OWN_SESSION_NAME,
+      prompt: fire(snapshot({ ownerPrincipal: "unknown", ownerIsOperator: false })),
+    });
+    expect(third.streaming.suppressChatEmit).toBe(true);
+    expect(third.metadata.turnReplyTarget).toEqual({ kind: "none" });
+    await third.end();
+
+    // Keeping the history keeps the hold; only dropping it lets the session
+    // answer chat B, with nothing of public A left to answer from.
+    resetSession(OWN_SESSION, { preserveHistoryContext: true });
+    expect(resolveSession(OWN_SESSION)?.triggerOwnerLentAt).toBeNumber();
+    resetSession(OWN_SESSION);
+    expect(resolveSession(OWN_SESSION)?.triggerOwnerLentAt).toBeUndefined();
+    const afterReset = await startTurn({
+      sessionKey: OWN_SESSION,
+      sessionName: OWN_SESSION_NAME,
+      prompt: fire(snapshot()),
+    });
+    expect(afterReset.streaming.suppressChatEmit).toBe(false);
+    expect(afterReset.metadata.turnReplyTarget).toMatchObject({ kind: "chat", canonicalChatId: ana.id });
+    expect(afterReset.bases()).toMatchObject({ kind: "refused", reason: { kind: "routine_shared_session" } });
+    expect(resolveSession(OWN_SESSION)?.triggerOwnerLentAt).toBeUndefined();
+    await afterReset.end();
   });
 
   it("is refused with a chat attached to its session, its owner's own direct chat included", async () => {

@@ -109,6 +109,24 @@ export function triggerOwnSession(
 }
 
 /**
+ * The session one fire of an `isolated` trigger runs in. The trigger's own
+ * session holds what its owner's turns read and is continued by every later
+ * one, so only a fire admitted as its owner's enters it. Any other fire (a
+ * test by someone who is not the owner, a definition the runner has not
+ * reloaded, a row that is gone) runs in the plain one-per-trigger session,
+ * with nobody's authority: taking the authority from the turn alone would
+ * still leave its prompt and its answer in the owner's history.
+ */
+export function triggerFireSession(
+  agentId: string,
+  trigger: Pick<Trigger, "id" | "ownerPrincipal">,
+  fire: { asOwner: boolean },
+): { sessionKey: string; own: boolean } {
+  if (!fire.asOwner) return { sessionKey: triggerIsolatedSessionKey(agentId, trigger.id, false), own: false };
+  return triggerOwnSession(agentId, trigger);
+}
+
+/**
  * The name of the session an `isolated` trigger runs in, once the runner has
  * created it, or null: its key for the own session, a generated name for the
  * session of a trigger nobody owns. How its owner finds it

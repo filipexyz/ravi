@@ -55,6 +55,7 @@ interface SessionRow {
   runtime_provider_config_revision: number;
   runtime_session_json: string | null;
   history_reset_after_id: number | null;
+  trigger_owner_lent_at: number | null;
   runtime_session_display_id: string | null;
   agent_id: string;
   agent_cwd: string;
@@ -103,6 +104,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     runtimeProviderConfigRevision: row.runtime_provider_config_revision ?? 0,
     runtimeSessionParams,
     historyResetAfterId: row.history_reset_after_id ?? undefined,
+    triggerOwnerLentAt: row.trigger_owner_lent_at ?? undefined,
     runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
     providerSessionId,
     sdkSessionId: row.sdk_session_id ?? undefined,
@@ -606,6 +608,33 @@ export function updateProviderSessionId(
   updateSdkSessionId(sessionKey, providerSessionId);
 }
 
+/**
+ * Records that a turn in this session runs with its trigger's owner's
+ * authority, answering to no chat. Written before that turn starts and kept
+ * with the session's history: from then on the session answers to no chat,
+ * whoever is attached to it later, until a reset drops the history
+ * (`resetSession`). Returns whether the session now carries the mark; a turn
+ * whose mark could not be written must not lend anything.
+ */
+export function markSessionTriggerOwnerLent(sessionKey: string): boolean {
+  getDb()
+    .prepare("UPDATE sessions SET trigger_owner_lent_at = ? WHERE session_key = ? AND trigger_owner_lent_at IS NULL")
+    .run(Date.now(), sessionKey);
+  return sessionHoldsTriggerOwnerHistory(sessionKey);
+}
+
+/**
+ * Whether this session's history holds what a turn read with its trigger's
+ * owner's authority: read for nobody but the owner, so no chat is answered
+ * from it.
+ */
+export function sessionHoldsTriggerOwnerHistory(sessionKey: string): boolean {
+  const row = getDb()
+    .prepare("SELECT trigger_owner_lent_at AS at FROM sessions WHERE session_key = ?")
+    .get(sessionKey) as { at: number | null } | undefined;
+  return typeof row?.at === "number";
+}
+
 export function clearProviderSession(sessionKey: string): void {
   const s = getStatements();
   s.clearProviderState.run(Date.now(), sessionKey);
@@ -755,6 +784,9 @@ export function resetSession(sessionKey: string, options: { preserveHistoryConte
   const historyResetAfterId = options.preserveHistoryContext
     ? (session?.historyResetAfterId ?? null)
     : (getRecentHistory(session?.name ?? sessionKey, 1).at(-1)?.id ?? 0);
+  // What a trigger owner's turns read goes with the history: kept with it,
+  // dropped with it.
+  const triggerOwnerLentAt = options.preserveHistoryContext ? (session?.triggerOwnerLentAt ?? null) : null;
   db.prepare(
     `
     UPDATE sessions SET
@@ -763,6 +795,7 @@ export function resetSession(sessionKey: string, options: { preserveHistoryConte
       runtime_session_json = NULL,
       runtime_session_display_id = NULL,
       history_reset_after_id = ?,
+      trigger_owner_lent_at = ?,
       system_sent = 0,
       aborted_last_run = 0,
       compaction_count = 0,
@@ -773,7 +806,7 @@ export function resetSession(sessionKey: string, options: { preserveHistoryConte
       updated_at = ?
     WHERE session_key = ?
   `,
-  ).run(historyResetAfterId, Date.now(), sessionKey);
+  ).run(historyResetAfterId, triggerOwnerLentAt, Date.now(), sessionKey);
   const changed = getDbChanges() > 0;
   try {
     // What the old context read no longer gates writes (Knowledge §11.4).

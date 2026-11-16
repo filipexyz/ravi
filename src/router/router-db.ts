@@ -1632,6 +1632,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0,
       runtime_session_json TEXT,
       history_reset_after_id INTEGER,
+      trigger_owner_lent_at INTEGER,
       runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
       agent_cwd TEXT NOT NULL,
@@ -3195,6 +3196,9 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   }
   if (!sessionColumns.some((c) => c.name === "history_reset_after_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN history_reset_after_id INTEGER");
+  }
+  if (!sessionColumns.some((c) => c.name === "trigger_owner_lent_at")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN trigger_owner_lent_at INTEGER");
   }
   if (!sessionColumns.some((c) => c.name === "runtime_session_display_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_display_id TEXT");

@@ -36,7 +36,7 @@ import {
   captureTriggerRunAuthority,
   sameTriggerDefinition,
   sessionAdmitsTriggerFire,
-  triggerOwnSession,
+  triggerFireSession,
   triggerRunsAs,
 } from "./ownership.js";
 import { isTriggerOwnSessionKey, triggerOwnSessionName } from "./authority.js";
@@ -597,6 +597,9 @@ export class TriggerRunner {
     let source: { channel: string; accountId: string; chatId: string } | undefined;
     // The trigger as stored now: who owns it decides which session is its own.
     const stored = dbGetTrigger(trigger.id);
+    // Whether this fire is its owner's: decided before the session is chosen,
+    // because only such a fire enters the trigger's own session.
+    const ownerFire = this.fireIsOwners(trigger, stored, opts);
     // The key of the trigger's own session, when this fire runs there. Only an
     // `isolated` trigger a person owns has one; nothing else enters it.
     let ownSessionKey: string | null = null;
@@ -628,8 +631,10 @@ export class TriggerRunner {
       }
     } else if (trigger.session === "isolated") {
       // A trigger a person owns runs in its own session; one nobody owns keeps
-      // the plain one-per-trigger session, as before owners existed.
-      const target = triggerOwnSession(agentId, stored ?? trigger);
+      // the plain one-per-trigger session, as before owners existed. A fire
+      // that is not its owner's (someone else's test, a stale definition)
+      // runs in the plain session too: it never touches the owner's history.
+      const target = triggerFireSession(agentId, stored ?? trigger, { asOwner: ownerFire });
       const dbKey = target.sessionKey;
       // The own session is found by its key alone: a session that merely goes
       // by that string as its name is not it.
@@ -766,7 +771,9 @@ export class TriggerRunner {
       source,
       _trigger: true,
       _triggerId: trigger.id,
-      _triggerAuthority: this.admitTriggerOwner(trigger, stored, opts, ownSessionKey),
+      _triggerAuthority: captureTriggerRunAuthority(ownerFire && stored ? stored : { id: trigger.id }, {
+        ownSessionKey,
+      }),
     });
 
     dbUpdateTriggerState(trigger.id, {
@@ -779,26 +786,25 @@ export class TriggerRunner {
   }
 
   /**
-   * Who this fire acts as, fixed now and carried with the prompt. The owner is
-   * read from the stored row, never from the subscription's copy, and is
-   * admitted only when that row is still the trigger being fired: after an
-   * edit the runner has not reloaded, the old message must not run under the
-   * row's owner, and a row that is gone has no owner. A test fire is admitted
-   * only for the owner's own test. The snapshot also names the trigger's own
-   * session when the fire runs there; anywhere else the owner's authority is
-   * not lent.
+   * Whether this fire is its owner's, fixed now: it decides both who the fire
+   * acts as (the snapshot carried with the prompt) and which session it runs
+   * in. The owner is read from the stored row, never from the subscription's
+   * copy, and is admitted only when that row is still the trigger being
+   * fired: after an edit the runner has not reloaded, the old message must
+   * not run under the row's owner, and a row that is gone has no owner. A
+   * test fire is admitted only for the owner's own test. A fire that is not
+   * admitted acts as nobody and stays out of the trigger's own session.
    */
-  private admitTriggerOwner(
+  private fireIsOwners(
     trigger: Trigger,
     stored: Trigger | null,
     opts: { test?: boolean; testInitiator?: string },
-    ownSessionKey: string | null,
-  ) {
-    const admitted =
+  ): boolean {
+    return (
       stored !== null &&
       sameTriggerDefinition(stored, trigger) &&
-      (!opts.test || (opts.testInitiator !== undefined && opts.testInitiator === triggerRunsAs(stored)));
-    return captureTriggerRunAuthority(admitted && stored ? stored : { id: trigger.id }, { ownSessionKey });
+      (!opts.test || (opts.testInitiator !== undefined && opts.testInitiator === triggerRunsAs(stored)))
+    );
   }
 
   /**

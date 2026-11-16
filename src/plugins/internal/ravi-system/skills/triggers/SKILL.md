@@ -140,7 +140,9 @@ Três condições a mais para o turno agir pelo dono:
   - Só os disparos desse trigger viram turno nessa sessão. Outro trigger apontado para ela é recusado ou pulado (do mesmo dono também), e um prompt mandado para ela (`ravi sessions send`), relatório de task, cron, hook ou aviso de falha de trigger shell (`--on-error`) é descartado. Para ler: `ravi sessions read <nome>`.
   - O nome é só dela: a sessão não pode ser renomeada e nenhuma outra sessão pode usar esse nome, nem depois que ela é apagada.
   - Não é lugar de conversa: com um chat anexado, ou uma rota mandando chats para ela, Bases recusa do mesmo jeito e as mensagens desse chat não são entregues.
+  - O que o dono leu não sai dali: depois do primeiro turno que agiu pelo dono, a sessão não responde a chat nenhum, nem a um chat anexado mais tarde, porque o histórico dela guarda o que foi lido só para o dono. Anexar um chat depois disso só faz Bases recusar; a resposta continua sem ir para ele. Só um `ravi sessions reset` que descarta o histórico libera a sessão.
   - Se o trigger perde o dono, passa a rodar em outra sessão, e a que guardava o que os turnos do dono leram não é mais usada.
+  - `ravi triggers test <id> --execute` de quem não é o dono (ou sem autor) roda nessa outra sessão, sem autoridade nenhuma: nem o prompt nem a resposta do teste entram no histórico do dono.
 - A resposta fica na sessão: a resposta do turno não vai para chat nenhum. Deixe a resposta na linha; se alguém precisa ser avisado, diga no `--message` (`ravi sessions inform <sessão-do-dono> "<resumo>"`, que pede acesso do agente a essa sessão). Um turno que começou com um chat ligado à resposta recebe `ACTOR_UNKNOWN` com `refusalReason: routine_answers_elsewhere`.
 - O disparo roda sozinho: cada disparo é um turno próprio, sem juntar outro prompt da fila nem nota `!!` do chat. Para tratar uma rajada num disparo só, use `--debounce`.
 

@@ -272,7 +272,8 @@ describe("TriggerRunner carries the trigger's owner with the turn it fires", () 
     expect(dbGetTrigger(trigger.id)?.ownerPrincipal).toBe("operator");
     const stale = await fire("evt-2");
     expect(String(stale.prompt)).toContain("row changed");
-    expect(stale._triggerAuthority).toEqual(nobody(trigger.id));
+    // Not its owner's fire: it also stays out of the trigger's own session.
+    expect(stale._triggerAuthority).toEqual(nobody(trigger.id, false));
 
     // Once reloaded, the new prompt runs as the owner again.
     const fresh = await fireAfterRefresh((payload) => String(payload.prompt).includes("a new prompt"));
@@ -303,7 +304,9 @@ describe("TriggerRunner carries the trigger's owner with the turn it fires", () 
 
     // Deleted without a refresh: the subscription's copy still says `operator`.
     dbDeleteTrigger(trigger.id);
-    expect((await fire("evt-gone"))._triggerAuthority).toEqual(nobody(trigger.id));
+    const gone = await fireInto("evt-gone");
+    expect(gone.payload._triggerAuthority).toEqual(nobody(trigger.id, false));
+    expect(gone.sessionName).not.toBe(ownSessionKey(trigger.id));
   });
 });
 
@@ -591,9 +594,54 @@ describe("a test fire", () => {
       ownerIsOperator: true,
       ownSessionKey: ownSessionKey(trigger.id),
     });
-    // Someone else's test, or one that does not say who asked, runs with nobody's authority.
-    expect((await testFire(trigger.id, "contact:c_ana"))._triggerAuthority).toEqual(nobody(trigger.id));
-    expect((await testFire(trigger.id))._triggerAuthority).toEqual(nobody(trigger.id));
+    // Someone else's test, or one that does not say who asked, runs with
+    // nobody's authority, outside the trigger's own session.
+    expect((await testFire(trigger.id, "contact:c_ana"))._triggerAuthority).toEqual(nobody(trigger.id, false));
+    expect((await testFire(trigger.id))._triggerAuthority).toEqual(nobody(trigger.id, false));
+  });
+
+  it("non_owner_test_fire_does_not_touch_owner_session", async () => {
+    const trigger = createTrigger("contact:c_luis");
+    await startRunner();
+    const own = ownSessionKey(trigger.id);
+
+    // The owner's fire runs in the trigger's own session and leaves a turn there.
+    const owners = await fireInto("evt-1");
+    expect(owners.sessionName).toBe(own);
+    saveMessage(own, "assistant", "what the owner's turn read in Bases", "provider-session-1");
+    const ownerSession = getSession(own);
+    const ownerHistory = getRecentHistory(own, 10);
+    expect(ownerHistory).toHaveLength(1);
+
+    // Someone else tests the trigger, and so does a test that names nobody.
+    const before = publishCalls.length;
+    emit({ triggerId: trigger.id, initiator: "contact:c_ana" }, "ravi.triggers.test");
+    await waitFor(() => publishCalls.length === before + 1);
+    emit({ triggerId: trigger.id }, "ravi.triggers.test");
+    await waitFor(() => publishCalls.length === before + 2);
+    const tests = publishCalls.slice(before);
+
+    for (const test of tests) {
+      // Not one prompt reaches the owner's session, under its name or its key...
+      expect(test.sessionName).not.toBe(own);
+      expect(getSessionByName(test.sessionName)?.sessionKey).toBe(plainSessionKey(trigger.id));
+      // ...and the turn names no session of the trigger's own and no owner.
+      expect(test.payload._triggerAuthority).toEqual(nobody(trigger.id, false));
+    }
+    // Both tests share the plain session; the owner's is exactly as it was.
+    expect(tests[1]!.sessionName).toBe(tests[0]!.sessionName);
+    expect(getSession(own)).toEqual(ownerSession);
+    expect(getRecentHistory(own, 10)).toEqual(ownerHistory);
+
+    // The owner's own test still runs there, as the owner.
+    const ownersTest = publishCalls.length;
+    emit({ triggerId: trigger.id, initiator: "contact:c_luis" }, "ravi.triggers.test");
+    await waitFor(() => publishCalls.length === ownersTest + 1);
+    expect(publishCalls[ownersTest]!.sessionName).toBe(own);
+    expect(publishCalls[ownersTest]!.payload._triggerAuthority).toMatchObject({
+      ownerPrincipal: "contact:c_luis",
+      ownSessionKey: own,
+    });
   });
 
   it("never gives an ownerless trigger an owner, whoever tests it", async () => {

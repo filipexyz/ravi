@@ -4,6 +4,7 @@ import { getRecentHistory } from "../db.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
+import { markSessionTriggerOwnerLent, sessionHoldsTriggerOwnerHistory } from "../router/sessions.js";
 import { configStore } from "../config-store.js";
 import { applyProviderModelRule } from "./model-catalog.js";
 import { validateRuntimeModelSelector } from "./model-validation.js";
@@ -28,6 +29,7 @@ import {
   pickRuntimeTurnAuthorityEnvelope,
   type RuntimeMessageGeneratorOptions,
   withoutSharedTriggerAuthority,
+  withoutTriggerAuthority,
 } from "./delivery-queue.js";
 import { commitRenderedSignals, releaseRenderedSignals, renderSignalsForTurn } from "../signals/render.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
@@ -1015,7 +1017,7 @@ async function buildRuntimeStartRequestInternal(
       stopActiveContextLease = undefined;
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
       // A trigger's owner goes only with the one fire it was published with.
-      const turnPrompt = withoutSharedTriggerAuthority(queuedTurnPrompt ?? prompt, input.deliverableMessages.length);
+      let turnPrompt = withoutSharedTriggerAuthority(queuedTurnPrompt ?? prompt, input.deliverableMessages.length);
       const turnSource = queuedTurnPrompt ? resolveRuntimePromptSource(turnPrompt, session) : resolvedSource;
       streamingSession.currentSource = turnSource ? { ...turnSource } : undefined;
       const replyResolution = resolveSessionOutputTargetPreserving({
@@ -1030,18 +1032,42 @@ async function buildRuntimeStartRequestInternal(
       // runner sent the fire to) is bound, from the start, to where it
       // answers: with no chat bound it posts nowhere, so a chat attached to
       // the session later never receives what it read.
-      const pinsNoAnswer =
+      let pinsNoAnswer =
         triggerAuthorityLendsOwner(turnPrompt._triggerAuthority) &&
         turnPrompt._triggerAuthority?.ownSessionKey === dbSessionKey &&
         !replyResolution.target;
+      // What that turn reads stays in the session's history, and a later turn
+      // answers from it. So the audience is fixed for the history, not for one
+      // turn: the session is marked before the turn starts, and a turn whose
+      // mark cannot be written lends nothing.
+      if (pinsNoAnswer && !recordTriggerOwnerLent(dbSessionKey)) {
+        runtimeRequestLog.warn("Trigger fire lends nothing: its session could not be marked as holding owner reads", {
+          sessionName,
+          triggerId: turnPrompt._triggerAuthority?.triggerId,
+        });
+        turnPrompt = withoutTriggerAuthority(turnPrompt);
+        pinsNoAnswer = false;
+      }
+      // Read for nobody but the owner, answered to nobody: a chat attached
+      // after such a turn receives nothing from this session, this turn or
+      // any later one, until a reset drops the history.
+      const holdsOwnerHistory = pinsNoAnswer || holdsTriggerOwnerHistory(dbSessionKey);
+      if (holdsOwnerHistory && replyResolution.target) {
+        runtimeRequestLog.warn("Turn answers no chat: its session's history holds what a trigger read for its owner", {
+          sessionName,
+          channel: replyResolution.target.channel,
+          hint: "attach the chat before the trigger's first fire, or reset the session",
+        });
+      }
       streamingSession.suppressChatEmit =
         Boolean(turnPrompt._cliDestination) ||
         Boolean(turnPrompt._observation) ||
         isObserverRuntimeSessionName(sessionName) ||
-        pinsNoAnswer;
-      streamingSession.currentReplyTarget = replyResolution.target ? { ...replyResolution.target } : null;
-      if (replyResolution.target) {
-        streamingSession.lastBoundReplyTarget = { ...replyResolution.target };
+        holdsOwnerHistory;
+      const turnReplyTarget = holdsOwnerHistory ? null : replyResolution.target;
+      streamingSession.currentReplyTarget = turnReplyTarget ? { ...turnReplyTarget } : null;
+      if (turnReplyTarget) {
+        streamingSession.lastBoundReplyTarget = { ...turnReplyTarget };
       }
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;
       streamingSession.currentTurnAuthority = pickRuntimeTurnAuthorityEnvelope(turnPrompt);
@@ -1272,6 +1298,29 @@ interface PendingModelBrokerAttempt {
   leaseId: string;
   runtimeId: string;
   sessionKey: string;
+}
+
+/** Marks the session as holding its trigger's owner's reads; false when the mark is not on record. */
+function recordTriggerOwnerLent(sessionKey: string): boolean {
+  try {
+    return markSessionTriggerOwnerLent(sessionKey);
+  } catch (error) {
+    runtimeRequestLog.warn("Failed to mark the session as holding trigger owner reads", { sessionKey, error });
+    return false;
+  }
+}
+
+/** Whether the session's history holds its trigger's owner's reads; a failed lookup counts as held. */
+function holdsTriggerOwnerHistory(sessionKey: string): boolean {
+  try {
+    return sessionHoldsTriggerOwnerHistory(sessionKey);
+  } catch (error) {
+    runtimeRequestLog.warn("Failed to read whether the session holds trigger owner reads; answering no chat", {
+      sessionKey,
+      error,
+    });
+    return true;
+  }
 }
 
 function findRuntimeTurnPrompt(deliverableMessages: RuntimeUserMessage[]): RuntimeLaunchPrompt | undefined {
