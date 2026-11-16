@@ -1054,6 +1054,92 @@ describe("CI840 quote-aware command discovery", () => {
     });
   });
 
+  it("heredoc with a quoted delimiter does not require the skill for a Ravi line in its body", () => {
+    const command = "cat <<'EOF'\nravi bases list\nEOF";
+    expect(runtimeSkillGateForCommand(command)).toBeUndefined();
+    expect(runtimeSkillGateForCommand(command, { executables: ["cat"] })).toBeUndefined();
+  });
+
+  it("heredoc with an unquoted delimiter requires the skill for an active substitution in its body", () => {
+    const command = "cat <<EOF\n$(ravi bases list)\nEOF";
+    expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+    expect(runtimeSkillGateForCommand(command, { executables: ["cat"] })).toMatchObject({
+      skill: "ravi-system-bases",
+      ruleId: "bases",
+    });
+  });
+
+  it("still ignores the quoted literal beside an active substitution outside any heredoc", () => {
+    expect(runtimeSkillGateForCommand(`printf '%s' '$(ravi bases list)' "$(date)"`)).toBeUndefined();
+  });
+
+  it.each([
+    'cat <<"EOF"\nravi bases list\nEOF',
+    "cat <<\\EOF\nravi bases list\nEOF",
+    "cat <<-'EOF'\n\travi bases list\n\tEOF",
+    "cat 3<<'EOF'\nravi bases list\nEOF",
+    "cat <<'EOF'\n$(ravi bases list) `ravi bases list`\nEOF",
+    "cat <<EOF\nravi bases list\nEOF",
+    "cat <<EOF\n\\$(ravi bases list) \\`ravi bases list\\`\nEOF",
+    "cat <<'A' <<'B'\nravi bases list\nA\nravi bases list\nB",
+    "(cat <<'EOF') | wc -l\nravi bases list\nEOF",
+    `git commit -m "$(cat <<'EOF'\nravi bases list\nEOF\n)"`,
+    "cat <<EOF\n$(cat <<'INNER'\nravi bases list\nINNER\n)\nEOF",
+    "cat <<< 'ravi bases list'",
+  ])("reads a heredoc body as stdin, not as command lines: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toBeUndefined();
+  });
+
+  it.each([
+    "cat <<EOF\ntotal: `ravi bases list`\nEOF",
+    "cat <<-EOF\n\t'$(ravi bases list)'\n\tEOF",
+    "cat <<'EOF'\nplain text\nEOF\nravi bases list",
+    "cat <<'EOF' | ravi bases list\nplain text\nEOF",
+    "<<EOF ravi bases list\nplain text\nEOF",
+    "cat <<EOF\nfoo \\\nEOF\nEOF\nravi bases list",
+    "cat <<< text\nravi bases list",
+  ])("retains a Ravi gate invoked around or inside a heredoc: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+  });
+
+  it("keeps reading lines as commands when no heredoc terminator follows", () => {
+    for (const command of [
+      "cat <<'EOF'\nravi bases list",
+      "echo $((1 << 2))\nravi bases list",
+      "(( x = 1 << 2 ))\nravi bases list",
+    ]) {
+      expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+    }
+  });
+
+  it.each([
+    "(( x = 1 << EOF ))\nravi bases list\nEOF",
+    "echo $(( 1 << EOF ))\nravi bases list\nEOF",
+    "echo $((\n1 << EOF\n))\nravi bases list\nEOF",
+    'echo "$((\n1 << EOF\n))"\nravi bases list\nEOF',
+    "cat <<$X <<'EOF'\n$(ravi bases list)\n$X\ntext\nEOF",
+    "cat <<`x` <<'EOF'\n$(ravi bases list)\n`x`\ntext\nEOF",
+    "a[1<<n]=5\nravi bases list\nn]=5",
+    "echo $[1 << n]\nravi bases list\nn]",
+    "echo $" + "{v:1<<n}\nravi bases list\nn}",
+  ])("does not take an arithmetic shift or an unreadable word for a heredoc redirect: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+  });
+
+  it("reads a real heredoc beside or inside an arithmetic command as stdin", () => {
+    expect(runtimeSkillGateForCommand("(( x = 1 << 2 )); cat <<'EOF'\nravi bases list\nEOF")).toBeUndefined();
+    expect(runtimeSkillGateForCommand("(( x = $(cat <<'EOF'\nravi bases list\nEOF\n) ))")).toBeUndefined();
+  });
+
+  it("does not let a literal heredoc body satisfy a configured command prefix", () => {
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "python-analysis" });
+    expect(runtimeSkillGateForCommand("cat <<'EOF'\npython3 -c pass\nEOF")).toBeUndefined();
+    expect(runtimeSkillGateForCommand("cat <<EOF\n$( python3 -c pass )\nEOF")).toMatchObject({
+      skill: "python-analysis",
+      source: "config",
+    });
+  });
+
   it("does not let a literal Bases decoy hide a real Pages invocation", () => {
     expect(runtimeSkillGateForCommand(`printf '%s' '$(ravi bases list)' "$(ravi pages list)"`)).toMatchObject({
       skill: "ravi-system-pages",
@@ -1116,6 +1202,45 @@ describe("CI840 quote-aware command discovery", () => {
       [],
     );
     const active = { command: `printf '%s' "$(ravi bases list)"` };
+    const first = await services.authorizeCommandExecution(active);
+    expect(first.approved).toBe(false);
+    expect(first.reason).toContain("RAVI_SKILL_REQUIRED");
+    expect(onSkillGatePersisted).toHaveBeenCalledTimes(1);
+    expect((await services.authorizeCommandExecution(active)).approved).toBe(true);
+  });
+
+  it("approves a literal heredoc without loading a skill, and gates an active one until retry", async () => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "bases-analysis", groupRegex: "^bases(?:[._]|$)", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:ci840-heredoc", "main", stateDir!, {
+      name: "ci840-heredoc",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      sessionKey: session.sessionKey,
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ],
+    });
+    const onSkillGatePersisted = mock(() => {});
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "ci840-heredoc",
+      toolContext: {},
+      onSkillGatePersisted,
+    });
+    const literal = await services.authorizeCommandExecution({ command: "cat <<'EOF'\nravi bases list\nEOF" });
+    expect(literal.approved).toBe(true);
+    expect(onSkillGatePersisted).not.toHaveBeenCalled();
+    expect(readSkillVisibilityFromParams(getSession(session.sessionKey)?.runtimeSessionParams).loadedSkills).toEqual(
+      [],
+    );
+    const active = { command: "cat <<EOF\n$(ravi bases list)\nEOF" };
     const first = await services.authorizeCommandExecution(active);
     expect(first.approved).toBe(false);
     expect(first.reason).toContain("RAVI_SKILL_REQUIRED");

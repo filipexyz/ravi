@@ -53,7 +53,14 @@ Quoting regressions (`bun test src/bash/`):
   covers mixed literal Ravi text plus active unrelated expansion, actual nested
   substitutions/pipelines, quoted command words, configured raw-text rules and
   native skill delivery/retry. Literal-only mentions MUST NOT load a skill;
-  named-executable contexts MUST remain restricted.
+  named-executable contexts MUST remain restricted. The same block covers
+  here-documents: a body under a quoted delimiter (`<<'EOF'`, `<<"EOF"`,
+  `<<\EOF`) MUST NOT load a skill, a body under an unquoted delimiter MUST gate
+  only its active substitutions, the delimiter MUST NOT hide the command on its
+  own line, and lines with no terminator MUST still be read as commands. A `<<`
+  that is an arithmetic shift (`((...))`, `$((...))`, a subscript or an
+  expansion offset) or whose delimiter word cannot be followed MUST NOT hide
+  the Ravi line that follows it.
 - The remaining syntax-refusal checks below use restricted contexts. The parser
   defaults remain strict; its explicit inline-code discovery mode is not an
   authorization decision.

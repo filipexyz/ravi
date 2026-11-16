@@ -882,8 +882,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | relay | src/cli/remote-gateway.ts | 1522 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
 | cli | src/cli/runtime-target.ts | 34 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:a330f4808d976b8052774005 |
 | cli | src/cli/runtime-target.ts | 86 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:863230d57a244c76b7fe3ddb |
-| cli | src/cli/skill-gates.ts | 249 | no-cause | Incomplete shell text is expected during best-effort skill discovery; retain only its visible command prefix, never an authorization verdict. | src/cli/skill-gates.ts:b60b7d61e8d7d344de5faa41 |
-| cli | src/cli/skill-gates.ts | 502 | triaged-follow-up | catch-without-binding | src/cli/skill-gates.ts:2393bd5726c3cde0dace38b5 |
+| cli | src/cli/skill-gates.ts | 264 | no-cause | Incomplete shell text is expected during best-effort skill discovery; retain only its visible command prefix, never an authorization verdict. | src/cli/skill-gates.ts:b60b7d61e8d7d344de5faa41 |
+| cli | src/cli/skill-gates.ts | 610 | triaged-follow-up | catch-without-binding | src/cli/skill-gates.ts:2393bd5726c3cde0dace38b5 |
 | cli | src/cli/tools-export.ts | 254 | triaged-follow-up | rejection-without-binding | src/cli/tools-export.ts:4838115c49b02fe526434d88 |
 | cli | src/cli/tools-export.ts | 284 | triaged-follow-up | rejection-without-binding | src/cli/tools-export.ts:4838115c49b02fe526434d88 |
 | cli | src/cli/tools-export.ts | 349 | fixed | binding retained / no recognized error surface | src/cli/tools-export.ts:2a577896035c9de9bdeb7006 |

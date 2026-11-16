@@ -151,10 +151,18 @@ Required capability materializers:
   including inside active substitutions. Literal arguments and comments MUST NOT
   become executable evidence because another region has active shell syntax.
   Incomplete executable hints MUST NOT hide Ravi in nested, double-quoted,
-  backtick or process substitutions and pipelines. Explicit configured
-  `commandRegex` rules retain their raw-text contract. This discovery is bounded:
-  script contents, interpreter/eval strings and dynamic command names are not
-  evaluated, and no discovery result grants permission.
+  backtick or process substitutions and pipelines. A here-document body is stdin
+  and MUST NOT be read as command lines: a quoted delimiter makes the body
+  literal, and an unquoted delimiter leaves only its command substitutions
+  active. The delimiter word MUST NOT be taken as the executable. Lines after a
+  here-document redirect with no terminator line MUST stay readable as commands.
+  `<<` inside `((...))` or `$((...))` is an arithmetic shift and MUST NOT open a
+  here-document. When a delimiter word cannot be followed, the lines after that
+  redirect MUST stay readable as commands; discovery MAY then over-report and
+  MUST NOT hide a command line.
+  Explicit configured `commandRegex` rules retain their raw-text contract. This
+  discovery is bounded: script contents, interpreter/eval strings and dynamic
+  command names are not evaluated, and no discovery result grants permission.
 - The syntax restrictions below apply to contexts without effective arbitrary
   execution. Policy refusals MUST identify `shell_syntax` and a stable rule,
   without inventing a missing executable capability from the first command token.
