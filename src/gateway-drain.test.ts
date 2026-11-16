@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:te
 import { Gateway } from "./gateway.js";
 import { AsyncResource } from "node:async_hooks";
 import type { TrackedWorkDrain } from "./runtime/work-drain.js";
+import { stopRuntimeComponents } from "./runtime/shutdown.js";
 import { nats } from "./nats.js";
 import * as lifecycle from "./channels/slack/thread-lifecycle.js";
 import * as outbox from "./channels/outbound-publish-outbox.js";
@@ -405,6 +406,10 @@ describe("gateway drain", () => {
         await expect(harness.gateway.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
         expect(harness.gateway.drainStatus()).toMatchObject({ accepted: 1, completed: 1, pending: 0 });
         expect(harness.gateway.drainStatus().failures).toContain("response-media-send");
+        const shutdown = await stopRuntimeComponents([{ name: "gateway", stop: () => harness.gateway.stop() }], []);
+        expect(shutdown.exitCode).toBe(1);
+        expect(shutdown.failures[0]?.name).toBe("gateway");
+        expect(shutdown.drain).toMatchObject({ phase: "blocked", failures: ["gateway"] });
       } finally {
         mediaSend.mockRestore();
         harness.restore();

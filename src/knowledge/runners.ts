@@ -48,17 +48,18 @@ export function startKnowledgeLeaderRunners(
 export function stopKnowledgeLeaderRunners(): void {
   const runners = started;
   if (!runners) return;
-  started = null;
+  const failed: KnowledgeLeaderRunner[] = [];
+  const failures: Error[] = [];
   for (const runner of runners) {
     try {
       runner.stop();
-    } catch (error) {
-      log.warn("knowledge runner failed to stop", {
-        runner: runner.name,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    } catch (cause) {
+      failed.push(runner);
+      failures.push(new Error(`Knowledge runner ${runner.name} failed to stop`, { cause }));
     }
   }
+  started = failed.length ? failed : null;
+  if (failures.length) throw new AggregateError(failures, "Knowledge runner shutdown failed", { cause: failures[0] });
 }
 
 export function knowledgeLeaderRunnersStarted(): boolean {

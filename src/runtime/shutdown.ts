@@ -1,3 +1,5 @@
+import { TrackedWorkDrain, type WorkDrainStatus } from "./work-drain.js";
+
 export interface RuntimeShutdownStep {
   name: string;
   stop: () => unknown | Promise<unknown>;
@@ -14,17 +16,19 @@ export async function stopRuntimeComponents(
   sharedResources: readonly RuntimeShutdownStep[],
   exitCode = 0,
   onFailure?: (failure: RuntimeShutdownFailure) => void,
-): Promise<{ exitCode: number; failures: RuntimeShutdownFailure[] }> {
+): Promise<{ exitCode: number; failures: RuntimeShutdownFailure[]; drain: WorkDrainStatus }> {
   const failures: RuntimeShutdownFailure[] = [];
+  const drain = new TrackedWorkDrain("runtime-shutdown");
   const stop = async (step: RuntimeShutdownStep) => {
     try {
-      await step.stop();
+      await drain.run(step.name, step.stop);
     } catch (cause) {
       const failure = { name: step.name, cause };
       failures.push(failure);
       try {
         onFailure?.(failure);
       } catch (reportCause) {
+        drain.recordFailure(`${step.name}.diagnostic`);
         failures.push({ name: `${step.name}.diagnostic`, cause: reportCause });
       }
     }
@@ -35,5 +39,6 @@ export async function stopRuntimeComponents(
   if (failures.length === 0) {
     for (const resource of sharedResources) await stop(resource);
   }
-  return { exitCode: failures.length ? exitCode || 1 : exitCode, failures };
+  drain.beginDrain();
+  return { exitCode: failures.length ? exitCode || 1 : exitCode, failures, drain: drain.status() };
 }

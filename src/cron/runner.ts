@@ -75,6 +75,9 @@ export class CronRunner {
   private running = false;
   private processing = false;
   private runtimeEventStream: ReturnType<typeof nats.subscribe> | null = null;
+  private runtimeEventAbort: AbortController | null = null;
+  private runtimeEventLoop: Promise<void> | null = null;
+  private readonly runtimeEventStopFailures: Error[] = [];
 
   /**
    * Start the cron runner.
@@ -95,7 +98,7 @@ export class CronRunner {
     this.subscribeToTriggerEvents();
 
     // Subscribe to runtime terminal events so job state reflects turn outcomes
-    this.subscribeToRuntimeEvents();
+    this.runtimeEventLoop = this.subscribeToRuntimeEvents();
     for (const run of pendingCronFailureReports()) {
       if (await notifyCronFailure(cronRunNotification(run), run.error ?? "Agent turn failed"))
         markCronRunReported(run.id);
@@ -108,7 +111,7 @@ export class CronRunner {
    * Stop the cron runner.
    */
   async stop(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running && !this.runtimeEventStream && !this.runtimeEventStopFailures.length) return;
     this.running = false;
 
     log.info("Stopping cron runner");
@@ -118,14 +121,23 @@ export class CronRunner {
       this.timer = null;
     }
 
+    this.runtimeEventAbort?.abort();
     if (this.runtimeEventStream) {
       try {
-        this.runtimeEventStream.return?.(undefined);
-      } catch {
-        // ignore close errors
+        await this.runtimeEventStream.return?.(undefined);
+      } catch (cause) {
+        this.runtimeEventStopFailures.push(new Error("Cron runtime subscription close failed", { cause }));
       }
-      this.runtimeEventStream = null;
     }
+    await this.runtimeEventLoop;
+    if (this.runtimeEventStopFailures.length) {
+      throw new AggregateError(this.runtimeEventStopFailures, "Cron runner shutdown failed", {
+        cause: this.runtimeEventStopFailures[0],
+      });
+    }
+    this.runtimeEventStream = null;
+    this.runtimeEventAbort = null;
+    this.runtimeEventLoop = null;
 
     log.info("Cron runner stopped");
   }
@@ -739,8 +751,10 @@ export class CronRunner {
    */
   private async subscribeToRuntimeEvents(): Promise<void> {
     log.debug("Subscribing to runtime turn events", { topic: CRON_RUNTIME_EVENTS_TOPIC });
-    const stream = nats.subscribe(CRON_RUNTIME_EVENTS_TOPIC);
+    const controller = new AbortController();
+    const stream = nats.subscribe(CRON_RUNTIME_EVENTS_TOPIC, { signal: controller.signal });
     this.runtimeEventStream = stream;
+    this.runtimeEventAbort = controller;
 
     try {
       for await (const event of stream) {
@@ -748,16 +762,22 @@ export class CronRunner {
         try {
           await this.handleRuntimeEvent(event);
         } catch (err) {
+          if (!this.running)
+            this.runtimeEventStopFailures.push(new Error("Cron turn outcome failed during shutdown", { cause: err }));
           log.error("Failed to record cron turn outcome", { topic: event.topic, error: err });
         }
       }
     } catch (err) {
-      // Stream closed by stop() is expected
-      if (!this.running || this.runtimeEventStream !== stream) return;
+      if (!this.running || this.runtimeEventStream !== stream) {
+        this.runtimeEventStopFailures.push(
+          new Error("Cron runtime subscription failed during shutdown", { cause: err }),
+        );
+        return;
+      }
       log.error("Runtime event subscription error", { error: err });
       this.runtimeEventStream = null;
       setTimeout(() => {
-        if (this.running && !this.runtimeEventStream) this.subscribeToRuntimeEvents();
+        if (this.running && !this.runtimeEventStream) this.runtimeEventLoop = this.subscribeToRuntimeEvents();
       }, 5000);
     }
   }

@@ -70,6 +70,10 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - A freeze inside an existing transaction, including one opened by its verifier, refuses before granting a lease; a successful freeze is committed and visible from another connection.
 - Missing adapter plus failed receipt persistence cannot produce a drain proof, even after NAK. Pending work with a persisted receipt remains eligible for ordinary redelivery.
 - A failed gateway drain still attempts the remaining component stops and makes shutdown exit nonzero; shared storage/broker handles are not closed while component completion is unproven.
+- Knowledge runner stop and database close failures each retain named original causes, attempt every sibling and yield a blocked shutdown latch/nonzero exit. Only failed Knowledge runners remain active for cleanup retry; a later successful retry never rewrites the original shutdown result.
+- A media upload rejection still blocks both gateway drain and the shutdown collector after the delivery handler catches it. A channel-runner close rejection invalidates subsequent drain requests as well as rejecting stop.
+- Adapter unsubscribe/supervisor, leadership release, host socket cleanup and subscription teardown failures propagate through their actual stop paths. Idle subscription cancellation completes without a real broker; delayed or rejected cleanup cannot yield an early clean shutdown.
+- A failed adapter command loop remains failed on every subsequent stop attempt, even after its handle closed. Retrying handle cleanup cannot certify successful completion of that accepted loop; each later collector result retains the original cause and blocked latch.
 - The shared gateway counts caught send failures and in-flight TTS publication without changing payload, send order or retry. Existing Omni/WhatsApp behavior tests run unchanged.
 - A drain requested during runner startup cannot certify before startup cleanup or activate later consumers. Successfully stopped drivers leave the active set even if another driver's stop fails.
 

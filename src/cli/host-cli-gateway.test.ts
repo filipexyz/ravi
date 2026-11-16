@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import { EventEmitter } from "node:events";
+import * as fs from "node:fs";
+import * as http from "node:http";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -72,4 +75,42 @@ describe("host CLI gateway", () => {
     });
     expect(handle).toBeNull();
   });
+
+  it.each(["EACCES", "ENOENT"])(
+    "reports socket cleanup failure to shutdown except an absent socket (%s)",
+    async (code) => {
+      const cause = Object.assign(new Error("unlink failed"), { code });
+      const server = new EventEmitter() as http.Server;
+      server.listen = ((...args: unknown[]) => {
+        (args.at(-1) as () => void)();
+        return server;
+      }) as http.Server["listen"];
+      server.close = (callback) => {
+        callback?.();
+        return server;
+      };
+      const create = spyOn(http, "createServer").mockReturnValue(server);
+      const exists = spyOn(fs, "existsSync").mockReturnValue(false);
+      const chmod = spyOn(fs, "chmodSync").mockImplementation(() => {});
+      const unlink = spyOn(fs, "unlinkSync").mockImplementation(() => {
+        throw cause;
+      });
+      try {
+        const handle = await startHostCliGateway({
+          socketPath: "/isolated-test/cli-gateway.sock",
+          handleRequest: () => Response.json({ ok: true }),
+        });
+        expect(handle).not.toBeNull();
+        exists.mockReturnValue(true);
+        if (code === "ENOENT") await expect(handle!.stop()).resolves.toBeUndefined();
+        else await expect(handle!.stop()).rejects.toBe(cause);
+        expect(unlink).toHaveBeenCalledTimes(1);
+      } finally {
+        unlink.mockRestore();
+        chmod.mockRestore();
+        exists.mockRestore();
+        create.mockRestore();
+      }
+    },
+  );
 });
