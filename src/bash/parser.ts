@@ -687,6 +687,11 @@ function inlineCodeReason(command: AnalyzedCommand): string | undefined {
   if (flags && command.argv.some((arg) => arg !== null && hasInlineFlag(flags, arg))) {
     return `${command.name} with inline code flag is not allowed`;
   }
+  // `printf code | timeout 5 python3`: the pipe check sees `timeout`, but the
+  // launched interpreter inherits the pipe as its stdin and runs it.
+  if (command.pipedStdin && pipedStdinIsCode(command.name, command.argv)) {
+    return `${command.name} reading piped stdin as its program is inline code and is not allowed`;
+  }
   return codeInputReason(command);
 }
 
@@ -757,6 +762,7 @@ function expandLauncher(command: AnalyzedCommand, out: AnalyzedCommand[], assign
       text: command.text,
       // The launched program inherits the launcher's stdin and arguments.
       ...(command.codeInputs ? { codeInputs: command.codeInputs } : {}),
+      ...(command.pipedStdin ? { pipedStdin: true } : {}),
       ...(launched.openArgs ? { openArgs: true } : {}),
     };
     out.push(child);
@@ -814,6 +820,7 @@ export function analyzeBashCommand(command: string): BashAnalysis {
           origin: level.origin,
           text: segment.text,
           ...(inputs.length > 0 ? { codeInputs: [...new Set(inputs)] } : {}),
+          ...(segment.piped ? { pipedStdin: true } : {}),
         };
         commands.push(analyzed);
         const before = assignments.length;

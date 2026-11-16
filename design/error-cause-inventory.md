@@ -189,9 +189,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | bash | src/bash/hook.ts | 934 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:7e03a7087d67033e4dc89c20 |
 | bash | src/bash/parser.ts | 124 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:e337326684f08167ed5c281d |
 | bash | src/bash/parser.ts | 160 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:f7fddc1ded126c0cda52b2f6 |
-| bash | src/bash/parser.ts | 826 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:6dcaeabe2d97e908cf41481b |
-| bash | src/bash/parser.ts | 850 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:b24ef659106c4008ffd9b39e |
-| bash | src/bash/parser.ts | 994 | triaged-follow-up | catch-without-binding | src/bash/parser.ts:e80dc90deffeaf87466e3b91 |
+| bash | src/bash/parser.ts | 833 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:6dcaeabe2d97e908cf41481b |
+| bash | src/bash/parser.ts | 857 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:b24ef659106c4008ffd9b39e |
+| bash | src/bash/parser.ts | 1001 | triaged-follow-up | catch-without-binding | src/bash/parser.ts:e80dc90deffeaf87466e3b91 |
 | runtime-chat | src/bot.runtime-guards.fixture.ts | 2296 | fixed | binding retained / no recognized error surface | src/bot.runtime-guards.fixture.ts:90a4062e42ef5df83ba7c4fa |
 | runtime-chat | src/bot.runtime-guards.fixture.ts | 2397 | fixed | binding retained / no recognized error surface | src/bot.runtime-guards.fixture.ts:90a4062e42ef5df83ba7c4fa |
 | runtime-chat | src/bot.runtime-guards.fixture.ts | 2449 | fixed | binding retained / no recognized error surface | src/bot.runtime-guards.fixture.ts:90a4062e42ef5df83ba7c4fa |

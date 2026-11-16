@@ -31,6 +31,11 @@ export interface AnalyzedCommand {
    * A check that depends on the arguments cannot see them.
    */
   openArgs?: boolean;
+  /**
+   * A pipe feeds this command's stdin, directly or through the launcher that
+   * runs it. An interpreter that names no script runs that stdin as code.
+   */
+  pipedStdin?: boolean;
 }
 
 /** Result of parsing a bash command */

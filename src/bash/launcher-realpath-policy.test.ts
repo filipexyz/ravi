@@ -895,7 +895,7 @@ describe("no_op_editor_and_granted_interpreter_behind_launcher", () => {
   it("shells behind launchers, ungranted interpreters and interpreters fed xargs input stay refused", () => {
     expect(evaluateBashPermission("timeout 5 sh -c id", bootstrap("timeout", "sh")).syntaxRule).toBe("shell_launcher");
     expect(evaluateBashPermission("timeout 5 python3 x.py", bootstrap("timeout")).allowed).toBe(false);
-    expect(evaluateBashPermission("ls | xargs bun", bootstrap()).syntaxRule).toBe("shell_launcher");
+    expect(evaluateBashPermission("ls | xargs bun", bootstrap()).allowed).toBe(false);
     expect(parseBashCommand("timeout 5 bun -e 'x'").success).toBe(false);
   });
 });
@@ -913,5 +913,44 @@ describe("guard_failure_is_a_refusal", () => {
     expect(decision.allowed).toBe(false);
     expect(decision.syntaxRule).toBe("unknown_parse");
     expect(decision.cause).toBeInstanceOf(TypeError);
+  });
+});
+
+// CodeRabbit 4592919009 on 5cf8bd9f: the pipe check sees the launcher, but the
+// interpreter it starts inherits the pipe as stdin and runs it as its program.
+describe("piped_stdin_reaches_interpreter_through_launcher", () => {
+  const grants = ["printf", "python3", "timeout", "env", "nice", "command", "nohup"];
+
+  it.each([
+    ["timeout", "printf 'print(1)' | timeout 5 python3"],
+    ["env", "printf 'print(1)' | env python3"],
+    ["nice", "printf 'print(1)' | nice python3"],
+    ["command", "printf 'print(1)' | command python3"],
+    ["nohup", "printf 'print(1)' | nohup python3"],
+    ["stdin path", "printf 'print(1)' | timeout 5 python3 -"],
+  ])("refuses an interpreter fed piped stdin through %s", (_launcher, command) => {
+    const decision = evaluateBashPermission(command, bootstrap(...grants));
+    expect(decision.allowed, command).toBe(false);
+    const parsed = parseBashCommand(command);
+    expect(parsed.success, command).toBe(false);
+    expect(parsed.error, command).toContain("piped stdin");
+  });
+
+  it.each([
+    ["here-string", "env python3 <<< 'print(1)'"],
+    ["here-document", "timeout 5 python3 <<'EOF'\nprint(1)\nEOF"],
+  ])("a %s through a launcher stays refused", (_form, command) => {
+    expect(evaluateBashPermission(command, bootstrap(...grants)).allowed, command).toBe(false);
+  });
+
+  it("a named script reads the pipe as data, through a launcher too", () => {
+    for (const command of [
+      "printf x | timeout 5 python3 script.py",
+      "printf x | env python3 script.py",
+      "timeout 5 python3 script.py",
+      "printf x | timeout 120 bun test src/bash/",
+    ]) {
+      expect(evaluateBashPermission(command, bootstrap(...grants, "bun")).allowed, command).toBe(true);
+    }
   });
 });
