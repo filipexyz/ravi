@@ -15,7 +15,7 @@ import {
 } from "../pr/github.js";
 import { prError, type PublicationPhase } from "../pr/contracts.js";
 import { requireFollowRuntime } from "../pr/follow-health.js";
-import { dbGetTrigger } from "../triggers/index.js";
+import { dbGetTrigger, serializeReplySource } from "../triggers/triggers-db.js";
 import { getWatch } from "../watch/watch-db.js";
 import { resolvePublicationFollowContext } from "../pr/context.js";
 
@@ -65,6 +65,7 @@ export async function verifyPublicationFollow(
   const watch = follow.ciWatchId ? (deps.watch ?? getWatch)(follow.ciWatchId) : null;
   const trigger = follow.triggerId ? (deps.trigger ?? dbGetTrigger)(follow.triggerId) : null;
   const desired = buildGhFollowTriggerInput(input.repo, prNumber, resolvePublicationFollowContext(input.context));
+  const desiredReplySource = serializeReplySource(desired.replySource);
   if (
     !watch ||
     watch.status !== "active" ||
@@ -75,7 +76,9 @@ export async function verifyPublicationFollow(
     !trigger?.enabled ||
     trigger.cooldownMs !== desired.cooldownMs ||
     (trigger.debounceMs ?? 0) !== (desired.debounceMs ?? 0) ||
-    ["topic", "filter", "agentId", "replySession", "replySource", "session", "accountId"].some(
+    !desiredReplySource ||
+    serializeReplySource(trigger.replySource) !== desiredReplySource ||
+    ["topic", "filter", "agentId", "replySession", "session", "accountId"].some(
       (key) =>
         JSON.stringify(trigger[key as keyof typeof trigger]) !== JSON.stringify(desired[key as keyof typeof desired]),
     )
