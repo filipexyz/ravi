@@ -1571,13 +1571,6 @@
       "count": 1
     },
     {
-      "id": "src/cli/host-cli-gateway.ts:badc819b44c99d76bde75691",
-      "file": "src/cli/host-cli-gateway.ts",
-      "boundary": "cli",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/cli/library-contract.ts:f2ec480a53ac6fd028da51f5",
       "file": "src/cli/library-contract.ts",
       "boundary": "cli",
@@ -2140,13 +2133,6 @@
     {
       "id": "src/cron/authority.ts:e116ec0448fbb570f6475354",
       "file": "src/cron/authority.ts",
-      "boundary": "cron",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/cron/runner.ts:9ec1905034d5600d03660fa2",
-      "file": "src/cron/runner.ts",
       "boundary": "cron",
       "rule": "catch-without-binding",
       "count": 1
@@ -5554,13 +5540,6 @@
       "count": 1
     },
     {
-      "id": "src/triggers/runner.ts:c81d4567b8e396622e226477",
-      "file": "src/triggers/runner.ts",
-      "boundary": "triggers",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/triggers/triggers-db.ts:18050dd160921a6db0880e71",
       "file": "src/triggers/triggers-db.ts",
       "boundary": "triggers",
@@ -5806,13 +5785,6 @@
       "count": 1
     },
     {
-      "id": "src/work-objects/nats.ts:84da9ff3b3b7d971aafc2907",
-      "file": "src/work-objects/nats.ts",
-      "boundary": "work-objects",
-      "rule": "rejection-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/workflows/workflow-db.ts:29ea9b1863655e4119634bae",
       "file": "src/workflows/workflow-db.ts",
       "boundary": "workflows",
@@ -5828,7 +5800,7 @@
     }
   ],
   "totals": {
-    "violations": 872,
+    "violations": 868,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5846,7 +5818,7 @@
       "src/channels/native": 5,
       "src/channels/slack": 14,
       "src/ci": 1,
-      "src/cli": 33,
+      "src/cli": 32,
       "src/cli/commands": 144,
       "src/cloud-agents": 30,
       "src/cloud-auth": 11,
@@ -5854,7 +5826,7 @@
       "src": 38,
       "src/costs": 2,
       "src/crm": 1,
-      "src/cron": 5,
+      "src/cron": 4,
       "src/db": 2,
       "src/decisions": 2,
       "src/devin": 2,
@@ -5912,7 +5884,7 @@
       "src/tasks": 16,
       "src/threads": 3,
       "src/transcribe": 3,
-      "src/triggers": 6,
+      "src/triggers": 5,
       "src/tui": 2,
       "src/tui/hooks": 5,
       "src/tui/lib": 2,
@@ -5921,7 +5893,7 @@
       "src/webhooks": 9,
       "src/whatsapp-overlay": 7,
       "src/work-objects/adapters": 1,
-      "src/work-objects": 2,
+      "src/work-objects": 1,
       "src/workflows": 2
     }
   }

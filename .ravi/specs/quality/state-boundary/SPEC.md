@@ -12,6 +12,16 @@ applies_to:
   - src/threads/bootstrap-authorization.ts
   - src/runtime-maintenance.ts
   - src/runtime/work-drain.ts
+  - src/runtime/shutdown.ts
+  - src/knowledge/runners.ts
+  - src/db/close-all.ts
+  - src/adapters/session-adapter-bus.ts
+  - src/leader/index.ts
+  - src/cli/host-cli-gateway.ts
+  - src/cron/runner.ts
+  - src/triggers/runner.ts
+  - src/work-objects/nats.ts
+  - src/nats.ts
   - src/managed-runtime-rebind.ts
   - src/gateway.ts
   - src/db/schema-owner.ts
@@ -112,6 +122,8 @@ An impossible hook creates a culture of bypass. The sanctioned lightweight publi
 - The durable thread fence carries a monotonic protocol floor, phase and epoch. This preparation serves `legacy_ready` only and may freeze writes; it MUST NOT backfill, drop legacy lifecycle state, switch to canonical state or thaw a failed migration.
 - First installation on pre-existing or canonical real state MUST require external verification of accepted-work persistence/completion, closed admissions, disabled legacy launchers and physical exit of both predecessor identities. A synchronous explicit authorization scope MAY adopt that exact database after validating complete inventory, evidence references and physical exits; live or unknown predecessors MUST refuse. The external verifier is trusted coordinator code, never a parser for user claims, environment flags, a stopped record or an empty PM2 result. No automatic production coordinator is wired by PR1: missing evidence remains a deployment blocker. A synchronous isolated CLI/fixture MAY instead own a private newly-created database, including old schema seeded before fence installation, using the exclusive state constructor; it MUST initialize before sharing the path with another process. Both scopes MUST bind canonical path/device/inode, expire on return, reject async proof and record their reason/evidence before SQL. First fence installation MUST own its commit, never outlive its authorization in an outer transaction.
 - Drain receipts MUST state their component scope. Gateway/Slack/outbound completion MUST NOT certify untracked daemon work. Caught callback failures across text/media/upload/file fallback/direct/private sends, actions, metadata, tracing and presence, failed helper results, incomplete receipts and drain timeouts remain unproven; late completion alone MUST NOT erase that outcome. Already-fired presence cleanup/renewal timers MUST remain tracked until settled; clearing scheduled timers alone does not complete their in-flight work.
+- Shutdown MUST preserve caught stop/close failures in its result and failure latch, including nested Knowledge runners, database handles, adapter supervisors/subscriptions and final shared-resource cleanup. Each independent sibling stop MUST still be attempted; failed components MUST NOT be reported as stopped or produce exit code zero. Diagnostic failures MUST NOT erase the original failure. Shared storage/broker handles remain open when component completion is unproven. Subscription teardown MUST release idle consumers before awaiting completion and MUST surface rejected cleanup, without changing delivery or retention policy.
+- An adapter's terminal command-loop failure MUST survive later stop attempts independently of closed handles. Retrying resource cleanup MUST NOT certify that a failed accepted loop completed successfully; clearing such failure requires an explicit recovery policy outside this preparation.
 - Maintenance MUST keep a durable exclusive interlock. Both CLI controls and process entrypoints MUST reject starts/restarts while it exists, including PM2 auto-restarts of prepared binaries. Old binaries require an external launcher interlock; they cannot be assumed to understand the new file.
 - Both completions MUST be verified before stopping either process. Stop channels first, then daemon, checking inventories and physical PID absence. Only ESRCH proves absence; EPERM, reused PIDs, replacement processes, failed inventory queries and timeouts MUST keep maintenance blocked. No successor or migration may be authorized by a successful stop command alone.
 - Durably queued work, event/destination IDs, receipts and claims MUST survive preparation. Preparation MUST NOT delete queues, reinterpret expiration as non-delivery or retransmit results.

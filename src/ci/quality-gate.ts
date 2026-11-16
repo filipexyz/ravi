@@ -115,6 +115,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Shutdown failure propagation and scoped drain evidence.
+    "src/runtime/shutdown.test.ts",
     // Reset refusal must still settle its captured logical request under ownership fences.
     "src/runtime/host-event-loop.reset-failure.test.ts",
     // Real host/generator retention, owner and cancellation fences under memory-only isolation.

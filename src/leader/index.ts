@@ -164,5 +164,6 @@ export async function releaseLeadership(role: string): Promise<void> {
     log.info("Leadership released", { role, daemonId });
   } catch (err) {
     log.warn("Failed to release leadership", { role, error: err });
+    throw err;
   }
 }

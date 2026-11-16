@@ -345,7 +345,12 @@ async function shutdown(signal: string, exitCode = 0) {
   );
 
   clearTimeout(shutdownTimeout);
-  log.info("Daemon stopped", { pid: process.pid, exitCode: result.exitCode, unproven: result.failures.length });
+  log.info("Daemon stopped", {
+    pid: process.pid,
+    exitCode: result.exitCode,
+    unproven: result.failures.length,
+    drain: result.drain.phase,
+  });
   process.exit(result.exitCode);
 }
 

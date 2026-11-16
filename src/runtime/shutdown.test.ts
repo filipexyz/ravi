@@ -24,6 +24,7 @@ it("continues independent stops after failed gateway drain, retains shared handl
   expect(calls).toEqual(["bot", "gateway", "remaining-consumer"]);
   expect(result.exitCode).toBe(1);
   expect(result.failures).toEqual([{ name: "gateway", cause }]);
+  expect(result.drain).toMatchObject({ phase: "blocked", pending: 0, failures: ["gateway"] });
 });
 
 it("waits for accepted component work before releasing shared resources", async () => {
@@ -39,7 +40,7 @@ it("waits for accepted component work before releasing shared resources", async 
   await Promise.resolve();
   expect(calls).toEqual([]);
   finish();
-  expect(await stopped).toEqual({ exitCode: 0, failures: [] });
+  expect(await stopped).toMatchObject({ exitCode: 0, failures: [], drain: { phase: "drained", failures: [] } });
   expect(calls).toEqual(["gateway", "nats"]);
 });
 
@@ -64,12 +65,13 @@ it("preserves every failure and an existing fatal exit code", async () => {
     [],
     2,
   );
-  expect(result).toEqual({
+  expect(result).toMatchObject({
     exitCode: 2,
     failures: [
       { name: "first", cause: first },
       { name: "second", cause: second },
     ],
+    drain: { phase: "blocked", failures: ["first", "second"] },
   });
 });
 
@@ -89,7 +91,11 @@ it("records resource-close failure after successful component drains and continu
     ],
   );
   expect(calls).toEqual(["sqlite"]);
-  expect(result).toEqual({ exitCode: 1, failures: [{ name: "nats", cause }] });
+  expect(result).toMatchObject({
+    exitCode: 1,
+    failures: [{ name: "nats", cause }],
+    drain: { phase: "blocked", failures: ["nats"] },
+  });
 });
 
 it("reports a failure before a later pending stop can reach the process watchdog", async () => {
@@ -117,4 +123,35 @@ it("reports a failure before a later pending stop can reach the process watchdog
   expect(reported).toEqual([cause]);
   finish();
   expect((await result).exitCode).toBe(1);
+});
+
+it("latches a failed shutdown diagnostic without skipping remaining stops or losing the original cause", async () => {
+  const cause = new Error("stop failed");
+  const reportCause = new Error("diagnostic failed");
+  const calls: string[] = [];
+  const result = await stopRuntimeComponents(
+    [
+      {
+        name: "broken",
+        stop: () => {
+          throw cause;
+        },
+      },
+      { name: "remaining", stop: () => calls.push("remaining") },
+    ],
+    [{ name: "sqlite", stop: () => calls.push("sqlite") }],
+    0,
+    () => {
+      throw reportCause;
+    },
+  );
+  expect(calls).toEqual(["remaining"]);
+  expect(result).toMatchObject({
+    exitCode: 1,
+    failures: [
+      { name: "broken", cause },
+      { name: "broken.diagnostic", cause: reportCause },
+    ],
+    drain: { phase: "blocked", pending: 0, failures: ["broken", "broken.diagnostic"] },
+  });
 });

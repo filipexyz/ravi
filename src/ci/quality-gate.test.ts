@@ -366,6 +366,11 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/router/", "src/runtime/"]);
   });
 
+  it("requires and recognizes focused shutdown failure coverage", () => {
+    expect(runCoverageGate(["src/runtime/shutdown.ts"]).ok).toBe(false);
+    expect(runCoverageGate(["src/runtime/shutdown.ts", "src/runtime/shutdown.test.ts"]).ok).toBe(true);
+  });
+
   it("accepts channel backend coverage across channel, router, and runtime changes", () => {
     const result = runCoverageGate([
       "src/channels/backend.ts",

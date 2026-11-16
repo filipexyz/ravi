@@ -91,6 +91,8 @@ Do not remove the interlock, downgrade schema markers, clear queues/claims, rese
 
 A failed shutdown drain must retain its failure while attempting the other component stops and exit nonzero. It must not tear down shared NATS/SQLite handles as though all accepted component work had settled. Neither a zero exit nor a scoped drain receipt replaces the external accepted-work verifier.
 
+Inspect the shutdown result's named `failures`, `drain.phase` and exit code together. Nested stop/close failures preserve their original causes in an aggregate. `blocked` remains an unsuccessful shutdown even if another sibling or a later cleanup retry succeeds. Do not clear that result, reset queues or restart the live daemon to test it; use isolated failure-injection tests for Knowledge, SQLite, subscriptions and media.
+
 
 For isolated CLI/fixture creation, `withNewIsolatedThreadState(parent, callback)` creates a private directory and exclusive database file. Seed an old schema and initialize it within the synchronous ownership callback; do not launch a runtime or share this state until initialization finishes. This is proof by creation/ownership, not a rule that temporary paths are safe.
 
