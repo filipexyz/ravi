@@ -14,15 +14,19 @@ Unknown OS layouts or ambiguous launch commands fail closed. Replacing a bundle
 requires a new controlled boot and new permit. An orphan record remains evidence
 only; it cannot authorize recovery or cleanup.
 
-Relative direct entrypoints resolve against the consumer's kernel-observed cwd,
-never the controller's cwd. A different canonical script or digest is unsupported.
-`DeliveryProcessObservationError` exposes `PROCESS_CWD_UNAVAILABLE` or
-`ENTRYPOINT_RESOLUTION_FAILED` and the underlying cause. Surface that diagnostic
-to the controller/operator and repair the observation or launch path; do not
-convert it to supports or bury it in a silent unknown retry loop. No guarded
-effect executes, and a permit rejected during revalidation stays revoked even
-after repairing the observation. Missing/dead processes or absent boot files
-still return unknown.
+Only publish inside the consumer resolves a relative direct entrypoint. It
+records the exact kernel argv1Raw and absolute canonical bundlePath. Supply the
+same raw launch spelling in the independent inventory; the controller compares
+strings, never resolves raw argv against either cwd, and checks only the declared
+absolute bundle's realpath/digest. A different script binding/digest is unsupported.
+
+A missing/unreadable absolute bundle returns unknown with
+`error.code=DELIVERY_BOOT_OBSERVATION_FAILED` and a serializable cause (for example
+ENOENT or EACCES). Inspect/acquire return that diagnostic without throwing raw
+filesystem errors. Surface `snapshot.consumers[].error` to the operator, repair
+the observation and acquire a fresh permit; never suppress it with supports or
+bury it in a silent retry. A run rejected during revalidation stays revoked even
+after repair. Missing/dead processes or absent boot files still return unknown.
 
 If a floor is missing or invalid, return unknown without repairing the database.
 Preserve uncertain rows and associated resources. Rollback of this inactive PR
