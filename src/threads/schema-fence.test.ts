@@ -118,7 +118,7 @@ describe("thread SQL transactional writer fence", () => {
       throw new Error("fresh real state requires proof");
     });
     expect(() => prepareThreadFence(db)).toThrow("fresh real state requires proof");
-    expect(inspected).toEqual({ existingSchema: false, databasePath: filename });
+    expect(inspected).toMatchObject({ existingSchema: false, databasePath: filename });
     expect(db.query("SELECT name FROM sqlite_master").all()).toEqual([]);
   });
 

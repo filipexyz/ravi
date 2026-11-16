@@ -310,6 +310,7 @@ describe("sendSlackPrivateCards", () => {
       return Response.json({ ok: true, channel: "D777", ts: "1784000000.000300" });
     }) as typeof fetch;
 
+    const onFailure = mock(() => {});
     const result = await sendSlackPrivateCards(
       {
         accountId: "hana-slack",
@@ -319,10 +320,11 @@ describe("sendSlackPrivateCards", () => {
         text: "Permission requested",
         blocks: [{ type: "section", text: { type: "mrkdwn", text: "x" } }],
       },
-      dependencies(fetchImpl),
+      { ...dependencies(fetchImpl), onFailure },
     );
 
     expect(result.failures).toEqual([]);
+    expect(onFailure).toHaveBeenCalledTimes(1);
     expect(result.deliveries).toEqual([
       { userId: "UIN", kind: "ephemeral", chatId: "C123", messageId: "1784000000.000200" },
       { userId: "UOUT", kind: "dm", chatId: "D777", messageId: "1784000000.000300" },
@@ -347,6 +349,7 @@ describe("sendSlackPrivateCards", () => {
       return Response.json({ ok: false, error: "invalid_blocks" });
     }) as typeof fetch;
 
+    const onFailure = mock(() => {});
     const result = await sendSlackPrivateCards(
       {
         accountId: "hana-slack",
@@ -355,11 +358,12 @@ describe("sendSlackPrivateCards", () => {
         text: "Permission requested",
         blocks: [],
       },
-      dependencies(fetchImpl),
+      { ...dependencies(fetchImpl), onFailure },
     );
 
     expect(result.deliveries).toEqual([]);
     expect(result.failures).toHaveLength(1);
+    expect(onFailure).toHaveBeenCalledTimes(2);
     // Never a public post in the shared chat: the fallback is the person's DM.
     expect(requests).toEqual([
       { method: "chat.postEphemeral", channel: "C123" },

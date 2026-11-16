@@ -9,6 +9,7 @@ normative: true
 applies_to:
   - src/db/state-boundary.ts
   - src/threads/schema-fence.ts
+  - src/threads/bootstrap-authorization.ts
   - src/runtime-maintenance.ts
   - src/runtime/work-drain.ts
   - src/managed-runtime-rebind.ts
@@ -18,6 +19,9 @@ applies_to:
   - src/channels/runner.ts
   - src/channels/outbound-publish-outbox.ts
   - src/channels/slack/automatic-output-circuit.ts
+  - src/channels/slack/automatic-media-output.ts
+  - src/channels/slack/text-send.ts
+  - src/channels/slack/markdown-delivery.ts
   - src/cloud-agents/chat-db.ts
   - src/daemon.ts
   - src/bridge/store.ts
@@ -106,8 +110,8 @@ An impossible hook creates a culture of bypass. The sanctioned lightweight publi
 - Both `ravi` and `ravi-channels` write thread lifecycle state. Readiness and schema-owner roles MUST NOT be treated as a writer fence.
 - Every current writer MUST present its compiled protocol at the SQL boundary. `runThreadMutation` owns one prepared DML and an uncommitted lease inside `BEGIN IMMEDIATE` or an existing transaction savepoint; it deletes the lease before returning or committing. It accepts no callback, uses no TTL and never executes caller SQL with `exec`. A missing/obsolete writer, including a previously prepared statement on another connection, MUST fail before protected DML or readiness invalidation. Authorization committed by another connection MUST NOT authorize a legacy writer.
 - The durable thread fence carries a monotonic protocol floor, phase and epoch. This preparation serves `legacy_ready` only and may freeze writes; it MUST NOT backfill, drop legacy lifecycle state, switch to canonical state or thaw a failed migration.
-- First installation on populated or canonical real state MUST require external verification of accepted-work persistence/completion, closed admissions, disabled legacy launchers and physical exit of both predecessor identities. The first release has no automatic legacy authorizer: missing evidence is a deployment blocker, not permission to infer success from startup or health.
-- Drain receipts MUST state their component scope. Gateway/Slack/outbound completion MUST NOT certify untracked daemon work. Caught callback failures, incomplete receipts and drain timeouts remain unproven; late completion alone MUST NOT erase that outcome.
+- First installation on pre-existing or canonical real state MUST require external verification of accepted-work persistence/completion, closed admissions, disabled legacy launchers and physical exit of both predecessor identities. A synchronous explicit authorization scope MAY adopt that exact database after validating complete inventory, evidence references and physical exits; live or unknown predecessors MUST refuse. The external verifier is trusted coordinator code, never a parser for user claims, environment flags, a stopped record or an empty PM2 result. No automatic production coordinator is wired by PR1: missing evidence remains a deployment blocker. A synchronous isolated CLI/fixture MAY instead own a private newly-created database, including old schema seeded before fence installation, using the exclusive state constructor; it MUST initialize before sharing the path with another process. Both scopes MUST bind canonical path/device/inode, expire on return, reject async proof and record their reason/evidence before SQL. First fence installation MUST own its commit, never outlive its authorization in an outer transaction.
+- Drain receipts MUST state their component scope. Gateway/Slack/outbound completion MUST NOT certify untracked daemon work. Caught callback failures across text/media/upload/file fallback/direct/private sends, actions, metadata, tracing and presence, failed helper results, incomplete receipts and drain timeouts remain unproven; late completion alone MUST NOT erase that outcome.
 - Maintenance MUST keep a durable exclusive interlock. Both CLI controls and process entrypoints MUST reject starts/restarts while it exists, including PM2 auto-restarts of prepared binaries. Old binaries require an external launcher interlock; they cannot be assumed to understand the new file.
 - Both completions MUST be verified before stopping either process. Stop channels first, then daemon, checking inventories and physical PID absence. Only ESRCH proves absence; EPERM, reused PIDs, replacement processes, failed inventory queries and timeouts MUST keep maintenance blocked. No successor or migration may be authorized by a successful stop command alone.
 - Durably queued work, event/destination IDs, receipts and claims MUST survive preparation. Preparation MUST NOT delete queues, reinterpret expiration as non-delivery or retransmit results.

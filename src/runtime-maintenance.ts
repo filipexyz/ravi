@@ -13,6 +13,7 @@ import {
 import { join } from "node:path";
 import { getRaviStateDir } from "./utils/paths.js";
 import { resolveAccountHome } from "./utils/account-home.js";
+import type { ThreadFenceBootstrapContext } from "./threads/schema-fence.js";
 
 export type MaintenanceProcess = {
   name: "ravi" | "ravi-channels";
@@ -226,22 +227,23 @@ export async function prepareRuntimeMaintenance(input: {
 }
 
 /**
- * PR1 intentionally has no live legacy bootstrap authorizer. The external work
- * inventory/verifier must be reviewed before a populated database can be adopted.
- * Do not turn a stopped record or a health check into a deployment permission.
+ * Populated state needs an explicit synchronous authorization scope. The default
+ * never interprets a stopped record, empty process list or health as permission.
  */
-export function assertThreadFenceBootstrapAuthorized(input: {
-  existingSchema: boolean;
-  databasePath: string;
-}): undefined {
+export function assertThreadFenceBootstrapAuthorized(input: ThreadFenceBootstrapContext): undefined {
+  const { verifyScopedThreadBootstrap, recordThreadBootstrapAuthorization } =
+    require("./threads/bootstrap-authorization.js") as typeof import("./threads/bootstrap-authorization.js");
+  if (verifyScopedThreadBootstrap(input)) return;
   const { canonicalStatePath } = require("./db/state-boundary.js") as typeof import("./db/state-boundary.js");
   const home = resolveAccountHome();
   if (!home) throw new Error("THREAD_FENCE_BOOTSTRAP_BLOCKED: OS account identity is unavailable");
   const database = canonicalStatePath(input.databasePath);
   const liveState = canonicalStatePath(join(home, ".ravi"));
   const legacy = canonicalStatePath(join(home, "ravi", "ravi.db"));
-  if (!input.existingSchema && database !== legacy && !database.startsWith(`${liveState}/`) && database !== liveState)
+  if (!input.existingSchema && database !== legacy && !database.startsWith(`${liveState}/`) && database !== liveState) {
+    recordThreadBootstrapAuthorization(input.databasePath, { reason: "empty-isolated-state" });
     return;
+  }
   throw new Error(
     "THREAD_FENCE_BOOTSTRAP_BLOCKED: external persistence/completion evidence and process exits require review",
   );

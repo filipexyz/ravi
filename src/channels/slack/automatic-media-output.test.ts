@@ -385,7 +385,8 @@ describe("native bot automatic media terminal delivery", () => {
   for (const lookup of ["getSlackAutomaticOutputDecision", "reserveSlackAutomaticOutput"] as const) {
     it(`retains pending or unknown when no-send proof fails at ${lookup}`, async () => {
       const f = fixture();
-      const deps = callbacks(f.originDependencies);
+      const onFailure = mock(() => {});
+      const deps = { ...callbacks(f.originDependencies), onFailure };
       exhaustAdmission(f.manifest!.scope);
       rejectSuppressionWrites();
       const first = await deliverSlackAutomaticMedia(f.input(), deps);
@@ -401,11 +402,13 @@ describe("native bot automatic media terminal delivery", () => {
           throw new Error("durable admission unavailable");
         });
         try {
+          onFailure.mockClear();
           expect(await deliverSlackAutomaticMedia(f.input(), deps)).toMatchObject({
             status: reopen ? "unknown" : "pending",
             retryable: !reopen,
           });
           expect(getChannelOutboundReceipt(first.idempotencyKey)).toEqual(receipt);
+          expect(onFailure).toHaveBeenCalledTimes(1);
         } finally {
           unavailable.mockRestore();
         }

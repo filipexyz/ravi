@@ -41,6 +41,7 @@ import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
 import { listRecentSessionEventsByType } from "./session-trace/session-trace-db.js";
 import { logger } from "./utils/logger.js";
+import { reportErrorDiagnostic } from "./utils/error-reporting.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 import { getAgentPlatformIdentity, recordOutbound } from "./contacts.js";
@@ -603,10 +604,12 @@ export class Gateway {
         payloadJson: payload,
       });
     } catch (error) {
+      this.workDrain.recordFailure("presence-trace");
       log.debug("Failed to record gateway presence trace", { sessionName, error });
     }
 
     await this.emitEvent("ravi.presence.typing", payload).catch((error) => {
+      this.workDrain.recordFailure("presence-event");
       log.debug("Failed to emit gateway presence event", { sessionName, error });
     });
   }
@@ -844,6 +847,7 @@ export class Gateway {
     try {
       return getter.call(this.omniConsumer, sessionName) as PresenceTarget | undefined;
     } catch (error) {
+      this.workDrain.recordFailure("presence-active-target-read");
       log.warn("Omni consumer getActiveTarget failed", { sessionName, error });
       return undefined;
     }
@@ -858,6 +862,7 @@ export class Gateway {
     try {
       return await renew.call(this.omniConsumer, sessionName);
     } catch (error) {
+      this.workDrain.recordFailure("presence-active-target-renew");
       log.warn("Omni consumer renewActiveTarget failed", { sessionName, error });
       return false;
     }
@@ -872,6 +877,7 @@ export class Gateway {
     try {
       await clear.call(this.omniConsumer, sessionName);
     } catch (error) {
+      this.workDrain.recordFailure("presence-active-target-clear");
       log.warn("Omni consumer clearActiveTarget failed", { sessionName, error });
     }
   }
@@ -936,6 +942,7 @@ export class Gateway {
       this.interruptedPresenceStops.delete(sessionName);
       if (!this.running) return;
       this.stopPresenceForSession(sessionName, target).catch((error) => {
+        this.workDrain.recordFailure("presence-interrupted-cleanup");
         log.debug("Interrupted presence cleanup failed", { sessionName, error });
       });
     }, INTERRUPTED_PRESENCE_GRACE_MS);
@@ -1007,6 +1014,7 @@ export class Gateway {
       if (this.terminalRuntimeSessions.has(sessionName)) return;
       if ((this.runtimeActivitySequences.get(sessionName) ?? 0) <= scheduledAfterActivity) return;
       this.forceRenewTyping(sessionName, target, reason).catch((error) => {
+        this.workDrain.recordFailure("presence-post-delivery-renew");
         log.debug("Post-delivery presence renewal failed", { sessionName, error });
       });
     }, POST_DELIVERY_RENEW_DELAY_MS);
@@ -1134,6 +1142,7 @@ export class Gateway {
     try {
       recordResponseEmittedTrace({ sessionName, response });
     } catch (error) {
+      this.workDrain.recordFailure("response-trace");
       log.warn("Failed to record response emitted trace", { sessionName, error });
     }
   }
@@ -1154,6 +1163,7 @@ export class Gateway {
     try {
       recordDeliveryTrace({ sessionName, response, delivery });
     } catch (error) {
+      this.workDrain.recordFailure("delivery-trace");
       log.warn("Failed to record delivery trace", { sessionName, status: data.status, error });
     }
 
@@ -1165,6 +1175,7 @@ export class Gateway {
     try {
       return isGuardedSession(sessionName);
     } catch (error) {
+      this.workDrain.recordFailure("response-knowledge-guard");
       log.warn("Knowledge guard lookup failed", { sessionName, error });
       return null;
     }
@@ -1362,7 +1373,7 @@ export class Gateway {
     const builtPart = this.buildTextPartResponse(response, text, partIndex, totalParts);
     const partResponse = text === unguardedText ? builtPart : { ...builtPart, response: text, error: undefined };
     const emitDelivery = (data: Record<string, unknown>) => {
-      if (data.status === "failed" && data.reason === "local_outbox_error") {
+      if (data.status === "failed" && (data.reason === "local_outbox_error" || data.reason === "queue_error")) {
         this.workDrain.recordFailure("response-native-outbox");
       } else if (data.status === "failed" && data.reason === "send_error") {
         this.workDrain.recordFailure("response-text-send");
@@ -1529,8 +1540,11 @@ export class Gateway {
      * preserving a canonical receipt key supplied by automatic delivery instead
      * of replacing it with the attachment's optional idempotency key.
      */
-    const emitDelivery = (data: Record<string, unknown>) =>
-      this.emitDeliveryEvent(sessionName, response, {
+    const emitDelivery = (data: Record<string, unknown>) => {
+      if (data.status === "failed" || data.status === "unknown") {
+        this.workDrain.recordFailure("response-media-send");
+      }
+      return this.emitDeliveryEvent(sessionName, response, {
         ...data,
         contentType: "media",
         mediaType: media.type,
@@ -1539,6 +1553,7 @@ export class Gateway {
         idempotencyKey: data.idempotencyKey ?? media.idempotencyKey,
         partIndex,
       });
+    };
     const channel = target.channel.toLowerCase();
     const t0 = Date.now();
 
@@ -1569,9 +1584,15 @@ export class Gateway {
            */
           emitDelivery: (data) => emitDelivery({ ...data, durationMs: Date.now() - t0 }),
           flushTelemetry: flushNatsConnection,
+          onFailure: () => this.workDrain.recordFailure("response-media-send"),
         },
       );
       if (automatic.handled) {
+        // The receipt helper can capture upload/bookkeeping/telemetry failures
+        // and return normally. Its result must still invalidate drain proof.
+        if (automatic.status === "failed" || automatic.status === "unknown") {
+          this.workDrain.recordFailure("response-media-send");
+        }
         if (automatic.status === "delivered") {
           if (automatic.newlySent) {
             this.recordOutboundContactInteraction(sessionName, target);
@@ -1698,6 +1719,7 @@ export class Gateway {
   private async cleanupResponseMediaFile(media: ResponseMediaAttachment): Promise<void> {
     if (media.source !== "runtime.generated_media") return;
     await unlink(media.filePath).catch((error) => {
+      this.workDrain.recordFailure("response-media-cleanup");
       log.debug("Failed to clean generated response media file", {
         filePath: media.filePath,
         error: error instanceof Error ? error.message : String(error),
@@ -1808,6 +1830,7 @@ export class Gateway {
         });
       }
     } catch (error) {
+      this.workDrain.recordFailure("outbound-actor-metadata");
       log.warn("Failed to save outbound message actor metadata", { sessionName, messageId, error });
     }
   }
@@ -1826,6 +1849,7 @@ export class Gateway {
 
       recordOutbound(target.contactId);
     } catch (error) {
+      this.workDrain.recordFailure("outbound-contact-interaction");
       log.warn("Failed to record outbound contact interaction", {
         sessionName,
         contactId: target.contactId,
@@ -1868,6 +1892,7 @@ export class Gateway {
         }
       } catch (err) {
         if (this.running) {
+          this.workDrain.recordFailure(`subscription-loop:${key}`);
           log.error(`${key} subscription error`, err);
         }
       } finally {
@@ -2028,11 +2053,32 @@ export class Gateway {
       response = { success: true };
     } catch {
       // no-cause: Approval delivery errors may contain provider credentials; emit only the fixed failure notice.
+      this.workDrain.recordFailure("approval-finalization");
       response = { success: false, error: "Slack approval finalization failed." };
     }
     if (typeof data.replyTopic === "string" && /^ravi\._reply\.[A-Za-z0-9-]+$/.test(data.replyTopic)) {
       await this.emitEvent(data.replyTopic, response);
     }
+  }
+
+  /** Preserve existing reply contracts while retaining the original cause in bounded internal diagnostics. */
+  private async replyDeliveryFailure(
+    replyTopic: string | undefined,
+    cause: unknown,
+    options: {
+      operation: string;
+      message: string;
+      format?: "string";
+      fields?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    reportErrorDiagnostic({ warn: log.error.bind(log) }, options.message, cause, { operation: options.operation });
+    if (!replyTopic) return;
+    await this.emitEvent(replyTopic, {
+      success: false,
+      ...options.fields,
+      error: options.format === "string" ? String(cause) : cause instanceof Error ? cause.message : String(cause),
+    });
   }
 
   private async handleDirectSendEvent(data: DirectSendRequest): Promise<void> {
@@ -2128,10 +2174,12 @@ export class Gateway {
         await this.emitEvent(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>);
       }
     } catch (err) {
-      log.error("Failed to deliver direct send", { to, instanceId, error: err });
-      if (data.replyTopic) {
-        await this.emitEvent(data.replyTopic, { success: false, error: String(err) });
-      }
+      this.workDrain.recordFailure("direct-send");
+      await this.replyDeliveryFailure(data.replyTopic, err, {
+        operation: "direct_send",
+        message: "Failed to deliver direct send",
+        format: "string",
+      });
     }
   }
 
@@ -2174,7 +2222,10 @@ export class Gateway {
             blocks: data.blocks ?? [],
             ...(data.threadId ? { threadId: data.threadId } : {}),
           },
-          { authority: { kind: "internal-service", service: "slack-delivery" } },
+          {
+            authority: { kind: "internal-service", service: "slack-delivery" },
+            onFailure: () => this.workDrain.recordFailure("native-private-send"),
+          },
         );
         log.info("Native private cards delivered", {
           accountId: resolved.accountId,
@@ -2182,6 +2233,7 @@ export class Gateway {
           failed: result.failures.length,
         });
         if (result.failures.length > 0) {
+          this.workDrain.recordFailure("native-private-send");
           log.warn("Some private Slack cards were not delivered", { failures: result.failures });
         }
         if (result.deliveries.length === 0) {
@@ -2198,8 +2250,11 @@ export class Gateway {
           failures: result.failures,
         });
       } catch (err) {
-        log.error("Failed to deliver native private cards", { accountId: resolved.accountId, error: err });
-        await reply({ success: false, error: err instanceof Error ? err.message : String(err) });
+        this.workDrain.recordFailure("native-private-send");
+        await this.replyDeliveryFailure(data.replyTopic, err, {
+          operation: "native_private_send",
+          message: "Failed to deliver native private cards",
+        });
       }
       return;
     }
@@ -2214,7 +2269,10 @@ export class Gateway {
           ...(data.blocks ? { blocks: data.blocks } : {}),
           ...(knowledgeGuarded ? { unfurlLinks: false } : {}),
         },
-        { authority: { kind: "internal-service", service: "slack-delivery" } },
+        {
+          authority: { kind: "internal-service", service: "slack-delivery" },
+          onFailure: () => this.workDrain.recordFailure("native-direct-send"),
+        },
       );
       log.info("Native direct send delivered", {
         accountId: resolved.accountId,
@@ -2223,8 +2281,11 @@ export class Gateway {
       });
       await reply({ success: true, messageId: delivered.messageId });
     } catch (err) {
-      log.error("Failed to deliver native direct send", { accountId: resolved.accountId, error: err });
-      await reply({ success: false, error: err instanceof Error ? err.message : String(err) });
+      this.workDrain.recordFailure("native-direct-send");
+      await this.replyDeliveryFailure(data.replyTopic, err, {
+        operation: "native_direct_send",
+        message: "Failed to deliver native direct send",
+      });
     }
   }
 
@@ -2248,6 +2309,7 @@ export class Gateway {
       content: input.content,
     });
     const published = await publishChannelOutboundJobDurably(job);
+    if (!published.ok) this.workDrain.recordFailure("native-chat-action-publication");
     return {
       success: true,
       queued: true,
@@ -2316,6 +2378,7 @@ export class Gateway {
       await this.omniSender.sendReaction(resolved.instanceId, reactionChatId, data.messageId, data.emoji);
       log.info("Reaction sent", { chatId: reactionChatId, messageId: data.messageId, emoji: data.emoji });
     } catch (err) {
+      this.workDrain.recordFailure("reaction-send");
       log.error("Failed to send reaction", { error: err });
     }
   }
@@ -2427,12 +2490,11 @@ export class Gateway {
         target: { channel: data.channel, accountId: data.accountId, chatId },
       });
     } catch (err) {
-      log.error("Failed to edit message", { instanceId, chatId, messageId, error: err });
-      await emitReply({
-        success: false,
-        messageId,
-        canonicalMessageId: data.canonicalMessageId,
-        error: err instanceof Error ? err.message : String(err),
+      this.workDrain.recordFailure("message-edit");
+      await this.replyDeliveryFailure(data.replyTopic, err, {
+        operation: "message_edit",
+        message: "Failed to edit message",
+        fields: { messageId, canonicalMessageId: data.canonicalMessageId },
       });
     }
   }
@@ -2512,12 +2574,11 @@ export class Gateway {
         target: { channel: data.channel, accountId: data.accountId, chatId },
       });
     } catch (err) {
-      log.error("Failed to delete message", { instanceId, chatId, messageId, error: err });
-      await emitReply({
-        success: false,
-        messageId,
-        canonicalMessageId: data.canonicalMessageId,
-        error: err instanceof Error ? err.message : String(err),
+      this.workDrain.recordFailure("message-delete");
+      await this.replyDeliveryFailure(data.replyTopic, err, {
+        operation: "message_delete",
+        message: "Failed to delete message",
+        fields: { messageId, canonicalMessageId: data.canonicalMessageId },
       });
     }
   }
@@ -2569,6 +2630,7 @@ export class Gateway {
       );
       log.info("Media sent", { chatId: mediaChatId, type: data.type, filename: data.filename });
     } catch (err) {
+      this.workDrain.recordFailure("media-send");
       log.error("Failed to send media", { error: err });
     }
   }
@@ -2582,9 +2644,11 @@ export class Gateway {
       "tts",
       [RAVI_TTS_TOPIC],
       async (event) => {
-        await handleRaviTtsRequest(guardKnowledgeTtsRequest(event.data), (topic, payload) =>
-          this.emitEvent(topic, payload as Record<string, unknown>),
+        const result = await handleRaviTtsRequest(
+          guardKnowledgeTtsRequest(event.data, () => this.workDrain.recordFailure("tts-knowledge-guard")),
+          (topic, payload) => this.emitEvent(topic, payload as Record<string, unknown>),
         );
+        if (result.status === "failed") this.workDrain.recordFailure("tts-generation");
       },
       { queue: "ravi-tts" },
     );
@@ -2639,6 +2703,7 @@ export class Gateway {
         try {
           await this.handleStickerSendEvent(event.data as StickerSendEvent);
         } catch (err) {
+          this.workDrain.recordFailure("sticker-send");
           log.error("Failed to send sticker", { error: err });
         }
       },
@@ -2658,7 +2723,7 @@ export class Gateway {
 }
 
 /** Knowledge egress guard on a TTS request bound to a guarded session or chat. */
-export function guardKnowledgeTtsRequest(payload: unknown): unknown {
+export function guardKnowledgeTtsRequest(payload: unknown, onFailure?: () => void): unknown {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
   const request = payload as { text?: unknown; sessionName?: unknown; target?: unknown };
   if (typeof request.text !== "string" || !request.text) return payload;
@@ -2672,6 +2737,7 @@ export function guardKnowledgeTtsRequest(payload: unknown): unknown {
     if (!guarded) return payload;
     return { ...request, text: guardTextForGuardedSession(request.text, guarded).text };
   } catch (error) {
+    onFailure?.();
     log.warn("Knowledge guard on TTS request failed", { error });
     return payload;
   }
