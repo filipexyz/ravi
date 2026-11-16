@@ -13,14 +13,18 @@
 - Only a newly acquired permit for the supporting replacement cohort may invoke
   the five isolated fixture callbacks; no real provider or broker is contacted.
 - A real consumer started with a relative script from another directory MUST
-  produce a supports cohort and allow all five fixture operations. Absolute and
-  symlink spellings of the same entrypoint MUST verify as well.
+  produce a supports cohort and allow all five fixture operations, even though
+  that relative filename does not exist in the controller cwd. The publisher's
+  argv1Raw MUST equal the kernel value exactly; changing raw spelling is rejected.
 - A script that actually differs from the expected bundle MUST produce an
   unsupported cohort and zero recovery, pull, claim, send and prune callbacks.
-- Removing an observed entrypoint MUST produce an explicit observation error
-  preserving its cause, not silent unknown. Revalidation MUST invalidate its
-  permit, even if the path is restored; no callback may execute on that permit.
-- Removing only the empty cwd of a live isolated consumer MUST report
-  `PROCESS_CWD_UNAVAILABLE` with its cause from both process and boot observers.
+  Replacing the declared bundle by a symlink to another script (even with the
+  same bytes) MUST also be unsupported.
+- Removing the absolute bundle after boot MUST return unknown with an ENOENT
+  diagnostic, without throwing from verification or inspect/acquire. Both real
+  consumers MUST keep all five operation counters at zero. Repairing the file
+  MUST NOT revalidate a permit previously rejected during this failure.
+- Removing only an empty consumer cwd MUST NOT invalidate a boot whose absolute
+  bundle is intact: controller verification does not observe/resolve raw cwd.
 - Run focused tests with the production-state blocking preload:
   `bun test --timeout 20000 --preload ./src/test/isolated-runtime-preload.ts src/channels/delivery-contract.test.ts src/channels/delivery-boot.test.ts src/channels/delivery-activation.test.ts`.

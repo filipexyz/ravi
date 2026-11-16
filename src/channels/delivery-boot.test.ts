@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { type Subprocess, spawn } from "bun";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -12,11 +13,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import {
   type DeliveryBootDeclaration,
   type DeliveryBootExpectation,
-  DeliveryProcessObservationError,
   deliveryBootPath,
   observeDeliveryProcess,
   readVerifiedDeliveryBoot,
@@ -38,14 +38,16 @@ async function startBoot(
   separateCwd = false,
 ): Promise<{
   stateDir: string;
+  consumerCwd: string;
   child: Subprocess<"ignore", "pipe", "pipe">;
   expected: DeliveryBootExpectation;
   declaration: DeliveryBootDeclaration;
 }> {
   const stateDir = realpathSync(mkdtempSync(join(tmpdir(), "ravi-delivery-boot-")));
   directories.push(stateDir);
-  const bundlePath = join(stateDir, "consumer.ts");
   const bootId = randomUUID();
+  const bundlePath = join(stateDir, `consumer-${bootId}.ts`);
+  const aliasPath = join(stateDir, `consumer-alias-${bootId}.ts`);
   const source = `
 import { publishDeliveryBoot } from ${JSON.stringify(join(import.meta.dir, "delivery-boot.ts"))};
 const input = {stateDir:process.argv[2],processName:"test-consumer",bootId:process.argv[3],
@@ -56,13 +58,17 @@ console.log(JSON.stringify(boot));
 setInterval(() => {}, 1000);
 `;
   writeFileSync(bundlePath, source);
-  if (entrypoint === "alias") symlinkSync(bundlePath, join(stateDir, "consumer-alias.ts"));
+  if (entrypoint === "alias") symlinkSync(bundlePath, aliasPath);
   const bundleSha256 = createHash("sha256").update(source).digest("hex");
   const consumerCwd = separateCwd ? mkdtempSync(join(stateDir, "empty-cwd-")) : stateDir;
   const child = spawn({
     cmd: [
       process.execPath,
-      entrypoint === "relative" ? "./consumer.ts" : entrypoint === "alias" ? "./consumer-alias.ts" : bundlePath,
+      entrypoint === "relative"
+        ? `./${basename(bundlePath)}`
+        : entrypoint === "alias"
+          ? `./${basename(aliasPath)}`
+          : bundlePath,
       stateDir,
       bootId,
     ],
@@ -97,6 +103,7 @@ setInterval(() => {}, 1000);
   // Independent launcher expectations: identity comes from the kernel, not child's declaration.
   const expected: DeliveryBootExpectation = {
     ...observed,
+    argv1Raw: observed.argv[1]!,
     processName: "test-consumer",
     bootId,
     bundlePath,
@@ -104,7 +111,7 @@ setInterval(() => {}, 1000);
     stateIdentity: "test-state",
     consumerDomain: "test-domain",
   };
-  return { stateDir, child, expected, declaration: JSON.parse(line) as DeliveryBootDeclaration };
+  return { stateDir, consumerCwd, child, expected, declaration: JSON.parse(line) as DeliveryBootDeclaration };
 }
 
 describe("delivery boot oracle (real processes)", () => {
@@ -115,6 +122,8 @@ describe("delivery boot oracle (real processes)", () => {
     expect(declaration.pid).toBe(expected.pid);
     expect(declaration.processStartToken).toBe(expected.processStartToken);
     expect(declaration.argv).toEqual(expected.argv);
+    expect(declaration.argv1Raw).toBe(expected.argv[1]!);
+    expect(declaration.bundlePath).toBe(realpathSync(expected.bundlePath));
     expect(declaration.bundleSha256).toBe(expected.bundleSha256);
     expect(declaration.deliveryProtocolVersions).toEqual([2]);
     const path = deliveryBootPath(stateDir, expected);
@@ -134,25 +143,29 @@ describe("delivery boot oracle (real processes)", () => {
   test("a consumer launched with a relative script from another cwd has a verified boot", async () => {
     const { stateDir, expected, declaration } = await startBoot("relative");
     expect(stateDir).not.toBe(realpathSync(process.cwd()));
-    expect(expected.argv[1]).toBe("./consumer.ts");
-    expect(expected.cwd).toBe(stateDir);
-    expect(declaration.cwd).toBe(stateDir);
+    expect(expected.argv[1]).toBe(`./${basename(expected.bundlePath)}`);
+    expect(expected.argv1Raw).toBe(expected.argv[1]!);
+    expect(declaration.argv1Raw).toBe(expected.argv1Raw);
+    // The raw path intentionally cannot be resolved in the controller's cwd.
+    expect(existsSync(resolve(expected.argv1Raw))).toBe(false);
     expect(readVerifiedDeliveryBoot({ stateDir, expected }).relation).toBe("known");
   });
 
-  test("relative and absolute script arguments resolving to the same bundle are equivalent", async () => {
+  test("a different raw entrypoint is rejected even when it resolves to the same bundle", async () => {
     const { stateDir, expected } = await startBoot("relative");
     const argv = [...expected.argv];
     argv[1] = expected.bundlePath;
-    expect(readVerifiedDeliveryBoot({ stateDir, expected: { ...expected, argv } }).relation).toBe("known");
+    expect(
+      readVerifiedDeliveryBoot({ stateDir, expected: { ...expected, argv, argv1Raw: expected.bundlePath } }).relation,
+    ).toBe("unsupported");
   });
 
-  test("an observed script symlink is canonicalized before comparison with the bundle", async () => {
-    const { stateDir, expected } = await startBoot("alias");
-    expect(expected.argv[1]).toBe("./consumer-alias.ts");
-    const argv = [...expected.argv];
-    argv[1] = expected.bundlePath;
-    expect(readVerifiedDeliveryBoot({ stateDir, expected: { ...expected, argv } }).relation).toBe("known");
+  test("publisher binds the raw script symlink to the absolute canonical bundle", async () => {
+    const { stateDir, expected, declaration } = await startBoot("alias");
+    expect(expected.argv1Raw).toStartWith("./consumer-alias-");
+    expect(declaration.argv1Raw).toBe(expected.argv1Raw);
+    expect(declaration.bundlePath).toBe(expected.bundlePath);
+    expect(readVerifiedDeliveryBoot({ stateDir, expected }).relation).toBe("known");
   });
 
   test("a live script that really differs from the expected bundle is unsupported", async () => {
@@ -166,41 +179,28 @@ describe("delivery boot oracle (real processes)", () => {
     });
   });
 
-  test("a script that cannot be resolved raises an explicit observer error with its cause", async () => {
-    const { stateDir, expected } = await startBoot("relative");
+  test("an argv[1] file that no longer exists returns unknown with an explicit error and never throws", async () => {
+    const { stateDir, expected } = await startBoot("absolute");
+    expect(expected.argv1Raw).toBe(expected.bundlePath);
     rmSync(expected.bundlePath);
+    expect(existsSync(expected.argv1Raw)).toBe(false);
     expect(observeDeliveryProcess(expected.pid)).not.toBeNull();
-    let failure: unknown;
-    try {
-      readVerifiedDeliveryBoot({ stateDir, expected });
-    } catch (error) {
-      failure = error;
-    }
-    expect(failure).toBeInstanceOf(DeliveryProcessObservationError);
-    expect(failure).toMatchObject({ code: "ENTRYPOINT_RESOLUTION_FAILED", cause: { code: "ENOENT" } });
+    expect(() => readVerifiedDeliveryBoot({ stateDir, expected })).not.toThrow();
+    expect(readVerifiedDeliveryBoot({ stateDir, expected })).toMatchObject({
+      relation: "unknown",
+      error: { code: "DELIVERY_BOOT_OBSERVATION_FAILED", cause: { code: "ENOENT" } },
+    });
   });
 
-  test("removing a live consumer cwd raises an explicit observation error through the boot reader", async () => {
-    const { stateDir, child, expected } = await startBoot("absolute", true);
-    expect(expected.cwd).not.toBe(stateDir);
+  test("removing an empty consumer cwd does not invalidate a boot with its absolute bundle intact", async () => {
+    const { stateDir, consumerCwd, child, expected } = await startBoot("absolute", true);
+    expect(consumerCwd).not.toBe(stateDir);
     expect(readVerifiedDeliveryBoot({ stateDir, expected }).relation).toBe("known");
     // Only remove the fixture's empty cwd, preserving its absolute entrypoint and declaration.
-    rmdirSync(expected.cwd);
+    rmdirSync(consumerCwd);
     expect(child.exitCode).toBeNull();
-    for (const observe of [
-      () => observeDeliveryProcess(expected.pid),
-      () => readVerifiedDeliveryBoot({ stateDir, expected }),
-    ]) {
-      let failure: unknown;
-      try {
-        observe();
-      } catch (error) {
-        failure = error;
-      }
-      expect(failure).toBeInstanceOf(DeliveryProcessObservationError);
-      expect(failure).toMatchObject({ code: "PROCESS_CWD_UNAVAILABLE" });
-      expect((failure as Error).cause).toBeInstanceOf(Error);
-    }
+    expect(observeDeliveryProcess(expected.pid)?.argv).toEqual(expected.argv);
+    expect(readVerifiedDeliveryBoot({ stateDir, expected }).relation).toBe("known");
   });
 
   test("rejects stale start identity, different argv and scope", async () => {
@@ -213,6 +213,18 @@ describe("delivery boot oracle (real processes)", () => {
     ]) {
       expect(readVerifiedDeliveryBoot({ stateDir, expected: { ...expected, ...mismatch } }).relation).toBe("unknown");
     }
+  });
+
+  test("a bundle replaced after boot by a symlink to another existing script is unsupported", async () => {
+    const { stateDir, expected } = await startBoot();
+    const differentBundle = join(stateDir, "different-bundle.ts");
+    writeFileSync(differentBundle, readFileSync(expected.bundlePath));
+    rmSync(expected.bundlePath);
+    symlinkSync(differentBundle, expected.bundlePath);
+    expect(readVerifiedDeliveryBoot({ stateDir, expected })).toEqual({
+      relation: "unsupported",
+      reason: "entrypoint_bundle_mismatch",
+    });
   });
 
   test("a mismatching bundle digest is unsupported", async () => {
