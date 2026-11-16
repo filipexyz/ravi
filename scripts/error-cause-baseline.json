@@ -528,13 +528,6 @@
       "count": 1
     },
     {
-      "id": "src/channels/slack/markdown-delivery.ts:ddbbf99b5618436506c18e7a",
-      "file": "src/channels/slack/markdown-delivery.ts",
-      "boundary": "channels-slack",
-      "rule": "rejection-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/channels/slack/media.ts:c080cae772801e60d5e1b98b",
       "file": "src/channels/slack/media.ts",
       "boundary": "channels-slack",
@@ -2278,28 +2271,7 @@
       "count": 2
     },
     {
-      "id": "src/gateway.ts:0e950481ed220e99099ac63f",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/gateway.ts:38b3a905b1bff1eaf59af932",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
       "id": "src/gateway.ts:49a19f1559aad6da19e61c67",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/gateway.ts:5955b4947cd95ed0c53bfebb",
       "file": "src/gateway.ts",
       "boundary": "gateway.ts",
       "rule": "surface-bypasses-constructor",
@@ -2320,21 +2292,7 @@
       "count": 1
     },
     {
-      "id": "src/gateway.ts:847d3a3fcc564674e0dc04ad",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
       "id": "src/gateway.ts:b31b92d6eb316bc184edb339",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/gateway.ts:e5adb0dd5b47cd35b49c07d3",
       "file": "src/gateway.ts",
       "boundary": "gateway.ts",
       "rule": "surface-bypasses-constructor",
@@ -5870,7 +5828,7 @@
     }
   ],
   "totals": {
-    "violations": 878,
+    "violations": 872,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5886,14 +5844,14 @@
       "src/calendar": 2,
       "src/channels": 24,
       "src/channels/native": 5,
-      "src/channels/slack": 15,
+      "src/channels/slack": 14,
       "src/ci": 1,
       "src/cli": 33,
       "src/cli/commands": 144,
       "src/cloud-agents": 30,
       "src/cloud-auth": 11,
       "src/console-scope": 5,
-      "src": 43,
+      "src": 38,
       "src/costs": 2,
       "src/crm": 1,
       "src/cron": 5,
