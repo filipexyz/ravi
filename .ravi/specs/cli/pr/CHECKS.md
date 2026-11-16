@@ -16,6 +16,10 @@
   `PUBLICATION_SESSION_REQUIRED` (exit 2) when it names no session and with
   `SESSION_NOT_FOUND` when the session it names is not there. It publishes
   into the session it names, recorded as `local-operator` with no context ID.
+  A session store the daemon has not prepared is refused for both callers and
+  for the follow with `STATE_SCHEMA_NOT_READY` and the command that prepares
+  it; it is never reported as a missing session, and refusing does not create
+  the store.
 - `bun test src/cli/commands/pr-process.test.ts` runs the real CLI as a
   process and verifies that a terminal refusal is printed once, as the JSON
   envelope on stdout or as text on stderr, with its exit code.

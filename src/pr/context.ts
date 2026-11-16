@@ -1,7 +1,10 @@
 import { Database } from "bun:sqlite";
-import { ContractError } from "../cli/agent-contract.js";
+import { existsSync } from "node:fs";
+import { ContractError, stateNotReadyToContractError } from "../cli/agent-contract.js";
 import { getContext } from "../cli/context.js";
+import { StateSchemaNotReadyError } from "../db/schema-owner.js";
 import { assertDatabaseTargetAllowed } from "../db/state-boundary.js";
+import { isStateNotReadyError } from "../db/state-readiness.js";
 import { localOperatorCan } from "../permissions/provider-runtime.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
 import { getRaviDbPath } from "../router/router-db.js";
@@ -54,11 +57,26 @@ export function resolvePublicationCaller(): PublicationCaller {
   return { kind: "terminal" };
 }
 
+/**
+ * The read-only handle both resolvers read sessions through. Publication never
+ * creates runtime state, so a missing `ravi.db` is state the installed daemon
+ * has not prepared: it is refused as `STATE_SCHEMA_NOT_READY`, with the command
+ * that prepares it, and is never reported as a missing session.
+ */
+function openPublicationState(): Database {
+  const path = getRaviDbPath();
+  if (!existsSync(path)) {
+    const notReady = new StateSchemaNotReadyError("router", { operatorCli: true });
+    throw stateNotReadyToContractError("pr publish", notReady) ?? notReady;
+  }
+  return new Database(path, { readonly: true, create: false });
+}
+
 /** Validate live ownership without bootstrapping or migrating state during preview. */
 export function resolvePublicationFollowContext(context: GhWatchFollowContext): GhWatchFollowContext {
   let database: Database | undefined;
   try {
-    database = new Database(getRaviDbPath(), { readonly: true, create: false });
+    database = openPublicationState();
     const resolved = resolveGhFollowContext(context, database);
     const ref = resolved.sessionKey ?? resolved.sessionName;
     if (
@@ -69,6 +87,8 @@ export function resolvePublicationFollowContext(context: GhWatchFollowContext): 
       throw new Error("Cannot register PR follow: durable session is missing.");
     return resolved;
   } catch (error) {
+    // State the daemon has not prepared keeps its own code and recovery command.
+    if (isStateNotReadyError(error)) throw error;
     throw prError(
       "PUBLICATION_SESSION_REQUIRED",
       error instanceof Error && error.message.startsWith("Cannot register PR follow:")
@@ -120,7 +140,7 @@ export function resolvePublicationContext(replySession?: string): GhWatchFollowC
   try {
     // The session is read from runtime state, which a checkout or worktree never reaches.
     assertDatabaseTargetAllowed(getRaviDbPath());
-    database = new Database(getRaviDbPath(), { readonly: true, create: false });
+    database = openPublicationState();
     const row = database
       .query(`SELECT session_key,name,agent_id,last_channel,last_account_id,last_to,last_thread_id
       FROM sessions WHERE session_key=? OR name=?`)
@@ -154,6 +174,7 @@ export function resolvePublicationContext(replySession?: string): GhWatchFollowC
       source,
     };
   } catch (error) {
+    // A ContractError keeps its code; the STATE_SCHEMA_NOT_READY refusal of the open above is one.
     if (error instanceof ContractError) throw error;
     throw prError("PUBLICATION_SESSION_REQUIRED", "A readable Ravi session database is required for publication.");
   } finally {

@@ -1607,8 +1607,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | pm2.ts | src/pm2.ts | 96 | fixed | binding retained / no recognized error surface | src/pm2.ts:4352afcdb59390b880f3b901 |
 | pm2.ts | src/pm2.ts | 149 | fixed | binding retained / no recognized error surface | src/pm2.ts:2ef6c550ff1b5370c2c3e2f1 |
 | policy | src/policy/reaction-actions.ts | 104 | triaged-follow-up | catch-without-binding | src/policy/reaction-actions.ts:53ffd706658bef6705b7af7c |
-| pr | src/pr/context.ts | 71 | fixed | binding retained / no recognized error surface | src/pr/context.ts:47a6ad6be72f95e3c0e7a4c0 |
-| pr | src/pr/context.ts | 156 | triaged-follow-up | cause-not-forwarded-at-surface | src/pr/context.ts:5818b3b034774e3a5eff6a0b |
+| pr | src/pr/context.ts | 89 | fixed | binding retained / no recognized error surface | src/pr/context.ts:52623f27d5b9dac648b331af |
+| pr | src/pr/context.ts | 176 | triaged-follow-up | cause-not-forwarded-at-surface | src/pr/context.ts:5818b3b034774e3a5eff6a0b |
 | pr | src/pr/follow-health.ts | 40 | triaged-follow-up | catch-without-binding | src/pr/follow-health.ts:606cfe08538ef71c95d4c760 |
 | pr | src/pr/follow-health.ts | 44 | triaged-follow-up | catch-without-binding | src/pr/follow-health.ts:31bfbd62945bd07c70bda352 |
 | pr | src/pr/follow-health.ts | 64 | triaged-follow-up | catch-without-binding | src/pr/follow-health.ts:8c744db238738a1ee22c2bd5 |

@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, expect, it } from "bun:test";
+import { existsSync, rmSync } from "node:fs";
+import { ContractError } from "../cli/agent-contract.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { getDb } from "../router/router-db.js";
+import { PREPARE_STATE_COMMAND } from "../db/state-readiness.js";
+import { closeRouterDb, getDb, getRaviDbPath } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { resolvePublicationContext } from "./context.js";
+import { resolvePublicationContext, resolvePublicationFollowContext } from "./context.js";
 import { openPublicationJournal } from "./journal.js";
 
 let state: string | null = null;
@@ -138,4 +141,59 @@ it("lets the operator's terminal publish into the session it names, which is a d
   expect(() => runWithContext({}, () => resolvePublicationContext("publisher"))).toThrow("no chat destination");
   getDb().exec("UPDATE sessions SET last_to='C-test'");
   expect(getDb().query("SELECT * FROM sessions").all()).toEqual(before);
+});
+
+/** The state directory as it is before the daemon prepares it: no session store. */
+function removeSessionStore(): string {
+  closeRouterDb();
+  const path = getRaviDbPath();
+  for (const suffix of ["", "-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true });
+  return path;
+}
+function refusal(run: () => unknown): ContractError {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof ContractError) return error;
+    throw error;
+  }
+  throw new Error("Expected the publication context to be refused.");
+}
+const follow = {
+  agentId: "test",
+  sessionKey: "agent:test:publisher",
+  sessionName: "publisher",
+  accountId: "main",
+  source: { channel: "slack", accountId: "main", chatId: "C-test", threadId: "thread-1" },
+};
+it("refuses state the daemon has not prepared under its own code, with the command that prepares it", () => {
+  const path = removeSessionStore();
+  const refusals = {
+    session: refusal(() => runWithContext(context, () => resolvePublicationContext())),
+    terminal: refusal(() => runWithContext({}, () => resolvePublicationContext("publisher"))),
+    follow: refusal(() => resolvePublicationFollowContext(follow)),
+  };
+  for (const [entry, error] of Object.entries(refusals)) {
+    expect({ entry, op: error.op, code: error.code, exitCode: error.exitCode }).toEqual({
+      entry,
+      op: "pr publish",
+      code: "STATE_SCHEMA_NOT_READY",
+      exitCode: 1,
+    });
+    expect(error.message).toContain(PREPARE_STATE_COMMAND);
+    expect(error.details).toMatchObject({ retryable: true });
+    expect(String(error.details.suggestedAction)).toContain(PREPARE_STATE_COMMAND);
+  }
+  // Refusing is all it does: the store is the daemon's to create.
+  expect(existsSync(path)).toBe(false);
+});
+it("keeps reporting a follow session that is gone as a missing session when the store is there", () => {
+  expect(resolvePublicationFollowContext(follow)).toMatchObject({ agentId: "test", sessionName: "publisher" });
+  const gone = refusal(() =>
+    resolvePublicationFollowContext({ agentId: "test", sessionKey: "agent:test:gone", sessionName: "gone" }),
+  );
+  expect({ code: gone.code, message: gone.message }).toEqual({
+    code: "PUBLICATION_SESSION_REQUIRED",
+    message: "Cannot register PR follow: durable session is missing.",
+  });
 });
