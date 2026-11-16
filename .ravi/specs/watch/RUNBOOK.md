@@ -16,13 +16,25 @@ producer and loaded trigger configuration. The JSON result includes both
 SHAs, PR URL and watch/trigger IDs. See `cli/pr` for limits and error recovery.
 
 After a partial failure, repeat with the same `--expect-sha` in the same session.
-The PR/follow are reused; do not create another trigger or alter Review Gate.
-Independent current-head approval remains required before merge.
+The PR/follow are reused; do not create another trigger or reinstate Review Gate.
+Record independent current-head review in the PR description before merge.
 
 An older selected follow ending in `ravi.watch.github.*` is repaired in place
 to `ravi.watch.github.>` during reconciliation. The former cannot receive the
 two-token PR/CI event suffixes in NATS. After updating the runtime, republish
 each affected PR from its owning session to repair its existing subscription.
+
+## Review Burst Delivery
+
+Inspect the generated trigger with `ravi triggers show <trigger-id> --json`:
+`cooldownMs` and `debounceMs` must both be zero. After deploying the fix, the
+normal follow maintenance tick repairs existing generated subscriptions in
+place and refreshes the runner, retaining paused state and recipients. Reusing
+or republishing the selected PR also reconciles these settings.
+
+Every distinct matching event produces its own prompt. Diagnose retries using
+`dedupeKey`, not timestamps: multiple comments can share one second. Repair
+prevents future window drops; it does not recover comments already discarded.
 
 ## List Connectors
 

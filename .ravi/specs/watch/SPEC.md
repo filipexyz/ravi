@@ -19,6 +19,7 @@ applies_to:
   - src/inbox
   - src/triggers
   - src/hooks/gh-watch.ts
+  - src/hooks/gh-follow-sweep.ts
   - src/hooks/gh-pr-publish.ts
   - src/cli/commands/pr.ts
   - src/pr/follow-health.ts
@@ -173,6 +174,18 @@ second trigger runner.
 
 ## PR Publication Follow
 
+- Generated `gh-follow` triggers MUST set `cooldownMs: 0` and `debounceMs: 0`
+  for every matching PR event, including review comments, lifecycle and CI.
+  Distinct events in the same second MUST each reach the session; timestamps
+  MUST NOT substitute for event identity. Existing event-key deduplication and
+  trigger-origin loop guards MUST remain active.
+- Follow reuse and maintenance MUST repair old cooldown/debounce settings in
+  place and refresh the runner. Maintenance MUST preserve the saved recipient
+  and disabled state and MUST NOT change unrelated triggers. Repeated repair
+  of an already corrected follow MUST perform no additional write or refresh.
+- Publication verification and the loaded-runner fingerprint MUST include
+  cooldown and debounce settings, so a stale lossy subscription cannot report
+  successful follow health. An absent debounce means zero, as in the runner.
 - The sanctioned Git Data API publication path is `ravi pr publish`, from
   the publishing Ravi session (see `cli/pr`). A raw
   `POST /pulls` alone is not a completed publication.
@@ -201,8 +214,9 @@ second trigger runner.
 - Partial failures MUST report incomplete publication and permit the same
   command to recover it. Runner refresh MUST be retried even if a previous
   attempt already persisted the desired trigger.
-- Publishing ready MUST NOT weaken independent current-head approval or any
-  other Review Gate requirement. Ready means eligible for review, not approved.
+- Independent review MUST be recorded in the PR description with the reviewed
+  SHA. Quality Gate is the required CI check; the retired Review Gate MUST NOT
+  be reinstated by publication. Ready means eligible for review, not approved.
 
 ## Acceptance Criteria
 

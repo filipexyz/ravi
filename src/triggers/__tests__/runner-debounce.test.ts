@@ -84,6 +84,7 @@ mock.module("../../omni/session-stream.js", () => ({
 
 const { TriggerRunner } = await import("../runner.js");
 const { dbCreateTrigger, dbGetTrigger } = await import("../triggers-db.js");
+const { buildGhFollowTriggerInput } = await import("../../hooks/gh-watch.js");
 
 let stateDir: string | null = null;
 let markerDir: string | null = null;
@@ -97,9 +98,9 @@ async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<voi
   }
 }
 
-function emit(topic: string, data: unknown): void {
-  const channel = channels.get(topic);
-  if (!channel) throw new Error(`Runner is not subscribed to ${topic}`);
+function emit(topic: string, data: unknown, subscriptionTopic = topic): void {
+  const channel = channels.get(subscriptionTopic);
+  if (!channel) throw new Error(`Runner is not subscribed to ${subscriptionTopic}`);
   channel.push({ topic, data });
 }
 
@@ -166,6 +167,57 @@ afterEach(async () => {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("TriggerRunner cooldown", () => {
+  it("delivers all three PR #833 review comments from 2026-11-15T23:52:33Z exactly once", async () => {
+    const topic = "ravi.watch.github.pull_request_comment.created";
+    const trigger = dbCreateTrigger(
+      buildGhFollowTriggerInput("filipexyz/ravi", 833, { agentId: "trigger-test-agent" }),
+    );
+    await startRunner();
+
+    const commentEvent = (commentId: number) => ({
+      eventId: `review-event-${commentId}`,
+      dedupeKey: `filipexyz/ravi#833:comment:${commentId}`,
+      eventType: "pull_request_comment.created",
+      occurredAt: "2026-11-15T23:52:33Z",
+      payload: {
+        repository: "filipexyz/ravi",
+        number: 833,
+        pull_request: { number: 833 },
+        commentId,
+        author: `reviewer-${commentId}[bot]`,
+        body: `Please address review finding ${commentId}.`,
+        url: `https://github.com/filipexyz/ravi/pull/833#discussion_r${commentId}`,
+      },
+    });
+    const comments = [commentEvent(101), commentEvent(102), commentEvent(103)];
+    for (const event of comments) emit(topic, event, trigger.topic);
+    await waitFor(() => publishCalls.length >= comments.length, 2_000);
+
+    expect(publishCalls).toHaveLength(3);
+    for (const event of comments) {
+      const deliveries = publishCalls.filter(({ payload }) => String(payload.prompt).includes(event.payload.body));
+      expect(deliveries).toHaveLength(1);
+      const prompt = String(deliveries[0]?.payload.prompt);
+      expect(prompt).toContain(event.payload.author);
+      expect(prompt).toContain(event.payload.url);
+      expect(prompt).toContain(event.occurredAt);
+    }
+
+    // Transport retries may assign a new envelope id; domain identity still wins.
+    for (const event of comments) {
+      emit(topic, { ...event, eventId: `replay-${event.eventId}` }, trigger.topic);
+    }
+    emit(topic, { ...commentEvent(104), _trigger: true }, trigger.topic);
+    emit(topic, { ...commentEvent(105), _turnProvenance: { origin: "trigger" } }, trigger.topic);
+
+    // The sentinel proves the preceding retries and loop events were consumed.
+    const sentinel = commentEvent(106);
+    emit(topic, sentinel, trigger.topic);
+    await waitFor(() => publishCalls.some(({ payload }) => String(payload.prompt).includes(sentinel.payload.body)));
+    expect(publishCalls).toHaveLength(4);
+    expect(dbGetTrigger(trigger.id)?.fireCount).toBe(4);
+  });
+
   it("fires every event when cooldown is off", async () => {
     const topic = "ravi.test.bus";
     createTrigger({ name: "bus", topic, executionType: "shell", cooldownMs: 0 });
