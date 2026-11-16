@@ -929,9 +929,14 @@ describe("dispatch — error path", () => {
       const db = getDb();
       // Exercise schema drift against current dev. The historical 3.261031.6
       // task_decisions reproduction is recorded in the incident dossier.
-      const schema = db
-        .query("SELECT sql FROM sqlite_master WHERE tbl_name = 'decisions' AND sql IS NOT NULL ORDER BY type DESC")
-        .all() as { sql: string }[];
+      // Restore tables before their indexes and triggers, including the fence.
+      const readSchema = () =>
+        db
+          .query(`SELECT type, name, sql FROM sqlite_master
+            WHERE tbl_name = 'decisions' AND sql IS NOT NULL
+            ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 WHEN 'trigger' THEN 2 ELSE 3 END, name`)
+          .all() as { type: string; name: string; sql: string }[];
+      const schema = readSchema();
       db.exec("DROP TABLE decisions");
       const commands = buildRegistry([TaskCommands]);
       const contextRecord = gatewayContext([executeGroup("tasks"), adminSystem()], "main");
@@ -953,6 +958,7 @@ describe("dispatch — error path", () => {
       db.transaction(() => {
         for (const row of schema) db.exec(row.sql);
       })();
+      expect(readSchema()).toEqual(schema);
       expect((await invoke("tasks.show")).response.status).toBe(200);
       const dryRun = await invoke("tasks.dispatch");
       expect(dryRun.response.status).toBe(409);

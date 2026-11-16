@@ -3619,6 +3619,15 @@ describe("Slack Socket Mode routing", () => {
 });
 
 describe("Slack Socket Mode connection liveness", () => {
+  let livenessState: string | null = null;
+  beforeEach(async () => {
+    livenessState = await createIsolatedRaviState("ravi-slack-socket-liveness-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(livenessState);
+    livenessState = null;
+  });
+
   it("reports connected only after Slack hello", async () => {
     const { service, sockets } = createSocketLifecycleHarness();
 
@@ -6045,3 +6054,35 @@ function contentEnvelope(text: string | undefined, blocks: readonly unknown[], b
     },
   };
 }
+
+describe("Slack Socket Mode drain", () => {
+  it("waits for an admitted envelope ACK and fences a concurrent new reply", async () => {
+    const service = new SlackSocketModeService({ accountId: "drain-test", appToken: "test", botToken: "test" });
+    let finishAck!: () => void;
+    const ack = new Promise<void>((resolve) => {
+      finishAck = resolve;
+    });
+    const processing = service.handleEnvelope({ envelope_id: "pending-ack", type: "events_api" }, () => ack);
+    const draining = service.requestDrain();
+    expect(service.drainStatus()).toMatchObject({ phase: "draining", pending: 1 });
+    const lateAck = mock(() => {});
+    await expect(service.handleEnvelope({ envelope_id: "late-reply", type: "events_api" }, lateAck)).rejects.toThrow(
+      "WORK_DRAIN_ADMISSION_CLOSED",
+    );
+    expect(lateAck).not.toHaveBeenCalled();
+    finishAck();
+    await processing;
+    expect(await draining).toMatchObject({ completed: 1, scope: "slack.socket-mode" });
+  });
+
+  it("does not certify a caught acknowledged handler failure", async () => {
+    const service = new SlackSocketModeService({ accountId: "drain-test", appToken: "test", botToken: "test" });
+    await service
+      .handleEnvelope({ envelope_id: "failed-ack", type: "events_api" }, () => {
+        throw new Error("socket ACK failed");
+      })
+      .catch(() => {});
+    expect(service.drainStatus().pending).toBe(0);
+    await expect(service.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+  });
+});

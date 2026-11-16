@@ -2,6 +2,13 @@ import type { Database } from "bun:sqlite";
 import packageInfo from "../../package.json" with { type: "json" };
 import { isSchemaConsumer, type DatabaseBoundaryOptions } from "./state-boundary.js";
 import { withSchemaMigrationLock } from "./schema-lock.js";
+import {
+  assertThreadFenceSchemaWriteAllowed,
+  installThreadFenceTriggers,
+  prepareRegisteredThreadFence,
+  runThreadMutation,
+  usesThreadSchemaFence,
+} from "../threads/schema-fence.js";
 
 // A channel runner must use the exact release whose daemon prepared the stores.
 export const STATE_SCHEMA_VERSION = `1:${packageInfo.version}`;
@@ -10,7 +17,11 @@ const initialized = new WeakMap<Database, Set<string>>();
 /** Journal changes participate in schema exclusion, including first-file boot. */
 export function configureStateJournalMode(db: Database): void {
   if (isSchemaConsumer()) return;
-  withSchemaMigrationLock(db, () => db.exec("PRAGMA journal_mode = WAL"));
+  withSchemaMigrationLock(db, () => {
+    prepareRegisteredThreadFence(db);
+    assertThreadFenceSchemaWriteAllowed(db);
+    db.exec("PRAGMA journal_mode = WAL");
+  });
 }
 
 export class StateSchemaNotReadyError extends Error {
@@ -24,6 +35,7 @@ export class StateSchemaNotReadyError extends Error {
 }
 
 export function assertStateSchemaReady(db: Database, component: string): void {
+  assertThreadFenceSchemaWriteAllowed(db);
   try {
     const row = db.query("SELECT version FROM state_schema_versions WHERE component = ?").get(component) as {
       version: string;
@@ -46,15 +58,31 @@ export function initializeStateSchema(
     assertStateSchemaReady(db, component);
     return;
   }
+  prepareRegisteredThreadFence(db);
+  assertThreadFenceSchemaWriteAllowed(db);
   if (initialized.get(db)?.has(component)) return;
   withSchemaMigrationLock(db, () => {
+    assertThreadFenceSchemaWriteAllowed(db);
     // Invalidate under the same lock as migration and readiness publication.
     // No outer SQL transaction: migrations own their BEGIN/COMMIT and FK mode.
     db.exec("CREATE TABLE IF NOT EXISTS state_schema_versions (component TEXT PRIMARY KEY, version TEXT NOT NULL)");
-    db.query("DELETE FROM state_schema_versions WHERE component = ?").run(component);
-    initialize();
-    db.query(`INSERT INTO state_schema_versions (component, version) VALUES (?, ?)
-      ON CONFLICT(component) DO UPDATE SET version = excluded.version`).run(component, STATE_SCHEMA_VERSION);
+    installThreadFenceTriggers(db);
+    const markerWrite = (sql: string, ...values: string[]) =>
+      usesThreadSchemaFence(db) ? runThreadMutation(db, sql, ...values) : db.query(sql).run(...values);
+    markerWrite("DELETE FROM state_schema_versions WHERE component = ?", component);
+    try {
+      initialize();
+    } finally {
+      // A failed initializer may have created tables before throwing. Keep
+      // those tables fenced too, while leaving the ready marker absent.
+      installThreadFenceTriggers(db);
+    }
+    markerWrite(
+      `INSERT INTO state_schema_versions (component, version) VALUES (?, ?)
+      ON CONFLICT(component) DO UPDATE SET version = excluded.version`,
+      component,
+      STATE_SCHEMA_VERSION,
+    );
   });
   const components = initialized.get(db) ?? new Set<string>();
   components.add(component);

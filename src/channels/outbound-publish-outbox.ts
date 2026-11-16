@@ -1,3 +1,4 @@
+import { TrackedWorkDrain, type WorkDrainProof } from "../runtime/work-drain.js";
 import { createHash } from "node:crypto";
 import type { Database } from "bun:sqlite";
 import { initializeStateSchema } from "../db/schema-owner.js";
@@ -796,6 +797,7 @@ export async function reconcileDueChannelOutboundPublishes(
 
 export class ChannelOutboundPublishReconciler {
   private running = false;
+  private readonly workDrain = new TrackedWorkDrain("channels.outbound-publication-reconciliation");
   private loopPromise: Promise<void> | null = null;
 
   constructor(
@@ -807,20 +809,25 @@ export class ChannelOutboundPublishReconciler {
       intervalMs?: number;
       limit?: number;
       now?: () => number;
+      reconcile?: typeof reconcileDueChannelOutboundPublishes;
     } = {},
   ) {}
 
   start(): void {
+    if (this.workDrain.status().phase !== "accepting") throw new Error("WORK_DRAIN_ADMISSION_CLOSED");
     if (this.running) return;
     this.running = true;
     this.loopPromise = this.runLoop();
   }
 
-  async stop(): Promise<void> {
+  requestDrain(timeoutMs?: number): Promise<WorkDrainProof> {
     this.running = false;
-    await this.loopPromise?.catch((error) => {
-      log.debug("Channel outbound publish reconciler stopped after loop error", { error });
-    });
+    return this.workDrain.waitForDrain(timeoutMs);
+  }
+
+  async stop(): Promise<void> {
+    await this.requestDrain();
+    await this.loopPromise;
     this.loopPromise = null;
   }
 
@@ -836,7 +843,10 @@ export class ChannelOutboundPublishReconciler {
     const intervalMs = this.options.intervalMs ?? CHANNEL_OUTBOUND_PUBLISH_RECONCILE_INTERVAL_MS;
     while (this.shouldContinue()) {
       try {
-        await reconcileDueChannelOutboundPublishes(this.options);
+        await this.workDrain.run("outbound-publication-reconciliation", async () => {
+          const result = await (this.options.reconcile ?? reconcileDueChannelOutboundPublishes)(this.options);
+          if (result.failed > 0) this.workDrain.recordFailure("outbound-publication-reconciliation-record");
+        });
       } catch (error) {
         log.warn("Channel outbound publish reconcile loop failed; retrying", { error });
       }

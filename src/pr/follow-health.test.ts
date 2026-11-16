@@ -29,3 +29,29 @@ it("refuses old, unreachable, stopped, malformed and producer-less runtimes befo
   ])
     await expect(requireFollowRuntime(undefined, probe)).rejects.toMatchObject({ code: "FOLLOW_RUNTIME_UNAVAILABLE" });
 });
+
+it.each([
+  { cooldownMs: 30_000, debounceMs: 0 },
+  { cooldownMs: 0, debounceMs: 2_000 },
+])("waits for the runner to load the repaired follow delivery policy %j", async (stalePolicy) => {
+  const desired = {
+    id: "trg_burst",
+    enabled: true,
+    topic: "ravi.watch.github.>",
+    replySession: "publisher",
+    cooldownMs: 0,
+    debounceMs: 0,
+  } as Trigger;
+  let probes = 0;
+  await requireFollowRuntime(desired, async () => ({
+    running: true,
+    producerRunning: true,
+    fingerprint: followFingerprint(++probes === 1 ? { ...desired, ...stalePolicy } : desired),
+  }));
+  expect(probes).toBe(2);
+});
+
+it("treats omitted debounce as disabled when verifying the loaded follow", () => {
+  const desired = { id: "trg_burst", cooldownMs: 0, debounceMs: 0 };
+  expect(followFingerprint({ ...desired, debounceMs: undefined })).toBe(followFingerprint(desired));
+});

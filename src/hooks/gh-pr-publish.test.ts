@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   publishGhPr,
@@ -197,6 +198,25 @@ describe("Git Data API publication boundary", () => {
     expect(f.watches.some((watch) => watch.placement === "local")).toBe(true);
   });
 
+  it.each([
+    { cooldownMs: 30_000, debounceMs: 0 },
+    { cooldownMs: 0, debounceMs: 2_000 },
+  ])("refuses publication verification with stale persisted delivery policy %j", async (stalePolicy) => {
+    const f = fixture();
+    const result = await publishGhPr(input, f.deps);
+    Object.assign(f.triggers[0]!, stalePolicy);
+    await expect(f.deps.verifyFollow(input, result.follow, 9)).rejects.toMatchObject({
+      code: "PR_PUBLICATION_INCOMPLETE",
+    });
+  });
+
+  it("accepts omitted debounce as disabled in the persisted follow", async () => {
+    const f = fixture();
+    const result = await publishGhPr(input, f.deps);
+    delete f.triggers[0]!.debounceMs;
+    await expect(f.deps.verifyFollow(input, result.follow, 9)).resolves.toBeUndefined();
+  });
+
   it("reports follow failure and recovers the already created PR on rerun", async () => {
     const f = fixture();
     const create = f.deps.follow.createTrigger!;
@@ -306,7 +326,7 @@ describe("Git Data API publication boundary", () => {
           (phase === "before-follow" && endpoint.endsWith("/pulls") && method === "POST") ||
           (phase === "verification" && endpoint.endsWith("/pulls/9"))
         ) {
-          getDb().query("DELETE FROM slack_thread_lifecycle WHERE child_session_key=?").run(childKey);
+          runThreadMutation(getDb(), "DELETE FROM slack_thread_lifecycle WHERE child_session_key=?", childKey);
         }
         return result;
       };

@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../../threads/schema-fence.js";
 import { isDeepStrictEqual } from "node:util";
 import { executeWrite } from "../../db/write-retry.js";
 import { getDb } from "../../router/router-db.js";
@@ -88,9 +89,11 @@ export function prepareThreadAttentionNotice(
       const frozen = frozenNotice(row);
       assertThreadAttentionSession(frozen, resolveSession(sessionName));
       if (!existing)
-        db.query(`INSERT INTO slack_thread_attention_notices
+        runThreadMutation(
+          db,
+          `INSERT INTO slack_thread_attention_notices
       (event_id,request_id,turn_id,parent_session_key,child_session_key,target_session_name,payload_json,created_at)
-      VALUES (?,?,?,?,?,?,?,?)`).run(
+      VALUES (?,?,?,?,?,?,?,?)`,
           id,
           requestId,
           binding.turn_id,
@@ -128,7 +131,11 @@ export async function admitThreadAttention(
       if (!isDeepStrictEqual(prompt, frozen)) throw new Error("Thread attention admission envelope differs");
       if (!["pending", "refused"].includes(row.admission_status)) return null;
       // The receipt itself binds historical child/turn/authority. A later child turn or close cannot erase it.
-      db.query("UPDATE slack_thread_attention_notices SET admission_status='accepting' WHERE event_id=?").run(id);
+      runThreadMutation(
+        db,
+        "UPDATE slack_thread_attention_notices SET admission_status='accepting' WHERE event_id=?",
+        id,
+      );
       return frozen;
     },
     { label: "thread-attention-admit" },
@@ -139,10 +146,13 @@ export async function admitThreadAttention(
     executeWrite(
       getDb(),
       (db) =>
-        db
-          .query(`UPDATE slack_thread_attention_notices
-      SET admission_status='admitted', admitted_at=? WHERE event_id=? AND admission_status='accepting'`)
-          .run(Date.now(), id),
+        runThreadMutation(
+          db,
+          `UPDATE slack_thread_attention_notices
+      SET admission_status='admitted', admitted_at=? WHERE event_id=? AND admission_status='accepting'`,
+          Date.now(),
+          id,
+        ),
       { label: "thread-attention-admitted" },
     );
   } catch (error) {
@@ -150,10 +160,13 @@ export async function admitThreadAttention(
     executeWrite(
       getDb(),
       (db) =>
-        db
-          .query(`UPDATE slack_thread_attention_notices SET admission_status=?
-      WHERE event_id=? AND admission_status='accepting'`)
-          .run(error instanceof RuntimeStartCapacityError ? "refused" : "uncertain", id),
+        runThreadMutation(
+          db,
+          `UPDATE slack_thread_attention_notices SET admission_status=?
+      WHERE event_id=? AND admission_status='accepting'`,
+          error instanceof RuntimeStartCapacityError ? "refused" : "uncertain",
+          id,
+        ),
       { label: "thread-attention-refused" },
     );
     throw error;

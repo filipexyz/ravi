@@ -1,3 +1,4 @@
+import { TrackedWorkDrain, type WorkDrainProof } from "../runtime/work-drain.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../omni/session-stream.js";
@@ -612,8 +613,9 @@ export function startChannelBackendPublicationReconciler(
     publishPrompt?: ChannelBackendPromptPublisher;
     setInterval?: (callback: () => void, intervalMs: number) => ChannelBackendPublicationRetryTimer;
     clearInterval?: (timer: ChannelBackendPublicationRetryTimer) => void;
+    reconcile?: typeof resumePendingChannelIngressPublications;
   } = {},
-): () => void {
+): () => Promise<WorkDrainProof> {
   const intervalMs = options.intervalMs ?? CHANNEL_BACKEND_PUBLICATION_RETRY_INTERVAL_MS;
   if (!Number.isSafeInteger(intervalMs) || intervalMs < 1_000) {
     throw new Error("Channel backend publication retry interval must be at least 1000 milliseconds");
@@ -621,13 +623,19 @@ export function startChannelBackendPublicationReconciler(
   const scheduleInterval = options.setInterval ?? setInterval;
   const cancelInterval = options.clearInterval ?? clearInterval;
   let retrying = false;
+  let stopped = false;
+  const drain = new TrackedWorkDrain("channels.backend-publication-reconciliation");
   const retry = () => {
-    if (retrying) return;
+    if (stopped || retrying) return;
     retrying = true;
-    void resumePendingChannelIngressPublications({
-      ...(options.limit === undefined ? {} : { limit: options.limit }),
-      ...(options.publishPrompt === undefined ? {} : { publishPrompt: options.publishPrompt }),
-    })
+    void drain
+      .run("publication-reconciliation", async () => {
+        const result = await (options.reconcile ?? resumePendingChannelIngressPublications)({
+          ...(options.limit === undefined ? {} : { limit: options.limit }),
+          ...(options.publishPrompt === undefined ? {} : { publishPrompt: options.publishPrompt }),
+        });
+        if (result.failed > 0) drain.recordFailure("publication-reconciliation-record");
+      })
       .catch((error) => {
         log.warn("Channel ingress publication reconciliation failed", {
           errorKind: errorKind(error),
@@ -640,7 +648,11 @@ export function startChannelBackendPublicationReconciler(
   retry();
   const timer = scheduleInterval(retry, intervalMs);
   timer.unref?.();
-  return () => cancelInterval(timer);
+  return () => {
+    stopped = true;
+    cancelInterval(timer);
+    return drain.waitForDrain();
+  };
 }
 
 async function publishAcceptedChannelIngressReceipt(

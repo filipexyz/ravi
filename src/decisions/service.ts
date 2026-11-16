@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { buildSessionRelayTurnOrigin } from "../runtime/turn-origin.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { canAccessSession, canModifySession, getScopeContext, isScopeEnforced } from "../permissions/scope.js";
@@ -197,7 +198,12 @@ export async function answerDecision(id: string, text: string, by?: string) {
         contextId: scope.contextId ?? scope.context?.contextId,
       }),
     };
-    getDb().query("UPDATE decision_deliveries SET payload_json=? WHERE id=?").run(JSON.stringify(payload), deliveryId);
+    runThreadMutation(
+      getDb(),
+      "UPDATE decision_deliveries SET payload_json=? WHERE id=?",
+      JSON.stringify(payload),
+      deliveryId,
+    );
     return { decision: answered };
   });
   if ("event" in result) await emitTaskEvent(result.task, result.event);

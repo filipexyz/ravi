@@ -1,3 +1,4 @@
+import { TrackedWorkDrain } from "../runtime/work-drain.js";
 import { JSONCodec } from "nats";
 import { z } from "zod";
 import { reportErrorDiagnostic } from "../utils/error-reporting.js";
@@ -191,6 +192,7 @@ export function startChannelBackendEgressResponder(options: {
     queue: CHANNEL_BACKEND_EGRESS_QUEUE,
   });
   let stopped = false;
+  const workDrain = new TrackedWorkDrain("channels.backend-egress-sinks");
 
   const loop = (async () => {
     for await (const message of subscription) {
@@ -199,23 +201,26 @@ export function startChannelBackendEgressResponder(options: {
       let request: ChannelBackendEgressRequest | undefined;
       try {
         request = ChannelBackendEgressRequestSchema.parse(codec.decode(message.data));
-        if (request.kind === "runtime_event") {
-          const emitted = await runtimeEventSinks.tryEmit(request.target, request.event);
-          response = emitted ? successResponse() : failureResponse(undefined, request, "sink_unavailable");
-        } else {
-          const confirmation = await outputSinks.emit(request.envelope, request.context);
+        const accepted = request;
+        // Keep failures latched even though the wire converts them to a response.
+        response = await workDrain.run("accepted-egress-sink", async () => {
+          if (accepted.kind === "runtime_event") {
+            const emitted = await runtimeEventSinks.tryEmit(accepted.target, accepted.event);
+            return emitted ? successResponse() : failureResponse(undefined, accepted, "sink_unavailable");
+          }
+          const confirmation = await outputSinks.emit(accepted.envelope, accepted.context);
           if (
             confirmation !== undefined &&
             !channelOutputHandoffConfirmationMatches(
               confirmation,
-              request.envelope,
-              request.context?.expectedRequestFingerprint,
+              accepted.envelope,
+              accepted.context?.expectedRequestFingerprint,
             )
           ) {
-            throw unknownOutputHandoff(request.envelope, "INVALID_CONFIRMATION", true);
+            throw unknownOutputHandoff(accepted.envelope, "INVALID_CONFIRMATION", true);
           }
-          response = successResponse(confirmation === undefined ? undefined : confirmation);
-        }
+          return successResponse(confirmation === undefined ? undefined : confirmation);
+        });
       } catch (error) {
         response = failureResponse(error, request);
       }
@@ -223,12 +228,20 @@ export function startChannelBackendEgressResponder(options: {
     }
   })();
 
+  void loop.catch(() => {
+    // no-cause: This observer only latches failure; stop awaits the original loop and propagates its rejection.
+    workDrain.recordFailure("responder-loop");
+  });
+
   return {
     async stop(): Promise<void> {
-      if (stopped) return;
-      stopped = true;
-      subscription.unsubscribe();
-      await loop.catch(() => {});
+      if (!stopped) {
+        stopped = true;
+        workDrain.beginDrain();
+        subscription.unsubscribe();
+      }
+      // Repeated stop must not turn a prior uncertainty into successful drain.
+      await Promise.all([loop, workDrain.waitForDrain()]);
     },
   };
 }

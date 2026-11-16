@@ -363,6 +363,17 @@ it.skipIf(!isolatedPm2Executable)(
         join(packageRoot, "dist", "bundle", "state-boundary.ts"),
       );
       copyFileSync(new URL("./pm2-output.ts", import.meta.url), join(packageRoot, "dist", "pm2-output.ts"));
+      mkdirSync(join(packageRoot, "dist", "threads"), { recursive: true });
+      mkdirSync(join(packageRoot, "dist", "db"), { recursive: true });
+      copyFileSync(
+        new URL("./threads/schema-fence.ts", import.meta.url),
+        join(packageRoot, "dist", "threads", "schema-fence.ts"),
+      );
+      copyFileSync(new URL("./db/schema-lock.ts", import.meta.url), join(packageRoot, "dist", "db", "schema-lock.ts"));
+      copyFileSync(
+        new URL("./db/state-boundary.ts", import.meta.url),
+        join(packageRoot, "dist", "db", "state-boundary.ts"),
+      );
       writeFileSync(
         bundlePath,
         `import { readSync, writeFileSync } from "node:fs";

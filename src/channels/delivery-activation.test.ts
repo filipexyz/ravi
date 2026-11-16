@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "bun";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readFileSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
@@ -14,12 +14,7 @@ import {
   DELIVERY_EFFECTS,
   type DeliveryConsumerInventory,
 } from "./delivery-activation.js";
-import {
-  deliveryBootPath,
-  observeDeliveryProcess,
-  DeliveryProcessObservationError,
-  type DeliveryBootExpectation,
-} from "./delivery-boot.js";
+import { deliveryBootPath, observeDeliveryProcess, type DeliveryBootExpectation } from "./delivery-boot.js";
 
 const fixture = fileURLToPath(new URL("./fixtures/delivery-consumer.ts", import.meta.url));
 const zero = { recovery: 0, pull: 0, claim: 0, send: 0, prune: 0 };
@@ -59,13 +54,24 @@ afterEach(async () => {
   await cleanupIsolatedRaviState(stateDir);
 });
 
-async function consumer(protocol: 1 | 2 = 2, launch: "absolute" | "relative" | "alias" = "absolute") {
+async function consumer(protocol: 1 | 2 = 2, launch: "absolute" | "relative" | "alias" | "removable" = "absolute") {
   const bootId = randomUUID();
   const name = `consumer-${children.length}`;
   const cwd = realpathSync(stateDir);
-  const alias = join(cwd, `${name}.ts`);
+  const bundleFileName = `${name}-${bootId}.ts`;
+  const alias = join(cwd, bundleFileName);
+  const bundle = launch === "removable" || launch === "relative" ? alias : fixture;
+  if (launch === "removable" || launch === "relative") {
+    const source = readFileSync(fixture, "utf8")
+      .replace(
+        '"../delivery-activation.js"',
+        JSON.stringify(fileURLToPath(new URL("./delivery-activation.ts", import.meta.url))),
+      )
+      .replace('"../delivery-boot.js"', JSON.stringify(fileURLToPath(new URL("./delivery-boot.ts", import.meta.url))));
+    writeFileSync(bundle, source);
+  }
   if (launch === "alias") symlinkSync(fixture, alias);
-  const entrypoint = launch === "absolute" ? fixture : launch === "alias" ? alias : relative(cwd, fixture);
+  const entrypoint = launch === "relative" ? `./${bundleFileName}` : launch === "alias" ? alias : bundle;
   const args = [entrypoint, stateDir, dbPath, inventoryPath, bootId, name, String(protocol)];
   const child = spawn([process.execPath, ...args], {
     cwd,
@@ -97,15 +103,17 @@ async function consumer(protocol: 1 | 2 = 2, launch: "absolute" | "relative" | "
   expect(observed).not.toBeNull();
   const expected: DeliveryBootExpectation = {
     ...observed!,
+    argv1Raw: observed!.argv[1]!,
     processName: name,
     bootId,
-    bundlePath: fixture,
-    bundleSha256: createHash("sha256").update(readFileSync(fixture)).digest("hex"),
+    bundlePath: bundle,
+    bundleSha256: createHash("sha256").update(readFileSync(bundle)).digest("hex"),
     stateIdentity: dbPath,
     consumerDomain: "fixture-delivery",
   };
   return {
     child,
+    cwd,
     expected,
     async command(operation: string) {
       child.stdin.write(`${JSON.stringify({ operation })}\n`);
@@ -135,8 +143,9 @@ describe("inactive delivery compatibility gate", () => {
   it("consumer started with a relative script from another directory: cohort supports and all operations proceed", async () => {
     const a = await consumer(2, "relative");
     const b = await consumer();
-    expect(a.expected.cwd).not.toBe(process.cwd());
-    expect(a.expected.argv[1]).not.toStartWith("/");
+    expect(a.cwd).not.toBe(process.cwd());
+    expect(a.expected.argv1Raw).not.toStartWith("/");
+    expect(existsSync(resolve(process.cwd(), a.expected.argv1Raw))).toBe(false);
     inventory([a.expected, b.expected]);
     expect(gate().inspect().relation).toBe("supports");
     for (const instance of [a, b]) {
@@ -169,21 +178,36 @@ describe("inactive delivery compatibility gate", () => {
     }
   });
 
-  it("entrypoint resolution failure is explicit and revokes permits without executing effects", async () => {
-    const a = await consumer(2, "alias");
-    inventory([a.expected]);
+  it("a missing absolute bundle returns unknown with error, no throw, and blocks every operation", async () => {
+    const a = await consumer(2, "removable");
+    const b = await consumer();
+    inventory([a.expected, b.expected]);
     const controller = gate();
     const acquired = controller.acquire();
     if (acquired.relation !== "supports") throw new Error("Expected supported fixture");
-    const alias = a.expected.argv[1]!;
-    unlinkSync(alias);
-    expect(() => controller.inspect()).toThrow(DeliveryProcessObservationError);
-    expect(() => controller.acquire()).toThrow(DeliveryProcessObservationError);
+    for (const instance of [a, b]) expect((await instance.command("acquire")).relation).toBe("supports");
+    const bundleSource = readFileSync(a.expected.bundlePath);
+    unlinkSync(a.expected.bundlePath);
+    expect(existsSync(a.expected.argv1Raw)).toBe(false);
+    const snapshot = controller.inspect();
+    expect(snapshot.relation).toBe("unknown");
+    expect(snapshot.consumers[0]?.error).toMatchObject({
+      code: "DELIVERY_BOOT_OBSERVATION_FAILED",
+      cause: { code: "ENOENT" },
+    });
+    expect(controller.acquire().relation).toBe("unknown");
+    for (const instance of [a, b]) {
+      expect(await instance.command("attempt")).toEqual({
+        failures: [...DELIVERY_EFFECTS],
+        counters: zero,
+        relation: "unknown",
+      });
+    }
     const counters = { ...zero };
     expect(() => controller.run(acquired.permit, "recovery", () => counters.recovery++)).toThrow(
-      DeliveryProcessObservationError,
+      DeliveryCompatibilityBlockedError,
     );
-    symlinkSync(fixture, alias);
+    writeFileSync(a.expected.bundlePath, bundleSource);
     expect(controller.inspect().relation).toBe("supports");
     for (const effect of DELIVERY_EFFECTS) {
       expect(() => controller.run(acquired.permit, effect, () => counters[effect]++)).toThrow(

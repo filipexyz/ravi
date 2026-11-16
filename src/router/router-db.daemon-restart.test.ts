@@ -1,7 +1,8 @@
-import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { openStateDatabase } from "../db/state-boundary.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { prepareThreadFence } from "../threads/schema-fence.js";
 import {
   dbGetDaemonRestartResumeDelivery,
   dbHasDaemonRestartResumeDelivery,
@@ -81,7 +82,8 @@ describe("daemon restart delivery ledger", () => {
 
   it("migrates a legacy delivery table and reads its rows as resume deliveries", () => {
     if (!stateDir) throw new Error("missing isolated state dir");
-    const legacy = new Database(join(stateDir, "ravi.db"));
+    const legacy = openStateDatabase(join(stateDir, "ravi.db"));
+    prepareThreadFence(legacy);
     legacy.exec(`
       CREATE TABLE daemon_restart_epochs (
         restart_epoch TEXT PRIMARY KEY,

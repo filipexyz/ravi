@@ -1,3 +1,5 @@
+import { assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
+import { TrackedWorkDrain, type WorkDrainProof, type WorkDrainStatus } from "../runtime/work-drain.js";
 import { recordManagedRuntimeBoot } from "../runtime-process-identity.js";
 import { closeAllRaviDbs } from "../db/close-all.js";
 import { canonicalStatePath, runAsSchemaConsumer } from "../db/state-boundary.js";
@@ -6,6 +8,7 @@ import { getRaviStateDir } from "../utils/paths.js";
 import { closeNats, connectNats, getNats } from "../nats.js";
 import { configStore } from "../config-store.js";
 import { logger, type LogLevel } from "../utils/logger.js";
+import { reportErrorDiagnostic } from "../utils/error-reporting.js";
 import {
   startNativeInboundChannelActionResponder,
   type NativeInboundChannelActionResponder,
@@ -118,6 +121,10 @@ type AdapterStatus = ChannelAdapterHealth;
 
 export class ChannelRunner {
   private running = false;
+  private drainRequested = false;
+  private startupTask: Promise<void> | null = null;
+  private readonly workDrain = new TrackedWorkDrain("channels.registered-components");
+  private drainTask: Promise<void> | null = null;
   private startedAt: number | null = null;
   private outboundInfrastructureReady = false;
   private outboundPublishReconciler: ChannelOutboundPublishReconciler | null = null;
@@ -132,15 +139,21 @@ export class ChannelRunner {
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
   private backendEgressResponder: ChannelBackendEgressResponder | null = null;
-  private stopBackendPublicationReconciler: (() => void) | null = null;
+  private stopBackendPublicationReconciler: (() => Promise<WorkDrainProof>) | null = null;
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
   async start(): Promise<void> {
-    return runAsSchemaConsumer(() => this.startAsConsumer());
+    assertRuntimeMaintenanceInactive();
+    if (this.drainRequested || this.workDrain.status().phase !== "accepting") {
+      throw new Error("WORK_DRAIN_ADMISSION_CLOSED");
+    }
+    this.startupTask ??= Promise.resolve().then(() => runAsSchemaConsumer(() => this.startAsConsumer()));
+    return this.startupTask;
   }
 
   private async startAsConsumer(): Promise<void> {
+    if (this.drainRequested) return;
     if (this.running) {
       log.warn("Channel runner already started");
       return;
@@ -160,13 +173,18 @@ export class ChannelRunner {
         "STATE_PATH_MISMATCH: channel options and process stores must select the same state and credentials",
       );
     }
-    (await import("../db/runtime-state.js")).assertRuntimeStateReady(process.env);
+    const runtimeState = await import("../db/runtime-state.js");
+    if (this.drainRequested) return;
+    runtimeState.assertRuntimeStateReady(process.env);
     await connectNats(this.options.natsUrl ?? env.NATS_URL ?? "nats://127.0.0.1:4222", {
       explicit: true,
       retry: true,
     });
+    if (this.drainRequested) return;
     await configStore.startRefresh();
+    if (this.drainRequested) return;
     await ensureChannelOutboundInfrastructure();
+    if (this.drainRequested) return;
     runChannelOutboundLedgerMaintenance();
     this.stopReceiptPruner = startChannelOutboundReceiptPruner();
 
@@ -180,6 +198,7 @@ export class ChannelRunner {
     });
 
     await this.startNativeChannels(env);
+    if (this.drainRequested) return;
     this.stopBackendPublicationReconciler = startChannelBackendPublicationReconciler();
     this.backendEgressResponder = startChannelRunnerBackendEgressResponder({
       connection: getNats(),
@@ -218,27 +237,60 @@ export class ChannelRunner {
     return runAsSchemaConsumer(() => this.stopAsConsumer());
   }
 
+  drainStatus(): WorkDrainStatus {
+    return this.workDrain.status();
+  }
+
+  requestDrain(timeoutMs?: number): Promise<WorkDrainProof> {
+    return runAsSchemaConsumer(() => {
+      if (!this.drainTask) {
+        this.drainRequested = true;
+        this.running = false;
+        this.drainTask = this.workDrain.run("registered-component-stops", async () => {
+          this.workDrain.beginDrain();
+          // Start every admission stop before awaiting completion. Pending durable
+          // queues remain untouched; accepted handlers must finish persistence.
+          const stops: Array<() => unknown> = [
+            () => {
+              this.stopReceiptPruner?.();
+              this.stopReceiptPruner = null;
+            },
+            () => this.stopBackendPublicationReconciler?.(),
+            () => this.outboundPublishReconciler?.stop(),
+            () => this.outboundConsumer?.stop(),
+            () => this.presenceConsumer?.stop(),
+            () => this.backendEgressResponder?.stop(),
+            () => this.inboundActionResponder?.stop(),
+            () => this.nativeChannelManager?.stop({ requireDrain: true }),
+          ];
+          const results = await Promise.allSettled([...stops.map(async (stop) => stop()), this.startupTask]);
+          const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+          if (failures.length)
+            throw new AggregateError(failures, "CHANNEL_RUNNER_DRAIN_UNPROVEN", { cause: failures[0] });
+        });
+        // Drain proof retains the failure latch; report the original component causes.
+        void this.drainTask.catch((error) => {
+          reportErrorDiagnostic(log, "Channel runner drain failed", error, {
+            operation: "channel runner drain",
+            code: "CHANNEL_RUNNER_DRAIN_UNPROVEN",
+          });
+        });
+      }
+      return this.workDrain.waitForDrain(timeoutMs);
+    });
+  }
+
   private async stopAsConsumer(): Promise<void> {
-    if (!this.running) return;
-    this.running = false;
+    log.info("Stopping channel runner", { pid: process.pid });
+    await this.requestDrain();
     await this.healthResponder?.stop();
     this.healthResponder = null;
-    this.stopReceiptPruner?.();
-    this.stopReceiptPruner = null;
-    this.stopBackendPublicationReconciler?.();
     this.stopBackendPublicationReconciler = null;
-    log.info("Stopping channel runner", { pid: process.pid });
-    await this.outboundPublishReconciler?.stop();
     this.outboundPublishReconciler = null;
-    await this.outboundConsumer?.stop();
     this.outboundConsumer = null;
-    await this.presenceConsumer?.stop();
     this.presenceConsumer = null;
-    await this.backendEgressResponder?.stop();
     this.backendEgressResponder = null;
-    await this.inboundActionResponder?.stop();
     this.inboundActionResponder = null;
-    await this.nativeChannelManager?.stop();
     this.nativeChannelManager = null;
     this.deliveries = [];
     this.actionDeliveries = [];
@@ -293,11 +345,13 @@ export class ChannelRunner {
       log.warn("Native channel driver configuration was rejected", { reason });
     }
 
+    if (this.drainRequested) return;
     this.nativeChannelManager = new NativeChannelDriverManager({
       channels: configStore.getConfig().channels ?? {},
       registry,
     });
     await this.nativeChannelManager.start();
+    if (this.drainRequested) return;
     this.inboundActionResponder = startChannelRunnerInboundActionResponder({
       connection: getNats(),
       handlers: this.nativeChannelManager.inboundActionHandlers(),
@@ -429,6 +483,7 @@ export function resolveChannelRunnerLogLevel(env: NodeJS.ProcessEnv = process.en
 }
 
 export async function runChannelRunnerFromEnv(): Promise<void> {
+  assertRuntimeMaintenanceInactive();
   logger.setLevel(resolveChannelRunnerLogLevel());
   if (!recordManagedRuntimeBoot("ravi-channels"))
     log.warn("Could not record process boot identity; runtime alignment will remain unverified");

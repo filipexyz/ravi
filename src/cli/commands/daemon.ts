@@ -1,3 +1,4 @@
+import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
 /**
@@ -446,6 +447,7 @@ export class DaemonCommands {
   @CommandAccess({ kind: "mutate", resource: "daemon", action: "start", risk: "high" })
   @Returns(daemonMutationReturnSchema)
   start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
 
     if (isRaviRunning()) {
@@ -463,6 +465,8 @@ export class DaemonCommands {
       }
       return payload;
     }
+
+    assertRuntimeReplacementPrepared();
 
     // Clean up old launchd/systemd if present
     this.cleanupLegacyServices({ silent: Boolean(asJson) });
@@ -544,7 +548,9 @@ export class DaemonCommands {
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
+    assertRuntimeReplacementPrepared();
 
     if (!message) {
       fail('Flag -m é obrigatória. Use: ravi daemon restart -m "motivo"');

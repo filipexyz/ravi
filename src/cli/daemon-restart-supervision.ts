@@ -1,3 +1,4 @@
+import { assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
 /**
  * Supervised daemon restart cutover.
  *
@@ -143,6 +144,7 @@ function result(input: SupervisedDaemonRestartResult): SupervisedDaemonRestartRe
 export async function performSupervisedDaemonRestart(
   deps: SupervisedDaemonRestartDeps,
 ): Promise<SupervisedDaemonRestartResult> {
+  assertRuntimeMaintenanceInactive();
   const processName = deps.processName ?? "ravi";
   const clock = timing(deps);
   const deletedPmIds: number[] = [];
@@ -174,6 +176,7 @@ export async function performSupervisedDaemonRestart(
   let predecessorStopped = false;
 
   const deletePmId = async (pmId: number): Promise<number> => {
+    assertRuntimeMaintenanceInactive();
     const status = await deps.deletePmId(pmId);
     if (status === 0) deletedPmIds.push(pmId);
     return status;
@@ -202,6 +205,7 @@ export async function performSupervisedDaemonRestart(
       deletedPmIds,
     });
 
+  assertRuntimeMaintenanceInactive();
   const startStatus = await deps.start({ force: replaceRunning });
   if (startStatus !== 0) {
     await cleanupUnsupervisedArrivals();
@@ -361,6 +365,7 @@ export async function performSupervisedDaemonRestart(
       await cleanupUnsupervisedArrivals();
       return preserved(successorPmId, saveBeforeStop);
     }
+    assertRuntimeMaintenanceInactive();
     const recoveryStatus = await deps.start({ force: false });
     let recovered: ManagedDaemonProcess | undefined;
     if (recoveryStatus === 0) {

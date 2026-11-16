@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { DELIVERY_CAPABILITIES, type DeliveryCapabilities, isDeliveryCapabilities } from "./delivery-protocol.js";
-import { DeliveryProcessObservationError, observeDeliveryProcess } from "./delivery-process.js";
+import { observeDeliveryProcess } from "./delivery-process.js";
 
-export { DeliveryProcessObservationError, observeDeliveryProcess } from "./delivery-process.js";
+export { observeDeliveryProcess } from "./delivery-process.js";
 
 /** The controller obtains these expectations from its launch inventory, not directory discovery. */
 export type DeliveryBootExpectation = Readonly<{
@@ -13,7 +14,7 @@ export type DeliveryBootExpectation = Readonly<{
   bootId: string;
   processStartToken: string;
   executablePath: string;
-  cwd: string;
+  argv1Raw: string;
   argv: readonly string[];
   bundlePath: string;
   bundleSha256: string;
@@ -24,9 +25,36 @@ export type DeliveryBootExpectation = Readonly<{
 export type DeliveryBootDeclaration = DeliveryBootExpectation &
   DeliveryCapabilities & { readonly bootFormatVersion: 1 };
 
+export type DeliveryObservationDiagnostic = Readonly<{
+  code: string;
+  message: string;
+  cause: Readonly<{ name?: string; code?: string; message: string }>;
+}>;
+
+/** Project the cause once at the observation boundary; never return the raw exception. */
+export function deliveryObservationFailure(
+  error: unknown,
+  reason: string,
+  code: string,
+): { relation: "unknown"; reason: string; error: DeliveryObservationDiagnostic } {
+  const diagnostic = errorDiagnostic(error, { operation: "delivery_observation" });
+  return {
+    relation: "unknown",
+    reason,
+    error: {
+      code,
+      message: `Delivery observation failed: ${diagnostic.cause}`,
+      cause: {
+        ...(diagnostic.context.code ? { code: diagnostic.context.code } : {}),
+        message: diagnostic.cause,
+      },
+    },
+  };
+}
+
 export type DeliveryBootReadResult =
   | { relation: "known"; boot: DeliveryBootDeclaration }
-  | { relation: "unknown" | "unsupported"; reason: string };
+  | { relation: "unknown" | "unsupported"; reason: string; error?: DeliveryObservationDiagnostic };
 
 type BootAddress = Pick<DeliveryBootExpectation, "processName" | "pid" | "bootId">;
 
@@ -62,11 +90,12 @@ function validExpectation(value: DeliveryBootExpectation): boolean {
     value.processStartToken.length > 0 &&
     typeof value.executablePath === "string" &&
     value.executablePath.startsWith("/") &&
-    typeof value.cwd === "string" &&
-    value.cwd.startsWith("/") &&
     Array.isArray(value.argv) &&
     value.argv.length >= 2 &&
     value.argv.every((arg) => typeof arg === "string") &&
+    typeof value.argv1Raw === "string" &&
+    value.argv1Raw.length > 0 &&
+    value.argv1Raw === value.argv[1] &&
     typeof value.bundlePath === "string" &&
     value.bundlePath.startsWith("/") &&
     typeof value.bundleSha256 === "string" &&
@@ -78,33 +107,6 @@ function validExpectation(value: DeliveryBootExpectation): boolean {
   );
 }
 
-function canonicalEntrypoint(pid: number, cwd: string, entrypoint: string): string {
-  try {
-    return realpathSync(resolve(cwd, entrypoint));
-  } catch (cause) {
-    throw new DeliveryProcessObservationError(
-      "ENTRYPOINT_RESOLUTION_FAILED",
-      `Cannot resolve delivery entrypoint for PID ${pid} against consumer cwd ${cwd}: ${entrypoint}`,
-      { cause },
-    );
-  }
-}
-
-function argvMatches(
-  actual: Pick<DeliveryBootExpectation, "pid" | "cwd" | "argv">,
-  expected: Pick<DeliveryBootExpectation, "pid" | "cwd" | "argv">,
-): boolean {
-  return (
-    actual.argv.length === expected.argv.length &&
-    actual.argv.every((arg, index) =>
-      index === 1
-        ? canonicalEntrypoint(actual.pid, actual.cwd, arg) ===
-          canonicalEntrypoint(expected.pid, expected.cwd, expected.argv[index]!)
-        : arg === expected.argv[index],
-    )
-  );
-}
-
 function identityMatches(actual: DeliveryBootExpectation, expected: DeliveryBootExpectation): boolean {
   return (
     actual.processName === expected.processName &&
@@ -112,10 +114,8 @@ function identityMatches(actual: DeliveryBootExpectation, expected: DeliveryBoot
     actual.bootId === expected.bootId &&
     actual.processStartToken === expected.processStartToken &&
     actual.executablePath === expected.executablePath &&
-    actual.cwd === expected.cwd &&
-    argvMatches(actual, expected) &&
-    actual.bundlePath === expected.bundlePath &&
-    actual.bundleSha256 === expected.bundleSha256 &&
+    actual.argv1Raw === expected.argv1Raw &&
+    JSON.stringify(actual.argv) === JSON.stringify(expected.argv) &&
     actual.stateIdentity === expected.stateIdentity &&
     actual.consumerDomain === expected.consumerDomain
   );
@@ -128,19 +128,19 @@ function observeExpectedProcess(
   if (
     !observed ||
     observed.processStartToken !== expected.processStartToken ||
-    observed.executablePath !== expected.executablePath ||
-    observed.cwd !== expected.cwd
+    observed.executablePath !== expected.executablePath
   )
     return { relation: "unknown", reason: "process_identity_unverified" };
   // Only direct Bun entrypoints are supported here. An ambiguous wrapper/flag layout is unknown.
   if (!observed.argv[1] || observed.argv[1].startsWith("-"))
     return { relation: "unknown", reason: "direct_entrypoint_unobservable" };
-  const entrypoint = canonicalEntrypoint(observed.pid, observed.cwd, observed.argv[1]);
-  const bundle = canonicalEntrypoint(expected.pid, expected.cwd, expected.bundlePath);
-  if (entrypoint !== bundle) return { relation: "unsupported", reason: "entrypoint_bundle_mismatch" };
-  if (!argvMatches(observed, expected)) return { relation: "unknown", reason: "process_arguments_mismatch" };
-  if (bundle !== expected.bundlePath) return { relation: "unknown", reason: "noncanonical_expected_bundle" };
-  if (digestBundle(bundle) !== expected.bundleSha256)
+  // argv1Raw is bound by the publisher inside the consumer. Never resolve raw argv here.
+  if (observed.argv[1] !== expected.argv1Raw) return { relation: "unsupported", reason: "entrypoint_bundle_mismatch" };
+  if (JSON.stringify(observed.argv) !== JSON.stringify(expected.argv))
+    return { relation: "unknown", reason: "process_arguments_mismatch" };
+  if (realpathSync(expected.bundlePath) !== expected.bundlePath)
+    return { relation: "unsupported", reason: "entrypoint_bundle_mismatch" };
+  if (digestBundle(expected.bundlePath) !== expected.bundleSha256)
     return { relation: "unsupported", reason: "bundle_digest_mismatch" };
   return { relation: "known" };
 }
@@ -158,14 +158,15 @@ export function publishDeliveryBoot(input: {
   const bundlePath = realpathSync(input.bundlePath);
   if (
     !observed ||
-    canonicalEntrypoint(process.pid, observed.cwd, process.argv[1] ?? "") !== bundlePath ||
-    canonicalEntrypoint(process.pid, observed.cwd, observed.argv[1] ?? "") !== bundlePath
+    realpathSync(process.argv[1] ?? "") !== bundlePath ||
+    realpathSync(observed.argv[1] ?? "") !== bundlePath
   ) {
     throw new Error("Delivery boot requires an observable direct process entrypoint");
   }
   const boot: DeliveryBootDeclaration = {
     bootFormatVersion: 1,
     ...observed,
+    argv1Raw: observed.argv[1]!,
     processName: input.processName,
     bootId: input.bootId,
     bundlePath,
@@ -235,12 +236,15 @@ export function readVerifiedDeliveryBoot(input: {
     if (!identityMatches(boot, input.expected)) {
       return { relation: "unknown", reason: "boot_identity_mismatch" };
     }
+    // The publisher established the raw-argv -> absolute bundle link in its own cwd.
+    if (boot.bundlePath !== input.expected.bundlePath)
+      return { relation: "unsupported", reason: "entrypoint_bundle_mismatch" };
+    if (boot.bundleSha256 !== input.expected.bundleSha256)
+      return { relation: "unsupported", reason: "bundle_digest_mismatch" };
     const finalObservation = observeExpectedProcess(input.expected);
     if (finalObservation.relation !== "known") return finalObservation;
     return { relation: "known", boot };
   } catch (error) {
-    if (error instanceof DeliveryProcessObservationError) throw error;
-    // no-cause: Missing or unverifiable boot evidence deliberately returns unknown, never a health fallback.
-    return { relation: "unknown", reason: "boot_evidence_unavailable" };
+    return deliveryObservationFailure(error, "boot_evidence_unavailable", "DELIVERY_BOOT_OBSERVATION_FAILED");
   }
 }

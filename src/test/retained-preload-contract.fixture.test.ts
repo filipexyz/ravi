@@ -1,5 +1,6 @@
 /** One bounded scenario per fresh child; the outer runner checks fatal guard outcomes separately. */
 import { expect, test } from "bun:test";
+import { join } from "node:path";
 import type { probe as Probe } from "./retained-preload-contract.bootstrap.js";
 import { runRetainedSqliteScenario } from "./retained-preload-sqlite-cases.js";
 
@@ -35,6 +36,28 @@ test(`retained guard contract: ${scenario}`, async () => {
       expect(probe.calls).toEqual([{ operation: "linkSync", path: `${probe.state}/synthetic-source` }]);
     } else throw new Error(`Unknown link scenario ${scenario}`);
     if (scenario !== "link-inside") expect(probe.calls).toEqual([]);
+  } else if (scenario === "account-identity") {
+    const { resolveAccountHome } = await import("../utils/account-home.js");
+    const processes = await import("node:child_process");
+    // biome-ignore lint/style/useNodejsImportProtocol: the bare builtin alias must retain the same process guard.
+    const bare = await import("child_process");
+    const uid = process.getuid!();
+    const darwin = process.platform === "darwin";
+    const command = darwin ? "/usr/bin/dscacheutil" : "/usr/bin/getent";
+    const args = darwin ? ["-q", "user", "-a", "uid", String(uid)] : ["passwd", String(uid)];
+    expect(resolveAccountHome()).toBe(join(probe.state, "home"));
+    expect(bare.spawnSync(command, args, { encoding: "utf8" }).status).toBe(0);
+    expect(() => processes.spawnSync("/__ravi_synthetic_never_exists__", [])).toThrow(
+      "TEST_NETWORK_OR_PROCESS_BLOCKED",
+    );
+    expect(() => processes.spawnSync(command, [...args, "extra"], { encoding: "utf8" })).toThrow(
+      "TEST_NETWORK_OR_PROCESS_BLOCKED",
+    );
+    expect(() => processes.spawnSync(command, args)).toThrow("TEST_NETWORK_OR_PROCESS_BLOCKED");
+    expect(() =>
+      processes.default.spawnSync(command, [...args.slice(0, -1), String(uid + 1)], { encoding: "utf8" }),
+    ).toThrow("TEST_NETWORK_OR_PROCESS_BLOCKED");
+    expect(() => processes.spawn(command, args)).toThrow("TEST_NETWORK_OR_PROCESS_BLOCKED");
   } else if (scenario.startsWith("dns-")) {
     const dns = await import("node:dns");
     // biome-ignore lint/style/useNodejsImportProtocol: the bare builtin alias is the regression surface.

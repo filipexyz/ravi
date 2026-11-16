@@ -90,10 +90,17 @@ export function assessSessionThreadIdentity(
  * Runs inside the rename's write.
  */
 export function renameThreadSessionNames(database: Database, sessionKey: string, newName: string): void {
-  database
-    .prepare("UPDATE slack_thread_lifecycle SET child_session_name = ? WHERE child_session_key = ?")
-    .run(newName, sessionKey);
-  database
-    .prepare("UPDATE slack_thread_lifecycle SET parent_session_name = ? WHERE parent_session_key = ?")
-    .run(newName, sessionKey);
+  runThreadMutation(
+    database,
+    "UPDATE slack_thread_lifecycle SET child_session_name = ? WHERE child_session_key = ?",
+    newName,
+    sessionKey,
+  );
+  runThreadMutation(
+    database,
+    "UPDATE slack_thread_lifecycle SET parent_session_name = ? WHERE parent_session_key = ?",
+    newName,
+    sessionKey,
+  );
 }
+import { runThreadMutation } from "../threads/schema-fence.js";

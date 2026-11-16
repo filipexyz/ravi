@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { runThreadMutation } from "../threads/schema-fence.js";
 
 /** Run only as part of opening the DB. No provider calls or production-specific repair. */
 export function migrateDecisions(db: Database): void {
@@ -49,18 +50,27 @@ export function migrateDecisions(db: Database): void {
     const legacy = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='task_decisions'").get();
     if (!legacy) return;
     // Strict insert: an unexpected collision rolls the entire migration back.
-    db.exec(`INSERT INTO decisions (
+    runThreadMutation(
+      db,
+      `INSERT INTO decisions (
       id,origin_type,origin_id,key,status,owner_type,owner_id,ask,asked_by,asked_at,
       answer,answered_by,answered_at,blocks,created_at,updated_at
     ) SELECT id,'task',task_id,key,status,owner_type,owner_id,ask,asked_by,asked_at,
-      answer,answered_by,answered_at,blocks,created_at,updated_at FROM task_decisions`);
+      answer,answered_by,answered_at,blocks,created_at,updated_at FROM task_decisions`,
+    );
     // Preserve the original table's full row as migration evidence; task_events remains untouched.
     const rows = db.query("SELECT * FROM task_decisions").all() as Array<Record<string, unknown>>;
-    const insert = db.prepare(
-      "INSERT INTO decision_history(decision_id,type,actor,snapshot_json,created_at) VALUES (?,'migrated',?,?,?)",
-    );
+    const insert =
+      "INSERT INTO decision_history(decision_id,type,actor,snapshot_json,created_at) VALUES (?,'migrated',?,?,?)";
     for (const row of rows)
-      insert.run(String(row.id), row.asked_by as string | null, JSON.stringify(row), Number(row.created_at));
+      runThreadMutation(
+        db,
+        insert,
+        String(row.id),
+        row.asked_by as string | null,
+        JSON.stringify(row),
+        Number(row.created_at),
+      );
     db.exec("DROP TABLE task_decisions");
   }).immediate();
 }

@@ -36,5 +36,20 @@ primitive directly and reports success only after the producer and subscription
 exist. Re-running is also the reconciliation path for already published PRs.
 
 Publishing ready is smaller than introducing a second state machine that waits
-for every non-review check and then promotes a draft. The Review Gate already
-requires independent approval on the current head; ready does not grant it.
+for every non-review check and then promotes a draft. Independent review is
+recorded against the current head in the PR description; ready does not grant it.
+
+## Why PR Follows Deliver Each Event Immediately
+
+PR #833 received three review comments at `2026-11-15T23:52:33Z`. The generated
+follow's 30-second cooldown delivered only one and discarded the other two.
+Cooldown is rate suppression, not event deduplication, and CI/lifecycle changes
+are also distinct information that must not compete with comments for a window.
+
+The current debounce is bounded to 200 events and drops pending batches on
+runner stop. Setting both cooldown and debounce to zero preserves distinct
+events without introducing another queue or changing the shared debounce
+contract. The tradeoff is one prompt per distinct event; existing `dedupeKey`
+and trigger-origin guards still suppress immediate retries and loops.
+Maintenance repairs stored follows so the fix reaches subscriptions created
+before the upgrade, not only newly published PRs.

@@ -21,6 +21,8 @@ export function followFingerprint(trigger: Partial<Trigger>): string {
         trigger.replySession,
         trigger.replySource,
         trigger.session,
+        trigger.cooldownMs,
+        trigger.debounceMs ?? 0,
       ]),
     )
     .digest("hex");
