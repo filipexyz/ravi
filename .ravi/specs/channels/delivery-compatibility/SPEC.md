@@ -33,22 +33,26 @@ initialize it. Compatibility is necessary but is not a cutover or send permit.
   capabilities MUST NOT be overridden by environment or health data.
 - A private immutable file under
   `runtime-processes/delivery/<name>-<pid>-<bootId>.json` MUST bind that declaration
-  to a live OS process start token, executable, working directory, arguments and bundle digest.
+  to a live OS process start token, executable, exact kernel arguments and bundle digest.
   The controller supplies independently observed launch expectations. File
   discovery alone MUST NOT define the expected consumer inventory.
 - Kernel process observation MUST distinguish boot identity from PID existence.
   Missing, dead, reused or inaccessible process identity and unsupported OS
   layouts MUST produce unknown. An orphan file MUST NOT authorize anything.
-- A direct entrypoint MUST be resolved against the consumer's kernel-observed
-  working directory and canonicalized before comparison. The controller's cwd
-  MUST NOT affect the result. Relative, absolute and symlink spellings of the
-  same entrypoint MUST compare equally; other arguments remain exact.
-- A positively observed different entrypoint or bundle digest MUST be
-  unsupported. An observer unable to resolve the consumer cwd or entrypoint
-  MUST throw `DeliveryProcessObservationError` with a diagnostic code and cause,
-  rather than silently reducing that defect to unknown. Both errors and rejected
-  relations MUST prevent callbacks; an observation error during revalidation
-  permanently revokes the existing permit. Absent process or boot evidence
+- The publisher inside the consumer MUST capture `argv1Raw` exactly as observed
+  from the kernel and bind it to an absolute canonical `bundlePath`. Only that
+  publisher resolves the raw entrypoint in its own cwd. The controller MUST NOT
+  resolve raw argv or depend on observing the consumer's cwd.
+- Verification MUST compare `observed.argv[1] === expected.argv1Raw`, exact full
+  argv equality, process start token and executable. The declaration MUST agree
+  with the launch expectation on raw argv and absolute bundle. The absolute
+  expected bundle MUST remain canonical and match its expected digest.
+- A positively observed different entrypoint/bundle or bundle digest MUST be
+  unsupported. Missing/unreadable bundle or failed realpath MUST return unknown
+  with a serializable diagnostic code, message and underlying cause; verification
+  and gate inspect/acquire MUST NOT throw a raw filesystem exception. Diagnostics
+  MUST survive in the aggregate snapshot. Unknown never permits a callback and
+  revokes an existing permit on revalidation. Absent process/boot evidence
   remains unknown. Ambiguous wrapper/flag launch layouts are not supported.
 - `channel_delivery_contract` MUST be read with a readonly/create:false SQLite
   handle and no store initializer. The singleton defines migration id/digest,

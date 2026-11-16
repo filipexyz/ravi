@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   readVerifiedDeliveryBoot,
-  DeliveryProcessObservationError,
+  deliveryObservationFailure,
+  type DeliveryObservationDiagnostic,
   type DeliveryBootDeclaration,
   type DeliveryBootExpectation,
 } from "./delivery-boot.js";
@@ -20,7 +21,14 @@ export interface DeliveryConsumerInventory {
 export interface DeliveryCompatibilitySnapshot {
   relation: CompatibilityRelation;
   reason: string;
-  consumers: readonly { pid: number; bootId: string; relation: CompatibilityRelation; reason: string }[];
+  error?: DeliveryObservationDiagnostic;
+  consumers: readonly {
+    pid: number;
+    bootId: string;
+    relation: CompatibilityRelation;
+    reason: string;
+    error?: DeliveryObservationDiagnostic;
+  }[];
   fingerprint?: string;
 }
 
@@ -81,7 +89,13 @@ export function createDeliveryCompatibilityGate(options: {
       const consumers = inventory.consumers.map((expected) => {
         const read = readVerifiedDeliveryBoot({ stateDir: options.stateDir, expected });
         if (read.relation !== "known") {
-          return { pid: expected.pid, bootId: expected.bootId, relation: read.relation, reason: read.reason };
+          return {
+            pid: expected.pid,
+            bootId: expected.bootId,
+            relation: read.relation,
+            reason: read.reason,
+            ...(read.error ? { error: read.error } : {}),
+          };
         }
         declarations.push(read.boot);
         const verdict = compareDeliveryCompatibility(floor.contract, read.boot);
@@ -111,9 +125,14 @@ export function createDeliveryCompatibilityGate(options: {
           : {}),
       };
     } catch (error) {
-      if (error instanceof DeliveryProcessObservationError) throw error;
-      // no-cause: Failed observation is intentionally unknown evidence; it never permits an effect callback.
-      return unknown("COMPATIBILITY_OBSERVATION_FAILED");
+      return {
+        ...deliveryObservationFailure(
+          error,
+          "COMPATIBILITY_OBSERVATION_FAILED",
+          "DELIVERY_COMPATIBILITY_OBSERVATION_FAILED",
+        ),
+        consumers: [],
+      };
     }
   }
 
@@ -134,13 +153,7 @@ export function createDeliveryCompatibilityGate(options: {
     if (!record || record.invalidated || !DELIVERY_EFFECTS.includes(effect)) {
       throw new DeliveryCompatibilityBlockedError(effect, unknown("PERMIT_INVALID"));
     }
-    let snapshot: DeliveryCompatibilitySnapshot;
-    try {
-      snapshot = inspect();
-    } catch (error) {
-      record.invalidated = true;
-      throw error;
-    }
+    const snapshot = inspect();
     if (snapshot.relation !== "supports" || snapshot.fingerprint !== record.fingerprint) {
       record.invalidated = true;
       throw new DeliveryCompatibilityBlockedError(
