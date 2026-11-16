@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { Gateway } from "./gateway.js";
+import { AsyncResource } from "node:async_hooks";
+import type { TrackedWorkDrain } from "./runtime/work-drain.js";
 import { nats } from "./nats.js";
 import * as lifecycle from "./channels/slack/thread-lifecycle.js";
 import * as outbox from "./channels/outbound-publish-outbox.js";
@@ -16,10 +18,12 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-s
 
 function deferred() {
   let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function gatewayHarness() {
@@ -231,6 +235,91 @@ describe("gateway drain", () => {
       subscription.mockRestore();
     }
   });
+
+  for (const timerKind of ["interrupted-stop", "post-delivery-renew"] as const) {
+    for (const outcome of ["success", "failure"] as const) {
+      it(`waits for in-flight ${timerKind} and ${outcome === "failure" ? "rejects its late failure" : "certifies only after completion"}`, async () => {
+        const gateway = new Gateway({ omniSender: {} as never, omniConsumer: {} as never });
+        const internals = gateway as unknown as {
+          running: boolean;
+          workDrain: TrackedWorkDrain;
+          activeRuntimeSessions: Set<string>;
+          runtimeActivitySequences: Map<string, number>;
+          scheduleInterruptedPresenceStop(session: string, target: NonNullable<ResponseMessage["target"]>): void;
+          schedulePostDeliveryPresenceRenewal(
+            session: string,
+            target: NonNullable<ResponseMessage["target"]>,
+            reason: string,
+          ): void;
+          stopPresenceForSession(): Promise<void>;
+          forceRenewTyping(): Promise<void>;
+        };
+        internals.running = true;
+        const session = "presence-drain-session";
+        const target = { channel: "slack", accountId: "presence-account", chatId: "presence-chat" };
+        internals.activeRuntimeSessions.add(session);
+        internals.runtimeActivitySequences.set(session, 1);
+        const finish = deferred();
+        const method = timerKind === "interrupted-stop" ? "stopPresenceForSession" : "forceRenewTyping";
+        const action = spyOn(internals, method).mockImplementation(() => finish.promise);
+        let fire: (() => void) | undefined;
+        let scheduledDelay: number | undefined;
+        const timer = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay) => {
+          if (typeof callback !== "function") throw new Error("Expected a function timer");
+          // Retain the scheduling handler's ALS context, then fire after that
+          // handler completes: the timer must become its own tracked work.
+          fire = AsyncResource.bind(callback as () => void);
+          scheduledDelay = delay;
+          return { unref() {} } as unknown as ReturnType<typeof setTimeout>;
+        });
+        try {
+          await internals.workDrain.run("presence-parent", () => {
+            if (timerKind === "interrupted-stop") internals.scheduleInterruptedPresenceStop(session, target);
+            else internals.schedulePostDeliveryPresenceRenewal(session, target, "test-renew");
+          });
+          expect(gateway.drainStatus()).toMatchObject({ accepted: 1, completed: 1, pending: 0 });
+          expect(scheduledDelay).toBe(timerKind === "interrupted-stop" ? 15_000 : 1_000);
+          internals.runtimeActivitySequences.set(session, 2);
+          if (!fire) throw new Error("Presence timer was not scheduled");
+          fire();
+          timer.mockRestore();
+          expect(action).toHaveBeenCalledTimes(1);
+          expect(action.mock.calls[0]).toEqual(
+            timerKind === "interrupted-stop" ? [session, target] : [session, target, "test-renew"],
+          );
+          let settled = false;
+          const draining = gateway.requestDrain();
+          void draining.then(
+            () => {
+              settled = true;
+            },
+            () => {
+              settled = true;
+            },
+          );
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(settled).toBe(false);
+          expect(gateway.drainStatus()).toMatchObject({ phase: "draining", accepted: 2, completed: 1, pending: 1 });
+          if (outcome === "failure") {
+            finish.reject(new Error("late presence failure"));
+            await expect(draining).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+            expect(gateway.drainStatus().failures).toContain(
+              timerKind === "interrupted-stop" ? "presence-interrupted-cleanup" : "presence-post-delivery-renew",
+            );
+          } else {
+            finish.resolve();
+            expect(await draining).toMatchObject({ accepted: 2, completed: 2 });
+            expect(gateway.drainStatus()).toMatchObject({ phase: "drained", pending: 0, failures: [] });
+          }
+        } finally {
+          finish.resolve();
+          internals.running = false;
+          timer.mockRestore();
+          action.mockRestore();
+        }
+      });
+    }
+  }
 
   it("awaits active Slack reconciliation instead of certifying timer cancellation", async () => {
     const finish = deferred();

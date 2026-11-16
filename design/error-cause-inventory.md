@@ -1099,31 +1099,31 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | gateway.ts | src/gateway.ts | 849 | fixed | binding retained / no recognized error surface | src/gateway.ts:fa63ed24629f683454801745 |
 | gateway.ts | src/gateway.ts | 864 | fixed | binding retained / no recognized error surface | src/gateway.ts:e41d3d02c87fdc7012b928e4 |
 | gateway.ts | src/gateway.ts | 879 | fixed | binding retained / no recognized error surface | src/gateway.ts:4f8bdb5f0c19fa1447accabb |
-| gateway.ts | src/gateway.ts | 944 | fixed | binding retained / no recognized error surface | src/gateway.ts:1bdb8630af26482f8917c9ac |
-| gateway.ts | src/gateway.ts | 1016 | fixed | binding retained / no recognized error surface | src/gateway.ts:bfc879057e511da475086a67 |
-| gateway.ts | src/gateway.ts | 1052 | fixed | binding retained / no recognized error surface | src/gateway.ts:4e7648713d99b322deb34eb1 |
-| gateway.ts | src/gateway.ts | 1144 | fixed | binding retained / no recognized error surface | src/gateway.ts:405e6dfdfba630213ff99b95 |
-| gateway.ts | src/gateway.ts | 1165 | fixed | binding retained / no recognized error surface | src/gateway.ts:3247d00cc1a83e4e29a686c2 |
-| gateway.ts | src/gateway.ts | 1177 | fixed | binding retained / no recognized error surface | src/gateway.ts:0ad95975d5842e01f798f743 |
-| gateway.ts | src/gateway.ts | 1433 | triaged-follow-up | surface-bypasses-constructor | src/gateway.ts:fef810b49e7e230ff287054f |
-| gateway.ts | src/gateway.ts | 1498 | fixed | binding retained / no recognized error surface | src/gateway.ts:f638e4431b3e6a55e04fc6ed |
-| gateway.ts | src/gateway.ts | 1502 | triaged-follow-up | surface-bypasses-constructor | src/gateway.ts:49a19f1559aad6da19e61c67 |
-| gateway.ts | src/gateway.ts | 1682 | triaged-follow-up | surface-bypasses-constructor | src/gateway.ts:792fc2bef4e1b7081ace9e9a |
-| gateway.ts | src/gateway.ts | 1721 | fixed | binding retained / no recognized error surface | src/gateway.ts:541b3c7fbf3705891805eeb7 |
-| gateway.ts | src/gateway.ts | 1832 | fixed | binding retained / no recognized error surface | src/gateway.ts:5fdd5ba72ea3b93a8e1a0a2c |
-| gateway.ts | src/gateway.ts | 1851 | fixed | binding retained / no recognized error surface | src/gateway.ts:5918a8764988353491c7a8f0 |
-| gateway.ts | src/gateway.ts | 1889 | fixed | binding retained / no recognized error surface | src/gateway.ts:f9cc28038a52d705fc5b8f1b |
-| gateway.ts | src/gateway.ts | 1893 | fixed | binding retained / no recognized error surface | src/gateway.ts:a6ec4c5c8f9e0f5ef70ead69 |
-| gateway.ts | src/gateway.ts | 2054 | no-cause | Approval delivery errors may contain provider credentials; emit only the fixed failure notice. | src/gateway.ts:843d64e07af813c62ed44425 |
-| gateway.ts | src/gateway.ts | 2176 | fixed | binding retained / no recognized error surface | src/gateway.ts:ebddfa2f1464a6bb10d7fd20 |
-| gateway.ts | src/gateway.ts | 2252 | fixed | binding retained / no recognized error surface | src/gateway.ts:814d44cd282a584820ef06ea |
-| gateway.ts | src/gateway.ts | 2283 | fixed | binding retained / no recognized error surface | src/gateway.ts:fb2aa8ecc4899ed1d2fce174 |
-| gateway.ts | src/gateway.ts | 2380 | fixed | binding retained / no recognized error surface | src/gateway.ts:58107c3076326a0c1141d347 |
-| gateway.ts | src/gateway.ts | 2492 | fixed | binding retained / no recognized error surface | src/gateway.ts:1ae66150ff66d1c0056d5754 |
-| gateway.ts | src/gateway.ts | 2576 | fixed | binding retained / no recognized error surface | src/gateway.ts:ea1c50976f5828da1d627933 |
-| gateway.ts | src/gateway.ts | 2632 | fixed | binding retained / no recognized error surface | src/gateway.ts:1b931a855e441f17a1ff507e |
-| gateway.ts | src/gateway.ts | 2705 | fixed | binding retained / no recognized error surface | src/gateway.ts:df08e1b73004bba2210a2849 |
-| gateway.ts | src/gateway.ts | 2739 | fixed | binding retained / no recognized error surface | src/gateway.ts:a6345a2ea1d8fc290932c31f |
+| gateway.ts | src/gateway.ts | 946 | fixed | binding retained / no recognized error surface | src/gateway.ts:1bdb8630af26482f8917c9ac |
+| gateway.ts | src/gateway.ts | 1020 | fixed | binding retained / no recognized error surface | src/gateway.ts:bfc879057e511da475086a67 |
+| gateway.ts | src/gateway.ts | 1056 | fixed | binding retained / no recognized error surface | src/gateway.ts:4e7648713d99b322deb34eb1 |
+| gateway.ts | src/gateway.ts | 1148 | fixed | binding retained / no recognized error surface | src/gateway.ts:405e6dfdfba630213ff99b95 |
+| gateway.ts | src/gateway.ts | 1169 | fixed | binding retained / no recognized error surface | src/gateway.ts:3247d00cc1a83e4e29a686c2 |
+| gateway.ts | src/gateway.ts | 1181 | fixed | binding retained / no recognized error surface | src/gateway.ts:0ad95975d5842e01f798f743 |
+| gateway.ts | src/gateway.ts | 1437 | triaged-follow-up | surface-bypasses-constructor | src/gateway.ts:fef810b49e7e230ff287054f |
+| gateway.ts | src/gateway.ts | 1502 | fixed | binding retained / no recognized error surface | src/gateway.ts:f638e4431b3e6a55e04fc6ed |
+| gateway.ts | src/gateway.ts | 1506 | triaged-follow-up | surface-bypasses-constructor | src/gateway.ts:49a19f1559aad6da19e61c67 |
+| gateway.ts | src/gateway.ts | 1686 | triaged-follow-up | surface-bypasses-constructor | src/gateway.ts:792fc2bef4e1b7081ace9e9a |
+| gateway.ts | src/gateway.ts | 1725 | fixed | binding retained / no recognized error surface | src/gateway.ts:541b3c7fbf3705891805eeb7 |
+| gateway.ts | src/gateway.ts | 1836 | fixed | binding retained / no recognized error surface | src/gateway.ts:5fdd5ba72ea3b93a8e1a0a2c |
+| gateway.ts | src/gateway.ts | 1855 | fixed | binding retained / no recognized error surface | src/gateway.ts:5918a8764988353491c7a8f0 |
+| gateway.ts | src/gateway.ts | 1893 | fixed | binding retained / no recognized error surface | src/gateway.ts:f9cc28038a52d705fc5b8f1b |
+| gateway.ts | src/gateway.ts | 1897 | fixed | binding retained / no recognized error surface | src/gateway.ts:a6ec4c5c8f9e0f5ef70ead69 |
+| gateway.ts | src/gateway.ts | 2058 | no-cause | Approval delivery errors may contain provider credentials; emit only the fixed failure notice. | src/gateway.ts:843d64e07af813c62ed44425 |
+| gateway.ts | src/gateway.ts | 2180 | fixed | binding retained / no recognized error surface | src/gateway.ts:ebddfa2f1464a6bb10d7fd20 |
+| gateway.ts | src/gateway.ts | 2256 | fixed | binding retained / no recognized error surface | src/gateway.ts:814d44cd282a584820ef06ea |
+| gateway.ts | src/gateway.ts | 2287 | fixed | binding retained / no recognized error surface | src/gateway.ts:fb2aa8ecc4899ed1d2fce174 |
+| gateway.ts | src/gateway.ts | 2384 | fixed | binding retained / no recognized error surface | src/gateway.ts:58107c3076326a0c1141d347 |
+| gateway.ts | src/gateway.ts | 2496 | fixed | binding retained / no recognized error surface | src/gateway.ts:1ae66150ff66d1c0056d5754 |
+| gateway.ts | src/gateway.ts | 2580 | fixed | binding retained / no recognized error surface | src/gateway.ts:ea1c50976f5828da1d627933 |
+| gateway.ts | src/gateway.ts | 2636 | fixed | binding retained / no recognized error surface | src/gateway.ts:1b931a855e441f17a1ff507e |
+| gateway.ts | src/gateway.ts | 2709 | fixed | binding retained / no recognized error surface | src/gateway.ts:df08e1b73004bba2210a2849 |
+| gateway.ts | src/gateway.ts | 2743 | fixed | binding retained / no recognized error surface | src/gateway.ts:a6345a2ea1d8fc290932c31f |
 | heartbeat | src/heartbeat/runner.ts | 152 | fixed | binding retained / no recognized error surface | src/heartbeat/runner.ts:a6b2da222c3e90ad6cb30904 |
 | hooks-runtime | src/hooks-runtime/db.ts | 101 | triaged-follow-up | catch-without-binding | src/hooks-runtime/db.ts:3c08a152288c09ea27823b56 |
 | hooks-runtime | src/hooks-runtime/runner.ts | 281 | fixed | binding retained / no recognized error surface | src/hooks-runtime/runner.ts:62f3b527b3513d4a42ca504e |

@@ -941,10 +941,12 @@ export class Gateway {
     const timer = setTimeout(() => {
       this.interruptedPresenceStops.delete(sessionName);
       if (!this.running) return;
-      this.stopPresenceForSession(sessionName, target).catch((error) => {
-        this.workDrain.recordFailure("presence-interrupted-cleanup");
-        log.debug("Interrupted presence cleanup failed", { sessionName, error });
-      });
+      this.workDrain
+        .runContinuation("presence-interrupted-cleanup", () => this.stopPresenceForSession(sessionName, target))
+        .catch((error) => {
+          this.workDrain.recordFailure("presence-interrupted-cleanup");
+          log.debug("Interrupted presence cleanup failed", { sessionName, error });
+        });
     }, INTERRUPTED_PRESENCE_GRACE_MS);
     timer.unref?.();
     this.interruptedPresenceStops.set(sessionName, timer);
@@ -1013,10 +1015,12 @@ export class Gateway {
       if (!this.running || !this.activeRuntimeSessions.has(sessionName)) return;
       if (this.terminalRuntimeSessions.has(sessionName)) return;
       if ((this.runtimeActivitySequences.get(sessionName) ?? 0) <= scheduledAfterActivity) return;
-      this.forceRenewTyping(sessionName, target, reason).catch((error) => {
-        this.workDrain.recordFailure("presence-post-delivery-renew");
-        log.debug("Post-delivery presence renewal failed", { sessionName, error });
-      });
+      this.workDrain
+        .runContinuation("presence-post-delivery-renew", () => this.forceRenewTyping(sessionName, target, reason))
+        .catch((error) => {
+          this.workDrain.recordFailure("presence-post-delivery-renew");
+          log.debug("Post-delivery presence renewal failed", { sessionName, error });
+        });
     }, POST_DELIVERY_RENEW_DELAY_MS);
     timer.unref?.();
     this.postDeliveryRenewals.set(sessionName, timer);

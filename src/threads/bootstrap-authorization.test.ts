@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
@@ -150,6 +150,18 @@ describe("thread bootstrap authorization", () => {
   it("a path label or populated isolated database without an ownership scope is not proof", () => {
     const db = legacy(join(root(), "ravi.db"));
     expect(() => prepareThreadFence(db)).toThrow("BOOTSTRAP_BLOCKED");
+  });
+
+  it("audit persistence failure refuses bootstrap before changing the legacy schema", () => {
+    withNewIsolatedThreadState(root(), (directory) => {
+      const path = join(directory, "ravi.db");
+      const db = legacy(path);
+      const before = db.query("SELECT type, name, sql FROM sqlite_master").all();
+      mkdirSync(`${path}.thread-bootstrap.jsonl`);
+      expect(() => prepareThreadFence(db)).toThrow();
+      expect(db.query("SELECT type, name, sql FROM sqlite_master").all()).toEqual(before);
+      expect(db.query("SELECT * FROM pending_work").all()).toEqual([{ id: "preserved" }]);
+    });
   });
 
   it("authorization is bound to the database inode and cannot authorize another database", () => {
