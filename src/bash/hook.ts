@@ -21,7 +21,7 @@ import {
   UNCONDITIONAL_BLOCKS,
   type ShellOutputRedirect,
 } from "./parser.js";
-import { collectShellLevels } from "./shell-structure.js";
+import { collectShellLevels, type ShellLevel } from "./shell-structure.js";
 import { checkExecutablePath, isInterpreterName, isShellName } from "./executable-path.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext } from "../permissions/scope.js";
@@ -275,6 +275,7 @@ function shellTextForIdentityChecks(command: string): string {
       .map((level) => level.text)
       .join("\n");
   } catch {
+    // no-cause: unanalyzable text is checked whole, here-doc data included, which only refuses more
     return command;
   }
 }
@@ -523,6 +524,53 @@ const GIT_EXECUTING_SUBCOMMANDS: Record<string, (argv: Array<string | null>) => 
   "filter-repo": () => true,
 };
 
+/** `git config` options whose value is the next word. */
+const GIT_CONFIG_VALUE_OPTIONS = new Set(["-f", "--file", "--blob", "--type", "--default", "--comment", "--value"]);
+
+/**
+ * Why this `git config` can make a later git command run a program, if it can.
+ * Storing `core.pager`, `core.fsmonitor` or `alias.x=!cmd` is the same as
+ * `git -c` with that key, only persistent. Reads, unsets and keys in
+ * {@link SAFE_GIT_CONFIG_KEY} are allowed.
+ */
+function gitConfigWrite(argv: Array<string | null>): string | undefined {
+  const words: string[] = [];
+  let reads = false;
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
+    if (arg === null) return "git config with a dynamic argument can store a program";
+    if (arg === "-e" || arg === "--edit") return "git config --edit runs an editor";
+    if (arg === "--rename-section") return "git config --rename-section can turn a section into aliases";
+    // Reads, and removals: deleting a key cannot add a program to run.
+    if (
+      /^--(?:get(?:-all|-regexp|-urlmatch|-color(?:bool)?)?|list|unset(?:-all)?|remove-section)$/.test(arg) ||
+      arg === "-l"
+    ) {
+      reads = true;
+      continue;
+    }
+    if (GIT_CONFIG_VALUE_OPTIONS.has(arg)) {
+      index++;
+      continue;
+    }
+    if (arg === "--") {
+      words.push(...(argv.slice(index + 1) as Array<string | null>).map((word) => word ?? ""));
+      break;
+    }
+    if (arg.startsWith("-")) continue;
+    words.push(arg);
+  }
+  // git 2.46+ subcommand syntax: `git config get|list|set|unset|...`.
+  const [verb] = words;
+  if (verb === "get" || verb === "list" || verb === "unset") return undefined;
+  if (verb === "edit") return "git config edit runs an editor";
+  if (verb === "rename-section") return "git config rename-section can turn a section into aliases";
+  const assignment = verb === "set" ? words.slice(1) : words;
+  if (reads || assignment.length < 2) return undefined;
+  const key = assignment[0]!;
+  return SAFE_GIT_CONFIG_KEY.test(key) ? undefined : `git config ${key} can store a program for git to run`;
+}
+
 /** Why this git invocation can run an arbitrary program, if it can. */
 function gitExecutionOverride(argv: Array<string | null>): string | undefined {
   let index = 0;
@@ -552,6 +600,7 @@ function gitExecutionOverride(argv: Array<string | null>): string | undefined {
   const subcommand = argv[index];
   if (typeof subcommand !== "string") return undefined;
   const rest = argv.slice(index + 1);
+  if (subcommand === "config") return gitConfigWrite(rest);
   if (GIT_EXECUTING_SUBCOMMANDS[subcommand]?.(rest)) return `git ${subcommand} runs commands it is given`;
   const options = GIT_EXECUTION_OPTIONS[subcommand];
   const offending = options ? rest.find((arg) => arg !== null && options.test(arg)) : undefined;
@@ -648,7 +697,11 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
   }
   for (const analyzed of commands) {
     if (analyzed.name !== "git") continue;
-    const gitOverride = gitExecutionOverride(analyzed.argv);
+    // `printf -- '-c core.pager=id log' | xargs git`: the options git runs with
+    // are read at run time, so the checks below cannot see them.
+    const gitOverride = analyzed.openArgs
+      ? `git with arguments ${analyzed.launcher ?? "its launcher"} reads from its input`
+      : gitExecutionOverride(analyzed.argv);
     if (gitOverride) {
       return shellSyntaxDenial(
         "execution_override",
@@ -659,7 +712,14 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
 
   // An allowed executable plus `> file` is a file write: `ravi crypto status > ~/.ravi/crypto.db`
   // would wipe the ledger. Restricted agents may only discard output unless they can write files anyway.
-  const redirects = analyzeRedirectsAcrossLevels(command, ctx.cwd, changesDirectory);
+  let levels: ShellLevel[];
+  try {
+    levels = collectShellLevels(command);
+  } catch (error) {
+    // Unreachable after checkDangerousPatterns, which analyzes the same text; still a verdict, never an allow.
+    return unknownParseDenial(error instanceof Error ? error.message : "unsupported syntax");
+  }
+  const redirects = analyzeRedirectsAcrossLevels(levels, ctx.cwd, changesDirectory);
   if (redirects.error) {
     return {
       allowed: false,
@@ -726,16 +786,10 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
  * directory, so a directory change anywhere makes their targets unknowable.
  */
 function analyzeRedirectsAcrossLevels(
-  command: string,
+  levels: ShellLevel[],
   cwd: string | undefined,
   changesDirectory: boolean,
 ): { writes: ShellOutputRedirect[]; error?: string } {
-  let levels: Array<{ text: string; depth: number }>;
-  try {
-    levels = collectShellLevels(command);
-  } catch (error) {
-    return { writes: [], error: error instanceof Error ? error.message : "Cannot analyze shell command" };
-  }
   const writes: ShellOutputRedirect[] = [];
   for (const level of levels) {
     const result = analyzeOutputRedirects(level.text, cwd);

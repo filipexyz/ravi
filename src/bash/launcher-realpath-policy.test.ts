@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { evaluateBashPermission, type BashPermissionContext } from "./hook.js";
 import { checkDangerousPatterns, parseBashCommand } from "./parser.js";
 import { checkExecutablePath } from "./executable-path.js";
+import { ShellAnalysisError } from "./shell-structure.js";
 import { bootstrapCapabilitiesFor } from "../permissions/runtime-bootstrap-provider.js";
 import type { ContextCapability } from "../router/router-db.js";
 
@@ -545,5 +546,207 @@ describe("find_predicate_operands_are_not_actions", () => {
       expect(decision.allowed, command).toBe(false);
       expect(decision.syntaxRule, command).toBe("unknown_parse");
     }
+  });
+});
+
+// Review of #846 at 4258954d (CodeRabbit 4590852306): `git config` stores the
+// same keys `git -c` would set, and later git commands run them.
+describe("git_config_write_needs_execution_authority", () => {
+  it("refuses storing a key that makes git run a program", () => {
+    for (const command of [
+      "git config core.fsmonitor 'sh -c id'",
+      "git config alias.x '!sh -c id'",
+      "git config --global core.pager id",
+      "git config --add alias.y '!id'",
+      "git config set core.pager id",
+      "git -C . config core.hooksPath /tmp/hooks",
+      "git config include.path /tmp/evil.config",
+      "git config -e",
+      "git config --rename-section foo alias",
+      "git config $KEY id",
+    ]) {
+      const decision = evaluateBashPermission(command, bootstrap());
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("execution_override");
+    }
+  });
+
+  it("allows reads, removals and keys that cannot run a program", () => {
+    for (const command of [
+      "git config --get core.pager",
+      "git config --list",
+      "git config -l --show-origin",
+      "git config core.pager",
+      "git config get core.pager",
+      "git config --unset core.pager",
+      "git config user.name Ravi",
+      "git config --global color.ui auto",
+    ]) {
+      expect(evaluateBashPermission(command, bootstrap()).allowed, command).toBe(true);
+    }
+  });
+});
+
+// CodeRabbit 4590852332: `xargs -I R` replaces R in the command word too.
+describe("xargs_replace_string_cannot_rewrite_command_word", () => {
+  it("refuses a replace string that occurs in the payload command word", () => {
+    for (const command of [
+      "printf sh | xargs -I ls ls -c id",
+      "printf sh | xargs -Ils ls -c id",
+      "printf sh | xargs -ils ls -c id",
+      "printf sh | xargs --replace=ls ls -c id",
+      "printf sh | xargs -J ls ls -c id",
+      "printf sh | xargs -i {} -c id",
+    ]) {
+      const decision = evaluateBashPermission(command, bootstrap("printf"));
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("unknown_parse");
+    }
+  });
+
+  it("GNU optional-value options never swallow the payload command", () => {
+    for (const command of ["xargs --replace sh -c id", "xargs --eof sh -c id", "xargs --max-lines sh -c id"]) {
+      expect(parseBashCommand(command).executables, command).toEqual(["xargs", "sh"]);
+      expect(evaluateBashPermission(command, bootstrap()).syntaxRule, command).toBe("shell_launcher");
+    }
+  });
+
+  it("a replace string in the arguments is still allowed", () => {
+    expect(evaluateBashPermission("ls | xargs -I {} ls -l {}", bootstrap()).allowed).toBe(true);
+    expect(evaluateBashPermission("ls | xargs --replace=F ls -l F", bootstrap()).allowed).toBe(true);
+  });
+});
+
+// CodeRabbit 4590852344: xargs appends what it reads to git's argv.
+describe("xargs_input_arguments_reach_git_checks", () => {
+  it("refuses git whose arguments come from xargs input", () => {
+    for (const command of [
+      "printf '%s\\n' -c core.pager=id log | xargs git",
+      "ls | xargs git add",
+      "ls | xargs -I {} git add {}",
+      "ls | xargs -n1 git -C",
+    ]) {
+      const decision = evaluateBashPermission(command, bootstrap("printf"));
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("execution_override");
+    }
+    expect(parseBashCommand("ls | xargs git add").commands?.find((c) => c.name === "git")?.openArgs).toBe(true);
+  });
+
+  it("git with fixed arguments under xargs -I is checked as written", () => {
+    expect(evaluateBashPermission("ls | xargs -I {} git status", bootstrap()).allowed).toBe(true);
+    expect(evaluateBashPermission("ls | xargs -I {} git -c core.pager=id log", bootstrap()).syntaxRule).toBe(
+      "execution_override",
+    );
+  });
+});
+
+// CodeRabbit 4590852353: NAME=VALUE after sudo is the command's environment.
+describe("sudo_assignments_reach_execution_override", () => {
+  const cases: Array<[string, string]> = [
+    ["sudo GIT_PAGER='sh -c id' git log", "GIT_PAGER"],
+    ["sudo -u root GIT_PAGER=id git log", "GIT_PAGER"],
+    ["sudo -- LD_PRELOAD=/tmp/x.so git status", "LD_PRELOAD"],
+    ["doas PATH=/tmp git status", "PATH"],
+  ];
+
+  it("the analysis reports the assignments sudo passes to the command", () => {
+    for (const [command, name] of cases) {
+      const parsed = parseBashCommand(command);
+      expect(parsed.success, command).toBe(true);
+      expect(parsed.assignments, command).toContain(name);
+      expect(parsed.executables.at(-1), command).toBe("git");
+    }
+    expect(parseBashCommand("sudo LANG=C git status").assignments).toEqual(["LANG"]);
+  });
+
+  // Where /usr/bin/sudo is not readable (macOS), the path check refuses first.
+  it.skipIf(!checkExecutablePath("sudo").ok)("the policy refuses them as execution_override", () => {
+    for (const [command] of cases.filter(([command]) => command.startsWith("sudo"))) {
+      const decision = evaluateBashPermission(command, named("sudo", "git"));
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("execution_override");
+    }
+    expect(evaluateBashPermission("sudo LANG=C git status", named("sudo", "git")).allowed).toBe(true);
+  });
+});
+
+// CodeRabbit 4590852364: `node -p` and `perl -E` run code like `bun --print`;
+// bundled short flags (`perl -ne`) hid the inline flag.
+describe("inline_code_print_and_bundled_flags", () => {
+  it("refuses print/evaluate flags and inline flags inside a bundle", () => {
+    for (const command of [
+      "node -p \"require('child_process').execSync('id')\"",
+      "node --print 1",
+      "node -pe 1",
+      "perl -E 'say 1'",
+      "perl -ne 'print'",
+      "perl -wle 'print 1'",
+      "python3 -Ic 'print(1)'",
+      "ruby -we 'p 1'",
+    ]) {
+      const parsed = parseBashCommand(command);
+      expect(parsed.success, command).toBe(false);
+      expect(parsed.error, command).toContain("inline code");
+    }
+  });
+
+  it("scripts and long options are not inline code", () => {
+    for (const command of [
+      "node script.js",
+      "perl script.pl",
+      "python3 -m http.server",
+      "python3 -W error script.py",
+      "node --inspect script.js",
+    ]) {
+      expect(parseBashCommand(command).success, command).toBe(true);
+    }
+  });
+});
+
+// CodeRabbit 4590852367 and the error-cause ratchet: the analyzer's refusal
+// keeps its typed cause up to the verdict.
+describe("analyzer_refusal_keeps_its_cause", () => {
+  it("parseBashCommand returns the typed refusal as cause", () => {
+    const parsed = parseBashCommand("echo 'unterminated");
+    expect(parsed.success).toBe(false);
+    expect(parsed.code).toBe("unknown_parse");
+    expect(parsed.cause).toBeInstanceOf(ShellAnalysisError);
+    expect(parsed.cause?.message).toBe(parsed.error);
+  });
+
+  it("ShellAnalysisError forwards a cause", () => {
+    const original = new TypeError("boom");
+    expect(new ShellAnalysisError("wrapped", { cause: original }).cause).toBe(original);
+  });
+
+  it("the dangerous-pattern verdict and the permission decision stay named", () => {
+    expect(checkDangerousPatterns("echo 'unterminated")).toMatchObject({ safe: false, code: "unknown_parse" });
+    expect(evaluateBashPermission("ls 'unterminated", bootstrap()).syntaxRule).toBe("unknown_parse");
+  });
+});
+
+// CodeRabbit 4590852269: a relative PATH entry resolves where the shell is,
+// which the guard does not know without cwd or after `cd`.
+describe("relative_path_entry_fails_closed_without_cwd", () => {
+  it.skipIf(!existsSync("/usr/bin/git"))("refuses when cwd is unknown or changes", () => {
+    for (const options of [
+      { pathEnv: ".:/usr/bin" },
+      { pathEnv: ":/usr/bin" },
+      { pathEnv: ".:/usr/bin", cwd: scratch, changesDirectory: true },
+    ]) {
+      const check = checkExecutablePath("git", options);
+      expect(check.ok, JSON.stringify(options)).toBe(false);
+      if (!check.ok) expect(check.rule).toBe("untrusted_executable_path");
+    }
+  });
+
+  it.skipIf(!existsSync("/usr/bin/git"))("a known cwd without the binary falls through to a later entry", () => {
+    const check = checkExecutablePath("git", { pathEnv: ".:/usr/bin", cwd: scratch });
+    expect(check.ok).toBe(true);
+  });
+
+  it.skipIf(!existsSync("/usr/bin/git"))("an absolute entry that matches first is unaffected", () => {
+    expect(checkExecutablePath("git", { pathEnv: "/usr/bin:." }).ok).toBe(true);
   });
 });

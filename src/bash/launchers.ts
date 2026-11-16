@@ -13,11 +13,36 @@ import { ShellAnalysisError } from "./shell-structure.js";
 export type Argv = Array<string | null>;
 
 export type LauncherPayloads =
-  | { kind: "payloads"; payloads: Argv[]; assignments: string[] }
+  | {
+      kind: "payloads";
+      payloads: Argv[];
+      assignments: string[];
+      /** The launcher adds arguments read at run time (xargs input) to the payload argv. */
+      openArgs?: boolean;
+    }
   /** The launcher hands a string to a shell (`parallel`, `watch`, `sudo -s`). */
   | { kind: "shell_string"; reason: string };
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/;
+
+/** xargs options whose value is the next word (see the `withValue` list in xargsPayload). */
+const XARGS_VALUE_OPTIONS = new Set([
+  "-a",
+  "-E",
+  "-L",
+  "-n",
+  "-P",
+  "-R",
+  "-S",
+  "-s",
+  "-d",
+  "--arg-file",
+  "--max-args",
+  "--max-procs",
+  "--max-chars",
+  "--delimiter",
+  "--process-slot-var",
+]);
 
 /** Launchers that run their payload through a shell string, never as argv. */
 export const SHELL_STRING_LAUNCHERS = new Set(["parallel", "sem", "watch", "su", "runuser", "script"]);
@@ -74,7 +99,8 @@ function skipOptions(
       continue;
     }
     if (arg.startsWith("--") && arg.includes("=")) {
-      if (spec.withValue.includes(arg.slice(0, arg.indexOf("=")))) {
+      const option = arg.slice(0, arg.indexOf("="));
+      if (spec.withValue.includes(option) || spec.optionalValue?.includes(option)) {
         i++;
         continue;
       }
@@ -191,18 +217,46 @@ function xargsPayload(name: string, argv: Argv): LauncherPayloads {
       "-s",
       "-d",
       "--arg-file",
-      "--eof",
-      "--replace",
-      "--max-lines",
       "--max-args",
       "--max-procs",
       "--max-chars",
       "--delimiter",
       "--process-slot-var",
     ],
-    optionalValue: ["-i", "-l", "-e"],
+    // GNU: the value is attached or absent (`-i`, `--replace`, `--replace=R`);
+    // these never consume the next word, which is already the payload.
+    optionalValue: ["-i", "-l", "-e", "--replace", "--eof", "--max-lines"],
   });
-  return { kind: "payloads", payloads: rest(argv, i), assignments: [] };
+  const payloads = rest(argv, i);
+  const replace = xargsReplaceStrings(argv.slice(1, i) as string[]);
+  // Without a replace string xargs appends the words it reads, quotes honored,
+  // to the payload argv. With one, input text lands wherever the string occurs.
+  let openArgs = replace.length === 0;
+  for (const payload of payloads) {
+    const [word, ...args] = payload;
+    if (replace.some((value) => word === null || word === undefined || word.includes(value))) {
+      fail(name, "its replace string can rewrite the command word from input");
+    }
+    if (args.some((arg) => arg === null || replace.some((value) => arg.includes(value)))) openArgs = true;
+  }
+  return { kind: "payloads", payloads, assignments: [], ...(openArgs ? { openArgs } : {}) };
+}
+
+/** Replace strings set by `-I R`, `-IR`, `-i[R]`, `--replace[=R]` and BSD `-J R` (`{}` when bare). */
+function xargsReplaceStrings(options: string[]): string[] {
+  const values: string[] = [];
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i]!;
+    if (option === "--") break;
+    if (option === "-I" || option === "-J") values.push(options[++i] ?? "");
+    else if (/^-[IJ]./.test(option)) values.push(option.slice(2));
+    else if (option === "-i" || option === "--replace") values.push("{}");
+    else if (option.startsWith("-i")) values.push(option.slice(2));
+    else if (option.startsWith("--replace=")) values.push(option.slice("--replace=".length));
+    else if (XARGS_VALUE_OPTIONS.has(option)) i++;
+  }
+  // An empty replace string would match everywhere; xargs refuses it too.
+  return values.map((value) => value || "{}");
 }
 
 /**
@@ -291,15 +345,27 @@ function findPayloads(name: string, argv: Argv): LauncherPayloads {
 }
 
 function sudoPayload(name: string, argv: Argv): LauncherPayloads {
+  // sudo puts NAME=VALUE words before the command in its environment. They go
+  // to the same execution-override check as `env NAME=VALUE`, whatever
+  // env_reset in sudoers would keep at run time.
+  const assignments: string[] = [];
+  const payloadFrom = (start: number): LauncherPayloads => {
+    let i = start;
+    while (i < argv.length) {
+      const arg = argv[i];
+      if (arg === null) fail(name, "a dynamic assignment or command");
+      const match = ASSIGNMENT.exec(arg);
+      if (!match) break;
+      assignments.push(match[1]!);
+      i++;
+    }
+    return { kind: "payloads", payloads: rest(argv, i), assignments };
+  };
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === null) fail(name, "a dynamic option");
-    if (arg === "--") return { kind: "payloads", payloads: rest(argv, i + 1), assignments: [] };
-    if (!arg.startsWith("-")) {
-      // sudo accepts NAME=VALUE before the command.
-      if (ASSIGNMENT.test(arg)) continue;
-      return { kind: "payloads", payloads: rest(argv, i), assignments: [] };
-    }
+    if (arg === "--") return payloadFrom(i + 1);
+    if (!arg.startsWith("-")) return payloadFrom(i);
     if (/^-[^-]*[si]/.test(arg) || arg === "--shell" || arg === "--login") {
       return { kind: "shell_string", reason: `${name} ${arg} starts a shell` };
     }

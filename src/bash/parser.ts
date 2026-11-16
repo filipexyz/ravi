@@ -46,8 +46,8 @@ export const UNCONDITIONAL_BLOCKS = new Set([
 const INLINE_CODE_INTERPRETERS: Record<string, string[]> = {
   python: ["-c"],
   python3: ["-c"],
-  node: ["-e", "--eval"],
-  perl: ["-e"],
+  node: ["-e", "--eval", "-p", "--print"],
+  perl: ["-e", "-E"],
   ruby: ["-e"],
   php: ["-r"],
   bun: ["-e", "--eval", "-p", "--print"],
@@ -111,15 +111,6 @@ function pipedStdinIsCode(name: string, argv: Array<string | null>): boolean {
 // Pattern Checking
 // ============================================================================
 
-/** Every level of `command`, or the analyzer's named refusal. */
-function shellLevels(command: string): ShellLevel[] | { error: string } {
-  try {
-    return collectShellLevels(command);
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Cannot analyze shell command" };
-  }
-}
-
 /**
  * Check structure the policy cannot authorize command by command: text the
  * analyzer cannot model (named `unknown_parse`) and stdin piped into a shell or
@@ -127,8 +118,17 @@ function shellLevels(command: string): ShellLevel[] | { error: string } {
  * refused here: {@link parseBashCommand} returns the commands inside them.
  */
 export function checkDangerousPatterns(command: string): PatternCheckResult {
-  const levels = shellLevels(command);
-  if (!Array.isArray(levels)) return { safe: false, reason: levels.error, code: "unknown_parse" };
+  let levels: ShellLevel[];
+  try {
+    levels = collectShellLevels(command);
+  } catch (error) {
+    // The analyzer's refusal is the guard's verdict, named like the pipeline one below.
+    return {
+      safe: false,
+      reason: error instanceof Error ? error.message : "Cannot analyze shell command",
+      code: "unknown_parse",
+    };
+  }
   for (const level of levels) {
     const result = checkPipelineReceivers(level.text);
     if (!result.safe) return result;
@@ -656,7 +656,13 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
 
 function hasInlineFlag(flags: string[], token: string): boolean {
   return flags.some(
-    (flag) => token === flag || token.startsWith(flag + "=") || (flag.length === 2 && token.startsWith(flag)),
+    (flag) =>
+      token === flag ||
+      token.startsWith(flag + "=") ||
+      (flag.length === 2 && token.startsWith(flag)) ||
+      // Bundled short flags: `perl -ne`, `python3 -Ic`, `node -pe`. A letter
+      // that is really the value of an earlier option can only refuse more.
+      (flag.length === 2 && /^-[A-Za-z]{2,}$/.test(token) && token.includes(flag[1]!)),
   );
 }
 
@@ -728,6 +734,7 @@ function expandLauncher(command: AnalyzedCommand, out: AnalyzedCommand[], assign
       text: command.text,
       // The launched program inherits the launcher's stdin and arguments.
       ...(command.codeInputs ? { codeInputs: command.codeInputs } : {}),
+      ...(launched.openArgs ? { openArgs: true } : {}),
     };
     out.push(child);
     assignments.push(...builtinAssignments(child));
@@ -788,7 +795,9 @@ export function analyzeBashCommand(command: string): BashAnalysis {
     }
   } catch (error) {
     if (isShellAnalysisError(error)) throw error;
-    throw new ShellAnalysisError(error instanceof Error ? error.message : "Cannot analyze shell command");
+    throw new ShellAnalysisError(error instanceof Error ? error.message : "Cannot analyze shell command", {
+      cause: error,
+    });
   }
   if (unattributedInput || (definesFunction && feedsInput)) {
     // Fail closed: any interpreter in the command may be the one reading it.
@@ -798,6 +807,20 @@ export function analyzeBashCommand(command: string): BashAnalysis {
     }
   }
   return { commands, assignments };
+}
+
+/**
+ * The analysis, or the analyzer's typed refusal with its cause chain intact.
+ * {@link analyzeBashCommand} already turns every failure into a
+ * {@link ShellAnalysisError}; anything else is a defect and propagates.
+ */
+function analyzeOrRefusal(command: string): BashAnalysis | ShellAnalysisError {
+  try {
+    return analyzeBashCommand(command);
+  } catch (error) {
+    if (isShellAnalysisError(error)) return error;
+    throw error;
+  }
 }
 
 /**
@@ -815,16 +838,9 @@ export function analyzeBashCommand(command: string): BashAnalysis {
  * A command the analyzer cannot model fails with `code: "unknown_parse"`.
  */
 export function parseBashCommand(command: string, options: { allowInlineCode?: boolean } = {}): ParsedCommand {
-  let analysis: BashAnalysis;
-  try {
-    analysis = analyzeBashCommand(command);
-  } catch (err) {
-    return {
-      executables: [],
-      success: false,
-      error: err instanceof Error ? err.message : "Parse error",
-      code: "unknown_parse",
-    };
+  const analysis = analyzeOrRefusal(command);
+  if (isShellAnalysisError(analysis)) {
+    return { executables: [], success: false, error: analysis.message, code: analysis.code, cause: analysis };
   }
   const inline = analysis.commands.map(inlineCodeReason).find(Boolean);
   if (inline && !options.allowInlineCode) {

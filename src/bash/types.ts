@@ -26,6 +26,11 @@ export interface AnalyzedCommand {
    * (`<(...)`). An interpreter reading it runs code the agent wrote inline.
    */
   codeInputs?: Array<"stdin" | "file">;
+  /**
+   * The launcher adds arguments it reads at run time (xargs input) to `argv`.
+   * A check that depends on the arguments cannot see them.
+   */
+  openArgs?: boolean;
 }
 
 /** Result of parsing a bash command */
@@ -41,6 +46,9 @@ export interface ParsedCommand {
 
   /** Why parsing failed: the analyzer could not model it, or inline interpreter code. */
   code?: "unknown_parse" | "inline_code";
+
+  /** The analyzer's typed refusal when `code === "unknown_parse"`, cause chain included. */
+  cause?: Error;
 
   /** Every analyzed command, with path and origin (present on success). */
   commands?: AnalyzedCommand[];

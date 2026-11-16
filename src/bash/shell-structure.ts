@@ -43,8 +43,8 @@ export interface ShellStructure {
 /** The analyzer could not model this command. Callers MUST fail closed. */
 export class ShellAnalysisError extends Error {
   readonly code = "unknown_parse" as const;
-  constructor(detail: string) {
-    super(detail);
+  constructor(detail: string, options?: { cause?: unknown }) {
+    super(detail, options);
     this.name = "ShellAnalysisError";
   }
 }

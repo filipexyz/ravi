@@ -199,20 +199,6 @@
       "count": 1
     },
     {
-      "id": "src/bash/parser.ts:5adb02df86feece6349d5635",
-      "file": "src/bash/parser.ts",
-      "boundary": "bash",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/bash/parser.ts:bc535f42d16639e50c0686c7",
-      "file": "src/bash/parser.ts",
-      "boundary": "bash",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/bash/parser.ts:e80dc90deffeaf87466e3b91",
       "file": "src/bash/parser.ts",
       "boundary": "bash",
@@ -5793,7 +5779,7 @@
     }
   ],
   "totals": {
-    "violations": 867,
+    "violations": 865,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5803,7 +5789,7 @@
       "src/artifacts": 4,
       "src/audio": 2,
       "src/bases": 3,
-      "src/bash": 3,
+      "src/bash": 1,
       "src/bridge": 4,
       "src/bug-report": 2,
       "src/calendar": 2,

@@ -114,6 +114,7 @@ function safeRealpath(path: string): string | null {
   try {
     return realpathSync(path);
   } catch {
+    // no-cause: a path that cannot be resolved is untrusted; every caller refuses or skips it
     return null;
   }
 }
@@ -123,6 +124,7 @@ function isExecutableFile(path: string): boolean {
     const stat = statSync(path);
     return stat.isFile() && (stat.mode & 0o111) !== 0;
   } catch {
+    // no-cause: a missing or unreadable file is not an executable candidate, as the shell sees it
     return false;
   }
 }
@@ -176,8 +178,16 @@ export function checkExecutablePath(word: string, options: ExecutablePathOptions
     const pathEnv = options.pathEnv ?? process.env.PATH ?? "";
     for (const entry of pathEnv.split(delimiter)) {
       const relativeEntry = !entry || !isAbsolute(entry);
-      const dir = relativeEntry ? (options.cwd ? resolve(options.cwd, entry || ".") : null) : entry;
-      if (!dir) continue;
+      if (relativeEntry && (!options.cwd || options.changesDirectory)) {
+        // The shell resolves this entry in a directory the guard does not know,
+        // so the binary it runs may sit there instead of in a later entry.
+        return {
+          ok: false,
+          rule: "untrusted_executable_path",
+          reason: `PATH entry "${entry}" is relative to a working directory the guard cannot resolve`,
+        };
+      }
+      const dir = relativeEntry ? resolve(options.cwd!, entry || ".") : entry;
       const candidate = join(dir, word);
       if (!isExecutableFile(candidate)) continue;
       if (relativeEntry) {
