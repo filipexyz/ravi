@@ -251,8 +251,12 @@ describe("gateway drain", () => {
             target: NonNullable<ResponseMessage["target"]>,
             reason: string,
           ): void;
-          stopPresenceForSession(): Promise<void>;
-          forceRenewTyping(): Promise<void>;
+          stopPresenceForSession(session: string, target: NonNullable<ResponseMessage["target"]>): Promise<void>;
+          forceRenewTyping(
+            session: string,
+            target: NonNullable<ResponseMessage["target"]>,
+            reason: string,
+          ): Promise<void>;
         };
         internals.running = true;
         const session = "presence-drain-session";
@@ -264,14 +268,17 @@ describe("gateway drain", () => {
         const action = spyOn(internals, method).mockImplementation(() => finish.promise);
         let fire: (() => void) | undefined;
         let scheduledDelay: number | undefined;
-        const timer = spyOn(globalThis, "setTimeout").mockImplementation((callback, delay) => {
+        const scheduleTimer = (callback: () => void, delay?: number): ReturnType<typeof setTimeout> => {
           if (typeof callback !== "function") throw new Error("Expected a function timer");
           // Retain the scheduling handler's ALS context, then fire after that
           // handler completes: the timer must become its own tracked work.
-          fire = AsyncResource.bind(callback as () => void);
+          fire = AsyncResource.bind(callback);
           scheduledDelay = delay;
           return { unref() {} } as unknown as ReturnType<typeof setTimeout>;
-        });
+        };
+        const timer = spyOn(globalThis, "setTimeout").mockImplementation(
+          Object.assign(scheduleTimer, { __promisify__: setTimeout.__promisify__ }) as typeof setTimeout,
+        );
         try {
           await internals.workDrain.run("presence-parent", () => {
             if (timerKind === "interrupted-stop") internals.scheduleInterruptedPresenceStop(session, target);
