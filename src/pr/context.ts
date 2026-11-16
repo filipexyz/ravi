@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { ContractError, stateNotReadyToContractError } from "../cli/agent-contract.js";
 import { getContext } from "../cli/context.js";
-import { StateSchemaNotReadyError } from "../db/schema-owner.js";
+import { assertStateSchemaReady, StateSchemaNotReadyError } from "../db/schema-owner.js";
 import { assertDatabaseTargetAllowed } from "../db/state-boundary.js";
 import { isStateNotReadyError } from "../db/state-readiness.js";
 import { localOperatorCan } from "../permissions/provider-runtime.js";
@@ -57,19 +57,33 @@ export function resolvePublicationCaller(): PublicationCaller {
   return { kind: "terminal" };
 }
 
+/** The session store is not the one this release's daemon prepared: said with the command that prepares it. */
+function sessionStoreNotPrepared(options?: ErrorOptions): Error {
+  const notReady = new StateSchemaNotReadyError("router", { ...options, operatorCli: true });
+  return stateNotReadyToContractError("pr publish", notReady) ?? notReady;
+}
+
 /**
  * The read-only handle both resolvers read sessions through. Publication never
- * creates runtime state, so a missing `ravi.db` is state the installed daemon
- * has not prepared: it is refused as `STATE_SCHEMA_NOT_READY`, with the command
- * that prepares it, and is never reported as a missing session.
+ * creates or migrates runtime state, so the session store has to be the one the
+ * installed daemon prepared for this release. A missing `ravi.db`, and one whose
+ * router schema this release's daemon has not prepared, are refused as
+ * `STATE_SCHEMA_NOT_READY` with the command that prepares them: neither is
+ * read, and neither is reported as a missing session.
  */
 function openPublicationState(): Database {
   const path = getRaviDbPath();
-  if (!existsSync(path)) {
-    const notReady = new StateSchemaNotReadyError("router", { operatorCli: true });
-    throw stateNotReadyToContractError("pr publish", notReady) ?? notReady;
+  if (!existsSync(path)) throw sessionStoreNotPrepared();
+  const database = new Database(path, { readonly: true, create: false });
+  try {
+    assertStateSchemaReady(database, "router");
+    return database;
+  } catch (error) {
+    database.close();
+    // Only the readiness refusal is reworded for whoever is publishing; any other failure keeps its shape.
+    if (!isStateNotReadyError(error)) throw error;
+    throw sessionStoreNotPrepared({ cause: error });
   }
-  return new Database(path, { readonly: true, create: false });
 }
 
 /** Validate live ownership without bootstrapping or migrating state during preview. */

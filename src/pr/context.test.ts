@@ -2,9 +2,11 @@ import { afterEach, beforeEach, expect, it } from "bun:test";
 import { existsSync, rmSync } from "node:fs";
 import { ContractError } from "../cli/agent-contract.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
+import { STATE_SCHEMA_VERSION } from "../db/schema-owner.js";
 import { PREPARE_STATE_COMMAND } from "../db/state-readiness.js";
 import { closeRouterDb, getDb, getRaviDbPath } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { runThreadMutation, usesThreadSchemaFence } from "../threads/schema-fence.js";
 import { resolvePublicationContext, resolvePublicationFollowContext } from "./context.js";
 import { openPublicationJournal } from "./journal.js";
 
@@ -166,8 +168,8 @@ const follow = {
   accountId: "main",
   source: { channel: "slack", accountId: "main", chatId: "C-test", threadId: "thread-1" },
 };
-it("refuses state the daemon has not prepared under its own code, with the command that prepares it", () => {
-  const path = removeSessionStore();
+/** Every way publication reads sessions, each expected to refuse state the daemon has not prepared. */
+function expectNotPreparedAtEveryEntry(): void {
   const refusals = {
     session: refusal(() => runWithContext(context, () => resolvePublicationContext())),
     terminal: refusal(() => runWithContext({}, () => resolvePublicationContext("publisher"))),
@@ -184,8 +186,44 @@ it("refuses state the daemon has not prepared under its own code, with the comma
     expect(error.details).toMatchObject({ retryable: true });
     expect(String(error.details.suggestedAction)).toContain(PREPARE_STATE_COMMAND);
   }
+}
+it("refuses state the daemon has not prepared under its own code, with the command that prepares it", () => {
+  const path = removeSessionStore();
+  expectNotPreparedAtEveryEntry();
   // Refusing is all it does: the store is the daemon's to create.
   expect(existsSync(path)).toBe(false);
+});
+
+/** The router marker as another release, or a boot that did not finish, leaves it. */
+function writeRouterMarker(sql: string, ...values: string[]): void {
+  const db = getDb();
+  if (usesThreadSchemaFence(db)) runThreadMutation(db, sql, ...values);
+  else db.query(sql).run(...values);
+}
+const routerMarker = () =>
+  getDb().query("SELECT version FROM state_schema_versions WHERE component = 'router'").get() as {
+    version: string;
+  } | null;
+it("refuses a session store that is there but that this release's daemon has not prepared", () => {
+  const sessions = getDb().query("SELECT * FROM sessions").all();
+  expect(routerMarker()?.version).toBe(STATE_SCHEMA_VERSION);
+  // Prepared by another release: the sessions table is there and would have answered.
+  writeRouterMarker("UPDATE state_schema_versions SET version = ? WHERE component = ?", "1:0.0.0-other", "router");
+  expectNotPreparedAtEveryEntry();
+  // Left by a boot that did not finish: no marker at all.
+  writeRouterMarker("DELETE FROM state_schema_versions WHERE component = ?", "router");
+  expectNotPreparedAtEveryEntry();
+  // Refusing is all it does: the marker is the daemon's to write, and no session is touched.
+  expect(routerMarker()).toBeNull();
+  expect(getDb().query("SELECT * FROM sessions").all()).toEqual(sessions);
+  // Prepared again, the same store answers.
+  writeRouterMarker(
+    "INSERT INTO state_schema_versions (component, version) VALUES (?, ?)",
+    "router",
+    STATE_SCHEMA_VERSION,
+  );
+  expect(resolvePublicationFollowContext(follow)).toMatchObject({ agentId: "test", sessionName: "publisher" });
+  expect(runWithContext(context, () => resolvePublicationContext()).sessionKey).toBe("agent:test:publisher");
 });
 it("keeps reporting a follow session that is gone as a missing session when the store is there", () => {
   expect(resolvePublicationFollowContext(follow)).toMatchObject({ agentId: "test", sessionName: "publisher" });
