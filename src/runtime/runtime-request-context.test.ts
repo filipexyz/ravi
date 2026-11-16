@@ -1958,6 +1958,51 @@ describe("runtime request context authority", () => {
     );
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+    // A prompt that carries no owner snapshot records none.
+    expect(runtimeContext.metadata?.triggerRunAuthority).toBeNull();
+  });
+
+  it("records the trigger owner the runner admitted, and only a snapshot for this trigger", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const build = (authority: unknown) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt: {
+          prompt: "[Trigger: requests] run",
+          _trigger: true,
+          _triggerId: "trigger-1",
+          _triggerAuthority: authority as never,
+        },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+      }).runtimeContext;
+
+    const admitted = {
+      triggerId: "trigger-1",
+      ownerPrincipal: "contact:c_ana",
+      ownerIsOperator: false,
+      ownSessionKey: "agent:provider-agent:trigger:trigger-1:own",
+    };
+    const owned = build(admitted);
+    expect(owned.metadata?.triggerRunAuthority).toEqual(admitted);
+    // The owner is attribution for Bases only: it grants the turn nothing.
+    expect(owned.metadata?.actorPrincipal).toBe("automation:trigger:trigger-1");
+    expect(canWithCapabilities(owned.capabilities, "admin", "system", "*")).toBe(false);
+    // Fired into a session that is not the trigger's own: recorded as such.
+    const elsewhere = { ...admitted, ownSessionKey: null };
+    expect(build(elsewhere).metadata?.triggerRunAuthority).toEqual(elsewhere);
+
+    expect(build({ ...admitted, triggerId: "trigger-2" }).metadata?.triggerRunAuthority).toBeNull();
+    expect(build({ triggerId: "trigger-1", ownerPrincipal: "operator" }).metadata?.triggerRunAuthority).toBeNull();
+    // A snapshot that does not say which session the fire was sent to is not one.
+    const { ownSessionKey: _unsaid, ...withoutSession } = admitted;
+    expect(build(withoutSession).metadata?.triggerRunAuthority).toBeNull();
+    expect(build("operator").metadata?.triggerRunAuthority).toBeNull();
   });
 });
 

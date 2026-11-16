@@ -311,6 +311,45 @@ describe("CronCommands --json", () => {
     ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
   });
 
+  it("does not make a trigger's own session the reply session of a job created during its turn", async () => {
+    const addJob = () =>
+      captureJson(() =>
+        new CronCommands().add(
+          "From a turn",
+          undefined,
+          "30m",
+          undefined,
+          undefined,
+          "hello",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+
+    // That session runs its trigger's fires only: the job runs in the agent's main session.
+    mockCliContext = {
+      agentId: "dev",
+      sessionName: "dev-trigger-rows-1a2b3c4d",
+      sessionKey: "agent:dev:trigger:ab12cd34:own",
+    };
+    await addJob();
+    expect(cronJob?.replySession).toBeUndefined();
+
+    // Any other session is still where the job answers.
+    mockCliContext = { agentId: "dev", sessionName: "luis-dm", sessionKey: "agent:dev:whatsapp:dm:5511999999999" };
+    await addJob();
+    expect(cronJob?.replySession).toBe("agent:dev:whatsapp:dm:5511999999999");
+  });
+
   it("derives durable creation idempotency from observer source turns", async () => {
     mockCliContext = {
       agentId: "observer",

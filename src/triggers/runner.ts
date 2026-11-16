@@ -21,7 +21,9 @@ import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
   getMainSession,
   getOrCreateSession,
+  getSession,
   resolveSession,
+  resetSession,
   generateSessionName,
   ensureUniqueName,
   updateSessionName,
@@ -30,10 +32,19 @@ import {
 import { getAgent } from "../router/config.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { dbListTriggers, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTriggerState } from "./triggers-db.js";
+import {
+  captureTriggerRunAuthority,
+  sameTriggerDefinition,
+  sessionAdmitsTriggerFire,
+  triggerFireSession,
+  triggerRunsAs,
+} from "./ownership.js";
+import { isTriggerOwnSessionKey, triggerOwnSessionName } from "./authority.js";
 import type { CompiledFilter } from "./filter.js";
 import { isLegacySessionTarget, isSessionNameTemplate, type Trigger } from "./types.js";
 import { resolveTemplate, resolveTemplateStrict } from "./template.js";
 import { resolveTriggerActivation } from "./activation.js";
+import { isInternalEventTopic } from "./topic-policy.js";
 import { buildTriggerPrompt } from "./prompt.js";
 import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
@@ -110,7 +121,13 @@ export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean 
   if (!data || typeof data !== "object") return false;
   const record = data as Record<string, unknown>;
   const origin = (record._turnProvenance as { origin?: unknown } | undefined)?.origin;
-  return origin === "trigger" || record._trigger === true;
+  if (origin === "trigger" || record._trigger === true) return true;
+  // A command run by a turn in a trigger's own session: its audit event is
+  // published under `ravi._cli.*` and names the session in the invocation
+  // record. What such a turn does is not another trigger's to act on.
+  const invocation = record.cliInvocation as { raviContext?: { sessionKey?: unknown } } | undefined;
+  const invocationSession = invocation?.raviContext?.sessionKey;
+  return typeof invocationSession === "string" && isTriggerOwnSessionKey(invocationSession);
 }
 
 export function shouldRetryTriggerTopic(
@@ -383,6 +400,9 @@ export class TriggerRunner {
           // for producers that have not adopted it yet.
           const eventData = event.data as Record<string, unknown> | undefined;
           if (isTriggerOriginatedEvent(event.topic, eventData)) continue;
+          // A wildcard pattern also delivers the bus's own transport (what a
+          // session streams, a request's reply, a remote worker's pipe).
+          if (isInternalEventTopic(event.topic)) continue;
 
           for (const prepared of subscription.triggers) {
             const trigger = prepared.trigger;
@@ -557,7 +577,7 @@ export class TriggerRunner {
   private async fireTrigger(
     trigger: Trigger,
     event: { topic: string; data: unknown },
-    opts: { test?: boolean; batch?: TriggerBatch } = {},
+    opts: { test?: boolean; batch?: TriggerBatch; testInitiator?: string } = {},
   ): Promise<void> {
     const agentId = trigger.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
@@ -575,12 +595,21 @@ export class TriggerRunner {
 
     let sessionName: string;
     let source: { channel: string; accountId: string; chatId: string } | undefined;
+    // The trigger as stored now: who owns it decides which session is its own.
+    const stored = dbGetTrigger(trigger.id);
+    // Whether this fire is its owner's: decided before the session is chosen,
+    // because only such a fire enters the trigger's own session.
+    const ownerFire = this.fireIsOwners(trigger, stored, opts);
+    // The key of the trigger's own session, when this fire runs there. Only an
+    // `isolated` trigger a person owns has one; nothing else enters it.
+    let ownSessionKey: string | null = null;
 
     if (trigger.session === "main") {
       // If replySession is set, resolve it for session name + source routing
       if (trigger.replySession) {
         const resolved = resolveSession(trigger.replySession);
-        if (resolved?.name) {
+        // Another trigger's own session never stands in for the main session.
+        if (resolved?.name && sessionAdmitsTriggerFire(resolved)) {
           sessionName = resolved.name;
           source = sourceFromSessionEntry(resolved, trigger.accountId);
         } else {
@@ -601,14 +630,34 @@ export class TriggerRunner {
         }
       }
     } else if (trigger.session === "isolated") {
-      const dbKey = `agent:${agentId}:trigger:${trigger.id}`;
-      const existing = resolveSession(dbKey);
-      if (existing?.name) {
+      // A trigger a person owns runs in its own session; one nobody owns keeps
+      // the plain one-per-trigger session, as before owners existed. A fire
+      // that is not its owner's (someone else's test, a stale definition)
+      // runs in the plain session too: it never touches the owner's history.
+      const target = triggerFireSession(agentId, stored ?? trigger, { asOwner: ownerFire });
+      const dbKey = target.sessionKey;
+      // The own session is found by its key alone: a session that merely goes
+      // by that string as its name is not it.
+      const existing = target.own ? getSession(dbKey) : resolveSession(dbKey);
+      if (target.own) ownSessionKey = dbKey;
+      if (target.own) {
+        // The own session goes by one name, its key: a name the session store
+        // gives to no other session, before this one exists or after it is
+        // deleted. So nothing keyed to its name (history, a context, a signal)
+        // was ever another session's, and nobody inherits what this one stored.
+        sessionName = triggerOwnSessionName(dbKey);
+        if (!existing) getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName }, { triggerRunner: true });
+        // Start after whatever the journal already holds under that name (an
+        // earlier own session of this trigger, since deleted). Checked on
+        // every fire, so a session left without the mark gets it before its
+        // first turn.
+        if (existing?.historyResetAfterId === undefined) resetSession(dbKey);
+      } else if (existing?.name) {
         sessionName = existing.name;
       } else {
         const baseName = generateSessionName(agentId, { suffix: `trigger-${trigger.name}` });
         sessionName = ensureUniqueName(baseName);
-        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName }, { triggerRunner: true });
         if (!session.name) updateSessionName(session.sessionKey, sessionName);
       }
 
@@ -652,6 +701,18 @@ export class TriggerRunner {
         });
         return;
       }
+      if (isTriggerOwnSessionKey(rawTarget) || (existing && !sessionAdmitsTriggerFire(existing))) {
+        // A trigger's own session is entered only by that trigger's isolated
+        // fires: a name, a key or event data never points another fire there,
+        // nor at a stand-in for one that does not exist yet.
+        log.warn("Skipping trigger fire; resolved session is another trigger's own", {
+          triggerId: trigger.id,
+          triggerName: trigger.name,
+          topic: event.topic,
+          session: existing?.name ?? existing?.sessionKey ?? rawTarget,
+        });
+        return;
+      }
       if (existing) {
         // An unnamed session (e.g. the creator's, inherited by key) is reused
         // and given a name, never replaced by a new one.
@@ -659,7 +720,7 @@ export class TriggerRunner {
         if (!existing.name) updateSessionName(existing.sessionKey, sessionName);
       } else {
         sessionName = ensureUniqueName(targetName);
-        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName }, { triggerRunner: true });
         if (!session.name) updateSessionName(session.sessionKey, sessionName);
       }
 
@@ -710,6 +771,9 @@ export class TriggerRunner {
       source,
       _trigger: true,
       _triggerId: trigger.id,
+      _triggerAuthority: captureTriggerRunAuthority(ownerFire && stored ? stored : { id: trigger.id }, {
+        ownSessionKey,
+      }),
     });
 
     dbUpdateTriggerState(trigger.id, {
@@ -719,6 +783,28 @@ export class TriggerRunner {
 
     // Update in-memory trigger too (for cooldown tracking)
     trigger.lastFiredAt = Date.now();
+  }
+
+  /**
+   * Whether this fire is its owner's, fixed now: it decides both who the fire
+   * acts as (the snapshot carried with the prompt) and which session it runs
+   * in. The owner is read from the stored row, never from the subscription's
+   * copy, and is admitted only when that row is still the trigger being
+   * fired: after an edit the runner has not reloaded, the old message must
+   * not run under the row's owner, and a row that is gone has no owner. A
+   * test fire is admitted only for the owner's own test. A fire that is not
+   * admitted acts as nobody and stays out of the trigger's own session.
+   */
+  private fireIsOwners(
+    trigger: Trigger,
+    stored: Trigger | null,
+    opts: { test?: boolean; testInitiator?: string },
+  ): boolean {
+    return (
+      stored !== null &&
+      sameTriggerDefinition(stored, trigger) &&
+      (!opts.test || (opts.testInitiator !== undefined && opts.testInitiator === triggerRunsAs(stored)))
+    );
   }
 
   /**
@@ -877,6 +963,15 @@ export class TriggerRunner {
     }
 
     const resolved = resolveSession(sessionRef);
+    // A trigger's own session runs that trigger's fires only: a failed
+    // command's output is not one, so it is reported nowhere rather than there.
+    if (!sessionAdmitsTriggerFire(resolved) || isTriggerOwnSessionKey(sessionRef)) {
+      log.warn("Skipping trigger on-error notice; the session is a trigger's own", {
+        triggerId: trigger.id,
+        session: sessionRef,
+      });
+      return;
+    }
     const sessionName = resolved?.name ?? sessionRef;
     const stdout = result.stdout.trim();
     const stderr = result.stderr.trim();
@@ -1053,7 +1148,7 @@ export class TriggerRunner {
       for await (const event of nats.subscribe(topic)) {
         if (!this.running) break;
 
-        const data = event.data as { triggerId?: string };
+        const data = event.data as { triggerId?: string; initiator?: unknown };
         if (!data.triggerId) continue;
 
         log.info("Received test trigger", { triggerId: data.triggerId });
@@ -1074,7 +1169,8 @@ export class TriggerRunner {
               timestamp: new Date().toISOString(),
             },
           },
-          { test: true },
+          // Who asked for the test: the fire acts as the trigger's owner only when they are that owner.
+          { test: true, ...(typeof data.initiator === "string" ? { testInitiator: data.initiator } : {}) },
         );
       }
     } catch (err) {

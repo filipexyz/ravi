@@ -120,4 +120,32 @@ describe("runtime session continuity", () => {
       resumeProviderSessionId: "parent-provider-session",
     });
   });
+
+  it("never forks a trigger's own session into a thread opened from it", () => {
+    // What the owner's turns read stays in the own session: a chat thread
+    // routed to it gets a session that starts on its own.
+    const own = "agent:agent-a:trigger:ab12cd34:own";
+    getOrCreateSession(own, "agent-a", "/tmp/agent-a", undefined, { triggerRunner: true });
+    updateProviderSession(own, "codex", "own-provider-session");
+    const fork = (dbSessionKey: string) =>
+      resolveRuntimeSessionContinuity({
+        dbSessionKey,
+        runtimeProviderId: "codex",
+        supportsSessionFork: true,
+        supportsSessionResume: true,
+        canResumeStoredSession: false,
+        defaultRuntimeProviderId: "codex",
+      });
+
+    expect(fork(`${own}:thread:1713000000.000100`)).toEqual({});
+
+    // The plain session of a trigger nobody owns forks as any session does.
+    const plain = "agent:agent-a:trigger:ab12cd34";
+    getOrCreateSession(plain, "agent-a", "/tmp/agent-a", undefined, { triggerRunner: true });
+    updateProviderSession(plain, "codex", "plain-provider-session");
+    expect(fork(`${plain}:thread:1713000000.000100`)).toEqual({
+      forkFromProviderSessionId: "plain-provider-session",
+      resumeProviderSessionId: "plain-provider-session",
+    });
+  });
 });

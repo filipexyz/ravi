@@ -228,6 +228,13 @@ export interface SessionEntry {
   sessionFile?: string;
   /** Durable transcript boundary for an explicit conversation reset. */
   historyResetAfterId?: number;
+  /**
+   * When a turn here first ran with its trigger's owner's authority, answering
+   * to no chat. What such a turn read stays in the session's history, so the
+   * session answers to no chat while this is set. Only a reset that drops the
+   * history clears it.
+   */
+  triggerOwnerLentAt?: number;
   updatedAt: number;
   createdAt: number;
 

@@ -803,16 +803,25 @@ function actorUnknownRemoteCopy(
       break;
     case "routine_not_operator_owned": {
       details.refusalReason = remote.refusalReason;
-      if (remote.routine === "cron") details.routine = remote.routine;
+      if (remote.routine === "cron" || remote.routine === "trigger") details.routine = remote.routine;
       const jobId = boundedRemoteField(remote, ["jobId"], /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, 128);
+      // A routine created from another routine's turn is owned by that automation.
       const ownerPrincipal = boundedRemoteField(
         remote,
         ["ownerPrincipal"],
-        /^(?:unknown|(?:agent|contact):[A-Za-z0-9][A-Za-z0-9._-]{0,127})$/,
+        /^(?:unknown|(?:agent|contact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}|automation:[A-Za-z0-9][A-Za-z0-9._:-]{0,123})$/,
         136,
       );
       if (jobId) details.jobId = jobId;
       if (ownerPrincipal) details.ownerPrincipal = ownerPrincipal;
+      break;
+    }
+    case "routine_shared_session":
+    case "routine_answers_elsewhere": {
+      details.refusalReason = remote.refusalReason;
+      if (remote.routine === "trigger") details.routine = remote.routine;
+      const jobId = boundedRemoteField(remote, ["jobId"], /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, 128);
+      if (jobId) details.jobId = jobId;
       break;
     }
   }

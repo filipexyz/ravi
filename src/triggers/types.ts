@@ -11,9 +11,11 @@
  * e.g. `issue-{{data.payload.row.values.topic_id.0}}` for one session per
  * issue. An existing session with that name is reused; otherwise it is created.
  *
- * `main` and `isolated` are legacy values still stored by older triggers and
- * internal producers (watches, Pages comment follows): `main` is the agent's
- * main session, `isolated` one session per trigger.
+ * `main` and `isolated` are the two fixed values, also stored by older
+ * triggers and internal producers (watches, Pages comment follows): `main` is
+ * the agent's main session, `isolated` one session per trigger, which only
+ * that trigger runs in (the only session where its owner's authority is lent,
+ * see `ownership.ts`).
  */
 export type SessionTarget = string;
 
@@ -83,6 +85,13 @@ export interface Trigger {
   debounceMs?: number;
   /** Optional filter expression. If set, trigger only fires when event data matches. */
   filter?: string;
+  /**
+   * Who the trigger's turns act as in Bases: `operator`, or the actor
+   * principal of the turn that created it. Written once, on create, and
+   * cleared by any change its owner did not make. Unset on rows written
+   * before owners were recorded, which act as nobody.
+   */
+  ownerPrincipal?: string;
 
   // State
   lastFiredAt?: number;
@@ -120,6 +129,8 @@ export interface TriggerInput {
   debounceMs?: number;
   /** Optional filter expression. If set, trigger only fires when event data matches. */
   filter?: string;
+  /** `operator`, or the actor principal of the creating turn. Unset: no owner. */
+  ownerPrincipal?: string;
 }
 
 /** True when the session value has a {{...}} placeholder resolved per event. */

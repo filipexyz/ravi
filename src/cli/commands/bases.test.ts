@@ -896,6 +896,7 @@ describe("ravi bases subscribe filters and --trigger", () => {
           enabled: input.enabled ?? true,
           cooldownMs: input.cooldownMs ?? 5000,
           filter: input.filter,
+          ownerPrincipal: input.ownerPrincipal,
           fireCount: 0,
           createdAt: 0,
           updatedAt: 0,
@@ -908,14 +909,30 @@ describe("ravi bases subscribe filters and --trigger", () => {
     return { store, created, refreshes: () => refreshes };
   }
 
-  function subscribeDeps(calls: Call[], inAgentSession: boolean, store: BasesTriggerStore) {
+  /** Session names that already exist, with their keys: the fake sessions table of these tests. */
+  let existingSessions: Record<string, string> = {};
+  afterEach(() => {
+    existingSessions = {};
+  });
+
+  // Who is asking comes from the daemon's record of the turn; here each test says it.
+  function subscribeDeps(calls: Call[], inAgentSession: boolean, store: BasesTriggerStore, owner = "operator") {
     const deps = makeDeps(calls, () => ({
       ...subscription(),
       viewId: "view_1",
       properties: ["status"],
       events: ["row.created", "approval.requested"],
     }));
-    return { ...deps, inAgentSession: () => inAgentSession, triggers: store };
+    return {
+      ...deps,
+      inAgentSession: () => inAgentSession,
+      triggers: store,
+      triggerOwner: () => owner,
+      // Neither this machine's login nor its sessions are read: only the operator
+      // acts as the operator, and the test says which session names already exist.
+      triggerActsAsOperator: (ownerPrincipal: string | undefined) => ownerPrincipal === "operator",
+      resolveSession: (ref: string) => (ref in existingSessions ? { sessionKey: existingSessions[ref]! } : null),
+    };
   }
 
   it("sends the filter and, from the operator's terminal, creates an enabled trigger on the inbox subject", async () => {
@@ -959,11 +976,194 @@ describe("ravi bases subscribe filters and --trigger", () => {
         'data.category == "bases" && data.payload.baseId == "base_1" && data.payload.subscriptionId == "sub_1" && (data.eventType == "bases.approval.requested" || data.eventType == "bases.row.created" || data.eventType == "bases.rows.bulk_changed")',
     });
     expect(triggers.refreshes()).toBe(1);
+    // The operator subscribed, so the trigger's turns act in Bases as the operator.
+    expect(triggers.created[0]).toMatchObject({ ownerPrincipal: "operator" });
     expect(result).toMatchObject({
       filter: { viewId: "view_1", properties: ["status"], events: ["row.created", "approval.requested"] },
-      trigger: { id: "trg_1", enabled: true, created: true, draft: false, enableCommand: null },
+      trigger: {
+        id: "trg_1",
+        enabled: true,
+        created: true,
+        draft: false,
+        enableCommand: null,
+        ownerPrincipal: "operator",
+        runsAsOperator: true,
+      },
     });
     expectReturnsMatch(BasesCommands, "subscribe", result);
+  });
+
+  it("records who subscribed as the trigger's owner and says when that is not the operator", async () => {
+    const subscribeAs = async (owner: string) => {
+      const triggers = triggerStore();
+      const deps = subscribeDeps([], true, triggers.store, owner);
+      const captured = await captureConsole(() =>
+        runWithContext({ transport: "tool", agentId: "triagem", sessionName: "triagem-main" }, () =>
+          new BasesCommands(deps).subscribe(
+            "crm",
+            undefined,
+            undefined,
+            "row.created",
+            true,
+            "triagem",
+            undefined,
+            undefined,
+            "sales",
+            undefined,
+            undefined,
+          ),
+        ),
+      );
+      return { ...captured, created: triggers.created };
+    };
+
+    // The owner asking their agent in their own chat: a draft, but theirs.
+    const own = await subscribeAs("operator");
+    expect(own.created[0]).toMatchObject({ ownerPrincipal: "operator", enabled: false });
+    expect(own.result).toMatchObject({ trigger: { draft: true, ownerPrincipal: "operator", runsAsOperator: true } });
+    expect(own.output).not.toContain("not the operator");
+    expectReturnsMatch(BasesCommands, "subscribe", own.result);
+
+    // Someone else asking: the trigger acts as them, and the output says so.
+    const other = await subscribeAs("contact:c_ana");
+    expect(other.created[0]).toMatchObject({ ownerPrincipal: "contact:c_ana" });
+    expect(other.result).toMatchObject({ trigger: { ownerPrincipal: "contact:c_ana", runsAsOperator: false } });
+    expect(other.output).toContain("Runs as contact:c_ana, not the operator");
+    expect(other.output).toContain("through their own ravi link");
+
+    // A turn Ravi cannot attribute: owned by nobody, and the output says Bases will refuse it.
+    const nobody = await subscribeAs("unknown");
+    expect(nobody.result).toMatchObject({ trigger: { ownerPrincipal: "unknown", runsAsOperator: false } });
+    expect(nobody.output).toContain("Runs as unknown, not the operator: Bases refuses its turns");
+  });
+
+  it("says whether the trigger runs in its own session, which Bases requires", async () => {
+    const subscribeInto = async (session: string | undefined, context: Record<string, unknown> = {}) => {
+      const triggers = triggerStore();
+      const captured = await captureConsole(() =>
+        runWithContext(context, () =>
+          new BasesCommands(subscribeDeps([], false, triggers.store)).subscribe(
+            "crm",
+            undefined,
+            undefined,
+            "row.created",
+            true,
+            "triagem",
+            session,
+            undefined,
+            "sales",
+            undefined,
+            undefined,
+          ),
+        ),
+      );
+      return { ...captured, created: triggers.created };
+    };
+
+    // `--session isolated` is the trigger's own session: its turns read and write the base.
+    const own = await subscribeInto("isolated");
+    expect(own.created[0]).toMatchObject({ session: "isolated" });
+    expect(own.result).toMatchObject({ trigger: { session: "isolated", runsAsOperator: true, ownsSession: true } });
+    expect(own.output).not.toContain("not the trigger's own");
+    expectReturnsMatch(BasesCommands, "subscribe", own.result);
+
+    // No --session from the terminal: the agent's main session, where the turn
+    // sees the event but Bases refuses it. The output says how to change that.
+    const main = await subscribeInto(undefined);
+    expect(main.created[0]).toMatchObject({ session: "main" });
+    expect(main.result).toMatchObject({ trigger: { session: "main", runsAsOperator: true, ownsSession: false } });
+    expect(main.output).toContain('Runs in session "main", which is not the trigger\'s own');
+    expect(main.output).toContain("ravi triggers set trg_1 session isolated");
+    expectReturnsMatch(BasesCommands, "subscribe", main.result);
+
+    // A named or templated session is one anyone can name: it does not lend either.
+    for (const session of ["requests-queue", "bases-{{data.payload.rowId}}"]) {
+      const shared = await subscribeInto(session);
+      expect(shared.result).toMatchObject({ trigger: { session, ownsSession: false } });
+      expect(shared.output).toContain(`Runs in session "${session}", which is not the trigger's own`);
+      expectReturnsMatch(BasesCommands, "subscribe", shared.result);
+    }
+  });
+
+  it("does not point the trigger at another trigger's own session", async () => {
+    const ownKey = "agent:triagem:trigger:aaaa1111:own";
+    existingSessions = { "triagem-trigger-rows-1a2b3c4d": ownKey, [ownKey]: ownKey };
+    const subscribe = (session: string | undefined, context: Record<string, unknown> = {}) => {
+      const triggers = triggerStore();
+      const calls: Call[] = [];
+      const run = captureConsole(() =>
+        runWithContext(context, () =>
+          new BasesCommands(subscribeDeps(calls, false, triggers.store)).subscribe(
+            "crm",
+            undefined,
+            undefined,
+            "row.created",
+            true,
+            "triagem",
+            session,
+            undefined,
+            "sales",
+            undefined,
+            undefined,
+          ),
+        ),
+      );
+      return { run, triggers, calls };
+    };
+
+    // Asked for by name or by key: refused before any Console call.
+    for (const ref of ["triagem-trigger-rows-1a2b3c4d", ownKey]) {
+      const attempt = subscribe(ref);
+      await expect(attempt.run).rejects.toThrow(`Session ${ref} is the own session of trigger aaaa1111`);
+      expect(attempt.calls).toEqual([]);
+      expect(attempt.triggers.created).toEqual([]);
+    }
+
+    // Subscribing during one of that trigger's turns: the current session is
+    // not a default to share, so the trigger goes to the agent's main session.
+    const during = subscribe(undefined, {
+      transport: "tool",
+      agentId: "triagem",
+      sessionName: "triagem-trigger-rows-1a2b3c4d",
+      sessionKey: ownKey,
+    });
+    await during.run;
+    expect(during.triggers.created[0]).toMatchObject({ session: "main" });
+  });
+
+  it("reads who is asking before the first Console call", async () => {
+    const calls: Call[] = [];
+    const triggers = triggerStore();
+    let consoleCallsWhenAsked = -1;
+    const deps = {
+      ...subscribeDeps(calls, false, triggers.store),
+      triggerOwner: () => {
+        consoleCallsWhenAsked = calls.length;
+        return "operator";
+      },
+    };
+
+    await captureConsole(() =>
+      runWithContext({}, () =>
+        new BasesCommands(deps).subscribe(
+          "crm",
+          undefined,
+          undefined,
+          "row.created",
+          true,
+          "triagem",
+          undefined,
+          undefined,
+          "sales",
+          undefined,
+          true,
+        ),
+      ),
+    );
+
+    expect(consoleCallsWhenAsked).toBe(0);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(triggers.created[0]).toMatchObject({ ownerPrincipal: "operator" });
   });
 
   it("creates a disabled draft from an agent session and says how the operator turns it on", async () => {
@@ -1032,7 +1232,17 @@ describe("ravi bases subscribe filters and --trigger", () => {
 
     expect(triggers.created).toEqual([]);
     expect(triggers.refreshes()).toBe(0);
-    expect(result).toMatchObject({ trigger: { id: "trg_old", enabled: true, created: false, draft: false } });
+    // Reuse never adopts: a trigger written before owners existed stays ownerless.
+    expect(result).toMatchObject({
+      trigger: {
+        id: "trg_old",
+        enabled: true,
+        created: false,
+        draft: false,
+        ownerPrincipal: "unknown",
+        runsAsOperator: false,
+      },
+    });
   });
 
   it("lets the trigger through the bulk and backfill items its events can bring", () => {

@@ -595,6 +595,39 @@ describe("native Slack context recovery keeps logical output ownership", () => {
     expect((await consume([built.job], Date.now())).sends).toEqual(["Recovered legacy answer"]);
   });
 
+  it("hands a trigger turn's recovery on without the trigger owner's authority", async () => {
+    const f = await fixture("user", undefined, "claude");
+    f.streaming.toolEffectFence = resolveRuntimeToolEffectFence("claude", capabilities.tools.permissionMode);
+    const authority = {
+      triggerId: "trg_1",
+      ownerPrincipal: "operator",
+      ownerIsOperator: true,
+      ownSessionKey: f.session.sessionKey,
+    };
+    f.streaming.pendingMessages = [
+      createQueuedRuntimeUserMessage({
+        prompt: "[Trigger: rows] summarize the row",
+        source: f.streaming.currentSource,
+        _trigger: true,
+        _triggerId: "trg_1",
+        _triggerAuthority: authority,
+      }),
+    ];
+    const initial = await startQueuedTurn(f);
+    expect(f.streaming.currentTurnAuthority?._triggerAuthority).toEqual(authority);
+    await f.run(
+      (async function* () {
+        yield { type: "turn.failed", error: "context window exhausted", recoverable: false };
+      })(),
+    );
+    await initial.return(undefined);
+    // The recovery prompt restates the session's recent history, so it is no
+    // longer the fire's own text: still the trigger's turn, with nobody's authority.
+    const recovered = f.stashedMessages.get(f.session.name!)?.[0];
+    expect(recovered?.launchPrompt).toMatchObject({ _trigger: true, _triggerId: "trg_1" });
+    expect(recovered?.launchPrompt).not.toHaveProperty("_triggerAuthority");
+  });
+
   it("keeps Claude recovery refused after a tool has started", async () => {
     const f = await fixture("bot", undefined, "claude");
     f.streaming.toolEffectFence = resolveRuntimeToolEffectFence("claude", capabilities.tools.permissionMode);

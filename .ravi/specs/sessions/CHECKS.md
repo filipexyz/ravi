@@ -4,6 +4,29 @@
 
 - A session MUST always belong to exactly one agent.
 - Renaming `session_name` MUST NOT rewrite `session_key`.
+- A session under a trigger's key (`agent:<agent>:trigger:<id>`, its `:own`
+  form and its `:key:<24 hex>` form) MUST be created only by the trigger
+  runner: every
+  other creation throws `SESSION_KEY_RESERVED`, an existing one is returned
+  to anybody, keys that only resemble or derive from a trigger's stay open
+  (`src/router/sessions.test.ts`), and `sessions send <name> -a <agent>`
+  refuses the name without creating a session
+  (`src/cli/commands/sessions.test.ts`).
+- A name spelled like a trigger's session key MUST be accepted only as the
+  session's own key, at creation and by `updateSessionName`, in any letter
+  case; any other name MUST be taken as before, one spelled like another
+  kind of key included (`src/router/sessions.test.ts`).
+- A trigger's own session MUST be named by its key whatever it is asked,
+  with the characters a name cannot hold written out, and MUST refuse
+  another name at creation, by `updateSessionName` and by
+  `renameSessionName` (`src/router/sessions.test.ts`,
+  `src/triggers/__tests__/runner-owner.test.ts`).
+- `findSessionByChatId` MUST skip a trigger's own session and return the
+  chat's other session, or none (`src/router/sessions.test.ts`).
+- A prompt published to a trigger's own session MUST become a turn only when
+  it is that trigger's fire or the runtime's restart notice for that session
+  (`src/runtime/session-dispatcher.test.ts`), and `sessions send` MUST refuse
+  the session as a target (`src/cli/commands/sessions.test.ts`).
 - Session reset MUST clear provider continuity state but MUST NOT drop attach
   subscriptions.
 - Attach/detach MUST persist only on `session_chat_subscriptions`. Detach MUST

@@ -7,6 +7,7 @@ import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_POLICY, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
+import { isTriggerOwnSessionKey } from "../../triggers/authority.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cronListReturnSchema, cronMutationReturnSchema, cronShowReturnSchema } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
@@ -738,8 +739,10 @@ export class CronCommands {
       ? undefined
       : (account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined));
 
-    // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123)
-    const replySession = isShellJob ? undefined : ctx?.sessionKey;
+    // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123).
+    // A trigger's own session runs that trigger's fires only, so a job created
+    // during one of its turns has no reply session and runs in the main one.
+    const replySession = isShellJob || isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionKey;
 
     // Invalid input fails before the owner refusal (exit 3).
     const shellTimeoutMs = isShellJob ? parseCronShellTimeout(timeout) : undefined;
