@@ -1,4 +1,4 @@
-import type { NativeBackgroundTask } from "./background-work.js";
+import type { NativeBackgroundTask, UndeliveredBackgroundWake } from "./background-work.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
 import type { TurnProvenance } from "./turn-provenance.js";
@@ -254,6 +254,11 @@ export interface RuntimeHostStreamingSession {
    * the task with the provider process and lose the completion.
    */
   pendingBackgroundTasks?: Map<string, NativeBackgroundTask>;
+  /**
+   * Background outcomes whose wake the durable prompt queue has not accepted
+   * yet. They are being redelivered; until then the session is not idle.
+   */
+  undeliveredBackgroundWakes?: Map<string, UndeliveredBackgroundWake>;
   /**
    * Host-loop observer for skill-gate deliveries persisted in-process by the
    * authorize path. Set while the event loop owns this stream so live state

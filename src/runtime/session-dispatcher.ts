@@ -7,7 +7,8 @@ import {
   BACKGROUND_TASK_LOST_REASON,
   buildBackgroundTaskLostPrompt,
   decideIdleEviction,
-  publishBackgroundWake,
+  deliverBackgroundWake,
+  hasProcessBoundBackgroundWork,
   resolveRuntimeBackgroundTaskTtlMs,
   type BackgroundWakePublisher,
 } from "./background-work.js";
@@ -1996,7 +1997,7 @@ export class RuntimeSessionDispatcher {
       !isRuntimeSessionServing(session) &&
       // A provider-owned background task dies with the process; pool pressure
       // must not be the thing that loses its completion.
-      !session.pendingBackgroundTasks?.size &&
+      !hasProcessBoundBackgroundWork(session) &&
       !this.startReservations.has(sessionName) &&
       !this.startingSessions.has(sessionName) &&
       !this.debounceStates.has(sessionName) &&
@@ -2525,17 +2526,20 @@ export class RuntimeSessionDispatcher {
   }
 
   private reportLostBackgroundTasks(sessionName: string, prompt: string, taskIds: string[]): void {
-    publishBackgroundWake(
+    void deliverBackgroundWake({
       sessionName,
       prompt,
-      { kind: "native_task_lost", taskIds },
-      this.options.publishBackgroundWake,
-    ).catch((error: unknown) => {
-      log.error("Could not report lost background tasks; the session owes an answer", {
-        sessionName,
-        taskIds,
-        error,
-      });
+      meta: { kind: "native_task_lost", taskIds },
+      ...(this.options.publishBackgroundWake ? { publish: this.options.publishBackgroundWake } : {}),
+      onAttemptFailed: ({ error, attempt, willRetry }) => {
+        log.error("Could not report lost background tasks; the session owes an answer", {
+          sessionName,
+          taskIds,
+          attempt,
+          willRetry,
+          error,
+        });
+      },
     });
   }
 

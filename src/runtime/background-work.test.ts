@@ -9,6 +9,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   buildNativeBackgroundTaskOutcomePrompt,
   decideIdleEviction,
+  deliverBackgroundWake,
   observeNativeBackgroundTaskEvent,
   publishBackgroundWake,
   resolveRuntimeBackgroundTaskTtlMs,
@@ -165,6 +166,91 @@ describe("background completion survives the session", () => {
         },
       },
     ]);
+  });
+
+  it("native_task_outcome_survives_rejected_wake_publish", async () => {
+    const holder: BackgroundWorkHolder = {};
+    observeNativeBackgroundTaskEvent(holder, { type: "system", subtype: "task_started", task_id: "t9" }, 1_000);
+    const finished = observeNativeBackgroundTaskEvent(holder, {
+      type: "system",
+      subtype: "task_notification",
+      task_id: "t9",
+      status: "completed",
+      summary: "done",
+    });
+    if (finished.kind !== "finished") throw new Error("expected a finished observation");
+    // The provider process is done with the task, so it left the native count.
+    expect(holder.pendingBackgroundTasks?.size).toBe(0);
+
+    const attempts: Array<{ messageId?: string; prompt: unknown }> = [];
+    const failures: Array<{ attempt: number; willRetry: boolean }> = [];
+    const evictionWhileUndelivered: boolean[] = [];
+    const idle = () =>
+      decideIdleEviction({ sessionName: "dm-wake", holder, idleMs: 6 * 60_000, idleTtlMs: 5 * 60_000 }).evict;
+
+    const delivery = await deliverBackgroundWake({
+      sessionName: "dm-wake",
+      prompt: buildNativeBackgroundTaskOutcomePrompt(finished),
+      meta: { kind: "native_task_finished", taskIds: ["t9"] },
+      holder,
+      retryDelaysMs: [10, 20],
+      sleep: async () => {
+        // Between attempts the outcome is still owed: the session must not look idle.
+        evictionWhileUndelivered.push(idle());
+        expect(holder.undeliveredBackgroundWakes?.size).toBe(1);
+      },
+      publish: async (_sessionName, payload, options) => {
+        attempts.push({ messageId: options?.messageId, prompt: payload.prompt });
+        if (attempts.length < 3) throw new Error("SESSION_PROMPTS unavailable");
+      },
+      onAttemptFailed: ({ attempt, willRetry }) => failures.push({ attempt, willRetry }),
+    });
+
+    expect(delivery).toEqual({
+      delivered: true,
+      attempts: 3,
+      wakeId: "native-task:dm-wake:native_task_finished:t9",
+    });
+    expect(failures).toEqual([
+      { attempt: 1, willRetry: true },
+      { attempt: 2, willRetry: true },
+    ]);
+    expect(evictionWhileUndelivered).toEqual([false, false]);
+    // Every attempt carries the same id, so a publish that landed but answered
+    // with an error cannot become a second turn.
+    expect(attempts.map((attempt) => attempt.messageId)).toEqual([
+      "native-task:dm-wake:native_task_finished:t9",
+      "native-task:dm-wake:native_task_finished:t9",
+      "native-task:dm-wake:native_task_finished:t9",
+    ]);
+    expect(String(attempts[2]?.prompt)).toContain("t9");
+    // Accepted: nothing is owed and the session is ordinary idle again.
+    expect(holder.undeliveredBackgroundWakes?.size).toBe(0);
+    expect(idle()).toBe(true);
+  });
+
+  it("reports the last rejected wake so the caller can record it durably", async () => {
+    const holder: BackgroundWorkHolder = {};
+    const failures: Array<{ attempt: number; willRetry: boolean }> = [];
+    const delivery = await deliverBackgroundWake({
+      sessionName: "dm-wake",
+      prompt: "[System] Tarefa em background t1 terminou: completed.",
+      meta: { kind: "native_task_finished", taskIds: ["t1"] },
+      holder,
+      retryDelaysMs: [1],
+      sleep: async () => {},
+      publish: async () => {
+        throw new Error("SESSION_PROMPTS unavailable");
+      },
+      onAttemptFailed: ({ attempt, willRetry }) => failures.push({ attempt, willRetry }),
+    });
+    expect(delivery.delivered).toBe(false);
+    expect(delivery.attempts).toBe(2);
+    expect(failures).toEqual([
+      { attempt: 1, willRetry: true },
+      { attempt: 2, willRetry: false },
+    ]);
+    expect(holder.undeliveredBackgroundWakes?.size).toBe(0);
   });
 
   it("dead_background_task_reports_failure_instead_of_hanging", async () => {

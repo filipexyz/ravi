@@ -95,7 +95,7 @@ import {
   buildNativeBackgroundTaskOutcomePrompt,
   decideIdleEviction,
   observeNativeBackgroundTaskEvent,
-  publishBackgroundWake,
+  deliverBackgroundWake,
   resolveRuntimeBackgroundTaskTtlMs,
   type NativeBackgroundTask,
 } from "./background-work.js";
@@ -1920,21 +1920,31 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     prompt: string,
     meta: { kind: "native_task_finished" | "native_task_lost"; taskIds: string[] },
   ) => {
-    publishBackgroundWake(sessionName, prompt, meta).catch((error: unknown) => {
-      log.error("Could not wake session for background work", { sessionName, meta, error });
-      recordTraceEvent({
-        provider: runtimeSession.provider,
-        model,
-        eventType: "background_task.delivery_failed",
-        eventGroup: "session",
-        status: "failed",
-        source: null,
-        payloadJson: {
-          ...meta,
-          prompt,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
+    // O desfecho de uma task terminada fica pendente na sessão até a fila
+    // aceitar; o de uma task perdida sai depois do despejo, sem sessão para segurar.
+    void deliverBackgroundWake({
+      sessionName,
+      prompt,
+      meta,
+      ...(meta.kind === "native_task_finished" ? { holder: streaming } : {}),
+      onAttemptFailed: ({ error, attempt, willRetry, retryInMs }) => {
+        log.error("Could not wake session for background work", { sessionName, meta, attempt, willRetry, error });
+        recordTraceEvent({
+          provider: runtimeSession.provider,
+          model,
+          eventType: willRetry ? "background_task.delivery_retrying" : "background_task.delivery_failed",
+          eventGroup: "session",
+          status: "failed",
+          source: null,
+          payloadJson: {
+            ...meta,
+            prompt,
+            attempt,
+            ...(retryInMs !== undefined ? { retryInMs } : {}),
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      },
     });
   };
   const reportLostBackgroundTasks = (tasks: NativeBackgroundTask[], idleMs: number) => {

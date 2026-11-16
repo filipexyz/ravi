@@ -56,6 +56,26 @@ export interface NativeBackgroundTask {
 /** O pedaço da sessão de streaming que este módulo lê e escreve. */
 export interface BackgroundWorkHolder {
   pendingBackgroundTasks?: Map<string, NativeBackgroundTask>;
+  /**
+   * Avisos de background que a fila durável ainda não aceitou. A task já saiu de
+   * `pendingBackgroundTasks` (o processo acabou), mas o desfecho ainda não chegou
+   * a lugar durável: enquanto houver entrada aqui a sessão não é idle.
+   */
+  undeliveredBackgroundWakes?: Map<string, UndeliveredBackgroundWake>;
+}
+
+/** Aviso de background com publicação recusada, ainda em reentrega. */
+export interface UndeliveredBackgroundWake {
+  wakeId: string;
+  kind: BackgroundWakeMeta["kind"];
+  taskIds: string[];
+  attempts: number;
+  since: number;
+}
+
+export interface BackgroundWakeMeta {
+  kind: "native_task_finished" | "native_task_lost";
+  taskIds: string[];
 }
 
 export type NativeBackgroundTaskStatus = "completed" | "failed" | "stopped" | "killed";
@@ -142,10 +162,13 @@ function normalizeNotificationStatus(value: unknown): NativeBackgroundTaskStatus
 export interface PendingBackgroundWork {
   nativeTasks: NativeBackgroundTask[];
   jobIds: string[];
+  /** Desfechos cuja publicação na fila durável foi recusada e está em reentrega. */
+  undeliveredWakes: UndeliveredBackgroundWake[];
 }
 
 export function listPendingBackgroundWork(sessionName: string, holder: BackgroundWorkHolder): PendingBackgroundWork {
   const nativeTasks = [...(holder.pendingBackgroundTasks?.values() ?? [])];
+  const undeliveredWakes = [...(holder.undeliveredBackgroundWakes?.values() ?? [])];
   let jobIds: string[] = [];
   try {
     jobIds = dbListPendingJobIdsForSession(sessionName);
@@ -153,11 +176,16 @@ export function listPendingBackgroundWork(sessionName: string, holder: Backgroun
     // Sem banco não dá para provar pendência de job; as tasks nativas ainda contam.
     log.warn("Could not read pending jobs for idle check", { sessionName, error });
   }
-  return { nativeTasks, jobIds };
+  return { nativeTasks, jobIds, undeliveredWakes };
 }
 
 export function hasPendingBackgroundWork(work: PendingBackgroundWork): boolean {
-  return work.nativeTasks.length > 0 || work.jobIds.length > 0;
+  return work.nativeTasks.length > 0 || work.jobIds.length > 0 || work.undeliveredWakes.length > 0;
+}
+
+/** A sessão carrega trabalho de provider que morre, ou se perde, com o processo dela. */
+export function hasProcessBoundBackgroundWork(holder: BackgroundWorkHolder): boolean {
+  return Boolean(holder.pendingBackgroundTasks?.size || holder.undeliveredBackgroundWakes?.size);
 }
 
 export type IdleEvictionDecision =
@@ -224,24 +252,135 @@ export function buildBackgroundTaskLostPrompt(input: { tasks: NativeBackgroundTa
   ].join("\n");
 }
 
-export type BackgroundWakePublisher = (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
+export type BackgroundWakePublisher = (
+  sessionName: string,
+  payload: Record<string, unknown>,
+  options?: { messageId?: string },
+) => Promise<void>;
 
 /**
  * Entrega um aviso de background pela fila durável de prompts.
  *
- * A fila acorda a sessão se ela não estiver viva. Se nem a fila aceitar, o
- * chamador recebe o erro para registrar o motivo em lugar durável (trace).
+ * A fila acorda a sessão se ela não estiver viva. É uma tentativa só: quem
+ * precisa que o desfecho sobreviva a uma recusa usa `deliverBackgroundWake`.
  */
 export async function publishBackgroundWake(
   sessionName: string,
   prompt: string,
-  meta: { kind: "native_task_finished" | "native_task_lost"; taskIds: string[] },
+  meta: BackgroundWakeMeta,
   publish: BackgroundWakePublisher = publishSessionPrompt,
+  options: { messageId?: string } = {},
 ): Promise<void> {
-  await publish(sessionName, {
+  const payload = {
     prompt,
     deliveryBarrier: "after_response",
     deliveryBarrierSource: "default",
     _backgroundTask: meta,
+  };
+  if (options.messageId) {
+    await publish(sessionName, payload, { messageId: options.messageId });
+    return;
+  }
+  await publish(sessionName, payload);
+}
+
+/**
+ * Espera entre tentativas de reentrega. Somadas dão ~17 min: cobre uma queda
+ * curta da fila sem segurar a sessão além do TTL de pendência.
+ */
+export const BACKGROUND_WAKE_RETRY_DELAYS_MS: readonly number[] = [1_000, 5_000, 30_000, 120_000, 300_000, 600_000];
+
+/**
+ * Id estável do aviso. Toda tentativa do mesmo desfecho usa o mesmo id, então
+ * uma publicação que entrou na fila mas respondeu com erro não vira dois turnos.
+ */
+export function backgroundWakeMessageId(sessionName: string, meta: BackgroundWakeMeta): string {
+  return `native-task:${sessionName}:${meta.kind}:${[...meta.taskIds].sort().join(",")}`;
+}
+
+export interface BackgroundWakeFailedAttempt {
+  error: unknown;
+  attempt: number;
+  willRetry: boolean;
+  retryInMs?: number;
+}
+
+export interface BackgroundWakeDelivery {
+  delivered: boolean;
+  attempts: number;
+  wakeId: string;
+}
+
+function sleepUnref(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
   });
+}
+
+/**
+ * Entrega um aviso de background e só o dá por entregue quando a fila aceita.
+ *
+ * Enquanto a publicação é recusada, o aviso fica em `undeliveredBackgroundWakes`
+ * do holder (a sessão não é tratada como idle) e é reentregue com o mesmo id.
+ * Esgotadas as tentativas, o chamador é avisado com `willRetry: false` para
+ * deixar o desfecho em lugar durável (trace): a memória não sobrevive ao daemon.
+ * Nunca rejeita.
+ */
+export async function deliverBackgroundWake(input: {
+  sessionName: string;
+  prompt: string;
+  meta: BackgroundWakeMeta;
+  holder?: BackgroundWorkHolder;
+  publish?: BackgroundWakePublisher;
+  retryDelaysMs?: readonly number[];
+  sleep?: (ms: number) => Promise<void>;
+  onAttemptFailed?: (failure: BackgroundWakeFailedAttempt) => void;
+  now?: () => number;
+}): Promise<BackgroundWakeDelivery> {
+  const wakeId = backgroundWakeMessageId(input.sessionName, input.meta);
+  const delays = input.retryDelaysMs ?? BACKGROUND_WAKE_RETRY_DELAYS_MS;
+  const sleep = input.sleep ?? sleepUnref;
+  const holder = input.holder;
+  const entry: UndeliveredBackgroundWake = {
+    wakeId,
+    kind: input.meta.kind,
+    taskIds: [...input.meta.taskIds],
+    attempts: 0,
+    since: (input.now ?? Date.now)(),
+  };
+  // Pendente desde antes da primeira tentativa: entre a task sair da contagem e
+  // a fila aceitar o aviso não existe janela em que a sessão pareça idle.
+  if (holder) {
+    holder.undeliveredBackgroundWakes ??= new Map();
+    holder.undeliveredBackgroundWakes.set(wakeId, entry);
+  }
+  const settle = () => {
+    if (holder?.undeliveredBackgroundWakes?.get(wakeId) === entry) holder.undeliveredBackgroundWakes.delete(wakeId);
+  };
+
+  for (;;) {
+    entry.attempts += 1;
+    try {
+      await publishBackgroundWake(input.sessionName, input.prompt, input.meta, input.publish, { messageId: wakeId });
+      settle();
+      return { delivered: true, attempts: entry.attempts, wakeId };
+    } catch (error) {
+      const retryInMs = delays[entry.attempts - 1];
+      const willRetry = retryInMs !== undefined;
+      log.warn("Background wake publish rejected", {
+        sessionName: input.sessionName,
+        wakeId,
+        attempt: entry.attempts,
+        willRetry,
+        error,
+      });
+      input.onAttemptFailed?.({ error, attempt: entry.attempts, willRetry, ...(willRetry ? { retryInMs } : {}) });
+      if (!willRetry) {
+        settle();
+        return { delivered: false, attempts: entry.attempts, wakeId };
+      }
+      await sleep(retryInMs);
+    }
+  }
 }
