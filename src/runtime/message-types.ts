@@ -1,5 +1,6 @@
 import type { CronRunAuthority } from "../cron/authority.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
+import type { TriggerRunAuthority } from "../triggers/authority.js";
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -250,6 +251,8 @@ export interface PromptMessage {
   _trigger?: boolean;
   /** Trigger id when `_trigger` is true. */
   _triggerId?: string;
+  /** Ownership fixed by the runner when the trigger fired, never rebuilt from the live trigger. */
+  _triggerAuthority?: TriggerRunAuthority;
   /** Session followup runner prompt marker. */
   _sessionFollowup?: boolean;
   /** Session followup cadence id when `_sessionFollowup` is true. */

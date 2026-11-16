@@ -41,6 +41,7 @@ import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
   hasIsolatedRuntimeTurnEnvelope,
+  withoutSharedTriggerAuthority,
   runtimeTurnActorKey,
   hasDeliverableRuntimeMessages,
   prepareRuntimeInterruptSuccessor,
@@ -48,6 +49,7 @@ import {
   type RuntimeInterruptSuccessorPreparation,
   wakeRuntimeSessionIfDeliverable,
 } from "./delivery-queue.js";
+import { triggerAuthorityLendsOwner, triggerOwnSessionAdmitsPrompt } from "../triggers/authority.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
   CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
@@ -895,6 +897,32 @@ export class RuntimeSessionDispatcher {
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
     assertThreadAttentionSession(prompt, sessionEntry);
+    // Every prompt a producer publishes comes through here. A trigger's own
+    // session runs that trigger's fires and nothing else, so no relay, task
+    // report, cron run, hook action or chat message becomes a turn there.
+    // The session as stored and the one a runtime still living under this
+    // name was started for: neither may be an own session this prompt is not
+    // for. With neither left the name itself says it, since an own session
+    // goes by its key.
+    const targetSession = sessionEntry ?? getSession(sessionName);
+    const liveSessionKey = this.streamingSessions.get(sessionName)?.sessionKey;
+    const targetKeys = targetSession || liveSessionKey ? [targetSession?.sessionKey, liveSessionKey] : [sessionName];
+    const refusedKey = targetKeys.find((key) => key && !triggerOwnSessionAdmitsPrompt(key, prompt));
+    if (refusedKey) {
+      if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+      if (prompt._taskAssignmentId) throw new Error("Task assignment session runs a trigger's fires only");
+      if (isThreadAttentionPrompt(prompt)) throw new Error("Thread attention session runs a trigger's fires only");
+      reportRuntimePromptIntakeFailure({
+        sessionName,
+        prompt,
+        reason: "trigger_own_session",
+        stage: "dispatch",
+        instanceId: this.options.instanceId,
+        safeEmit: this.options.safeEmit,
+        details: { sessionKey: refusedKey },
+      });
+      return;
+    }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent =
       routerConfig.agents[agentId] ??
@@ -2527,6 +2555,11 @@ export class RuntimeSessionDispatcher {
   }
 
   private consumeDeferredBootstrap(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+    // A trigger fire that lends its owner's authority runs its own text only;
+    // the deferred bootstrap waits for the next turn.
+    if (triggerAuthorityLendsOwner(prompt._triggerAuthority)) {
+      return prompt;
+    }
     const deferred = this.deferredBootstraps.get(sessionName);
     if (!deferred) {
       return prompt;
@@ -2554,7 +2587,8 @@ export class RuntimeSessionDispatcher {
   ): void {
     const debounce = this.debounceStates.get(sessionName);
     const lastDebounced = debounce?.messages.at(-1);
-    if (debounce && lastDebounced) {
+    // Never onto a trigger fire that lends its owner's authority: `!!` text is someone else's.
+    if (debounce && lastDebounced && !triggerAuthorityLendsOwner(lastDebounced._triggerAuthority)) {
       // Ride along with the batch that is already waiting so arrival order
       // holds, without extending its window.
       debounce.messages[debounce.messages.length - 1] = appendSkipTurnText(lastDebounced, prompt);
@@ -2596,6 +2630,11 @@ export class RuntimeSessionDispatcher {
     // Deferred bootstraps are re-read from `prompt` only, and resume envelopes
     // replay already persisted atoms; the next real turn carries the text.
     if (prompt._deferRuntimeStart || prompt._resumeStashedMessages || prompt._daemonRestartResume) {
+      return prompt;
+    }
+    // A trigger fire that lends its owner's authority runs its own text only;
+    // the held `!!` text waits for the next turn.
+    if (triggerAuthorityLendsOwner(prompt._triggerAuthority)) {
       return prompt;
     }
     const held = this.heldSkipTurnMessages.get(sessionName);
@@ -3297,6 +3336,8 @@ export function canUseNativeRuntimeSteer(
   return (
     barrier === "after_tool" &&
     !hasIsolatedRuntimeTurnEnvelope(prompt) &&
+    // Nothing is injected into a running trigger turn that lends its owner's authority.
+    !triggerAuthorityLendsOwner(session.currentTurnAuthority?._triggerAuthority) &&
     isSameRuntimeTurnSurface(session.currentSource, prompt?.source) &&
     isSameRuntimeTurnActor(session, prompt) &&
     supportsNativeSteer &&
@@ -3386,13 +3427,16 @@ function combineDebounceBatch(batch: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt
     })),
   );
 
-  return {
-    ...last,
-    prompt: batch.map((entry) => entry.prompt).join("\n\n"),
-    deliveryBarrier: delivery.barrier,
-    deliveryBarrierSource: delivery.source,
-    commands: batch.flatMap((entry) => entry.commands ?? []),
-  };
+  return withoutSharedTriggerAuthority(
+    {
+      ...last,
+      prompt: batch.map((entry) => entry.prompt).join("\n\n"),
+      deliveryBarrier: delivery.barrier,
+      deliveryBarrierSource: delivery.source,
+      commands: batch.flatMap((entry) => entry.commands ?? []),
+    },
+    batch.length,
+  );
 }
 
 function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
@@ -3479,7 +3523,7 @@ export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): Runti
     .join("\n\n")
     .trim();
 
-  return {
+  const restart: RuntimeLaunchPrompt = {
     ...(newestLaunchPrompt ?? {
       prompt: combinedPrompt,
       deliveryBarrier: delivery.barrier,
@@ -3496,6 +3540,8 @@ export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): Runti
         : messages.flatMap((message) => message.commands ?? []),
     _resumeStashedMessages: true,
   };
+  // The combined text of several stashed prompts never runs as one trigger's owner.
+  return withoutSharedTriggerAuthority(restart, messages.length);
 }
 
 function selectStashedRestartPromptEnvelope(launchPrompts: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt | undefined {

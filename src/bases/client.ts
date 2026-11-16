@@ -3,7 +3,12 @@
 // never evaluates a filter or an access rule.
 
 import { randomUUID } from "node:crypto";
-import { ConsoleApiClient, normalizeConsoleUrl, refreshCredentialsForStore } from "../cloud-auth/client.js";
+import {
+  ConsoleApiClient,
+  normalizeConsoleUrl,
+  refreshCredentialsForStore,
+  type ConsoleApiClientOptions,
+} from "../cloud-auth/client.js";
 import { CloudAuthError, isCloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
@@ -74,7 +79,8 @@ export interface BasesClientDeps extends ConsoleScopeResolverDeps {
   clientHint?: () => BasesClientHint | null;
   /**
    * Whether a runtime turn runs this and Ravi cannot say who asked, as a
-   * boolean or the refusal with its reason (default: `unattributedTurnRefusal`).
+   * boolean or the refusal with its reason. Default: the turn is classified
+   * once (`resolveTurnActor`), and that decision also names the actor.
    */
   unattributedTurn?: () => boolean | TurnRefusal | null | Promise<boolean | TurnRefusal | null>;
 }
@@ -519,14 +525,28 @@ export async function openBasesClient(
   const credentials = requireStoredCredentials(readCredentials(), options.console);
   // Every Bases call (reads included) acts as the person of the turn. A turn Ravi
   // cannot attribute would go out as the operator, so it stops here instead.
-  const refusal = normalizeTurnRefusal(await (deps.unattributedTurn ?? defaultUnattributedTurn)());
-  if (refusal) throw new TurnRefusalError(refusal.reason, "bases");
+  // The turn is classified once: the same decision admits it and names its
+  // actor, so a call can never be admitted for one person and sent as another.
+  let actorContact: (() => string | null) | undefined;
+  if (deps.unattributedTurn) {
+    const refusal = normalizeTurnRefusal(await deps.unattributedTurn());
+    if (refusal) throw new TurnRefusalError(refusal.reason, "bases");
+  } else {
+    // Loaded lazily to keep the turn classifier out of import cycles.
+    const { resolveTurnActor } = await import("../cloud-auth/turn-actor.js");
+    const turn = resolveTurnActor(process.env, BASES_TURN_ACTOR);
+    if (turn.refusal) throw new TurnRefusalError(turn.refusal.reason, "bases");
+    actorContact = () => turn.contactId;
+  }
+  // One client for the project lookup and the Bases calls, so both name the
+  // same actor.
+  const client = deps.client ?? basesConsoleClient(credentials.consoleUrl, {}, actorContact);
   const { projectRef } = await resolveConsoleProjectRef(
     { consoleUrl: options.console, explicitProject: options.project ?? null },
-    { ...deps, readCredentials },
+    { ...deps, client, readCredentials },
   );
   return new RaviBasesClient({
-    client: deps.client ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl }),
+    client,
     credentials,
     projectRef,
     write: deps.writeCredentials ?? writeCloudCredentials,
@@ -536,10 +556,37 @@ export async function openBasesClient(
   });
 }
 
-async function defaultUnattributedTurn(): Promise<TurnRefusal | null> {
-  // Loaded lazily, like the client's own actor lookup, to keep the turn classifier out of import cycles.
-  const { unattributedTurnRefusal } = await import("../cloud-auth/turn-actor.js");
-  return unattributedTurnRefusal();
+/**
+ * Bases honors a trigger's owner: a turn a trigger fired acts as whoever owns
+ * the trigger (`triggers/ownership.ts`). The refusal, the actor header and the
+ * link flow all read the turn with this, so they never disagree.
+ */
+const BASES_TURN_ACTOR = { triggerRoutines: true } as const;
+
+/**
+ * The Console client Bases calls go through. It names the turn's actor with
+ * trigger owners honored (the one `openBasesClient` already decided, when
+ * given), and starts no link message for a routine.
+ */
+export function basesConsoleClient(
+  consoleUrl: string,
+  options: Pick<ConsoleApiClientOptions, "fetch" | "timeoutMs"> = {},
+  actorContact?: () => string | null,
+): ConsoleApiClient {
+  return new ConsoleApiClient({
+    ...options,
+    consoleUrl,
+    actorContact:
+      actorContact ??
+      (async () => {
+        const { turnActorContactId } = await import("../cloud-auth/turn-actor.js");
+        return turnActorContactId(process.env, BASES_TURN_ACTOR);
+      }),
+    startActorLink: async (contactId) => {
+      const { startTurnLink } = await import("../identity-link/turn-link.js");
+      return startTurnLink(contactId, { actor: BASES_TURN_ACTOR });
+    },
+  });
 }
 
 function requireStoredCredentials(credentials: CloudCredentials | null, consoleUrl?: string): CloudCredentials {

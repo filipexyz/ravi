@@ -289,7 +289,8 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
     ["draft", "proposed", "published", "superseded", "rejected", "withdrawn"].includes(proposalStatus)
   )
     controls.proposalStatus = proposalStatus;
-  if (read("routine") === "cron") controls.routine = "cron";
+  const routine = read("routine");
+  if (routine === "cron" || routine === "trigger") controls.routine = routine;
   if (read("reason") === "admin_context_exists") controls.reason = "admin_context_exists";
   for (const key of ["expectedSha", "actualSha"] as const) {
     const value = read(key);

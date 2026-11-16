@@ -26,6 +26,7 @@ import { getAgent } from "../../router/config.js";
 import { getAccountForAgent } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
 import { dbCreateTrigger, type TriggerInput } from "../../triggers/index.js";
+import { resolveTriggerOwnerForCurrentTurn } from "../../triggers/ownership.js";
 import { nats } from "../../nats.js";
 import {
   createWatch,
@@ -376,6 +377,7 @@ export class WatchCommands {
         session: parseSession(session),
         cooldownMs: cooldown ? parseDurationMs(cooldown) : 5000,
         filter: `data.watchId == ${JSON.stringify(watch.id)}`,
+        ownerPrincipal: resolveTriggerOwnerForCurrentTurn(),
       };
       if (execute !== true) {
         // Write brake (Manual v2 7.8): this arms a real automation — every

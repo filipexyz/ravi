@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { resolveSession } from "../router/sessions.js";
+import { getOrCreateSession, resolveSession } from "../router/sessions.js";
 import { createContact, deleteContact, setContactStatus } from "../contacts.js";
 import { pickRuntimeTurnAuthorityEnvelope } from "../runtime/delivery-queue.js";
 import { CRON_RUN_AUTHORITY_ENV } from "./authority.js";
@@ -315,6 +315,28 @@ describe("CronRunner agent job outcome tracking", () => {
     });
     const { listLocalInboxItems } = await import("../inbox/local-db.js");
     expect(listLocalInboxItems({ sourceDomain: "cron" })).toHaveLength(1);
+  });
+
+  it("never runs a main-target job in a trigger's own session, its reply session included", async () => {
+    // A trigger's own session goes by its key: one string is its name and its key.
+    const ownKey = "agent:test-agent:trigger:ab12cd34:own";
+    getOrCreateSession(ownKey, "test-agent", stateDir!, undefined, { triggerRunner: true });
+    const runner = new CronRunner();
+
+    // The reply session a job gets when it is created during one of that
+    // trigger's turns: the job runs in the main session.
+    const job = createAgentJob({ sessionTarget: "main", replySession: ownKey });
+    await runner.triggerJob(job.id);
+    const published = publishCalls.at(-1)!;
+    expect(published.payload._jobId).toBe(job.id);
+    expect(published.sessionName).not.toBe(ownKey);
+    expect(resolveSession(published.sessionName)?.sessionKey).toBe("agent:test-agent:main");
+
+    // Any other reply session is still where the job runs.
+    getOrCreateSession("agent:test-agent:whatsapp:dm:5511888888888", "test-agent", stateDir!, { name: "ana-chat" });
+    const elsewhere = createAgentJob({ sessionTarget: "main", replySession: "ana-chat" });
+    await runner.triggerJob(elsewhere.id);
+    expect(publishCalls.at(-1)?.sessionName).toBe("ana-chat");
   });
 
   it("records ok only after the turn completes", async () => {

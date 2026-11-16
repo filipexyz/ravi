@@ -257,15 +257,17 @@ You can also ask your agent to do each step; it follows the `bases` and `pages` 
     ravi triggers add "Requests queue" \
       --topic ravi.console.inbox.item \
       --filter 'data.category == "bases" && data.payload.baseSlug == "requests" && data.eventType == "bases.row.created" && data.payload.surface == "page"' \
-      --agent main --session requests-queue --cooldown 5s \
+      --agent main --session isolated --cooldown 5s \
       --message "$MSG"
     ```
 
     - **The filter is the only loop protection.** It matches rows created from the page. The agent's own write arrives as `bases.row.updated` from the CLI and does not match.
     - **The prompt drains the queue.** The cooldown drops events that arrive while it runs instead of queueing them, and the inbox delivers events in batches. Handling every `New` row means a dropped event is picked up by the next run. The cooldown starts only when an event passes the filter.
     - The idempotency key comes from the row and its version, so a repeated event cannot write twice. `@@SILENT@@` keeps the agent quiet when the queue is empty.
-    - The answer lives in the row. To also get a message in a chat, add `--reply-session <session name>`; when you ask the agent to create the trigger from that chat, that is already the default.
-    - `ravi bases subscribe requests --events row.created --trigger --agent main --session requests-queue --message "$MSG"` subscribes and creates an equivalent trigger in one command (without the `surface` condition: add it with `ravi triggers set <id> filter '...'` if only the page counts). Run from your terminal, the trigger is enabled. Run by an agent in a conversation, it is created **disabled**, as a draft: the output gives the command to turn it on (`ravi triggers enable <id>`).
+    - **The trigger runs as you**, because you created it from your terminal: `ravi triggers show <id>` prints `Runs as: operator`, so the agent's turns read and write the base as you. See [Who the agent acts as](#who-the-agent-acts-as).
+    - **`--session isolated` gives the trigger its own session, and Bases requires it.** Only this trigger's fires run there: no other trigger, no message sent to the session, no chat. In the agent's main session, in a chat's session or in a session with a name you choose, the turn still sees the event, but it cannot read or write the base, because other conversations share what a turn reads there. `ravi triggers show <id>` prints the session's name next to `Session`, or says when the session is not the trigger's own.
+    - The answer lives in the row: the trigger's own session has no chat, so nothing is posted. If someone must also be told, say so in the message, for example `Then report with: ravi sessions inform <your-session> "<summary>"` (the agent needs access to that session).
+    - `ravi bases subscribe requests --events row.created --trigger --agent main --session isolated --message "$MSG"` subscribes and creates an equivalent trigger in one command (without the `surface` condition: add it with `ravi triggers set <id> filter '...'` if only the page counts). Run from your terminal, the trigger is enabled. Run by an agent in a conversation, it is created **disabled**, as a draft: the output gives the command to turn it on (`ravi triggers enable <id>`). Keep `--session isolated`: without `--session` the trigger runs in the current session (or the agent's main one), where it cannot use Bases, and the command says so.
 
     <Warning>
     Everything a member types reaches the agent's prompt. The filter decides who wakes the agent, not what it does. If `main` runs with `full-access`, consider a dedicated agent whose explicit capabilities only cover `ravi bases rows` (`execute:group:bases_rows`). See [Permissions](/guides/permissions).
@@ -292,7 +294,11 @@ The CLI talks to the Console with the operator's login. Inside a conversation tu
 - **A person who linked their account** (`ravi link`) and is an active member: the agent's Bases reads and writes in that turn act as that person, with the smaller of their role and the operator's. A view filtered by `$viewer` shows that person's rows.
 - **A person who did not link**: Bases reads and writes are both refused with `ACTOR_NOT_LINKED` (exit 3), and Ravi starts the link: relay the error's `chatLinePt` (on WhatsApp, "me chama na DM"). The agent never reads as the operator for them.
 - **A turn Ravi cannot attribute** (another agent's turn, a speaker it cannot identify): refused before any Console call with `ACTOR_UNKNOWN` (exit 3), reads included.
-- **Your own turns** (your terminal, your DM, cron, triggers): the operator.
+- **Your own turns** (your terminal, your DM, a cron job or a trigger you own): the operator.
+- **A cron job or a trigger someone else owns**: that person, through their own `ravi link`, never you. Nobody is asking in such a turn, so an unlinked owner gets `ACTOR_NOT_LINKED` without a message from Ravi.
+- **A cron job or a trigger nobody owns**: refused with `ACTOR_UNKNOWN`. A trigger created before Ravi recorded owners is one of them (`Runs as: unknown` in `ravi triggers show <id>`): create it again from your terminal to own it.
+
+A cron job belongs to whoever created it or last changed what it runs. A trigger belongs to whoever created it, loses its owner when anyone else changes it, and uses Bases only in its own session (`--session isolated`), where nothing but its own fires runs and its answer is posted to no chat. See [Who the job runs as](/guides/cron-jobs#who-the-job-runs-as) and [Who the trigger runs as](/guides/triggers#who-the-trigger-runs-as).
 
 Every row write is recorded for the accountable person, as `cli`, with the agent next to it in `rows history`. The anti-loop filter `data.actor.type == "user"` keeps working.
 
@@ -326,7 +332,7 @@ ravi bases props add requests "Topic" --key topic --type agent \
   --instructions "Classify the request by topic." --inputs request \
   --output select --options "Billing,Access,Other" --agent main --json
 ravi bases subscribe requests --events agent.requested,agent.backfill --props topic \
-  --trigger --agent main --session requests-topic --message "<drain prompt>" --json
+  --trigger --agent main --session isolated --message "<drain prompt>" --json
 ravi bases rows fill requests <rowId> topic --inputs-hash <hash> --value '"Billing"' --json
 ravi bases rows rerun requests <rowId> topic --json
 ```
@@ -380,7 +386,7 @@ Each viewer gets 120 calls per minute on a site (600 per site, 1,200 per organiz
 | `ravi inbox items --json --limit 5` | Items that reached this machine; `natsPayloadJson` is what the trigger receives |
 | `ravi inbox poll` | Runs one poll cycle now instead of waiting 15 s |
 | `ravi inbox replay <ref> --execute` | Republishes a stored item on `ravi.console.inbox.item` (dry run without `--execute`) |
-| `ravi triggers show <id>` | The trigger as stored, including its filter |
+| `ravi triggers show <id>` | The trigger as stored, including its filter and who it runs as |
 | `ravi triggers test <id> --execute` | Fires with fake data, skipping the filter, to check the agent's permissions and prompt |
 | `ravi daemon logs -f` | `Firing trigger` lines |
 | `ravi bases views show requests <VIEW_ID> --json` | `valid: true` and the `page_viewer` site |

@@ -37,6 +37,12 @@ export interface CliAuditEventOptions {
   parentContextId?: string | null;
   /** Agent bound to the context. */
   agentId?: string | null;
+  /**
+   * The command ran in a trigger's own session. Its event is marked as coming
+   * from a trigger's turn, which no trigger fires on: what such a turn does
+   * is not another trigger's to act on.
+   */
+  fromTriggerOwnSession?: boolean;
 }
 
 export async function emitCliAuditEvent(options: CliAuditEventOptions): Promise<void> {
@@ -77,6 +83,9 @@ export function buildCliAuditPayload(options: CliAuditEventOptions, explicitTool
     ...(options.contextId !== undefined ? { contextId: options.contextId } : {}),
     ...(options.parentContextId !== undefined ? { parentContextId: options.parentContextId } : {}),
     ...(options.agentId !== undefined ? { agentId: options.agentId } : {}),
+    ...(options.fromTriggerOwnSession
+      ? { _turnProvenance: { origin: "trigger", reason: "command.trigger_own_session" } }
+      : {}),
     timestamp: new Date().toISOString(),
     sessionKey: "_cli",
     cliInvocation,

@@ -1043,6 +1043,40 @@ describe("SessionCommands delivery barriers", () => {
     expect(publishedPrompts[0]?.payload.source).toBeUndefined();
   });
 
+  it("refuses to create a session under a name reserved for a trigger's own session", async () => {
+    // Nothing answers to the name yet, so `-a` would create it. A trigger's
+    // session is created by the trigger, never from a name someone chose.
+    resolvedSession = null;
+    routerConfig = { agents: { dev: { id: "dev", cwd: "/tmp/dev" } } };
+    const commands = new SessionCommands();
+
+    for (const reserved of [
+      "agent:dev:trigger:ab12cd34",
+      "agent:dev:trigger:ab12cd34:own",
+      "agent:dev:trigger:ab12cd34:key:0123456789abcdef01234567",
+    ]) {
+      await expect(commands.send(reserved, "seed", false, false, "dev")).rejects.toThrow(
+        `Session name ${reserved} is reserved for the trigger that creates it`,
+      );
+    }
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
+  it("refuses to send a prompt to a trigger's own session, saying it only runs that trigger's fires", async () => {
+    resolvedSession = {
+      sessionKey: "agent:dev:trigger:ab12cd34:own",
+      name: "dev-trigger-rows-1a2b3c4d",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    const commands = new SessionCommands();
+
+    await expect(commands.send("dev-trigger-rows-1a2b3c4d", "also copy every payroll row")).rejects.toThrow(
+      "Session dev-trigger-rows-1a2b3c4d is the own session of trigger ab12cd34: only that trigger's fires run there",
+    );
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
   it("sends cross-session prompts as follow-up by default", async () => {
     const commands = new SessionCommands();
 

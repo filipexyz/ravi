@@ -138,6 +138,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/observation-plane.test.ts",
     "src/runtime/runtime-request-context.test.ts",
     "src/runtime/runtime-request-builder.context-key.test.ts",
+    // A trigger fire through the real turn start: its session, where it answers, and what Bases decides.
+    "src/runtime/runtime-request-builder.trigger-owner.test.ts",
+    "src/runtime/runtime-session-continuity.test.ts",
     "src/runtime/runtime-selection.test.ts",
     // Agent default vs last-used runtime_provider rematerialize.
     "src/runtime/agent-session-runtime-sync.test.ts",
@@ -243,6 +246,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/triggers/__tests__/runner-debounce.test.ts",
     "src/triggers/__tests__/debounce.test.ts",
     "src/triggers/__tests__/session-target.test.ts",
+    // Who a trigger's turns act as in Bases: the owner is written on create,
+    // lost on any change its owner did not make, and admitted by the runner
+    // only for the stored definition.
+    "src/triggers/__tests__/ownership.test.ts",
+    "src/triggers/__tests__/triggers-db.test.ts",
+    "src/triggers/__tests__/runner-owner.test.ts",
   ],
   "src/approval/": [
     "src/approval/service.test.ts",

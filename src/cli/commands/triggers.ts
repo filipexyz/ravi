@@ -47,6 +47,19 @@ import {
 import { getTriggerTopicWarnings } from "../../triggers/topic-policy.js";
 import { validateFilter } from "../../triggers/filter.js";
 import { resolveTriggerActivation } from "../../triggers/activation.js";
+import {
+  TRIGGER_OWNER_NEUTRAL_SET_KEYS,
+  ownerKeptOnEnable,
+  resolveTriggerOwnerForCurrentTurn,
+  triggerOwnerActsAsOperator,
+  triggerOwnerLostWarning,
+  triggerRunsAs,
+  triggerIsolatedSessionName,
+  triggerRunsAsWarning,
+  triggerRunsInOwnSession,
+  triggerSessionTargetError,
+} from "../../triggers/ownership.js";
+import { isPersonPrincipal, isTriggerOwnSessionKey } from "../../triggers/authority.js";
 import { isLegacySessionTarget, sessionTargetError, type SessionTarget } from "../../triggers/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
@@ -192,6 +205,13 @@ function serializeTrigger(trigger: Trigger) {
   return {
     ...trigger,
     executionType: trigger.executionType ?? "agent",
+    // Who its agent turns act as in Bases. A trigger with no recorded owner acts as nobody.
+    ownerPrincipal: triggerRunsAs(trigger),
+    runsAsOperator: triggerOwnerActsAsOperator(trigger.ownerPrincipal),
+    // Bases lends the owner's authority only in the trigger's own session (`--session isolated`).
+    ownsSession: triggerRunsInOwnSession(trigger),
+    // The session an isolated trigger runs in, once it has fired.
+    isolatedSessionName: triggerIsolatedSessionName(trigger.agentId ?? getDefaultAgentId(), trigger),
     filterRejectCount: trigger.filterRejectCount ?? 0,
     effectiveAgentId: trigger.agentId ?? getDefaultAgentId(),
     debounceMs: trigger.debounceMs ?? 0,
@@ -206,6 +226,34 @@ function serializeTrigger(trigger: Trigger) {
     runtimeState: activation.state,
     ...(activation.reason ? { runtimeStateReason: activation.reason } : {}),
   };
+}
+
+/**
+ * The `Session` line. For an agent trigger a person owns, says when it runs
+ * in a session anyone can name, where Bases does not lend the owner's
+ * authority. A trigger nobody owns is refused everywhere, which `Runs as`
+ * already says.
+ */
+function describeSession(
+  trigger: Pick<Trigger, "id" | "agentId" | "session" | "ownerPrincipal" | "executionType">,
+): string {
+  // Show the isolated session's name once it exists, so its owner can read it.
+  const isolatedName = triggerIsolatedSessionName(trigger.agentId ?? getDefaultAgentId(), trigger);
+  if (isolatedName) return `${trigger.session} (${isolatedName})`;
+  const couldLend = (trigger.executionType ?? "agent") === "agent" && isPersonPrincipal(trigger.ownerPrincipal);
+  return couldLend && !triggerRunsInOwnSession(trigger)
+    ? `${trigger.session} (not the trigger's own session: its turns cannot use Bases; isolated can)`
+    : trigger.session;
+}
+
+/**
+ * The `Runs as` line. Only an agent trigger's turns are held to the owner; a
+ * shell command runs with the machine's access whoever owns the trigger.
+ */
+function describeRunsAs(trigger: Pick<Trigger, "ownerPrincipal" | "executionType">): string {
+  const owner = triggerRunsAs(trigger);
+  if ((trigger.executionType ?? "agent") === "shell") return `${owner} (not enforced on a shell trigger)`;
+  return triggerOwnerActsAsOperator(trigger.ownerPrincipal) ? owner : `${owner} (not the operator)`;
 }
 
 function invalidFilterWarning(
@@ -319,7 +367,11 @@ function normalizeTriggerOnError(value: string | undefined): string | undefined 
   if (!trimmed.startsWith(prefix) || !trimmed.slice(prefix.length).trim()) {
     fail(`Invalid --on-error value: ${value}. Use notify-session:<session>`);
   }
-  return `${prefix}${trimmed.slice(prefix.length).trim()}`;
+  const session = trimmed.slice(prefix.length).trim();
+  // Said now, so a failure is not silently reported nowhere later.
+  const refused = triggerSessionTargetError(session);
+  if (refused) fail(refused);
+  return `${prefix}${session}`;
 }
 
 @Group({
@@ -467,13 +519,14 @@ export class TriggersCommands {
       }
       console.log(`  Topic:           ${trigger.topic}`);
       console.log(`  Execution:       ${trigger.executionType ?? "agent"}`);
+      console.log(`  Runs as:         ${describeRunsAs(trigger)}`);
       if ((trigger.executionType ?? "agent") === "shell") {
         console.log(`  Shell:           ${trigger.shellCommand ?? "(missing)"}`);
         console.log(`  Timeout:         ${formatDurationMs(trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS)}`);
         if (trigger.shellEnvFile) console.log(`  Env file:        ${trigger.shellEnvFile}`);
         if (trigger.onError) console.log(`  On error:        ${trigger.onError}`);
       }
-      console.log(`  Session:         ${trigger.session}`);
+      console.log(`  Session:         ${describeSession(trigger)}`);
       if (trigger.replySession) {
         console.log(`  Reply session:   ${trigger.replySession}`);
       }
@@ -637,10 +690,13 @@ export class TriggersCommands {
     // Session: explicit name/template, else the caller's current session.
     // Outside a session there is no current one; the agent main session is it.
     if (session !== undefined) {
-      const error = sessionTargetError(session);
+      const error = sessionTargetError(session) ?? triggerSessionTargetError(session);
       if (error) fail(error);
     }
-    const sessionTarget: SessionTarget = session?.trim() || ctx?.sessionName || ctx?.sessionKey || "main";
+    // A trigger's own session takes that trigger's fires only, so a trigger
+    // created during one of its turns has no current session to default to.
+    const currentSession = isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionName || ctx?.sessionKey;
+    const sessionTarget: SessionTarget = session?.trim() || currentSession || "main";
     const resolvedAgent = agent ?? ctx?.agentId;
 
     // Resolve account in this order:
@@ -703,12 +759,15 @@ export class TriggersCommands {
       cooldownMs,
       debounceMs,
       filter,
+      ownerPrincipal: resolveTriggerOwnerForCurrentTurn(),
     };
 
     try {
       const trigger = dbCreateTrigger(input);
 
       await nats.emit("ravi.triggers.refresh", {});
+      const runsAsWarning = triggerRunsAsWarning(trigger);
+      const addWarnings = [...topicWarnings, ...(runsAsWarning ? [runsAsWarning] : [])];
 
       const payload = {
         status: "created" as const,
@@ -720,12 +779,12 @@ export class TriggersCommands {
           topicId: resolvedMessage.topicCatalogEntry?.id ?? null,
           templateId: resolvedMessage.templateId ?? null,
         },
-        ...(topicWarnings.length ? { warnings: topicWarnings } : {}),
+        ...(addWarnings.length ? { warnings: addWarnings } : {}),
       };
       if (asJson) {
         printJson(payload);
       } else {
-        printWarnings(topicWarnings);
+        printWarnings(addWarnings);
         console.log(`\n✓ Created trigger: ${trigger.id}`);
         console.log(`  Name:       ${trigger.name}`);
         console.log(`  Topic:      ${trigger.topic}`);
@@ -734,7 +793,8 @@ export class TriggersCommands {
         }
         console.log(`  Cooldown:   ${formatOptionalDurationMs(trigger.cooldownMs)}`);
         if (trigger.debounceMs) console.log(`  Debounce:   ${formatOptionalDurationMs(trigger.debounceMs)}`);
-        console.log(`  Session:    ${trigger.session}`);
+        console.log(`  Session:    ${describeSession(trigger)}`);
+        console.log(`  Runs as:    ${describeRunsAs(trigger)}`);
       }
       return payload;
     } catch (err) {
@@ -755,21 +815,26 @@ export class TriggersCommands {
     assertNoUserOverlayAutomationWrite("triggers enable");
 
     try {
-      const updated = dbUpdateTrigger(id, { enabled: true });
+      // Arming a trigger is its owner's call, or the operator's (it then still
+      // acts as its owner): turned on by anyone else, it runs with no owner.
+      const keepOwnerFor = ownerKeptOnEnable(trigger);
+      const updated = dbUpdateTrigger(id, { enabled: true }, keepOwnerFor ? { keepOwnerFor } : {});
       await nats.emit("ravi.triggers.refresh", {});
-      const filterWarning = invalidFilterWarning(updated);
+      const warnings = [invalidFilterWarning(updated), triggerOwnerLostWarning(trigger, updated)].filter(
+        (warning): warning is string => Boolean(warning),
+      );
       const payload = {
         status: "enabled" as const,
         target: { type: "trigger" as const, id },
         changedCount: 1,
         trigger: serializeTrigger(updated),
-        ...(filterWarning ? { warnings: [filterWarning] } : {}),
+        ...(warnings.length ? { warnings } : {}),
       };
       if (asJson) {
         printJson(payload);
       } else {
         console.log(`✓ Enabled trigger: ${id} (${trigger.name})`);
-        if (filterWarning) printWarnings([filterWarning]);
+        printWarnings(warnings);
       }
       return payload;
     } catch (err) {
@@ -836,6 +901,10 @@ export class TriggersCommands {
       assertTriggerTargetAuthorized("triggers set", { agentId: triggerOwnerId(trigger), replySession: value }, asJson);
     }
 
+    // The trigger keeps its owner only when the owner makes this change;
+    // anyone else leaves it with none, in the same write as the edit.
+    const keepOwnerFor = TRIGGER_OWNER_NEUTRAL_SET_KEYS.has(key) ? undefined : resolveTriggerOwnerForCurrentTurn();
+
     try {
       let updated: Trigger | null = null;
       let normalizedValue: unknown = value;
@@ -843,15 +912,17 @@ export class TriggersCommands {
       const logHuman = (message: string) => {
         if (!asJson) console.log(message);
       };
+      const update = (updates: Parameters<typeof dbUpdateTrigger>[1]) =>
+        dbUpdateTrigger(id, updates, keepOwnerFor ? { keepOwnerFor } : {});
 
       switch (key) {
         case "name":
-          updated = dbUpdateTrigger(id, { name: value });
+          updated = update({ name: value });
           logHuman(`✓ Name set: ${id} -> ${value}`);
           break;
 
         case "message":
-          updated = dbUpdateTrigger(id, {
+          updated = update({
             message: value,
             executionType: "agent",
             shellCommand: null,
@@ -870,7 +941,7 @@ export class TriggersCommands {
           if (!shellCommand) {
             fail("Shell command cannot be empty");
           }
-          updated = dbUpdateTrigger(id, {
+          updated = update({
             executionType: "shell",
             shellCommand,
             message: "",
@@ -886,7 +957,7 @@ export class TriggersCommands {
             fail("timeout only applies to shell triggers");
           }
           const shellTimeoutMs = value === "null" || value === "-" ? null : parseTriggerShellTimeout(value);
-          updated = dbUpdateTrigger(id, { shellTimeoutMs });
+          updated = update({ shellTimeoutMs });
           normalizedValue = shellTimeoutMs;
           logHuman(`✓ Shell timeout set: ${id} -> ${shellTimeoutMs ? formatDurationMs(shellTimeoutMs) : "(default)"}`);
           break;
@@ -897,7 +968,7 @@ export class TriggersCommands {
             fail("env-file only applies to shell triggers");
           }
           const shellEnvFile = value === "null" || value === "-" ? null : value;
-          updated = dbUpdateTrigger(id, { shellEnvFile });
+          updated = update({ shellEnvFile });
           normalizedValue = shellEnvFile;
           logHuman(`✓ Shell env file set: ${id} -> ${shellEnvFile ?? "(none)"}`);
           break;
@@ -908,7 +979,7 @@ export class TriggersCommands {
             fail("on-error only applies to shell triggers");
           }
           const normalizedOnError = normalizeTriggerOnError(value);
-          updated = dbUpdateTrigger(id, { onError: normalizedOnError ?? null });
+          updated = update({ onError: normalizedOnError ?? null });
           normalizedValue = normalizedOnError ?? null;
           logHuman(`✓ Shell on-error set: ${id} -> ${normalizedOnError ?? "(none)"}`);
           break;
@@ -916,7 +987,7 @@ export class TriggersCommands {
 
         case "topic": {
           warnings = getTriggerTopicWarnings(value);
-          updated = dbUpdateTrigger(id, { topic: value });
+          updated = update({ topic: value });
           if (!asJson) printWarnings(warnings);
           logHuman(`✓ Topic set: ${id} -> ${value}`);
           break;
@@ -930,7 +1001,7 @@ export class TriggersCommands {
               fail(`Agent not found: ${agentId}`);
             }
           }
-          updated = dbUpdateTrigger(id, { agentId });
+          updated = update({ agentId });
           normalizedValue = agentId ?? null;
           logHuman(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
           break;
@@ -938,17 +1009,17 @@ export class TriggersCommands {
 
         case "account": {
           const accountId = value === "null" || value === "-" ? undefined : value;
-          updated = dbUpdateTrigger(id, { accountId });
+          updated = update({ accountId });
           normalizedValue = accountId ?? null;
           logHuman(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
           break;
         }
 
         case "session": {
-          const error = sessionTargetError(value);
+          const error = sessionTargetError(value) ?? triggerSessionTargetError(value);
           if (error) fail(error);
           const session = value.trim();
-          updated = dbUpdateTrigger(id, { session });
+          updated = update({ session });
           normalizedValue = session;
           logHuman(`✓ Session set: ${id} -> ${session}`);
           break;
@@ -956,7 +1027,7 @@ export class TriggersCommands {
 
         case "cooldown": {
           const ms = parseOptionalDurationMs(value, parseDurationMs);
-          updated = dbUpdateTrigger(id, { cooldownMs: ms });
+          updated = update({ cooldownMs: ms });
           normalizedValue = ms;
           logHuman(`✓ Cooldown set: ${id} -> ${formatOptionalDurationMs(ms)}`);
           break;
@@ -964,7 +1035,7 @@ export class TriggersCommands {
 
         case "debounce": {
           const ms = parseOptionalDurationMs(value, parseDurationMs);
-          updated = dbUpdateTrigger(id, { debounceMs: ms });
+          updated = update({ debounceMs: ms });
           normalizedValue = ms;
           logHuman(`✓ Debounce set: ${id} -> ${formatOptionalDurationMs(ms)}`);
           break;
@@ -973,7 +1044,7 @@ export class TriggersCommands {
         case "filter": {
           const filterValue = value === "null" || value === "-" ? null : value;
           assertValidTriggerFilter(filterValue ?? undefined);
-          updated = dbUpdateTrigger(id, { filter: filterValue });
+          updated = update({ filter: filterValue });
           normalizedValue = filterValue ?? null;
           logHuman(`✓ Filter set: ${id} -> ${filterValue ?? "(none)"}`);
           break;
@@ -986,7 +1057,7 @@ export class TriggersCommands {
           // to force the SQL UPDATE to set reply_session = NULL.
           const cleared = value === "null" || value === "-";
           const replySession: string | null = cleared ? null : value.trim();
-          updated = dbUpdateTrigger(id, { replySession });
+          updated = update({ replySession });
           normalizedValue = replySession;
           logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(none)"}`);
           break;
@@ -1000,6 +1071,12 @@ export class TriggersCommands {
 
       await nats.emit("ravi.triggers.refresh", {});
       const current = updated ?? dbGetTrigger(id);
+      // Said when this edit took the owner away.
+      const ownerWarning = current ? triggerOwnerLostWarning(trigger, current) : null;
+      if (ownerWarning) {
+        warnings = [...warnings, ownerWarning];
+        if (!asJson) printWarnings([ownerWarning]);
+      }
       const payload = {
         status: "updated" as const,
         target: { type: "trigger" as const, id },
@@ -1061,7 +1138,8 @@ export class TriggersCommands {
     }
 
     try {
-      await nats.emit("ravi.triggers.test", { triggerId: id });
+      // The test fire acts as the trigger's owner only when the owner asked for it.
+      await nats.emit("ravi.triggers.test", { triggerId: id, initiator: resolveTriggerOwnerForCurrentTurn() });
       const payload = {
         status: "test_emitted" as const,
         target: { type: "trigger" as const, id },

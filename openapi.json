@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "7d0f75ed1bbeae66"
+    "version": "b08d03567efbfa1a"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -25683,7 +25683,7 @@
                     "type": "string"
                   },
                   "session": {
-                    "description": "With --trigger: session to run in, by name or template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
+                    "description": "With --trigger: session to run in: isolated (the trigger's own, required to read or write the base), a name or a template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
                     "type": "string"
                   },
                   "trigger": {
@@ -25880,6 +25880,15 @@
                         "name": {
                           "type": "string"
                         },
+                        "ownerPrincipal": {
+                          "type": "string"
+                        },
+                        "ownsSession": {
+                          "type": "boolean"
+                        },
+                        "runsAsOperator": {
+                          "type": "boolean"
+                        },
                         "session": {
                           "type": "string"
                         },
@@ -25897,7 +25906,10 @@
                         "session",
                         "topic",
                         "filter",
-                        "enableCommand"
+                        "enableCommand",
+                        "ownerPrincipal",
+                        "runsAsOperator",
+                        "ownsSession"
                       ],
                       "type": "object"
                     }

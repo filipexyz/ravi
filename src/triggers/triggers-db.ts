@@ -36,6 +36,7 @@ interface TriggerRow {
   cooldown_ms: number;
   debounce_ms?: number | null;
   filter: string | null;
+  owner_principal?: string | null;
   last_fired_at: number | null;
   fire_count: number;
   filter_reject_count?: number | null;
@@ -113,6 +114,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
   const replySource = parseReplySource(row.reply_source);
   if (replySource) trigger.replySource = replySource;
   if (row.filter !== null) trigger.filter = row.filter;
+  if (row.owner_principal) trigger.ownerPrincipal = row.owner_principal;
   if (row.last_fired_at !== null) trigger.lastFiredAt = row.last_fired_at;
   if (row.filter_reject_count) trigger.filterRejectCount = row.filter_reject_count;
   if (row.last_filter_reject_at != null) trigger.lastFilterRejectAt = row.last_filter_reject_at;
@@ -136,8 +138,8 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     INSERT INTO triggers (
       id, name, agent_id, account_id, topic, message, execution_type, shell_command, shell_timeout_ms,
       shell_env_file, on_error, message_source, message_template_id, session, reply_session,
-      reply_source, enabled, cooldown_ms, debounce_ms, filter, fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      reply_source, enabled, cooldown_ms, debounce_ms, filter, owner_principal, fire_count, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -161,6 +163,7 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     input.cooldownMs ?? 5000,
     input.debounceMs ?? 0,
     input.filter ?? null,
+    normalizeTriggerOwner(input.ownerPrincipal),
     0,
     now,
     now,
@@ -193,24 +196,64 @@ export function dbListTriggers(opts?: { enabledOnly?: boolean }): Trigger[] {
   return rows.map(rowToTrigger);
 }
 
+/** An owner is a principal; an unattributable turn (`unknown`) owns nothing. */
+function normalizeTriggerOwner(ownerPrincipal: string | null | undefined): string | null {
+  const owner = ownerPrincipal?.trim();
+  return owner && owner !== "unknown" ? owner : null;
+}
+
+export type TriggerUpdate = Omit<
+  Partial<Trigger>,
+  | "replySession"
+  | "messageTemplateId"
+  | "shellCommand"
+  | "shellTimeoutMs"
+  | "shellEnvFile"
+  | "onError"
+  | "filter"
+  | "ownerPrincipal"
+> & {
+  filter?: string | null;
+  messageTemplateId?: string | null;
+  replySession?: string | null;
+  shellCommand?: string | null;
+  shellTimeoutMs?: number | null;
+  shellEnvFile?: string | null;
+  onError?: string | null;
+};
+
+export interface TriggerUpdateOptions {
+  /**
+   * The principal making this change. The trigger keeps its owner only when
+   * that owner is this same principal; checked in the same statement, so a
+   * concurrent change of owner is never overwritten.
+   */
+  keepOwnerFor?: string;
+}
+
+/**
+ * Whether a patch leaves alone what a trigger runs, on which events, with
+ * which agent and session, and where it answers: its frequency, a shell
+ * timeout, or turning it off.
+ */
+export function isOwnerNeutralTriggerUpdate(updates: TriggerUpdate): boolean {
+  return Object.entries(updates).every(([key, value]) => {
+    if (value === undefined) return true;
+    if (key === "cooldownMs" || key === "shellTimeoutMs") return true;
+    return key === "enabled" && value === false;
+  });
+}
+
 /**
  * Update a trigger.
+ *
+ * A trigger's owner is written only when it is created. Any change here that
+ * is not owner-neutral takes the owner away, unless the owner is the one
+ * making it (`keepOwnerFor`): whatever a trigger runs, sees or answers into
+ * was then chosen by someone else, so nobody's authority goes with it. No
+ * update can give a trigger an owner.
  */
-export function dbUpdateTrigger(
-  id: string,
-  updates: Omit<
-    Partial<Trigger>,
-    "replySession" | "messageTemplateId" | "shellCommand" | "shellTimeoutMs" | "shellEnvFile" | "onError" | "filter"
-  > & {
-    filter?: string | null;
-    messageTemplateId?: string | null;
-    replySession?: string | null;
-    shellCommand?: string | null;
-    shellTimeoutMs?: number | null;
-    shellEnvFile?: string | null;
-    onError?: string | null;
-  },
-): Trigger {
+export function dbUpdateTrigger(id: string, updates: TriggerUpdate, options: TriggerUpdateOptions = {}): Trigger {
   const db = getDb();
   const existing = dbGetTrigger(id);
 
@@ -303,6 +346,16 @@ export function dbUpdateTrigger(
 
   if (fields.length === 0) {
     return existing;
+  }
+
+  if (!isOwnerNeutralTriggerUpdate(updates)) {
+    const keeper = normalizeTriggerOwner(options.keepOwnerFor);
+    if (keeper) {
+      fields.push("owner_principal = CASE WHEN owner_principal = ? THEN owner_principal ELSE NULL END");
+      values.push(keeper);
+    } else {
+      fields.push("owner_principal = NULL");
+    }
   }
 
   // Reject counters describe the previous filter/topic; start over when either changes.

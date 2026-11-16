@@ -140,6 +140,9 @@ export {
 // Sessions
 export {
   getOrCreateSession,
+  isReservedSessionKey,
+  isSessionNameReserved,
+  ReservedSessionKeyError,
   getSession,
   getSessionByName,
   getSessionBySdkId,

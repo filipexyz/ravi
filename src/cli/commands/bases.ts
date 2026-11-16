@@ -90,6 +90,14 @@ import { nats } from "../../nats.js";
 import { getAgent } from "../../router/config.js";
 import { getAccountForAgent } from "../../router/router-db.js";
 import { dbCreateTrigger, dbListTriggers } from "../../triggers/triggers-db.js";
+import { isTriggerOwnSessionKey } from "../../triggers/authority.js";
+import {
+  resolveTriggerOwnerForCurrentTurn,
+  triggerOwnerActsAsOperator,
+  triggerRunsAs,
+  triggerRunsInOwnSession,
+  triggerSessionTargetError,
+} from "../../triggers/ownership.js";
 import { sessionTargetError, type Trigger, type TriggerInput } from "../../triggers/types.js";
 import { quoteCommandToken } from "../../utils/pagination.js";
 import { ContractError, contractDryRun, pickFields, sanitizePublicContractMessage } from "../agent-contract.js";
@@ -107,6 +115,12 @@ export interface BasesCommandDeps extends BasesClientDeps {
   inAgentSession?: () => boolean;
   /** Local trigger store used by `subscribe --trigger` (default: ravi.db + a NATS refresh). */
   triggers?: BasesTriggerStore;
+  /** Owner of a trigger the current turn creates (default: the turn classification). */
+  triggerOwner?: () => string;
+  /** Whether a trigger with this owner acts as the operator (default: the active login and its link). */
+  triggerActsAsOperator?: (ownerPrincipal: string | undefined) => boolean;
+  /** The session a `--session` name answers to (default: the sessions table). */
+  resolveSession?: (ref: string) => { sessionKey: string } | null | undefined;
 }
 
 export interface BasesTriggerStore {
@@ -518,7 +532,7 @@ export class BasesCommands {
     @Option({
       flags: "--session <name>",
       description:
-        "With --trigger: session to run in, by name or template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
+        "With --trigger: session to run in: isolated (the trigger's own, required to read or write the base), a name or a template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
     })
     session?: string,
     @Option({
@@ -2462,6 +2476,8 @@ interface SubscriptionTriggerPlan {
   session: string | undefined;
   message: string | undefined;
   draft: boolean;
+  /** The turn that subscribes, read before any Console call: it owns the trigger. */
+  ownerPrincipal: string;
 }
 
 interface SubscriptionTriggerResult {
@@ -2475,6 +2491,14 @@ interface SubscriptionTriggerResult {
   topic: string;
   filter: string;
   enableCommand: string | null;
+  /** Who the trigger's turns act as in Bases. */
+  ownerPrincipal: string;
+  runsAsOperator: boolean;
+  /**
+   * Whether it runs in the trigger's own session (`--session isolated`),
+   * the only place Bases lends the owner's authority.
+   */
+  ownsSession: boolean;
 }
 
 const DEFAULT_SUBSCRIPTION_TRIGGER_MESSAGE =
@@ -2496,6 +2520,9 @@ function planSubscriptionTrigger(
   if (session !== undefined) {
     const error = sessionTargetError(session);
     if (error) throw invalidInput(error);
+    // Another trigger's own session takes that trigger's fires only.
+    const taken = triggerSessionTargetError(session, { resolveSession: deps.resolveSession });
+    if (taken) throw invalidInput(taken);
   }
   if (message !== undefined && !message.trim()) throw invalidInput("--message must not be empty.");
   return {
@@ -2504,6 +2531,7 @@ function planSubscriptionTrigger(
     message: optionalText(message),
     // An agent turn only drafts its own automation; the operator turns it on.
     draft: (deps.inAgentSession ?? hasRuntimeInvocationContext)(),
+    ownerPrincipal: (deps.triggerOwner ?? resolveTriggerOwnerForCurrentTurn)(),
   };
 }
 
@@ -2573,7 +2601,12 @@ async function createSubscriptionTrigger(
       executionType: "agent",
       agentId: plan.agentId,
       accountId: ctx?.source?.accountId ?? getAccountForAgent(plan.agentId),
-      session: plan.session ?? ctx?.sessionName ?? ctx?.sessionKey ?? "main",
+      // A trigger's own session takes that trigger's fires only: subscribing
+      // during one of its turns has no current session to default to.
+      session:
+        plan.session ??
+        (isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : (ctx?.sessionName ?? ctx?.sessionKey)) ??
+        "main",
       replySession: ctx?.sessionName ?? ctx?.sessionKey,
       replySource:
         ctx?.source?.channel && ctx.source.accountId && ctx.source.chatId
@@ -2587,6 +2620,9 @@ async function createSubscriptionTrigger(
       enabled: !plan.draft,
       cooldownMs: DEFAULT_TRIGGER_COOLDOWN_MS,
       filter,
+      // The turn that subscribes owns the trigger: its turns act in Bases as
+      // that person. A trigger that already exists keeps whatever owner it has.
+      ownerPrincipal: plan.ownerPrincipal,
     });
   if (!existing) await store.refresh();
   return {
@@ -2600,6 +2636,9 @@ async function createSubscriptionTrigger(
     topic: trigger.topic,
     filter,
     enableCommand: trigger.enabled ? null : `ravi triggers enable ${trigger.id}`,
+    ownerPrincipal: triggerRunsAs(trigger),
+    runsAsOperator: (deps.triggerActsAsOperator ?? triggerOwnerActsAsOperator)(trigger.ownerPrincipal),
+    ownsSession: triggerRunsInOwnSession(trigger),
   };
 }
 
@@ -2607,14 +2646,28 @@ function printSubscriptionTrigger(trigger: SubscriptionTriggerResult): void {
   const verb = trigger.created ? "created" : "already exists";
   if (trigger.enabled) {
     console.log(`✓ Trigger ${trigger.id} ${verb} for agent ${trigger.agentId} (enabled, session ${trigger.session})`);
-    return;
+  } else {
+    console.log(
+      `✓ Trigger ${trigger.id} ${verb} for agent ${trigger.agentId} as a disabled draft${
+        trigger.draft ? " (created from an agent session)" : ""
+      }.`,
+    );
+    console.log(`  The operator turns it on with: ${trigger.enableCommand}`);
   }
-  console.log(
-    `✓ Trigger ${trigger.id} ${verb} for agent ${trigger.agentId} as a disabled draft${
-      trigger.draft ? " (created from an agent session)" : ""
-    }.`,
-  );
-  console.log(`  The operator turns it on with: ${trigger.enableCommand}`);
+  if (!trigger.runsAsOperator) {
+    // Its turns read and write this base as the owner, so say when that is not the operator.
+    console.log(
+      trigger.ownerPrincipal.startsWith("contact:")
+        ? `  Runs as ${trigger.ownerPrincipal}, not the operator: its turns act in Bases as that person, through their own ravi link.`
+        : `  Runs as ${trigger.ownerPrincipal}, not the operator: Bases refuses its turns. Only the turn that creates a trigger owns it.`,
+    );
+  }
+  if (!trigger.ownsSession) {
+    // Fine for a trigger that only answers there; not for one that reads or writes the base.
+    console.log(
+      `  Runs in session "${trigger.session}", which is not the trigger's own: its turns see the event but Bases refuses them there. To read or write the base, give it its own session: ravi triggers set ${trigger.id} session isolated (or subscribe with --session isolated).`,
+    );
+  }
 }
 
 async function setBaseArchived(
@@ -3506,6 +3559,11 @@ declareCommandReturns(BasesCommands, {
         topic: z.string(),
         filter: z.string(),
         enableCommand: z.string().nullable(),
+        /** Who the trigger's turns act as in Bases: `operator`, a principal, or `unknown`. */
+        ownerPrincipal: z.string(),
+        runsAsOperator: z.boolean(),
+        /** Whether it runs in the trigger's own session (`--session isolated`), which Bases requires. */
+        ownsSession: z.boolean(),
       })
       .optional(),
   }),

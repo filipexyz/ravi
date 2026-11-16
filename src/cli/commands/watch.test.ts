@@ -110,6 +110,12 @@ mock.module("../../triggers/index.js", () => ({
   },
 }));
 
+// The turn classification reads the daemon's tables; here the test says whose turn it is.
+let watchTurnOwner = "operator";
+mock.module("../../triggers/ownership.js", () => ({
+  resolveTriggerOwnerForCurrentTurn: () => watchTurnOwner,
+}));
+
 mock.module("../../nats.js", () => ({
   connectNats: async () => {},
   closeNats: async () => {},
@@ -208,6 +214,7 @@ beforeEach(() => {
   emitCalls.length = 0;
   watchStore = [buildWatch()];
   watchOperationError = null;
+  watchTurnOwner = "operator";
 });
 
 // ---------------------------------------------------------------------------
@@ -286,6 +293,7 @@ describe("watch write brake", () => {
   });
 
   it("trigger with --execute creates the trigger scoped to the watch", async () => {
+    watchTurnOwner = "contact:c_watcher";
     const commands = new WatchCommands();
     const payload = await silenced(() =>
       commands.trigger(
@@ -310,6 +318,8 @@ describe("watch write brake", () => {
       agentId: "main",
       accountId: "acc-main",
       session: "isolated",
+      // The turn that arms the trigger owns it.
+      ownerPrincipal: "contact:c_watcher",
     });
     expect(payload).toMatchObject({ status: "created" });
   });

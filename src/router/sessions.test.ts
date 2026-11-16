@@ -12,14 +12,22 @@ import {
   updateSessionModelOverride,
   detachChatFromSession,
   expireEphemeralSession,
+  findSessionByChatId,
   getExpiredSessions,
   getOrCreateSession,
   getSession,
+  getSessionByName,
   getSessionTurnUsageSummary,
+  isReservedSessionKey,
   listSessionSubscriptions,
+  renameSessionName,
+  ReservedSessionKeyError,
   resetSession,
+  resolveSession,
   setSessionEphemeral,
   updateSessionContext,
+  updateSessionName,
+  updateSessionSource,
   updateProviderSession,
   updateProviderSessionId,
   updateRuntimeProviderState,
@@ -44,6 +52,153 @@ describe("sessions store", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("creates a session under a trigger's key for the trigger runner only", () => {
+    const isolated = "agent:main:trigger:ab12cd34";
+    const own = "agent:main:trigger:ab12cd34:own";
+    const named = "agent:main:trigger:ab12cd34:key:0123456789abcdef01234567";
+    expect(isReservedSessionKey(isolated)).toBe(true);
+    expect(isReservedSessionKey(own)).toBe(true);
+    expect(isReservedSessionKey(named)).toBe(true);
+
+    // A session created from a name someone chose, however it got here.
+    for (const key of [isolated, own, named]) {
+      expect(() => getOrCreateSession(key, "main", stateDir!, { name: key })).toThrow(ReservedSessionKeyError);
+      expect(() => getOrCreateSession(key, "main", stateDir!)).toThrow(/reserved for the trigger/);
+      expect(() => getOrCreateSession(key, "main", stateDir!, undefined, {})).toThrow(ReservedSessionKeyError);
+      expect(getSession(key)).toBeNull();
+      expect(resolveSession(key)).toBeNull();
+    }
+
+    // The trigger runner creates it; from then on it is an existing session
+    // like any other, returned to whoever asks for it by key.
+    const created = getOrCreateSession(
+      isolated,
+      "main",
+      stateDir!,
+      { name: "main-trigger-rows" },
+      { triggerRunner: true },
+    );
+    expect(created).toMatchObject({ sessionKey: isolated, name: "main-trigger-rows" });
+    expect(getOrCreateSession(isolated, "main", stateDir!)).toMatchObject({ sessionKey: isolated });
+    expect(getOrCreateSession(named, "main", stateDir!, undefined, { triggerRunner: true }).sessionKey).toBe(named);
+    expect(getOrCreateSession(own, "main", stateDir!, undefined, { triggerRunner: true }).sessionKey).toBe(own);
+  });
+
+  it("lets a name spelled like a trigger's session key be only that session's own key", () => {
+    const chat = "agent:main:whatsapp:dm:5511888888888";
+    // Created under a trigger's session key as its name: a session could then be taken for that one.
+    for (const name of [
+      "agent:main:trigger:ab12cd34:own",
+      "agent:main:trigger:ab12cd34",
+      "agent:main:trigger:ab12cd34:key:0123456789abcdef01234567",
+      "Agent:Main:Trigger:ab12cd34:own",
+      " agent:main:trigger:ab12cd34:own ",
+    ]) {
+      expect(() => getOrCreateSession(chat, "main", stateDir!, { name })).toThrow("reserved for the trigger's session");
+    }
+    expect(getSession(chat)).toBeNull();
+
+    // Given such a name later.
+    const created = getOrCreateSession(chat, "main", stateDir!, { name: "ana-chat" });
+    expect(() => updateSessionName(created.sessionKey, "agent:main:trigger:ab12cd34:own")).toThrow(
+      "reserved for the trigger's session",
+    );
+    expect(getSession(chat)?.name).toBe("ana-chat");
+
+    // Any other name is taken as before, one spelled like another kind of key included
+    // (a route may force one); only `renameSessionName` refuses those, as it always did.
+    updateSessionName(created.sessionKey, "agent:main:main");
+    expect(getSession(chat)?.name).toBe("agent:main:main");
+    const byName = getOrCreateSession("agent:main:by-name", "main", stateDir!, { name: "agent:main:by-name" });
+    expect(byName.name).toBe("agent:main:by-name");
+    updateSessionName(created.sessionKey, chat);
+    expect(getSession(chat)?.name).toBe(chat);
+  });
+
+  it("names a trigger's own session by its key, whatever it is asked, and never lets it go by another name", () => {
+    const own = "agent:main:trigger:ab12cd34:own";
+    expect(getOrCreateSession(own, "main", stateDir!, undefined, { triggerRunner: true }).name).toBe(own);
+    expect(() => updateSessionName(own, "payroll-sync")).toThrow("goes by its own name only");
+    expect(() => renameSessionName(own, "payroll-sync")).toThrow("goes by its own name only");
+    // Keeping the name it has is not a rename.
+    expect(renameSessionName(own, own).changed).toBe(false);
+    expect(getSession(own)?.name).toBe(own);
+
+    // Asked for another name when it is created: refused, and nothing is created.
+    const other = "agent:main:trigger:cd34ef56:own";
+    expect(() =>
+      getOrCreateSession(other, "main", stateDir!, { name: "payroll-sync" }, { triggerRunner: true }),
+    ).toThrow("goes by its own name only");
+    expect(getSession(other)).toBeNull();
+
+    // An agent id with a dot or a space: the name stays one subject token.
+    const dotted = "agent:acme.support:trigger:ab12cd34:own";
+    const dottedName = "agent:acme~2E~support:trigger:ab12cd34:own";
+    expect(getOrCreateSession(dotted, "acme.support", stateDir!, undefined, { triggerRunner: true }).name).toBe(
+      dottedName,
+    );
+    expect(getSessionByName(dottedName)?.sessionKey).toBe(dotted);
+    expect(renameSessionName(dotted, dottedName).changed).toBe(false);
+    expect(() => updateSessionName(dotted, "payroll-sync")).toThrow("goes by its own name only");
+    // That name is reserved like any name spelled like a trigger's session key.
+    const chat = "agent:acme.support:whatsapp:dm:5511888888888";
+    expect(() => getOrCreateSession(chat, "acme.support", stateDir!, { name: dottedName })).toThrow(
+      "reserved for the trigger's session",
+    );
+
+    // The plain and named sessions of a trigger keep the names the runner generates.
+    const plain = "agent:main:trigger:ab12cd34";
+    expect(
+      getOrCreateSession(plain, "main", stateDir!, { name: "main-trigger-rows" }, { triggerRunner: true }).name,
+    ).toBe("main-trigger-rows");
+  });
+
+  it("never resolves a chat id to a trigger's own session", () => {
+    const chatId = "5511888888888@s.whatsapp.net";
+    const source = { channel: "whatsapp", accountId: "wa", chatId };
+    const chat = "agent:main:whatsapp:dm:5511888888888";
+    getOrCreateSession(chat, "main", stateDir!, { name: "ana-chat" });
+    updateSessionSource(chat, source);
+    expect(findSessionByChatId(chatId)?.sessionKey).toBe(chat);
+
+    // A fire that answers into that chat makes the own session the last one to talk to it.
+    const own = "agent:main:trigger:ab12cd34:own";
+    getOrCreateSession(own, "main", stateDir!, undefined, { triggerRunner: true });
+    getDb()
+      .prepare(
+        "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?",
+      )
+      .run(source.channel, source.accountId, chatId, Date.now() + 60_000, own);
+    expect(findSessionByChatId(chatId)?.sessionKey).toBe(chat);
+
+    // With no other session for the chat, the chat id finds nothing.
+    getDb().prepare("DELETE FROM sessions WHERE session_key = ?").run(chat);
+    expect(findSessionByChatId(chatId)).toBeNull();
+
+    // The plain session of a trigger nobody owns is found as before.
+    const plain = "agent:main:trigger:ab12cd34";
+    getOrCreateSession(plain, "main", stateDir!, { name: "main-trigger-rows" }, { triggerRunner: true });
+    updateSessionSource(plain, source);
+    expect(findSessionByChatId(chatId)?.sessionKey).toBe(plain);
+  });
+
+  it("leaves every other key open, the ones that only resemble a trigger's included", () => {
+    for (const key of [
+      "agent:main:main",
+      "agent:main:whatsapp:dm:5511999999999",
+      "agent:main:cron:job_1",
+      "requests-queue",
+      // Derived from a trigger's session: a thread of it, or a hash the runner does not write.
+      "agent:main:trigger:ab12cd34:thread:1700000000.000100",
+      "agent:main:trigger:ab12cd34:own:thread:1700000000.000100",
+      "agent:main:trigger:ab12cd34:key:not-a-hash",
+      "agent:main:whatsapp:trigger:ab12cd34",
+    ]) {
+      expect(isReservedSessionKey(key)).toBe(false);
+      expect(getOrCreateSession(key, "main", stateDir!).sessionKey).toBe(key);
+    }
   });
 
   it("accounts for a retired turn without replacing the current context snapshot", () => {

@@ -765,6 +765,32 @@ describe("dispatch — validation", () => {
     expect(await disabledResult.response.json()).toEqual({ noCache: true });
   });
 
+  it("says in the audit event when the command ran in a trigger's own session", async () => {
+    const audits = captureAudits();
+    const inSession = (sessionKey?: string) =>
+      dispatch(
+        findCmd("demo.negated"),
+        {},
+        {},
+        { contextRecord: { ...demoContext, ...(sessionKey ? { sessionKey } : {}) }, emitAudit: audits.emit },
+      );
+
+    await inSession("agent:gateway-agent:trigger:ab12cd34:own");
+    expect(audits.events.at(-1)).toMatchObject({ name: "negated", fromTriggerOwnSession: true });
+
+    // Any other session, a trigger's plain and named ones included, is not marked.
+    for (const sessionKey of [
+      undefined,
+      "agent:gateway-agent:main",
+      "agent:gateway-agent:whatsapp:dm:5511999999999",
+      "agent:gateway-agent:trigger:ab12cd34",
+      "agent:gateway-agent:trigger:ab12cd34:key:0123456789abcdef01234567",
+    ]) {
+      await inSession(sessionKey);
+      expect(audits.events.at(-1)?.fromTriggerOwnSession).toBeUndefined();
+    }
+  });
+
   it("preserves early validation as a usage-error contract and audit", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
