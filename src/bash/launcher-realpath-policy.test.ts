@@ -4,8 +4,17 @@
  * bootstrap profile on dev before this change.
  */
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { evaluateBashPermission, type BashPermissionContext } from "./hook.js";
 import { checkDangerousPatterns, parseBashCommand } from "./parser.js";
@@ -928,6 +937,11 @@ describe("piped_stdin_reaches_interpreter_through_launcher", () => {
     ["command", "printf 'print(1)' | command python3"],
     ["nohup", "printf 'print(1)' | nohup python3"],
     ["stdin path", "printf 'print(1)' | timeout 5 python3 -"],
+    // Second independent review on 5cf8bd9f: these ran the piped file in a real shell.
+    ["env (bun run -)", "cat x.ts | env bun run -"],
+    ["nohup (bun run -)", "cat x.ts | nohup bun run -"],
+    ["timeout (bare bun)", "cat x.ts | timeout 5 bun"],
+    ["find -exec (bun run -)", "cat x.ts | find . -maxdepth 0 -exec bun run - \\;"],
   ])("refuses an interpreter fed piped stdin through %s", (_launcher, command) => {
     const decision = evaluateBashPermission(command, bootstrap(...grants));
     expect(decision.allowed, command).toBe(false);
@@ -952,5 +966,48 @@ describe("piped_stdin_reaches_interpreter_through_launcher", () => {
     ]) {
       expect(evaluateBashPermission(command, bootstrap(...grants, "bun")).allowed, command).toBe(true);
     }
+  });
+});
+
+// Second independent review, item 4: `~/.bun/bin/ravi` is a symlink into
+// `~/.bun/install/global/node_modules/ravi.bot/bin`. The absolute path is
+// trusted only while that real directory is on the PATH the guard sees; the
+// daemon (`daemon run`) and `channels run` start with it as the first entry.
+describe("sanctioned_cli_absolute_path_depends_on_daemon_path", () => {
+  const layout = () => {
+    const home = join(scratch, "cli-home");
+    const globalBin = join(home, ".bun", "install", "global", "node_modules", "ravi.bot", "bin");
+    const bunBin = join(home, ".bun", "bin");
+    mkdirSync(globalBin, { recursive: true });
+    mkdirSync(bunBin, { recursive: true });
+    const target = join(globalBin, "ravi");
+    if (!existsSync(target)) {
+      writeFileSync(target, "#!/usr/bin/env bun\n// ravi CLI stand-in for the path check\n");
+      chmodSync(target, 0o755);
+    }
+    const link = join(bunBin, "ravi");
+    if (!existsSync(link)) symlinkSync("../install/global/node_modules/ravi.bot/bin/ravi", link);
+    return { globalBin, bunBin, link };
+  };
+
+  it("passes with the daemon's PATH, which carries the package bin directory", () => {
+    const { globalBin, bunBin, link } = layout();
+    const check = checkExecutablePath(link, { pathEnv: [globalBin, bunBin, "/usr/bin", "/bin"].join(":") });
+    expect(check.ok).toBe(true);
+  });
+
+  it("without that directory the absolute path is untrusted while the bare name still resolves", () => {
+    const { bunBin, link } = layout();
+    const pathEnv = [bunBin, "/usr/bin", "/bin"].join(":");
+    const byPath = checkExecutablePath(link, { pathEnv });
+    expect(byPath.ok).toBe(false);
+    if (!byPath.ok) expect(byPath.rule).toBe("untrusted_executable_path");
+  });
+
+  const installed = join(homedir(), ".bun", "bin", "ravi");
+  const daemonLikePath = (process.env.PATH ?? "").includes("/node_modules/ravi.bot/bin");
+  it.skipIf(!existsSync(installed) || !daemonLikePath)("the installed CLI passes on this host's PATH", () => {
+    expect(checkExecutablePath(installed).ok).toBe(true);
+    expect(evaluateBashPermission(`${installed} --help`, bootstrap()).allowed).toBe(true);
   });
 });
