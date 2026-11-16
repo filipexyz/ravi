@@ -197,4 +197,29 @@ describe("job runner", () => {
     expect(runner.startJob(job.id)).toBe(true);
     expect(envs).toEqual([{ RAVI_AUTOMATION_PRINCIPAL: `automation:job:${job.id}` }]);
   });
+
+  it("records a failed outcome delivery on the job and retries it instead of dropping it", async () => {
+    const job = makeJob();
+    dbMarkJobRunning(job.id, process.pid);
+    dbFinishJob(job.id, { status: "succeeded", exitCode: 0, signal: null });
+    const delivered: string[] = [];
+    let queueUp = false;
+    const runner = new JobsRunner({
+      notifySession: async (record) => {
+        if (!queueUp) throw new Error("queue down");
+        delivered.push(record.id);
+      },
+    });
+
+    await runner.handleJobFinished(job.id);
+    const failed = dbGetJob(job.id)!;
+    expect(failed.notifiedAt).toBeNull();
+    expect(failed.deliveryError).toBe("queue down");
+    expect(failed.deliveryAttempts).toBe(1);
+
+    queueUp = true;
+    await runner.redeliverUndeliveredOutcomes();
+    expect(delivered).toEqual([job.id]);
+    expect(dbGetJob(job.id)?.notifiedAt).toBeGreaterThan(0);
+  });
 });
