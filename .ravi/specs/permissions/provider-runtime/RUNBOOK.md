@@ -9,8 +9,12 @@ tool. A quoted heredoc delimiter does not remove the heredoc operator itself.
 
 Run `bun test src/bash/` in isolated test state. Inspect parser and hook decisions
 for the exact command without placing secrets in logs, test fixtures or reports.
-Unsupported expanded quoting and malformed quoting fail closed. Identity/env,
-session, executable and redirect checks still apply independently.
+Without effective arbitrary execution, unsupported expanded quoting and malformed
+quoting fail closed. With `execute:executable:*`, the shell handles its own syntax;
+the restricted parser is only a best-effort input to skill discovery. Identity/env,
+tool, session and actual Ravi request authorization remain independent. Inspect
+`shell_syntax` plus its rule separately from a missing executable capability; do
+not add grants to work around that diagnosis.
 
 If a file-based interpreter script passes, do not report the syntax guard as
 confining its effects. Review the executable grant and the host execution boundary.

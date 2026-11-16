@@ -24,8 +24,8 @@ const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 ];
 
 /**
- * Executables that are ALWAYS blocked, regardless of config.
- * These can execute arbitrary strings, bypassing all restrictions.
+ * Indirect executables blocked for named-executable contexts. Arbitrary shell
+ * authority is decided by the permission hook, never inferred by this parser.
  */
 export const UNCONDITIONAL_BLOCKS = new Set([
   // Shell bypass
@@ -514,7 +514,7 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
  * - Full paths: /usr/bin/git status -> ["git"]
  * - Semicolons: ls; pwd -> ["ls", "pwd"]
  */
-export function parseBashCommand(command: string): ParsedCommand {
+export function parseBashCommand(command: string, options: { allowInlineCode?: boolean } = {}): ParsedCommand {
   try {
     // Split only on active operators; retain quoted words for token decoding.
     const simpleCommands = splitByOperators(command);
@@ -550,7 +550,7 @@ export function parseBashCommand(command: string): ParsedCommand {
     }
 
     // If inline code was detected, fail parsing
-    if (seenInline.length > 0) {
+    if (seenInline.length > 0 && !options.allowInlineCode) {
       return {
         executables: [],
         success: false,

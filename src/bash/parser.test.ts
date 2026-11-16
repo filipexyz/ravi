@@ -144,6 +144,17 @@ describe("parseBashCommand", () => {
     expect(r.error).toContain("inline code");
   });
 
+  it("discovers executables for an authorized inline command without changing the restricted default", () => {
+    const command = "python3 -c 'print(1)' | cat";
+
+    expect(parseBashCommand(command, { allowInlineCode: true })).toMatchObject({
+      success: true,
+      executables: ["python3", "cat"],
+    });
+    expect(parseBashCommand(command)).toMatchObject({ success: false, executables: [] });
+    expect(parseBashCommand(command).error).toContain("inline code");
+  });
+
   it("allows interpreter without inline code flag", () => {
     const r = parseBashCommand("python script.py");
     expect(r.success).toBe(true);
