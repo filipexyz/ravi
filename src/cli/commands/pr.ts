@@ -6,13 +6,14 @@ import { contractDryRun, ContractError, renderContractError, wasContractErrorRen
 import { enforceCliCommandAuthorization } from "../command-access.js";
 import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
 import { buildAuditContextProvenance } from "../../permissions/audit-provenance.js";
+import { resultSchema, prError, PUBLICATION_CONTEXT_REQUIRED_MESSAGE, LIMITS } from "../../pr/contracts.js";
 import {
-  resultSchema,
-  prError,
-  PUBLICATION_TIMEOUT_MS,
-  PUBLICATION_CONTEXT_REQUIRED_MESSAGE,
-  LIMITS,
-} from "../../pr/contracts.js";
+  createPublicationDeadline,
+  publicationBudgetMs,
+  publicationTimeoutError,
+  PUBLICATION_TIMEOUT_CEILING_MS,
+  PUBLICATION_TIMEOUT_ENV,
+} from "../../pr/budget.js";
 import { githubClient, GithubError } from "../../pr/github.js";
 import { LocalGit, utf8 } from "../../pr/git.js";
 import { preparePublication, executePublication } from "../../pr/service.js";
@@ -41,7 +42,9 @@ REGRAS HARD
   Clean named branch, github.com origin matching --repo, head distinct from base/default.
   Exact local/remote tree AND commit SHA. Only fast-forward ref updates. No hook configuration changes.
   Missing signed/nonstandard commits, new submodules, LFS and SHA-256 repositories are unsupported.
-  Limits: ${LIMITS.commits} missing commits, ${LIMITS.objects} objects, 50 MiB total, 8 MiB per blob; 180s total.
+  Limits: ${LIMITS.commits} missing commits, ${LIMITS.objects} objects, 50 MiB total, 8 MiB per blob.
+  Time budget: 180s plus 1s per 250 KiB of measured upload, at most ${PUBLICATION_TIMEOUT_CEILING_MS / 1000}s.
+  ${PUBLICATION_TIMEOUT_ENV}=<ms> in the publishing process replaces it, under the same ceiling.
 CONFIRMAÇÃO
   Dry-run by default. --execute publishes externally; it does not grant permissions or approve review.
 LIFECYCLE
@@ -58,6 +61,10 @@ ON ERROR
   WORKTREE_DIRTY: commit changes. GIT_OBJECT_MISMATCH: inspect the object; never accept a substitute SHA.
   NON_FAST_FORWARD / REMOTE_REF_CHANGED: integrate remote changes or choose a new branch.
   PR_PUBLICATION_INCOMPLETE: inspect partial.phase and rerun with the same --expect-sha.
+  PUBLICATION_TIMEOUT: timeout reports the phase and the objects/bytes already uploaded; rerun with the same
+  --expect-sha, objects GitHub already holds are skipped.
+  PUBLICATION_REQUEST_TIMEOUT: one git/GitHub request passed its own limit, not the publication budget; rerun with
+  the same --expect-sha. PUBLICATION_RESPONSE_TOO_LARGE: a response passed the output limit; a rerun does not help.
   FOLLOW_RUNTIME_UNAVAILABLE: update/start Ravi's runtime; no success without its active CI producer.
 OUTPUT
   --json returns publication/attempt IDs, repo/head/base, SHAs, PR URL, watch/trigger IDs and CI snapshot.
@@ -81,7 +88,7 @@ export class PrCommands {
     name: "publish",
     description: "Upload the current branch, publish a ready PR and verify CI follow",
     helpAfter: HELP,
-    remoteTimeoutMs: PUBLICATION_TIMEOUT_MS + 15_000,
+    remoteTimeoutMs: PUBLICATION_TIMEOUT_CEILING_MS + 15_000,
   })
   @CommandAccess(access)
   @Returns(resultSchema)
@@ -175,14 +182,37 @@ export class PrCommands {
         );
       }
     }
-    signal = AbortSignal.timeout(PUBLICATION_TIMEOUT_MS);
+    // The preflight runs on the base budget; once it has measured the upload, the same deadline grows with it.
+    const deadline = createPublicationDeadline(publicationBudgetMs(0));
+    signal = deadline.signal;
     const request = this.dependencies.github(signal);
+    const measure = async () => {
+      try {
+        return await preparePublication(
+          { cwd, repo, base, title, body, expectSha, context: publisher },
+          request,
+          new LocalGit(cwd, signal),
+        );
+      } catch (error) {
+        // The budget ended before the upload was measured: say so instead of reporting unknown progress.
+        if (error instanceof ContractError && error.code === "PUBLICATION_TIMEOUT")
+          throw publicationTimeoutError(
+            {
+              phase: "preflight",
+              budgetMs: publicationBudgetMs(0),
+              objectsUploaded: 0,
+              objectCount: null,
+              bytesUploaded: 0,
+              uploadBytes: null,
+            },
+            error.details,
+          );
+        throw error;
+      }
+    };
     try {
-      const prepared = await preparePublication(
-        { cwd, repo, base, title, body, expectSha, context: publisher },
-        request,
-        new LocalGit(cwd, signal),
-      );
+      const prepared = await measure();
+      deadline.setBudget(publicationBudgetMs(prepared.plan.uploadBytes));
       await this.dependencies.health();
       if (!execute) contractDryRun("pr publish", prepared.plan, { asJson });
       const provenance = buildAuditContextProvenance(context);
@@ -209,6 +239,8 @@ export class PrCommands {
           { retryable: error.status >= 500 || error.status === 429 },
         );
       throw error;
+    } finally {
+      deadline.dispose();
     }
   }
 }
