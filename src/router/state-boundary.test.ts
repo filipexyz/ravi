@@ -16,7 +16,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { assertDatabaseTargetAllowed, openStateDatabase, type DatabaseBoundaryOptions } from "../db/state-boundary.js";
+import {
+  assertDatabaseTargetAllowed,
+  isInstalledOperatorCli,
+  isOperatorCliOnRealState,
+  isSchemaConsumer,
+  isSchemaConsumerOf,
+  openStateDatabase,
+  type DatabaseBoundaryOptions,
+} from "../db/state-boundary.js";
 import { buildChannelsPm2Env, buildDaemonPm2StartArgs } from "../daemon-stdin.js";
 import { buildManagedRuntimeRebindPlan } from "../managed-runtime-rebind.js";
 import { OUTDATED_PM2_BANNER } from "../test/pm2-jlist.js";
@@ -111,14 +119,13 @@ it("protects symlinked roots, dangling file symlinks and hardlinks", () => {
   expect(() => assertDatabaseTargetAllowed(join(options.homeDir, "innocent.db"), options)).toThrow("hardlinked");
 });
 
-it("accepts only an installed daemon whose actual PID and executable match PM2; tests and source cannot opt in", () => {
+it("accepts as a daemon only one whose actual PID and executable match PM2; tests and source cannot opt in", () => {
   const options = fixture();
   const path = join(options.homeDir, ".ravi", "ravi.db");
   const registered = daemon(options);
   expect(() => assertDatabaseTargetAllowed(path, registered)).not.toThrow();
   for (const overridden of [
     { pid: 999 },
-    { argv: ["bun", options.argv[1], "agents", "list"] },
     { env: { NODE_ENV: "test" } },
     { registeredProcesses: () => [{ pid: 1234, name: "other" }] },
     { modulePath: resolve(import.meta.dir, "../db/state-boundary.ts") },
@@ -131,7 +138,7 @@ it("accepts only an installed daemon whose actual PID and executable match PM2; 
 });
 
 it.each([false, true])(
-  "launches the installed daemon with PM2 banner=%s; identity loss, CLI, test, build and worktree launches refuse",
+  "launches the installed daemon with PM2 banner=%s and the installed CLI on prepared state; identity loss, runtime context, test, build and worktree launches refuse",
   (banner) => {
     const options = fixture();
     const realState = join(options.homeDir, ".ravi");
@@ -148,6 +155,11 @@ it.each([false, true])(
       join(fixtureDist, "threads", "schema-fence.ts"),
     );
     copyFileSync(resolve(import.meta.dir, "../db/schema-lock.ts"), join(fixtureDist, "db", "schema-lock.ts"));
+    mkdirSync(join(options.homeDir, "release", "dist", "utils"));
+    copyFileSync(
+      resolve(import.meta.dir, "../utils/account-home.ts"),
+      join(options.homeDir, "release", "dist", "utils", "account-home.ts"),
+    );
     const entry = options.argv[1];
     const target = join(realState, "ravi.db");
     writeFileSync(
@@ -186,7 +198,20 @@ it.each([false, true])(
     const check = new Database(target, { readonly: true });
     expect(check.query("SELECT name FROM sqlite_master WHERE name='launched'").get()).toEqual({ name: "launched" });
     check.close();
-    expect(launch(["agents", "list"], { RAVI_STATE_DIR: realState, pm_id: "1", name: "ravi" }).status).not.toBe(0);
+    // The installed CLI in a terminal opens the state the daemon prepared;
+    // inherited PM2 labels neither help nor hurt it.
+    expect(launch(["agents", "list"]).status).toBe(0);
+    expect(launch(["agents", "list"], { RAVI_STATE_DIR: realState, pm_id: "1", name: "ravi" }).status).toBe(0);
+    // A process that carries a runtime context goes through the gateway instead.
+    for (const key of [
+      "RAVI_CONTEXT_KEY",
+      "RAVI_GATEWAY_URL",
+      "RAVI_SESSION_KEY",
+      "RAVI_SESSION_NAME",
+      "RAVI_AGENT_ID",
+    ])
+      expect(launch(["agents", "list"], { [key]: "fixture" }).status).not.toBe(0);
+    expect(launch(["agents", "list"], { NODE_ENV: "test" }).status).not.toBe(0);
     expect(launch(["daemon", "run"], { NODE_ENV: "test" }).status).not.toBe(0);
     for (const content of ["not-a-pid", String(process.pid + 1), ""]) {
       writeFileSync(join(pm2Home, "pm2.pid"), content);
@@ -202,9 +227,11 @@ it.each([false, true])(
     const release = join(options.homeDir, "release");
     mkdirSync(join(release, "src"));
     expect(launch().status).not.toBe(0);
+    expect(launch(["agents", "list"]).status).not.toBe(0);
     rmSync(join(release, "src"), { recursive: true });
     writeFileSync(join(release, ".git"), "gitdir: /fixture/worktree");
     expect(launch().status).not.toBe(0);
+    expect(launch(["agents", "list"]).status).not.toBe(0);
   },
 );
 
@@ -377,6 +404,129 @@ it("admits a registered installed channels runner only as an existing-state cons
   const db = openStateDatabase(path, undefined, channels);
   expect(db.query("SELECT name FROM sqlite_master WHERE name='sentinel'").get()).toBeTruthy();
   db.close();
+});
+
+function operatorCli(options: ReturnType<typeof fixture>, command = ["agents", "list"]) {
+  return { ...options, argv: ["bun", options.argv[1], ...command] } satisfies DatabaseBoundaryOptions;
+}
+
+it("admits the installed CLI in the operator's terminal to real state, never to prepare it", () => {
+  const options = fixture();
+  const root = join(options.homeDir, ".ravi");
+  mkdirSync(root);
+  const path = join(root, "ravi.db");
+  const terminal = operatorCli(options);
+  expect(isInstalledOperatorCli(terminal)).toBe(true);
+  expect(isSchemaConsumer(terminal)).toBe(true);
+
+  // No state yet: the CLI creates nothing and says what prepares it.
+  expect(() => openStateDatabase(path, undefined, terminal)).toThrow("does not exist");
+  expect(() => openStateDatabase(path, undefined, terminal)).toThrow("ravi daemon start");
+  try {
+    openStateDatabase(path, undefined, terminal);
+  } catch (error) {
+    expect((error as { code?: string }).code).toBe("STATE_SCHEMA_NOT_READY");
+  }
+  expect(existsSync(path)).toBe(false);
+
+  // State the daemon prepared: read and written in place.
+  const seed = new Database(path);
+  seed.exec("CREATE TABLE sentinel (id TEXT)");
+  seed.close();
+  const db = openStateDatabase(path, undefined, terminal);
+  db.exec("INSERT INTO sentinel VALUES ('written from the terminal')");
+  expect(db.query("SELECT id FROM sentinel").all()).toEqual([{ id: "written from the terminal" }]);
+  db.close();
+
+  // An explicit real state directory is the same real state.
+  expect(() => assertDatabaseTargetAllowed(path, { ...terminal, env: { RAVI_STATE_DIR: root } })).not.toThrow();
+  expect(isSchemaConsumer({ ...terminal, env: { RAVI_STATE_DIR: root } })).toBe(true);
+});
+
+it("lets the installed CLI prepare an isolated state directory, and still not a real database it opens from there", () => {
+  const options = fixture();
+  mkdirSync(join(options.homeDir, ".ravi"));
+  const isolated = join(options.homeDir, "isolated");
+  mkdirSync(isolated);
+  const terminal = { ...operatorCli(options), env: { RAVI_STATE_DIR: isolated } };
+
+  expect(isSchemaConsumer(terminal)).toBe(false);
+  const db = openStateDatabase(join(isolated, "ravi.db"), undefined, terminal);
+  db.exec("CREATE TABLE created (id TEXT)");
+  db.close();
+  expect(existsSync(join(isolated, "ravi.db"))).toBe(true);
+
+  const real = join(options.homeDir, ".ravi", "ravi.db");
+  expect(isSchemaConsumerOf(real, terminal)).toBe(true);
+  expect(() => openStateDatabase(real, undefined, terminal)).toThrow("does not exist");
+  expect(existsSync(real)).toBe(false);
+});
+
+it("never lets a HOME override make the installed CLI the one that prepares the account's real state", () => {
+  const options = fixture();
+  // The account's own home, which HOME does not point at any more.
+  const accountHome = join(options.homeDir, "account");
+  const accountState = join(accountHome, ".ravi");
+  mkdirSync(accountState, { recursive: true });
+  const terminal = { ...operatorCli(options), accountHome, env: { RAVI_STATE_DIR: accountState } };
+
+  // The boundary itself judges by HOME and lets the path through; the CLI still never prepares it.
+  expect(isOperatorCliOnRealState(terminal)).toBe(true);
+  expect(isSchemaConsumer(terminal)).toBe(true);
+  expect(() => openStateDatabase(join(accountState, "ravi.db"), undefined, terminal)).toThrow("does not exist");
+  expect(existsSync(join(accountState, "ravi.db"))).toBe(false);
+
+  // A state directory under neither home is isolated, and the CLI's own to prepare.
+  const isolated = { ...terminal, env: { RAVI_STATE_DIR: join(options.homeDir, "isolated") } };
+  expect(isOperatorCliOnRealState(isolated)).toBe(false);
+  expect(isSchemaConsumer(isolated)).toBe(false);
+  // A state directory inside real state is real state.
+  expect(
+    isOperatorCliOnRealState({ ...terminal, env: { RAVI_STATE_DIR: join(options.homeDir, ".ravi", "nested") } }),
+  ).toBe(true);
+});
+
+it("gives the operator role to nothing but the installed CLI entry with no runtime context", () => {
+  const options = fixture();
+  const path = join(options.homeDir, ".ravi", "ravi.db");
+  const terminal = operatorCli(options);
+  const refused = (boundary: DatabaseBoundaryOptions) => {
+    expect(isInstalledOperatorCli(boundary)).toBe(false);
+    expect(() => assertDatabaseTargetAllowed(path, boundary)).toThrow("Refusing the real Ravi state");
+  };
+
+  // A runtime context or an explicit gateway: the daemon authorizes those.
+  for (const key of ["RAVI_CONTEXT_KEY", "RAVI_GATEWAY_URL", "RAVI_SESSION_KEY", "RAVI_SESSION_NAME", "RAVI_AGENT_ID"])
+    refused({ ...terminal, env: { [key]: "fixture" } });
+  // A test: by its environment, or because its entry is the test file and not the CLI.
+  refused({ ...terminal, env: { NODE_ENV: "test" } });
+  refused({ ...terminal, argv: ["bun", join(options.homeDir, "fixture.test.ts")] });
+  // A runtime entry that PM2 does not supervise is not a terminal command.
+  refused(operatorCli(options, ["daemon", "run"]));
+  refused(operatorCli(options, ["channels", "run"]));
+  // Source code: a checkout, a worktree, or a package this module does not belong to.
+  refused({ ...terminal, modulePath: resolve(import.meta.dir, "../db/state-boundary.ts") });
+  for (const marker of ["src", ".git"]) {
+    const release = join(options.homeDir, "release");
+    if (marker === "src") mkdirSync(join(release, "src"));
+    else writeFileSync(join(release, ".git"), "gitdir: /fixture/worktree");
+    refused(terminal);
+    rmSync(join(release, marker), { recursive: true, force: true });
+  }
+  // Another script that merely loads the installed package.
+  refused({ ...terminal, argv: ["bun", join(options.homeDir, "script.js"), "agents", "list"] });
+  refused({ ...terminal, argv: ["bun"] });
+
+  expect(() => assertDatabaseTargetAllowed(path, terminal)).not.toThrow();
+  // The operator's own arguments may name anything, a test file included.
+  for (const command of [
+    ["agents", "list", "--tag", "flaky.test.ts"],
+    ["sessions", "send", "dev", "rode src/x.test.ts"],
+  ]) {
+    const named = operatorCli(options, command);
+    expect(isInstalledOperatorCli(named)).toBe(true);
+    expect(() => assertDatabaseTargetAllowed(path, named)).not.toThrow();
+  }
 });
 
 it("rejects mismatched identity and arguments for the canonical Bun channels launcher", () => {

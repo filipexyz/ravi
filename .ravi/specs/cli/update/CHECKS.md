@@ -40,8 +40,8 @@
   runtime/session environment as text mode; quiet lifecycle execution MUST NOT
   depend on launcher variables already existing in the caller environment.
 - `bun test src/cli/operator-runtime.test.ts src/cli/registry-operator-gateway.test.ts`
-  MUST prove that installed operator commands reach the authenticated gateway,
-  isolated source commands stay local, and runtime contexts cannot obtain an
+  MUST prove that installed operator commands run in the terminal with the
+  daemon's gateway up or down, and that runtime contexts cannot obtain an
   offline operator fallback. Local recovery MUST not initialize real state.
 - `bun test src/cli/commands/daemon-restart-supervision.test.ts` MUST prove that
   failed pre-cutover startup preserves the predecessor and that intake stops

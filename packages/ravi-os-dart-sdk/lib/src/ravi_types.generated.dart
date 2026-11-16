@@ -20876,13 +20876,14 @@ class PermissionsStatusReturn {
 PermissionsStatusReturn permissionsStatusReturnFromJson(Object? json) => PermissionsStatusReturn.fromJsonValue(json);
 
 class PrPublishOptions {
-  const PrPublishOptions({this.base, this.bodyFile, this.dryRun, this.execute, this.expectSha, this.repo, this.title});
+  const PrPublishOptions({this.base, this.bodyFile, this.dryRun, this.execute, this.expectSha, this.replySession, this.repo, this.title});
 
   final String? base;
   final String? bodyFile;
   final bool? dryRun;
   final bool? execute;
   final String? expectSha;
+  final String? replySession;
   final String? repo;
   final String? title;
 
@@ -20901,6 +20902,9 @@ class PrPublishOptions {
     }
     if (expectSha != null) {
       into["expectSha"] = RaviJson.from(expectSha);
+    }
+    if (replySession != null) {
+      into["replySession"] = RaviJson.from(replySession);
     }
     if (repo != null) {
       into["repo"] = RaviJson.from(repo);

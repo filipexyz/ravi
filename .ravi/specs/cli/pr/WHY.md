@@ -20,7 +20,38 @@ incorrectly rejects working follows. Reusing the persistence serializer on both
 sides compares the actual destination contract without widening stored data or
 weakening verification of a missing or different destination.
 
-## Decision: remove bare operator publication
+## Decision (2026-11-15): the operator's terminal publishes again
+
+The decision below removed publication from the operator's terminal. It
+followed from the state boundary of the time: no CLI could open real state, so
+the journal refused the terminal and the honest contract was to say so. In
+practice it left the person who owns the installation with no way to publish
+from their own machine: the sanctioned command needed an agent's session, and
+`git push` runs a pre-push chain this host must not run.
+
+The boundary changed (`quality/state-boundary`): the installed CLI in the
+operator's terminal opens real state again, without preparing it, and runs its
+commands there. With that the terminal reaches the journal, and a terminal
+caller is added beside the session caller: `--reply-session <session>` names
+where the CI follow reports, and the authority is the local operator's admin
+access. The trust model is the one every other terminal command already has: a
+process running the installed CLI as the account's user, with no runtime
+context, is the operator.
+
+Everything the earlier decision put in place for runtime contexts stays: the
+identity comes from the authenticated record, a session publishes only into
+itself, and a context that belongs to no session is refused. That last rule is
+what keeps `--reply-session` from being a way into another session: before the
+earlier decision, the local-operator check did not look at who was calling, so
+a gateway context with no session and the publish capability could name any
+session it could access. The two callers are told apart by the transport of
+the running context, so a runtime context never takes the terminal's path.
+
+A reply destination is still not authentication, and a checkout or worktree
+CLI still cannot publish. The authenticated terminal flow designed below
+remains a possible future tightening; nothing here depends on it.
+
+## Earlier decision (2026-11-07, superseded): remove bare operator publication
 
 `--reply-session` selected a notification destination but proved no identity.
 The local-operator permission path trusted the host; the protected journal

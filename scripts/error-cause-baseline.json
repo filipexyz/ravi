@@ -1165,13 +1165,6 @@
       "count": 1
     },
     {
-      "id": "src/cli/commands/pr.ts:d5e03ff8271ee2697dc04e7f",
-      "file": "src/cli/commands/pr.ts",
-      "boundary": "cli",
-      "rule": "cause-not-forwarded-at-surface",
-      "count": 1
-    },
-    {
       "id": "src/cli/commands/prox-calls.ts:26a08d3f24a25e5756357b2a",
       "file": "src/cli/commands/prox-calls.ts",
       "boundary": "cli",
@@ -5800,7 +5793,7 @@
     }
   ],
   "totals": {
-    "violations": 868,
+    "violations": 867,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5819,7 +5812,7 @@
       "src/channels/slack": 14,
       "src/ci": 1,
       "src/cli": 32,
-      "src/cli/commands": 144,
+      "src/cli/commands": 143,
       "src/cloud-agents": 30,
       "src/cloud-auth": 11,
       "src/console-scope": 5,

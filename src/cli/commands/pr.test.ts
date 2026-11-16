@@ -6,6 +6,7 @@ import { buildRegistry } from "../registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../context.js";
 import { ContractError } from "../agent-contract.js";
 import { enforceCliCommandAuthorization } from "../command-access.js";
+import { resolvePublicationContext } from "../../pr/context.js";
 import { PUBLICATION_CONTEXT_REQUIRED_MESSAGE } from "../../pr/contracts.js";
 import { executePublication } from "../../pr/service.js";
 import { publicationFixture } from "../../pr/test-fixture.js";
@@ -69,7 +70,7 @@ async function invoke(execute = false, dryRun = false, allowed = true) {
   writeFileSync(bodyPath, "Validation: focused tests.\n");
   // A path relative to the caller worktree, which differs from the daemon cwd.
   return runWithContext(context(allowed), () =>
-    command().publish("o/r", "dev", "Fix publication", "../body.md", f.sha(), dryRun, true, execute),
+    command().publish("o/r", "dev", "Fix publication", "../body.md", f.sha(), undefined, dryRun, true, execute),
   );
 }
 
@@ -83,28 +84,29 @@ describe("pr publish CLI contract", () => {
       resource: "pr",
       action: "publish",
       risk: "high",
-      localOperator: false,
+      localOperator: true,
     });
-    expect(entry.options.find((opt) => opt.name === "execute")?.index).toBe(7);
-    expect(entry.options.some((opt) => opt.name === "replySession")).toBe(false);
+    expect(entry.options.find((opt) => opt.name === "execute")?.index).toBe(8);
+    expect(entry.options.find((opt) => opt.name === "replySession")?.index).toBe(5);
   });
-  it("denies the bare operator at command admission with actionable session guidance", () => {
+  it("admits the operator's terminal at command admission, and still no unresolved runtime principal", () => {
     const entry = buildRegistry([PrCommands]).commands[0]!;
-    const result = runWithContext({}, () =>
-      enforceCliCommandAuthorization({
-        group: "pr",
-        command: "publish",
-        scope: "open",
-        access: entry.access,
-        source: "cli",
-        input: { repo: "o/r", base: "dev", execute: true },
-      }),
-    );
-    expect(result.allowed).toBe(false);
-    expect(result.errorMessage).toContain(PUBLICATION_CONTEXT_REQUIRED_MESSAGE);
+    const admit = (source: "cli" | "gateway") =>
+      runWithContext({}, () =>
+        enforceCliCommandAuthorization({
+          group: "pr",
+          command: "publish",
+          scope: "open",
+          access: entry.access,
+          source,
+          input: { repo: "o/r", base: "dev", replySession: "publisher", execute: true },
+        }),
+      );
+    expect(admit("cli").allowed).toBe(true);
+    expect(admit("gateway").allowed).toBe(false);
     expect(f.calls).toHaveLength(0);
   });
-  it("refuses unauthenticated or sessionless execution before body, GitHub, health or journal IO", async () => {
+  it("refuses a runtime context with no authenticated session before any IO, whatever --reply-session names", async () => {
     let effects = 0;
     const unexpected = () => {
       effects++;
@@ -118,25 +120,36 @@ describe("pr publish CLI contract", () => {
     });
     const authenticated = context();
     const invalid: ToolContext[] = [
-      {},
       { transport: "gateway" },
       { transport: "tool", agentId: "test", sessionKey: "agent:test:publisher" },
-      { ...authenticated, transport: undefined, contextOrigin: "default-credential" },
+      // A gateway context that holds the publish capability but belongs to no session.
       { ...authenticated, context: { ...authenticated.context!, sessionKey: undefined, sessionName: undefined } },
     ];
     process.env.RAVI_AGENT_ID = "test";
     process.env.RAVI_SESSION_KEY = "agent:test:publisher";
     for (const candidate of invalid) {
-      for (const execute of [false, true]) {
-        await expect(
-          runWithContext(candidate, () =>
-            guarded.publish("o/r", "dev", "Test", "/does-not-exist/body.md", undefined, false, true, execute),
-          ),
-        ).rejects.toMatchObject({
-          code: "PERMISSION_DENIED",
-          exitCode: 1,
-          message: PUBLICATION_CONTEXT_REQUIRED_MESSAGE,
-        });
+      for (const replySession of [undefined, "publisher", "agent:test:publisher"]) {
+        for (const execute of [false, true]) {
+          await expect(
+            runWithContext(candidate, () =>
+              guarded.publish(
+                "o/r",
+                "dev",
+                "Test",
+                "/does-not-exist/body.md",
+                undefined,
+                replySession,
+                false,
+                true,
+                execute,
+              ),
+            ),
+          ).rejects.toMatchObject({
+            code: "PERMISSION_DENIED",
+            exitCode: 1,
+            message: PUBLICATION_CONTEXT_REQUIRED_MESSAGE,
+          });
+        }
       }
     }
     expect(effects).toBe(0);
@@ -144,12 +157,95 @@ describe("pr publish CLI contract", () => {
     expect(f.db.query("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(0);
     expect(f.triggers).toHaveLength(0);
   });
+  it("refuses the terminal with no destination, or a destination that is not there, before body, GitHub, health or journal IO", async () => {
+    let effects = 0;
+    const unexpected = () => {
+      effects++;
+      throw new Error("unexpected IO");
+    };
+    const guarded = new PrCommands({
+      context: resolvePublicationContext,
+      github: unexpected,
+      health: unexpected,
+      execute: unexpected,
+    });
+    const authenticated = context();
+    // No transport: the terminal, with or without a stored default credential.
+    // Session names left in the environment or in that credential are not a destination.
+    const terminals: ToolContext[] = [
+      {},
+      { ...authenticated, transport: undefined, contextOrigin: "default-credential" },
+    ];
+    process.env.RAVI_AGENT_ID = "test";
+    process.env.RAVI_SESSION_KEY = "agent:test:publisher";
+    for (const terminal of terminals) {
+      for (const execute of [false, true]) {
+        await expect(
+          runWithContext(terminal, () =>
+            guarded.publish(
+              "o/r",
+              "dev",
+              "Test",
+              "/does-not-exist/body.md",
+              undefined,
+              undefined,
+              false,
+              true,
+              execute,
+            ),
+          ),
+        ).rejects.toMatchObject({ code: "PUBLICATION_SESSION_REQUIRED", exitCode: 2 });
+        await expect(
+          runWithContext(terminal, () =>
+            guarded.publish(
+              "o/r",
+              "dev",
+              "Test",
+              "/does-not-exist/body.md",
+              undefined,
+              "no-such-session",
+              false,
+              true,
+              execute,
+            ),
+          ),
+        ).rejects.toMatchObject({ code: "SESSION_NOT_FOUND", exitCode: 1 });
+      }
+    }
+    expect(effects).toBe(0);
+    expect(f.calls).toHaveLength(0);
+    expect(f.triggers).toHaveLength(0);
+  });
+  it("publishes from the operator's terminal into the session it names, recorded as the local operator", async () => {
+    const bodyPath = join(f.root, "body.md");
+    writeFileSync(bodyPath, "Validation: focused tests.\n");
+    const terminal: ToolContext = { cwd: f.cwd };
+    const publish = (execute: boolean) =>
+      runWithContext(terminal, () =>
+        command().publish("o/r", "dev", "Fix publication", "../body.md", f.sha(), "publisher", false, true, execute),
+      );
+
+    await expect(publish(false)).rejects.toMatchObject({ exitCode: 3, details: { dryRun: true } });
+    expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+
+    const result = await publish(true);
+    expect(result).toMatchObject({ localSha: f.sha(), pr: { ready: true }, follow: { replySession: "publisher" } });
+    const event = f.db.query("SELECT detail_json FROM pr_publication_events ORDER BY id LIMIT 1").get() as {
+      detail_json: string;
+    };
+    expect(JSON.parse(event.detail_json)).toMatchObject({
+      contextId: null,
+      actor: "local-operator",
+      executorAgentId: null,
+      sessionKey: "agent:test:publisher",
+    });
+  });
   it("refuses expired and revoked session contexts before publication IO", async () => {
     for (const ended of [{ expiresAt: 1 }, { revokedAt: 1 }]) {
       const authenticated = context();
       await expect(
         runWithContext({ ...authenticated, context: { ...authenticated.context!, ...ended } }, () =>
-          command().publish("o/r", "dev", "Test", "/does-not-exist/body.md", undefined, false, true, true),
+          command().publish("o/r", "dev", "Test", "/does-not-exist/body.md", undefined, undefined, false, true, true),
         ),
       ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
     }
