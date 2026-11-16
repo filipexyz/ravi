@@ -37,8 +37,7 @@ import {
   createLocalCredentialOperatorContext,
   isLocalCredentialCommand,
   isLocalRecoveryCommand,
-  isManagedRuntimeEntry,
-  usesInstalledOperatorTransport,
+  usesOperatorRecoveryPath,
 } from "./operator-runtime.js";
 import {
   codexHookTransportFailure,
@@ -258,21 +257,17 @@ function registerCommand(
       if (input[optName] === undefined) input[optName] = optionValue;
     }
 
-    const installedOperator = usesInstalledOperatorTransport();
+    // The operator's terminal runs its commands here, on real state the CLI
+    // opens without preparing. Two families must work with no database at all,
+    // so a stopped or half-updated daemon can be recovered: the daemon and
+    // channel lifecycle, and the credential file.
+    const installedOperator = usesOperatorRecoveryPath();
     const localRecovery = installedOperator && isLocalRecoveryCommand(groupName, cmdMeta.name);
     const localCredentials = installedOperator && isLocalCredentialCommand(groupName, cmdMeta.name);
-    const operatorGateway =
-      installedOperator &&
-      !localRecovery &&
-      !localCredentials &&
-      !cliOnly &&
-      !isManagedRuntimeEntry(groupName, cmdMeta.name);
 
     let remoteConfig: RemoteGatewayConfig | null;
     try {
-      remoteConfig = await resolveRemoteGatewayConfig(process.env, commandOperation(groupName, cmdMeta.name), {
-        installedOperator: operatorGateway,
-      });
+      remoteConfig = await resolveRemoteGatewayConfig(process.env, commandOperation(groupName, cmdMeta.name));
     } catch (error) {
       if (isCodexBashHookCommand(groupName, cmdMeta.name)) {
         console.log(JSON.stringify(codexHookTransportFailure("invalid gateway configuration")));
@@ -313,12 +308,12 @@ function registerCommand(
 
     // A runtime context key means the caller acts for a daemon-owned context.
     // Never authorize it locally against a DB chosen by this process's env.
-    if (requiresRemoteGateway(process.env) || operatorGateway) {
+    if (requiresRemoteGateway(process.env)) {
       if (isCodexBashHookCommand(groupName, cmdMeta.name)) {
         console.log(JSON.stringify(codexHookTransportFailure("gateway unavailable")));
         return;
       }
-      const error = gatewayRequiredError(commandOperation(groupName, cmdMeta.name), operatorGateway);
+      const error = gatewayRequiredError(commandOperation(groupName, cmdMeta.name));
       renderContractError(error, input.json === true);
       process.exit(error.exitCode);
     }

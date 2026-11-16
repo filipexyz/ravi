@@ -23,11 +23,10 @@ let savedEnv: NodeJS.ProcessEnv;
 
 @Group({ name: "tasks", description: "Stateful fixture", scope: "admin" })
 class StatefulCommands {
-  @Command({ name: "list", description: "List through gateway" })
+  @Command({ name: "list", description: "List on the state this terminal selected" })
   @CommandAccess({ kind: "read", resource: "tasks", action: "list", risk: "low" })
   list(@Option({ flags: "--json", description: "JSON output" }) _json?: boolean) {
     handlerCalls.push("stateful");
-    throw new Error("Stateful commands must run in the daemon");
   }
 }
 
@@ -76,8 +75,8 @@ beforeEach(() => {
     { mode: 0o600 },
   );
   // Provenance and real-state selection are covered separately; exercise the
-  // installed routing branch with an isolated socket and credential here.
-  spyOn(operatorRuntime, "usesInstalledOperatorTransport").mockImplementation(
+  // installed operator branch with an isolated socket and credential here.
+  spyOn(operatorRuntime, "usesOperatorRecoveryPath").mockImplementation(
     () => !process.env.RAVI_CONTEXT_KEY && !process.env.RAVI_GATEWAY_URL,
   );
   handlerCalls = [];
@@ -107,7 +106,7 @@ function execute(group: string, command: string) {
   return program.parseAsync(["bun", "fixture", group, command, "--json"]);
 }
 
-describe("installed operator gateway and offline recovery", () => {
+describe("the installed operator's terminal: local commands and offline recovery", () => {
   it.each(["daemon", "channels"])("runs the real %s status handler offline without SQLite", async (group) => {
     const pm2Available = spyOn(pm2, "isPm2Available").mockReturnValue(false);
     const program = new CommanderCommand();
@@ -119,20 +118,23 @@ describe("installed operator gateway and offline recovery", () => {
     expect(existsSync(join(stateDir, "ravi.db"))).toBe(false);
   });
 
-  it("uses the existing credential on the Unix gateway without opening local state", async () => {
+  it("runs a stateful command in the terminal, not on the daemon's gateway, even while its socket is up", async () => {
     let requests = 0;
-    server = createServer((request, response) => {
+    server = createServer((_request, response) => {
       requests++;
-      expect(request.url).toBe("/api/v1/tasks/list");
-      expect(request.headers.authorization).toBe("Bearer rctx_operator_fixture");
       response.setHeader("Content-Type", "application/json");
       response.end(JSON.stringify({ items: [] }));
     });
     await new Promise<void>((resolve) => server!.listen(join(stateDir, "cli-gateway.sock"), resolve));
     await execute("tasks", "list");
-    expect(requests).toBe(1);
-    expect(handlerCalls).toEqual([]);
-    expect(existsSync(join(stateDir, "ravi.db"))).toBe(false);
+    expect(requests).toBe(0);
+    expect(handlerCalls).toEqual(["stateful"]);
+  });
+
+  it("runs a stateful command in the terminal with the daemon stopped", async () => {
+    await execute("tasks", "list");
+    expect(handlerCalls).toEqual(["stateful"]);
+    expect(output.join("\n")).not.toContain("GATEWAY_REQUIRED");
   });
 
   it.each(["status", "restart"])("keeps daemon %s available offline without SQLite", async (command) => {
@@ -149,7 +151,8 @@ describe("installed operator gateway and offline recovery", () => {
     expect(existsSync(join(stateDir, "ravi.db"))).toBe(false);
   });
 
-  it("preserves gateway authorization denial without trying the local handler", async () => {
+  it("sends a runtime context's command to the gateway and keeps its denial, without the local handler", async () => {
+    process.env.RAVI_CONTEXT_KEY = "rctx_runtime_fixture";
     server = createServer((_request, response) => {
       response.writeHead(403, { "Content-Type": "application/json" });
       response.end(
@@ -169,7 +172,8 @@ describe("installed operator gateway and offline recovery", () => {
     expect(existsSync(join(stateDir, "ravi.db"))).toBe(false);
   });
 
-  it("fails stateful commands closed when the installed gateway is absent", async () => {
+  it("fails a runtime context's stateful command closed when no gateway is reachable", async () => {
+    process.env.RAVI_CONTEXT_KEY = "rctx_runtime_fixture";
     await expect(execute("tasks", "list")).rejects.toThrow("fixture_exit_1");
     expect(output.join("\n")).toContain("GATEWAY_REQUIRED");
     expect(handlerCalls).toEqual([]);

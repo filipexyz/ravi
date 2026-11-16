@@ -23,27 +23,42 @@ function run(args: string[]) {
   });
 }
 
-describe("pr publish process authentication contract", () => {
-  it("refuses bare operator preview and execute with one actionable envelope", () => {
+describe("pr publish from a terminal, as a real process", () => {
+  it("prints one actionable envelope when no reply session is named, in preview and in execute", () => {
     for (const mode of ["--dry-run", "--execute"]) {
       const result = run(["--repo", "o/r", "--base", "dev", "--body-file", "/does-not-exist.md", mode, "--json"]);
-      expect(result.status).toBe(1);
+      expect(result.status).toBe(2);
       expect(result.stderr).toBe("");
       const envelope = JSON.parse(result.stdout);
-      expect(envelope).toMatchObject({ success: false, op: "pr publish", error: { code: "PERMISSION_DENIED" } });
-      expect(envelope.error.message).toContain(PUBLICATION_CONTEXT_REQUIRED_MESSAGE);
+      expect(envelope).toMatchObject({
+        success: false,
+        op: "pr publish",
+        error: { code: "PUBLICATION_SESSION_REQUIRED", message: expect.stringContaining("--reply-session <session>") },
+      });
       expect(result.stdout).not.toContain("PUBLICATION_AUDIT_FAILED");
     }
   }, 45_000);
 
-  it("rejects the removed reply-session option as usage error", () => {
-    const result = run(["--repo", "o/r", "--base", "dev", "--reply-session", "publisher", "--json"]);
+  it("prints the refusal for a reply session that does not exist, as JSON and as text", () => {
+    const json = run(["--repo", "o/r", "--base", "dev", "--reply-session", "no-such-session", "--json"]);
+    expect(json.status).toBe(1);
+    expect(json.stderr).toBe("");
+    expect(JSON.parse(json.stdout)).toMatchObject({ success: false, op: "pr publish" });
+    expect(json.stdout).not.toContain(PUBLICATION_CONTEXT_REQUIRED_MESSAGE);
+
+    const text = run(["--repo", "o/r", "--base", "dev", "--reply-session", "no-such-session"]);
+    expect(text.status).toBe(1);
+    expect(text.stdout).toBe("");
+    expect(text.stderr.trim().length).toBeGreaterThan(0);
+  }, 45_000);
+
+  it("prints usage errors instead of exiting silently", () => {
+    const result = run(["--base", "dev", "--json"]);
     expect(result.status).toBe(2);
-    expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toMatchObject({
       success: false,
       op: "pr publish",
-      error: { code: "USAGE_ERROR", message: expect.stringContaining("--reply-session") },
+      error: { code: "USAGE_ERROR" },
     });
   }, 25_000);
 });

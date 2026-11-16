@@ -19,6 +19,7 @@
  */
 import { stripVTControlCharacters } from "node:util";
 import type { Command as CommanderCommand, CommanderError } from "commander";
+import { isStateNotReadyError, PREPARE_STATE_COMMAND } from "../db/state-readiness.js";
 import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write-retry.js";
 import { isRuntimeContextError } from "../runtime/context-errors.js";
 import { getContext } from "./context.js";
@@ -505,10 +506,30 @@ export function sqliteCapacityToContractError(op: string, error: unknown): Contr
   });
 }
 
+/**
+ * State the installed daemon has not prepared for this release. It is a
+ * condition the operator fixes with one command, not an internal failure.
+ */
+export function stateNotReadyToContractError(op: string, error: unknown): ContractError | null {
+  if (!isStateNotReadyError(error)) return null;
+  let source: unknown = error;
+  while ((source as { code?: unknown }).code !== "STATE_SCHEMA_NOT_READY")
+    source = (source as { cause?: unknown }).cause;
+  const message = source instanceof Error ? source.message : "State is not prepared for this release.";
+  return new ContractError(op, "STATE_SCHEMA_NOT_READY", message, CONTRACT_EXIT_ERROR, {
+    ...errorDiagnostic(source, { operation: op }),
+    ...{
+      retryable: true,
+      suggestedAction: `Run \`${PREPARE_STATE_COMMAND}\` (or \`ravi daemon start\` when it never ran), then retry`,
+    },
+  });
+}
+
 export function mapExecutionErrorToContractError(op: string, error: unknown): ContractError {
   return (
     expectedErrorToContractError(op, error) ??
     runtimeContextErrorToContractError(op, error) ??
+    stateNotReadyToContractError(op, error) ??
     sqliteCapacityToContractError(op, error) ??
     unexpectedErrorToContractError(op, error)
   );
@@ -582,8 +603,16 @@ export function binaryResponseToContractError(op: string, status: number): Contr
   });
 }
 
+const renderedContractErrors = new WeakSet<ContractError>();
+
+/** Whether this failure was already shown on this process's output. */
+export function wasContractErrorRendered(error: ContractError): boolean {
+  return renderedContractErrors.has(error);
+}
+
 export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
   if (getContext({ localOnly: true })?.suppressCliOutput === true) return;
+  renderedContractErrors.add(error);
   const envelope = error.envelope();
   if (asJson) {
     console.log(JSON.stringify(envelope, null, 2));

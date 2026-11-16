@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonicalStatePath } from "../db/state-boundary.js";
+import { canonicalStatePath, hasRuntimeInvocationEnv, isOperatorCliOnRealState } from "../db/state-boundary.js";
 import { findRaviPackageRoot } from "../managed-runtime.js";
 import { resolveAccountHome } from "../utils/account-home.js";
 import { getContext, hasRuntimeInvocationContext, type ToolContext } from "./context.js";
@@ -21,19 +21,18 @@ const RECOVERY_COMMANDS = new Set([
   "channels logs",
 ]);
 
-/** Selects transport only; it never grants access to a database or a gateway. */
-export function usesInstalledOperatorTransport(
+/**
+ * Whether this is the installed CLI in the operator's terminal, using real
+ * state. Such a CLI runs its commands in this process, against real state it
+ * may open but never prepares (`db/state-boundary.ts`); it is not sent to the
+ * daemon's gateway. This only says which commands must work with no database
+ * at all (recovery, the credential file); it grants no access by itself.
+ */
+export function isInstalledOperatorOnRealState(
   env: NodeJS.ProcessEnv = process.env,
   options: { modulePath?: string; homeDir?: string; runtimeInvocation?: boolean } = {},
 ): boolean {
-  if (
-    env.RAVI_CONTEXT_KEY?.trim() ||
-    env.RAVI_GATEWAY_URL?.trim() ||
-    env.RAVI_SESSION_KEY?.trim() ||
-    env.RAVI_SESSION_NAME?.trim() ||
-    env.RAVI_AGENT_ID?.trim()
-  )
-    return false;
+  if (hasRuntimeInvocationEnv(env)) return false;
   if (options.runtimeInvocation ?? (hasRuntimeInvocationContext() || getContext({ localOnly: true }) !== undefined))
     return false;
   const root = findRaviPackageRoot(options.modulePath ?? codePath);
@@ -45,12 +44,20 @@ export function usesInstalledOperatorTransport(
   return canonicalStatePath(state) === canonicalStatePath(join(home, ".ravi"));
 }
 
-export function isLocalRecoveryCommand(group: string, command: string): boolean {
-  return RECOVERY_COMMANDS.has(`${group} ${command}`);
+/**
+ * Whether the commands that must work with no database get that path: the
+ * operator's installed CLI on real state, by the provenance check above or as
+ * the state boundary sees it. The two differ when `HOME` is not the account's
+ * home, when the account lookup is unavailable and when the selected state
+ * directory sits inside `~/.ravi`; whenever the boundary lets this CLI into
+ * real state, recovery must not depend on that state being prepared.
+ */
+export function usesOperatorRecoveryPath(): boolean {
+  return isInstalledOperatorOnRealState() || isOperatorCliOnRealState();
 }
 
-export function isManagedRuntimeEntry(group: string, command: string): boolean {
-  return command === "run" && (group === "daemon" || group === "channels");
+export function isLocalRecoveryCommand(group: string, command: string): boolean {
+  return RECOVERY_COMMANDS.has(`${group} ${command}`);
 }
 
 const LOCAL_CREDENTIAL_COMMANDS = new Set(["list", "add", "set-default", "remove"]);

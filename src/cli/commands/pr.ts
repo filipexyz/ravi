@@ -1,7 +1,8 @@
 import "reflect-metadata";
 import { readFile, stat } from "node:fs/promises";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { Command, CommandAccess, Group, Option, Returns, type CommandAccessOptions } from "../decorators.js";
-import { contractDryRun, ContractError } from "../agent-contract.js";
+import { contractDryRun, ContractError, renderContractError, wasContractErrorRendered } from "../agent-contract.js";
 import { enforceCliCommandAuthorization } from "../command-access.js";
 import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
 import { buildAuditContextProvenance } from "../../permissions/audit-provenance.js";
@@ -15,7 +16,7 @@ import {
 import { githubClient, GithubError } from "../../pr/github.js";
 import { LocalGit, utf8 } from "../../pr/git.js";
 import { preparePublication, executePublication } from "../../pr/service.js";
-import { requirePublicationRuntimeContext, resolvePublicationContext } from "../../pr/context.js";
+import { resolvePublicationCaller, resolvePublicationContext } from "../../pr/context.js";
 import { requireFollowRuntime } from "../../pr/follow-health.js";
 
 const access: CommandAccessOptions = {
@@ -24,18 +25,16 @@ const access: CommandAccessOptions = {
   action: "publish",
   risk: "high",
   requiresConfirmation: true,
-  localOperator: false,
-  notes: PUBLICATION_CONTEXT_REQUIRED_MESSAGE,
-  input: ["repo", "base", "expectSha"],
+  localOperator: true,
+  input: ["repo", "base", "expectSha", "replySession"],
   redactions: ["title", "bodyFile"],
 };
 const HELP = `
 USE
   Publish a committed work branch through Git Data API, then create/reuse its ready PR and CI follow.
-  Requires an authenticated Ravi session through the gateway/agent, including preview.
-  CI follows the publishing session's durable origin.
-BREAKING CHANGE
-  Bare local operator publication and --reply-session are removed. A reply destination is not authentication.
+  In a Ravi session (through the gateway/agent), CI follows that session's durable origin.
+  From the operator's terminal, with the installed CLI, pass --reply-session <session>: the session whose
+  chat receives the CI follow. It names a destination and grants no authority.
 NÃO USE
   This is not commit, merge, approval, force-push, fork publication or a draft workflow.
 REGRAS HARD
@@ -53,7 +52,9 @@ EXAMPLES
   ravi pr publish --repo owner/repo --base dev --title "Fix parser" --body-file /tmp/pr.md --expect-sha <40-char-sha> --json --execute
   ravi pr publish --repo owner/repo --base dev --json --execute
 ON ERROR
-  PERMISSION_DENIED: ${PUBLICATION_CONTEXT_REQUIRED_MESSAGE}
+  PERMISSION_DENIED in a runtime context: ${PUBLICATION_CONTEXT_REQUIRED_MESSAGE}
+  PUBLICATION_SESSION_REQUIRED from a terminal: pass --reply-session <session> that has a chat destination.
+  STATE_SCHEMA_NOT_READY from a terminal: the installed daemon prepares state; run ravi daemon restart -m "prepare state".
   WORKTREE_DIRTY: commit changes. GIT_OBJECT_MISMATCH: inspect the object; never accept a substitute SHA.
   NON_FAST_FORWARD / REMOTE_REF_CHANGED: integrate remote changes or choose a new branch.
   PR_PUBLICATION_INCOMPLETE: inspect partial.phase and rerun with the same --expect-sha.
@@ -97,12 +98,42 @@ export class PrCommands {
     bodyFile?: string,
     @Option({ flags: "--expect-sha <sha>", description: "Require this full local commit SHA (default: capture HEAD)" })
     expectSha?: string,
+    @Option({
+      flags: "--reply-session <session>",
+      description:
+        "From a terminal: the session whose chat receives the CI follow. In a session it must be that session. Grants no authority",
+    })
+    replySession?: string,
     @Option({ flags: "--dry-run", description: "Preview only; also the default without --execute (exit 3)" })
     dryRun?: boolean,
     @Option({ flags: "--json", description: "Print one typed JSON result or error envelope" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Publish externally and reconcile CI follow" }) execute?: boolean,
   ) {
-    const context = requirePublicationRuntimeContext();
+    try {
+      return await this.publishFor({ repo, base, title, bodyFile, expectSha, replySession, dryRun, asJson, execute });
+    } catch (error) {
+      // A gateway client and a tool caller show the returned failure themselves.
+      // In a terminal nothing else does, so it is shown here, once.
+      if (error instanceof ContractError && !wasContractErrorRendered(error)) renderContractError(error, asJson);
+      throw error;
+    }
+  }
+
+  private async publishFor(input: {
+    repo?: string;
+    base?: string;
+    title?: string;
+    bodyFile?: string;
+    expectSha?: string;
+    replySession?: string;
+    dryRun?: boolean;
+    asJson?: boolean;
+    execute?: boolean;
+  }) {
+    const { repo, base, title, bodyFile, expectSha, replySession, dryRun, asJson, execute } = input;
+    // A session through the gateway/agent, or the operator's own terminal.
+    const caller = resolvePublicationCaller();
+    const context = caller.kind === "session" ? caller.context : undefined;
     let signal: AbortSignal | undefined;
     const authorize = () => {
       if (signal?.aborted)
@@ -115,7 +146,7 @@ export class PrCommands {
         scope: "open",
         access,
         source: context?.transport ?? "cli",
-        input: { repo, base, expectSha },
+        input: { repo, base, expectSha, replySession },
       });
       if (!decision.allowed)
         throw prError("PERMISSION_DENIED", "This context cannot publish the selected PR.", decision.denialDetails);
@@ -125,7 +156,7 @@ export class PrCommands {
       throw prError("USAGE_ERROR", "Provide --repo and --base; --dry-run and --execute are mutually exclusive.", {}, 2);
     if (context?.transport && !context.cwd)
       throw prError("CALLER_CWD_REQUIRED", "The gateway needs the caller worktree directory for publication.");
-    const publisher = this.dependencies.context();
+    const publisher = this.dependencies.context(replySession);
     const cwd = resolveCallerPath(getCallerCwd());
     let body: string | undefined;
     if (bodyFile) {
@@ -137,7 +168,11 @@ export class PrCommands {
         body = utf8(await readFile(path));
       } catch (error) {
         if (error instanceof ContractError) throw error;
-        throw prError("BODY_FILE_UNREADABLE", "Cannot read the PR description file from the caller directory.");
+        throw prError(
+          "BODY_FILE_UNREADABLE",
+          "Cannot read the PR description file from the caller directory.",
+          errorDiagnostic(error, { operation: "pr publish" }),
+        );
       }
     }
     signal = AbortSignal.timeout(PUBLICATION_TIMEOUT_MS);
@@ -154,10 +189,10 @@ export class PrCommands {
       const result = await this.dependencies.execute(prepared, request, {
         authorize,
         provenance: {
-          actor: provenance?.actorPrincipal ?? `agent:${context.agentId}`,
-          executorAgentId: context.agentId,
+          actor: provenance?.actorPrincipal ?? (context ? `agent:${context.agentId}` : "local-operator"),
+          executorAgentId: context?.agentId ?? null,
           sessionKey: publisher.sessionKey ?? null,
-          contextId: context.contextId,
+          contextId: context?.contextId ?? null,
         },
       });
       console.log(

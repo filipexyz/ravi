@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveAccountHome } from "../utils/account-home.js";
 import { runWithContext } from "./context.js";
-import { isLocalRecoveryCommand, usesInstalledOperatorTransport } from "./operator-runtime.js";
+import { isLocalRecoveryCommand, isInstalledOperatorOnRealState } from "./operator-runtime.js";
 
 const fixture = mkdtempSync(join(tmpdir(), "ravi-operator-provenance-"));
 const homeDir = join(fixture, "home");
@@ -28,7 +28,7 @@ const options = { modulePath: installed, homeDir, runtimeInvocation: false };
 
 afterAll(() => rmSync(fixture, { recursive: true, force: true }));
 
-describe("installed operator transport", () => {
+describe("the installed operator CLI on real state", () => {
   it("keeps an actual Bun process with overridden HOME isolated without injecting account home", () => {
     const accountHome = resolveAccountHome();
     expect(accountHome).toBeString();
@@ -38,7 +38,7 @@ describe("installed operator transport", () => {
       [
         "-e",
         [
-          `import { usesInstalledOperatorTransport } from ${JSON.stringify(new URL("./operator-runtime.ts", import.meta.url).href)};`,
+          `import { isInstalledOperatorOnRealState } from ${JSON.stringify(new URL("./operator-runtime.ts", import.meta.url).href)};`,
           `import { resolveHostCliGatewayStateDirs } from ${JSON.stringify(new URL("./remote-gateway.ts", import.meta.url).href)};`,
           `import { resolveAccountHome } from ${JSON.stringify(new URL("../utils/account-home.ts", import.meta.url).href)};`,
           'import { join } from "node:path";',
@@ -46,9 +46,9 @@ describe("installed operator transport", () => {
           "const accountHome = resolveAccountHome();",
           "console.log(JSON.stringify({",
           "  accountHome, selectedHome: process.env.HOME,",
-          "  implicit: usesInstalledOperatorTransport(process.env, options),",
-          "  isolated: usesInstalledOperatorTransport({ ...process.env, RAVI_STATE_DIR: join(process.env.HOME, '.ravi') }, options),",
-          "  explicit: usesInstalledOperatorTransport({ ...process.env, RAVI_STATE_DIR: join(accountHome, '.ravi') }, options),",
+          "  implicit: isInstalledOperatorOnRealState(process.env, options),",
+          "  isolated: isInstalledOperatorOnRealState({ ...process.env, RAVI_STATE_DIR: join(process.env.HOME, '.ravi') }, options),",
+          "  explicit: isInstalledOperatorOnRealState({ ...process.env, RAVI_STATE_DIR: join(accountHome, '.ravi') }, options),",
           "  gateway: resolveHostCliGatewayStateDirs(),",
           "}));",
         ].join("\n"),
@@ -72,26 +72,26 @@ describe("installed operator transport", () => {
     expect(existsSync(join(stateDir, "ravi.db"))).toBe(false);
   });
 
-  it("selects the gateway only for installed code targeting canonical real state", () => {
-    expect(usesInstalledOperatorTransport({}, options)).toBe(true);
-    expect(usesInstalledOperatorTransport({ RAVI_STATE_DIR: stateDir }, options)).toBe(true);
+  it("is installed code targeting canonical real state, and nothing else", () => {
+    expect(isInstalledOperatorOnRealState({}, options)).toBe(true);
+    expect(isInstalledOperatorOnRealState({ RAVI_STATE_DIR: stateDir }, options)).toBe(true);
     const alias = join(fixture, "state-alias");
     symlinkSync(stateDir, alias);
-    expect(usesInstalledOperatorTransport({ RAVI_STATE_DIR: alias }, options)).toBe(true);
-    expect(usesInstalledOperatorTransport({ RAVI_STATE_DIR: join(fixture, "isolated") }, options)).toBe(false);
-    expect(usesInstalledOperatorTransport({ HOME: join(fixture, "isolated-home") }, options)).toBe(false);
+    expect(isInstalledOperatorOnRealState({ RAVI_STATE_DIR: alias }, options)).toBe(true);
+    expect(isInstalledOperatorOnRealState({ RAVI_STATE_DIR: join(fixture, "isolated") }, options)).toBe(false);
+    expect(isInstalledOperatorOnRealState({ HOME: join(fixture, "isolated-home") }, options)).toBe(false);
     expect(
-      usesInstalledOperatorTransport({ HOME: join(fixture, "isolated-home"), RAVI_STATE_DIR: stateDir }, options),
+      isInstalledOperatorOnRealState({ HOME: join(fixture, "isolated-home"), RAVI_STATE_DIR: stateDir }, options),
     ).toBe(true);
   });
 
   it("does not promote source trees, worktrees or unknown code to an installed operator", () => {
     for (const marker of ["src", ".git"] as const) {
-      expect(usesInstalledOperatorTransport({}, { ...options, modulePath: packageFixture(marker, marker) })).toBe(
+      expect(isInstalledOperatorOnRealState({}, { ...options, modulePath: packageFixture(marker, marker) })).toBe(
         false,
       );
     }
-    expect(usesInstalledOperatorTransport({}, { ...options, modulePath: join(fixture, "unknown.js") })).toBe(false);
+    expect(isInstalledOperatorOnRealState({}, { ...options, modulePath: join(fixture, "unknown.js") })).toBe(false);
   });
 
   it("does not replace explicit gateway or runtime authority with a local operator", () => {
@@ -102,12 +102,12 @@ describe("installed operator transport", () => {
       "RAVI_SESSION_NAME",
       "RAVI_AGENT_ID",
     ]) {
-      expect(usesInstalledOperatorTransport({ [key]: "explicit-authority" }, options)).toBe(false);
+      expect(isInstalledOperatorOnRealState({ [key]: "explicit-authority" }, options)).toBe(false);
     }
-    expect(usesInstalledOperatorTransport({}, { ...options, runtimeInvocation: true })).toBe(false);
+    expect(isInstalledOperatorOnRealState({}, { ...options, runtimeInvocation: true })).toBe(false);
     for (const transport of ["tool", "gateway"] as const) {
       expect(
-        runWithContext({ transport }, () => usesInstalledOperatorTransport({}, { modulePath: installed, homeDir })),
+        runWithContext({ transport }, () => isInstalledOperatorOnRealState({}, { modulePath: installed, homeDir })),
       ).toBe(false);
     }
   });

@@ -10,7 +10,17 @@ normative: true
 
 # Operating the state boundary
 
-## CLI, tests and worktrees
+## The operator's terminal
+
+The installed `ravi` runs its commands in the terminal, on real state, with no gateway in between. It never creates or migrates a store there. When a command answers `STATE_SCHEMA_NOT_READY`, the daemon of this release has not prepared a store yet (first start, or an update whose restart has not happened):
+
+```bash
+ravi daemon restart -m "prepare state"
+```
+
+`ravi daemon start|stop|restart|status|logs`, the same `ravi channels` commands and `ravi update` work with no database, so they are always available to recover.
+
+## Tests, worktrees and source checkouts
 
 Select a disposable directory explicitly on the command:
 
@@ -18,7 +28,7 @@ Select a disposable directory explicitly on the command:
 RAVI_STATE_DIR="$(mktemp -d)" bun test src/router/state-boundary.test.ts
 ```
 
-For real state use the installed daemon gateway. Selecting `~/.ravi` explicitly, setting process-name variables or adding `daemon run` to argv does not turn a CLI/worktree into the runtime. Do not change HOME or copy real databases into a test path to evade the boundary.
+Code run from a checkout, a worktree or a build never reaches real state. Selecting `~/.ravi` explicitly, setting process-name variables or adding `daemon run` to argv does not turn a worktree into the runtime or into the operator's CLI. Do not change HOME or copy real databases into a test path to evade the boundary. An agent's turn carries a runtime context and goes through the installed daemon gateway.
 
 A refusal after cleanup means the caller lost its isolated state. Fix its state selection/cleanup; do not disable the guard. `getDb()` is not a readonly operation because it initializes schema.
 
@@ -65,14 +75,15 @@ No package installation, environment mutation, daemon restart or live-state repa
 ## Publication
 
 Run focused tests and the spec/coverage gate with isolated state, then commit on
-a work branch with pre-commit enabled. From the publishing Ravi session, preview
-and execute the canonical publisher through an authenticated context on the
-installed daemon gateway. A bare operator terminal is unsupported, and
-`--reply-session` alone does not provide authentication:
+a work branch with pre-commit enabled. Preview and execute the canonical
+publisher from the publishing Ravi session, or from the operator's terminal with
+the installed CLI, naming the session whose chat receives the CI follow:
 
 ```bash
 ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
 ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --execute
+# from a terminal
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --reply-session <session> --execute
 ```
 
 The command preserves the exact local commit and tree and reconciles the ready
