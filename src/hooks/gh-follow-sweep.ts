@@ -31,6 +31,7 @@ import {
   ensureGhWatchFollow,
   ensureFollowWatchProducer,
   ghFollowFilter,
+  ghFollowDeliveryPatch,
   ghFollowReplyTargetPatch,
   isGhFollowManagedWatch,
 } from "./gh-watch.js";
@@ -279,7 +280,7 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
     );
     for (const trigger of alive) {
       try {
-        const patch = ghFollowReplyTargetPatch(trigger);
+        const patch = { ...ghFollowDeliveryPatch(trigger), ...ghFollowReplyTargetPatch(trigger) };
         const filter = filterRepairs.get(trigger.id);
         if (filter) patch.filter = filter;
         if (Object.keys(patch).length === 0) continue;

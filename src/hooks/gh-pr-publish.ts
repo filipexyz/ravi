@@ -73,6 +73,8 @@ export async function verifyPublicationFollow(
     watch.resourceRef !== input.repo ||
     !watch.eventTypes.includes("workflow_run.completed") ||
     !trigger?.enabled ||
+    trigger.cooldownMs !== desired.cooldownMs ||
+    (trigger.debounceMs ?? 0) !== (desired.debounceMs ?? 0) ||
     ["topic", "filter", "agentId", "replySession", "replySource", "session", "accountId"].some(
       (key) =>
         JSON.stringify(trigger[key as keyof typeof trigger]) !== JSON.stringify(desired[key as keyof typeof desired]),
