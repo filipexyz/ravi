@@ -68,6 +68,7 @@ interface ActiveAdapterRuntime {
   health: StdioSupervisorHealth;
   commandSubscriptions: AdapterBusSubscription[];
   commandLoops: Map<AdapterBusSubscription, Promise<void>>;
+  commandLoopFailures: Error[];
   commandClosures: Map<AdapterBusSubscription, Promise<void>>;
   failedCommandClosures: Set<AdapterBusSubscription>;
   toAdapterTopics: string[];
@@ -747,6 +748,7 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
       },
       commandSubscriptions: [],
       commandLoops: new Map(),
+      commandLoopFailures: [],
       commandClosures: new Map(),
       failedCommandClosures: new Set(),
       toAdapterTopics:
@@ -832,7 +834,7 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
     running = false;
 
     const stops = Array.from(runtimes.values()).map(async (runtime) => {
-      const failures: Error[] = [];
+      const failures: Error[] = [...runtime.commandLoopFailures];
       const remainingSubscriptions: AdapterBusSubscription[] = [];
       const closedSubscriptions: Array<{ subscription: AdapterBusSubscription; index: number }> = [];
       for (const [index, subscription] of runtime.commandSubscriptions.entries()) {
@@ -858,7 +860,12 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
         try {
           await runtime.commandLoops.get(subscription);
         } catch (cause) {
-          failures.push(new Error(`${runtime.adapter.adapterId}.subscription.${index} loop failed to stop`, { cause }));
+          const failure = new Error(`${runtime.adapter.adapterId}.subscription.${index} loop failed to stop`, {
+            cause,
+          });
+          // Closing a handle on retry cannot repair a failed accepted command loop.
+          runtime.commandLoopFailures.push(failure);
+          failures.push(failure);
         }
         runtime.commandLoops.delete(subscription);
         runtime.commandClosures.delete(subscription);

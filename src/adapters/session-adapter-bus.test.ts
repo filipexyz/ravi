@@ -519,7 +519,17 @@ describe("session adapter bus", () => {
     if (outcome === "failure") {
       const aggregate = result.failures[0]?.cause as AggregateError;
       expect(aggregate.errors[0].cause.errors).toContain(cause);
+      const retried = await stopRuntimeComponents([{ name: "session-adapters", stop: () => bus.stop() }], []);
+      expect(retried).toMatchObject({ exitCode: 1, drain: { phase: "blocked", failures: ["session-adapters"] } });
+      const retryCause = retried.failures[0]?.cause;
+      expect(retryCause).toBeInstanceOf(AggregateError);
+      expect((retryCause as AggregateError).errors[0]).toBe(aggregate.errors[0]);
+      expect(bus.health()).toEqual({ running: false, adapters: 1 });
+    } else {
+      const retried = await stopRuntimeComponents([{ name: "session-adapters", stop: () => bus.stop() }], []);
+      expect(retried).toMatchObject({ exitCode: 0, drain: { phase: "drained", failures: [] } });
+      expect(bus.health()).toEqual({ running: false, adapters: 0 });
     }
-    await bus.stop();
+    expect(closes).toBe(1);
   });
 });

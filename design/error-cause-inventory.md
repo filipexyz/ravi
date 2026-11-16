@@ -106,21 +106,21 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | access | src/access/actor.ts | 173 | triaged-follow-up | catch-without-binding | src/access/actor.ts:6ccdbf59886db9b3ed7358fc |
 | access | src/access/client.ts | 110 | triaged-follow-up | catch-without-binding | src/access/client.ts:b54838dd044d734be125749d |
 | access | src/access/command-support.ts | 60 | fixed | binding retained / no recognized error surface | src/access/command-support.ts:8dc43755742997e41fb636d7 |
-| sessions | src/adapters/session-adapter-bus.ts | 142 | triaged-follow-up | catch-without-binding | src/adapters/session-adapter-bus.ts:bfa606733bfbb2551dcfe305 |
-| sessions | src/adapters/session-adapter-bus.ts | 441 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:1956f6765232bc5d8fc33af2 |
-| sessions | src/adapters/session-adapter-bus.ts | 473 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:8c76da3ac8913881c3f357d9 |
-| sessions | src/adapters/session-adapter-bus.ts | 541 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:051d8caf9799159b2bba1ac4 |
-| sessions | src/adapters/session-adapter-bus.ts | 568 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:820d41a2c98f11bfd58e2776 |
-| sessions | src/adapters/session-adapter-bus.ts | 582 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:e504ca6d734e61dbc71317ec |
-| sessions | src/adapters/session-adapter-bus.ts | 594 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:b4ee45c590591ac9adbb6819 |
-| sessions | src/adapters/session-adapter-bus.ts | 602 | no-cause | The original rejection stays in commandLoops; stop awaits and reports it before success. | src/adapters/session-adapter-bus.ts:a76527e22a864e2fcda4a25d |
-| sessions | src/adapters/session-adapter-bus.ts | 610 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:c073c1446752e3e3ddcad44a |
-| sessions | src/adapters/session-adapter-bus.ts | 682 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:c6d3f5c6487555de7380191a |
-| sessions | src/adapters/session-adapter-bus.ts | 802 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:5f534751d41ddbd357d93d65 |
-| sessions | src/adapters/session-adapter-bus.ts | 820 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:000a346d95c6851c533b993d |
-| sessions | src/adapters/session-adapter-bus.ts | 845 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:0af72ac84a2279a70114e270 |
-| sessions | src/adapters/session-adapter-bus.ts | 854 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:2295e29c27bbb13526d50787 |
-| sessions | src/adapters/session-adapter-bus.ts | 860 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:8eb9b5acf7361917e9eb50af |
+| sessions | src/adapters/session-adapter-bus.ts | 143 | triaged-follow-up | catch-without-binding | src/adapters/session-adapter-bus.ts:bfa606733bfbb2551dcfe305 |
+| sessions | src/adapters/session-adapter-bus.ts | 442 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:1956f6765232bc5d8fc33af2 |
+| sessions | src/adapters/session-adapter-bus.ts | 474 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:8c76da3ac8913881c3f357d9 |
+| sessions | src/adapters/session-adapter-bus.ts | 542 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:051d8caf9799159b2bba1ac4 |
+| sessions | src/adapters/session-adapter-bus.ts | 569 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:820d41a2c98f11bfd58e2776 |
+| sessions | src/adapters/session-adapter-bus.ts | 583 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:e504ca6d734e61dbc71317ec |
+| sessions | src/adapters/session-adapter-bus.ts | 595 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:b4ee45c590591ac9adbb6819 |
+| sessions | src/adapters/session-adapter-bus.ts | 603 | no-cause | The original rejection stays in commandLoops; stop awaits and reports it before success. | src/adapters/session-adapter-bus.ts:a76527e22a864e2fcda4a25d |
+| sessions | src/adapters/session-adapter-bus.ts | 611 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:c073c1446752e3e3ddcad44a |
+| sessions | src/adapters/session-adapter-bus.ts | 683 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:c6d3f5c6487555de7380191a |
+| sessions | src/adapters/session-adapter-bus.ts | 804 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:5f534751d41ddbd357d93d65 |
+| sessions | src/adapters/session-adapter-bus.ts | 822 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:000a346d95c6851c533b993d |
+| sessions | src/adapters/session-adapter-bus.ts | 847 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:0af72ac84a2279a70114e270 |
+| sessions | src/adapters/session-adapter-bus.ts | 856 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:2295e29c27bbb13526d50787 |
+| sessions | src/adapters/session-adapter-bus.ts | 862 | fixed | binding retained / no recognized error surface | src/adapters/session-adapter-bus.ts:0d2a4edcb0058e0977f9a2a6 |
 | adapters | src/adapters/stdio-supervisor.ts | 181 | triaged-follow-up | surface-bypasses-constructor | src/adapters/stdio-supervisor.ts:fbe96ff56a9d990ac368d3bc |
 | adapters | src/adapters/stdio-supervisor.ts | 584 | fixed | binding retained / no recognized error surface | src/adapters/stdio-supervisor.ts:5c0b98290c11943e2bd3b8e0 |
 | permissions | src/approval/grantor.ts | 99 | triaged-follow-up | catch-without-binding | src/approval/grantor.ts:5de0b9d35a8669588a27c9bc |
