@@ -18,10 +18,26 @@ export interface NestedShellText {
   origin: NestedShellOrigin;
 }
 
+/**
+ * Input this command line builds for a command: `stdin` for a here-document or
+ * here-string, `file` for `<(...)`. `offset` is where it sits in the level text.
+ */
+export interface CodeInput {
+  offset: number;
+  kind: "stdin" | "file";
+}
+
 export interface ShellStructure {
   /** Text of this level with nested commands replaced by `${__RAVI_*}` placeholders and here-doc bodies removed. */
   outer: string;
   nested: NestedShellText[];
+  /**
+   * Offsets in `outer` where this level feeds text it built itself to a
+   * command: a here-document, a here-string or an input process substitution
+   * `<(...)`. Removing the body is not enough: an interpreter reading that
+   * input runs it as code, so the policy must know the input was there.
+   */
+  codeInputs: CodeInput[];
 }
 
 /** The analyzer could not model this command. Callers MUST fail closed. */
@@ -145,6 +161,16 @@ interface PendingHeredoc {
   stripTabs: boolean;
 }
 
+/**
+ * Whether the body of a `$(...)` is an arithmetic expansion `$((...))`. Bash
+ * reads `$((` as arithmetic only when the inner `(` closes right before the
+ * outer `)`; `$((sh -c id);(true))` is a command substitution running a
+ * subshell. Anything else is a command, never data.
+ */
+function isArithmeticBody(body: string): boolean {
+  return body.startsWith("(") && findParenEnd(body, 1) === body.length - 1;
+}
+
 /** `$(...)`, backticks and arithmetic inside text the shell expands like a double-quoted string. */
 function extractExpansionsFromExpandedText(text: string, origin: NestedShellOrigin): NestedShellText[] {
   const nested: NestedShellText[] = [];
@@ -164,7 +190,7 @@ function extractExpansionsFromExpandedText(text: string, origin: NestedShellOrig
       const open = skipContinuations(text, i + 1);
       const end = findParenEnd(text, open + 1);
       const body = text.slice(open + 1, end);
-      if (body.startsWith("(") && body.endsWith(")")) {
+      if (isArithmeticBody(body)) {
         nested.push(...extractExpansionsFromExpandedText(body.slice(1, -1), origin));
       } else {
         nested.push({ text: body, origin });
@@ -188,6 +214,7 @@ function unescapeBacktickBody(body: string): string {
 export function extractShellStructure(input: string): ShellStructure {
   let outer = "";
   const nested: NestedShellText[] = [];
+  const codeInputs: CodeInput[] = [];
   let quote: '"' | undefined;
   let wordStart = true;
   let placeholderCount = 0;
@@ -244,7 +271,7 @@ export function extractShellStructure(input: string): ShellStructure {
       if (input[after] === "(") {
         const end = findParenEnd(input, after + 1);
         const body = input.slice(after + 1, end);
-        if (body.startsWith("(") && body.endsWith(")")) {
+        if (isArithmeticBody(body)) {
           // Arithmetic expansion: the expression is data, its own substitutions are commands.
           nested.push(...extractExpansionsFromExpandedText(body.slice(1, -1), "substitution"));
           outer += placeholder("ARITH");
@@ -270,6 +297,8 @@ export function extractShellStructure(input: string): ShellStructure {
     if (!quote && (char === "<" || char === ">") && input[i + 1] === "(") {
       const end = findParenEnd(input, i + 2);
       nested.push({ text: input.slice(i + 2, end), origin: "process_substitution" });
+      // `<(...)` names a file whose content this command line produces.
+      if (char === "<") codeInputs.push({ offset: outer.length, kind: "file" });
       outer += placeholder("PROCSUB");
       i = end + 1;
       wordStart = false;
@@ -278,7 +307,8 @@ export function extractShellStructure(input: string): ShellStructure {
 
     if (!quote && char === "<" && input[i + 1] === "<") {
       if (input[i + 2] === "<") {
-        // Here-string: its word is data read on stdin, expanded like any argument.
+        // Here-string: its word is read on stdin, expanded like any argument.
+        codeInputs.push({ offset: outer.length, kind: "stdin" });
         outer += "<";
         i += 3;
         wordStart = true;
@@ -312,6 +342,7 @@ export function extractShellStructure(input: string): ShellStructure {
       }
       if (!delimiter) throw new ShellAnalysisError("Missing here-document delimiter");
       pending.push({ delimiter, quoted, stripTabs });
+      codeInputs.push({ offset: outer.length, kind: "stdin" });
       outer += " ";
       i = j;
       wordStart = false;
@@ -351,7 +382,7 @@ export function extractShellStructure(input: string): ShellStructure {
 
   if (quote) throw new ShellAnalysisError("Unterminated shell quote");
   if (pending.length > 0) throw new ShellAnalysisError("Unterminated here document");
-  return { outer, nested };
+  return { outer, nested, codeInputs };
 }
 
 export interface ShellLevel {
@@ -359,13 +390,15 @@ export interface ShellLevel {
   text: string;
   origin: "segment" | NestedShellOrigin;
   depth: number;
+  /** Offsets in `text` of here-documents, here-strings and `<(...)` (see {@link ShellStructure.codeInputs}). */
+  codeInputs: CodeInput[];
 }
 
 /** Every level of a command, outermost first. Throws {@link ShellAnalysisError}. */
 export function collectShellLevels(command: string, origin: ShellLevel["origin"] = "segment", depth = 0): ShellLevel[] {
   if (depth > MAX_NESTING) throw new ShellAnalysisError("Shell nesting is too deep to analyze");
   const structure = extractShellStructure(command);
-  const levels: ShellLevel[] = [{ text: structure.outer, origin, depth }];
+  const levels: ShellLevel[] = [{ text: structure.outer, origin, depth, codeInputs: structure.codeInputs }];
   for (const nested of structure.nested) {
     // A nested text keeps the origin of the construct it came from.
     levels.push(...collectShellLevels(nested.text, origin === "segment" ? nested.origin : origin, depth + 1));

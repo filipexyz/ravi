@@ -20,6 +20,12 @@ export interface AnalyzedCommand {
   launchesShellString?: string;
   /** The simple command (segment) text it came from. */
   text: string;
+  /**
+   * Input the command line builds for this command: `stdin` (here-document,
+   * here-string, or stdin a compound command/function passes down) and `file`
+   * (`<(...)`). An interpreter reading it runs code the agent wrote inline.
+   */
+  codeInputs?: Array<"stdin" | "file">;
 }
 
 /** Result of parsing a bash command */

@@ -360,6 +360,13 @@ it.skipIf(!existsSync("/bin/bash"))("agrees with Bash expansion on harmless prin
     { command: "cat <<'EOF'\n$(printf changed)\nEOF", output: "$(printf changed)\n", safe: false },
     { command: "cat <<\\EOF\n$(printf changed)\nEOF", output: "$(printf changed)\n", safe: false },
     { command: "cat <(printf changed)", output: "changed", safe: false },
+    // `$((` is arithmetic only when its inner `(` closes at the end; otherwise
+    // Bash runs a command substitution whose body starts with a subshell.
+    { command: "printf  $((printf a);(printf changed))", output: "achanged", safe: false },
+    { command: "printf '%s' $((printf a);(printf changed))", output: "achanged", safe: false },
+    { command: "printf '%s' \"$((printf a);(printf changed))\"", output: "achanged", safe: false },
+    { command: "cat <<EOF\n$((printf a);(printf changed))\nEOF", output: "achanged\n", safe: false },
+    { command: "printf '%s' $(( $(printf 1) + 1 ))", output: "2", safe: false },
   ];
   // Oracle: Bash ran the nested printf exactly when the output lost the literal
   // "printf". The analyzer must report a nested command in exactly those cases.

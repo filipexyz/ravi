@@ -205,17 +205,85 @@ function xargsPayload(name: string, argv: Argv): LauncherPayloads {
   return { kind: "payloads", payloads: rest(argv, i), assignments: [] };
 }
 
+/**
+ * find primaries that take exactly one operand in GNU and BSD find. The
+ * operand is data even when it spells an action: `-name '-exec'` matches a
+ * file. Only primaries certain to consume a word are listed; an unlisted one
+ * leaves its operand to be read as a primary, which can only add a payload.
+ */
+const FIND_ONE_OPERAND = new Set([
+  "-name",
+  "-iname",
+  "-path",
+  "-ipath",
+  "-wholename",
+  "-iwholename",
+  "-regex",
+  "-iregex",
+  "-lname",
+  "-ilname",
+  "-type",
+  "-xtype",
+  "-user",
+  "-group",
+  "-uid",
+  "-gid",
+  "-perm",
+  "-size",
+  "-mtime",
+  "-atime",
+  "-ctime",
+  "-mmin",
+  "-amin",
+  "-cmin",
+  "-Bmin",
+  "-Btime",
+  "-newer",
+  "-anewer",
+  "-cnewer",
+  "-Bnewer",
+  "-samefile",
+  "-inum",
+  "-links",
+  "-maxdepth",
+  "-mindepth",
+  "-fstype",
+  "-used",
+  "-context",
+  "-printf",
+  "-fprint",
+  "-fprint0",
+  "-fls",
+  "-regextype",
+  "-files0-from",
+  "-flags",
+]);
+
 function findPayloads(name: string, argv: Argv): LauncherPayloads {
   const payloads: Argv[] = [];
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === null) continue;
+    // An unquoted variable or glob can expand to several words, `-exec sh -c id ;` included.
+    if (arg === null) fail(name, "a dynamic argument could add an action such as -exec");
+    if (FIND_ONE_OPERAND.has(arg) || /^-newer[aBcmt][aBcmt]$/.test(arg)) {
+      if (i + 1 < argv.length && argv[i + 1] === null)
+        fail(name, "a dynamic argument could add an action such as -exec");
+      i++;
+      continue;
+    }
+    if (arg === "-fprintf") {
+      if (argv.slice(i + 1, i + 3).includes(null)) fail(name, "a dynamic argument could add an action such as -exec");
+      i += 2;
+      continue;
+    }
     if (!["-exec", "-execdir", "-ok", "-okdir"].includes(arg)) continue;
     const start = i + 1;
     let end = start;
     while (end < argv.length && argv[end] !== ";" && argv[end] !== "+") end++;
     if (end >= argv.length) fail(name, `${arg} is not terminated by ';' or '+'`);
     if (end === start) fail(name, `${arg} has no command`);
+    // A dynamic word could end this action early (`;`) and start another.
+    if (argv.slice(start, end).includes(null)) fail(name, "a dynamic argument could add an action such as -exec");
     payloads.push(argv.slice(start, end));
     i = end;
   }

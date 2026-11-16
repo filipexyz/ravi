@@ -384,3 +384,166 @@ describe("regressions", () => {
     }
   });
 });
+
+// PR #846 review (Devin job e4cdea1d): code the command line hands to an
+// interpreter on stdin or as a file is inline code, like `python3 -c`.
+function expectInlineCodeRefusal(command: string, ctx: BashPermissionContext): void {
+  const decision = evaluateBashPermission(command, ctx);
+  expect(decision.allowed, command).toBe(false);
+  expect(decision.denialType, command).toBe("shell_syntax");
+  expect(decision.reason, command).toContain("inline code");
+}
+
+describe("interpreter_heredoc_requires_inline_code_grant", () => {
+  it.each([
+    ["python3 <<'EOF'\nimport os\nos.system('id')\nEOF", ["python3"]],
+    ["python3 <<EOF\nimport os\nEOF", ["python3"]],
+    ["python3 <<-EOF\n\timport os\n\tEOF", ["python3"]],
+    ["python3 - <<'EOF'\nimport os\nEOF", ["python3"]],
+    ["python3 script.py <<'EOF'\nimport os\nEOF", ["python3"]],
+    ["python3 /dev/fd/3 3<<'EOF'\nimport os\nEOF", ["python3"]],
+    ["<<'EOF' python3\nimport os\nEOF", ["python3"]],
+    ["python3.11 <<'EOF'\nimport os\nEOF", ["python3.11"]],
+    ["node <<'EOF'\nrequire('child_process')\nEOF", ["node"]],
+    ["bun <<'EOF'\nBun.spawn(['id'])\nEOF", ["bun"]],
+    ["ruby <<'EOF'\nsystem('id')\nEOF", ["ruby"]],
+    ["perl <<'EOF'\nsystem('id')\nEOF", ["perl"]],
+    ["awk -f - <<'EOF'\nBEGIN { system(\"id\") }\nEOF", ["awk"]],
+    ["echo $(python3 <<'EOF'\nimport os\nEOF\n)", ["python3", "echo"]],
+    // Stdin a compound command or function passes down reaches the interpreter inside.
+    ["{ cat; python3; } <<'EOF'\nimport os\nEOF", ["python3", "cat"]],
+    ["(python3; cat) <<'EOF'\nimport os\nEOF", ["python3", "cat"]],
+    ["while read -r l; do python3; done <<'EOF'\nimport os\nEOF", ["python3"]],
+    ["cat() { python3; }; cat <<'EOF'\nimport os\nEOF", ["python3", "cat"]],
+    ["printf 'import os' | (cat; python3)", ["python3", "cat", "printf"]],
+    ["python3 <(printf 'import os')", ["python3", "printf"]],
+    ["python3 < <(printf 'import os')", ["python3", "printf"]],
+  ] as Array<[string, string[]]>)("%s", (command, grants) => {
+    expectInlineCodeRefusal(command, named(...grants));
+    expect(parseBashCommand(command).code, command).toBe("inline_code");
+    expect(evaluateBashPermission(command, arbitrary).allowed, command).toBe(true);
+  });
+
+  it("shells fed a here-document stay refused", () => {
+    for (const command of ["sh <<'EOF'\nid\nEOF", "bash -s <<'EOF'\nid\nEOF"]) {
+      expect(evaluateBashPermission(command, named("sh", "bash")).allowed, command).toBe(false);
+      expect(evaluateBashPermission(command, arbitrary).allowed, command).toBe(true);
+    }
+  });
+});
+
+describe("interpreter_here_string_requires_inline_code_grant", () => {
+  it.each([
+    ["python3 <<<'import os'", ["python3"]],
+    ['python3 <<< "import os"', ["python3"]],
+    ["<<<'import os' python3", ["python3"]],
+    ["python3 - <<<'import os'", ["python3"]],
+    ["node <<<'process.exit(0)'", ["node"]],
+    ["bun <<<'console.log(1)'", ["bun"]],
+    ["env python3 <<<'import os'", ["python3", "env"]],
+  ] as Array<[string, string[]]>)("%s", (command, grants) => {
+    const decision = evaluateBashPermission(command, named(...grants));
+    expect(decision.allowed, command).toBe(false);
+    expect(decision.denialType, command).toBe("shell_syntax");
+    expect(evaluateBashPermission(command, arbitrary).allowed, command).toBe(true);
+  });
+
+  it("piping code into an interpreter that reads stdin is refused", () => {
+    for (const command of [
+      "printf 'import os' | python3 -",
+      "printf 'import os' | python3 -u",
+      "printf 'import os' | python3 /dev/stdin",
+      "printf 'x' | node -",
+    ]) {
+      const decision = evaluateBashPermission(command, named("python3", "node", "printf"));
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("restricted_syntax");
+    }
+    expect(evaluateBashPermission("printf x | python3 script.py", named("python3", "printf")).allowed).toBe(true);
+  });
+});
+
+describe("heredoc_to_non_interpreter_still_allowed", () => {
+  it.each([
+    ["cat <<'EOF'\nimport os\nEOF", ["cat"]],
+    ["cat <<EOF\nhello\nEOF", ["cat"]],
+    ["cat <<<'import os'", ["cat"]],
+    ["grep import <<'EOF'\nimport os\nEOF", ["grep"]],
+    ["awk '{ print $1 }' <<'EOF'\na b\nEOF", ["awk"]],
+    ["cat <<'EOF'\nimport os\nEOF\npython3 script.py", ["cat", "python3"]],
+    ["diff <(printf a) <(printf b)", ["diff", "printf"]],
+  ] as Array<[string, string[]]>)("%s", (command, grants) => {
+    expect(evaluateBashPermission(command, named(...grants)).allowed, command).toBe(true);
+  });
+});
+
+describe("subshell_substitution_is_not_arithmetic", () => {
+  it("a $(( that does not close as one group runs its commands", () => {
+    for (const command of [
+      'ls "$((sh -c id);(true))"',
+      "ls $((sh -c id);(true))",
+      'ls "$( (sh -c id) )"',
+      "echo $((echo a);(sh -c id))",
+      "cat <<EOF\n$((echo a);(sh -c id))\nEOF",
+    ]) {
+      const decision = evaluateBashPermission(command, bootstrap());
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("indirect_execution");
+    }
+    expect(parseBashCommand("ls $((sh -c id);(true))").executables).toEqual(["ls", "sh", "true"]);
+  });
+
+  it("arithmetic stays data", () => {
+    for (const command of ["ls $((1 + 2))", 'ls "$(( (1 + 2) * 3 ))"', "ls $(( $(date +%s) % 2 ))"]) {
+      expect(parseBashCommand(command).success, command).toBe(true);
+    }
+    expect(parseBashCommand("ls $((1 + 2))").executables).toEqual(["ls"]);
+    expect(parseBashCommand("ls $(( $(date +%s) % 2 ))").executables).toEqual(["ls", "date"]);
+  });
+});
+
+describe("function_body_commands_are_checked", () => {
+  it.each(["ls() { sh -c id; }; ls", "ls() { sh -c id; }", "ls () ( sh -c id ); ls", "function ls { sh -c id; }; ls"])(
+    "%s",
+    (command) => {
+      const decision = evaluateBashPermission(command, bootstrap());
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("indirect_execution");
+    },
+  );
+});
+
+describe("find_predicate_operands_are_not_actions", () => {
+  it("an operand that spells an action is a pattern", () => {
+    for (const command of [
+      "find . -maxdepth 0 -name '-exec'",
+      "find . -path '-ok' -o -name x",
+      "find . -iname -execdir -print",
+      "find . -newermt -okdir",
+    ]) {
+      const parsed = parseBashCommand(command);
+      expect(parsed.success, command).toBe(true);
+      expect(parsed.executables, command).toEqual(["find"]);
+      expect(evaluateBashPermission(command, bootstrap()).allowed, command).toBe(true);
+    }
+  });
+
+  it("a real action after a predicate is still a payload", () => {
+    expect(parseBashCommand("find . -name '-exec' -exec grep -l x {} +").executables).toEqual(["find", "grep"]);
+    const decision = evaluateBashPermission("find . -name x -exec sh -c id \\;", bootstrap());
+    expect(decision.syntaxRule).toBe("shell_launcher");
+  });
+
+  it("a dynamic word could expand to an action and fails closed", () => {
+    for (const command of [
+      'X="-exec sh -c id ;"; find . $X',
+      "find . -name $X",
+      "find . -name x -exec grep $X {} +",
+      "find . *",
+    ]) {
+      const decision = evaluateBashPermission(command, bootstrap("grep"));
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("unknown_parse");
+    }
+  });
+});

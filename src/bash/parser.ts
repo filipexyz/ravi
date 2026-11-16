@@ -11,6 +11,8 @@ import { resolve } from "node:path";
 import { physicalPathForPermissionCheck } from "../permissions/provider-config-paths.js";
 import { collectShellLevels, isShellAnalysisError, ShellAnalysisError, type ShellLevel } from "./shell-structure.js";
 import { launcherPayloads, type Argv } from "./launchers.js";
+// Circular with executable-path.ts (it reads UNCONDITIONAL_BLOCKS); both sides use the binding only inside functions.
+import { isInterpreterName, isShellName } from "./executable-path.js";
 
 // ============================================================================
 // Dangerous Patterns (checked before parsing)
@@ -57,6 +59,54 @@ function inlineCodeFlags(executable: string): string[] | undefined {
   return INLINE_CODE_INTERPRETERS[executable] ?? INLINE_CODE_INTERPRETERS[executable.replace(/\.\d+$/, "")];
 }
 
+/** Interpreters whose stdin is data unless an argument names stdin as the program (`awk -f -`). */
+const DATA_STDIN_INTERPRETERS = /^(?:[gmn]?awk|npx|npm|pnpm|yarn|bunx)$/;
+
+/** Arguments that make a program read stdin as if it were a file. */
+const STDIN_PATH = /^(?:-|\/dev\/stdin|\/dev\/fd\/0|\/proc\/self\/fd\/0)$/;
+
+/**
+ * `code`: a shell or interpreter that runs a program it reads (stdin when it
+ * names no script). `data`: an interpreter whose stdin is data by default.
+ */
+function readsProgram(name: string): "code" | "data" | undefined {
+  if (isShellName(name) || inlineCodeFlags(name)) return "code";
+  if (!isInterpreterName(name)) return undefined;
+  return DATA_STDIN_INTERPRETERS.test(name) ? "data" : "code";
+}
+
+/**
+ * Code the command line wrote itself and handed to an interpreter: a
+ * here-document, here-string or `<(...)`. That is inline code exactly like
+ * `python3 -c`, whatever the interpreter's grant, so it gets the same refusal.
+ * A named script does not make it data: `python3 x.py <<EOF` is refused too.
+ */
+function codeInputReason(command: AnalyzedCommand): string | undefined {
+  const inputs = command.codeInputs;
+  if (!inputs?.length) return undefined;
+  const kind = readsProgram(command.name);
+  if (!kind) return undefined;
+  if (kind === "data") {
+    const namesStdin = command.argv.some((arg) => arg === null || STDIN_PATH.test(arg));
+    const namesProgramFile =
+      inputs.includes("file") && command.argv.some((arg) => arg === null || /^(?:-f|--file)/.test(arg));
+    if (!namesStdin && !namesProgramFile) return undefined;
+  }
+  const via = inputs.includes("stdin") ? "a here-document or here-string" : "a process substitution";
+  return `${command.name} reading code from ${via} is inline code and is not allowed`;
+}
+
+/**
+ * Piped stdin is code for an interpreter that names no script, or names stdin
+ * itself (`python3 -`, `node /dev/stdin`). A dynamic word may be either.
+ */
+function pipedStdinIsCode(name: string, argv: Array<string | null>): boolean {
+  const kind = readsProgram(name);
+  if (!kind) return false;
+  if (argv.some((arg) => arg === null || STDIN_PATH.test(arg))) return true;
+  return kind === "code" && !argv.some((arg) => arg !== null && !arg.startsWith("-"));
+}
+
 // ============================================================================
 // Pattern Checking
 // ============================================================================
@@ -96,16 +146,15 @@ function checkPipelineReceivers(command: string): PatternCheckResult {
       if (inspected.syntax[i] !== "|" || /[|>]/.test(inspected.syntax[i - 1] ?? "") || inspected.syntax[i + 1] === "|")
         continue;
       const receiver = splitByOperators(inspected.command.slice(i + 1))[0] ?? "";
-      const executable = parseSimpleCommand(receiver);
-      if (!executable) continue;
+      const resolved = resolveSegment(receiver.trim(), { caseDepth: 0 }).command;
+      if (!resolved) continue;
+      const executable = extractExecutableName(resolved.word);
       if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
-      if (inlineCodeFlags(executable)) {
-        if (isInlineCodeExecution(executable, receiver).blocked) {
-          return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
-        }
-        if (countCommandWords(receiver) === 1) {
-          return { safe: false, reason: "piping to interpreter stdin is not allowed" };
-        }
+      if (inlineCodeFlags(executable) && isInlineCodeExecution(executable, receiver).blocked) {
+        return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
+      }
+      if (pipedStdinIsCode(executable, resolved.argv)) {
+        return { safe: false, reason: "piping to interpreter stdin is not allowed" };
       }
     }
   } catch (error) {
@@ -240,33 +289,6 @@ function parseWords(command: string, env?: Parameters<typeof parseShell>[1]): Pa
     view += (inspected.syntax[i] === "#" ? "\\" : "") + inspected.command[i];
   }
   return parseShell(view, env);
-}
-
-/** Assignments, comments and redirect operands are not interpreter arguments. */
-function countCommandWords(command: string): number {
-  const tokens = parseWords(command);
-  let count = 0;
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]!;
-    const next = tokens[i + 1];
-    if (typeof token === "string") {
-      if (count === 0 && isEnvAssignment(token)) continue;
-      if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
-      count++;
-    } else if ("comment" in token) {
-      break;
-    } else if (token.op === "glob") {
-      count++;
-    } else if (token.op === "&" && typeof next === "object" && "op" in next && [">", ">>"].includes(next.op)) {
-      // The following redirect token consumes the combined redirect destination.
-    } else if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
-      if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
-      if (tokens[++i] === undefined) throw new Error("Missing shell redirect destination");
-    } else {
-      throw new Error("Cannot resolve shell pipeline arguments");
-    }
-  }
-  return count;
 }
 
 /**
@@ -423,12 +445,14 @@ type SyntaxState = { caseDepth: number };
 function resolveSegment(
   command: string,
   state: SyntaxState,
-): { command: SegmentCommand | null; assignments: string[] } {
+): { command: SegmentCommand | null; assignments: string[]; definesFunction: boolean } {
   const atoms = scanAtoms(command);
   const assignments: string[] = [];
+  let definesFunction = false;
   const found = (index: number) => ({
     command: { word: decodeCommandWord(atoms[index]!.text), argv: collectArgv(atoms, index + 1) },
     assignments,
+    definesFunction,
   });
   let sawCommandPrefix = false;
   let skippingWordList = false;
@@ -480,6 +504,7 @@ function resolveSegment(
       if (OPENING_WORDS.has(atom.text)) {
         // for/select: loop variable; case: subject; function: name.
         if (atom.text === "case") state.caseDepth += 1;
+        if (atom.text === "function") definesFunction = true;
         if (next?.kind === "word") {
           if (atom.text === "for" || atom.text === "select") assignments.push(next.text);
           index++;
@@ -510,17 +535,24 @@ function resolveSegment(
       continue;
     }
 
+    // `name() body` defines a function: the name is not run here, the body is.
+    // Without this, `ls() { sh -c id; }; ls` checks only `ls`.
+    if (
+      !sawCommandPrefix &&
+      atom.active &&
+      next?.kind === "operator" &&
+      next.text === "(" &&
+      atoms[index + 2]?.kind === "operator" &&
+      atoms[index + 2]!.text === ")"
+    ) {
+      definesFunction = true;
+      index += 2;
+      continue;
+    }
+
     return found(index);
   }
-  return { command: null, assignments };
-}
-
-/**
- * Parse a single simple command (no pipes/chains) and extract the executable name.
- */
-function parseSimpleCommand(command: string, state: SyntaxState = { caseDepth: 0 }): string | null {
-  const resolved = resolveSegment(command.trim(), state).command;
-  return resolved ? extractExecutableName(resolved.word) : null;
+  return { command: null, assignments, definesFunction };
 }
 
 /**
@@ -528,23 +560,62 @@ function parseSimpleCommand(command: string, state: SyntaxState = { caseDepth: 0
  * Returns array of simple commands.
  */
 function splitByOperators(command: string): string[] {
+  return splitSegments(command).map((segment) => segment.text);
+}
+
+interface Segment {
+  text: string;
+  /** Range of the segment in the inspected command, separators excluded. */
+  start: number;
+  end: number;
+  /** The segment receives the previous segment's output through `|`. */
+  piped: boolean;
+}
+
+function splitSegments(command: string, requireAlignedOffsets = false): Segment[] {
   const inspected = inspectShellSyntax(command);
   if (inspected.error) throw new ShellAnalysisError(inspected.error);
-  const commands: string[] = [];
+  if (requireAlignedOffsets && inspected.command.length !== command.length) {
+    // Offsets from the shell-structure pass must still point at the same text.
+    throw new ShellAnalysisError("Cannot align shell segments with their input");
+  }
+  const segments: Segment[] = [];
   let start = 0;
+  let piped = false;
+  const push = (end: number) => {
+    const text = inspected.command.slice(start, end).trim();
+    if (text) segments.push({ text, start, end, piped });
+  };
   for (const match of inspected.syntax.matchAll(/\|\||&&|[|;&\n]/g)) {
     const index = match.index!;
     // Descriptor duplication, combined redirects and clobber are not chains.
     if (match[0] === "&" && (/[<>]/.test(inspected.syntax[index - 1] ?? "") || inspected.syntax[index + 1] === ">"))
       continue;
     if (match[0] === "|" && inspected.syntax[index - 1] === ">") continue;
-    const part = inspected.command.slice(start, match.index).trim();
-    if (part) commands.push(part);
-    start = match.index! + match[0].length;
+    push(index);
+    // `|&` is a pipe whose `&` belongs to it; a lone `&` after it ends no segment.
+    piped = match[0] === "|" || (match[0] === "&" && inspected.syntax[index - 1] === "|");
+    start = index + match[0].length;
   }
-  const last = inspected.command.slice(start).trim();
-  if (last) commands.push(last);
-  return commands;
+  push(inspected.command.length);
+  return segments;
+}
+
+const COMPOUND_CLOSERS = new Set(["}", "done", "fi", "esac"]);
+const COMPOUND_OPENERS = new Set(["{", "while", "until", "if", "for", "select", "case"]);
+
+/** The segment closes (`} <<EOF`, `cat) <<EOF`) or opens (`| { cat; python3; }`) a compound command. */
+function touchesCompound(segment: string, edge: "closes" | "opens"): boolean {
+  const atoms = scanAtoms(segment);
+  if (edge === "closes") {
+    if (atoms.some((atom) => atom.kind === "operator" && atom.text === ")")) return true;
+    const first = atoms.find((atom) => atom.kind === "word");
+    return !!first && first.active && COMPOUND_CLOSERS.has(first.text);
+  }
+  const first = atoms[0];
+  if (!first) return false;
+  if (first.kind === "operator") return first.text === "(";
+  return first.active && COMPOUND_OPENERS.has(first.text);
 }
 
 /**
@@ -592,10 +663,10 @@ function hasInlineFlag(flags: string[], token: string): boolean {
 /** Inline-code refusal for an analyzed command, judged on its own argv. */
 function inlineCodeReason(command: AnalyzedCommand): string | undefined {
   const flags = inlineCodeFlags(command.name);
-  if (!flags) return undefined;
-  return command.argv.some((arg) => arg !== null && hasInlineFlag(flags, arg))
-    ? `${command.name} with inline code flag is not allowed`
-    : undefined;
+  if (flags && command.argv.some((arg) => arg !== null && hasInlineFlag(flags, arg))) {
+    return `${command.name} with inline code flag is not allowed`;
+  }
+  return codeInputReason(command);
 }
 
 /** Builtins whose arguments name variables they assign. */
@@ -655,6 +726,8 @@ function expandLauncher(command: AnalyzedCommand, out: AnalyzedCommand[], assign
       origin: "launcher",
       launcher: command.name,
       text: command.text,
+      // The launched program inherits the launcher's stdin and arguments.
+      ...(command.codeInputs ? { codeInputs: command.codeInputs } : {}),
     };
     out.push(child);
     assignments.push(...builtinAssignments(child));
@@ -676,19 +749,37 @@ export interface BashAnalysis {
 export function analyzeBashCommand(command: string): BashAnalysis {
   const commands: AnalyzedCommand[] = [];
   const assignments: string[] = [];
+  // Input that reaches commands the analyzer cannot attribute it to: a
+  // here-document on a compound command, a pipe into one, or a function.
+  let unattributedInput = false;
+  let definesFunction = false;
+  let feedsInput = false;
   try {
     for (const level of collectShellLevels(command)) {
       const state: SyntaxState = { caseDepth: 0 };
-      for (const segment of splitByOperators(level.text)) {
-        const resolved = resolveSegment(segment, state);
+      if (level.codeInputs.length > 0) feedsInput = true;
+      for (const segment of splitSegments(level.text, level.codeInputs.length > 0)) {
+        const inputs = level.codeInputs
+          .filter((input) => input.offset >= segment.start && input.offset < segment.end)
+          .map((input) => input.kind);
+        const resolved = resolveSegment(segment.text, state);
         assignments.push(...resolved.assignments);
+        if (resolved.definesFunction) definesFunction = true;
+        if (segment.piped) {
+          feedsInput = true;
+          if (touchesCompound(segment.text, "opens")) unattributedInput = true;
+        }
+        if (inputs.length > 0 && (!resolved.command || touchesCompound(segment.text, "closes"))) {
+          unattributedInput = true;
+        }
         if (!resolved.command) continue;
         const analyzed: AnalyzedCommand = {
           name: extractExecutableName(resolved.command.word),
           word: resolved.command.word,
           argv: resolved.command.argv,
           origin: level.origin,
-          text: segment,
+          text: segment.text,
+          ...(inputs.length > 0 ? { codeInputs: [...new Set(inputs)] } : {}),
         };
         commands.push(analyzed);
         assignments.push(...builtinAssignments(analyzed));
@@ -698,6 +789,13 @@ export function analyzeBashCommand(command: string): BashAnalysis {
   } catch (error) {
     if (isShellAnalysisError(error)) throw error;
     throw new ShellAnalysisError(error instanceof Error ? error.message : "Cannot analyze shell command");
+  }
+  if (unattributedInput || (definesFunction && feedsInput)) {
+    // Fail closed: any interpreter in the command may be the one reading it.
+    for (const analyzed of commands) {
+      if (readsProgram(analyzed.name))
+        analyzed.codeInputs = [...new Set([...(analyzed.codeInputs ?? []), "stdin" as const])];
+    }
   }
   return { commands, assignments };
 }
