@@ -58,3 +58,6 @@ The initial publications of [#766](https://github.com/filipexyz/ravi/pull/766) a
 ## Why preparation precedes the thread cutover
 
 Slack socket callbacks and outbound receipts write lifecycle alongside the daemon. A healthy successor or a JS adapter does not stop an older cached SQL writer. Scoped drain completion also cannot prove that a legacy process persisted every accepted message. Preparation therefore enforces SQL ownership, retains explicit deployment blockers and keeps a persistent two-process interlock; canonical state and audience changes remain separate work.
+
+
+A populated schema alone does not establish a live legacy process, and an empty process list does not establish absence. Bootstrap distinguishes proof from labels: exclusive fresh-state ownership supports realistic legacy fixtures, while adoption requires an explicit trusted verifier for complete predecessor inventory, persistence/completion and launcher exclusion plus physical exit probes. Lexical scopes avoid lending that authority to detached tasks. Caught delivery failures likewise remain failed drain evidence even when a transport helper recovers through an existing fallback.

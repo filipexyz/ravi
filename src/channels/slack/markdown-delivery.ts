@@ -8,6 +8,7 @@
  */
 
 import { logger } from "../../utils/logger.js";
+import { reportErrorDiagnostic } from "../../utils/error-reporting.js";
 import type { SlackBlockKitBlock } from "./block-kit.js";
 import type { SlackPostMessageResult, SlackWebApiClient } from "./client.js";
 import {
@@ -40,6 +41,8 @@ export interface SlackMarkdownPostInput {
   readonly idempotencyKey?: string;
   /** False keeps everything in the messages: no canvas, no file. */
   readonly allowDocuments?: boolean;
+  /** Synchronous accounting only; recovered fallbacks keep their existing result. */
+  readonly onFailure?: () => void;
   readonly unfurlLinks?: boolean;
 }
 
@@ -66,7 +69,8 @@ export async function postSlackMarkdown(
   const files: SlackLayoutDocument[] = [];
 
   for (const document of plan.documents) {
-    const canvas = await publishSlackCanvas(client, input.channel, document).catch((error) => {
+    const canvas = await publishSlackCanvas(client, input.channel, document, input.onFailure).catch((error) => {
+      input.onFailure?.();
       log.info("Slack canvas unavailable for a long document", { channel: input.channel, error: errorMessage(error) });
       return undefined;
     });
@@ -103,6 +107,7 @@ export async function postSlackMarkdown(
       });
       outcomes.push({ title: document.title, delivery: "file", id: uploaded.fileId });
     } catch (error) {
+      input.onFailure?.();
       log.warn("Slack file upload failed for a long document; sending it as messages", {
         channel: input.channel,
         error: errorMessage(error),
@@ -174,6 +179,7 @@ async function postRenderedMessage(
     return [await post(client, input, { text: message.text, blocks: message.blocks }, key)];
   } catch (error) {
     if (!isSlackInvalidBlocksError(error)) throw error;
+    input.onFailure?.();
     log.warn("Slack refused the Markdown blocks; sending mrkdwn", {
       channel: input.channel,
       error: errorMessage(error),
@@ -207,6 +213,7 @@ async function publishSlackCanvas(
   client: SlackMarkdownClient,
   channel: string,
   document: SlackLayoutDocument,
+  onFailure?: () => void,
 ): Promise<{ id: string; url: string } | undefined> {
   const created = await client.canvasesCreate({ title: document.title, markdown: document.content });
   const id = created.canvas_id;
@@ -219,7 +226,12 @@ async function publishSlackCanvas(
     if (!url) throw new Error("Slack files.info returned no permalink for the canvas");
     return { id, url };
   } catch (error) {
-    await client.canvasesDelete({ canvasId: id }).catch(() => undefined);
+    await client.canvasesDelete({ canvasId: id }).catch((cleanupError) => {
+      onFailure?.();
+      reportErrorDiagnostic(log, "Failed to remove an unshared Slack canvas", cleanupError, {
+        operation: "slack_canvas_cleanup",
+      });
+    });
     throw error;
   }
 }
