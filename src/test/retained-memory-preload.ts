@@ -191,12 +191,17 @@ function denyNetwork(operation: string): never {
 }
 
 /** Replaces exported network/process entry points while retaining non-I/O utility exports. */
-async function guardModule(name: string, operations: string[]): Promise<Record<string, unknown>> {
+async function guardModule(
+  name: string,
+  operations: string[],
+  synthetic: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
   const original = { ...(await import(`node:${name}`)) } as Record<string, unknown>;
   const guarded = { ...original };
   for (const operation of operations) {
     if (typeof original[operation] === "function") guarded[operation] = () => denyNetwork(`${name}.${operation}`);
   }
+  Object.assign(guarded, synthetic);
   const replacement = { ...guarded, default: guarded };
   mock.module(`node:${name}`, () => replacement);
   mock.module(name, () => replacement);
@@ -244,7 +249,32 @@ for (const [name, module] of [
   mock.module(`node:${name}`, () => module);
   mock.module(name, () => module);
 }
-await guardModule("child_process", ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"]);
+/** Supplies only synthetic account evidence; no subprocess is ever executed. */
+function retainedAccountLookup(command: unknown, args: unknown, options?: { encoding?: unknown }) {
+  const uid = process.getuid?.();
+  const darwin = process.platform === "darwin";
+  const expectedCommand = darwin ? "/usr/bin/dscacheutil" : "/usr/bin/getent";
+  const expectedArgs = darwin ? ["-q", "user", "-a", "uid", String(uid)] : ["passwd", String(uid)];
+  if (
+    (darwin || process.platform === "linux") &&
+    Number.isSafeInteger(uid) &&
+    command === expectedCommand &&
+    options?.encoding === "utf8" &&
+    Array.isArray(args) &&
+    args.length === expectedArgs.length &&
+    args.every((arg, index) => arg === expectedArgs[index])
+  ) {
+    const home = join(stateRoot!, "home");
+    return {
+      status: 0,
+      stdout: darwin ? `name: synthetic\nuid: ${uid}\ndir: ${home}\n` : `synthetic:x:${uid}:0::${home}:/bin/false\n`,
+    };
+  }
+  return denyNetwork("child_process.spawnSync");
+}
+await guardModule("child_process", ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"], {
+  spawnSync: retainedAccountLookup,
+});
 await guardModule("worker_threads", ["Worker"]);
 const bunRuntime = globalThis.Bun;
 const bunModule = { ...(await import("bun")) } as Record<string, unknown>;

@@ -6,6 +6,7 @@ import { SlackChatActionDelivery } from "./slack/socket-mode.js";
 import { createSlackThreadLifecycle, getSlackThreadLifecycle } from "./slack/thread-lifecycle-store.js";
 import type { NativeChatActionDelivery, NativeTextDelivery } from "./native/types.js";
 import {
+  ChannelOutboundConsumer,
   type ChannelOutboundConsumerOptions,
   acknowledgeChannelOutboundMessage,
   channelOutboundRequestFingerprint,
@@ -90,6 +91,24 @@ describe("channel outbound consumer", () => {
         jobId: "runtime:ravi-channels:emit_1",
       }),
     );
+  });
+
+  it("drain preserves a pending queue item with no adapter and does not ACK it", async () => {
+    const consumer = new ChannelOutboundConsumer({
+      deliveries: [],
+      persistDelivery: false,
+      knowledgeGuard: () => null,
+      emitEvent: async () => {},
+      flushNats: async () => {},
+      recordDeliveryTrace: () => null,
+    });
+    const message = { ack: mock(() => {}), nak: mock(() => {}) };
+    await consumer.processMessage(makeJob(), message);
+    expect(await consumer.requestDrain()).toMatchObject({ completed: 1 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(message.nak).toHaveBeenCalledTimes(1);
+    await expect(consumer.processMessage(makeJob(), message)).rejects.toThrow("WORK_DRAIN_ADMISSION_CLOSED");
+    expect(message.nak).toHaveBeenCalledTimes(1);
   });
 
   it("naks missing-adapter failures with bounded backoff instead of acknowledging terminal loss", async () => {
@@ -535,6 +554,102 @@ describe("channel outbound consumer", () => {
       await cleanupIsolatedRaviState(stateDir);
       stateDir = null;
     });
+
+    it("drain waits for an admitted delivery callback and its durable complete receipt before ACK", async () => {
+      let finishCallback!: () => void;
+      const callback = new Promise<void>((resolve) => {
+        finishCallback = resolve;
+      });
+      const job = makeJob();
+      const consumer = new ChannelOutboundConsumer({
+        deliveries: [makeDelivery()],
+        emitEvent: async () => callback,
+        flushNats: async () => {},
+        recordDeliveryTrace: () => null,
+        knowledgeGuard: () => null,
+        persistDeliveredMessage: () => ({ canonicalMessageId: "message-drain" }),
+      });
+      const message = { ack: mock(() => {}), nak: mock(() => {}) };
+      const processing = consumer.processMessage(job, message);
+      const draining = consumer.requestDrain();
+      expect(consumer.drainStatus()).toMatchObject({ phase: "draining", pending: 1 });
+      expect(message.ack).not.toHaveBeenCalled();
+      finishCallback();
+      await processing;
+      expect(await draining).toMatchObject({ completed: 1 });
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)?.state).toBe("complete");
+      expect(message.ack).toHaveBeenCalledTimes(1);
+    });
+
+    it("a caught receipt failure blocks drain while retaining the queue for retry", async () => {
+      const consumer = new ChannelOutboundConsumer({
+        deliveries: [makeDelivery()],
+        emitEvent: async () => {},
+        flushNats: async () => {},
+        recordDeliveryTrace: () => null,
+        knowledgeGuard: () => null,
+        receiptStore: {
+          ...sqliteChannelOutboundReceiptStore,
+          recordSent: () => {
+            throw new Error("receipt failed");
+          },
+        },
+      });
+      const message = { ack: mock(() => {}), nak: mock(() => {}) };
+      const result = await consumer.processMessage(makeJob(), message);
+      expect(result.phase).toBe("receipt_write");
+      expect(message.ack).not.toHaveBeenCalled();
+      expect(message.nak).toHaveBeenCalledTimes(1);
+      await expect(consumer.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+    });
+
+    it.each(["persisted", "failed"] as const)(
+      "drain requires a claimed missing-adapter job's error record to persist: %s",
+      async (persistence) => {
+        const job = makeJob();
+        sqliteChannelOutboundReceiptStore.claim({
+          idempotencyKey: job.request.idempotencyKey,
+          requestFingerprint: channelOutboundRequestFingerprint(job),
+          owner: "previous-consumer",
+          jobId: job.jobId,
+          requestId: job.request.requestId,
+          sessionName: job.request.origin.sessionName,
+          provider: "slack",
+          now: 100,
+        });
+        const recordError = mock<ChannelOutboundReceiptStore["recordError"]>((...args) => {
+          if (persistence === "failed") throw new Error("receipt error persistence unavailable");
+          return sqliteChannelOutboundReceiptStore.recordError(...args);
+        });
+        const consumer = new ChannelOutboundConsumer({
+          deliveries: [],
+          emitEvent: async () => {},
+          flushNats: async () => {},
+          recordDeliveryTrace: () => null,
+          knowledgeGuard: () => null,
+          receiptStore: { ...sqliteChannelOutboundReceiptStore, recordError },
+        });
+        const message = { ack: mock(() => {}), nak: mock(() => {}) };
+        const result = await consumer.processMessage(job, message, 2);
+        expect(recordError).toHaveBeenCalledTimes(1);
+        expect(message.ack).not.toHaveBeenCalled();
+        expect(message.nak).toHaveBeenCalledWith(60_000);
+        expect(result).toMatchObject({ disposition: "nak", retryable: true, nakDelayMs: 60_000 });
+        expect(getChannelOutboundReceipt(job.request.idempotencyKey)?.state).toBe("claimed");
+        if (persistence === "failed") {
+          expect(result).toMatchObject({
+            phase: "receipt_write",
+            error: "No native delivery adapter registered for claimed channel: slack",
+          });
+          await expect(consumer.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+          expect(consumer.drainStatus().failures).toContain("outbound-receipt_write");
+        } else {
+          expect(result.phase).toBe("adapter_lookup");
+          expect(getChannelOutboundReceipt(job.request.idempotencyKey)?.lastErrorPhase).toBe("adapter_lookup");
+          expect(await consumer.requestDrain()).toMatchObject({ accepted: 1, completed: 1 });
+        }
+      },
+    );
 
     it("resumes terminal suppression after telemetry failure without sending or reopening the outbox", async () => {
       const job = makeJob();

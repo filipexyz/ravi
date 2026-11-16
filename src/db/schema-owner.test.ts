@@ -5,6 +5,8 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertRuntimeStateReady } from "./runtime-state.js";
+import { openStateDatabase } from "./state-boundary.js";
+import { runThreadMutation } from "../threads/schema-fence.js";
 import {
   assertStateSchemaReady,
   configureStateJournalMode,
@@ -147,8 +149,8 @@ it.each(["channel-outbound-publish", "slack-automatic-output", "cloud-chat"])(
       `const { initializeRuntimeState } = await import('./src/db/runtime-state.ts'); await initializeRuntimeState();`,
     );
     expect(prepared.status, prepared.stderr).toBe(0);
-    const database = new Database(join(state, "ravi.db"));
-    database.query("DELETE FROM state_schema_versions WHERE component = ?").run(component);
+    const database = openStateDatabase(join(state, "ravi.db"));
+    runThreadMutation(database, "DELETE FROM state_schema_versions WHERE component = ?", component);
     const before = database.query("PRAGMA schema_version").get();
     expect(() => assertRuntimeStateReady({ RAVI_STATE_DIR: state })).toThrow(`STATE_SCHEMA_NOT_READY: ${component}`);
     const consumer = run(
@@ -228,8 +230,8 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
   );
   expect(consumer.status, consumer.stderr).toBe(0);
   expect(snapshot()).toEqual(before);
-  const old = new Database(join(state, "ravi.db"));
-  old.query("UPDATE state_schema_versions SET version = 'old' WHERE component='router'").run();
+  const old = openStateDatabase(join(state, "ravi.db"));
+  runThreadMutation(old, "UPDATE state_schema_versions SET version = 'old' WHERE component='router'");
   old.close();
   expect(() => assertRuntimeStateReady({ RAVI_STATE_DIR: state })).toThrow("STATE_SCHEMA_NOT_READY");
 });

@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getDb } from "../router/router-db.js";
@@ -197,9 +198,11 @@ describe("task decisions", () => {
       blocks: true,
     });
     // Age the parked ask deterministically so ordering does not depend on clock ticks.
-    getDb()
-      .prepare("UPDATE decisions SET asked_at = asked_at - 5000 WHERE origin_type = 'task' AND origin_id = ?")
-      .run(parkedTask);
+    runThreadMutation(
+      getDb(),
+      "UPDATE decisions SET asked_at = asked_at - 5000 WHERE origin_type = 'task' AND origin_id = ?",
+      parkedTask,
+    );
     dbDecideTask(parkedTask, { key: "naming", ask: "Name?", ownerType: "unassigned" });
     dbDecideTask(agentTask, { key: "spec", ask: "Which spec?", ownerType: "agent", ownerId: "main", blocks: true });
 

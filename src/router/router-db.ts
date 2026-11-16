@@ -1,6 +1,7 @@
 import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
 import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { migrateDecisions } from "../decisions/schema.js";
+import { assertThreadFenceReady } from "../threads/schema-fence.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
 import { isOrdinaryTurnCompletionRevocation } from "../runtime/context-revocation.js";
 /**
@@ -1402,6 +1403,7 @@ function getDb(): Database {
   const nextDbPath = resolveDbPath();
   assertDatabaseTargetAllowed(nextDbPath);
   if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
+    assertThreadFenceReady(routerDbState.db);
     return routerDbState.db;
   }
   if (routerDbState.db !== null && routerDbState.dbPath !== nextDbPath) {
@@ -1437,6 +1439,7 @@ function getDb(): Database {
   routerDbState.dbPath = nextDbPath;
 
   try {
+    if (isSchemaConsumer()) assertThreadFenceReady(db);
     // WAL mode for concurrent read/write access (CLI + daemon).
     configureStateJournalMode(db);
     // Wait up to 5s for locks to clear instead of failing immediately.

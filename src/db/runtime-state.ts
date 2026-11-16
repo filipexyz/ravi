@@ -4,6 +4,7 @@ import { getCredentialsDbPath } from "../credentials/store.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { assertStateSchemaReady, StateSchemaNotReadyError } from "./schema-owner.js";
 import { assertDatabaseTargetAllowed, openStateDatabase } from "./state-boundary.js";
+import { assertThreadFenceReady } from "../threads/schema-fence.js";
 
 /** Daemon boot prepares every store before consumers or gateway become ready. */
 export async function initializeRuntimeState(): Promise<void> {
@@ -42,6 +43,7 @@ export function assertRuntimeStateReady(env: NodeJS.ProcessEnv = process.env): v
     if (!existsSync(path)) throw new StateSchemaNotReadyError(components.join(", "));
     const db = openStateDatabase(path, { readonly: true, create: false }, { env });
     try {
+      if (components.includes("router")) assertThreadFenceReady(db);
       for (const component of components) assertStateSchemaReady(db, component);
     } finally {
       db.close();

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { Database } from "bun:sqlite";
 import { join } from "node:path";
+import { openStateDatabase } from "../db/state-boundary.js";
+import { prepareThreadFence } from "../threads/schema-fence.js";
 import { enqueueTraceExportBatch } from "../session-trace/cloud-trace-export.js";
 import { recordSessionEvent } from "../session-trace/session-trace-db.js";
 import { getSyncCursor } from "../sync/db.js";
@@ -353,7 +354,8 @@ describe("router context queries", () => {
   });
 
   it("preserves retired permission tables while another process may still use them", () => {
-    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    const legacyDb = openStateDatabase(join(stateDir!, "ravi.db"));
+    prepareThreadFence(legacyDb);
     legacyDb.exec(`
       CREATE TABLE relations (id INTEGER PRIMARY KEY, marker TEXT NOT NULL);
       CREATE TABLE permission_policy_rules (id TEXT PRIMARY KEY, marker TEXT NOT NULL);
@@ -390,7 +392,8 @@ describe("router context queries", () => {
   });
 
   it("adds library_agents.listed and keeps listed only the agents already open to requests", () => {
-    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    const legacyDb = openStateDatabase(join(stateDir!, "ravi.db"));
+    prepareThreadFence(legacyDb);
     legacyDb.exec(`
       CREATE TABLE library_agents (
         agent_id             TEXT PRIMARY KEY,

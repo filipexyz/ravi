@@ -1,3 +1,4 @@
+import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
 /**
  * Channels Commands - manage native Ravi channel runner.
  */
@@ -302,6 +303,7 @@ function recreateChannelRunner(
   runnerEnv: Record<string, string>,
   asJson?: boolean,
 ): { status: number; saveStatus: number | null } {
+  assertRuntimeReplacementPrepared();
   const args = buildChannelsPm2StartArgs({
     bundlePath: target.bundlePath,
     processes: getPm2Processes({ strict: true }),
@@ -696,7 +698,9 @@ export class ChannelsCommands {
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
+    assertRuntimeReplacementPrepared();
 
     // PM2 "online" alone is not liveness: a runner whose Slack Socket Mode
     // loop died keeps its PM2 entry. Probe the PID-scoped health subject and
@@ -820,6 +824,7 @@ export class ChannelsCommands {
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
     const runnerEnv = buildRunnerPm2Env();
     const target = requireRuntimeTarget(build);
