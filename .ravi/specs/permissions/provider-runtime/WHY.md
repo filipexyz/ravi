@@ -32,3 +32,14 @@ immutable entrypoints before promising isolation. File Write is not a sufficient
 security boundary: scripts may already exist, and granted executables have
 their own file, network and subprocess effects. CLI contexts and session checks
 still protect Ravi-mediated calls; they are not a general process sandbox.
+
+## Arbitrary execution and restricted syntax
+
+An executor already authorized for every executable can run a script file with
+arbitrary host effects. Refusing only the equivalent inline shell form adds
+operational failures without establishing a sandbox. The restricted parser stays
+useful for named-executable contexts; the effective wildcard decision must include
+the issued context's limits and live reductions, not just the agent profile.
+Syntax-policy failures need their own diagnostic so operators are not encouraged
+to add an executable grant that cannot resolve that policy refusal.
+

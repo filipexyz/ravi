@@ -8,6 +8,16 @@ import {
 } from "./skill-gates.js";
 
 describe("default skill gate rules for slack, observers, meetings, knowledge, themes and widgets", () => {
+  it("discovers Ravi in shell substitutions when executable discovery is unknown", () => {
+    for (const command of [
+      "printf '%s' $(ravi bases list)",
+      "printf '%s' `ravi bases list`",
+      "cat <(ravi bases list)",
+    ]) {
+      expect(inferRaviCommandSkillGate(command)).toMatchObject({ skill: "ravi-system-bases" });
+    }
+    expect(inferRaviCommandSkillGate("printf '%s' '$(ravi bases list)'", { executables: ["printf"] })).toBeUndefined();
+  });
   const cases = [
     { group: "slack", skill: "ravi-system-slack", command: "ravi slack canvas-access-delete F123 --users U123 --json" },
     { group: "observers", skill: "ravi-system-observers", command: "ravi observers rules list --json" },

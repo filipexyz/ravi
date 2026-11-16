@@ -6,6 +6,7 @@ import { logger } from "../utils/logger.js";
 
 const log = logger.child("runtime:host-services");
 import {
+  canExecuteArbitraryShell,
   checkDangerousPatterns,
   emitBashDeniedAudit,
   evaluateBashPermission,
@@ -482,8 +483,12 @@ async function authorizeRuntimeCommandExecution(
 
   const eventData = request.eventData;
   const buildBashContext = () => ({
+    contextId: options.context.contextId,
+    context: options.context,
     agentId: options.agentId,
     kind: options.context.kind,
+    metadata: options.context.metadata,
+    source: options.context.source,
     ...(options.context.sessionKey ? { sessionKey: options.context.sessionKey } : {}),
     sessionName: options.context.sessionName ?? options.sessionName,
     capabilities: options.context.capabilities,
@@ -491,8 +496,11 @@ async function authorizeRuntimeCommandExecution(
   });
 
   const preliminary = evaluateBashPermission(command, buildBashContext());
-  if (!preliminary.allowed && preliminary.denialType === "env_spoofing") {
-    emitBashDeniedAudit(command, preliminary, options.agentId);
+  if (
+    !preliminary.allowed &&
+    (preliminary.denialType === "env_spoofing" || preliminary.denialType === "shell_syntax")
+  ) {
+    emitBashDeniedAudit(command, preliminary, options.agentId, buildBashContext());
     return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
   }
 
@@ -529,10 +537,11 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason };
   }
 
+  const arbitraryShell = canExecuteArbitraryShell(buildBashContext());
   const dangerous = checkDangerousPatterns(command);
-  if (!dangerous.safe) {
+  if (!dangerous.safe && !arbitraryShell) {
     emitRuntimePolicyDenied(options, {
-      type: "executable",
+      type: "shell_syntax",
       denied: "command_policy:dangerous_pattern",
       reason: dangerous.reason ?? "Command denied by Ravi policy.",
       command,
@@ -541,10 +550,12 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: dangerous.reason ?? "Command denied by Ravi policy." };
   }
 
-  const parsed = parseBashCommand(command);
-  if (!parsed.success) {
+  // With arbitrary execution, parsing is only best-effort skill discovery.
+  // A failed discovery must not become an empty, authoritative executable list.
+  const parsed = parseBashCommand(command, { allowInlineCode: arbitraryShell });
+  if (!parsed.success && !arbitraryShell) {
     emitRuntimePolicyDenied(options, {
-      type: "executable",
+      type: "shell_syntax",
       denied: "command_policy:parse_error",
       reason: parsed.error ?? "Failed to parse command for approval.",
       command,
@@ -570,7 +581,12 @@ async function authorizeRuntimeCommandExecution(
   }
   inherited = inherited && toolAuthorization.inherited;
 
-  if (!canWithCapabilityContext(options.context, "execute", "executable", "*")) {
+  if (!canExecuteArbitraryShell(buildBashContext())) {
+    const current = evaluateBashPermission(command, buildBashContext());
+    if (!current.allowed && current.denialType === "shell_syntax") {
+      emitBashDeniedAudit(command, current, options.agentId, buildBashContext());
+      return { approved: false, reason: current.reason ?? "Command denied by Ravi policy." };
+    }
     for (const executable of parsed.executables) {
       if (UNCONDITIONAL_BLOCKS.has(executable)) {
         const reason = `${executable} is blocked by Ravi command policy.`;
@@ -634,13 +650,13 @@ async function authorizeRuntimeCommandExecution(
 
   const finalDecision = evaluateBashPermission(command, buildBashContext());
   if (!finalDecision.allowed) {
-    emitBashDeniedAudit(command, finalDecision, options.agentId);
+    emitBashDeniedAudit(command, finalDecision, options.agentId, buildBashContext());
     return { approved: false, reason: finalDecision.reason ?? "Command denied by Ravi policy." };
   }
 
   const gateDecision = evaluateRuntimeCommandSkillGate({
     commandLine: command,
-    executables: parsed.executables,
+    ...(parsed.success && dangerous.safe ? { executables: parsed.executables } : {}),
     context: options.context,
     toolName: "Bash",
     onSkillGatePersisted: options.onSkillGatePersisted,

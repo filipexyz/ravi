@@ -45,6 +45,7 @@ function buildBashDeniedAuditEvent(
   agentId: string;
   denied: string;
   reason: string;
+  blockType?: string;
   detail?: { commandChars: number };
   context?: AuditContextProvenance;
 } | null {
@@ -74,6 +75,18 @@ function buildBashDeniedAuditEvent(
       agentId: resolvedAgentId,
       denied: command.split(/\s+/)[0] ?? "unknown",
       reason: decision.reason ?? "Bash command denied by Ravi",
+      detail,
+      ...contextFields,
+    };
+  }
+
+  if (decision.denialType === "shell_syntax") {
+    return {
+      type: "shell_syntax",
+      agentId: resolvedAgentId,
+      denied: decision.syntaxRule ?? "restricted_syntax",
+      blockType: decision.syntaxRule ?? "restricted_syntax",
+      reason: decision.reason ?? "Command is outside the restricted shell syntax policy",
       detail,
       ...contextFields,
     };
@@ -292,7 +305,8 @@ export interface BashPermissionContext {
 export interface BashPermissionDecision {
   allowed: boolean;
   reason?: string;
-  denialType?: "env_spoofing" | "executable" | "session_scope";
+  denialType?: "env_spoofing" | "executable" | "session_scope" | "shell_syntax";
+  syntaxRule?: "restricted_syntax" | "unparseable_command" | "indirect_execution";
   toolName?: string | null;
   deniedCapabilities?: Array<{ relation: string; objectType: string; objectId: string }>;
 }
@@ -396,20 +410,32 @@ function isSuperadminContext(ctx: BashPermissionContext): boolean {
   return canWithBashContext(ctx, "admin", "system", "*");
 }
 
-function checkExecutablePermissionsForContext(
-  command: string,
-  ctx: BashPermissionContext,
-): { allowed: boolean; reason?: string; deniedCapabilities?: BashPermissionDecision["deniedCapabilities"] } {
+/** Already-issued arbitrary execution authority, including all context narrowing. */
+export function canExecuteArbitraryShell(ctx: BashPermissionContext): boolean {
+  return canWithBashContext(ctx, "execute", "executable", "*");
+}
+
+function checkExecutablePermissionsForContext(command: string, ctx: BashPermissionContext): BashPermissionDecision {
+  // The restricted parser bounds named executable grants. It cannot make an
+  // already-authorized arbitrary host process safer by refusing its shell form.
+  // Environment identity and Ravi session/tool authorization remain separate.
+  if (canExecuteArbitraryShell(ctx)) return { allowed: true };
+
   // Preserve quoting here: the parser distinguishes literal data from active
   // substitutions. stripShellQuoting is for identity text checks, not syntax.
   const patternCheck = checkDangerousPatterns(command);
   if (!patternCheck.safe) {
-    return { allowed: false, reason: patternCheck.reason };
+    return { allowed: false, reason: patternCheck.reason, denialType: "shell_syntax", syntaxRule: "restricted_syntax" };
   }
 
   const parsed = parseBashCommand(command);
   if (!parsed.success) {
-    return { allowed: false, reason: parsed.error || "Failed to parse command" };
+    return {
+      allowed: false,
+      reason: parsed.error || "Failed to parse command",
+      denialType: "shell_syntax",
+      syntaxRule: "unparseable_command",
+    };
   }
 
   const BUILTIN_EXECUTABLES = new Set(["ravi"]);
@@ -424,17 +450,10 @@ function checkExecutablePermissionsForContext(
   if (blocked.length > 0) {
     return {
       allowed: false,
-      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot execute: ${blocked.join(", ")}`,
-      deniedCapabilities: blocked.map((executable) => ({
-        relation: "execute",
-        objectType: "executable",
-        objectId: executable,
-      })),
+      reason: `Restricted shell policy does not allow indirect execution through: ${blocked.join(", ")}`,
+      denialType: "shell_syntax",
+      syntaxRule: "indirect_execution",
     };
-  }
-
-  if (canWithBashContext(ctx, "execute", "executable", "*")) {
-    return { allowed: true };
   }
 
   // An allowed executable plus `> file` is a file write: `ravi crypto status > ~/.ravi/crypto.db`
@@ -613,7 +632,8 @@ export function evaluateBashPermission(command: string, ctx: BashPermissionConte
     return {
       allowed: false,
       reason: execResult.reason,
-      denialType: "executable",
+      denialType: execResult.denialType ?? "executable",
+      ...(execResult.syntaxRule ? { syntaxRule: execResult.syntaxRule } : {}),
       deniedCapabilities: execResult.deniedCapabilities,
     };
   }
@@ -668,34 +688,14 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
     };
     const decision = evaluateBashPermission(command, bashContext);
 
-    if (!decision.allowed && decision.denialType === "env_spoofing") {
-      log.warn("Env spoofing blocked", {
+    if (!decision.allowed) {
+      log.warn("Bash command blocked", {
         commandChars: command.length,
         reason: decision.reason,
+        denialType: decision.denialType,
       });
       recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
-
-      return buildPreToolUseDenyResult(decision.reason!);
-    }
-
-    if (!decision.allowed && decision.denialType === "executable") {
-      log.warn("Executable blocked", {
-        commandChars: command.length,
-        reason: decision.reason,
-      });
-      recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
-
-      return buildPreToolUseDenyResult(decision.reason!);
-    }
-
-    if (!decision.allowed && decision.denialType === "session_scope") {
-      log.warn("Scope check blocked", {
-        commandChars: command.length,
-        reason: decision.reason,
-      });
-      recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
-
-      return buildPreToolUseDenyResult(decision.reason!);
+      return buildPreToolUseDenyResult(decision.reason ?? "Bash command denied by Ravi policy");
     }
 
     log.debug("Bash command allowed", {
