@@ -16,7 +16,7 @@ This page describes `ravi.bot@next`. In `@latest` (3.260927.5) there is no `expl
 - Each agent has a **ceiling**: a runtime profile plus an optional list of explicit capabilities.
 - Each turn gets its own authority, computed from the ceiling, who sent the message and which chat it came from.
 - When a turn lacks a capability, Ravi can ask a trusted person in the chat to **approve** it for that turn (on the Pi and Grok providers; see [Approvals](#approvals)).
-- Some shell commands are **always blocked**, whatever the profile.
+- Named-executable access uses a restricted shell syntax; arbitrary shell forms require effective `execute:executable:*` authority.
 - Every denial is published on `ravi.audit.denied`.
 
 If you only want the owner setup (agent at `full-access`, yourself as owner contact), follow [Make yourself the owner](/start/owner). This page explains what those steps do.
@@ -217,14 +217,18 @@ When a turn needs a capability it does not hold, Ravi can post an approval reque
 
 ## The Bash check
 
-Before every Bash command, Ravi checks it against the turn's capabilities. These are always blocked, under every profile, and cannot be approved:
+Before every Bash command, Ravi checks the effective authority of its context. An existing `execute:executable:*` capability authorizes arbitrary shell forms; it does not grant a missing tool, change the caller's identity, or remove Ravi command/session authorization. A narrowed child or contact overlay cannot borrow a broader agent profile.
+
+Contexts limited to named executables retain these syntax restrictions. Approving a named executable does not remove them:
 
 - shells and string execution: `bash`, `sh`, `zsh`, `dash`, `ksh`, `csh`, `fish`, `tcsh`, `eval`, `exec`, `source`, `.`;
 - command substitution (`$(...)`, backticks), process substitution and here-documents;
 - piping into a shell, or into `python`, `python3`, `node`, `perl` or `ruby` as the last command (code read from stdin);
 - inline code: `python -c`, `python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`.
 
-Below `full-access`, two more rules apply: redirecting output to a file needs `use:tool:Write` (the bootstrap floor includes it), and commands that set `RAVI_*` environment variables are refused.
+Without arbitrary execution, redirecting output to a file needs `use:tool:Write` and provider configuration has an additional protection. Environment identity checks remain separate: only effective `admin:system:*` permits overriding `RAVI_*` variables. Executable access is not a filesystem or network sandbox.
+
+Syntax-policy refusals are reported as `shell_syntax` with a stable rule, rather than a missing permission for the first word of the command. They do not create a grant request for an executable that would still be blocked by that policy.
 
 ## Denials and audit
 

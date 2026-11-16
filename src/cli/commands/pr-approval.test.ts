@@ -4,7 +4,6 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PrCommands } from "./pr.js";
 import { buildRegistry } from "../registry-snapshot.js";
-import { PUBLICATION_CONTEXT_REQUIRED_MESSAGE } from "../../pr/contracts.js";
 import {
   canonicalize,
   EXTERNAL_AUTHORITY_ASSERTION_SETTING,
@@ -57,7 +56,7 @@ afterEach(async () => {
 });
 
 describe("pr publish approval through the gateway dispatcher", () => {
-  it("requires approved authenticated session execution in the response and both denial audit surfaces", async () => {
+  it("gives the same way out of a required approval in the response and both denial audit surfaces", async () => {
     const { publicKey, privateKey } = generateKeyPairSync("ed25519");
     const payload = {
       iss: "issuer",
@@ -135,11 +134,9 @@ describe("pr publish approval through the gateway dispatcher", () => {
         },
       });
       for (const message of [body.error.message, detailGuidance.message, auditGuidance.recommendedPath]) {
-        expect(message).toContain(PUBLICATION_CONTEXT_REQUIRED_MESSAGE);
-        expect(message).toContain("gateway/agent");
-        expect(message).toContain("authorized runtime context");
         expect(message).toContain("ask the authority to reissue the scope without requiresApproval");
-        expect(message).not.toContain("or have the operator run it");
+        // The operator can publish from a terminal, so that way out is offered again.
+        expect(message).toContain("or have the operator run it");
       }
 
       expect(handler).not.toHaveBeenCalled();

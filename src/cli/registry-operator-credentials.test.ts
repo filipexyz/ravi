@@ -10,7 +10,7 @@ import { runWithContext } from "./context.js";
 import * as operatorRuntime from "./operator-runtime.js";
 import { registerCommands } from "./registry.js";
 
-const classifyInstalledOperator = operatorRuntime.usesInstalledOperatorTransport;
+const classifyInstalledOperator = operatorRuntime.isInstalledOperatorOnRealState;
 const firstKey = "rctx_local_fixture_first";
 const secondKey = "rctx_local_fixture_second";
 const candidateKey = "rctx_local_fixture_candidate";
@@ -103,8 +103,8 @@ beforeEach(() => {
   process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
   const provenance = { modulePath, homeDir: accountHome };
   expect(classifyInstalledOperator(process.env, provenance)).toBe(true);
-  spyOn(operatorRuntime, "usesInstalledOperatorTransport").mockImplementation((env = process.env) =>
-    classifyInstalledOperator(env, provenance),
+  spyOn(operatorRuntime, "usesOperatorRecoveryPath").mockImplementation(() =>
+    classifyInstalledOperator(process.env, provenance),
   );
   writeStore(clientPath, { [firstKey]: entry("client-first"), [secondKey]: entry("client-second") }, firstKey);
   writeStore(daemonPath, { [firstKey]: entry("daemon-first"), [secondKey]: entry("daemon-second") }, firstKey);

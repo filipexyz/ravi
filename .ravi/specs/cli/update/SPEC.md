@@ -68,11 +68,12 @@ normative: true
   or a conflicting package-local filename/PM2 process name/namespace before
   stopping any process. PM2
   itself MUST be resolved in the original caller PATH before Bun PATH is pinned.
-- Operator CLI commands targeting real state MUST use the authenticated
-  installed gateway for stateful authorization/execution. Local lifecycle and
-  recovery operations MUST remain usable when the daemon is unavailable,
-  without opening or migrating real databases. Runtime contexts MUST never
-  gain an operator fallback.
+- Operator CLI commands targeting real state MUST run in the operator's
+  terminal, on that state, as a schema consumer (`quality/state-boundary`).
+  Local lifecycle and recovery operations MUST remain usable when the daemon
+  is unavailable or state is not prepared for the installed release, without
+  opening or migrating real databases. Runtime contexts MUST never gain an
+  operator fallback.
 - Update MUST prepare and validate its launcher before disrupting managed
   processes, and wait for the new daemon's exact-release readiness before
   starting channel consumers. A failed candidate MUST NOT be reported as

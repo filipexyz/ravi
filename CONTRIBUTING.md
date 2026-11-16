@@ -150,15 +150,25 @@ the remote tree and commit SHA against the local commit. Do not use `git push`
 with disabled hooks. Record the literal upload commands and checks left to CI
 in the PR description.
 
-Publish from an authenticated Ravi session and committed worktree through the installed
-daemon gateway. This path uses the session identity already accepted by the gateway;
-a bare shell without that context cannot open the real publication journal or use
-this workflow. Do not point it at real state or add credentials to bypass that boundary:
+Publish from the committed worktree with the installed `ravi`, in one of two ways.
+A Ravi session publishes through the installed daemon gateway with the session
+identity the gateway already accepted, and CI follows that session:
 
 ```bash
 ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
 ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --execute
 ```
+
+The operator's own terminal publishes as the local operator and names the session
+whose chat receives the CI follow. The flag names a destination; it grants nothing:
+
+```bash
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --reply-session <session>
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --reply-session <session> --execute
+```
+
+A `ravi` run from a checkout or a worktree cannot open real state and cannot
+publish. Do not point it at real state or add credentials to get around that.
 
 The command previews by default, preserves the exact local commit/tree and
 history, creates or reuses the ready PR and verifies the CI follow. It does not
@@ -170,13 +180,9 @@ durable parent; never close the only recipient while its checks are pending.
 Independent review belongs in the PR description. Quality Gate is the required
 merge check; the retired Review Gate must not be reinstated by this workflow.
 
-**Breaking change:** bare operator publication and `--reply-session` are removed.
-Both preview and execute require an authenticated session through the
-gateway/agent. Remove the option from callers and publish in an authorized
-Ravi session. A terminal without one fails with `PERMISSION_DENIED` and
-`pr publish requires an authenticated session context; run through the gateway/agent.`
-There is no human-login-to-runtime-context exchange for the bare terminal today.
-Do not bootstrap an admin key, bypass the journal or infer authority from the host.
+From a terminal, `PUBLICATION_SESSION_REQUIRED` means `--reply-session` is missing
+or names a session with no chat destination, and `STATE_SCHEMA_NOT_READY` means the
+installed daemon has not prepared state for this release: `ravi daemon restart -m "prepare state"`.
 
 ## Adding or changing a CLI command
 

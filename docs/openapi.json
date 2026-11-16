@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "708035da4326e046"
+    "version": "cd2ae86d63ff4c98"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -25683,7 +25683,7 @@
                     "type": "string"
                   },
                   "session": {
-                    "description": "With --trigger: session to run in: isolated (the trigger's own, required to read or write the base), a name or a template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
+                    "description": "With --trigger: session to run in, by name or template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
                     "type": "string"
                   },
                   "trigger": {
@@ -25880,15 +25880,6 @@
                         "name": {
                           "type": "string"
                         },
-                        "ownerPrincipal": {
-                          "type": "string"
-                        },
-                        "ownsSession": {
-                          "type": "boolean"
-                        },
-                        "runsAsOperator": {
-                          "type": "boolean"
-                        },
                         "session": {
                           "type": "string"
                         },
@@ -25906,10 +25897,7 @@
                         "session",
                         "topic",
                         "filter",
-                        "enableCommand",
-                        "ownerPrincipal",
-                        "runsAsOperator",
-                        "ownsSession"
+                        "enableCommand"
                       ],
                       "type": "object"
                     }
@@ -106873,6 +106861,10 @@
                   },
                   "expectSha": {
                     "description": "Require this full local commit SHA (default: capture HEAD)",
+                    "type": "string"
+                  },
+                  "replySession": {
+                    "description": "From a terminal: the session whose chat receives the CI follow. In a session it must be that session. Grants no authority",
                     "type": "string"
                   },
                   "repo": {

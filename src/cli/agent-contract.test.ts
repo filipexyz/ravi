@@ -442,6 +442,41 @@ describe("expectedErrorToContractError", () => {
   });
 });
 
+describe("state that is not prepared for this release", () => {
+  const notReady = Object.assign(
+    new Error(
+      'STATE_SCHEMA_NOT_READY: router is not prepared for this release. The installed daemon prepares state when it starts: run `ravi daemon restart -m "prepare state"`, then retry. The CLI never migrates state.',
+    ),
+    { code: "STATE_SCHEMA_NOT_READY" },
+  );
+
+  it("is reported under its own code with the command that fixes it, not as an internal failure", () => {
+    for (const error of [notReady, new Error("credential lookup failed", { cause: notReady })]) {
+      const contract = mapExecutionErrorToContractError("agents list", error);
+      expect(contract.exitCode).toBe(1);
+      const envelope = contract.envelope();
+      expect(envelope).toMatchObject({
+        success: false,
+        op: "agents list",
+        error: { code: "STATE_SCHEMA_NOT_READY", retryable: true },
+      });
+      expect(envelope.error.message).toContain("router is not prepared for this release");
+      expect(String(envelope.error.suggestedAction)).toContain('ravi daemon restart -m "prepare state"');
+      expect(envelope.error.message).not.toContain("failed internally");
+    }
+  });
+
+  it("leaves every other failure as it was", () => {
+    expect(mapExecutionErrorToContractError("agents list", new Error("boom")).code).toBe("UNHANDLED_ERROR");
+    expect(
+      mapExecutionErrorToContractError(
+        "agents list",
+        Object.assign(new Error("refused"), { code: "REAL_STATE_ACCESS_REFUSED" }),
+      ).code,
+    ).toBe("UNHANDLED_ERROR");
+  });
+});
+
 describe("CliExpectedError default code", () => {
   it("defaults to COMMAND_FAILED and still surfaces a safe fail() message", () => {
     const error = new CliExpectedError("Agent not found: ghost. Pass --create-agent to create it.");
