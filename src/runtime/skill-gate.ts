@@ -16,7 +16,6 @@ import {
   listSkillFilePaths,
   type RaviSkill,
 } from "../skills/manager.js";
-import { checkDangerousPatterns, parseBashCommand } from "../bash/parser.js";
 import {
   inferRaviCommandSkillGate,
   resolveRuntimeToolSkillGate,
@@ -78,15 +77,9 @@ export function runtimeSkillGateForCommand(
   commandLine: string,
   options?: { executables?: readonly string[] },
 ): SkillGateMetadata | undefined {
-  // Discovery is not authorization: inline code can already be allowed by an
-  // effective wildcard grant. Unknown syntax must retain text/group gates,
-  // rather than masquerade as a proven absence of gated executables.
-  const parsed =
-    options?.executables === undefined ? parseBashCommand(commandLine, { allowInlineCode: true }) : undefined;
-  const executables = checkDangerousPatterns(commandLine).safe
-    ? (options?.executables ?? (parsed?.success ? parsed.executables : undefined))
-    : undefined;
-  return inferRaviCommandSkillGate(commandLine, { executables, rules: readConfiguredSkillGateRules() });
+  // The discovery helper keeps command/quote boundaries even when executable
+  // hints are partial. Neither static discovery nor its fallback grants authority.
+  return inferRaviCommandSkillGate(commandLine, { ...options, rules: readConfiguredSkillGateRules() });
 }
 
 export function evaluateRuntimeToolSkillGate(input: EvaluateRuntimeToolSkillGateInput): SkillGateDecision {

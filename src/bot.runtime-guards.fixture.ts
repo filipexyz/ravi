@@ -501,6 +501,7 @@ mock.module("./heartbeat/index.js", () => ({
 }));
 
 mock.module("./bash/index.js", () => ({
+  canExecuteArbitraryShell: () => false,
   checkDangerousPatterns: () => ({ safe: true }),
   createBashPermissionHook: () => ({
     matcher: "Bash",

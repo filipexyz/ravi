@@ -49,6 +49,11 @@ Quoting regressions (`bun test src/bash/`):
   length, without a false missing-capability row or executable name. SDK hooks
   deny that category. Native skill discovery retains inline executable gates and
   conservative text/group gates on unsupported syntax.
+- `CI840 quote-aware command discovery` in `src/runtime/skill-gate.test.ts`
+  covers mixed literal Ravi text plus active unrelated expansion, actual nested
+  substitutions/pipelines, quoted command words, configured raw-text rules and
+  native skill delivery/retry. Literal-only mentions MUST NOT load a skill;
+  named-executable contexts MUST remain restricted.
 - The remaining syntax-refusal checks below use restricted contexts. The parser
   defaults remain strict; its explicit inline-code discovery mode is not an
   authorization decision.

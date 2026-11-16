@@ -1010,3 +1010,141 @@ describe("soft gate solucoes footer", () => {
     expect(reason).not.toContain(SOLUTIONS_LINE);
   });
 });
+
+describe("CI840 quote-aware command discovery", () => {
+  it.each([
+    `printf '%s' '$(ravi bases list)' "$(date)"`,
+    `printf '%s' "ravi bases list $(date)"`,
+    `printf '%s' '<(ravi bases list)' "$(date)"`,
+    `printf '%s' "$(printf '%s' '$(ravi bases list)')"`,
+    'printf \'%s\' "\\$(ravi bases list)" "$(date)"',
+    "printf '%s' \\`ravi bases list\\` \"$(date)\"",
+    "printf '%s' $(date) # ravi bases list\ndate",
+    `printf ravi bases list "$(date)"`,
+    `printf '%s' > ravi bases list "$(date)"`,
+  ])("ignores literal Ravi text beside active syntax: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toBeUndefined();
+    expect(runtimeSkillGateForCommand(command, { executables: ["printf"] })).toBeUndefined();
+  });
+
+  it.each([
+    `printf '%s' "$(ravi bases list)"`,
+    `printf '%s' "$(printf '%s' "$(ravi bases list)")"`,
+    "printf '%s' \"`ravi bases list`\"",
+    "cat <(ravi bases list)",
+    "cat >(ravi bases list)",
+    "printf data | ravi bases list",
+    `printf '%s' "$('ravi' 'bases' list)"`,
+    `printf '%s' "$("/usr/local/bin/ravi" bases list)"`,
+    "printf '%s' $(ravi bases list)",
+    "ravi context codex-bash-hook; ravi bases list",
+    "> ravi ravi bases list",
+    "sudo -n ravi bases list",
+    "env X=a#b ravi bases list",
+    "if true; then ravi bases list; fi",
+    "printf '%s' foo\\ # \"$(ravi bases list)\"",
+    "printf '%s' \"$\\\n(ravi bases list)\"",
+    `printf '%s' "$(command env ravi bases list)"`,
+    `printf '%s' "$(/usr/bin/env ravi bases list)"`,
+  ])("retains an actually invoked Ravi gate: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+    expect(runtimeSkillGateForCommand(command, { executables: ["printf"] })).toMatchObject({
+      skill: "ravi-system-bases",
+      ruleId: "bases",
+    });
+  });
+
+  it("does not let a literal Bases decoy hide a real Pages invocation", () => {
+    expect(runtimeSkillGateForCommand(`printf '%s' '$(ravi bases list)' "$(ravi pages list)"`)).toMatchObject({
+      skill: "ravi-system-pages",
+      ruleId: "pages",
+    });
+  });
+
+  it("retains explicit raw commandRegex rules", () => {
+    dbUpsertSkillGateRule({ id: "literal-contract", commandRegex: "ravi bases list", skill: "text-contract" });
+    expect(runtimeSkillGateForCommand(`printf '%s' '$(ravi bases list)' "$(date)"`)).toMatchObject({
+      skill: "text-contract",
+      source: "config",
+    });
+  });
+
+  it("keeps configured executable gates inside real substitutions without gating literal arguments", () => {
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "python-analysis" });
+    expect(runtimeSkillGateForCommand(`printf '%s' "$( python3 -c 'print(1)' )"`)).toMatchObject({
+      skill: "python-analysis",
+      source: "config",
+    });
+    expect(runtimeSkillGateForCommand(`printf '%s' 'python3 -c print(1)' "$(date)"`)).toBeUndefined();
+    expect(runtimeSkillGateForCommand("python3 -c 'unterminated")).toMatchObject({ skill: "python-analysis" });
+    expect(runtimeSkillGateForCommand("# python3 -c print(1)")).toBeUndefined();
+    dbUpsertSkillGateRule({ id: "sudo-analysis", commandPrefix: "sudo", skill: "sudo-analysis" });
+    expect(runtimeSkillGateForCommand("sudo -n ravi bases list")).toMatchObject({ skill: "sudo-analysis" });
+  });
+
+  it("does not load a literal skill, but gates a real substitution and then permits retry", async () => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "bases-analysis", groupRegex: "^bases(?:[._]|$)", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:ci840-quotes", "main", stateDir!, {
+      name: "ci840-quotes",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      sessionKey: session.sessionKey,
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ],
+    });
+    const onSkillGatePersisted = mock(() => {});
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "ci840-quotes",
+      toolContext: {},
+      onSkillGatePersisted,
+    });
+    const literal = await services.authorizeCommandExecution({
+      command: `printf '%s' '$(ravi bases list)' "$(date)"`,
+    });
+    expect(literal.approved).toBe(true);
+    expect(onSkillGatePersisted).not.toHaveBeenCalled();
+    expect(readSkillVisibilityFromParams(getSession(session.sessionKey)?.runtimeSessionParams).loadedSkills).toEqual(
+      [],
+    );
+    const active = { command: `printf '%s' "$(ravi bases list)"` };
+    const first = await services.authorizeCommandExecution(active);
+    expect(first.approved).toBe(false);
+    expect(first.reason).toContain("RAVI_SKILL_REQUIRED");
+    expect(onSkillGatePersisted).toHaveBeenCalledTimes(1);
+    expect((await services.authorizeCommandExecution(active)).approved).toBe(true);
+  });
+
+  it("does not infer arbitrary execution from discovery in a narrowed context", async () => {
+    const session = getOrCreateSession("agent:main:ci840-narrow", "main", stateDir!, { name: "ci840-narrow" });
+    const context = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      sessionKey: session.sessionKey,
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "printf" },
+      ],
+    });
+    const onSkillGatePersisted = mock(() => {});
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "ci840-narrow",
+      toolContext: {},
+      onSkillGatePersisted,
+    });
+    const decision = await services.authorizeCommandExecution({ command: `printf '%s' "$(ravi bases list)"` });
+    expect(decision.approved).toBe(false);
+    expect(decision.reason).toContain("command substitution");
+    expect(onSkillGatePersisted).not.toHaveBeenCalled();
+  });
+});

@@ -1,4 +1,5 @@
 import type { Changes, Database, SQLQueryBindings } from "bun:sqlite";
+import { realpathSync, statSync } from "node:fs";
 import { withSchemaMigrationLock } from "../db/schema-lock.js";
 
 // Fixed by the compiled writer; never supplied through environment or callers.
@@ -30,12 +31,14 @@ export interface ThreadSchemaFence {
 export interface ThreadFenceBootstrapContext {
   existingSchema: boolean;
   databasePath: string;
+  openedDatabase?: { path: string; device: number; inode: number };
 }
 export type ThreadFenceBootstrapVerifier = (context: ThreadFenceBootstrapContext) => undefined;
 export type ThreadFenceMaintenanceVerifier = () => undefined;
 interface ConnectionFence {
   prepared: boolean;
   verifyLegacyBootstrap?: ThreadFenceBootstrapVerifier;
+  openedDatabase?: ThreadFenceBootstrapContext["openedDatabase"];
 }
 const connections = new WeakMap<Database, ConnectionFence>();
 
@@ -75,7 +78,14 @@ export function registerThreadFenceConnection(
   db: Database,
   verifyLegacyBootstrap?: ThreadFenceBootstrapVerifier,
 ): void {
-  if (!connections.has(db)) connections.set(db, { prepared: false, verifyLegacyBootstrap });
+  if (connections.has(db)) return;
+  let openedDatabase: ThreadFenceBootstrapContext["openedDatabase"];
+  if (db.filename && db.filename !== ":memory:") {
+    const path = realpathSync(db.filename);
+    const info = statSync(path);
+    openedDatabase = Object.freeze({ path, device: info.dev, inode: info.ino });
+  }
+  connections.set(db, { prepared: false, verifyLegacyBootstrap, openedDatabase });
 }
 function hasFence(db: Database): boolean {
   return db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(THREAD_FENCE_TABLE) !== null;
@@ -137,6 +147,16 @@ export function prepareThreadFence(db: Database): void {
   const state = connections.get(db);
   if (!state) refused("Register the compiled writer protocol before preparing schema.");
   withSchemaMigrationLock(db, () => {
+    if (state.openedDatabase) {
+      const path = realpathSync(db.filename);
+      const info = statSync(path);
+      if (
+        path !== state.openedDatabase.path ||
+        info.dev !== state.openedDatabase.device ||
+        info.ino !== state.openedDatabase.inode
+      )
+        refused("opened SQLite connection does not match the current database identity");
+    }
     if (hasFence(db)) {
       assertThreadFenceReady(db);
       state.prepared = true;
@@ -148,6 +168,7 @@ export function prepareThreadFence(db: Database): void {
     ) {
       refused("Previously installed fence is missing; automatic repair is forbidden.");
     }
+    if (db.inTransaction) refused("First fence installation must own its committed transaction.");
     const existing = db
       .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1")
       .get();
@@ -156,8 +177,13 @@ export function prepareThreadFence(db: Database): void {
         "First installation on existing state requires externally verified persistence and process-exit evidence.",
       );
     assertSynchronousProof(
-      state.verifyLegacyBootstrap?.({ existingSchema: Boolean(existing), databasePath: db.filename }),
+      state.verifyLegacyBootstrap?.({
+        existingSchema: Boolean(existing),
+        databasePath: db.filename,
+        openedDatabase: state.openedDatabase,
+      }),
     );
+    if (db.inTransaction) refused("Bootstrap verifier opened an outer transaction; installation is refused.");
     db.transaction(() => {
       db.exec(`CREATE TABLE ${THREAD_FENCE_TABLE} (
         id INTEGER PRIMARY KEY CHECK (id = 1),

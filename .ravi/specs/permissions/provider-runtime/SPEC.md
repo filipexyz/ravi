@@ -147,6 +147,14 @@ Required capability materializers:
   conservative text/group gates. Static gates do not inspect arbitrary code inside
   scripts or interpreter strings; actual Ravi requests still authorize at the
   authenticated gateway.
+- Automatic Ravi skill inference MUST use command positions and quote boundaries,
+  including inside active substitutions. Literal arguments and comments MUST NOT
+  become executable evidence because another region has active shell syntax.
+  Incomplete executable hints MUST NOT hide Ravi in nested, double-quoted,
+  backtick or process substitutions and pipelines. Explicit configured
+  `commandRegex` rules retain their raw-text contract. This discovery is bounded:
+  script contents, interpreter/eval strings and dynamic command names are not
+  evaluated, and no discovery result grants permission.
 - The syntax restrictions below apply to contexts without effective arbitrary
   execution. Policy refusals MUST identify `shell_syntax` and a stable rule,
   without inventing a missing executable capability from the first command token.

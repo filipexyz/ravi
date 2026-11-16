@@ -1,3 +1,5 @@
+import { parse as parseShell } from "shell-quote";
+
 export interface SkillGateMetadata {
   skill: string;
   source: "inferred" | "config";
@@ -165,41 +167,141 @@ export function inferRaviCommandSkillGate(
   commandLine: string,
   options?: { executables?: readonly string[]; rules?: readonly SkillGateRuleConfig[] },
 ): SkillGateMetadata | undefined {
-  const configured = resolveConfiguredCommandGate(commandLine, options);
+  const commands = discoverShellCommands(commandLine);
+  const executables = commands.map((words) => words[0]!.split("/").at(-1)!);
+  const configured = resolveConfiguredCommandGate(commandLine, {
+    ...options,
+    executables,
+  });
   if (configured !== undefined) {
     return configured === false ? undefined : configured;
   }
 
-  if (options?.executables && !options.executables.includes("ravi")) {
-    return undefined;
-  }
-
-  const match = /(?:^|[\s;&|(`])(?:[^\s;&|()`'"]+\/)?ravi\s+([a-z][a-z0-9-]*)(?:\s+([a-z][a-z0-9-]*))?/i.exec(
-    commandLine,
-  );
-  if (!match) {
-    return undefined;
-  }
-
-  const first = normalizeCliSegment(match[1]);
-  const second = normalizeCliSegment(match[2]);
-  if (second && RAVI_GATE_EXEMPT_COMMANDS.has(`${first}.${second}`)) {
-    return undefined;
-  }
-  const candidates = second ? [`${first}.${second}`, first] : [first];
-  for (const groupPath of candidates) {
-    const configuredGroup = resolveConfiguredGroupTargetGate(groupPath, options?.rules ?? []);
-    if (configuredGroup !== undefined) {
-      return configuredGroup === false ? undefined : configuredGroup;
-    }
-
-    const inferred = inferRaviGroupSkillGate(groupPath, { rules: options?.rules });
-    if (inferred) {
-      return inferred;
+  // Executable hints may omit substitutions. Discover command positions rather
+  // than scanning literal arguments when a hint is incomplete.
+  for (const words of commands) {
+    if (words[0]?.split("/").at(-1) !== "ravi") continue;
+    const first = normalizeCliSegment(words[1]);
+    const second = normalizeCliSegment(words[2]);
+    if (second && RAVI_GATE_EXEMPT_COMMANDS.has(`${first}.${second}`)) continue;
+    const candidates = second ? [`${first}.${second}`, first] : [first];
+    for (const groupPath of candidates) {
+      const configuredGroup = resolveConfiguredGroupTargetGate(groupPath, options?.rules ?? []);
+      if (configuredGroup === false) break;
+      if (configuredGroup !== undefined) return configuredGroup;
+      const inferred = inferRaviGroupSkillGate(groupPath, { rules: options?.rules });
+      if (inferred) return inferred;
     }
   }
 
   return undefined;
+}
+
+/**
+ * Bounded discovery, never authorization or shell evaluation. Keep each active
+ * substitution in its own quote context, and decode static words only after
+ * separating command regions. Scripts, eval strings and dynamic command names
+ * remain opaque; real Ravi calls still authorize at the gateway. Configured
+ * raw-text matchers deliberately keep their separate contract above.
+ */
+function discoverShellCommands(input: string): string[][] {
+  type Frame = { source: string; wordStart: boolean; quote?: "'" | '"'; closing?: ")" | "`" };
+  const frames: Frame[] = [{ source: "", wordStart: true }];
+  const commands: string[][] = [];
+  const flush = (frame: Frame) => {
+    const source = frame.source;
+    frame.source = "";
+    frame.wordStart = true;
+    // Only unquoted reserved prefixes are syntax; quoted ones are executables.
+    const command = source.replace(/^(\s*(?:if|then|elif|else|do|while|until|!|time)\s+)+/, "");
+    try {
+      const tokens = parseShell(command, () => "__dynamic_shell_word__");
+      const words: string[] = [];
+      for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i]!;
+        const next = tokens[i + 1];
+        if (typeof token === "string") {
+          if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
+          words.push(token);
+        } else if ("comment" in token) {
+          break;
+        } else if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
+          if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
+          i++; // Redirect destinations are operands, including a file called ravi.
+        } else if (token.op === "glob") {
+          words.push("__dynamic_shell_word__");
+        }
+      }
+      while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) words.shift();
+      while (["env", "sudo", "command", "builtin", "nohup"].includes(words[0]?.split("/").at(-1) ?? "")) {
+        commands.push([...words]); // A wrapper can have its own configured gate.
+        const wrapper = words.shift()!.split("/").at(-1);
+        while (words[0]?.startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) {
+          const option = words.shift();
+          if (
+            (wrapper === "env" && ["-u", "--unset"].includes(option!)) ||
+            (wrapper === "sudo" && ["-u", "-g", "-h", "-p", "-C", "-T", "-R", "-D"].includes(option!))
+          )
+            words.shift();
+        }
+      }
+      if (words.length) commands.push(words);
+    } catch {
+      // no-cause: Incomplete shell text is expected during best-effort skill discovery; retain only its visible command prefix, never an authorization verdict.
+      // Retain a visible static command prefix even if a later word is malformed.
+      const prefix = /^\s*([a-z0-9_./-]+)(?:\s+([a-z0-9_-]+))?(?:\s+([a-z0-9_-]+))?/i.exec(command);
+      if (prefix) commands.push(prefix.slice(1).filter((word): word is string => Boolean(word)));
+    }
+  };
+  for (let i = 0; i < input.length; i++) {
+    const frame = frames[frames.length - 1]!;
+    const char = input[i]!;
+    let nextIndex = i + 1;
+    if (frame.quote !== "'" && (char === "$" || (!frame.quote && /[<>]/.test(char)))) {
+      while (input[nextIndex] === "\\" && input[nextIndex + 1] === "\n") nextIndex += 2;
+    }
+    const next = input[nextIndex];
+    if (char === "\\" && frame.quote !== "'" && (!frame.quote || (next && /[$`"\\\n]/.test(next)))) {
+      frame.source += char + (next ?? "");
+      if (next !== "\n") frame.wordStart = false;
+      i++;
+    } else if (char === frame.quote) {
+      frame.source += char;
+      frame.quote = undefined;
+    } else if (!frame.quote && (char === "'" || char === '"')) {
+      frame.source += char;
+      frame.quote = char;
+      frame.wordStart = false;
+    } else if (frame.quote === "'") {
+      frame.source += char;
+    } else if (!frame.quote && char === frame.closing) {
+      flush(frame);
+      frames.pop();
+    } else if (char === "`" || (next === "(" && (char === "$" || (!frame.quote && /[<>]/.test(char))))) {
+      frame.source += "__dynamic_shell_word__";
+      frame.wordStart = false;
+      frames.push({ source: "", wordStart: true, closing: char === "`" ? "`" : ")" });
+      if (char !== "`") i = nextIndex;
+    } else if (!frame.quote && char === "(") {
+      flush(frame);
+      frames.push({ source: "", wordStart: true, closing: ")" });
+    } else if (!frame.quote && char === "#" && frame.wordStart) {
+      while (i + 1 < input.length && input[i + 1] !== "\n") i++;
+    } else if (
+      !frame.quote &&
+      /[;|&\n]/.test(char) &&
+      !(char === "&" && (/[<>]/.test(input[i - 1] ?? "") || next === ">")) &&
+      !(char === "|" && input[i - 1] === ">")
+    ) {
+      flush(frame);
+    } else {
+      // shell-quote treats mid-word # as comments; Bash only does at word start.
+      frame.source += (!frame.quote && char === "#" ? "\\" : "") + char;
+      frame.wordStart = !frame.quote && /[\s<>]/.test(char);
+    }
+  }
+  for (const frame of frames) flush(frame);
+  return commands;
 }
 
 export function inferRaviGroupSkillGate(

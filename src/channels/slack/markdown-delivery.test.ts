@@ -65,6 +65,29 @@ describe("postSlackMarkdown", () => {
     expect(result.documents).toEqual([{ title: "Plano de rollout", delivery: "canvas", id: "F0CANVAS" }]);
   });
 
+  it("reports captured canvas and upload failures while retaining successful inline fallback", async () => {
+    const onFailure = mock(() => {});
+    const client = fakeClient({
+      canvasesCreate: mock(async () => {
+        throw new Error("canvas unavailable");
+      }),
+      uploadTextFile: mock(async () => {
+        throw new Error("upload unavailable");
+      }),
+    });
+    const result = await postSlackMarkdown(client as never, {
+      channel: "C123",
+      threadTs: "1712999999.000100",
+      markdown: REPLY,
+      onFailure,
+    });
+    expect(onFailure).toHaveBeenCalledTimes(2);
+    expect(client.uploadTextFile).toHaveBeenCalledTimes(1);
+    expect(result.documents).toEqual([{ title: "Plano de rollout", delivery: "inline" }]);
+    expect(result.messages).toHaveLength(2);
+    expect(client.postMessage.mock.calls[1]?.[0]).toMatchObject({ channel: "C123", threadTs: "1712999999.000100" });
+  });
+
   it("sends the document as a file in the thread when the app cannot make a canvas", async () => {
     const client = fakeClient({
       canvasesCreate: mock(async () => {
