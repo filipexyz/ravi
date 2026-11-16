@@ -125,6 +125,8 @@ mock.module("./db.js", () => ({
 
 mock.module("./prompt-builder.js", () => ({
   buildSystemPrompt: () => "",
+  buildSystemPromptSections: () => [],
+  renderPromptSections: () => "",
   SILENT_TOKEN: "@@SILENT@@",
 }));
 
@@ -221,6 +223,7 @@ mock.module("./heartbeat/index.js", () => ({
 }));
 
 mock.module("./bash/index.js", () => ({
+  canExecuteArbitraryShell: () => false,
   checkDangerousPatterns: () => ({ safe: true }),
   createBashPermissionHook: () => ({
     matcher: "Bash",

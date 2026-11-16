@@ -16,7 +16,6 @@ import {
   listSkillFilePaths,
   type RaviSkill,
 } from "../skills/manager.js";
-import { parseBashCommand } from "../bash/parser.js";
 import {
   inferRaviCommandSkillGate,
   resolveRuntimeToolSkillGate,
@@ -78,8 +77,9 @@ export function runtimeSkillGateForCommand(
   commandLine: string,
   options?: { executables?: readonly string[] },
 ): SkillGateMetadata | undefined {
-  const executables = options?.executables ?? parseBashCommand(commandLine).executables;
-  return inferRaviCommandSkillGate(commandLine, { executables, rules: readConfiguredSkillGateRules() });
+  // The discovery helper keeps command/quote boundaries even when executable
+  // hints are partial. Neither static discovery nor its fallback grants authority.
+  return inferRaviCommandSkillGate(commandLine, { ...options, rules: readConfiguredSkillGateRules() });
 }
 
 export function evaluateRuntimeToolSkillGate(input: EvaluateRuntimeToolSkillGateInput): SkillGateDecision {
