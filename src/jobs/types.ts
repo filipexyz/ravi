@@ -28,6 +28,15 @@ export function isJobTerminal(status: JobStatus): boolean {
 /** Quem pediu o job. Promoção automática, detach por tempo e pedido explícito contam histórias diferentes. */
 export type JobOrigin = "cli" | "agent" | "promotion" | "detach";
 
+/**
+ * Estado da entrega do desfecho na sessão.
+ *
+ * `pending`: ninguém está entregando. `inflight`: uma publicação foi reservada
+ * e está em voo — ninguém mais publica até ela fechar ou a reserva envelhecer.
+ * `notified`: chegou na fila da sessão.
+ */
+export type JobDeliveryState = "pending" | "inflight" | "notified";
+
 export interface JobRecord {
   id: string;
   sessionName: string | null;
@@ -42,6 +51,12 @@ export interface JobRecord {
   origin: JobOrigin;
   /** Quando o desfecho foi entregue na sessão. Null = ainda não avisado. */
   notifiedAt: number | null;
+  /** Último motivo de falha ao entregar o desfecho; null quando nunca falhou. */
+  deliveryError: string | null;
+  deliveryAttempts: number;
+  deliveryState: JobDeliveryState;
+  /** Quando a entrega em voo foi reservada; null fora de `inflight`. */
+  deliveryClaimedAt: number | null;
   startedAt: number | null;
   finishedAt: number | null;
   createdAt: number;
