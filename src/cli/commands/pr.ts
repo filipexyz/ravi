@@ -63,6 +63,8 @@ ON ERROR
   PR_PUBLICATION_INCOMPLETE: inspect partial.phase and rerun with the same --expect-sha.
   PUBLICATION_TIMEOUT: timeout reports the phase and the objects/bytes already uploaded; rerun with the same
   --expect-sha, objects GitHub already holds are skipped.
+  PUBLICATION_REQUEST_TIMEOUT: one git/GitHub request passed its own limit, not the publication budget; rerun with
+  the same --expect-sha. PUBLICATION_RESPONSE_TOO_LARGE: a response passed the output limit; a rerun does not help.
   FOLLOW_RUNTIME_UNAVAILABLE: update/start Ravi's runtime; no success without its active CI producer.
 OUTPUT
   --json returns publication/attempt IDs, repo/head/base, SHAs, PR URL, watch/trigger IDs and CI snapshot.

@@ -318,6 +318,60 @@ describe("verified Git Data API publication", () => {
     expect(f.calls.filter((call) => call.endpoint.endsWith("/pulls") && call.method === "POST")).toHaveLength(1);
   });
 
+  it("timeout_after_preflight_reports_measured_totals", async () => {
+    f = publicationFixture();
+    const prepared = await preparePublication(f.input(), f.request);
+    f.calls.length = 0;
+    // The deadline ends after the preflight, e.g. during the health probe: the first authorization sees it.
+    const expired = {
+      ...f.options,
+      authorize: () => {
+        throw prError("PUBLICATION_TIMEOUT", "Publication time budget expired.", { retryable: true });
+      },
+    };
+    const error = await executePublication(prepared, f.request, expired).catch((caught) => caught);
+    expect(error).toMatchObject({
+      code: "PUBLICATION_TIMEOUT",
+      details: {
+        retryable: true,
+        timeout: {
+          phase: "preflight",
+          budgetMs: 181_000,
+          objectsUploaded: 0,
+          objectCount: prepared.plan.objectCount,
+          bytesUploaded: 0,
+          uploadBytes: prepared.plan.uploadBytes,
+        },
+      },
+    });
+    expect(error.message).toContain("181s budget in phase preflight, after uploading 0 of 3 objects");
+    expect(mutations()).toHaveLength(0);
+  });
+
+  it("request_timeout_is_not_reported_as_budget_expiry", async () => {
+    f = publicationFixture();
+    let stopped = false;
+    // One upload passes its own subprocess limit while the publication deadline is still far away.
+    const slowTree: GithubRequest = async (endpoint, method, body) => {
+      if (!stopped && method === "POST" && endpoint.endsWith("/git/trees")) {
+        stopped = true;
+        throw prError("PUBLICATION_REQUEST_TIMEOUT", "One gh request exceeded its own 20s limit.", {
+          retryable: true,
+        });
+      }
+      return await f.request(endpoint, method, body);
+    };
+    const prepared = await preparePublication(f.input(), slowTree);
+    const error = await executePublication(prepared, slowTree, f.options).catch((caught) => caught);
+    expect(error).toMatchObject({
+      code: "PUBLICATION_REQUEST_TIMEOUT",
+      details: { retryable: true, partial: { phase: "objects", refPublished: false } },
+    });
+    expect(error.details.timeout).toBeUndefined();
+    expect(error.message).not.toContain("budget in phase");
+    expect(error.message).not.toContain("raises the budget");
+  });
+
   it("recovers successful ref and PR mutations whose responses were lost", async () => {
     f = publicationFixture();
     const lost: GithubRequest = async (endpoint, method, body) => {

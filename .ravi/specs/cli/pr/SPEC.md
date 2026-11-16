@@ -100,6 +100,11 @@ PR reconciliation and follow are internal helpers, not separate public commands.
   GitHub confirmed in this attempt, and the measured totals (null before the
   preflight measured them). A rerun for the same SHA MUST skip objects GitHub
   already holds, so each attempt uploads only what is still missing.
+- `PUBLICATION_TIMEOUT` MUST mean the publication deadline ended, including
+  between the preflight and the first write. A subprocess stopped by its own
+  limit MUST fail with `PUBLICATION_REQUEST_TIMEOUT`, and one stopped by the
+  output cap with `PUBLICATION_RESPONSE_TOO_LARGE`; neither may report the
+  budget as expired nor recommend raising `RAVI_PR_PUBLISH_TIMEOUT_MS`.
 - Advance refs only with `force:false`; re-read before/after. GitHub has no
   expected-old-SHA parameter: this detects races but does not promise CAS.
   A same-SHA ref still requires PR/follow reconciliation and final verification.

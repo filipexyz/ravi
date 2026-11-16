@@ -147,7 +147,24 @@ export async function executePublication(
   },
 ) {
   const { input, plan, git, objects } = prepared;
-  options.authorize();
+  try {
+    options.authorize();
+  } catch (error) {
+    // The budget ended between the preflight and the first write: nothing was uploaded and the totals are known.
+    if (error instanceof ContractError && error.code === "PUBLICATION_TIMEOUT")
+      throw publicationTimeoutError(
+        {
+          phase: "preflight",
+          budgetMs: publicationBudgetMs(plan.uploadBytes),
+          objectsUploaded: 0,
+          objectCount: plan.objectCount,
+          bytesUploaded: 0,
+          uploadBytes: plan.uploadBytes,
+        },
+        error.details,
+      );
+    throw error;
+  }
   const journal = (options.journal ?? openPublicationJournal)(plan, options.provenance);
   const partial = {
     publicationId: journal.publicationId,

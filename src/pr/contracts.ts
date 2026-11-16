@@ -109,8 +109,11 @@ export function publicationRecoveryAction(code: string): string {
       return "Update/start the normal Ravi runtime, then rerun publication with the same expected SHA.";
     case "PR_PUBLICATION_INCOMPLETE":
     case "PUBLICATION_TIMEOUT":
+    case "PUBLICATION_REQUEST_TIMEOUT":
     case "PUBLICATION_AUDIT_FAILED":
       return "Inspect partial publication state and rerun the same publication with --expect-sha to reconcile.";
+    case "PUBLICATION_RESPONSE_TOO_LARGE":
+      return "Inspect the oversized git or GitHub response; a rerun alone hits the same output limit.";
     case "WORKTREE_DIRTY":
       return "Commit the intended changes before publishing the branch.";
     case "PR_CONFLICT":
