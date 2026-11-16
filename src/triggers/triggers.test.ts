@@ -9,7 +9,13 @@ import {
   sourceFromSessionEntry,
 } from "./runner.js";
 import { findTriggerTopicCatalogEntry } from "./topic-catalog.js";
-import { dbCreateTrigger, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTrigger } from "./triggers-db.js";
+import {
+  dbCreateTrigger,
+  dbGetTrigger,
+  dbRecordTriggerFilterRejects,
+  dbUpdateTrigger,
+  serializeReplySource,
+} from "./triggers-db.js";
 
 let stateDir: string | null = null;
 
@@ -21,6 +27,32 @@ describe("triggers native automation support", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("uses the persisted destination projection for channel context metadata on create and update", () => {
+    const source = {
+      canonicalChatId: "canonical-chat",
+      chatId: "C123",
+      instanceId: "slack-instance",
+      accountId: "slack-account",
+      channel: "slack",
+    };
+    const destination = { channel: "slack", accountId: "slack-account", chatId: "C123" };
+    const trigger = dbCreateTrigger({
+      name: "destination",
+      topic: "test.destination",
+      message: "check",
+      replySource: source,
+    });
+    expect(trigger.replySource).toEqual(destination);
+    expect(serializeReplySource(source)).toBe(serializeReplySource(trigger.replySource));
+
+    const updated = { threadId: "123.456", ...source, chatId: "C456" };
+    dbUpdateTrigger(trigger.id, { replySource: updated });
+    const stored = dbGetTrigger(trigger.id)!;
+    expect(stored.replySource).toEqual({ ...destination, chatId: "C456", threadId: "123.456" });
+    expect(serializeReplySource(updated)).toBe(serializeReplySource(stored.replySource));
+    expect(serializeReplySource(source)).not.toBe(serializeReplySource(stored.replySource));
   });
 
   it("catalogs native Slack reaction_added as a producer of ravi.inbound.reaction", () => {

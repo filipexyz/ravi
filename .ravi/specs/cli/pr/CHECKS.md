@@ -22,6 +22,11 @@
   upload/ref/PR/follow recovery. No production repo/ref is mutated by tests.
 - `bun test src/hooks/gh-pr-publish.test.ts src/hooks/gh-watch.test.ts`
   verifies PR reuse/ready, conflicts and existing follow reconciliation.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/hooks/gh-pr-publish.test.ts src/triggers/triggers.test.ts`
+  verifies publication and reconciliation from a channel context carrying
+  `instanceId`/`canonicalChatId` against actual trigger persistence. Only the
+  existing destination fields are stored. Real destination or repository/PR
+  mismatches and missing destinations still fail before the runtime probe.
 - `bun test src/triggers/__tests__/runner-delete.test.ts src/watch/local-runner.test.ts`
   verifies actual loaded trigger fingerprints versus unconsumed DB changes,
   stop state and local CI producer behavior.

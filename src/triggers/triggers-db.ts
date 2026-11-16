@@ -69,7 +69,7 @@ function parseReplySource(raw: string | null): TriggerReplySource | undefined {
   return undefined;
 }
 
-function serializeReplySource(source: TriggerReplySource | undefined): string | null {
+export function serializeReplySource(source: TriggerReplySource | undefined): string | null {
   if (!source) return null;
   if (!source.channel || !source.accountId || !source.chatId) return null;
   const payload: TriggerReplySource = {
