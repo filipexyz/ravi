@@ -461,7 +461,10 @@ describe("session adapter bus", () => {
       expect(errors[1]?.message).toContain(`${TEST_ADAPTER_ID}.supervisor`);
       expect(calls).toContain(COMMAND_TOPIC);
       expect(calls).toContain(otherTopic);
-      expect(calls).toEqual([COMMAND_TOPIC, otherTopic, "supervisor"]);
+      // Equal created_at timestamps use subscription_id order. Both siblings
+      // must close exactly once before the supervisor, in either DB order.
+      expect(calls.slice(0, -1).sort()).toEqual([COMMAND_TOPIC, otherTopic].sort());
+      expect(calls.at(-1)).toBe("supervisor");
       expect(bus.health()).toEqual({ running: false, adapters: 1 });
       calls.length = 0;
       await expect(bus.stop()).rejects.toThrow("Session adapter shutdown failed");
