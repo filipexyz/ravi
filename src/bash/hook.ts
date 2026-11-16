@@ -19,7 +19,10 @@ import {
   parseBashCommand,
   stripShellQuoting,
   UNCONDITIONAL_BLOCKS,
+  type ShellOutputRedirect,
 } from "./parser.js";
+import { collectShellLevels } from "./shell-structure.js";
+import { checkExecutablePath, isInterpreterName, isShellName } from "./executable-path.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext } from "../permissions/scope.js";
 import {
@@ -261,6 +264,21 @@ function checkEnvSpoofing(rawCommand: string): { allowed: boolean; reason?: stri
   return { allowed: true };
 }
 
+/**
+ * The text the shell runs, level by level: substitutions are checked as their
+ * own text and a quoted here-document body (data) is left out. Falls back to
+ * the raw command when the structure cannot be analyzed.
+ */
+function shellTextForIdentityChecks(command: string): string {
+  try {
+    return collectShellLevels(command)
+      .map((level) => level.text)
+      .join("\n");
+  } catch {
+    return command;
+  }
+}
+
 /** Redirect targets that discard output or send it back to the terminal instead of writing a file. */
 const HARMLESS_REDIRECT_TARGETS = new Set(["/dev/null", "/dev/stdout", "/dev/stderr"]);
 
@@ -302,11 +320,27 @@ export interface BashPermissionContext {
   cwd?: string;
 }
 
+/**
+ * Named shell-policy refusals. `unknown_parse`: the analyzer could not model the
+ * command. `shell_launcher`: a launcher (xargs, find -exec, env, timeout, ...)
+ * would start a shell or interpreter. `untrusted_executable_path`: the real
+ * binary is outside trusted directories. `execution_override`: the command
+ * changes which program runs (PATH, loader, git hooks/config).
+ */
+export type BashSyntaxRule =
+  | "restricted_syntax"
+  | "unparseable_command"
+  | "indirect_execution"
+  | "unknown_parse"
+  | "shell_launcher"
+  | "untrusted_executable_path"
+  | "execution_override";
+
 export interface BashPermissionDecision {
   allowed: boolean;
   reason?: string;
   denialType?: "env_spoofing" | "executable" | "session_scope" | "shell_syntax";
-  syntaxRule?: "restricted_syntax" | "unparseable_command" | "indirect_execution";
+  syntaxRule?: BashSyntaxRule;
   toolName?: string | null;
   deniedCapabilities?: Array<{ relation: string; objectType: string; objectId: string }>;
 }
@@ -415,6 +449,126 @@ export function canExecuteArbitraryShell(ctx: BashPermissionContext): boolean {
   return canWithBashContext(ctx, "execute", "executable", "*");
 }
 
+/**
+ * Environment variables that change which program runs or make a program run
+ * other code: the search path, dynamic loaders, shell startup files, pagers,
+ * editors and git's command hooks. Assigning them is execution authority.
+ */
+const EXECUTION_ENV_NAMES = new Set([
+  "PATH",
+  "BASH_ENV",
+  "ENV",
+  "SHELLOPTS",
+  "BASHOPTS",
+  "PS4",
+  "PROMPT_COMMAND",
+  "IFS",
+  "CDPATH",
+  "PAGER",
+  "MANPAGER",
+  "EDITOR",
+  "VISUAL",
+  "LESSOPEN",
+  "LESSCLOSE",
+  "NODE_OPTIONS",
+  "BUN_OPTIONS",
+  "PERL5OPT",
+  "PERL5LIB",
+  "PYTHONSTARTUP",
+  "PYTHONPATH",
+  "RUBYOPT",
+  "SSH_ASKPASS",
+  "SUDO_ASKPASS",
+  "GIT_PAGER",
+  "GIT_EDITOR",
+  "GIT_SEQUENCE_EDITOR",
+  "GIT_SSH",
+  "GIT_SSH_COMMAND",
+  "GIT_EXTERNAL_DIFF",
+  "GIT_ASKPASS",
+  "GIT_EXEC_PATH",
+  "GIT_TEMPLATE_DIR",
+  "GIT_PROXY_COMMAND",
+  "GIT_CONFIG",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_PARAMETERS",
+]);
+
+function isExecutionEnvName(name: string): boolean {
+  return EXECUTION_ENV_NAMES.has(name) || /^(?:LD_|DYLD_|GIT_CONFIG_(?:KEY|VALUE)_)/.test(name);
+}
+
+/** `git -c` keys that cannot make git run a program. Every other key needs arbitrary execution. */
+const SAFE_GIT_CONFIG_KEY =
+  /^(?:color\.[\w.-]+|user\.(?:name|email)|core\.(?:quotepath|abbrev|autocrlf|safecrlf)|safe\.directory|advice\.[\w.-]+|init\.defaultbranch|log\.(?:date|decorate|abbrevcommit)|column\.ui|diff\.(?:noprefix|renames|algorithm)|pull\.rebase|push\.default|commit\.gpgsign|tag\.gpgsign|merge\.conflictstyle)$/i;
+
+/** git subcommands/options that hand git a program or shell string to run. */
+const GIT_EXECUTION_OPTIONS: Record<string, RegExp> = {
+  rebase: /^(?:-x|--exec(?:=.*)?|-x.+)$/,
+  difftool: /^(?:-x|--extcmd(?:=.*)?)$/,
+  fetch: /^(?:--upload-pack(?:=.*)?)$/,
+  pull: /^(?:--upload-pack(?:=.*)?)$/,
+  clone: /^(?:-u|--upload-pack(?:=.*)?|--template(?:=.*)?)$/,
+  "ls-remote": /^(?:--upload-pack(?:=.*)?)$/,
+  push: /^(?:--receive-pack(?:=.*)?|--exec(?:=.*)?)$/,
+  archive: /^(?:--exec(?:=.*)?)$/,
+  grep: /^(?:-O.*|--open-files-in-pager(?:=.*)?)$/,
+};
+const GIT_EXECUTING_SUBCOMMANDS: Record<string, (argv: Array<string | null>) => boolean> = {
+  bisect: (argv) => argv.includes("run"),
+  submodule: (argv) => argv.includes("foreach"),
+  "filter-branch": () => true,
+  "filter-repo": () => true,
+};
+
+/** Why this git invocation can run an arbitrary program, if it can. */
+function gitExecutionOverride(argv: Array<string | null>): string | undefined {
+  let index = 0;
+  while (index < argv.length) {
+    const arg = argv[index];
+    if (arg === null) return "git with a dynamic global option";
+    if (arg === "-c") {
+      const setting = argv[index + 1];
+      const key = setting?.split("=")[0];
+      if (!key || !SAFE_GIT_CONFIG_KEY.test(key)) return `git -c ${key ?? "<dynamic>"} can run a program`;
+      index += 2;
+      continue;
+    }
+    if (arg.startsWith("--config-env") || arg.startsWith("--exec-path")) {
+      return `git ${arg.split("=")[0]} can run a program`;
+    }
+    if (["-C", "--git-dir", "--work-tree", "--namespace"].includes(arg)) {
+      index += 2;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      index++;
+      continue;
+    }
+    break;
+  }
+  const subcommand = argv[index];
+  if (typeof subcommand !== "string") return undefined;
+  const rest = argv.slice(index + 1);
+  if (GIT_EXECUTING_SUBCOMMANDS[subcommand]?.(rest)) return `git ${subcommand} runs commands it is given`;
+  const options = GIT_EXECUTION_OPTIONS[subcommand];
+  const offending = options ? rest.find((arg) => arg !== null && options.test(arg)) : undefined;
+  return offending ? `git ${subcommand} ${offending.split("=")[0]} runs a program it is given` : undefined;
+}
+
+function shellSyntaxDenial(syntaxRule: BashSyntaxRule, reason: string): BashPermissionDecision {
+  return { allowed: false, reason, denialType: "shell_syntax", syntaxRule };
+}
+
+function unknownParseDenial(detail: string): BashPermissionDecision {
+  return shellSyntaxDenial(
+    "unknown_parse",
+    `Ravi could not analyze this command (unknown_parse): ${detail}. Commands the guard cannot model are refused; split it into simpler commands.`,
+  );
+}
+
 function checkExecutablePermissionsForContext(command: string, ctx: BashPermissionContext): BashPermissionDecision {
   // The restricted parser bounds named executable grants. It cannot make an
   // already-authorized arbitrary host process safer by refusing its shell form.
@@ -425,22 +579,52 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
   // substitutions. stripShellQuoting is for identity text checks, not syntax.
   const patternCheck = checkDangerousPatterns(command);
   if (!patternCheck.safe) {
-    return { allowed: false, reason: patternCheck.reason, denialType: "shell_syntax", syntaxRule: "restricted_syntax" };
+    if (patternCheck.code === "unknown_parse") return unknownParseDenial(patternCheck.reason ?? "unsupported syntax");
+    return shellSyntaxDenial("restricted_syntax", patternCheck.reason ?? "Command uses restricted shell syntax");
   }
 
+  // Analysis: what runs, from where. Authority is decided below, never in the parser.
   const parsed = parseBashCommand(command);
   if (!parsed.success) {
-    return {
-      allowed: false,
-      reason: parsed.error || "Failed to parse command",
-      denialType: "shell_syntax",
-      syntaxRule: "unparseable_command",
-    };
+    if (parsed.code === "unknown_parse") return unknownParseDenial(parsed.error ?? "unsupported syntax");
+    return shellSyntaxDenial("unparseable_command", parsed.error || "Failed to parse command");
   }
+  const commands = parsed.commands ?? [];
 
   const BUILTIN_EXECUTABLES = new Set(["ravi"]);
   const blocked: string[] = [];
 
+  // 1. Executable identity: the real binary, not the basename the agent typed.
+  //    `/tmp/p/git` is checked as the file it is, before its name means anything.
+  const changesDirectory = commands.some((analyzed) => ["cd", "pushd", "popd"].includes(analyzed.name));
+  for (const analyzed of commands) {
+    const pathCheck = checkExecutablePath(analyzed.word, { cwd: ctx.cwd, changesDirectory });
+    if (!pathCheck.ok) {
+      return shellSyntaxDenial(
+        pathCheck.rule,
+        `Restricted shell policy does not allow this executable: ${pathCheck.reason}.`,
+      );
+    }
+  }
+
+  // 2. Launchers: a shell or interpreter behind xargs/find -exec/env/timeout/...
+  //    is arbitrary execution, whatever grants the launcher and payload have.
+  for (const analyzed of commands) {
+    if (analyzed.launchesShellString) {
+      return shellSyntaxDenial(
+        "shell_launcher",
+        `Restricted shell policy does not allow ${analyzed.name}: ${analyzed.launchesShellString}. This needs arbitrary execution authority (execute:executable:*).`,
+      );
+    }
+    if (analyzed.origin === "launcher" && (isShellName(analyzed.name) || isInterpreterName(analyzed.name))) {
+      return shellSyntaxDenial(
+        "shell_launcher",
+        `Restricted shell policy does not allow ${analyzed.launcher} to launch the interpreter ${analyzed.name}. This needs arbitrary execution authority (execute:executable:*).`,
+      );
+    }
+  }
+
+  // 3. Shells, eval and source anywhere in the command.
   for (const exec of parsed.executables) {
     if (UNCONDITIONAL_BLOCKS.has(exec)) {
       blocked.push(exec);
@@ -448,17 +632,34 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
   }
 
   if (blocked.length > 0) {
-    return {
-      allowed: false,
-      reason: `Restricted shell policy does not allow indirect execution through: ${blocked.join(", ")}`,
-      denialType: "shell_syntax",
-      syntaxRule: "indirect_execution",
-    };
+    return shellSyntaxDenial(
+      "indirect_execution",
+      `Restricted shell policy does not allow indirect execution through: ${blocked.join(", ")}`,
+    );
+  }
+
+  // 4. Settings that change which program runs: PATH, loaders, git config/hooks.
+  const override = (parsed.assignments ?? []).find(isExecutionEnvName);
+  if (override) {
+    return shellSyntaxDenial(
+      "execution_override",
+      `Restricted shell policy does not allow setting ${override}: it changes which program runs. This needs arbitrary execution authority (execute:executable:*).`,
+    );
+  }
+  for (const analyzed of commands) {
+    if (analyzed.name !== "git") continue;
+    const gitOverride = gitExecutionOverride(analyzed.argv);
+    if (gitOverride) {
+      return shellSyntaxDenial(
+        "execution_override",
+        `Restricted shell policy does not allow ${gitOverride}. This needs arbitrary execution authority (execute:executable:*).`,
+      );
+    }
   }
 
   // An allowed executable plus `> file` is a file write: `ravi crypto status > ~/.ravi/crypto.db`
   // would wipe the ledger. Restricted agents may only discard output unless they can write files anyway.
-  const redirects = analyzeOutputRedirects(command, ctx.cwd);
+  const redirects = analyzeRedirectsAcrossLevels(command, ctx.cwd, changesDirectory);
   if (redirects.error) {
     return {
       allowed: false,
@@ -517,6 +718,34 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
   }
 
   return { allowed: true };
+}
+
+/**
+ * Output redirects at every level: a `> file` inside `$(...)` or a here-doc
+ * substitution writes a file too. Nested levels start in the outer working
+ * directory, so a directory change anywhere makes their targets unknowable.
+ */
+function analyzeRedirectsAcrossLevels(
+  command: string,
+  cwd: string | undefined,
+  changesDirectory: boolean,
+): { writes: ShellOutputRedirect[]; error?: string } {
+  let levels: Array<{ text: string; depth: number }>;
+  try {
+    levels = collectShellLevels(command);
+  } catch (error) {
+    return { writes: [], error: error instanceof Error ? error.message : "Cannot analyze shell command" };
+  }
+  const writes: ShellOutputRedirect[] = [];
+  for (const level of levels) {
+    const result = analyzeOutputRedirects(level.text, cwd);
+    writes.push(...result.writes);
+    if (result.error) return { writes, error: result.error };
+    if (level.depth > 0 && result.writes.length > 0 && changesDirectory) {
+      return { writes, error: "Cannot resolve output redirects inside a substitution after a directory change" };
+    }
+  }
+  return { writes };
 }
 
 function canAccessSessionWithBashContext(ctx: BashPermissionContext, targetNameOrKey: string): boolean {
@@ -618,7 +847,7 @@ function recordAndEmitBashPermissionDenial(
 
 export function evaluateBashPermission(command: string, ctx: BashPermissionContext = {}): BashPermissionDecision {
   const isSuperadmin = isSuperadminContext(ctx);
-  const spoofResult = isSuperadmin ? { allowed: true } : checkEnvSpoofing(command);
+  const spoofResult = isSuperadmin ? { allowed: true } : checkEnvSpoofing(shellTextForIdentityChecks(command));
   if (!spoofResult.allowed) {
     return {
       allowed: false,

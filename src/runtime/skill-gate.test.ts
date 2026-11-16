@@ -1267,9 +1267,12 @@ describe("CI840 quote-aware command discovery", () => {
       toolContext: {},
       onSkillGatePersisted,
     });
-    const decision = await services.authorizeCommandExecution({ command: `printf '%s' "$(ravi bases list)"` });
+    // Substitutions are analyzed now; a shell inside one still needs arbitrary execution.
+    const decision = await services.authorizeCommandExecution({
+      command: `printf '%s' "$(sh -c 'ravi bases list')"`,
+    });
     expect(decision.approved).toBe(false);
-    expect(decision.reason).toContain("command substitution");
+    expect(decision.reason).toContain("indirect execution through: sh");
     expect(onSkillGatePersisted).not.toHaveBeenCalled();
   });
 });

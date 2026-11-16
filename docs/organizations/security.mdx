@@ -127,7 +127,7 @@ ravi agents permissions main full-access --execute   # applies it
 ravi agents permissions support chat-only            # reduces authority, applies at once
 ```
 
-Shell commands get one more check. Shells, string execution, command substitution and inline code for `python`, `node`, `perl`, `ruby` and `php` are always blocked, under every profile. `bun -e` is not blocked. See [The Bash check](/guides/permissions#the-bash-check).
+Shell commands get one more check. Unless the agent can run any executable, every command in the line needs its own grant, including the ones inside `$(...)`. Shells, string execution, shells started through `xargs`, `find -exec`, `env` or `timeout`, and inline code for `python`, `node`, `bun`, `perl`, `ruby` and `php` are blocked. Ravi checks the real path of each binary, not its name. See [The Bash check](/guides/permissions#the-bash-check).
 
 ## Approvals
 

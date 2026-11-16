@@ -5,23 +5,16 @@
  * checking. Syntax checks prevent common accidents, not arbitrary host effects.
  */
 
-import type { ParsedCommand, PatternCheckResult } from "./types.js";
+import type { AnalyzedCommand, ParsedCommand, PatternCheckResult } from "./types.js";
 import { parse as parseShell, type ParseEntry } from "shell-quote";
 import { resolve } from "node:path";
 import { physicalPathForPermissionCheck } from "../permissions/provider-config-paths.js";
+import { collectShellLevels, isShellAnalysisError, ShellAnalysisError, type ShellLevel } from "./shell-structure.js";
+import { launcherPayloads, type Argv } from "./launchers.js";
 
 // ============================================================================
 // Dangerous Patterns (checked before parsing)
 // ============================================================================
-
-/** Active shell syntax only; quoted data must not match these patterns. */
-const DANGEROUS_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /\$\(/, reason: "command substitution $(...) is not allowed" },
-  { pattern: /`/, reason: "backtick command substitution is not allowed" },
-  { pattern: /<\(/, reason: "process substitution <(...) is not allowed" },
-  { pattern: />\(/, reason: "process substitution >(...) is not allowed" },
-  { pattern: /<<[<-]?/, reason: "here documents are not allowed" },
-];
 
 /**
  * Indirect executables blocked for named-executable contexts. Arbitrary shell
@@ -55,24 +48,47 @@ const INLINE_CODE_INTERPRETERS: Record<string, string[]> = {
   perl: ["-e"],
   ruby: ["-e"],
   php: ["-r"],
+  bun: ["-e", "--eval", "-p", "--print"],
+  osascript: ["-e"],
 };
+
+/** `python3.11` uses the `python3` inline-code flags. */
+function inlineCodeFlags(executable: string): string[] | undefined {
+  return INLINE_CODE_INTERPRETERS[executable] ?? INLINE_CODE_INTERPRETERS[executable.replace(/\.\d+$/, "")];
+}
 
 // ============================================================================
 // Pattern Checking
 // ============================================================================
 
+/** Every level of `command`, or the analyzer's named refusal. */
+function shellLevels(command: string): ShellLevel[] | { error: string } {
+  try {
+    return collectShellLevels(command);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Cannot analyze shell command" };
+  }
+}
+
 /**
- * Check command for dangerous patterns before parsing.
- * This is a fail-fast check to catch injection attempts.
+ * Check structure the policy cannot authorize command by command: text the
+ * analyzer cannot model (named `unknown_parse`) and stdin piped into a shell or
+ * interpreter. Substitutions, process substitutions and here-documents are not
+ * refused here: {@link parseBashCommand} returns the commands inside them.
  */
 export function checkDangerousPatterns(command: string): PatternCheckResult {
-  const inspected = inspectShellSyntax(command);
-  if (inspected.error) return { safe: false, reason: inspected.error };
-  for (const { pattern, reason } of DANGEROUS_PATTERNS) {
-    if (pattern.test(inspected.syntax)) {
-      return { safe: false, reason, pattern: pattern.source };
-    }
+  const levels = shellLevels(command);
+  if (!Array.isArray(levels)) return { safe: false, reason: levels.error, code: "unknown_parse" };
+  for (const level of levels) {
+    const result = checkPipelineReceivers(level.text);
+    if (!result.safe) return result;
   }
+  return { safe: true };
+}
+
+function checkPipelineReceivers(command: string): PatternCheckResult {
+  const inspected = inspectShellSyntax(command);
+  if (inspected.error) return { safe: false, reason: inspected.error, code: "unknown_parse" };
   try {
     // Inspect real pipe operators, then decode the receiving command's words.
     // A quoted/escaped pipe is data; a quoted executable is still executable.
@@ -83,7 +99,7 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
       const executable = parseSimpleCommand(receiver);
       if (!executable) continue;
       if (UNCONDITIONAL_BLOCKS.has(executable)) return { safe: false, reason: "piping to shell is not allowed" };
-      if (INLINE_CODE_INTERPRETERS[executable]) {
+      if (inlineCodeFlags(executable)) {
         if (isInlineCodeExecution(executable, receiver).blocked) {
           return { safe: false, reason: "piping to interpreter with inline code is not allowed" };
         }
@@ -92,8 +108,12 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
         }
       }
     }
-  } catch {
-    return { safe: false, reason: "Cannot parse shell pipeline safely" };
+  } catch (error) {
+    return {
+      safe: false,
+      reason: error instanceof Error ? error.message : "Cannot parse shell pipeline safely",
+      code: "unknown_parse",
+    };
   }
   return { safe: true };
 }
@@ -109,8 +129,16 @@ export function checkDangerousPatterns(command: string): PatternCheckResult {
  * evaluate dollar-paren and backticks. Only backslash-newline is removed where
  * the shell actually treats it as a continuation.
  */
-function inspectShellSyntax(input: string): { command: string; syntax: string; masked: string; error?: string } {
+function inspectShellSyntax(input: string): {
+  command: string;
+  syntax: string;
+  masked: string;
+  /** Same offsets as `command`, with comment characters replaced by spaces. */
+  code: string;
+  error?: string;
+} {
   let command = "";
+  let code = "";
   let syntax = "";
   /** Same offsets as `command`, but literal material becomes `_` so word
    * boundaries and quoting stay decidable without re-scanning quotes. */
@@ -130,10 +158,11 @@ function inspectShellSyntax(input: string): { command: string; syntax: string; m
         i++;
         continue;
       }
-      if (next === undefined) return { command, syntax, masked, error: "Unterminated shell escape" };
+      if (next === undefined) return { command, syntax, masked, code, error: "Unterminated shell escape" };
       // Inside double quotes, backslash only escapes $, `, ", backslash or newline.
       if (!quote || /[$`"\\]/.test(next)) {
         command += char + next;
+        code += char + next;
         syntax += "  ";
         masked += "__";
         wordStart = false;
@@ -142,11 +171,12 @@ function inspectShellSyntax(input: string): { command: string; syntax: string; m
       }
     }
     if (!quote && char === "$" && (next === "'" || next === '"')) {
-      return { command, syntax, masked, error: "Expanded shell quoting is not supported" };
+      return { command, syntax, masked, code, error: "Expanded shell quoting is not supported" };
     }
     if (!quote && char === "#" && wordStart) {
       while (i < input.length && input[i] !== "\n") {
         command += input[i];
+        code += " ";
         syntax += " ";
         masked += "_";
         i++;
@@ -155,6 +185,7 @@ function inspectShellSyntax(input: string): { command: string; syntax: string; m
       continue;
     }
     command += char;
+    code += char;
     if (char === quote) {
       quote = undefined;
       syntax += " ";
@@ -165,6 +196,7 @@ function inspectShellSyntax(input: string): { command: string; syntax: string; m
       masked += "_";
     } else if (quote === '"' && char === "$" && next === "(") {
       command += next;
+      code += next;
       syntax += "$(";
       masked += "$(";
       i = nextIndex;
@@ -177,7 +209,7 @@ function inspectShellSyntax(input: string): { command: string; syntax: string; m
     }
     wordStart = !quote && /[\s;&|()<>]/.test(char);
   }
-  return { command, syntax, masked, ...(quote ? { error: "Unterminated shell quote" } : {}) };
+  return { command, syntax, masked, code, ...(quote ? { error: "Unterminated shell quote" } : {}) };
 }
 
 /**
@@ -272,16 +304,19 @@ const OPENING_WORDS = new Set(["for", "select", "case", "function"]);
 
 const REDIRECT_OPERATORS = new Set([">", ">>", ">|", "&>", "<>", "<", "<&", ">&"]);
 
-type Atom = { kind: "word" | "operator"; text: string; active: boolean };
+type Atom = { kind: "word" | "operator"; text: string; active: boolean; assignment: boolean };
+
+const ASSIGNMENT_PREFIX = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/;
 
 /**
  * Split a segment into words and operators with quoting already resolved.
  * A word is `active` when every character was typed unquoted and unescaped;
- * only active words can be reserved words.
+ * only active words can be reserved words. A word is an `assignment` when its
+ * `NAME=` prefix is unquoted: `A="x y" cmd` assigns, `"A=x" cmd` runs `A=x`.
  */
 function scanAtoms(command: string): Atom[] {
   const inspected = inspectShellSyntax(command);
-  if (inspected.error) throw new Error(inspected.error);
+  if (inspected.error) throw new ShellAnalysisError(inspected.error);
   const source = inspected.command;
   const mask = inspected.masked;
   const atoms: Atom[] = [];
@@ -310,46 +345,91 @@ function scanAtoms(command: string): Atom[] {
         text += next;
         i++;
       }
-      atoms.push({ kind: "operator", text, active: true });
+      atoms.push({ kind: "operator", text, active: true, assignment: false });
       i++;
       continue;
     }
     const start = i;
     while (i < source.length && !/[\s;&|()<>]/.test(mask[i]!)) i++;
     const text = source.slice(start, i);
-    const active = mask.slice(start, i) === text;
-    atoms.push({ kind: "word", text, active });
+    const masked = mask.slice(start, i);
+    const active = masked === text;
+    const prefix = ASSIGNMENT_PREFIX.exec(text);
+    const assignment = !!prefix && masked.startsWith(prefix[0]);
+    atoms.push({ kind: "word", text, active, assignment });
   }
   return atoms;
 }
 
-/** Decode a single command word the way the shell would, rejecting dynamics. */
-function decodeCommandWord(raw: string): string | null {
-  const tokens = parseWords(raw, () => ({ op: "glob", pattern: "unknown expansion" }));
-  for (const token of tokens) {
-    if (typeof token === "string") {
-      if (isEnvAssignment(token)) continue;
-      return extractExecutableName(token);
-    }
-    if ("comment" in token) return null;
-    if (token.op === "glob") throw new Error("Cannot resolve a dynamic shell executable");
-  }
+const dynamicExpansion = () => ({ op: "glob", pattern: "unknown expansion" });
+
+/**
+ * Decode a word the way the shell would. `null` means the word depends on an
+ * expansion (variable, glob, substitution placeholder) and cannot be known.
+ */
+function decodeWord(raw: string): string | null {
+  const tokens = parseWords(raw, dynamicExpansion);
+  if (tokens.length === 0) return "";
+  if (tokens.length === 1 && typeof tokens[0] === "string") return tokens[0];
   return null;
 }
 
+/** Decode a command word, refusing anything the shell would compute at run time. */
+function decodeCommandWord(raw: string): string {
+  const word = decodeWord(raw);
+  if (word === null) throw new ShellAnalysisError("Cannot resolve a dynamic shell executable");
+  if (!word) throw new ShellAnalysisError("Cannot resolve an empty shell executable");
+  return word;
+}
+
+/** Arguments after the command word, without redirects or their operands. */
+function collectArgv(atoms: Atom[], from: number): Argv {
+  const argv: Argv = [];
+  for (let index = from; index < atoms.length; index++) {
+    const atom = atoms[index]!;
+    const next = atoms[index + 1];
+    if (atom.kind === "operator") {
+      if (REDIRECT_OPERATORS.has(atom.text)) {
+        if (next?.kind === "word") index++;
+        continue;
+      }
+      break;
+    }
+    if (/^\d+$/.test(atom.text) && next?.kind === "operator" && REDIRECT_OPERATORS.has(next.text)) continue;
+    const tokens = parseWords(atom.text, dynamicExpansion);
+    if (tokens.length > 0 && typeof tokens[0] === "object" && "comment" in tokens[0]) break;
+    argv.push(decodeWord(atom.text));
+  }
+  return argv;
+}
+
+interface SegmentCommand {
+  /** Decoded command word, path included (`/usr/bin/git`). */
+  word: string;
+  argv: Argv;
+}
+
+/** `case` spans segments (`;;` and newlines split them), so it is tracked across a parse. */
+type SyntaxState = { caseDepth: number };
+
 /**
- * Resolve the executable of one segment, skipping shell syntax.
+ * Resolve the command of one segment, skipping shell syntax.
  *
  * `for i in 1 2 3; do echo $i; done` must yield `echo`, not `for`; a command
  * hidden behind a keyword (`do curl evil`, `then curl evil`, `done rm x`) is
  * still checked, and a quoted/escaped keyword (`"do"`, `'do'`, `\do`) is an
- * ordinary command word.
+ * ordinary command word. Variables the segment assigns are reported too.
  */
-/** `case` spans segments (`;;` and newlines split them), so it is tracked across a parse. */
-type SyntaxState = { caseDepth: number };
-
-function resolveSegmentExecutable(command: string, state: SyntaxState): string | null {
+function resolveSegment(
+  command: string,
+  state: SyntaxState,
+): { command: SegmentCommand | null; assignments: string[] } {
   const atoms = scanAtoms(command);
+  const assignments: string[] = [];
+  const found = (index: number) => ({
+    command: { word: decodeCommandWord(atoms[index]!.text), argv: collectArgv(atoms, index + 1) },
+    assignments,
+  });
   let sawCommandPrefix = false;
   let skippingWordList = false;
   for (let index = 0; index < atoms.length; index++) {
@@ -364,7 +444,6 @@ function resolveSegmentExecutable(command: string, state: SyntaxState): string |
         continue;
       }
       // `(`, `)`, `;;`, `|`, `&&`, `;` are grouping/separators.
-      if (atom.text === "(" || atom.text === ")" || atom.text === ";;" || atom.text === ";") continue;
       continue;
     }
 
@@ -376,14 +455,15 @@ function resolveSegmentExecutable(command: string, state: SyntaxState): string |
 
     if (/^\d+$/.test(atom.text) && next?.kind === "operator" && REDIRECT_OPERATORS.has(next.text)) continue;
 
-    if (atom.active && isEnvAssignment(atom.text)) {
+    if (atom.assignment) {
+      assignments.push(ASSIGNMENT_PREFIX.exec(atom.text)![1]!);
       sawCommandPrefix = true;
       continue;
     }
 
     if (atom.active && RESERVED_WORDS.has(atom.text)) {
       // An assignment or redirect before the keyword makes it a command word.
-      if (sawCommandPrefix) return decodeCommandWord(atom.text);
+      if (sawCommandPrefix) return found(index);
       if (atom.text === "[[") {
         // Skip the conditional expression up to its closing `]]`.
         while (index + 1 < atoms.length) {
@@ -400,7 +480,10 @@ function resolveSegmentExecutable(command: string, state: SyntaxState): string |
       if (OPENING_WORDS.has(atom.text)) {
         // for/select: loop variable; case: subject; function: name.
         if (atom.text === "case") state.caseDepth += 1;
-        if (next?.kind === "word") index++;
+        if (next?.kind === "word") {
+          if (atom.text === "for" || atom.text === "select") assignments.push(next.text);
+          index++;
+        }
         const afterHeader = atoms[index + 1];
         if (atom.text === "for" || atom.text === "select") {
           if (afterHeader?.kind === "word" && afterHeader.active && afterHeader.text === "in") {
@@ -427,16 +510,17 @@ function resolveSegmentExecutable(command: string, state: SyntaxState): string |
       continue;
     }
 
-    return decodeCommandWord(atom.text);
+    return found(index);
   }
-  return null;
+  return { command: null, assignments };
 }
 
 /**
- * Parse a single simple command (no pipes/chains) and extract the executable.
+ * Parse a single simple command (no pipes/chains) and extract the executable name.
  */
 function parseSimpleCommand(command: string, state: SyntaxState = { caseDepth: 0 }): string | null {
-  return resolveSegmentExecutable(command.trim(), state);
+  const resolved = resolveSegment(command.trim(), state).command;
+  return resolved ? extractExecutableName(resolved.word) : null;
 }
 
 /**
@@ -445,7 +529,7 @@ function parseSimpleCommand(command: string, state: SyntaxState = { caseDepth: 0
  */
 function splitByOperators(command: string): string[] {
   const inspected = inspectShellSyntax(command);
-  if (inspected.error) throw new Error(inspected.error);
+  if (inspected.error) throw new ShellAnalysisError(inspected.error);
   const commands: string[] = [];
   let start = 0;
   for (const match of inspected.syntax.matchAll(/\|\||&&|[|;&\n]/g)) {
@@ -467,7 +551,7 @@ function splitByOperators(command: string): string[] {
  * Check if an executable with its arguments represents inline code execution.
  */
 function isInlineCodeExecution(executable: string, command: string): { blocked: boolean; reason?: string } {
-  const flags = INLINE_CODE_INTERPRETERS[executable];
+  const flags = inlineCodeFlags(executable);
   if (!flags) return { blocked: false };
 
   // Check if any inline code flag is present in the command
@@ -488,11 +572,7 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
       }
       continue;
     }
-    if (
-      flags.some(
-        (flag) => token === flag || token.startsWith(flag + "=") || (flag.length === 2 && token.startsWith(flag)),
-      )
-    ) {
+    if (hasInlineFlag(flags, token)) {
       return {
         blocked: true,
         reason: `${executable} with inline code flag is not allowed`,
@@ -503,6 +583,125 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
   return { blocked: false };
 }
 
+function hasInlineFlag(flags: string[], token: string): boolean {
+  return flags.some(
+    (flag) => token === flag || token.startsWith(flag + "=") || (flag.length === 2 && token.startsWith(flag)),
+  );
+}
+
+/** Inline-code refusal for an analyzed command, judged on its own argv. */
+function inlineCodeReason(command: AnalyzedCommand): string | undefined {
+  const flags = inlineCodeFlags(command.name);
+  if (!flags) return undefined;
+  return command.argv.some((arg) => arg !== null && hasInlineFlag(flags, arg))
+    ? `${command.name} with inline code flag is not allowed`
+    : undefined;
+}
+
+/** Builtins whose arguments name variables they assign. */
+const ASSIGNING_BUILTINS = new Set([
+  "export",
+  "declare",
+  "typeset",
+  "readonly",
+  "local",
+  "read",
+  "mapfile",
+  "readarray",
+]);
+
+function builtinAssignments(command: AnalyzedCommand): string[] {
+  const names: string[] = [];
+  if (ASSIGNING_BUILTINS.has(command.name)) {
+    for (const arg of command.argv) {
+      if (arg === null || arg.startsWith("-")) continue;
+      const match = /^([A-Za-z_][A-Za-z0-9_]*)(?:\+?=|$)/.exec(arg);
+      if (match) names.push(match[1]!);
+    }
+  }
+  if (command.name === "printf") {
+    command.argv.forEach((arg, index) => {
+      if (arg === "-v" && command.argv[index + 1]) names.push(command.argv[index + 1]!);
+      else if (arg?.startsWith("-v") && arg.length > 2) names.push(arg.slice(2));
+    });
+  }
+  return names;
+}
+
+const MAX_LAUNCHER_DEPTH = 8;
+
+function expandLauncher(command: AnalyzedCommand, out: AnalyzedCommand[], assignments: string[], depth: number): void {
+  const launched = launcherPayloads(command.name, [command.word, ...command.argv]);
+  if (!launched) return;
+  if (launched.kind === "shell_string") {
+    command.launchesShellString = launched.reason;
+    return;
+  }
+  if (depth >= MAX_LAUNCHER_DEPTH) throw new ShellAnalysisError("Launchers are nested too deeply to analyze");
+  assignments.push(...launched.assignments);
+  for (const payload of launched.payloads) {
+    const word = payload[0];
+    if (word === null || word === undefined) {
+      throw new ShellAnalysisError(`Cannot resolve the command launched by ${command.name}: it is dynamic`);
+    }
+    if (word.includes("{}")) {
+      throw new ShellAnalysisError(`Cannot resolve the command launched by ${command.name}: it comes from its input`);
+    }
+    if (!word) throw new ShellAnalysisError(`Cannot resolve the command launched by ${command.name}: it is empty`);
+    const child: AnalyzedCommand = {
+      name: extractExecutableName(word),
+      word,
+      argv: payload.slice(1),
+      origin: "launcher",
+      launcher: command.name,
+      text: command.text,
+    };
+    out.push(child);
+    assignments.push(...builtinAssignments(child));
+    expandLauncher(child, out, assignments, depth + 1);
+  }
+}
+
+export interface BashAnalysis {
+  commands: AnalyzedCommand[];
+  /** Variables any part of the command assigns or exports. */
+  assignments: string[];
+}
+
+/**
+ * Every command the shell would run for `command`, with its path as typed and
+ * where it came from (segment, substitution, process substitution, here-doc,
+ * launcher). Throws {@link ShellAnalysisError} for anything it cannot model.
+ */
+export function analyzeBashCommand(command: string): BashAnalysis {
+  const commands: AnalyzedCommand[] = [];
+  const assignments: string[] = [];
+  try {
+    for (const level of collectShellLevels(command)) {
+      const state: SyntaxState = { caseDepth: 0 };
+      for (const segment of splitByOperators(level.text)) {
+        const resolved = resolveSegment(segment, state);
+        assignments.push(...resolved.assignments);
+        if (!resolved.command) continue;
+        const analyzed: AnalyzedCommand = {
+          name: extractExecutableName(resolved.command.word),
+          word: resolved.command.word,
+          argv: resolved.command.argv,
+          origin: level.origin,
+          text: segment,
+        };
+        commands.push(analyzed);
+        assignments.push(...builtinAssignments(analyzed));
+        expandLauncher(analyzed, commands, assignments, 0);
+      }
+    }
+  } catch (error) {
+    if (isShellAnalysisError(error)) throw error;
+    throw new ShellAnalysisError(error instanceof Error ? error.message : "Cannot analyze shell command");
+  }
+  return { commands, assignments };
+}
+
 /**
  * Parse a bash command and extract all executables.
  *
@@ -510,65 +709,35 @@ function isInlineCodeExecution(executable: string, command: string): { blocked: 
  * - Pipes: cat file | grep foo -> ["cat", "grep"]
  * - Chains: git status && npm install -> ["git", "npm"]
  * - Env vars: NODE_ENV=prod node app.js -> ["node"]
- * - Sudo prefix: sudo rm -rf / -> ["sudo", "rm"]
- * - Full paths: /usr/bin/git status -> ["git"]
+ * - Launchers: sudo rm -rf / -> ["sudo", "rm"], xargs grep x -> ["xargs", "grep"]
+ * - Substitutions and here-docs: echo $(date) -> ["echo", "date"]
+ * - Full paths: /usr/bin/git status -> ["git"] (see `commands` for the path)
  * - Semicolons: ls; pwd -> ["ls", "pwd"]
+ *
+ * A command the analyzer cannot model fails with `code: "unknown_parse"`.
  */
 export function parseBashCommand(command: string, options: { allowInlineCode?: boolean } = {}): ParsedCommand {
+  let analysis: BashAnalysis;
   try {
-    // Split only on active operators; retain quoted words for token decoding.
-    const simpleCommands = splitByOperators(command);
-
-    // Extract executables from each command
-    const executables: string[] = [];
-    const seenInline: string[] = [];
-    const syntaxState: SyntaxState = { caseDepth: 0 };
-
-    for (const cmd of simpleCommands) {
-      const exec = parseSimpleCommand(cmd, syntaxState);
-      if (exec) {
-        executables.push(exec);
-
-        // Check for sudo - also extract the actual command
-        if (exec === "sudo") {
-          const words = parseWords(cmd).filter((token): token is string => typeof token === "string");
-          const index = words.findIndex((word) => extractExecutableName(word) === "sudo");
-          const actualExec = words[index + 1] ? extractExecutableName(words[index + 1]!) : null;
-          if (actualExec) {
-            executables.push(actualExec);
-            const inline = isInlineCodeExecution(actualExec, cmd);
-            if (inline.blocked) seenInline.push(inline.reason!);
-          }
-        }
-
-        // Check for inline code execution
-        const inlineCheck = isInlineCodeExecution(exec, cmd);
-        if (inlineCheck.blocked) {
-          seenInline.push(inlineCheck.reason || `${exec} inline code`);
-        }
-      }
-    }
-
-    // If inline code was detected, fail parsing
-    if (seenInline.length > 0 && !options.allowInlineCode) {
-      return {
-        executables: [],
-        success: false,
-        error: seenInline[0],
-      };
-    }
-
-    return {
-      executables: [...new Set(executables)], // Deduplicate
-      success: true,
-    };
+    analysis = analyzeBashCommand(command);
   } catch (err) {
     return {
       executables: [],
       success: false,
       error: err instanceof Error ? err.message : "Parse error",
+      code: "unknown_parse",
     };
   }
+  const inline = analysis.commands.map(inlineCodeReason).find(Boolean);
+  if (inline && !options.allowInlineCode) {
+    return { executables: [], success: false, error: inline, code: "inline_code" };
+  }
+  return {
+    executables: [...new Set(analysis.commands.map((analyzed) => analyzed.name))],
+    commands: analysis.commands,
+    assignments: [...new Set(analysis.assignments)],
+    success: true,
+  };
 }
 
 /**
@@ -640,8 +809,10 @@ const AMBIGUOUS_REDIRECT_COMMANDS = new Set([
 
 /**
  * A deliberately bounded shell subset for file writes. shell-quote owns token
- * and quote parsing. We model only simple commands separated by &&, || or ;,
- * and literal cd destinations. Retaining both sides of every cd over-approximates
+ * and quote parsing. We model only simple commands separated by &&, ||, ;,
+ * pipes or newlines, input redirects, and literal cd destinations. Callers pass
+ * one level at a time (see collectShellLevels): substitutions and here-docs
+ * must already be extracted. Retaining both sides of every cd over-approximates
  * control flow instead of assuming it succeeds. More complex shell execution
  * cannot be authorized as a harmless redirect from this static inspection.
  */
@@ -650,15 +821,31 @@ export function analyzeOutputRedirects(
   cwd = process.cwd(),
 ): { writes: ShellOutputRedirect[]; error?: string } {
   const writes: ShellOutputRedirect[] = [];
-  // The tokenizer does not model newline command boundaries or ANSI-C quotes.
-  // Refuse them, including before comments, rather than normalizing shell meaning.
+  // The tokenizer does not model newline command boundaries, comments that end
+  // at a newline, or ANSI-C quotes. Comments are blanked and active newlines
+  // become `;` (or a space after `|`, `&&`, `||`, `(`) before tokenizing.
   if (!command.includes(">")) return { writes };
-  if (/[\r\n]/.test(command) || /\$['"]/.test(command)) {
-    return { writes, error: "Cannot resolve output redirects with multiline or expanded shell quoting" };
+  if (/\r/.test(command) || /\$['"]/.test(command)) {
+    return { writes, error: "Cannot resolve output redirects with carriage returns or expanded shell quoting" };
+  }
+  const inspected = inspectShellSyntax(command);
+  if (inspected.error) return { writes, error: "Cannot parse output redirect safely" };
+  let normalized = "";
+  let lastActive = "";
+  for (let i = 0; i < inspected.code.length; i++) {
+    const char = inspected.code[i]!;
+    if (inspected.syntax[i] === "\n") {
+      const continues = lastActive === "" || /[|&;(]/.test(lastActive);
+      normalized += continues ? " " : ";";
+      if (!continues) lastActive = ";";
+      continue;
+    }
+    normalized += char;
+    if (!/\s/.test(char)) lastActive = inspected.masked[i]!;
   }
   let tokens: ParseEntry[];
   try {
-    tokens = parseWords(command, () => ({ op: "glob", pattern: "unknown expansion" }));
+    tokens = parseWords(normalized, () => ({ op: "glob", pattern: "unknown expansion" }));
   } catch {
     return { writes, error: "Cannot parse output redirect safely" };
   }
@@ -708,14 +895,23 @@ export function analyzeOutputRedirects(
       continue;
     }
     if ("comment" in token) break;
-    if (token.op === ";" || token.op === "&&" || token.op === "||") {
+    // &> / &>> and >| are two tokens in shell-quote.
+    const next = tokens[i + 1];
+    if (token.op === "&" && typeof next === "object" && "op" in next && [">", ">>"].includes(next.op)) {
+      continue;
+    }
+    // Pipeline stages and background jobs are separate simple commands. A `cd`
+    // inside a pipeline stage runs in a subshell; keeping its directory too only
+    // over-approximates where later redirects may land.
+    if ([";", "&&", "||", "|", "|&", "&"].includes(token.op)) {
       const error = finishCommand();
       if (error) return { writes, error };
       continue;
     }
-    // &> / &>> and >| are two tokens in shell-quote.
-    const next = tokens[i + 1];
-    if (token.op === "&" && typeof next === "object" && "op" in next && [">", ">>"].includes(next.op)) {
+    // Input redirects read a file; they never write one.
+    if (token.op === "<" || token.op === "<&") {
+      if (typeof tokens[i + 1] !== "string") return { writes, error: "Cannot resolve an input redirect operand" };
+      i++;
       continue;
     }
     if (token.op === ">" || token.op === ">>" || token.op === ">&") {

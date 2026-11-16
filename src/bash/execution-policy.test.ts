@@ -78,8 +78,11 @@ describe("effective arbitrary execution permission", () => {
 
   it("does not confer arbitrary execution through named interpreter grants", () => {
     const issued = context(restricted);
+    // A quoted here-doc and a process substitution of an authorized command run
+    // only authorized commands; everything else needs more than named grants.
+    const dataOnly = new Set(["cat <<'EOF'\nliteral\nEOF", "cat <(printf ok)"]);
     for (const command of compoundCommands.slice(0, -1)) {
-      expect(evaluateBashPermission(command, issued).allowed, command).toBe(false);
+      expect(evaluateBashPermission(command, issued).allowed, command).toBe(dataOnly.has(command));
     }
     expect(evaluateBashPermission("python3 ./fixture.py", issued).allowed).toBe(true);
     expect(evaluateBashPermission("cd nested && pwd", issued).allowed).toBe(true);

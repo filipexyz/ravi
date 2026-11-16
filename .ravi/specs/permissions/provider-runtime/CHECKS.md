@@ -73,10 +73,24 @@ Quoting regressions (`bun test src/bash/`):
   a real file-script argument MUST retain the documented executable boundary.
 - Single-quoted substitution/backtick/process/heredoc text and escaped dollar
   or backtick in double quotes MUST pass in JSON and rg/grep arguments.
-- Active substitutions outside and inside double quotes MUST fail, including
-  line continuations, nested quote text and escaped backslash parity.
-- Actual heredocs (even with quoted delimiters), here-strings and process
-  substitutions MUST fail. Literal operator text MUST NOT create a pipeline.
+- Active substitutions outside and inside double quotes MUST expose their
+  command (origin `substitution`), including line continuations, nested quote
+  text and escaped backslash parity; an unauthorized inner command is denied as
+  a missing executable grant naming it.
+- Quoted here-document bodies MUST yield no command; unquoted bodies expose only
+  their substitutions (origin `heredoc`). Process substitutions expose their
+  command. Literal operator text MUST NOT create a pipeline.
+- `src/bash/launcher-realpath-policy.test.ts` MUST keep:
+  `bootstrap_denies_shell_launchers` (xargs, find -exec, env, timeout, nice,
+  nohup, parallel, watch refuse a shell/interpreter payload under bootstrap even
+  when the launcher is granted), `realpath_not_basename_defeats_copied_binary`
+  (copied shell, symlinked shell, copy-then-run, relative path and PATH
+  override), `heredoc_quoted_body_is_not_commands`,
+  `substitution_and_redirect_allowed_when_command_authorized` (`printf
+  "$(date)"`, `echo $(git ...)`, `ls | sort > out` with Write, `diff <(...)`),
+  `unknown_parse_fails_closed_with_named_error`, and regressions for keywords
+  (#813), disguised substitutions (#767/#776), quoted assignment values and env
+  spoofing inside substitutions.
 - Quoted/escaped executable names, inline flags and piped interpreter receivers
   MUST retain their refusals for named-executable grants.
 - Quote concatenation, backslashes inside single quotes, comments after escaped
@@ -84,8 +98,8 @@ Quoting regressions (`bun test src/bash/`):
 - Harmless printf fixtures MUST compare actual Bash output with the guard's
   expansion classification when `/bin/bash` is available.
 - Real Bash comparisons MUST include nested and unquoted substitutions, escaped
-  metacharacters, and heredocs with bare, quoted and escaped delimiters. A literal
-  heredoc body does not make the heredoc operator permitted by this policy.
+  metacharacters, and heredocs with bare, quoted and escaped delimiters. The
+  analyzer MUST report a nested command exactly when Bash executed one.
 - Hook tests MUST demonstrate that named-executable grants permit literal search
   arguments, do not permit a later shell, and still permit interpreter file
   scripts: this last case documents the explicitly open capability boundary.
