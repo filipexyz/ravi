@@ -836,4 +836,22 @@ describe("channel runner drain", () => {
       closeBroker.mockRestore();
     }
   });
+
+  it("database close failure rejects shutdown and latches every later channel drain request", async () => {
+    const cause = new Error("SQLite close failed");
+    const closeDbs = spyOn(closeAllDbs, "closeAllRaviDbs").mockImplementation(() => {
+      throw cause;
+    });
+    const closeBroker = spyOn(natsConnection, "closeNats").mockResolvedValue(undefined);
+    try {
+      const runner = new ChannelRunner();
+      await expect(runner.stop()).rejects.toBe(cause);
+      expect(runner.drainStatus()).toMatchObject({ phase: "blocked", failures: ["channel-runner-stop"] });
+      await expect(runner.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+      expect(closeBroker).not.toHaveBeenCalled();
+    } finally {
+      closeDbs.mockRestore();
+      closeBroker.mockRestore();
+    }
+  });
 });

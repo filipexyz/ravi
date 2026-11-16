@@ -41,16 +41,15 @@ const CLOSE_STEPS: CloseStep[] = [
   { name: "router", close: closeRouterDb },
 ];
 
-export function closeAllRaviDbs(): void {
-  for (const step of CLOSE_STEPS) {
+export function closeAllRaviDbs(steps: readonly CloseStep[] = CLOSE_STEPS): void {
+  const failures: Error[] = [];
+  for (const step of steps) {
     try {
       step.close();
-    } catch (err) {
-      log.error("failed to close db handle", {
-        db: step.name,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    } catch (cause) {
+      failures.push(new Error(`Database ${step.name} failed to close`, { cause }));
     }
   }
+  if (failures.length) throw new AggregateError(failures, "Ravi database shutdown failed", { cause: failures[0] });
   log.info("all ravi db handles closed");
 }

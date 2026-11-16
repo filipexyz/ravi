@@ -102,8 +102,9 @@ export async function startHostCliGateway(
       if (existsSync(socketPath)) {
         try {
           unlinkSync(socketPath);
-        } catch {
-          // Best-effort cleanup; a replacement daemon will unlink on start.
+        } catch (error) {
+          // Another closer may already have removed the socket.
+          if ((error as NodeJS.ErrnoException | null)?.code !== "ENOENT") throw error;
         }
       }
       log.info("Host CLI gateway stopped", { socketPath });

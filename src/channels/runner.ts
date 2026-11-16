@@ -234,7 +234,12 @@ export class ChannelRunner {
   }
 
   async stop(): Promise<void> {
-    return runAsSchemaConsumer(() => this.stopAsConsumer());
+    try {
+      await runAsSchemaConsumer(() => this.stopAsConsumer());
+    } catch (error) {
+      this.workDrain.recordFailure("channel-runner-stop");
+      throw error;
+    }
   }
 
   drainStatus(): WorkDrainStatus {

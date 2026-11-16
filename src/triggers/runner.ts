@@ -54,6 +54,9 @@ interface PreparedTrigger {
 interface TopicSubscription {
   stream: TopicSub;
   triggers: PreparedTrigger[];
+  controller: AbortController;
+  loop?: Promise<void>;
+  failures: Error[];
 }
 
 interface PendingFilterRejects {
@@ -198,37 +201,50 @@ export class TriggerRunner {
    * Stop the trigger runner.
    */
   async stop(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running && !this.publicationHealth && !this.topicSubs.size && !this.pendingFilterRejects.size) return;
     this.running = false;
-
-    this.publicationHealth?.unsubscribe();
-    this.publicationHealth = null;
+    const failures: Error[] = [];
 
     log.info("Stopping trigger runner");
-
-    this.teardownSubscriptions();
-    this.flushFilterRejects();
-    const pendingDebounced = this.debouncer.clear();
-    if (pendingDebounced > 0) {
-      log.warn("Dropped debounced trigger events pending at stop", { events: pendingDebounced });
+    try {
+      this.publicationHealth?.unsubscribe();
+      this.publicationHealth = null;
+    } catch (cause) {
+      failures.push(new Error("Trigger publication health unsubscribe failed", { cause }));
     }
 
+    failures.push(...(await this.teardownSubscriptions()));
+    failures.push(...this.flushFilterRejects());
+    try {
+      const pendingDebounced = this.debouncer.clear();
+      if (pendingDebounced > 0) {
+        log.warn("Dropped debounced trigger events pending at stop", { events: pendingDebounced });
+      }
+    } catch (cause) {
+      failures.push(new Error("Trigger debounce cleanup failed", { cause }));
+    }
+    if (failures.length) throw new AggregateError(failures, "Trigger runner shutdown failed", { cause: failures[0] });
     log.info("Trigger runner stopped");
   }
 
-  /**
-   * Tear down all topic subscriptions.
-   */
-  private teardownSubscriptions(): void {
-    for (const subscription of this.topicSubs.values()) {
-      try {
-        subscription.stream.return?.(undefined);
-      } catch {
-        // ignore close errors
-      }
-    }
-    this.topicSubs.clear();
+  /** Stop every topic before waiting; an idle next() must be woken before return(). */
+  private async teardownSubscriptions(): Promise<Error[]> {
     this.desiredTopics.clear();
+    const subscriptions = [...this.topicSubs.entries()];
+    for (const [, subscription] of subscriptions) subscription.controller.abort();
+    const results = await Promise.all(
+      subscriptions.map(async ([topic, subscription]) => {
+        try {
+          await subscription.stream.return?.(undefined);
+        } catch (cause) {
+          subscription.failures.push(new Error(`Trigger topic ${topic} close failed`, { cause }));
+        }
+        await subscription.loop;
+        if (subscription.failures.length === 0) this.topicSubs.delete(topic);
+        return subscription.failures;
+      }),
+    );
+    return results.flat();
   }
 
   // Mutex to prevent concurrent setupSubscriptions calls
@@ -346,12 +362,13 @@ export class TriggerRunner {
    * Subscribe to a NATS topic and fire matching triggers.
    */
   private subscribeToTopic(topic: string, triggers: PreparedTrigger[]): void {
-    const stream = nats.subscribe(topic);
-    const subscription: TopicSubscription = { stream, triggers };
+    const controller = new AbortController();
+    const stream = nats.subscribe(topic, { signal: controller.signal });
+    const subscription: TopicSubscription = { stream, triggers, controller, failures: [] };
     this.topicSubs.set(topic, subscription);
 
-    // Run subscription loop in background
-    (async () => {
+    // Retain the loop so shutdown observes a rejection delivered to pending next().
+    subscription.loop = (async () => {
       try {
         for await (const event of stream) {
           if (!this.running) break;
@@ -440,7 +457,10 @@ export class TriggerRunner {
         }
       } catch (err) {
         // Stream closed is expected during teardown
-        if (!this.running || this.topicSubs.get(topic) !== subscription) return;
+        if (!this.running || this.topicSubs.get(topic) !== subscription) {
+          subscription.failures.push(new Error(`Trigger topic ${topic} failed during shutdown`, { cause: err }));
+          return;
+        }
 
         log.error("Topic subscription error", { topic, error: err });
         this.topicSubs.delete(topic);
@@ -752,7 +772,8 @@ export class TriggerRunner {
     this.filterRejectFlushTimer.unref?.();
   }
 
-  private flushFilterRejects(): void {
+  private flushFilterRejects(): Error[] {
+    const failures: Error[] = [];
     if (this.filterRejectFlushTimer) {
       clearTimeout(this.filterRejectFlushTimer);
       this.filterRejectFlushTimer = null;
@@ -765,8 +786,10 @@ export class TriggerRunner {
       } catch (error) {
         log.warn("Failed to record trigger filter rejects; retrying on the next flush", { triggerId, error });
         this.restoreFilterRejects(triggerId, rejects);
+        failures.push(new Error(`Trigger ${triggerId} filter reject flush failed`, { cause: error }));
       }
     }
+    return failures;
   }
 
   /** Put a failed batch back. A newer batch for another topic/filter wins; the stale one is dropped. */

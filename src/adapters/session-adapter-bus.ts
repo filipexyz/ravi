@@ -67,6 +67,9 @@ interface ActiveAdapterRuntime {
   supervisor: StdioSupervisor;
   health: StdioSupervisorHealth;
   commandSubscriptions: AdapterBusSubscription[];
+  commandLoops: Map<AdapterBusSubscription, Promise<void>>;
+  commandClosures: Map<AdapterBusSubscription, Promise<void>>;
+  failedCommandClosures: Set<AdapterBusSubscription>;
   toAdapterTopics: string[];
   fromAdapterTopics: string[];
   debug: {
@@ -506,6 +509,18 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
     }
   }
 
+  function closeCommandSubscription(
+    runtime: ActiveAdapterRuntime,
+    subscription: AdapterBusSubscription,
+  ): Promise<void> {
+    let closing = runtime.commandClosures.get(subscription);
+    if (!closing) {
+      closing = Promise.resolve().then(() => subscription.unsubscribe());
+      runtime.commandClosures.set(subscription, closing);
+    }
+    return closing;
+  }
+
   async function startAdapter(runtime: ActiveAdapterRuntime): Promise<void> {
     for (const commandTopic of runtime.toAdapterTopics) {
       const commandSubscription = transport.subscribe(commandTopic, {
@@ -514,7 +529,8 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
 
       runtime.commandSubscriptions.push(commandSubscription);
 
-      void (async () => {
+      const commandLoop = (async () => {
+        const failures: unknown[] = [];
         try {
           for await (const message of commandSubscription) {
             if (!running) break;
@@ -564,6 +580,7 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
             }
           }
         } catch (error) {
+          failures.push(error);
           if (running) {
             log.error("Adapter command subscription failed", {
               adapterId: runtime.adapter.adapterId,
@@ -572,9 +589,19 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
             });
           }
         } finally {
-          commandSubscription.unsubscribe();
+          try {
+            await closeCommandSubscription(runtime, commandSubscription);
+          } catch (cause) {
+            failures.push(cause);
+          }
         }
+        if (failures.length)
+          throw new AggregateError(failures, "Adapter command subscription cleanup failed", { cause: failures[0] });
       })();
+      runtime.commandLoops.set(commandSubscription, commandLoop);
+      void commandLoop.catch(() => {
+        // no-cause: The original rejection stays in commandLoops; stop awaits and reports it before success.
+      });
     }
 
     runtime.supervisor.events.on("state", (state: StdioSupervisorHealth) => {
@@ -719,6 +746,9 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
         stderrTail: "",
       },
       commandSubscriptions: [],
+      commandLoops: new Map(),
+      commandClosures: new Map(),
+      failedCommandClosures: new Set(),
       toAdapterTopics:
         toAdapterSubscriptions.length > 0
           ? toAdapterSubscriptions.map((subscription) => subscription.topic)
@@ -802,23 +832,48 @@ export function createSessionAdapterBus(options: SessionAdapterBusOptions = {}):
     running = false;
 
     const stops = Array.from(runtimes.values()).map(async (runtime) => {
-      for (const subscription of runtime.commandSubscriptions) {
-        subscription.unsubscribe();
+      const failures: Error[] = [];
+      const remainingSubscriptions: AdapterBusSubscription[] = [];
+      const closedSubscriptions: Array<{ subscription: AdapterBusSubscription; index: number }> = [];
+      for (const [index, subscription] of runtime.commandSubscriptions.entries()) {
+        try {
+          // Only a new stop attempt retries a previously failed close. The
+          // iterator finalizer shares this attempt instead of closing twice.
+          if (runtime.failedCommandClosures.delete(subscription)) runtime.commandClosures.delete(subscription);
+          await closeCommandSubscription(runtime, subscription);
+          closedSubscriptions.push({ subscription, index });
+        } catch (cause) {
+          runtime.failedCommandClosures.add(subscription);
+          remainingSubscriptions.push(subscription);
+          failures.push(new Error(`${runtime.adapter.adapterId}.subscription.${index} failed to stop`, { cause }));
+        }
       }
-      runtime.commandSubscriptions.length = 0;
+      runtime.commandSubscriptions = remainingSubscriptions;
       try {
         await runtime.supervisor.stop();
-      } catch (error) {
-        log.error("Failed to stop session adapter supervisor", {
-          adapterId: runtime.adapter.adapterId,
-          error,
-        });
+      } catch (cause) {
+        failures.push(new Error(`${runtime.adapter.adapterId}.supervisor failed to stop`, { cause }));
       }
+      for (const { subscription, index } of closedSubscriptions) {
+        try {
+          await runtime.commandLoops.get(subscription);
+        } catch (cause) {
+          failures.push(new Error(`${runtime.adapter.adapterId}.subscription.${index} loop failed to stop`, { cause }));
+        }
+        runtime.commandLoops.delete(subscription);
+        runtime.commandClosures.delete(subscription);
+      }
+      if (failures.length === 0) runtimes.delete(runtime.adapter.adapterId);
+      return failures;
     });
 
-    await Promise.allSettled(stops);
-    runtimes.clear();
-    shuttingDown = false;
+    try {
+      const failures = (await Promise.all(stops)).flat();
+      if (failures.length)
+        throw new AggregateError(failures, "Session adapter shutdown failed", { cause: failures[0] });
+    } finally {
+      shuttingDown = false;
+    }
   }
 
   async function restart(): Promise<void> {
