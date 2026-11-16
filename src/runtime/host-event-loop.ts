@@ -90,6 +90,16 @@ import {
 } from "./direct-interrupted-retention.js";
 import { classifyFatalToolFailure, FATAL_TOOL_FAILURE_REASON, type FatalToolFailure } from "./fatal-tool-failure.js";
 import {
+  BACKGROUND_TASK_LOST_REASON,
+  buildBackgroundTaskLostPrompt,
+  buildNativeBackgroundTaskOutcomePrompt,
+  decideIdleEviction,
+  observeNativeBackgroundTaskEvent,
+  publishBackgroundWake,
+  resolveRuntimeBackgroundTaskTtlMs,
+  type NativeBackgroundTask,
+} from "./background-work.js";
+import {
   LEGACY_RUNTIME_PROVIDER_ID,
   getCrashRecoveryReplayablePendingRuntimeMessages,
   getPendingRuntimeTurnSuccessors,
@@ -1504,6 +1514,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     Math.max(1_000, Math.floor(PROVIDER_TURN_INACTIVITY_TIMEOUT_MS / 10)),
   );
   const IDLE_SESSION_TTL_MS = resolveRuntimeIdleSessionTtlMs();
+  const BACKGROUND_TASK_TTL_MS = resolveRuntimeBackgroundTaskTtlMs();
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
   let providerInactivityWatchArmed = false;
   const readInactivityRecoveryCheckpoint = (): string | undefined => {
@@ -1901,11 +1912,44 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.idleSessionEvictionTimer = undefined;
     }
   };
-  const scheduleIdleSessionEviction = () => {
+  /**
+   * Entrega pela fila durável um aviso de background. Se nem a fila aceitar, o
+   * motivo fica no trace da sessão: ninguém pode ficar sem resposta em silêncio.
+   */
+  const wakeSessionForBackgroundWork = (
+    prompt: string,
+    meta: { kind: "native_task_finished" | "native_task_lost"; taskIds: string[] },
+  ) => {
+    publishBackgroundWake(sessionName, prompt, meta).catch((error: unknown) => {
+      log.error("Could not wake session for background work", { sessionName, meta, error });
+      recordTraceEvent({
+        provider: runtimeSession.provider,
+        model,
+        eventType: "background_task.delivery_failed",
+        eventGroup: "session",
+        status: "failed",
+        source: null,
+        payloadJson: {
+          ...meta,
+          prompt,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    });
+  };
+  const reportLostBackgroundTasks = (tasks: NativeBackgroundTask[], idleMs: number) => {
+    if (tasks.length === 0) return;
+    wakeSessionForBackgroundWork(buildBackgroundTaskLostPrompt({ tasks, idleMs }), {
+      kind: "native_task_lost",
+      taskIds: tasks.map((task) => task.taskId),
+    });
+  };
+  const scheduleIdleSessionEviction = (delayMs = IDLE_SESSION_TTL_MS) => {
     if (!ownsRuntimeSlot() || IDLE_SESSION_TTL_MS <= 0) {
       return;
     }
     clearIdleSessionEvictionTimer();
+    const scheduledAt = Date.now();
     streaming.idleSessionEvictionTimer = setTimeout(() => {
       streaming.idleSessionEvictionTimer = undefined;
       if (
@@ -1920,10 +1964,34 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         return;
       }
 
+      const now = Date.now();
+      const idleMs = Math.max(now - (streaming.lastActivity || scheduledAt), now - scheduledAt);
+      const decision = decideIdleEviction({
+        sessionName,
+        holder: streaming,
+        idleMs: Math.max(idleMs, IDLE_SESSION_TTL_MS),
+        idleTtlMs: IDLE_SESSION_TTL_MS,
+        backgroundTtlMs: BACKGROUND_TASK_TTL_MS,
+      });
+      if (!decision.evict) {
+        if (decision.reason === "background_work") {
+          log.info("Idle session kept alive by pending background work", {
+            sessionName,
+            idleMs,
+            nativeTasks: decision.work.nativeTasks.map((task) => task.taskId),
+            jobs: decision.work.jobIds,
+          });
+          scheduleIdleSessionEviction(decision.retryInMs);
+        }
+        return;
+      }
+
+      const reason = decision.reason === "background_task_ttl" ? BACKGROUND_TASK_LOST_REASON : IDLE_SESSION_TTL_REASON;
       log.info("Evicting idle runtime session", {
         runId,
         sessionName,
-        timeoutMs: IDLE_SESSION_TTL_MS,
+        reason,
+        timeoutMs: decision.reason === "background_task_ttl" ? BACKGROUND_TASK_TTL_MS : IDLE_SESSION_TTL_MS,
       });
       recordTraceEvent({
         provider: runtimeSession.provider,
@@ -1933,13 +2001,20 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         status: "evicted",
         source: streaming.currentSource,
         payloadJson: {
-          reason: IDLE_SESSION_TTL_REASON,
-          timeoutMs: IDLE_SESSION_TTL_MS,
+          reason,
+          timeoutMs: decision.reason === "background_task_ttl" ? BACKGROUND_TASK_TTL_MS : IDLE_SESSION_TTL_MS,
           lastActivity: streaming.lastActivity,
+          ...(decision.reason === "background_task_ttl"
+            ? {
+                lostNativeTasks: decision.lostNativeTasks.map((task) => task.taskId),
+                pendingJobs: decision.work.jobIds,
+              }
+            : {}),
         },
       });
-      shutdownRuntimeStreamingSession(streaming, IDLE_SESSION_TTL_REASON);
-    }, IDLE_SESSION_TTL_MS);
+      shutdownRuntimeStreamingSession(streaming, reason);
+      reportLostBackgroundTasks(decision.lostNativeTasks, idleMs);
+    }, delayMs);
     streaming.idleSessionEvictionTimer.unref?.();
   };
   const clearActiveToolState = () => {
@@ -3360,6 +3435,31 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       // canonical assistant/tool event. Hold that raw envelope until the
       // canonical event has crossed its durable write-ahead fence.
       if (event.type === "provider.raw") {
+        const backgroundTask = observeNativeBackgroundTaskEvent(streaming, event.rawEvent);
+        if (backgroundTask.kind !== "ignored") {
+          recordTraceEvent({
+            provider: runtimeSession.provider,
+            model,
+            eventType: backgroundTask.kind === "started" ? "background_task.started" : "background_task.finished",
+            eventGroup: "session",
+            status: backgroundTask.kind === "started" ? "running" : backgroundTask.status,
+            payloadJson: {
+              taskId: backgroundTask.task.taskId,
+              toolUseId: backgroundTask.task.toolUseId ?? null,
+              description: backgroundTask.task.description ?? null,
+              turnActive: streaming.turnActive,
+            },
+          });
+          // Dentro de um turno o provider entrega a notificação ao próprio
+          // modelo. Fora de turno ninguém começa um turno sozinho: a conclusão
+          // entra pela fila durável e acorda a sessão.
+          if (backgroundTask.kind === "finished" && !streaming.turnActive && !streaming.done) {
+            wakeSessionForBackgroundWork(buildNativeBackgroundTaskOutcomePrompt(backgroundTask), {
+              kind: "native_task_finished",
+              taskIds: [backgroundTask.task.taskId],
+            });
+          }
+        }
         await settlePreviousProviderRawEvents();
         pendingProviderRawEvents.push({ event, safetyFenced: false });
         continue;

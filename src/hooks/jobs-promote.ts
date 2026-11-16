@@ -9,6 +9,13 @@
  * Reescrita, não bloqueio: a decisão de rodar é do comando, e a de autorizar é do
  * hook de permissão (que roda antes deste). Aqui só trocamos a forma de execução.
  *
+ * `run_in_background` do provider vira job do Ravi destacado na hora
+ * (`RAVI_JOBS_DETACH_AFTER_MS` no mínimo do wrapper). O background nativo vive
+ * dentro do processo do provider: se a sessão for despejada por inatividade, a
+ * notificação de conclusão morre junto e ninguém responde (bug 081dac32). O job
+ * do Ravi fica no banco, sobrevive ao despejo e entrega o desfecho pela fila
+ * durável de prompts, que acorda a sessão.
+ *
  * Modos:
  * - padrão: toda chamada de Bash passa pelo wrapper;
  * - `RAVI_JOBS_WRAP=0`: volta à promoção antiga, por sintaxe (rollback);
@@ -24,7 +31,12 @@ import {
   resolveJobPromotionConfig,
   type JobPromotionDecision,
 } from "../jobs/promotion.js";
-import { buildWrappedBashCommand, shouldWrapBashCommand } from "../jobs/detach.js";
+import {
+  buildWrappedBashCommand,
+  DETACH_AFTER_ENV,
+  MIN_DETACH_AFTER_MS,
+  shouldWrapBashCommand,
+} from "../jobs/detach.js";
 import { ensureDetachScript, resolveDetachScriptPath } from "../jobs/detach-script.js";
 
 const log = logger.child("hooks:jobs-promote");
@@ -47,9 +59,12 @@ export function createJobPromotionHook(options: JobPromotionHookOptions = {}): H
       async (input) => {
         try {
           if (!enabled) return {};
-          const toolInput = input.tool_input as { command?: string; timeout?: number } | undefined;
+          const toolInput = input.tool_input as
+            | { command?: string; timeout?: number; run_in_background?: unknown }
+            | undefined;
           const command = toolInput?.command;
           if (!command) return {};
+          const runInBackground = toolInput?.run_in_background === true;
 
           if (process.env.RAVI_JOBS_WRAP === "0") {
             return promoteBySyntax(command, toolInput, options);
@@ -67,6 +82,20 @@ export function createJobPromotionHook(options: JobPromotionHookOptions = {}): H
             sessionName: options.sessionName ?? null,
             agentId: options.agentId ?? null,
           });
+
+          if (runInBackground && options.sessionName) {
+            log.info("Moving provider background Bash to a Ravi job", { sessionName: options.sessionName });
+            return {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse" as const,
+                updatedInput: {
+                  ...(toolInput as Record<string, unknown>),
+                  command: `${DETACH_AFTER_ENV}=${MIN_DETACH_AFTER_MS} ${wrapped}`,
+                  run_in_background: false,
+                },
+              },
+            };
+          }
 
           return {
             hookSpecificOutput: {

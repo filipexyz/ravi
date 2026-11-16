@@ -3,6 +3,14 @@ import {
   RuntimeStartCapacityError,
   type RuntimeStartCapacitySnapshot,
 } from "./start-admission.js";
+import {
+  BACKGROUND_TASK_LOST_REASON,
+  buildBackgroundTaskLostPrompt,
+  decideIdleEviction,
+  publishBackgroundWake,
+  resolveRuntimeBackgroundTaskTtlMs,
+  type BackgroundWakePublisher,
+} from "./background-work.js";
 import { configStore } from "../config-store.js";
 import { DecisionDispatchRejectedError } from "../decisions/model.js";
 import { isThreadAttentionPrompt, assertThreadAttentionSession } from "./message-types.js";
@@ -189,8 +197,12 @@ export interface RuntimeSessionDispatcherOptions {
   crashRecovery: RuntimeCrashRecoveryCoordinator;
   pendingStartTimeoutMs?: number;
   idleSessionTtlMs?: number;
+  /** How long a session with pending background work may sit without a turn. */
+  backgroundTaskTtlMs?: number;
   turnInactivityMs?: number;
   reclaimIntervalMs?: number;
+  /** Durable wake used to report background work lost on eviction. Injectable for tests. */
+  publishBackgroundWake?: BackgroundWakePublisher;
 }
 
 export interface RuntimeAbortProvenance {
@@ -228,6 +240,10 @@ export class RuntimeSessionDispatcher {
 
   private idleSessionTtlMs(): number {
     return this.options.idleSessionTtlMs ?? resolveRuntimeIdleSessionTtlMs();
+  }
+
+  private backgroundTaskTtlMs(): number {
+    return this.options.backgroundTaskTtlMs ?? resolveRuntimeBackgroundTaskTtlMs();
   }
 
   private turnInactivityMs(): number {
@@ -1978,6 +1994,9 @@ export class RuntimeSessionDispatcher {
   private isReclaimableForStart(sessionName: string, session: RuntimeHostStreamingSession): boolean {
     return (
       !isRuntimeSessionServing(session) &&
+      // A provider-owned background task dies with the process; pool pressure
+      // must not be the thing that loses its completion.
+      !session.pendingBackgroundTasks?.size &&
       !this.startReservations.has(sessionName) &&
       !this.startingSessions.has(sessionName) &&
       !this.debounceStates.has(sessionName) &&
@@ -2456,11 +2475,32 @@ export class RuntimeSessionDispatcher {
         session.pendingMessages.length > 0 ||
         Boolean(session.pendingWake);
       if (!servingWork && idleTtlMs > 0 && idleMs >= idleTtlMs) {
-        log.info("Reclaiming idle runtime session", { sessionName, idleMs, timeoutMs: idleTtlMs });
-        shutdownRuntimeStreamingSession(session, "idle_session_ttl");
+        // Pending background work is not idleness: the completion would die
+        // with the provider process (bug 081dac32).
+        const decision = decideIdleEviction({
+          sessionName,
+          holder: session,
+          idleMs,
+          idleTtlMs,
+          backgroundTtlMs: this.backgroundTaskTtlMs(),
+        });
+        if (!decision.evict) continue;
+        const reason = decision.reason === "background_task_ttl" ? BACKGROUND_TASK_LOST_REASON : "idle_session_ttl";
+        log.info("Reclaiming idle runtime session", { sessionName, idleMs, timeoutMs: idleTtlMs, reason });
+        shutdownRuntimeStreamingSession(session, reason);
         this.releaseRuntimeSessionSlot(sessionName);
         markRuntimeLiveIdle(sessionName, "idle evicted");
         idleEvicted.push(sessionName);
+        if (decision.lostNativeTasks.length > 0) {
+          this.reportLostBackgroundTasks(
+            sessionName,
+            buildBackgroundTaskLostPrompt({
+              tasks: decision.lostNativeTasks,
+              idleMs,
+            }),
+            decision.lostNativeTasks.map((task) => task.taskId),
+          );
+        }
         continue;
       }
       if (servingWork && (session.turnActive || session.toolRunning || session.starting) && idleMs >= stuckAfterMs) {
@@ -2482,6 +2522,21 @@ export class RuntimeSessionDispatcher {
     const orphanTasks = this.auditOrphanTaskSessions();
     const timedOutStarts = this.failExpiredPendingStarts(now);
     return { idleEvicted, stuckReleased, orphanTasks, timedOutStarts };
+  }
+
+  private reportLostBackgroundTasks(sessionName: string, prompt: string, taskIds: string[]): void {
+    publishBackgroundWake(
+      sessionName,
+      prompt,
+      { kind: "native_task_lost", taskIds },
+      this.options.publishBackgroundWake,
+    ).catch((error: unknown) => {
+      log.error("Could not report lost background tasks; the session owes an answer", {
+        sessionName,
+        taskIds,
+        error,
+      });
+    });
   }
 
   reclaimIdleObserverSessions(now = Date.now(), options: { drainPendingStarts?: boolean } = {}): string[] {

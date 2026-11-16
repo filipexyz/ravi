@@ -16,7 +16,16 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { logger } from "../utils/logger.js";
-import { dbFinishJob, dbGetJob, dbListJobs, dbListRunningJobs, dbMarkJobNotified, dbMarkJobRunning } from "./store.js";
+import {
+  dbFinishJob,
+  dbGetJob,
+  dbListJobs,
+  dbListRunningJobs,
+  dbListUndeliveredJobs,
+  dbMarkJobNotified,
+  dbMarkJobRunning,
+  dbRecordJobDeliveryFailure,
+} from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
 import { jobStatusFromExitCode, readJobExitState } from "./detach.js";
 
@@ -32,6 +41,12 @@ export const KILL_ESCALATION_MS = 5_000;
 
 /** Tail que acompanha o aviso de conclusão. Suficiente para decidir, não para afogar. */
 export const JOB_RESULT_TAIL_CHARS = 2_000;
+/**
+ * Tentativas de entregar um desfecho antes de desistir. O reconcile roda a cada
+ * 30 s, então isto cobre alguns minutos de fila fora do ar; depois disso a linha
+ * fica com `delivery_error` como registro de quem ficou sem resposta.
+ */
+export const JOB_DELIVERY_MAX_ATTEMPTS = 20;
 
 export interface JobsRunnerOptions {
   /** Injetável para teste. */
@@ -144,9 +159,13 @@ export class JobsRunner {
       await this.notify(current, buildJobOutcomeSummary(current));
       dbMarkJobNotified(current.id);
     } catch (error) {
-      log.warn("Could not deliver job outcome to session", {
+      // Nunca engolir: a linha guarda o motivo e o reconcile tenta de novo.
+      const reason = error instanceof Error ? error.message : String(error);
+      dbRecordJobDeliveryFailure(current.id, reason);
+      log.error("Could not deliver job outcome to session; will retry", {
         jobId: current.id,
         sessionName: current.sessionName,
+        attempts: current.deliveryAttempts + 1,
         error,
       });
     }
@@ -223,7 +242,19 @@ export class JobsRunner {
     if (finished && !finished.notifiedAt) await this.deliverOutcome(finished);
   }
 
-  private async reconcileOrphans(): Promise<void> {
+  /** Desfechos que terminaram mas não chegaram à sessão (fila fora do ar, daemon reiniciando). */
+  async redeliverUndeliveredOutcomes(): Promise<void> {
+    for (const job of dbListUndeliveredJobs({ maxAttempts: JOB_DELIVERY_MAX_ATTEMPTS })) {
+      await this.deliverOutcome(job);
+    }
+  }
+
+  async reconcileOrphans(): Promise<void> {
+    await this.reconcileRunningJobs();
+    await this.redeliverUndeliveredOutcomes();
+  }
+
+  private async reconcileRunningJobs(): Promise<void> {
     for (const job of dbListRunningJobs()) {
       if (this.jobs.has(job.id)) continue;
       if (job.status === "pending") {

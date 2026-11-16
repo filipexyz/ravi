@@ -15,6 +15,8 @@ interface JobRow {
   log_path: string;
   origin: string;
   notified_at: number | null;
+  delivery_error?: string | null;
+  delivery_attempts?: number | null;
   started_at: number | null;
   finished_at: number | null;
   created_at: number;
@@ -35,6 +37,8 @@ function rowToJob(row: JobRow): JobRecord {
     logPath: row.log_path,
     origin: row.origin as JobOrigin,
     notifiedAt: row.notified_at,
+    deliveryError: row.delivery_error ?? null,
+    deliveryAttempts: row.delivery_attempts ?? 0,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     createdAt: row.created_at,
@@ -126,6 +130,48 @@ export function dbMarkJobNotified(id: string): boolean {
   return getDbChanges() > 0;
 }
 
+/**
+ * Entrega do desfecho falhou. O motivo fica na linha: um job terminal com
+ * `notified_at` nulo e `delivery_error` preenchido é o registro durável de que
+ * alguém ficou sem resposta, e o reconcile tenta de novo.
+ */
+export function dbRecordJobDeliveryFailure(id: string, error: string): boolean {
+  ensureJobsSchema();
+  const now = Date.now();
+  getDb()
+    .prepare(
+      "UPDATE jobs SET delivery_error = ?, delivery_attempts = COALESCE(delivery_attempts, 0) + 1, updated_at = ? WHERE id = ?",
+    )
+    .run(error.slice(0, 2_000), now, id);
+  return getDbChanges() > 0;
+}
+
+/** Jobs terminais de uma sessão cujo desfecho ainda não chegou nela. */
+export function dbListUndeliveredJobs(input: { maxAttempts: number; limit?: number }): JobRecord[] {
+  ensureJobsSchema();
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM jobs
+        WHERE status IN ('succeeded','failed','killed')
+          AND notified_at IS NULL
+          AND session_name IS NOT NULL
+          AND COALESCE(delivery_attempts, 0) < ?
+        ORDER BY finished_at
+        LIMIT ?`,
+    )
+    .all(input.maxAttempts, Math.max(1, Math.min(input.limit ?? 50, 500))) as JobRow[];
+  return rows.map(rowToJob);
+}
+
+/** Ids dos jobs ainda não terminais de uma sessão: pendência que impede o despejo por idle. */
+export function dbListPendingJobIdsForSession(sessionName: string): string[] {
+  ensureJobsSchema();
+  const rows = getDb()
+    .prepare("SELECT id FROM jobs WHERE session_name = ? AND status IN ('pending','running') ORDER BY created_at")
+    .all(sessionName) as Array<{ id: string }>;
+  return rows.map((row) => row.id);
+}
+
 /** Jobs que ficaram marcados como rodando quando o daemon morreu. */
 export function dbListRunningJobs(): JobRecord[] {
   ensureJobsSchema();
@@ -215,4 +261,20 @@ function ensureJobsSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(session_name, created_at);
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at);
   `);
+  ensureJobsDeliveryColumns();
+}
+
+/**
+ * Colunas de entrega chegaram depois da tabela: banco existente ganha as duas
+ * sem migração manual. Checado a cada chamada porque testes trocam o banco.
+ */
+function ensureJobsDeliveryColumns(): void {
+  const db = getDb();
+  const columns = new Set(
+    (db.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (!columns.has("delivery_error")) db.exec("ALTER TABLE jobs ADD COLUMN delivery_error TEXT");
+  if (!columns.has("delivery_attempts")) {
+    db.exec("ALTER TABLE jobs ADD COLUMN delivery_attempts INTEGER NOT NULL DEFAULT 0");
+  }
 }

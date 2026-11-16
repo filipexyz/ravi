@@ -42,6 +42,9 @@ export interface JobRecord {
   origin: JobOrigin;
   /** Quando o desfecho foi entregue na sessão. Null = ainda não avisado. */
   notifiedAt: number | null;
+  /** Último motivo de falha ao entregar o desfecho; null quando nunca falhou. */
+  deliveryError: string | null;
+  deliveryAttempts: number;
   startedAt: number | null;
   finishedAt: number | null;
   createdAt: number;
