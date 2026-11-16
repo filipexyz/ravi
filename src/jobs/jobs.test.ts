@@ -3,13 +3,22 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDb } from "../router/router-db.js";
-import { buildJobOutcomeSummary, isPidAlive, JobsRunner, readJobTail } from "./runner.js";
 import {
+  buildJobOutcomeSummary,
+  isPidAlive,
+  JOB_DELIVERY_INFLIGHT_STALE_MS,
+  jobOutcomeMessageId,
+  JobsRunner,
+  readJobTail,
+} from "./runner.js";
+import {
+  dbClaimJobDelivery,
   dbCreateJob,
   dbFinishJob,
   dbGetJob,
   dbListJobs,
   dbListRunningJobs,
+  dbListUndeliveredJobs,
   dbMarkJobNotified,
   dbMarkJobRunning,
 } from "./store.js";
@@ -221,5 +230,117 @@ describe("job runner", () => {
     await runner.redeliverUndeliveredOutcomes();
     expect(delivered).toEqual([job.id]);
     expect(dbGetJob(job.id)?.notifiedAt).toBeGreaterThan(0);
+  });
+
+  it("overlapping_redelivery_publishes_completion_once", async () => {
+    const job = makeJob();
+    dbMarkJobRunning(job.id, process.pid);
+    dbFinishJob(job.id, { status: "succeeded", exitCode: 0, signal: null });
+
+    // The publish stays in flight until the test releases it.
+    const published: Array<{ jobId: string; messageId: string }> = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runner = new JobsRunner({
+      notifySession: async (record, _summary, delivery) => {
+        // The reconcile walks every undelivered job in the database.
+        if (record.id !== job.id) return;
+        published.push({ jobId: record.id, messageId: delivery.messageId });
+        await gate;
+      },
+    });
+
+    const first = runner.handleJobFinished(job.id);
+    // The outcome is reserved before the publish resolves.
+    const inflight = dbGetJob(job.id)!;
+    expect(inflight.deliveryState).toBe("inflight");
+    expect(inflight.notifiedAt).toBeNull();
+
+    // Every other route that can see the same outcome runs while it is in flight.
+    await runner.redeliverUndeliveredOutcomes();
+    await runner.reconcileOrphans();
+    await runner.handleJobFinished(job.id);
+    expect(published).toHaveLength(1);
+
+    release();
+    await first;
+    const notified = dbGetJob(job.id)!;
+    expect(notified.deliveryState).toBe("notified");
+    expect(notified.notifiedAt).toBeGreaterThan(0);
+    expect(notified.deliveryClaimedAt).toBeNull();
+
+    await runner.reconcileOrphans();
+    expect(published).toEqual([{ jobId: job.id, messageId: jobOutcomeMessageId(job.id) }]);
+  });
+
+  it("a stale in-flight delivery is retried under the same deduplication key", async () => {
+    const job = makeJob();
+    dbMarkJobRunning(job.id, process.pid);
+    dbFinishJob(job.id, { status: "succeeded", exitCode: 0, signal: null });
+
+    let clock = Date.now();
+    const published: string[] = [];
+    const hung = new Promise<void>(() => {});
+    const runner = new JobsRunner({
+      now: () => clock,
+      notifySession: async (_record, _summary, delivery) => {
+        published.push(delivery.messageId);
+        // The first publish never settles: whoever reserved it is gone.
+        if (published.length === 1) await hung;
+      },
+    });
+
+    void runner.handleJobFinished(job.id);
+    expect(published).toHaveLength(1);
+
+    clock += JOB_DELIVERY_INFLIGHT_STALE_MS - 1;
+    await runner.redeliverUndeliveredOutcomes();
+    expect(published).toHaveLength(1);
+
+    clock += 1;
+    await runner.redeliverUndeliveredOutcomes();
+    // Same key both times: the queue drops the second if the first reached it.
+    expect(published).toEqual([jobOutcomeMessageId(job.id), jobOutcomeMessageId(job.id)]);
+    expect(dbGetJob(job.id)?.deliveryState).toBe("notified");
+  });
+
+  it("a failed delivery releases the reservation, and a delivered job is never reopened", async () => {
+    const job = makeJob();
+    dbMarkJobRunning(job.id, process.pid);
+    dbFinishJob(job.id, { status: "failed", exitCode: 1, signal: null });
+    const staleAfterMs = JOB_DELIVERY_INFLIGHT_STALE_MS;
+    const listed = () =>
+      dbListUndeliveredJobs({ maxAttempts: 20, staleAfterMs, limit: 500 }).some((row) => row.id === job.id);
+
+    expect(dbClaimJobDelivery(job.id, { staleAfterMs })).toBe(true);
+    expect(dbClaimJobDelivery(job.id, { staleAfterMs })).toBe(false);
+    expect(listed()).toBe(false);
+
+    const failing = async () => {
+      throw new Error("queue down");
+    };
+    // The reservation is held elsewhere: this route neither publishes nor counts a failure.
+    await new JobsRunner({ notifySession: failing }).handleJobFinished(job.id);
+    expect(dbGetJob(job.id)?.deliveryAttempts).toBe(0);
+
+    // A stale reservation is retaken; its failure hands the job back to the reconcile.
+    await new JobsRunner({ now: () => Date.now() + staleAfterMs, notifySession: failing }).handleJobFinished(job.id);
+    const released = dbGetJob(job.id)!;
+    expect(released.deliveryState).toBe("pending");
+    expect(released.deliveryClaimedAt).toBeNull();
+    expect(released.deliveryAttempts).toBe(1);
+    expect(listed()).toBe(true);
+
+    dbMarkJobNotified(job.id);
+    expect(dbClaimJobDelivery(job.id, { staleAfterMs })).toBe(false);
+  });
+
+  it("does not reserve the delivery of a job that has not finished", () => {
+    const job = makeJob();
+    dbMarkJobRunning(job.id, process.pid);
+    expect(dbClaimJobDelivery(job.id, { staleAfterMs: JOB_DELIVERY_INFLIGHT_STALE_MS })).toBe(false);
+    expect(dbGetJob(job.id)?.deliveryState).toBe("pending");
   });
 });
