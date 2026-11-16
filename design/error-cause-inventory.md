@@ -879,7 +879,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | relay | src/cli/remote-gateway.ts | 1522 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
 | cli | src/cli/runtime-target.ts | 34 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:a330f4808d976b8052774005 |
 | cli | src/cli/runtime-target.ts | 86 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:863230d57a244c76b7fe3ddb |
-| cli | src/cli/skill-gates.ts | 398 | triaged-follow-up | catch-without-binding | src/cli/skill-gates.ts:2393bd5726c3cde0dace38b5 |
+| cli | src/cli/skill-gates.ts | 400 | triaged-follow-up | catch-without-binding | src/cli/skill-gates.ts:2393bd5726c3cde0dace38b5 |
 | cli | src/cli/tools-export.ts | 254 | triaged-follow-up | rejection-without-binding | src/cli/tools-export.ts:4838115c49b02fe526434d88 |
 | cli | src/cli/tools-export.ts | 284 | triaged-follow-up | rejection-without-binding | src/cli/tools-export.ts:4838115c49b02fe526434d88 |
 | cli | src/cli/tools-export.ts | 349 | fixed | binding retained / no recognized error surface | src/cli/tools-export.ts:2a577896035c9de9bdeb7006 |
@@ -1814,8 +1814,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/host-hooks.ts | 444 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:40939d36cb61945b928e347e |
 | runtime-chat | src/runtime/host-hooks.ts | 461 | triaged-follow-up | rejection-without-binding | src/runtime/host-hooks.ts:b03b3ddb89cfa3783292cbb7 |
 | runtime-chat | src/runtime/host-hooks.ts | 503 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:1294281309897e6d88b6c17c |
-| runtime-chat | src/runtime/host-services.ts | 823 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
-| runtime-chat | src/runtime/host-services.ts | 856 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
+| runtime-chat | src/runtime/host-services.ts | 839 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
+| runtime-chat | src/runtime/host-services.ts | 872 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
 | sessions | src/runtime/host-session.ts | 564 | triaged-follow-up | rejection-without-binding | src/runtime/host-session.ts:dbc4363ca5a44e3e1bc6811e |
 | runtime-chat | src/runtime/host-subscriptions.ts | 193 | fixed | binding retained / no recognized error surface | src/runtime/host-subscriptions.ts:e3b606d88f7de30df1125e01 |
 | runtime-chat | src/runtime/host-subscriptions.ts | 198 | fixed | binding retained / no recognized error surface | src/runtime/host-subscriptions.ts:7b51dde255a3e70c4aef4f10 |
@@ -1965,7 +1965,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/runtime/session-launcher.ts | 499 | triaged-follow-up | rejection-without-binding | src/runtime/session-launcher.ts:b2b5af4abe30227be3718ff2 |
 | sessions | src/runtime/session-launcher.ts | 602 | fixed | binding retained / no recognized error surface | src/runtime/session-launcher.ts:3e7c2dad6b1ba1f2356f8941 |
 | runtime-chat | src/runtime/skill-capability-implication.ts | 165 | triaged-follow-up | catch-without-binding | src/runtime/skill-capability-implication.ts:d61f50225f71f32f4e07e451 |
-| runtime-chat | src/runtime/skill-gate.ts | 327 | triaged-follow-up | rejection-without-binding | src/runtime/skill-gate.ts:0a0eed54b31130e84ff83db4 |
+| runtime-chat | src/runtime/skill-gate.ts | 334 | triaged-follow-up | rejection-without-binding | src/runtime/skill-gate.ts:0a0eed54b31130e84ff83db4 |
 | runtime-chat | src/runtime/skill-visibility.ts | 1029 | triaged-follow-up | catch-without-binding | src/runtime/skill-visibility.ts:9b65c0408a74af1ebbea8044 |
 | runtime-chat | src/runtime/skill-visibility.ts | 1175 | triaged-follow-up | catch-without-binding | src/runtime/skill-visibility.ts:8bc7c53e14fe520d6b3a6b7b |
 | runtime-chat | src/runtime/task-runtime-context.ts | 34 | fixed | binding retained / no recognized error surface | src/runtime/task-runtime-context.ts:32d552fa52728a3f6f9c38a0 |

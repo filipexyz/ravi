@@ -174,7 +174,9 @@ export function inferRaviCommandSkillGate(
     return undefined;
   }
 
-  const match = /(?:^|[\s;&|])(?:[^\s;&|'"]+\/)?ravi\s+([a-z][a-z0-9-]*)(?:\s+([a-z][a-z0-9-]*))?/i.exec(commandLine);
+  const match = /(?:^|[\s;&|(`])(?:[^\s;&|()`'"]+\/)?ravi\s+([a-z][a-z0-9-]*)(?:\s+([a-z][a-z0-9-]*))?/i.exec(
+    commandLine,
+  );
   if (!match) {
     return undefined;
   }

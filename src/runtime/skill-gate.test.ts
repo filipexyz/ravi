@@ -301,6 +301,40 @@ describe("evaluateSkillGate", () => {
     });
   });
 
+  it("keeps configured executable gates for inline code and rejects matches in literal arguments", () => {
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "python-analysis" });
+
+    expect(runtimeSkillGateForCommand("python3 -c 'print(1)' ")).toMatchObject({
+      skill: "python-analysis",
+      source: "config",
+      ruleId: "python-analysis",
+    });
+    expect(runtimeSkillGateForCommand("printf '%s' 'python3 -c print(1)' ")).toBeUndefined();
+  });
+
+  it("keeps text gates when shell discovery cannot parse the command", () => {
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "python-analysis" });
+
+    expect(runtimeSkillGateForCommand("python3 -c 'unterminated")).toMatchObject({
+      skill: "python-analysis",
+      source: "config",
+      ruleId: "python-analysis",
+    });
+  });
+
+  it.each([
+    "printf '%s' $( ravi bases list )",
+    "printf '%s' $(ravi bases list)",
+    "printf '%s' `ravi bases list`",
+    "cat <(ravi bases list)",
+  ])("keeps Ravi group gates when shell discovery is partial: %s", (command) => {
+    const expectedGate = { skill: "ravi-system-bases", ruleId: "bases" };
+
+    expect(runtimeSkillGateForCommand(command)).toMatchObject(expectedGate);
+    expect(runtimeSkillGateForCommand(command, { executables: ["printf"] })).toMatchObject(expectedGate);
+    expect(runtimeSkillGateForCommand("printf '%s' 'ravi bases list'")).toBeUndefined();
+  });
+
   it("infers Ravi CLI gates from parsed commands without matching quoted text", () => {
     expect(runtimeSkillGateForCommand("bin/ravi commands list --agent dev --json")).toMatchObject({
       skill: "ravi-system-commands",
@@ -578,6 +612,54 @@ describe("ravi skills show resource authorization", () => {
 });
 
 describe("runtime host skill-gate enforcement", () => {
+  it.each([
+    "python3 -c 'print(1)'",
+    "python3 -c 'unterminated",
+    "printf '%s' $( ravi bases list )",
+    "printf '%s' $(ravi bases list)",
+    "printf '%s' `ravi bases list`",
+    "cat <(ravi bases list)",
+  ])("delivers the required skill before arbitrary shell execution: %s", async (command) => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "bases-analysis", groupRegex: "^bases(?:[._]|$)", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "arbitrary-shell-skill-gate",
+      runtimeProvider: "codex",
+      providerSessionId: "thread-1",
+    });
+    const context = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      sessionKey: session.sessionKey,
+      sessionName: "arbitrary-shell-skill-gate",
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ],
+    });
+    const onSkillGatePersisted = mock(() => {});
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "arbitrary-shell-skill-gate",
+      toolContext: {},
+      onSkillGatePersisted,
+    });
+
+    const first = await services.authorizeCommandExecution({ command });
+
+    expect(first.approved).toBe(false);
+    expect(first.reason).toContain("RAVI_SKILL_REQUIRED");
+    expect(first.reason).toContain("# demo-skill");
+    expect(onSkillGatePersisted).toHaveBeenCalledTimes(1);
+    expect(readSkillVisibilityFromParams(getSession(session.sessionKey)?.runtimeSessionParams).loadedSkills).toEqual([
+      "demo-skill",
+    ]);
+    expect((await services.authorizeCommandExecution({ command })).approved).toBe(true);
+  });
+
   it("never persists or publishes the full command denied by native runtime policy", async () => {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
     const auditEvents: Array<Record<string, unknown>> = [];
@@ -608,10 +690,14 @@ describe("runtime host skill-gate enforcement", () => {
       await flushPermissionAuditEvents();
 
       expect(decision.approved).toBe(false);
-      expect(listPermissionDenials({ subjectType: "agent", subjectId: "main" })[0]?.command).toBe(
-        `[REDACTED:content length=${command.length}]`,
-      );
-      expect(auditEvents[0]?.command).toBe(`[REDACTED:content length=${command.length}]`);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "main" })).toEqual([]);
+      expect(auditEvents).toHaveLength(1);
+      expect(auditEvents[0]).toMatchObject({
+        type: "shell_syntax",
+        denied: "indirect_execution",
+        blockType: "indirect_execution",
+        detail: { commandChars: command.length },
+      });
       expect(JSON.stringify(auditEvents)).not.toContain("SENTINEL_SECRET_7M4Q");
     } finally {
       setPermissionAuditPublisherForTest();

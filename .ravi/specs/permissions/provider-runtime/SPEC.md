@@ -130,6 +130,28 @@ Required capability materializers:
 
 ## Bash Syntax Guard And Executable Trust
 
+- An effective `execute:executable:*` grant MUST authorize arbitrary shell
+  forms, including substitutions, heredocs, inline interpreters and shell/source
+  commands. The host MUST resolve that grant through the same context-aware
+  evaluator as ordinary executable authorization, before applying the restricted
+  syntax subset. A profile label or a parent agent's unrestricted ceiling MUST
+  NOT substitute for that effective decision.
+- Issued child limits, unresolved-actor snapshots, user overlays, relay/turn
+  narrowing and live executor reductions MUST remain effective in both the SDK
+  hook and native runtime approval path. Native adapters MUST preserve context
+  metadata when evaluating Bash. No new grant or approval is implied.
+- Arbitrary execution MUST NOT skip Bash tool authorization, environment identity
+  checks, Ravi session/command authorization or skill gates. Static skill discovery
+  MAY accept inline code without treating it as permission proof; unsupported
+  discovery MUST remain unknown rather than an empty executable list, preserving
+  conservative text/group gates. Static gates do not inspect arbitrary code inside
+  scripts or interpreter strings; actual Ravi requests still authorize at the
+  authenticated gateway.
+- The syntax restrictions below apply to contexts without effective arbitrary
+  execution. Policy refusals MUST identify `shell_syntax` and a stable rule,
+  without inventing a missing executable capability from the first command token.
+  Actual missing executable grants MUST remain distinct. Every denied decision
+  MUST be denied by the SDK hook, including new policy categories.
 - Dangerous-pattern checks MUST distinguish active shell syntax from literal
   arguments. Ordinary single-quoted data, escaped metacharacters and inert
   operators inside double quotes MUST NOT be rejected just for containing a
@@ -153,7 +175,7 @@ Required capability materializers:
 - Piped-interpreter stdin detection MUST count command words, excluding leading
   assignments, comments, redirection operators, descriptors and destinations.
   These shell decorations MUST NOT make a bare interpreter appear to have a
-  script argument, even when wildcard executable access is granted.
+  script argument in a restricted context.
 - The bounded scanner MUST refuse unterminated quotes/escapes and unsupported
   ANSI-C / locale quoting rather than assume them safe. It is not a shell AST.
   `stripShellQuoting`, used for identity text checks, MUST NOT be used as the

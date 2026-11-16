@@ -37,6 +37,21 @@
 
 Quoting regressions (`bun test src/bash/`):
 
+- Effective wildcard execution admits substitutions, heredocs, inline Python,
+  shell/source commands and compound `cd` through both the SDK hook and native
+  runtime authorization, without new approvals.
+- The indirect/unsupported shell forms remain denied to named-executable, narrowed child,
+  unresolved-actor, relay/turn-narrowed and contact-limited contexts, including
+  under a full-access executor. Live executor reductions take effect on the next
+  check. Ordinary `cd` chains remain admissible with their named grants.
+  Tool, environment, session and skill authorization remain separate.
+- Syntax refusals emit `shell_syntax` with a stable rule and sanitized command
+  length, without a false missing-capability row or executable name. SDK hooks
+  deny that category. Native skill discovery retains inline executable gates and
+  conservative text/group gates on unsupported syntax.
+- The remaining syntax-refusal checks below use restricted contexts. The parser
+  defaults remain strict; its explicit inline-code discovery mode is not an
+  authorization decision.
 - `X=a#b bash -c id` and `python3 -W ignore#x -c code` MUST be refused,
   including through sudo. URL fragments and real word-start comments MUST
   preserve command boundaries. `echo x#y > .codex/config.toml` MUST retain its
@@ -51,7 +66,7 @@ Quoting regressions (`bun test src/bash/`):
 - Actual heredocs (even with quoted delimiters), here-strings and process
   substitutions MUST fail. Literal operator text MUST NOT create a pipeline.
 - Quoted/escaped executable names, inline flags and piped interpreter receivers
-  MUST retain their refusals, including with wildcard executable grants.
+  MUST retain their refusals for named-executable grants.
 - Quote concatenation, backslashes inside single quotes, comments after escaped
   whitespace, command boundaries after comments and quoted newlines MUST be tested.
 - Harmless printf fixtures MUST compare actual Bash output with the guard's

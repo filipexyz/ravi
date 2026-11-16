@@ -185,7 +185,8 @@ describe("delegated turn enforcement (end-to-end)", () => {
     dbUpdateAgent(agent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
     expect(evaluateBashPermission("ssh host uptime", bashCtx).allowed).toBe(true);
     expect(evaluateBashPermission("timeout 1 true", bashCtx).allowed).toBe(true);
-    expect(evaluateBashPermission("bash -c 'echo hi'", bashCtx).allowed).toBe(false);
+    expect(evaluateBashPermission("bash -c 'echo hi'", bashCtx).allowed).toBe(true);
+    expect(evaluateBashPermission("printf '%s' $(date)", bashCtx).allowed).toBe(true);
   });
 
   it("lets a WhatsApp group turn execute ssh from explicit execute:executable:*", () => {
