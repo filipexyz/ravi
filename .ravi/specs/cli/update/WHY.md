@@ -18,3 +18,10 @@ Real-state protection exposed an independent bootstrap dependency: local CLI
 authorization tried to initialize the database before it could repair the daemon.
 Stateful commands should use the existing authenticated gateway; local recovery
 uses the already-defined operator authority without opening runtime storage.
+
+PM2 writes its manager/client version mismatch banner to stdout before the
+`jlist` JSON. Parsing the entire output failed updates/status and hid identity
+from other consumers. Separately, requiring a default manager PID file refused
+an installed daemon even after the banner was removed. The shared parser and
+the state-boundary parent verification address these independent dependencies;
+the installed launcher remains direct, with the same identity checks.

@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../../threads/schema-fence.js";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { spawn } from "bun";
 import { existsSync, readFileSync } from "node:fs";
@@ -206,7 +207,7 @@ describe("durable thread attention admission", () => {
         }),
       ).rejects.toThrow("handoff outcome unknown");
     } else {
-      getDb().query("UPDATE slack_thread_attention_notices SET admission_status='accepting'").run();
+      runThreadMutation(getDb(), "UPDATE slack_thread_attention_notices SET admission_status='accepting'");
     }
     closeSessionStore();
     closeRouterDb();

@@ -1,11 +1,25 @@
+import * as closeAllDbs from "../db/close-all.js";
+import * as natsConnection from "../nats.js";
 import { describe, expect, it, mock, spyOn } from "bun:test";
 import * as runtimeIdentity from "../runtime-process-identity.js";
+import * as runtimeState from "../db/runtime-state.js";
+import { configStore } from "../config-store.js";
+import * as nativeDrivers from "./native/driver.js";
+import * as outboundStream from "./outbound-stream.js";
+import * as runnerHealth from "./health.js";
+import * as backend from "./backend.js";
+import * as backendEgress from "./backend-egress.js";
+import * as inboundActions from "./inbound-actions.js";
+import { ChannelOutboundConsumer } from "./outbound-consumer.js";
+import { ChannelPresenceConsumer } from "./presence-consumer.js";
 import {
   CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS,
   type ChannelOutboundPublishResult,
   channelOutboundPublishRequestFingerprint,
+  ChannelOutboundPublishReconciler,
+  sqliteChannelOutboundPublishOutboxStore,
 } from "./outbound-publish-outbox.js";
-import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
+import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS, sqliteChannelOutboundReceiptStore } from "./outbound-receipts.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS,
   ChannelRunner,
@@ -666,6 +680,178 @@ describe("managed runner boot identity", () => {
     } finally {
       start.mockRestore();
       receipt.mockRestore();
+    }
+  });
+});
+
+describe("channel runner drain", () => {
+  it.each(["connect", "refresh", "infrastructure", "modules", "native"] as const)(
+    "fences startup suspended at %s and waits for its partial cleanup",
+    async (stage) => {
+      let entered!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let resume!: () => void;
+      const release = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      let finishCleanup!: () => void;
+      const cleanup = new Promise<void>((resolve) => {
+        finishCleanup = resolve;
+      });
+      const waitAt = async (point: typeof stage) => {
+        if (point !== stage) return;
+        entered();
+        await release;
+      };
+      const stopNative = spyOn(nativeDrivers.NativeChannelDriverManager.prototype, "stop").mockImplementation(
+        async () => cleanup,
+      );
+      const startOutbound = spyOn(ChannelOutboundConsumer.prototype, "start").mockImplementation(() => {});
+      const startPublish = spyOn(ChannelOutboundPublishReconciler.prototype, "start").mockImplementation(() => {});
+      const startPresence = spyOn(ChannelPresenceConsumer.prototype, "start").mockImplementation(() => {});
+      const startBackend = spyOn(backend, "startChannelBackendPublicationReconciler").mockImplementation(() => {
+        throw new Error("Unexpected backend startup after drain");
+      });
+      const startEgress = spyOn(backendEgress, "startChannelBackendEgressResponder").mockReturnValue({
+        stop: async () => {},
+      });
+      const startInbound = spyOn(inboundActions, "startNativeInboundChannelActionResponder").mockReturnValue({
+        stop: async () => {},
+      });
+      const spies = [
+        stopNative,
+        startOutbound,
+        startPublish,
+        startPresence,
+        startBackend,
+        startEgress,
+        startInbound,
+        spyOn(runtimeState, "assertRuntimeStateReady").mockImplementation(() => {}),
+        spyOn(natsConnection, "connectNats").mockImplementation(async () => {
+          await waitAt("connect");
+          return {} as never;
+        }),
+        spyOn(natsConnection, "getNats").mockReturnValue({} as never),
+        spyOn(configStore, "startRefresh").mockImplementation(async () => waitAt("refresh")),
+        spyOn(configStore, "getConfig").mockReturnValue({ channels: {} } as ReturnType<typeof configStore.getConfig>),
+        spyOn(outboundStream, "ensureChannelOutboundInfrastructure").mockImplementation(async () =>
+          waitAt("infrastructure"),
+        ),
+        spyOn(sqliteChannelOutboundReceiptStore, "pruneExpired").mockReturnValue(0),
+        spyOn(sqliteChannelOutboundPublishOutboxStore, "prunePublished").mockReturnValue(0),
+        spyOn(runnerHealth, "startChannelRunnerHealthResponder").mockReturnValue({
+          subject: "test.health",
+          stop: async () => {},
+        }),
+        spyOn(nativeDrivers, "loadNativeChannelDriverModules").mockImplementation(async () => {
+          await waitAt("modules");
+          return { loadedProviders: [], failures: [] };
+        }),
+        spyOn(nativeDrivers.NativeChannelDriverManager.prototype, "start").mockImplementation(async () =>
+          waitAt("native"),
+        ),
+      ];
+      try {
+        const runner = new ChannelRunner();
+        const starting = runner.start();
+        await pending;
+        let proved = false;
+        const draining = runner.requestDrain().then((proof) => {
+          proved = true;
+          return proof;
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(proved).toBe(false);
+        expect((runner as unknown as { running: boolean }).running).toBe(false);
+        await expect(runner.start()).rejects.toThrow("WORK_DRAIN_ADMISSION_CLOSED");
+        resume();
+        await starting;
+        if (stage === "native") {
+          expect(stopNative).toHaveBeenCalledWith({ requireDrain: true });
+          expect(proved).toBe(false);
+        }
+        finishCleanup();
+        await draining;
+        expect((runner as unknown as { running: boolean }).running).toBe(false);
+        for (const start of [startOutbound, startPublish, startPresence, startBackend, startEgress, startInbound]) {
+          expect(start).not.toHaveBeenCalled();
+        }
+      } finally {
+        resume();
+        finishCleanup();
+        for (const spy of spies) spy.mockRestore();
+      }
+    },
+  );
+
+  it("keeps databases open until every component has completed drain", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const nativeStop = mock(async () => pending);
+    const outboundStop = mock(async () => {});
+    const closeDbs = spyOn(closeAllDbs, "closeAllRaviDbs").mockImplementation(() => {});
+    const closeBroker = spyOn(natsConnection, "closeNats").mockImplementation(async () => {});
+    try {
+      const runner = new ChannelRunner();
+      const internals = runner as unknown as {
+        nativeChannelManager: { stop: typeof nativeStop };
+        outboundConsumer: { stop: typeof outboundStop };
+      };
+      internals.nativeChannelManager = { stop: nativeStop };
+      internals.outboundConsumer = { stop: outboundStop };
+      const stopping = runner.stop();
+      expect(nativeStop).toHaveBeenCalledWith({ requireDrain: true });
+      expect(outboundStop).toHaveBeenCalledTimes(1);
+      expect(closeDbs).not.toHaveBeenCalled();
+      expect(closeBroker).not.toHaveBeenCalled();
+      finish();
+      await stopping;
+      expect(closeDbs).toHaveBeenCalledTimes(1);
+      expect(closeBroker).toHaveBeenCalledTimes(1);
+    } finally {
+      closeDbs.mockRestore();
+      closeBroker.mockRestore();
+    }
+  });
+
+  it("does not close databases or broker when a component lacks drain proof", async () => {
+    const closeDbs = spyOn(closeAllDbs, "closeAllRaviDbs").mockImplementation(() => {});
+    const closeBroker = spyOn(natsConnection, "closeNats").mockImplementation(async () => {});
+    try {
+      const runner = new ChannelRunner();
+      (runner as unknown as { nativeChannelManager: { stop(): Promise<void> } }).nativeChannelManager = {
+        stop: async () => {
+          throw new Error("unpersisted callback");
+        },
+      };
+      await expect(runner.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+      expect(closeDbs).not.toHaveBeenCalled();
+      expect(closeBroker).not.toHaveBeenCalled();
+    } finally {
+      closeDbs.mockRestore();
+      closeBroker.mockRestore();
+    }
+  });
+
+  it("database close failure rejects shutdown and latches every later channel drain request", async () => {
+    const cause = new Error("SQLite close failed");
+    const closeDbs = spyOn(closeAllDbs, "closeAllRaviDbs").mockImplementation(() => {
+      throw cause;
+    });
+    const closeBroker = spyOn(natsConnection, "closeNats").mockResolvedValue(undefined);
+    try {
+      const runner = new ChannelRunner();
+      await expect(runner.stop()).rejects.toBe(cause);
+      expect(runner.drainStatus()).toMatchObject({ phase: "blocked", failures: ["channel-runner-stop"] });
+      await expect(runner.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+      expect(closeBroker).not.toHaveBeenCalled();
+    } finally {
+      closeDbs.mockRestore();
+      closeBroker.mockRestore();
     }
   });
 });

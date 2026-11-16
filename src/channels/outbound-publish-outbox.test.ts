@@ -3,6 +3,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS,
   ChannelOutboundPublishHandoffError,
+  ChannelOutboundPublishReconciler,
   type ChannelOutboundPublishResult,
   channelOutboundPublishRequestFingerprint,
   getChannelOutboundPublishJob,
@@ -838,5 +839,40 @@ describe("channel outbound publish outbox coalescing", () => {
       status: "published",
       supersededBy: keys[0]!,
     });
+  });
+});
+
+describe("outbound publication drain", () => {
+  it("waits for admitted publication before stopping", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const reconciler = new ChannelOutboundPublishReconciler({
+      reconcile: async () => {
+        await pending;
+        return { attempted: 1, published: 1, failed: 0, coalesced: 0 };
+      },
+    });
+    reconciler.start();
+    let stopped = false;
+    const stopping = reconciler.stop().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    finish();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
+
+  it("does not turn caught reconciliation errors into drain proof", async () => {
+    const reconciler = new ChannelOutboundPublishReconciler({
+      reconcile: async () => {
+        throw new Error("outbox receipt write failed");
+      },
+    });
+    reconciler.start();
+    await expect(reconciler.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
   });
 });

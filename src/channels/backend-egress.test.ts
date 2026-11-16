@@ -80,6 +80,88 @@ describe("channel backend cross-process egress", () => {
     expect(outputs).toEqual([outputEnvelope]);
   });
 
+  it("blocks drain when an admitted sink rejects after stop instead of treating wire failure as completion", async () => {
+    const connection = new InMemoryRequestReplyConnection();
+    const outputSinks = new ChannelOutputSinkRegistry();
+    let entered!: () => void;
+    const admitted = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let rejectSink!: (error: Error) => void;
+    const pending = new Promise<void>((_, reject) => {
+      rejectSink = reject;
+    });
+    outputSinks.register(target, {
+      async emit() {
+        entered();
+        await pending;
+      },
+    });
+    const responder = startChannelBackendEgressResponder({ connection, outputSinks });
+    const codec = JSONCodec<unknown>();
+    const requested = connection.request(
+      CHANNEL_BACKEND_EGRESS_SUBJECT,
+      codec.encode({
+        protocol: CHANNEL_BACKEND_EGRESS_PROTOCOL,
+        schemaVersion: 2,
+        kind: "output",
+        envelope: outputEnvelope,
+      }),
+      { timeout: 1000 },
+    );
+    await admitted;
+    let stopSettled = false;
+    const stopped = responder.stop().then(
+      () => {
+        stopSettled = true;
+        return null;
+      },
+      (error: unknown) => {
+        stopSettled = true;
+        return error;
+      },
+    );
+    await Promise.resolve();
+    expect(stopSettled).toBe(false);
+    rejectSink(new Error("accepted output durability unknown"));
+    expect(codec.decode((await requested).data)).toMatchObject({ ok: false, reason: "sink_failed" });
+    expect(await stopped).toMatchObject({ message: expect.stringContaining("WORK_DRAIN_UNPROVEN") });
+    await expect(responder.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+  });
+
+  it("waits for an admitted sink result before reporting drain", async () => {
+    const connection = new InMemoryRequestReplyConnection();
+    const outputSinks = new ChannelOutputSinkRegistry();
+    let entered!: () => void;
+    const admitted = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let finishSink!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finishSink = resolve;
+    });
+    outputSinks.register(target, {
+      async emit() {
+        entered();
+        await pending;
+      },
+    });
+    const responder = startChannelBackendEgressResponder({ connection, outputSinks });
+    const requester = createChannelBackendEgressRequester({ connect: async () => connection });
+    const requested = requester.emitOutput(outputEnvelope);
+    await admitted;
+    let stopSettled = false;
+    const stopped = responder.stop().then(() => {
+      stopSettled = true;
+    });
+    await Promise.resolve();
+    expect(stopSettled).toBe(false);
+    finishSink();
+    await requested;
+    await stopped;
+    expect(stopSettled).toBe(true);
+  });
+
   it("returns a stable failure when the runner has no matching sink", async () => {
     const connection = new InMemoryRequestReplyConnection();
     const responder = startChannelBackendEgressResponder({
@@ -240,7 +322,7 @@ describe("channel backend cross-process egress", () => {
       });
       expect(emit).not.toHaveBeenCalled();
     } finally {
-      await responder.stop();
+      await expect(responder.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
     }
   });
 
@@ -290,7 +372,7 @@ describe("channel backend cross-process egress", () => {
       });
       expect(contexts).toEqual([undefined, context]);
     } finally {
-      await responder.stop();
+      await expect(responder.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
     }
   });
 
@@ -339,7 +421,7 @@ describe("channel backend cross-process egress", () => {
         expect(context?.expectedRequestFingerprint).toBe(scenario === "no pin" ? undefined : "a".repeat(64));
         expect(request).toHaveBeenCalledTimes(1);
       } finally {
-        await responder.stop();
+        await expect(responder.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
       }
     });
   }
@@ -404,7 +486,7 @@ describe("channel backend cross-process egress", () => {
       expect(states.map((state) => state.status)).toEqual(["retry_scheduled", "non_retryable"]);
       expect(request).toHaveBeenCalledTimes(2);
     } finally {
-      await responder.stop();
+      await expect(responder.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
     }
   });
 
@@ -431,7 +513,7 @@ describe("channel backend cross-process egress", () => {
       });
       expect(failing).toHaveBeenCalledTimes(1);
     } finally {
-      await responder.stop();
+      await expect(responder.stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
     }
   });
 

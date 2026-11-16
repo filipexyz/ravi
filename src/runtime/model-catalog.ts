@@ -158,18 +158,11 @@ export function resolvePreferredRuntimeModel(
   options: RuntimeModelCatalogOptions = {},
 ): string {
   const normalized = normalizeRuntimeModel(provider, model);
-  const models = listRuntimeModels(provider, options);
   if (provider !== "claude" && isClaudeModelAlias(normalized)) {
     return getDefaultModelForProvider(provider, options);
   }
-  if (normalized && models.length === 0) {
-    return normalized;
-  }
-  if (normalized && models.some((entry) => entry.id.toLowerCase() === normalized.toLowerCase())) {
-    return normalized;
-  }
 
-  return getDefaultModelForProvider(provider, options);
+  return normalized ?? getDefaultModelForProvider(provider, options);
 }
 
 export function isClaudeModelAlias(model: string | null | undefined): boolean {
@@ -338,18 +331,10 @@ export function checkRuntimeModelInCatalog(
   return open;
 }
 
-function normalizeRuntimeModel(provider: RuntimeProviderId, model: string | null | undefined): string | null {
+function normalizeRuntimeModel(_provider: RuntimeProviderId, model: string | null | undefined): string | null {
   const value = model?.trim();
   if (!value) {
     return null;
-  }
-
-  if (provider === "claude") {
-    const lower = value.toLowerCase();
-    if (lower === "fable" || lower === "claude-mythos-5") return "claude-fable-5";
-    if (lower.includes("sonnet")) return "sonnet";
-    if (lower.includes("haiku")) return "haiku";
-    if (lower.includes("opus")) return "opus";
   }
 
   return value;

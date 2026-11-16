@@ -14,6 +14,12 @@ A row in the trigger table is not proof of a loaded subscription. The runner
 health request confirms that the existing runner consumed this exact desired
 follow configuration, without adding another watcher or scheduling system.
 
+The originating channel context includes provenance that the trigger destination
+contract does not persist. Comparing that whole context with the stored source
+incorrectly rejects working follows. Reusing the persistence serializer on both
+sides compares the actual destination contract without widening stored data or
+weakening verification of a missing or different destination.
+
 ## Decision: remove bare operator publication
 
 `--reply-session` selected a notification destination but proved no identity.

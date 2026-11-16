@@ -1,9 +1,9 @@
+import { seedPreparedThreadState, preparedThreadStateTables } from "../../test/prepared-thread-state.js";
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { listen, spawn } from "bun";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -110,6 +110,7 @@ function createFakeChannelsRuntime(prefix: string, channelsEntry: Record<string,
     "utf8",
   );
   chmodSync(fakePm2Path, 0o755);
+  seedPreparedThreadState(join(root, "state"));
 
   return {
     bundlePath,
@@ -200,7 +201,10 @@ describe("channels runner lifecycle", () => {
     const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
 
     expect(result.status).toBe(0);
-    expect(existsSync(join(runtime.env.RAVI_STATE_DIR!, "ravi.db"))).toBe(false);
+    expect(preparedThreadStateTables(runtime.env.RAVI_STATE_DIR!)).toEqual([
+      "thread_schema_fence",
+      "thread_schema_write_lease",
+    ]);
     expect(result.stderr).toBe("");
     expect(pm2Log).toContain("delete ravi-channels");
     expect(pm2Log).toContain(buildChannelsPm2StartArgs({ bundlePath: realpathSync(runtime.bundlePath) }).join(" "));
@@ -235,7 +239,10 @@ describe("channels runner lifecycle", () => {
       const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
 
       expect(result.status).toBe(0);
-      expect(existsSync(join(runtime.env.RAVI_STATE_DIR!, "ravi.db"))).toBe(false);
+      expect(preparedThreadStateTables(runtime.env.RAVI_STATE_DIR!)).toEqual([
+        "thread_schema_fence",
+        "thread_schema_write_lease",
+      ]);
       expect(JSON.parse(result.stdout)).toMatchObject({
         action: "start",
         changed: true,

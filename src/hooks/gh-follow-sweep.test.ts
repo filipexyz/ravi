@@ -42,7 +42,7 @@ const runMaintenance = (deps: Parameters<typeof runMaintenanceRaw>[0] = {}) =>
   runMaintenanceRaw({ ensureWatches: async () => undefined, ...deps });
 
 function trigger(name: string, id = "t1"): Trigger {
-  return { id, name } as Trigger;
+  return { id, name, cooldownMs: 0, debounceMs: 0 } as Trigger;
 }
 
 function pending(overrides: Partial<PendingGhFollow> = {}): PendingGhFollow {

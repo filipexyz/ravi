@@ -3,7 +3,64 @@ import { describe, expect, it } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parsePm2Jlist } from "./pm2-output.js";
 import { buildPm2Env, parsePm2Processes, runPm2 } from "./pm2.js";
+import { OUTDATED_PM2_BANNER, runWithPm2Jlist } from "./test/pm2-jlist.js";
+
+describe("PM2 jlist output", () => {
+  const entry = { name: "ravi", pid: 101, pm_id: 0, pm2_env: { status: "online" } };
+
+  it("reads the real PM2 version warning before compact and pretty JSON", () => {
+    for (const indent of [undefined, 2]) {
+      const raw = OUTDATED_PM2_BANNER + JSON.stringify([entry], null, indent);
+      expect(parsePm2Jlist(raw)).toEqual([entry]);
+      expect(parsePm2Processes(raw)[0]).toMatchObject({ name: "ravi", pid: 101, status: "online" });
+    }
+    expect(parsePm2Jlist(`${OUTDATED_PM2_BANNER}[]\n`)).toEqual([]);
+  });
+
+  it("ignores terminal colors and PM2 diagnostics without mistaking them for the JSON array", () => {
+    const raw = `\u001b[31m${OUTDATED_PM2_BANNER}\u001b[39m[PM2] Spawning PM2 daemon\n${JSON.stringify([entry])}\n`;
+    expect(parsePm2Jlist(raw)).toEqual([entry]);
+  });
+
+  it("preserves strings inside the process list verbatim", () => {
+    const process = {
+      ...entry,
+      name: '[PM2] quoted "name"',
+      pm2_env: { args: ["line\n>>>> warning", "\u001b[31mvalue"] },
+    };
+    expect(parsePm2Jlist(OUTDATED_PM2_BANNER + JSON.stringify([process]))).toEqual([process]);
+  });
+
+  it("rejects absent, truncated, non-array and malformed snapshots", () => {
+    for (const payload of [
+      "",
+      "not JSON",
+      '{"processes":[]}',
+      "null",
+      "[null]",
+      "[42]",
+      "[[]]",
+      "[{",
+      "[]\ntrailing garbage",
+    ]) {
+      expect(() => parsePm2Jlist(OUTDATED_PM2_BANNER + payload)).toThrow();
+    }
+  });
+
+  it("keeps strict process discovery usable with a banner and fails closed for corrupt output", () => {
+    const script = `import { getPm2Processes } from ${JSON.stringify(new URL("./pm2.ts", import.meta.url).href)};
+      try { console.log(JSON.stringify({ processes: getPm2Processes({ strict: true }) })); }
+      catch (error) { console.log(JSON.stringify({ error: error.message })); }`;
+    const valid = runWithPm2Jlist(OUTDATED_PM2_BANNER + JSON.stringify([entry]), script);
+    expect(valid.status, valid.stderr).toBe(0);
+    expect(JSON.parse(valid.stdout).processes[0]).toMatchObject({ name: "ravi", pid: 101, status: "online" });
+    const invalid = runWithPm2Jlist(OUTDATED_PM2_BANNER + "[{bad]", script);
+    expect(invalid.status, invalid.stderr).toBe(0);
+    expect(JSON.parse(invalid.stdout).error).toContain("Unable to read the managed PM2 processes");
+  });
+});
 
 describe("buildPm2Env", () => {
   it("overwrites retained PM2 context with empty values while preserving service settings", () => {

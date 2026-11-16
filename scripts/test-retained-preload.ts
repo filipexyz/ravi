@@ -11,7 +11,7 @@ import { captureRetainedProtectedRoots, retainedMacProfile } from "../src/test/r
 const repo = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 const scenarios = [
   "root-alias", "root-lexical", "link-sync", "link-callback", "link-promises", "link-inside",
-  "dns-nested", "dns-default", "dns-bare", "dns-standalone", "dns-bare-standalone", "dns-top",
+  "dns-nested", "dns-default", "dns-bare", "dns-standalone", "dns-bare-standalone", "dns-top", "account-identity",
   "closed-memory", "live-latest", "same-request-distinct", "close-false", "close-true-idle", "double-close",
   "dispose", "dispose-decorated-close", "close-true-busy", "snapshot-query-error-caught", "policy-contract", "failed-close-live", "snapshot-error-then-live",
 ];
@@ -50,7 +50,7 @@ function verify(scenario: string, stdout: string, stderr: string, exit: number, 
   assert.equal(snapshot.diskPersistenceTested, false);
   assert.deepEqual(snapshot.blocked, []);
   assert.equal(snapshot.fileDenials.length, filesystemRefusal ? 1 : 0);
-  assert.equal(snapshot.networkDenied.length, scenario.startsWith("dns-") ? 1 : 0);
+  assert.equal(snapshot.networkDenied.length, scenario === "account-identity" ? 5 : scenario.startsWith("dns-") ? 1 : 0);
   assert.equal(snapshot.snapshots.filter((item: any) => "error" in item).length, captureRefusal ? 1 : 0);
   assert.deepEqual(snapshot.snapshots[0].tables.probe_control, [{ value: "present" }]);
   if (scenario === "link-inside") assert.equal(body.calls.length, 1);

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { stopRuntimeComponents } from "../runtime/shutdown.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   hasPendingKnowledgeCuratorFirstRun,
@@ -110,5 +111,54 @@ describe("knowledge leader runners", () => {
     const log: string[] = [];
     startKnowledgeLeaderRunners(fakeRunners(log, "curator"));
     expect(log).toEqual(["start:index", "start:curator", "start:mirror", "start:digest"]);
+  });
+
+  it("knowledge-runner stop failure reaches shutdown result and blocks the drain latch", async () => {
+    const calls: string[] = [];
+    const first = new Error("index stop failed");
+    const second = { reason: "mirror stop failed" };
+    const failures = new Map<string, unknown>([
+      ["index", first],
+      ["mirror", second],
+    ]);
+    const runners = fakeRunners(calls).map((runner) => ({
+      ...runner,
+      stop: () => {
+        calls.push(`stop:${runner.name}`);
+        if (failures.has(runner.name)) {
+          const cause = failures.get(runner.name);
+          failures.delete(runner.name);
+          throw cause;
+        }
+      },
+    }));
+    startKnowledgeLeaderRunners(runners);
+    const result = await stopRuntimeComponents(
+      [
+        { name: "knowledge", stop: stopKnowledgeLeaderRunners },
+        { name: "remaining-component", stop: () => calls.push("remaining-component") },
+      ],
+      [{ name: "sqlite", stop: () => calls.push("sqlite") }],
+    );
+    expect(calls.slice(4)).toEqual(["stop:index", "stop:curator", "stop:mirror", "stop:digest", "remaining-component"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.name).toBe("knowledge");
+    const aggregate = result.failures[0]?.cause;
+    expect(aggregate).toBeInstanceOf(AggregateError);
+    expect((aggregate as AggregateError).errors.map((error: Error) => error.message)).toEqual([
+      "Knowledge runner index failed to stop",
+      "Knowledge runner mirror failed to stop",
+    ]);
+    expect((aggregate as AggregateError).errors[0].cause).toBe(first);
+    expect((aggregate as AggregateError).errors[1].cause).toBe(second);
+    expect(result.drain.phase).toBe("blocked");
+    expect(result.drain.failures).toContain("knowledge");
+    expect(knowledgeLeaderRunnersStarted()).toBe(true);
+
+    stopKnowledgeLeaderRunners();
+    expect(calls.slice(-2)).toEqual(["stop:index", "stop:mirror"]);
+    expect(knowledgeLeaderRunnersStarted()).toBe(false);
+    expect(result.drain.phase).toBe("blocked");
   });
 });

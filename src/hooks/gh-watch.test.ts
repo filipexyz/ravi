@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+  buildGhFollowTriggerInput,
   ensureFollowWatchProducer,
   ensureGhWatchFollow,
   resolveGhFollowContext,
@@ -488,6 +489,8 @@ describe("gh watch follow", () => {
       createWatch: async () => ({ watch: watch(), createdRemote: false }),
       listTriggers: () => [] as Trigger[],
       createTrigger: (input: TriggerInput) => {
+        expect(input.cooldownMs).toBe(0);
+        expect(input.debounceMs).toBe(0);
         created.push(input.name);
         return trigger();
       },
@@ -514,6 +517,8 @@ describe("gh watch follow", () => {
       message: "Activity on o/r#7. Tell the user what changed.",
       filter: "old",
       topic: "ravi.watch.github.*",
+      cooldownMs: 30_000,
+      debounceMs: 2_000,
     });
 
     const result = await ensureGhWatchFollow(
@@ -536,6 +541,8 @@ describe("gh watch follow", () => {
     expect(String(updates[0].patch.message)).toContain("comment");
     expect(updates[0].patch.filter).toBe(ghFollowFilter("o/r", 7));
     expect(updates[0].patch.topic).toBe("ravi.watch.github.>");
+    expect(updates[0].patch.cooldownMs).toBe(0);
+    expect(updates[0].patch.debounceMs).toBe(0);
   });
 
   it("does not create a trigger without a PR number", async () => {
@@ -1037,5 +1044,51 @@ describe("durable PR follow owner", () => {
     expect(() => resolveGhFollowContext(childContext)).toThrow("parent session is missing");
     expect(() => resolveGhFollowContext({ sessionKey: "missing:thread:1.2" })).toThrow("lifecycle is missing");
     expect(resolveGhFollowContext({ sessionName: "normal" })).toEqual({ sessionName: "normal" });
+  });
+
+  it("maintenance removes burst loss from existing follows once without changing owners or paused state", async () => {
+    seed();
+    const input = buildGhFollowTriggerInput("o/r", 833, { sessionName: "parent", source: childContext.source });
+    const legacy = dbCreateTrigger({ ...input, cooldownMs: 30_000 });
+    const paused = dbCreateTrigger({
+      ...input,
+      name: "gh-follow:o/r#834",
+      cooldownMs: 30_000,
+      debounceMs: 2_000,
+      enabled: false,
+    });
+    const unrelated = dbCreateTrigger({ ...input, name: "custom-review", cooldownMs: 30_000, debounceMs: 2_000 });
+    let refreshes = 0;
+    const maintenanceDeps = {
+      readPending: () => [],
+      listPrStates: () =>
+        new Map([
+          [833, "OPEN"],
+          [834, "OPEN"],
+        ]),
+      listWatches: () => [],
+      ensureWatches: async () => {},
+      emitTriggersRefresh: async () => {
+        refreshes++;
+      },
+    };
+
+    expect((await runGhFollowMaintenance(maintenanceDeps)).triggersRepaired).toBe(2);
+    expect(dbGetTrigger(legacy.id)).toMatchObject({
+      cooldownMs: 0,
+      debounceMs: 0,
+      replySession: "parent",
+      replySource: childContext.source,
+      enabled: true,
+    });
+    expect(dbGetTrigger(paused.id)).toMatchObject({
+      cooldownMs: 0,
+      debounceMs: 0,
+      enabled: false,
+      replySession: "parent",
+    });
+    expect(dbGetTrigger(unrelated.id)).toMatchObject({ cooldownMs: 30_000, debounceMs: 2_000 });
+    expect((await runGhFollowMaintenance(maintenanceDeps)).triggersRepaired).toBe(0);
+    expect(refreshes).toBe(1);
   });
 });

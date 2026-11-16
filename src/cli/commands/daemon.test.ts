@@ -1,3 +1,4 @@
+import { seedPreparedThreadState, preparedThreadStateTables } from "../../test/prepared-thread-state.js";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
@@ -86,6 +87,7 @@ function statefulFakePm2Script(): string {
 }
 
 function restartCliEnv(tempRoot: string, pm2LogPath: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  seedPreparedThreadState(join(tempRoot, "state"));
   return {
     ...withoutRaviRuntimeContextEnv(process.env),
     HOME: join(tempRoot, "home"),
@@ -276,6 +278,7 @@ describe("daemon runtime target", () => {
       "utf8",
     );
 
+    seedPreparedThreadState(join(tempRoot, "state"));
     const result = spawnSync("bun", ["src/cli/index.ts", "daemon", "restart", "-m", "restart once", "--json"], {
       cwd: process.cwd(),
       encoding: "utf8",
@@ -300,7 +303,10 @@ describe("daemon runtime target", () => {
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     expect(result.status).toBe(0);
-    expect(existsSync(join(tempRoot, "state", "ravi.db"))).toBe(false);
+    expect(preparedThreadStateTables(join(tempRoot, "state"))).toEqual([
+      "thread_schema_fence",
+      "thread_schema_write_lease",
+    ]);
     expect(result.stdout).not.toContain('"mode": "handoff"');
     const pm2Log = readFileSync(pm2LogPath, "utf8");
     expect(pm2Log).toContain(`start dist/bundle/index.js --cwd ${realpathSync(join(tempRoot, "runtime"))}`);
@@ -494,7 +500,10 @@ describe("DaemonCommands --json", () => {
       gateway: "",
       callback: "",
     });
-    expect(existsSync(join(tempRoot, "state", "ravi.db"))).toBe(false);
+    expect(preparedThreadStateTables(join(tempRoot, "state"))).toEqual([
+      "thread_schema_fence",
+      "thread_schema_write_lease",
+    ]);
   }, 25_000);
 
   it("prints structured daemon status without stdout fallback fields", () => {

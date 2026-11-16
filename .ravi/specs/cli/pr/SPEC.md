@@ -114,6 +114,13 @@ PR reconciliation and follow are internal helpers, not separate public commands.
   pruned is safe while its saved lifecycle and durable parent remain; missing
   or ambiguous lineage MUST fail closed. Verification and reported replySession
   MUST refer to the resolved parent, never a frozen child destination.
+- Follow verification MUST compare expected and persisted `replySource` through
+  the same `serializeReplySource` projection used by trigger persistence:
+  `channel`, `accountId`, `chatId`, and a nonempty optional `threadId`.
+  Context-only `instanceId` and `canonicalChatId` MUST NOT be persisted or cause
+  a false mismatch. A missing/invalid destination or a real difference in any
+  persisted destination field MUST fail verification. Watch, trigger, ownership,
+  repository/PR filter and loaded-runner checks MUST remain required.
 - New PRs are ready; legacy drafts become ready after follow verification.
   Final result includes repo/head/base, local and remote SHA/tree, PR URL,
   watch/CI-watch/trigger IDs, publishing session, verification time and current

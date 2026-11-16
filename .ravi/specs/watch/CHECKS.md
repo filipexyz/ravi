@@ -62,6 +62,16 @@ A PR follow owns its event producer, not just its trigger:
 
 ## PR Publication Regression
 
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/triggers/__tests__/runner-debounce.test.ts`
+  passes `delivers all three PR #833 review comments from 2026-11-15T23:52:33Z exactly once`:
+  three comments with distinct event keys in one second each retain their body
+  and URL; replay with new envelope ids does not redeliver; loop-marked events
+  do not fire; a new sentinel comment still arrives.
+- `src/hooks/gh-watch.test.ts` verifies creation without cooldown/debounce,
+  repair during reuse and maintenance, preservation of paused state and saved
+  recipient, no edits to unrelated triggers and an idempotent second sweep.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/pr/follow-health.test.ts src/hooks/gh-pr-publish.test.ts`
+  rejects persisted or loaded follow timing policies that still drop bursts.
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/hooks/gh-pr-publish.test.ts src/hooks/gh-watch.test.ts src/hooks/gh-follow-sweep.test.ts` passes.
 - Creating through the API sets `draft: false`, creates the standard repo watch
   and `gh-follow:<repo>#<number>` trigger, and routes it to the publishing session.

@@ -14,8 +14,10 @@ const publishCalls: Array<Record<string, unknown>> = [];
  * Mirrors the real `nats.subscribe`, an async generator: a `return()` called
  * while the consumer awaits `next()` is queued behind that pending `next()`,
  * so the next event on the topic is still delivered to the old loop.
+ * Owner shutdown can now pass AbortSignal to wake that pending next() first;
+ * ordinary refresh still exercises the queued-return behavior above.
  */
-async function* topicStream(topic: string): AsyncGenerator<BusEvent> {
+async function* topicStream(topic: string, signal?: AbortSignal): AsyncGenerator<BusEvent> {
   const queue: BusEvent[] = [];
   let wake: (() => void) | null = null;
   let closed = false;
@@ -24,6 +26,12 @@ async function* topicStream(topic: string): AsyncGenerator<BusEvent> {
     wake = null;
     resolve?.();
   };
+  const onAbort = () => {
+    closed = true;
+    notify();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) onAbort();
   channels.set(topic, {
     push(event) {
       queue.push(event);
@@ -34,14 +42,18 @@ async function* topicStream(topic: string): AsyncGenerator<BusEvent> {
       notify();
     },
   });
-  while (!closed) {
-    if (queue.length === 0) {
-      await new Promise<void>((resolve) => {
-        wake = resolve;
-      });
-      continue;
+  try {
+    while (!closed) {
+      if (queue.length === 0) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+        continue;
+      }
+      yield queue.shift()!;
     }
-    yield queue.shift()!;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -53,7 +65,7 @@ mock.module("../../nats.js", () => ({
   publish: mock(async () => {}),
   nats: {
     emit: mock(async () => {}),
-    subscribe: mock((topic: string) => topicStream(topic)),
+    subscribe: mock((topic: string, options?: { signal?: AbortSignal }) => topicStream(topic, options?.signal)),
     close: mock(async () => {}),
   },
 }));

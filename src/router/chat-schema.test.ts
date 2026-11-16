@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
+import { openStateDatabase } from "../db/state-boundary.js";
+import { prepareThreadFence } from "../threads/schema-fence.js";
 import {
   dbAddChatToReadingList,
   dbCanonicalizeDmChatForContact,
@@ -78,7 +80,8 @@ describe("identity chat schema", () => {
   });
 
   it("migrates existing chat rows before installing canonical-write indexes", () => {
-    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    const legacyDb = openStateDatabase(join(stateDir!, "ravi.db"));
+    prepareThreadFence(legacyDb);
     legacyDb.exec(`
       CREATE TABLE chats (
         id TEXT PRIMARY KEY,

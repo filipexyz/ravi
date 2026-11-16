@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { file, sleep, spawn, write } from "bun";
-import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { openStateDatabase } from "../db/state-boundary.js";
 import { closeRouterDb, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { prepareThreadFence } from "../threads/schema-fence.js";
 import {
   acquireRuntimeRecoveryClaim,
   CrashRecoveryLedgerConflictError,
@@ -225,7 +226,8 @@ async function waitForFile(path: string, timeoutMs = 5_000): Promise<void> {
 
 describe("crash recovery ledger", () => {
   it("creates and reopens the complete schema with foreign keys and indexes", () => {
-    const baselineDb = new Database(join(stateDir!, "ravi.db"));
+    const baselineDb = openStateDatabase(join(stateDir!, "ravi.db"));
+    prepareThreadFence(baselineDb);
     baselineDb.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`);
     baselineDb.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)").run("baseline", "kept", 1);
     baselineDb.close();

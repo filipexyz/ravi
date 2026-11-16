@@ -269,13 +269,6 @@
       "count": 1
     },
     {
-      "id": "src/channels/backend-egress.ts:6243cf0ad21583fb9b7a9f94",
-      "file": "src/channels/backend-egress.ts",
-      "boundary": "channels",
-      "rule": "rejection-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/channels/health.ts:05f821802cff049921afba21",
       "file": "src/channels/health.ts",
       "boundary": "channels",
@@ -360,21 +353,7 @@
       "count": 1
     },
     {
-      "id": "src/channels/native/driver.ts:43f34c69a5ddf124deecf607",
-      "file": "src/channels/native/driver.ts",
-      "boundary": "channels",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/channels/native/driver.ts:4d50f733fad5b2e1073beac3",
-      "file": "src/channels/native/driver.ts",
-      "boundary": "channels",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/channels/native/driver.ts:5cef50069c09c3ce767cb5d8",
       "file": "src/channels/native/driver.ts",
       "boundary": "channels",
       "rule": "catch-without-binding",
@@ -546,13 +525,6 @@
       "file": "src/channels/slack/interactions.ts",
       "boundary": "channels-slack",
       "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/channels/slack/markdown-delivery.ts:ddbbf99b5618436506c18e7a",
-      "file": "src/channels/slack/markdown-delivery.ts",
-      "boundary": "channels-slack",
-      "rule": "rejection-without-binding",
       "count": 1
     },
     {
@@ -1599,13 +1571,6 @@
       "count": 1
     },
     {
-      "id": "src/cli/host-cli-gateway.ts:badc819b44c99d76bde75691",
-      "file": "src/cli/host-cli-gateway.ts",
-      "boundary": "cli",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/cli/library-contract.ts:f2ec480a53ac6fd028da51f5",
       "file": "src/cli/library-contract.ts",
       "boundary": "cli",
@@ -2173,13 +2138,6 @@
       "count": 1
     },
     {
-      "id": "src/cron/runner.ts:9ec1905034d5600d03660fa2",
-      "file": "src/cron/runner.ts",
-      "boundary": "cron",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/cron/schedule.ts:2b46c8ca013c56a26edd2e09",
       "file": "src/cron/schedule.ts",
       "boundary": "cron",
@@ -2218,13 +2176,6 @@
       "id": "src/db/write-retry.ts:2678de187797463c8ed583e4",
       "file": "src/db/write-retry.ts",
       "boundary": "db",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/decisions/delivery.ts:0c0e6a25b357dad417a2494f",
-      "file": "src/decisions/delivery.ts",
-      "boundary": "decisions",
       "rule": "catch-without-binding",
       "count": 1
     },
@@ -2306,28 +2257,7 @@
       "count": 2
     },
     {
-      "id": "src/gateway.ts:0e950481ed220e99099ac63f",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/gateway.ts:38b3a905b1bff1eaf59af932",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
       "id": "src/gateway.ts:49a19f1559aad6da19e61c67",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/gateway.ts:5955b4947cd95ed0c53bfebb",
       "file": "src/gateway.ts",
       "boundary": "gateway.ts",
       "rule": "surface-bypasses-constructor",
@@ -2348,21 +2278,7 @@
       "count": 1
     },
     {
-      "id": "src/gateway.ts:847d3a3fcc564674e0dc04ad",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
       "id": "src/gateway.ts:b31b92d6eb316bc184edb339",
-      "file": "src/gateway.ts",
-      "boundary": "gateway.ts",
-      "rule": "surface-bypasses-constructor",
-      "count": 1
-    },
-    {
-      "id": "src/gateway.ts:e5adb0dd5b47cd35b49c07d3",
       "file": "src/gateway.ts",
       "boundary": "gateway.ts",
       "rule": "surface-bypasses-constructor",
@@ -5624,13 +5540,6 @@
       "count": 1
     },
     {
-      "id": "src/triggers/runner.ts:c81d4567b8e396622e226477",
-      "file": "src/triggers/runner.ts",
-      "boundary": "triggers",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/triggers/triggers-db.ts:18050dd160921a6db0880e71",
       "file": "src/triggers/triggers-db.ts",
       "boundary": "triggers",
@@ -5876,13 +5785,6 @@
       "count": 1
     },
     {
-      "id": "src/work-objects/nats.ts:84da9ff3b3b7d971aafc2907",
-      "file": "src/work-objects/nats.ts",
-      "boundary": "work-objects",
-      "rule": "rejection-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/workflows/workflow-db.ts:29ea9b1863655e4119634bae",
       "file": "src/workflows/workflow-db.ts",
       "boundary": "workflows",
@@ -5898,7 +5800,7 @@
     }
   ],
   "totals": {
-    "violations": 882,
+    "violations": 868,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5912,21 +5814,21 @@
       "src/bridge": 4,
       "src/bug-report": 2,
       "src/calendar": 2,
-      "src/channels": 25,
-      "src/channels/native": 7,
-      "src/channels/slack": 15,
+      "src/channels": 24,
+      "src/channels/native": 5,
+      "src/channels/slack": 14,
       "src/ci": 1,
-      "src/cli": 33,
+      "src/cli": 32,
       "src/cli/commands": 144,
       "src/cloud-agents": 30,
       "src/cloud-auth": 11,
       "src/console-scope": 5,
-      "src": 43,
+      "src": 38,
       "src/costs": 2,
       "src/crm": 1,
-      "src/cron": 5,
+      "src/cron": 4,
       "src/db": 2,
-      "src/decisions": 3,
+      "src/decisions": 2,
       "src/devin": 2,
       "src/ephemeral": 2,
       "src/eval": 3,
@@ -5982,7 +5884,7 @@
       "src/tasks": 16,
       "src/threads": 3,
       "src/transcribe": 3,
-      "src/triggers": 6,
+      "src/triggers": 5,
       "src/tui": 2,
       "src/tui/hooks": 5,
       "src/tui/lib": 2,
@@ -5991,7 +5893,7 @@
       "src/webhooks": 9,
       "src/whatsapp-overlay": 7,
       "src/work-objects/adapters": 1,
-      "src/work-objects": 2,
+      "src/work-objects": 1,
       "src/workflows": 2
     }
   }

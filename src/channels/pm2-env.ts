@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { parsePm2Jlist } from "../pm2-output.js";
 import { CHANNELS_PM2_PROCESS_NAME } from "../pm2.js";
 
 const RUNNER_ENV_KEYS = [
@@ -23,8 +24,7 @@ function readExistingPm2Env(processName: string): Record<string, unknown> {
   });
   if ((result.status ?? 1) !== 0 || !result.stdout.trim()) return {};
   try {
-    const list = JSON.parse(result.stdout) as unknown;
-    if (!Array.isArray(list)) return {};
+    const list = parsePm2Jlist(result.stdout);
     const processInfo = list.find((item) => {
       return item && typeof item === "object" && (item as { name?: unknown }).name === processName;
     }) as { pm2_env?: { env?: Record<string, unknown> } } | undefined;

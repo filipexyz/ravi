@@ -28,6 +28,19 @@ The installed daemon owns real state by process identity, with no new launcher f
 
 ## Boot and upgrades
 
+If `PM2_HOME/pm2.pid` is absent, the guard verifies the actual parent with
+`ps -ww -p <ppid> -o args=` and requires the default PM2 God Daemon title for
+the same canonical PM2 home before querying the live registry. Do not use
+`pids/ravi-0.pid` as the manager PID: it identifies the application. A custom
+manager title with no default PID file remains unverifiable and fails closed.
+Inspect PID/PPID and paths only; never print the full registry or environment.
+
+The inert-stdin launcher does not write boot identity. Runtime code writes
+`runtime-processes/ravi.json` or `ravi-channels.json` later. Absence of a receipt
+does not explain a state-boundary refusal by itself: check supervisor identity
+and the registry query separately. A version banner is tolerated; invalid JSON
+or a failed query still refuses access.
+
 The daemon role owns schema initialization; this does not establish exclusivity between daemon processes. Start it first; it initializes the router, cloud-chat bindings/approvals, outbound publication outbox, Slack automatic-output circuit, contacts, chat, credentials, console scope, insights, knowledge, Devin, human-bridge and PR publication stores before serving. Each store or lazy component records the exact package version after successful initialization. Then start channels from that same installed release.
 
 For upgrades, stop the old channel runner before the daemon applies a new release's migrations, and start the new runner after daemon initialization. An already-running consumer is not a schema-migration coordinator.
@@ -67,3 +80,22 @@ PR and its CI follow. It does not run tests or merge. On a partial result, repea
 the same expected SHA after inspecting the reported phase. Use the complete
 publication/recovery contract in `cli/pr`; do not revive the earlier snapshot
 publisher or disable hooks. Full checks run in PR CI before merge.
+
+## Thread PR1 deployment hold
+
+This is preparation only. Do not deploy onto existing runtime state using independent `daemon restart` / `channels restart`. The release refuses first bootstrap without reviewed external evidence. Component drain receipts, PM2 online, health and process silence do not establish full accepted-work completion.
+
+Before a later authorized rollout, inventory both predecessor PIDs/start identities/bundles, establish external intake and legacy-launcher exclusion, reconcile all accepted work to durable outcomes and validate its evidence. The maintenance coordinator requires a trusted verifier, keeps its interlock after failure, stops channels then daemon and accepts only confirmed physical exits. It never starts a successor, clears the interlock or migrates data in PR1. There is deliberately no env flag/file-hash-only bootstrap waiver.
+
+Do not remove the interlock, downgrade schema markers, clear queues/claims, reset context or expire a lease to force progress. An interrupted preparation requires reviewed recovery. Canonical health/attention JOINs and legacy context provenance (resume and local recovery) belong to PR2 before any cross-audience projection.
+
+A failed shutdown drain must retain its failure while attempting the other component stops and exit nonzero. It must not tear down shared NATS/SQLite handles as though all accepted component work had settled. Neither a zero exit nor a scoped drain receipt replaces the external accepted-work verifier.
+
+Inspect the shutdown result's named `failures`, `drain.phase` and exit code together. Nested stop/close failures preserve their original causes in an aggregate. `blocked` remains an unsuccessful shutdown even if another sibling or a later cleanup retry succeeds. Do not clear that result, reset queues or restart the live daemon to test it; use isolated failure-injection tests for Knowledge, SQLite, subscriptions and media.
+
+
+For isolated CLI/fixture creation, `withNewIsolatedThreadState(parent, callback)` creates a private directory and exclusive database file. Seed an old schema and initialize it within the synchronous ownership callback; do not launch a runtime or share this state until initialization finishes. This is proof by creation/ownership, not a rule that temporary paths are safe.
+
+An already-existing database requires `withExitedThreadBootstrapAuthorization` from reviewed coordinator code. The coordinator holds external launcher/admission exclusion throughout the synchronous callback and supplies complete inventory plus accepted-work evidence for both exact predecessors. The SQL boundary rechecks physical exits and evidence under the schema lock. The API neither stops/starts services nor releases an interlock; real-state process-role and entrypoint guards remain in force, so this does not complete the production rollout workflow.
+
+Inspect `<database>.thread-bootstrap.jsonl` for `thread-bootstrap-authorized`, its reason and evidence references. This log records authorization before SQL, not successful installation or migration. Missing/failed audit persistence refuses installation. Do not manufacture an audit record or use it as reusable authorization.

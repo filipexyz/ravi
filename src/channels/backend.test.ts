@@ -18,6 +18,7 @@ import {
   CHANNEL_BACKEND_SCHEMA_VERSION,
   ChannelOutputSinkRegistry,
   resumePendingChannelIngressPublications,
+  startChannelBackendPublicationReconciler,
   setChannelBackendPromptPublisherForTests,
   type ChannelBackendPromptPublisher,
   type ChannelIngressRequest,
@@ -695,3 +696,47 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   }
   throw new Error("condition was not reached");
 }
+
+describe("channel backend publication drain", () => {
+  it("stops the timer and awaits already admitted publication without re-running queued work", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let tick!: () => void;
+    const reconcile = mock(async () => {
+      await pending;
+      return { scanned: 1, published: 1, busy: 0, failed: 0 };
+    });
+    const cancel = mock(() => {});
+    const stop = startChannelBackendPublicationReconciler({
+      reconcile,
+      clearInterval: cancel,
+      setInterval: (callback) => {
+        tick = callback;
+        return {} as ReturnType<typeof setInterval>;
+      },
+    });
+    let drained = false;
+    const stopping = stop().then(() => {
+      drained = true;
+    });
+    tick();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    finish();
+    await stopping;
+    expect(drained).toBe(true);
+  });
+
+  it("blocks proof when reconciliation catches a failed record", async () => {
+    const stop = startChannelBackendPublicationReconciler({
+      reconcile: async () => ({ scanned: 1, published: 0, busy: 0, failed: 1 }),
+      setInterval: () => ({}) as ReturnType<typeof setInterval>,
+      clearInterval: () => {},
+    });
+    await expect(stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+  });
+});
