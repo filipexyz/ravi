@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   readVerifiedDeliveryBoot,
+  DeliveryProcessObservationError,
   type DeliveryBootDeclaration,
   type DeliveryBootExpectation,
 } from "./delivery-boot.js";
@@ -80,7 +81,7 @@ export function createDeliveryCompatibilityGate(options: {
       const consumers = inventory.consumers.map((expected) => {
         const read = readVerifiedDeliveryBoot({ stateDir: options.stateDir, expected });
         if (read.relation !== "known") {
-          return { pid: expected.pid, bootId: expected.bootId, relation: "unknown" as const, reason: read.reason };
+          return { pid: expected.pid, bootId: expected.bootId, relation: read.relation, reason: read.reason };
         }
         declarations.push(read.boot);
         const verdict = compareDeliveryCompatibility(floor.contract, read.boot);
@@ -109,7 +110,8 @@ export function createDeliveryCompatibilityGate(options: {
           ? { fingerprint: fingerprint({ inventory, contract: floor.contract, declarations }) }
           : {}),
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof DeliveryProcessObservationError) throw error;
       // no-cause: Failed observation is intentionally unknown evidence; it never permits an effect callback.
       return unknown("COMPATIBILITY_OBSERVATION_FAILED");
     }
@@ -132,7 +134,13 @@ export function createDeliveryCompatibilityGate(options: {
     if (!record || record.invalidated || !DELIVERY_EFFECTS.includes(effect)) {
       throw new DeliveryCompatibilityBlockedError(effect, unknown("PERMIT_INVALID"));
     }
-    const snapshot = inspect();
+    let snapshot: DeliveryCompatibilitySnapshot;
+    try {
+      snapshot = inspect();
+    } catch (error) {
+      record.invalidated = true;
+      throw error;
+    }
     if (snapshot.relation !== "supports" || snapshot.fingerprint !== record.fingerprint) {
       record.invalidated = true;
       throw new DeliveryCompatibilityBlockedError(

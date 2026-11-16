@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "bun";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
@@ -14,7 +14,12 @@ import {
   DELIVERY_EFFECTS,
   type DeliveryConsumerInventory,
 } from "./delivery-activation.js";
-import { deliveryBootPath, observeDeliveryProcess, type DeliveryBootExpectation } from "./delivery-boot.js";
+import {
+  deliveryBootPath,
+  observeDeliveryProcess,
+  DeliveryProcessObservationError,
+  type DeliveryBootExpectation,
+} from "./delivery-boot.js";
 
 const fixture = fileURLToPath(new URL("./fixtures/delivery-consumer.ts", import.meta.url));
 const zero = { recovery: 0, pull: 0, claim: 0, send: 0, prune: 0 };
@@ -54,11 +59,16 @@ afterEach(async () => {
   await cleanupIsolatedRaviState(stateDir);
 });
 
-async function consumer(protocol: 1 | 2 = 2) {
+async function consumer(protocol: 1 | 2 = 2, launch: "absolute" | "relative" | "alias" = "absolute") {
   const bootId = randomUUID();
   const name = `consumer-${children.length}`;
-  const args = [fixture, stateDir, dbPath, inventoryPath, bootId, name, String(protocol)];
+  const cwd = realpathSync(stateDir);
+  const alias = join(cwd, `${name}.ts`);
+  if (launch === "alias") symlinkSync(fixture, alias);
+  const entrypoint = launch === "absolute" ? fixture : launch === "alias" ? alias : relative(cwd, fixture);
+  const args = [entrypoint, stateDir, dbPath, inventoryPath, bootId, name, String(protocol)];
   const child = spawn([process.execPath, ...args], {
+    cwd,
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -122,6 +132,67 @@ function gate() {
 }
 
 describe("inactive delivery compatibility gate", () => {
+  it("consumer started with a relative script from another directory: cohort supports and all operations proceed", async () => {
+    const a = await consumer(2, "relative");
+    const b = await consumer();
+    expect(a.expected.cwd).not.toBe(process.cwd());
+    expect(a.expected.argv[1]).not.toStartWith("/");
+    inventory([a.expected, b.expected]);
+    expect(gate().inspect().relation).toBe("supports");
+    for (const instance of [a, b]) {
+      expect((await instance.command("acquire")).relation).toBe("supports");
+      expect(await instance.command("attempt")).toEqual({
+        failures: [],
+        counters: { recovery: 1, pull: 1, claim: 1, send: 1, prune: 1 },
+        relation: "supports",
+      });
+    }
+  });
+
+  it("script that does not match the bundle: cohort unsupported and every operation blocked", async () => {
+    const a = await consumer(2, "relative");
+    const b = await consumer();
+    inventory([a.expected, b.expected]);
+    expect((await a.command("acquire")).relation).toBe("supports");
+    const otherBundle = join(realpathSync(stateDir), "different-bundle.ts");
+    // Identical bytes do not make a different entrypoint the expected bundle.
+    writeFileSync(otherBundle, readFileSync(fixture));
+    inventory([a.expected, { ...b.expected, bundlePath: otherBundle }]);
+    expect(gate().inspect().relation).toBe("unsupported");
+    expect(gate().inspect().consumers[1]?.reason).toBe("entrypoint_bundle_mismatch");
+    for (const instance of [a, b]) {
+      expect(await instance.command("attempt")).toEqual({
+        failures: [...DELIVERY_EFFECTS],
+        counters: zero,
+        relation: "unsupported",
+      });
+    }
+  });
+
+  it("entrypoint resolution failure is explicit and revokes permits without executing effects", async () => {
+    const a = await consumer(2, "alias");
+    inventory([a.expected]);
+    const controller = gate();
+    const acquired = controller.acquire();
+    if (acquired.relation !== "supports") throw new Error("Expected supported fixture");
+    const alias = a.expected.argv[1]!;
+    unlinkSync(alias);
+    expect(() => controller.inspect()).toThrow(DeliveryProcessObservationError);
+    expect(() => controller.acquire()).toThrow(DeliveryProcessObservationError);
+    const counters = { ...zero };
+    expect(() => controller.run(acquired.permit, "recovery", () => counters.recovery++)).toThrow(
+      DeliveryProcessObservationError,
+    );
+    symlinkSync(fixture, alias);
+    expect(controller.inspect().relation).toBe("supports");
+    for (const effect of DELIVERY_EFFECTS) {
+      expect(() => controller.run(acquired.permit, effect, () => counters[effect]++)).toThrow(
+        DeliveryCompatibilityBlockedError,
+      );
+    }
+    expect(counters).toEqual(zero);
+  });
+
   for (const hasUncertain of [true, false]) {
     it(`two ready consumers, one protocol 1: all effects blocked (uncertain=${hasUncertain})`, async () => {
       if (!hasUncertain) {

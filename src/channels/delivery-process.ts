@@ -5,8 +5,35 @@ export type DeliveryProcessObservation = Readonly<{
   pid: number;
   processStartToken: string;
   executablePath: string;
+  cwd: string;
   argv: readonly string[];
 }>;
+
+/** Observation defects must be visible to the controller, never silently become compatibility. */
+export class DeliveryProcessObservationError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "DeliveryProcessObservationError";
+  }
+}
+
+function observeCwd(pid: number, read: () => string): string {
+  try {
+    const path = read();
+    if (!path.startsWith("/")) throw new Error("Kernel process cwd is not absolute");
+    return realpathSync(path);
+  } catch (cause) {
+    throw new DeliveryProcessObservationError(
+      "PROCESS_CWD_UNAVAILABLE",
+      `Cannot observe working directory for delivery process ${pid}`,
+      { cause },
+    );
+  }
+}
 
 function observeLinux(pid: number): DeliveryProcessObservation | null {
   const prefix = `/proc/${pid}`;
@@ -25,6 +52,7 @@ function observeLinux(pid: number): DeliveryProcessObservation | null {
     pid,
     processStartToken: `linux:${bootId}:${fields[19]}`,
     executablePath: realpathSync(`${prefix}/exe`),
+    cwd: observeCwd(pid, () => realpathSync(`${prefix}/cwd`)),
     argv,
   };
 }
@@ -84,15 +112,26 @@ function observeDarwin(pid: number): DeliveryProcessObservation | null {
     cursor = end + 1;
   }
   if (!argv[0]) return null;
+  const cwd = observeCwd(pid, () => {
+    // Public proc_vnodepathinfo ABI (sys/proc_info.h): pvi_cdir.vip_path.
+    // PROC_PIDVNODEPATHINFO=9, sizeof=2352, path offset=152, MAXPATHLEN=1024.
+    const vnodePaths = Buffer.alloc(2352);
+    const bytes = libraries.proc.symbols.proc_pidinfo(pid, 9, 0, ptr(vnodePaths), vnodePaths.length);
+    if (bytes !== vnodePaths.length) throw new Error(`proc_pidinfo cwd observation returned ${bytes} bytes`);
+    const end = vnodePaths.indexOf(0, 152);
+    if (end <= 152 || end >= 152 + 1024) throw new Error("Kernel process cwd is missing or unterminated");
+    return vnodePaths.toString("utf8", 152, end);
+  });
   return {
     pid,
     processStartToken: `darwin:${seconds}:${microseconds}`,
     executablePath: realpathSync(executable.toString("utf8", 0, executableEnd)),
+    cwd,
     argv,
   };
 }
 
-/** Missing permissions, unsupported OS, dead/reused PID or torn observations fail closed. */
+/** Dead/reused PID or torn identity is absent; cwd observation defects fail closed with a diagnostic. */
 export function observeDeliveryProcess(pid: number): DeliveryProcessObservation | null {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null;
   try {
@@ -102,7 +141,8 @@ export function observeDeliveryProcess(pid: number): DeliveryProcessObservation 
     const second = read(pid);
     if (!first || !second || JSON.stringify(first) !== JSON.stringify(second)) return null;
     return second;
-  } catch {
+  } catch (error) {
+    if (error instanceof DeliveryProcessObservationError) throw error;
     // no-cause: Kernel observation failure is unknown identity, never proof of a compatible live boot.
     return null;
   }

@@ -2,9 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DELIVERY_CAPABILITIES, type DeliveryCapabilities, isDeliveryCapabilities } from "./delivery-protocol.js";
-import { observeDeliveryProcess } from "./delivery-process.js";
+import { DeliveryProcessObservationError, observeDeliveryProcess } from "./delivery-process.js";
 
-export { observeDeliveryProcess } from "./delivery-process.js";
+export { DeliveryProcessObservationError, observeDeliveryProcess } from "./delivery-process.js";
 
 /** The controller obtains these expectations from its launch inventory, not directory discovery. */
 export type DeliveryBootExpectation = Readonly<{
@@ -13,6 +13,7 @@ export type DeliveryBootExpectation = Readonly<{
   bootId: string;
   processStartToken: string;
   executablePath: string;
+  cwd: string;
   argv: readonly string[];
   bundlePath: string;
   bundleSha256: string;
@@ -25,7 +26,7 @@ export type DeliveryBootDeclaration = DeliveryBootExpectation &
 
 export type DeliveryBootReadResult =
   | { relation: "known"; boot: DeliveryBootDeclaration }
-  | { relation: "unknown"; reason: string };
+  | { relation: "unknown" | "unsupported"; reason: string };
 
 type BootAddress = Pick<DeliveryBootExpectation, "processName" | "pid" | "bootId">;
 
@@ -61,6 +62,8 @@ function validExpectation(value: DeliveryBootExpectation): boolean {
     value.processStartToken.length > 0 &&
     typeof value.executablePath === "string" &&
     value.executablePath.startsWith("/") &&
+    typeof value.cwd === "string" &&
+    value.cwd.startsWith("/") &&
     Array.isArray(value.argv) &&
     value.argv.length >= 2 &&
     value.argv.every((arg) => typeof arg === "string") &&
@@ -75,6 +78,33 @@ function validExpectation(value: DeliveryBootExpectation): boolean {
   );
 }
 
+function canonicalEntrypoint(pid: number, cwd: string, entrypoint: string): string {
+  try {
+    return realpathSync(resolve(cwd, entrypoint));
+  } catch (cause) {
+    throw new DeliveryProcessObservationError(
+      "ENTRYPOINT_RESOLUTION_FAILED",
+      `Cannot resolve delivery entrypoint for PID ${pid} against consumer cwd ${cwd}: ${entrypoint}`,
+      { cause },
+    );
+  }
+}
+
+function argvMatches(
+  actual: Pick<DeliveryBootExpectation, "pid" | "cwd" | "argv">,
+  expected: Pick<DeliveryBootExpectation, "pid" | "cwd" | "argv">,
+): boolean {
+  return (
+    actual.argv.length === expected.argv.length &&
+    actual.argv.every((arg, index) =>
+      index === 1
+        ? canonicalEntrypoint(actual.pid, actual.cwd, arg) ===
+          canonicalEntrypoint(expected.pid, expected.cwd, expected.argv[index]!)
+        : arg === expected.argv[index],
+    )
+  );
+}
+
 function identityMatches(actual: DeliveryBootExpectation, expected: DeliveryBootExpectation): boolean {
   return (
     actual.processName === expected.processName &&
@@ -82,7 +112,8 @@ function identityMatches(actual: DeliveryBootExpectation, expected: DeliveryBoot
     actual.bootId === expected.bootId &&
     actual.processStartToken === expected.processStartToken &&
     actual.executablePath === expected.executablePath &&
-    JSON.stringify(actual.argv) === JSON.stringify(expected.argv) &&
+    actual.cwd === expected.cwd &&
+    argvMatches(actual, expected) &&
     actual.bundlePath === expected.bundlePath &&
     actual.bundleSha256 === expected.bundleSha256 &&
     actual.stateIdentity === expected.stateIdentity &&
@@ -90,21 +121,28 @@ function identityMatches(actual: DeliveryBootExpectation, expected: DeliveryBoot
   );
 }
 
-function observeExpectedProcess(expected: DeliveryBootExpectation): boolean {
+function observeExpectedProcess(
+  expected: DeliveryBootExpectation,
+): { relation: "known" } | { relation: "unknown" | "unsupported"; reason: string } {
   const observed = observeDeliveryProcess(expected.pid);
   if (
     !observed ||
     observed.processStartToken !== expected.processStartToken ||
     observed.executablePath !== expected.executablePath ||
-    JSON.stringify(observed.argv) !== JSON.stringify(expected.argv)
+    observed.cwd !== expected.cwd
   )
-    return false;
+    return { relation: "unknown", reason: "process_identity_unverified" };
   // Only direct Bun entrypoints are supported here. An ambiguous wrapper/flag layout is unknown.
-  if (realpathSync(observed.argv[1] ?? "") !== expected.bundlePath) return false;
-  return (
-    realpathSync(expected.bundlePath) === expected.bundlePath &&
-    digestBundle(expected.bundlePath) === expected.bundleSha256
-  );
+  if (!observed.argv[1] || observed.argv[1].startsWith("-"))
+    return { relation: "unknown", reason: "direct_entrypoint_unobservable" };
+  const entrypoint = canonicalEntrypoint(observed.pid, observed.cwd, observed.argv[1]);
+  const bundle = canonicalEntrypoint(expected.pid, expected.cwd, expected.bundlePath);
+  if (entrypoint !== bundle) return { relation: "unsupported", reason: "entrypoint_bundle_mismatch" };
+  if (!argvMatches(observed, expected)) return { relation: "unknown", reason: "process_arguments_mismatch" };
+  if (bundle !== expected.bundlePath) return { relation: "unknown", reason: "noncanonical_expected_bundle" };
+  if (digestBundle(bundle) !== expected.bundleSha256)
+    return { relation: "unsupported", reason: "bundle_digest_mismatch" };
+  return { relation: "known" };
 }
 
 /** Self-only publisher. This module is not wired into production bootstrap by PR1. */
@@ -120,8 +158,8 @@ export function publishDeliveryBoot(input: {
   const bundlePath = realpathSync(input.bundlePath);
   if (
     !observed ||
-    realpathSync(process.argv[1] ?? "") !== bundlePath ||
-    realpathSync(observed.argv[1] ?? "") !== bundlePath
+    canonicalEntrypoint(process.pid, observed.cwd, process.argv[1] ?? "") !== bundlePath ||
+    canonicalEntrypoint(process.pid, observed.cwd, observed.argv[1] ?? "") !== bundlePath
   ) {
     throw new Error("Delivery boot requires an observable direct process entrypoint");
   }
@@ -136,7 +174,8 @@ export function publishDeliveryBoot(input: {
     consumerDomain: input.consumerDomain,
     ...DELIVERY_CAPABILITIES,
   };
-  if (!validExpectation(boot) || !observeExpectedProcess(boot)) throw new Error("Delivery boot identity changed");
+  if (!validExpectation(boot) || observeExpectedProcess(boot).relation !== "known")
+    throw new Error("Delivery boot identity changed");
   const stateDir = realpathSync(input.stateDir);
   let directory = stateDir;
   for (const component of ["runtime-processes", "delivery"]) {
@@ -178,7 +217,8 @@ export function readVerifiedDeliveryBoot(input: {
 }): DeliveryBootReadResult {
   try {
     if (!validExpectation(input.expected)) return { relation: "unknown", reason: "invalid_expected_boot" };
-    if (!observeExpectedProcess(input.expected)) return { relation: "unknown", reason: "process_identity_unverified" };
+    const initialObservation = observeExpectedProcess(input.expected);
+    if (initialObservation.relation !== "known") return initialObservation;
     const stateDir = realpathSync(input.stateDir);
     const path = deliveryBootPath(stateDir, input.expected);
     const stat = lstatSync(path);
@@ -192,11 +232,14 @@ export function readVerifiedDeliveryBoot(input: {
     if (boot.bootFormatVersion !== 1 || !validExpectation(boot) || !isDeliveryCapabilities(boot)) {
       return { relation: "unknown", reason: "invalid_boot_declaration" };
     }
-    if (!identityMatches(boot, input.expected) || !observeExpectedProcess(input.expected)) {
+    if (!identityMatches(boot, input.expected)) {
       return { relation: "unknown", reason: "boot_identity_mismatch" };
     }
+    const finalObservation = observeExpectedProcess(input.expected);
+    if (finalObservation.relation !== "known") return finalObservation;
     return { relation: "known", boot };
-  } catch {
+  } catch (error) {
+    if (error instanceof DeliveryProcessObservationError) throw error;
     // no-cause: Missing or unverifiable boot evidence deliberately returns unknown, never a health fallback.
     return { relation: "unknown", reason: "boot_evidence_unavailable" };
   }
