@@ -14,6 +14,7 @@
  */
 
 import {
+  analyzeBashCommand,
   checkDangerousPatterns,
   analyzeOutputRedirects,
   parseBashCommand,
@@ -266,14 +267,20 @@ function checkEnvSpoofing(rawCommand: string): { allowed: boolean; reason?: stri
 
 /**
  * The text the shell runs, level by level: substitutions are checked as their
- * own text and a quoted here-document body (data) is left out. Falls back to
- * the raw command when the structure cannot be analyzed.
+ * own text and a quoted here-document body (data) is left out. A body or
+ * here-string is code when a shell or interpreter in the command reads it
+ * (`sh <<'EOF'`, `cat <<'EOF' | sh`): then the whole command is checked. Falls
+ * back to the raw command when the structure cannot be analyzed.
  */
 function shellTextForIdentityChecks(command: string): string {
   try {
-    return collectShellLevels(command)
-      .map((level) => level.text)
-      .join("\n");
+    const levels = collectShellLevels(command);
+    const buildsInput = levels.some((level) => level.codeInputs.length > 0);
+    const readsCode = (name: string) => isShellName(name) || isInterpreterName(name);
+    if (buildsInput && analyzeBashCommand(command).commands.some((analyzed) => readsCode(analyzed.name))) {
+      return command;
+    }
+    return levels.map((level) => level.text).join("\n");
   } catch {
     // no-cause: unanalyzable text is checked whole, here-doc data included, which only refuses more
     return command;
@@ -344,6 +351,8 @@ export interface BashPermissionDecision {
   syntaxRule?: BashSyntaxRule;
   toolName?: string | null;
   deniedCapabilities?: Array<{ relation: string; objectType: string; objectId: string }>;
+  /** The guard's own failure, when the refusal comes from a defect rather than a rule. */
+  cause?: unknown;
 }
 
 function hasContextCapabilities(ctx: BashPermissionContext): ctx is BashPermissionContext & {
@@ -496,6 +505,10 @@ const EXECUTION_ENV_NAMES = new Set([
   "GIT_CONFIG_COUNT",
   "GIT_CONFIG_PARAMETERS",
 ]);
+
+/** Editors git may be told to skip with a command that does nothing. */
+const NO_OP_EDITOR_NAMES = new Set(["GIT_EDITOR", "GIT_SEQUENCE_EDITOR"]);
+const NO_OP_EDITOR_VALUES = new Set(["true", ":"]);
 
 function isExecutionEnvName(name: string): boolean {
   return EXECUTION_ENV_NAMES.has(name) || /^(?:LD_|DYLD_|GIT_CONFIG_(?:KEY|VALUE)_)/.test(name);
@@ -665,7 +678,13 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
         `Restricted shell policy does not allow ${analyzed.name}: ${analyzed.launchesShellString}. This needs arbitrary execution authority (execute:executable:*).`,
       );
     }
-    if (analyzed.origin === "launcher" && (isShellName(analyzed.name) || isInterpreterName(analyzed.name))) {
+    // A shell behind a launcher is always arbitrary execution. A non-shell
+    // interpreter (`timeout 120 bun test`, `nohup bun run dev`) is no more than
+    // running it directly: its own grant decides below, and inline code is
+    // already refused. Arguments read from xargs input can be `-c code`, so
+    // an interpreter that receives them stays refused.
+    const launchedInterpreter = isInterpreterName(analyzed.name) && analyzed.openArgs === true;
+    if (analyzed.origin === "launcher" && (isShellName(analyzed.name) || launchedInterpreter)) {
       return shellSyntaxDenial(
         "shell_launcher",
         `Restricted shell policy does not allow ${analyzed.launcher} to launch the interpreter ${analyzed.name}. This needs arbitrary execution authority (execute:executable:*).`,
@@ -688,7 +707,15 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
   }
 
   // 4. Settings that change which program runs: PATH, loaders, git config/hooks.
-  const override = (parsed.assignments ?? []).find(isExecutionEnvName);
+  // `GIT_EDITOR=true git rebase --continue` is the required non-interactive
+  // form: an editor that is `true` or `:` runs nothing. Any other value, or a
+  // value set through env/sudo/export, stays an override.
+  const override = (parsed.assignmentValues ?? (parsed.assignments ?? []).map((name) => ({ name, value: null })))
+    .filter(
+      ({ name, value }) =>
+        isExecutionEnvName(name) && !(NO_OP_EDITOR_NAMES.has(name) && value !== null && NO_OP_EDITOR_VALUES.has(value)),
+    )
+    .map(({ name }) => name)[0];
   if (override) {
     return shellSyntaxDenial(
       "execution_override",
@@ -900,6 +927,25 @@ function recordAndEmitBashPermissionDenial(
 }
 
 export function evaluateBashPermission(command: string, ctx: BashPermissionContext = {}): BashPermissionDecision {
+  // An exception here must never reach a caller as "no decision": the SDK hook
+  // and the runtime command authorizer both treat a thrown guard as unknown.
+  try {
+    return decideBashPermission(command, ctx);
+  } catch (error) {
+    return guardFailureDenial(error);
+  }
+}
+
+/** A defect in the guard is a refusal with the defect as its cause, never an allow. */
+function guardFailureDenial(error: unknown): BashPermissionDecision {
+  const detail = error instanceof Error ? error.message : String(error);
+  return {
+    ...unknownParseDenial(`the guard failed while checking it (${detail})`),
+    cause: error,
+  };
+}
+
+function decideBashPermission(command: string, ctx: BashPermissionContext): BashPermissionDecision {
   const isSuperadmin = isSuperadminContext(ctx);
   const spoofResult = isSuperadmin ? { allowed: true } : checkEnvSpoofing(shellTextForIdentityChecks(command));
   if (!spoofResult.allowed) {

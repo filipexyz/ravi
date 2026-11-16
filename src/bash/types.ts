@@ -55,6 +55,15 @@ export interface ParsedCommand {
 
   /** Variables the command assigns or exports (present on success). */
   assignments?: string[];
+
+  /** Every assignment, in order; `value` is the literal string for `NAME=value` before a command, else null. */
+  assignmentValues?: AssignmentValue[];
+}
+
+export interface AssignmentValue {
+  name: string;
+  /** The fixed string assigned, or null when it is dynamic, appended or set by a builtin/launcher. */
+  value: string | null;
 }
 
 /** Result of checking dangerous patterns */

@@ -5,7 +5,7 @@
  * checking. Syntax checks prevent common accidents, not arbitrary host effects.
  */
 
-import type { AnalyzedCommand, ParsedCommand, PatternCheckResult } from "./types.js";
+import type { AnalyzedCommand, AssignmentValue, ParsedCommand, PatternCheckResult } from "./types.js";
 import { parse as parseShell, type ParseEntry } from "shell-quote";
 import { resolve } from "node:path";
 import { physicalPathForPermissionCheck } from "../permissions/provider-config-paths.js";
@@ -445,13 +445,20 @@ type SyntaxState = { caseDepth: number };
 function resolveSegment(
   command: string,
   state: SyntaxState,
-): { command: SegmentCommand | null; assignments: string[]; definesFunction: boolean } {
+): {
+  command: SegmentCommand | null;
+  assignments: string[];
+  assignmentValues: AssignmentValue[];
+  definesFunction: boolean;
+} {
   const atoms = scanAtoms(command);
   const assignments: string[] = [];
+  const assignmentValues: AssignmentValue[] = [];
   let definesFunction = false;
   const found = (index: number) => ({
     command: { word: decodeCommandWord(atoms[index]!.text), argv: collectArgv(atoms, index + 1) },
     assignments,
+    assignmentValues,
     definesFunction,
   });
   let sawCommandPrefix = false;
@@ -480,7 +487,12 @@ function resolveSegment(
     if (/^\d+$/.test(atom.text) && next?.kind === "operator" && REDIRECT_OPERATORS.has(next.text)) continue;
 
     if (atom.assignment) {
-      assignments.push(ASSIGNMENT_PREFIX.exec(atom.text)![1]!);
+      const name = ASSIGNMENT_PREFIX.exec(atom.text)![1]!;
+      assignments.push(name);
+      // The literal value when the shell assigns a fixed string (`=` only, never `+=`).
+      const decoded = decodeWord(atom.text);
+      const literal = decoded !== null && decoded.startsWith(`${name}=`) ? decoded.slice(name.length + 1) : null;
+      assignmentValues.push({ name, value: literal });
       sawCommandPrefix = true;
       continue;
     }
@@ -506,7 +518,10 @@ function resolveSegment(
         if (atom.text === "case") state.caseDepth += 1;
         if (atom.text === "function") definesFunction = true;
         if (next?.kind === "word") {
-          if (atom.text === "for" || atom.text === "select") assignments.push(next.text);
+          if (atom.text === "for" || atom.text === "select") {
+            assignments.push(next.text);
+            assignmentValues.push({ name: next.text, value: null });
+          }
           index++;
         }
         const afterHeader = atoms[index + 1];
@@ -552,7 +567,7 @@ function resolveSegment(
 
     return found(index);
   }
-  return { command: null, assignments, definesFunction };
+  return { command: null, assignments, assignmentValues, definesFunction };
 }
 
 /**
@@ -714,6 +729,14 @@ function expandLauncher(command: AnalyzedCommand, out: AnalyzedCommand[], assign
     command.launchesShellString = launched.reason;
     return;
   }
+  if (command.openArgs) {
+    // `… | xargs find`, `xargs -I ls xargs ls -c id`: input read at run time
+    // becomes this launcher's arguments, so its payload (`-exec sh -c id ;`,
+    // or a command word rewritten by a replace string) is unknowable here.
+    throw new ShellAnalysisError(
+      `Cannot resolve the command launched by ${command.name}: its arguments come from ${command.launcher ?? "launcher"} input`,
+    );
+  }
   if (depth >= MAX_LAUNCHER_DEPTH) throw new ShellAnalysisError("Launchers are nested too deeply to analyze");
   assignments.push(...launched.assignments);
   for (const payload of launched.payloads) {
@@ -746,6 +769,8 @@ export interface BashAnalysis {
   commands: AnalyzedCommand[];
   /** Variables any part of the command assigns or exports. */
   assignments: string[];
+  /** One entry per assignment in `assignments`, with the literal value when it is a fixed string. */
+  assignmentValues: AssignmentValue[];
 }
 
 /**
@@ -756,6 +781,7 @@ export interface BashAnalysis {
 export function analyzeBashCommand(command: string): BashAnalysis {
   const commands: AnalyzedCommand[] = [];
   const assignments: string[] = [];
+  const assignmentValues: AssignmentValue[] = [];
   // Input that reaches commands the analyzer cannot attribute it to: a
   // here-document on a compound command, a pipe into one, or a function.
   let unattributedInput = false;
@@ -771,6 +797,7 @@ export function analyzeBashCommand(command: string): BashAnalysis {
           .map((input) => input.kind);
         const resolved = resolveSegment(segment.text, state);
         assignments.push(...resolved.assignments);
+        assignmentValues.push(...resolved.assignmentValues);
         if (resolved.definesFunction) definesFunction = true;
         if (segment.piped) {
           feedsInput = true;
@@ -789,8 +816,11 @@ export function analyzeBashCommand(command: string): BashAnalysis {
           ...(inputs.length > 0 ? { codeInputs: [...new Set(inputs)] } : {}),
         };
         commands.push(analyzed);
+        const before = assignments.length;
         assignments.push(...builtinAssignments(analyzed));
         expandLauncher(analyzed, commands, assignments, 0);
+        // Builtins (`export`, `read`) and launchers (`env`, `sudo`) assign values the analyzer does not keep.
+        for (const name of assignments.slice(before)) assignmentValues.push({ name, value: null });
       }
     }
   } catch (error) {
@@ -806,7 +836,7 @@ export function analyzeBashCommand(command: string): BashAnalysis {
         analyzed.codeInputs = [...new Set([...(analyzed.codeInputs ?? []), "stdin" as const])];
     }
   }
-  return { commands, assignments };
+  return { commands, assignments, assignmentValues };
 }
 
 /**
@@ -850,6 +880,7 @@ export function parseBashCommand(command: string, options: { allowInlineCode?: b
     executables: [...new Set(analysis.commands.map((analyzed) => analyzed.name))],
     commands: analysis.commands,
     assignments: [...new Set(analysis.assignments)],
+    assignmentValues: analysis.assignmentValues,
     success: true,
   };
 }

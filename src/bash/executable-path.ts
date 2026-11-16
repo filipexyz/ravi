@@ -11,7 +11,8 @@
  *   must live under a trusted root and must not be a disguised interpreter.
  */
 
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { UNCONDITIONAL_BLOCKS } from "./parser.js";
@@ -167,6 +168,110 @@ function disguise(name: string, realPath: string): ExecutablePathCheck | null {
   return null;
 }
 
+/** Shells and interpreters whose bytes a renamed copy would carry. */
+const knownProgramNames = (): string[] => [
+  ...[...UNCONDITIONAL_BLOCKS].filter((name) => !["eval", "exec", "source", "."].includes(name)),
+  ...EXTRA_SHELLS,
+  "python3",
+  "python",
+  "node",
+  "bun",
+  "deno",
+  "perl",
+  "ruby",
+  "php",
+  "lua",
+  "osascript",
+  "awk",
+  "gawk",
+  "pwsh",
+];
+const KNOWN_PROGRAM_DIRS = ["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin", "/opt/local/bin"];
+
+interface KnownProgram {
+  name: string;
+  realPath: string;
+  size: number;
+}
+
+let knownPrograms: KnownProgram[] | undefined;
+const digestCache = new Map<string, string>();
+
+/** Real files of the shells and interpreters on this host (standard dirs and PATH), found once. */
+function knownProgramFiles(): KnownProgram[] {
+  if (knownPrograms) return knownPrograms;
+  const dirs = new Set([...KNOWN_PROGRAM_DIRS, ...(process.env.PATH ?? "").split(delimiter).filter(isAbsolute)]);
+  const seen = new Set<string>();
+  knownPrograms = [];
+  for (const name of knownProgramNames()) {
+    for (const dir of dirs) {
+      const candidate = join(dir, name);
+      if (!isExecutableFile(candidate)) continue;
+      const realPath = safeRealpath(candidate);
+      if (!realPath || seen.has(realPath)) continue;
+      seen.add(realPath);
+      knownPrograms.push({ name, realPath, size: statSync(realPath).size });
+    }
+  }
+  return knownPrograms;
+}
+
+function isWritableDirectory(dir: string): boolean {
+  try {
+    accessSync(dir, constants.W_OK);
+    return true;
+  } catch {
+    // no-cause: EACCES/EROFS is the answer (not writable); any other failure also means no planted copy can land there
+    return false;
+  }
+}
+
+/** sha256 of a file, cached by path, size and mtime; null when it cannot be read. */
+function fileDigest(path: string): string | null {
+  const stat = statSync(path);
+  const key = `${path}\0${stat.size}\0${stat.mtimeMs}`;
+  const cached = digestCache.get(key);
+  if (cached) return cached;
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(path);
+  } catch {
+    // no-cause: an unreadable file cannot be compared; the caller treats it as unidentified, not as trusted
+    return null;
+  }
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  digestCache.set(key, digest);
+  return digest;
+}
+
+/**
+ * A copy of a shell or interpreter under another name: `cp /bin/sh
+ * ~/.bun/bin/ls` lands in a trusted PATH directory with a harmless name and a
+ * new real path, so only its bytes give it away. Sizes are compared first; a
+ * file is hashed only when its size equals a known program's.
+ */
+function contentDisguise(name: string, realPath: string): ExecutablePathCheck | null {
+  if (isShellName(name) || isInterpreterName(name)) return null;
+  // Only a directory this user can write can receive a planted copy. System
+  // directories also hold multi-call shims (macOS /usr/bin/git, python3 and make
+  // are one xcrun binary that dispatches on its name), which are not copies.
+  if (!isWritableDirectory(dirname(realPath))) return null;
+  const size = statSync(realPath).size;
+  const sameSize = knownProgramFiles().filter((known) => known.size === size && known.realPath !== realPath);
+  if (sameSize.length === 0) return null;
+  const digest = fileDigest(realPath);
+  if (digest === null) {
+    return { ok: false, rule: "untrusted_executable_path", reason: `Cannot read ${realPath} to verify what it is` };
+  }
+  const match = sameSize.find((known) => fileDigest(known.realPath) === digest);
+  if (!match) return null;
+  return {
+    ok: false,
+    rule: "indirect_execution",
+    reason: `Executable "${name}" at ${realPath} is a copy of the ${isShellName(match.name) ? "shell" : "interpreter"} ${match.realPath}`,
+  };
+}
+
 /**
  * Check that `word` (the decoded command word) names a binary whose real path
  * is trusted. `name` is the name the grant is checked against.
@@ -201,7 +306,7 @@ export function checkExecutablePath(word: string, options: ExecutablePathOptions
       if (!realPath) {
         return { ok: false, rule: "untrusted_executable_path", reason: `Cannot resolve the real path of ${candidate}` };
       }
-      return disguise(name, realPath) ?? { ok: true, realPath };
+      return disguise(name, realPath) ?? contentDisguise(name, realPath) ?? { ok: true, realPath };
     }
     // Not on the host PATH: a builtin or function the shell knows, or a typo.
     // The grant check on the name still applies.
@@ -243,5 +348,5 @@ export function checkExecutablePath(word: string, options: ExecutablePathOptions
       reason: `Executable ${word} resolves to ${realPath}, outside the trusted executable directories`,
     };
   }
-  return disguise(name, realPath) ?? { ok: true, realPath };
+  return disguise(name, realPath) ?? contentDisguise(name, realPath) ?? { ok: true, realPath };
 }

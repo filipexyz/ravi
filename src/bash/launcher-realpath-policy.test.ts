@@ -65,7 +65,6 @@ describe("bootstrap_denies_shell_launchers", () => {
     ["env sh -c id", ["env"]],
     ["/usr/bin/env -i FOO=1 bash -c id", ["env"]],
     ["timeout 5 bash -c id", ["timeout"]],
-    ["timeout -s KILL 5 python3 script.py", ["timeout", "python3"]],
     ["nice -n 5 sh -c id", ["nice"]],
     ["nohup sh -c id", ["nohup"]],
     ["xargs node script.js", ["node"]],
@@ -748,5 +747,171 @@ describe("relative_path_entry_fails_closed_without_cwd", () => {
 
   it.skipIf(!existsSync("/usr/bin/git"))("an absolute entry that matches first is unaffected", () => {
     expect(checkExecutablePath("git", { pathEnv: "/usr/bin:." }).ok).toBe(true);
+  });
+});
+
+// Independent review of b212f7d3, finding 1: a here-document read by a shell
+// is code; RAVI_* in it is spoofing, also for a context with execute:executable:*.
+describe("heredoc_to_shell_is_checked_for_env_spoofing", () => {
+  it("refuses RAVI_* in a body a shell or interpreter reads", () => {
+    for (const command of [
+      "sh <<'EOF'\nRAVI_AGENT_ID=main ravi sessions list\nEOF",
+      "sh <<EOF\nRAVI_AGENT_ID=main ravi sessions list\nEOF",
+      "cat <<'EOF' | sh\nRAVI_AGENT_ID=main ravi sessions list\nEOF",
+      "bash <<'EOF'\nexport RAVI_CONTEXT_KEY=x\nEOF",
+      "bash <<< 'RAVI_AGENT_ID=main ravi sessions list'",
+    ]) {
+      const decision = evaluateBashPermission(command, arbitrary);
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.denialType, command).toBe("env_spoofing");
+    }
+  });
+
+  it("a body only data readers see stays data", () => {
+    for (const command of [
+      "cat <<'EOF'\nRAVI_AGENT_ID=main is documentation\nEOF",
+      "grep RAVI_ <<'EOF'\nRAVI_AGENT_ID=main\nEOF",
+    ]) {
+      expect(evaluateBashPermission(command, arbitrary).allowed, command).toBe(true);
+    }
+  });
+});
+
+// Finding 2: xargs input becomes the argv of the launcher it runs, so that
+// launcher's payload (`-exec sh -c id ;`) cannot be known.
+describe("launcher_with_open_args_is_unresolvable", () => {
+  it("refuses a launcher that receives xargs input as arguments", () => {
+    for (const [command, extra] of [
+      ["date '+. -maxdepth 0 -exec sh -c id ;' | xargs find", []],
+      ["cat list.txt | xargs find", []],
+      ["xargs find < list.txt", []],
+      ["xargs -a list.txt find", []],
+      ["ls | xargs find", []],
+      ["ls | xargs xargs", []],
+      ["find . -name list.txt -exec xargs find {} +", []],
+      ["xargs find <<< '. -maxdepth 0 -exec sh -c id ;'", []],
+      ["cat <<EOF | xargs find\n. -exec sh -c id ;\nEOF", []],
+      ["ls | xargs env", ["env"]],
+      ["ls | xargs nice", ["nice"]],
+      ["ls | xargs command", ["command"]],
+    ] as Array<[string, string[]]>) {
+      const decision = evaluateBashPermission(command, bootstrap(...extra));
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("unknown_parse");
+    }
+  });
+
+  it("a non-launcher receiving xargs input is still checked by its own grant", () => {
+    expect(evaluateBashPermission("ls | xargs grep x", bootstrap("grep")).allowed).toBe(true);
+    expect(evaluateBashPermission("ls | xargs wc -l", bootstrap()).allowed).toBe(true);
+    expect(parseBashCommand("ls | xargs wc -l").commands?.find((c) => c.name === "wc")?.openArgs).toBe(true);
+  });
+});
+
+// Finding 3: `xargs -I R` substitutes input into every initial argument,
+// including the command word of a launcher nested in the payload.
+describe("xargs_replace_string_cannot_rewrite_nested_launcher", () => {
+  it("refuses a replace string that reaches a nested launcher", () => {
+    for (const [command, extra] of [
+      ["date +sh | xargs -Ils find . -maxdepth 0 -exec ls -c id \\;", []],
+      ["date +sh | xargs -I ls xargs ls -c id", []],
+      ["echo sh | xargs -Ils env ls -c id", ["env", "echo"]],
+      ["ls | xargs -I{} find {} -name x", []],
+    ] as Array<[string, string[]]>) {
+      const decision = evaluateBashPermission(command, bootstrap(...extra));
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.syntaxRule, command).toBe("unknown_parse");
+    }
+  });
+
+  it("a nested launcher whose arguments the replace string does not touch is resolved", () => {
+    expect(parseBashCommand("ls | xargs -I{} find . -name x").executables).toEqual(["ls", "xargs", "find"]);
+  });
+});
+
+// Finding 4: a copy of a shell in a writable PATH directory, under a harmless name.
+describe("copied_shell_in_writable_path_dir_is_identified_by_content", () => {
+  it.skipIf(!SHELL)("a byte copy of /bin/sh named ls is a shell", () => {
+    const dir = join(scratch, "planted-bin");
+    mkdirSync(dir, { recursive: true });
+    const planted = join(dir, "ls");
+    copyFileSync(SHELL!, planted);
+    chmodSync(planted, 0o755);
+    const check = checkExecutablePath("ls", { pathEnv: `${dir}:/usr/bin:/bin`, cwd: scratch });
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.rule).toBe("indirect_execution");
+      expect(check.reason).toContain("copy of the shell");
+    }
+    const byPath = checkExecutablePath(planted, { trustedRoots: [dir], cwd: scratch });
+    expect(byPath.ok).toBe(false);
+  });
+
+  it("a different file of another size in the same directory is not flagged", () => {
+    const dir = join(scratch, "planted-bin-ok");
+    mkdirSync(dir, { recursive: true });
+    const tool = join(dir, "mytool");
+    copyFileSync(join(import.meta.dir, "launchers.ts"), tool);
+    chmodSync(tool, 0o755);
+    expect(checkExecutablePath("mytool", { pathEnv: `${dir}:/usr/bin`, cwd: scratch }).ok).toBe(true);
+  });
+
+  it.skipIf(!existsSync("/usr/bin/git"))("system multi-call shims are not copies (macOS git = python3 = make)", () => {
+    expect(checkExecutablePath("git", { pathEnv: "/usr/bin:/bin" }).ok).toBe(true);
+  });
+});
+
+// Review item 5: forms the dev branch allowed and the workspace requires.
+describe("no_op_editor_and_granted_interpreter_behind_launcher", () => {
+  it("GIT_EDITOR / GIT_SEQUENCE_EDITOR set to true or : run nothing", () => {
+    for (const command of [
+      "GIT_EDITOR=true git rebase --continue",
+      "GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2",
+      "GIT_EDITOR=':' git commit --amend --no-edit",
+    ]) {
+      expect(evaluateBashPermission(command, bootstrap()).allowed, command).toBe(true);
+    }
+    for (const command of [
+      "GIT_EDITOR=vim git rebase --continue",
+      "GIT_EDITOR=$X git rebase --continue",
+      "env GIT_EDITOR=true git rebase --continue",
+      "export GIT_EDITOR=true; git rebase --continue",
+    ]) {
+      expect(evaluateBashPermission(command, bootstrap("env")).syntaxRule, command).toBe("execution_override");
+    }
+  });
+
+  it("a granted non-shell interpreter behind a granted launcher runs as if direct", () => {
+    for (const [command, extra] of [
+      ["timeout 120 bun test src/bash/", ["timeout"]],
+      ["nohup bun run dev", ["nohup"]],
+      ["env FOO=1 bun run x.ts", ["env"]],
+      ["timeout -s KILL 5 python3 script.py", ["timeout", "python3"]],
+    ] as Array<[string, string[]]>) {
+      expect(evaluateBashPermission(command, bootstrap(...extra)).allowed, command).toBe(true);
+    }
+  });
+
+  it("shells behind launchers, ungranted interpreters and interpreters fed xargs input stay refused", () => {
+    expect(evaluateBashPermission("timeout 5 sh -c id", bootstrap("timeout", "sh")).syntaxRule).toBe("shell_launcher");
+    expect(evaluateBashPermission("timeout 5 python3 x.py", bootstrap("timeout")).allowed).toBe(false);
+    expect(evaluateBashPermission("ls | xargs bun", bootstrap()).syntaxRule).toBe("shell_launcher");
+    expect(parseBashCommand("timeout 5 bun -e 'x'").success).toBe(false);
+  });
+});
+
+// Review item 9: a defect inside the guard is a refusal, never an exception.
+describe("guard_failure_is_a_refusal", () => {
+  it("a thrown error while deciding becomes an unknown_parse denial with its cause", () => {
+    const poisoned = {
+      ...bootstrap(),
+      get capabilities(): never {
+        throw new TypeError("capability store unavailable");
+      },
+    } as unknown as BashPermissionContext;
+    const decision = evaluateBashPermission("ls", poisoned);
+    expect(decision.allowed).toBe(false);
+    expect(decision.syntaxRule).toBe("unknown_parse");
+    expect(decision.cause).toBeInstanceOf(TypeError);
   });
 });
