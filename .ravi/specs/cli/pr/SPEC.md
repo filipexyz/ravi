@@ -87,8 +87,19 @@ PR reconciliation and follow are internal helpers, not separate public commands.
 - Missing signed/noncanonical commits, non-UTF-8 paths/messages, new gitlinks,
   LFS pointer uploads, SHA-256 repos and new root history are refused in v1.
   Existing remote ancestry may contain these commits without reconstruction.
-- Bounds: 100 missing commits, 5,000 objects, 50 MiB total, 8 MiB per blob,
-  180 seconds overall and 20 seconds per subprocess. Exceeding them fails.
+- Bounds: 100 missing commits, 5,000 objects, 50 MiB total, 8 MiB per blob.
+  Exceeding them fails.
+- The time budget scales with the upload and is never unbounded. The preflight
+  runs on 180 seconds; once it has measured the upload, the same deadline
+  becomes 180 seconds plus 1 second per 250 KiB, at most 900 seconds.
+  `RAVI_PR_PUBLISH_TIMEOUT_MS` in the publishing process replaces the computed
+  value and obeys the same ceiling; an invalid value is a usage error. Each
+  subprocess gets 20 seconds plus 1 second per 250 KiB it carries. The journal
+  lease and the gateway client outlive the budget they wait for.
+- `PUBLICATION_TIMEOUT` MUST carry `timeout`: phase, budget, objects and bytes
+  GitHub confirmed in this attempt, and the measured totals (null before the
+  preflight measured them). A rerun for the same SHA MUST skip objects GitHub
+  already holds, so each attempt uploads only what is still missing.
 - Advance refs only with `force:false`; re-read before/after. GitHub has no
   expected-old-SHA parameter: this detects races but does not promise CAS.
   A same-SHA ref still requires PR/follow reconciliation and final verification.

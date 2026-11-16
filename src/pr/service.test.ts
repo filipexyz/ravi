@@ -5,6 +5,7 @@ import { chmodSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { preparePublication, executePublication } from "./service.js";
 import { publicationFixture } from "./test-fixture.js";
+import { prError, projectPublicationDetails } from "./contracts.js";
 import { GithubError, type GithubRequest } from "./github.js";
 import { parseCommit, LocalGit } from "./git.js";
 import { ContractError } from "../cli/agent-contract.js";
@@ -244,6 +245,76 @@ describe("verified Git Data API publication", () => {
     expect(f.pr()).toBeNull();
     await publish();
     expect(f.pr()?.draft).toBe(false);
+    expect(f.calls.filter((call) => call.endpoint.endsWith("/pulls") && call.method === "POST")).toHaveLength(1);
+  });
+
+  /** The budget runs out the way it does in production: the subprocess of the next upload is killed. */
+  const budgetEndsAtTree = (): GithubRequest => {
+    let expired = false;
+    return async (endpoint, method, body) => {
+      if (!expired && method === "POST" && endpoint.endsWith("/git/trees")) {
+        expired = true;
+        throw prError("PUBLICATION_TIMEOUT", "Publication exceeded its time or response-size budget.", {
+          retryable: true,
+        });
+      }
+      return await f.request(endpoint, method, body);
+    };
+  };
+
+  it("timeout_error_reports_bytes_and_phase", async () => {
+    f = publicationFixture();
+    const request = budgetEndsAtTree();
+    const prepared = await preparePublication(f.input(), request);
+    const blob = prepared.objects.find((object) => object.type === "blob")!;
+    expect(prepared.plan.objectCount).toBe(3);
+
+    const error = await executePublication(prepared, request, f.options).catch((caught) => caught);
+    expect(error).toMatchObject({
+      code: "PUBLICATION_TIMEOUT",
+      details: {
+        retryable: true,
+        timeout: {
+          phase: "objects",
+          budgetMs: 181_000,
+          objectsUploaded: 1,
+          objectCount: 3,
+          bytesUploaded: blob.bytes,
+          uploadBytes: prepared.plan.uploadBytes,
+        },
+        partial: { phase: "objects", refPublished: false, uncertain: true },
+      },
+    });
+    expect(blob.bytes).toBeGreaterThan(0);
+    expect(error.message).toContain("181s budget in phase objects");
+    expect(error.message).toContain("after uploading 1 of 3 objects");
+    expect(error.message).toContain("RAVI_PR_PUBLISH_TIMEOUT_MS");
+    // What a gateway caller receives: the allowlist keeps the progress, not just the code.
+    expect(projectPublicationDetails(error.details)).toMatchObject({ timeout: error.details.timeout });
+    expect(mutations().some((call) => call.endpoint.includes("/git/refs"))).toBe(false);
+  });
+
+  it("retry_after_timeout_skips_existing_objects", async () => {
+    f = publicationFixture();
+    const first = await preparePublication(f.input(), f.request);
+    const blob = first.objects.find((object) => object.type === "blob")!;
+    await expect(executePublication(first, budgetEndsAtTree(), f.options)).rejects.toMatchObject({
+      code: "PUBLICATION_TIMEOUT",
+    });
+    expect(f.pr()).toBeNull();
+
+    f.calls.length = 0;
+    const retry = await preparePublication(f.input(), f.request);
+    // The blob the first attempt delivered is neither planned nor counted against the new budget.
+    expect(retry.plan.localSha).toBe(first.plan.localSha);
+    expect(retry.objects.map((object) => object.sha)).not.toContain(blob.sha);
+    expect(retry.plan.objectCount).toBe(first.plan.objectCount - 1);
+    expect(retry.plan.uploadBytes).toBe(first.plan.uploadBytes - blob.bytes);
+
+    const result = await executePublication(retry, f.request, f.options);
+    expect(result.remoteSha).toBe(first.plan.localSha);
+    expect(mutations().filter((call) => call.endpoint.endsWith("/git/blobs"))).toHaveLength(0);
+    expect(mutations().filter((call) => /\/git\/(trees|commits)$/.test(call.endpoint))).toHaveLength(2);
     expect(f.calls.filter((call) => call.endpoint.endsWith("/pulls") && call.method === "POST")).toHaveLength(1);
   });
 

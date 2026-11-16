@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { prError, REPO, SHA } from "./contracts.js";
+import { publicationRequestTimeoutMs } from "./budget.js";
+import { LIMITS, prError, REPO, SHA } from "./contracts.js";
 import { runProcess } from "./process.js";
 
 export type GithubRequest = (
@@ -12,13 +13,24 @@ export class GithubError extends Error {
     super(`GitHub request failed (${status}).`);
   }
 }
+/**
+ * Bytes one request moves, so its deadline grows with them. An upload carries its own body. Reading a
+ * blob to learn whether GitHub already holds it returns the content, whose size is not known here, so
+ * it is allowed the largest blob a publication accepts (base64).
+ */
+export function carriedBytes(endpoint: string, method: string, input?: string): number {
+  if (input) return Buffer.byteLength(input);
+  return method === "GET" && /\/git\/blobs\/[a-f0-9]{40}$/.test(endpoint) ? Math.ceil((LIMITS.blobBytes * 4) / 3) : 0;
+}
 export function githubClient(signal?: AbortSignal): GithubRequest {
   return async (endpoint, method, body) => {
     const args = ["api", "--hostname", "github.com", "--include", "--method", method, endpoint];
     if (body) args.push("--input", "-");
+    const input = body ? JSON.stringify(body) : undefined;
     const result = await runProcess("gh", args, {
       signal,
-      input: body ? JSON.stringify(body) : undefined,
+      input,
+      timeoutMs: publicationRequestTimeoutMs(carriedBytes(endpoint, method, input)),
       env: { ...process.env, GH_PROMPT_DISABLED: "1" },
     });
     const raw = result.stdout.toString("utf8");

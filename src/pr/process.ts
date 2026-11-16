@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { PUBLICATION_REQUEST_TIMEOUT_MS } from "./budget.js";
 import { prError } from "./contracts.js";
 
 /** No shell, no synchronous subprocesses in the gateway, bounded output and deadline. */
@@ -11,6 +12,8 @@ export function runProcess(
     env?: NodeJS.ProcessEnv;
     signal?: AbortSignal;
     maxBytes?: number;
+    /** Deadline of this subprocess; the caller's signal still bounds the whole publication. */
+    timeoutMs?: number;
   } = {},
 ): Promise<{ stdout: Buffer; code: number }> {
   return new Promise((resolve, reject) => {
@@ -22,7 +25,7 @@ export function runProcess(
       stopped = true;
       child.kill("SIGKILL");
     };
-    const timer = setTimeout(stop, 20_000);
+    const timer = setTimeout(stop, options.timeoutMs ?? PUBLICATION_REQUEST_TIMEOUT_MS);
     options.signal?.addEventListener("abort", stop, { once: true });
     if (options.signal?.aborted) stop();
     child.stdout.on("data", (chunk: Buffer) => {
