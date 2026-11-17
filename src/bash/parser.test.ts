@@ -20,32 +20,30 @@ describe("checkDangerousPatterns", () => {
     expect(checkDangerousPatterns("ravi sessions list")).toEqual({ safe: true });
   });
 
-  it("blocks command substitution $()", () => {
-    const r = checkDangerousPatterns("echo $(whoami)");
-    expect(r.safe).toBe(false);
-    expect(r.reason).toContain("command substitution");
+  // Substitutions are analyzed, not refused: the policy authorizes what runs inside them.
+  it("exposes the command inside $() to the policy", () => {
+    expect(checkDangerousPatterns("echo $(whoami)")).toEqual({ safe: true });
+    expect(parseBashCommand("echo $(whoami)").commands?.map((c) => [c.name, c.origin])).toEqual([
+      ["echo", "segment"],
+      ["whoami", "substitution"],
+    ]);
   });
 
-  it("blocks backtick substitution", () => {
-    const r = checkDangerousPatterns("echo `whoami`");
-    expect(r.safe).toBe(false);
-    expect(r.reason).toContain("backtick");
+  it("exposes the command inside backticks", () => {
+    expect(parseBashCommand("echo `whoami`").executables).toEqual(["echo", "whoami"]);
   });
 
-  it("blocks process substitution <()", () => {
-    const r = checkDangerousPatterns("diff <(ls a) <(ls b)");
-    expect(r.safe).toBe(false);
+  it("exposes the commands inside process substitutions", () => {
+    expect(parseBashCommand("diff <(ls a) <(ls b)").executables).toEqual(["diff", "ls"]);
+    expect(parseBashCommand("tee >(cat)").commands?.map((c) => [c.name, c.origin])).toEqual([
+      ["tee", "segment"],
+      ["cat", "process_substitution"],
+    ]);
   });
 
-  it("blocks process substitution >()", () => {
-    const r = checkDangerousPatterns("tee >(cat)");
-    expect(r.safe).toBe(false);
-  });
-
-  it("blocks here documents", () => {
-    const r = checkDangerousPatterns("cat <<EOF\nhello\nEOF");
-    expect(r.safe).toBe(false);
-    expect(r.reason).toContain("here document");
+  it("reads here documents without treating the body as commands", () => {
+    expect(checkDangerousPatterns("cat <<EOF\nhello\nEOF")).toEqual({ safe: true });
+    expect(parseBashCommand("cat <<EOF\nhello\nEOF").executables).toEqual(["cat"]);
   });
 
   it("blocks piping to shell", () => {
@@ -256,26 +254,29 @@ describe("shell quoting boundaries", () => {
     "echo 'line\n$(id)'",
     "echo '$\\\n(id)'",
   ];
+  /** Active substitutions: the nested command is visible to the policy. */
+  const nested: Array<[string, string]> = [
+    ["echo $(id)", "id"],
+    ['echo "$(id)"', "id"],
+    ['echo "`id`"', "id"],
+    ["cat <(id)", "id"],
+    ["tee >(id)", "id"],
+    ["cat <<EOF\n$(id)\nEOF", "id"],
+    ['echo "\\\\$(id)"', "id"],
+    ['echo "a\\q$(id)"', "id"],
+    ["echo 'ok'$(id)", "id"],
+    ["echo $\\\n(id)", "id"],
+    ['echo "$\\\n(id)"', "id"],
+    ['echo "$\\\n\\\n(id)"', "id"],
+    ["echo \\ #$(id)", "id"],
+    ['echo ""#$(id)', "id"],
+    ["echo x#$(id)", "id"],
+    ["echo \"$(printf 'nested')\"", "printf"],
+    ['echo "$(printf "nested")"', "printf"],
+  ];
+  /** Literal data that looks like syntax: no nested command. */
+  const literalSyntax = ["cat <<EOF\nx\nEOF", "cat <<'EOF'\n$(id)\nEOF", 'cat <<<"ok"'];
   const unsafe = [
-    "echo $(id)",
-    'echo "$(id)"',
-    'echo "`id`"',
-    "cat <(id)",
-    "tee >(id)",
-    "cat <<EOF\nx\nEOF",
-    "cat <<'EOF'\n$(id)\nEOF",
-    'cat <<<"ok"',
-    'echo "\\\\$(id)"',
-    'echo "a\\q$(id)"',
-    "echo 'ok'$(id)",
-    "echo $\\\n(id)",
-    'echo "$\\\n(id)"',
-    'echo "$\\\n\\\n(id)"',
-    "echo \\ #$(id)",
-    'echo ""#$(id)',
-    "echo x#$(id)",
-    "echo \"$(printf 'nested')\"",
-    'echo "$(printf "nested")"',
     'cat script | "bash"',
     'cat script | py"thon3"',
     'echo x | "node" "-e" "hi"',
@@ -290,8 +291,20 @@ describe("shell quoting boundaries", () => {
     });
   }
   for (const command of unsafe) {
-    it(`refuses active or unsupported syntax: ${JSON.stringify(command)}`, () => {
+    it(`refuses piped shells or unsupported syntax: ${JSON.stringify(command)}`, () => {
       expect(checkDangerousPatterns(command).safe).toBe(false);
+    });
+  }
+  for (const [command, inner] of nested) {
+    it(`exposes the nested command of active syntax: ${JSON.stringify(command)}`, () => {
+      const parsed = parseBashCommand(command);
+      expect(parsed.success).toBe(true);
+      expect(parsed.commands?.some((c) => c.name === inner && c.origin !== "segment")).toBe(true);
+    });
+  }
+  for (const command of literalSyntax) {
+    it(`treats here-doc and here-string data as data: ${JSON.stringify(command)}`, () => {
+      expect(parseBashCommand(command).executables).toEqual(["cat"]);
     });
   }
 
@@ -347,7 +360,16 @@ it.skipIf(!existsSync("/bin/bash"))("agrees with Bash expansion on harmless prin
     { command: "cat <<'EOF'\n$(printf changed)\nEOF", output: "$(printf changed)\n", safe: false },
     { command: "cat <<\\EOF\n$(printf changed)\nEOF", output: "$(printf changed)\n", safe: false },
     { command: "cat <(printf changed)", output: "changed", safe: false },
+    // `$((` is arithmetic only when its inner `(` closes at the end; otherwise
+    // Bash runs a command substitution whose body starts with a subshell.
+    { command: "printf  $((printf a);(printf changed))", output: "achanged", safe: false },
+    { command: "printf '%s' $((printf a);(printf changed))", output: "achanged", safe: false },
+    { command: "printf '%s' \"$((printf a);(printf changed))\"", output: "achanged", safe: false },
+    { command: "cat <<EOF\n$((printf a);(printf changed))\nEOF", output: "achanged\n", safe: false },
+    { command: "printf '%s' $(( $(printf 1) + 1 ))", output: "2", safe: false },
   ];
+  // Oracle: Bash ran the nested printf exactly when the output lost the literal
+  // "printf". The analyzer must report a nested command in exactly those cases.
   for (const { command, output, safe } of cases) {
     expect(
       execFileSync("/bin/bash", ["--noprofile", "--norc", "-c", command], {
@@ -356,7 +378,14 @@ it.skipIf(!existsSync("/bin/bash"))("agrees with Bash expansion on harmless prin
         timeout: 1000,
       }),
     ).toBe(output);
-    expect(checkDangerousPatterns(command).safe).toBe(safe);
+    const executed = !output.includes("printf");
+    const parsed = parseBashCommand(command);
+    expect(parsed.success, command).toBe(true);
+    const nestedNames = (parsed.commands ?? []).filter((c) => c.origin !== "segment").map((c) => c.name);
+    expect(nestedNames.length > 0, command).toBe(executed);
+    expect(new Set(nestedNames).size <= 1 && nestedNames.every((name) => name === "printf"), command).toBe(true);
+    expect(checkDangerousPatterns(command).safe, command).toBe(true);
+    void safe;
   }
 });
 

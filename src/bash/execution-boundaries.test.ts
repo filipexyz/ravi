@@ -105,10 +105,10 @@ describe("Bash execution authority boundaries", () => {
       metadata: { authorityMode: "agent-identity", ...metadata },
     });
 
-    const decision = await host(context).authorizeCommandExecution({ command: "printf '%s' $(date)" });
+    const decision = await host(context).authorizeCommandExecution({ command: "printf ok | xargs sh -c id" });
 
     expect(decision.approved).toBe(false);
-    expect(decision.reason).toContain("substitution");
+    expect(decision.reason).toContain("launch the interpreter sh");
   });
 
   it("retains native denial provenance without creating an executable grant request", async () => {
@@ -126,7 +126,7 @@ describe("Bash execution authority boundaries", () => {
       capabilities: restricted,
       metadata: { authorityMode: "agent-identity", actorResolution: "resolved", turnCapabilityCount: 1 },
     });
-    const command = "printf '%s' $(printf PRIVATE_COMMAND_SENTINEL)";
+    const command = "printf '%s' PRIVATE_COMMAND_SENTINEL | sh";
 
     expect((await host(context).authorizeCommandExecution({ command })).approved).toBe(false);
     await flushPermissionAuditEvents();
@@ -151,7 +151,7 @@ describe("Bash execution authority boundaries", () => {
     expect(JSON.stringify(auditEvents)).not.toContain("PRIVATE_COMMAND_SENTINEL");
   });
 
-  it.each(["printf '%s' $(date)", "python3 -c 'print(1)'", "bash -c 'printf ok'", "printf 'unterminated"])(
+  it.each(["printf ok | xargs sh -c id", "python3 -c 'print(1)'", "bash -c 'printf ok'", "printf 'unterminated"])(
     "denies SDK syntax and never requests native approval: %s",
     async (command) => {
       // Missing Bash permission must not turn a syntax refusal into an approval.

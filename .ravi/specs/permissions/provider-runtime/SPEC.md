@@ -173,9 +173,43 @@ Required capability materializers:
   operators inside double quotes MUST NOT be rejected just for containing a
   substitution, heredoc or pipe token. JSON, regex and code arguments are data
   according to shell quoting, not according to their intended destination.
-- Dollar-paren and backtick substitutions remain executable inside double
-  quotes and MUST still be refused. Real process substitutions and heredoc /
-  here-string operators MUST remain refused, including quoted heredoc delimiters.
+- Analysis and authority are separate. The parser MUST return every command
+  the shell would run with its typed path and origin (`segment`, `substitution`,
+  `process_substitution`, `heredoc`, `launcher`), or fail with the named error
+  `unknown_parse`. The policy decides. `unknown_parse` MUST be refused as
+  `shell_syntax` / `unknown_parse`, never as a missing executable permission.
+- Dollar-paren and backtick substitutions (also inside double quotes), process
+  substitutions and the substitutions of an unquoted here-document body are
+  commands: each MUST be authorized by its own grant and the policy below. A
+  quoted here-document body (`<<'EOF'`, `<<"EOF"`, `<<\EOF`) is data and MUST NOT
+  yield commands. A here-document without a terminator, a `case` inside a
+  substitution, a dynamic command word and `$'...'` quoting are `unknown_parse`.
+- Executable identity MUST use the real path, never the basename. A
+  path-qualified command MUST resolve (symlinks followed) to an existing
+  executable under a trusted root (system and package-manager prefixes, the
+  host PATH directories, `RAVI_BASH_TRUSTED_EXECUTABLE_ROOTS`); otherwise it is
+  `untrusted_executable_path`. A relative path needs a fixed working directory
+  (no `cd`/`pushd`/`popd` in the command). A bare name resolves through the host
+  PATH; a cwd-relative PATH entry is untrusted. A binary whose real name is a
+  shell or interpreter under another name is `indirect_execution`. The always
+  allowed `ravi` name gets the same identity check.
+- Launchers that exec another command (`xargs`, `find -exec/-execdir/-ok`,
+  `env`, `timeout`, `nice`, `nohup`, `sudo`, `command`, `builtin`, `stdbuf`,
+  `setsid`, `caffeinate`, `time`) MUST expose their payload as a `launcher`
+  command checked like any other. A shell or interpreter payload, and every
+  shell-string launcher (`parallel`, `sem`, `watch`, `su`, `runuser`,
+  `script`), is `shell_launcher` and needs `execute:executable:*`, which the
+  bootstrap floor does not have. A payload taken from input (`{}`) or an
+  unknown launcher option is `unknown_parse`.
+- Changing which program runs is `execution_override`: assigning `PATH`,
+  loader (`LD_*`, `DYLD_*`), shell startup, pager/editor or `GIT_*` command
+  variables in any form (prefix, `export`, `env`, `for`), and git options that
+  run a program (`-c` outside a small display/identity allowlist,
+  `--config-env`, `--exec-path`, `rebase -x`, `bisect run`, `submodule foreach`,
+  `difftool -x`, `--upload-pack`/`--receive-pack`, `archive --exec`,
+  `filter-branch`, `clone --template`).
+- An assignment whose value is quoted (`X="1" cmd`) is still an assignment: the
+  command after it MUST be checked.
 - Literal masking MUST preserve token boundaries; quote removal MUST NOT join
   a literal dollar with a literal parenthesis into active syntax. Escapes inside
   single quotes are ordinary characters. Continuations outside single quotes
@@ -199,6 +233,10 @@ Required capability materializers:
 - The guard is an accident-prevention layer for directly visible command syntax,
   not a sandbox or a proof of the effects of an allowed executable. Interpreter
   scripts in files are a KNOWN OPEN vector; no file-content inspection is added.
+  The bootstrap floor keeps this vector by design: `bun <file>` and git hooks or
+  repository config written with the file tools run arbitrary code. Closing it
+  is a profile decision (drop `bun`/`git` or file writes from the floor), not a
+  syntax rule.
   Granting `execute:executable:python3` can authorize a script with arbitrary host
   effects, even without `use:tool:Write` (the file may already exist).
 - File-tool write grants and redirect checks govern those specific write paths;

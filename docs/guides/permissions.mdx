@@ -92,7 +92,7 @@ A `bootstrap` agent holds:
 - `read_own_contacts:system:*`.
 
 <Warning>
-The bootstrap floor is a convenience floor, not a sandbox. `bun -e` runs any code, and `find -exec` and `xargs` run other programs; the Bash check only sees `bun`, `find` and `xargs`. The provider's file read and write tools are allowed too. For agents that talk to untrusted people, use `chat-only` or `explicit-only`.
+The bootstrap floor is a convenience floor, not a sandbox. The Bash check refuses `bun -e`, a shell or interpreter started by `find -exec` or `xargs`, and `git` options that run a program, but `bun <file>` and git hooks still run whatever the file tools wrote. The provider's file read and write tools are allowed too. For agents that talk to untrusted people, use `chat-only` or `explicit-only`.
 </Warning>
 
 ## What a turn may do
@@ -219,12 +219,15 @@ When a turn needs a capability it does not hold, Ravi can post an approval reque
 
 Before every Bash command, Ravi checks the effective authority of its context. An existing `execute:executable:*` capability authorizes arbitrary shell forms; it does not grant a missing tool, change the caller's identity, or remove Ravi command/session authorization. A narrowed child or contact overlay cannot borrow a broader agent profile.
 
-Contexts limited to named executables retain these syntax restrictions. Approving a named executable does not remove them:
+Contexts limited to named executables are checked command by command. Ravi reads every command the shell would run, including the ones inside `$(...)`, backticks, `<(...)` and an unquoted here-document, and each one needs its own grant. A quoted here-document (`<<'EOF'`) is text, not commands. These stay refused even when the executable is approved:
 
 - shells and string execution: `bash`, `sh`, `zsh`, `dash`, `ksh`, `csh`, `fish`, `tcsh`, `eval`, `exec`, `source`, `.`;
-- command substitution (`$(...)`, backticks), process substitution and here-documents;
+- a shell or interpreter started by a launcher: `xargs`, `find -exec`, `env`, `timeout`, `nice`, `nohup`, and anything run by `parallel` or `watch`;
+- a binary outside the trusted directories, or one that is really a shell under another name: Ravi checks the real path, so a copy of `sh` named `git` is refused;
+- changing which program runs: `PATH`, `LD_*`/`DYLD_*`, pager and editor variables, and `git -c`, `git rebase -x` and similar options;
 - piping into a shell, or into `python`, `python3`, `node`, `perl` or `ruby` as the last command (code read from stdin);
-- inline code: `python -c`, `python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`.
+- inline code: `python -c`, `python3 -c`, `node -e`, `bun -e`, `perl -e`, `ruby -e`, `php -r`;
+- a command Ravi cannot analyze, reported as `unknown_parse`. Split it into simpler commands.
 
 Without arbitrary execution, redirecting output to a file needs `use:tool:Write` and provider configuration has an additional protection. Environment identity checks remain separate: only effective `admin:system:*` permits overriding `RAVI_*` variables. Executable access is not a filesystem or network sandbox.
 
