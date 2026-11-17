@@ -1464,6 +1464,33 @@ describe("remote gateway exit taxonomy", () => {
     expect(JSON.stringify(error?.envelope())).not.toContain("SECRET");
   });
 
+  it("keeps the live-turn recovery action of an ended publication context through the gateway", () => {
+    const error = remoteGatewayErrorToContractError(
+      "pr publish",
+      result({
+        status: 500,
+        body: JSON.stringify({
+          success: false,
+          op: "pr publish",
+          exitCode: 1,
+          outcome: "failed",
+          error: {
+            code: "RUNTIME_CONTEXT_INACTIVE",
+            message: "SECRET REMOTE TEXT",
+            retryable: false,
+            suggestedAction: "SECRET REMOTE ACTION",
+          },
+        }),
+      }),
+    );
+    const envelope = error?.envelope().error;
+    expect(envelope).toMatchObject({ code: "RUNTIME_CONTEXT_INACTIVE" });
+    expect(envelope?.suggestedAction).toContain("live turn");
+    expect(envelope?.suggestedAction).toContain("--expect-sha");
+    expect(envelope?.suggestedAction).not.toContain("Inspect ravi pr publish --help");
+    expect(JSON.stringify(error?.envelope())).not.toContain("SECRET");
+  });
+
   it.each([
     [MEDIA_SEND_FAILED_CODE, true, MEDIA_SEND_FAILED_MESSAGE, MEDIA_SEND_FAILED_SUGGESTED_ACTION],
     [OMNI_AUTH_FAILED_CODE, false, OMNI_AUTH_FAILED_MESSAGE, OMNI_AUTH_FAILED_SUGGESTED_ACTION],

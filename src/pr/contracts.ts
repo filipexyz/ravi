@@ -112,6 +112,8 @@ export function publicationRecoveryAction(code: string): string {
     case "PUBLICATION_REQUEST_TIMEOUT":
     case "PUBLICATION_AUDIT_FAILED":
       return "Inspect partial publication state and rerun the same publication with --expect-sha to reconcile.";
+    case "RUNTIME_CONTEXT_INACTIVE":
+      return "The context that started publication is no longer live, so this is not a missing grant: rerun the same command with the same --expect-sha from a live turn and keep it open until it exits; uploaded objects are skipped.";
     case "PUBLICATION_RESPONSE_TOO_LARGE":
       return "Inspect the oversized git or GitHub response; a rerun alone hits the same output limit.";
     case "WORKTREE_DIRTY":
