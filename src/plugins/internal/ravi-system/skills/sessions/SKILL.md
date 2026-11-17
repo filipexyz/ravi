@@ -330,6 +330,7 @@ A raiz da thread aparece no canal como um card: a primeira linha da mensagem ini
 Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack thread "<título>" (<sessão-da-thread>) ...`. `thread-send` reabre uma thread fechada; a filha responde dentro da thread.
 
 Uma mensagem no canal que continua o assunto de uma thread já aberta vai para essa thread com `thread-send`, sem abrir outra. Threads não falam entre si: quando uma precisa de algo de outra, ela pede com `report` e a sessão do canal repassa com `thread-send`.
+
 `thread-configure` aceita `--provider`, `--model`, `--effort` e `--thinking`; pelo menos um é obrigatório. Um campo omitido é preservado e `clear` remove seu override. O resultado mostra `before`, `after` e `appliesOn: next-turn`: não interrompe o turno em execução nem reabre uma thread fechada. Confira `sessions actions --json` para descobrir `thread.configure`. A operação verifica o vínculo persistido com o pai e não concede acesso genérico para alterar ou ler outras sessões. Mudar o provider para fora do default continua exigindo a autoridade de `agents set`.
 
 `sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
