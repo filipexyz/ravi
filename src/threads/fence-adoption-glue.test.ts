@@ -211,7 +211,10 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
     const anyTurn = at("`-w` only waits up to 120 s for a `turn.complete` of that session, of any turn");
     const readAlways = at("Whatever `-w` returned, read the session");
     const receipt = at('select(.role == "user" and (.createdAt // "") >= $since)');
-    const wait60 = at("first wait 60 s, the life of a prompt in `SESSION_PROMPTS`");
+    // Eleventh review: no line means wait and read again whatever `-w` returned, and at most two sends.
+    const noLine = at("No line, whatever `-w` returned");
+    const wait60 = at("So wait 60 s, the life of a prompt in `SESSION_PROMPTS`");
+    const cap = at("An entry is never sent more than twice.");
     const abandon = at("(f) Abandon after (b), as a step and not as an exception");
     expect(
       save < listing &&
@@ -226,8 +229,10 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
         notExit < anyTurn &&
         anyTurn < readAlways &&
         readAlways < receipt &&
-        receipt < wait60 &&
-        wait60 < abandon,
+        receipt < noLine &&
+        noLine < wait60 &&
+        wait60 < cap &&
+        cap < abandon,
     ).toBe(true);
     // The send refuses entries it cannot send instead of sending "null" or exiting 0.
     expect(recipe).toContain("halt_error(2)");
