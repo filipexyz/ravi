@@ -438,13 +438,13 @@ mock.module("./config-store.js", () => ({
           id: "main",
           cwd: "/tmp/ravi-test-bot/main",
           provider: activeProvider,
-          model: "test-model",
+          model: "sonnet-test-model",
         },
         secondary: {
           id: "secondary",
           cwd: "/tmp/ravi-test-bot/secondary",
           provider: activeProvider,
-          model: "test-model",
+          model: "sonnet-test-model",
         },
       },
       routes: [],
@@ -733,7 +733,7 @@ afterAll(async () => {
 function createBot(options: { startCrashRecovery?: boolean } = {}) {
   const bot = new RaviBot({
     config: {
-      model: "test-model",
+      model: "sonnet-test-model",
       logLevel: "error",
       apiKey: "fake",
     } as any,
@@ -1422,12 +1422,12 @@ describe("RaviBot runtime guards", () => {
       name: sessionKey,
       agentId: "main",
       agentCwd: "/tmp/ravi-test-bot/main",
-      modelOverride: "session-model",
+      modelOverride: "sonnet-session-model",
     });
     const dispatched = createDispatchedTaskForSession(sessionKey, {
       profileId: "task-doc-none",
       taskRuntimeOverride: {
-        model: "task-model",
+        model: "sonnet-task-model",
         effort: "xhigh",
       },
     });
@@ -1440,16 +1440,16 @@ describe("RaviBot runtime guards", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(runtimeStartCalls).toHaveLength(1);
-    expect(runtimeStartCalls[0]?.model).toBe("task-model");
+    expect(runtimeStartCalls[0]?.model).toBe("sonnet-task-model");
     expect(runtimeStartCalls[0]?.effort).toBe("xhigh");
-    expect(sessions.get(sessionKey)?.modelOverride).toBe("session-model");
+    expect(sessions.get(sessionKey)?.modelOverride).toBe("sonnet-session-model");
 
     completeTaskForSession(dispatched.task.id, sessionKey);
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("normal turn"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(runtimeStartCalls).toHaveLength(2);
-    expect(runtimeStartCalls[1]?.model).toBe("session-model");
+    expect(runtimeStartCalls[1]?.model).toBe("sonnet-session-model");
     expect(runtimeStartCalls[1]?.effort).toBe("xhigh");
     expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
   });
@@ -1461,12 +1461,12 @@ describe("RaviBot runtime guards", () => {
       name: sessionKey,
       agentId: "main",
       agentCwd: "/tmp/ravi-test-bot/main",
-      modelOverride: "test-model",
+      modelOverride: "sonnet-test-model",
     });
     const dispatched = createDispatchedTaskForSession(sessionKey, {
       profileId: "task-doc-none",
       taskRuntimeOverride: {
-        model: "task-model",
+        model: "sonnet-task-model",
         effort: "low",
       },
     });
@@ -1517,9 +1517,9 @@ describe("RaviBot runtime guards", () => {
     expect(runtimeStartCalls).toHaveLength(1);
     expect(setModelCalls).toEqual([]);
     expect(turns).toEqual([
-      { taskId: dispatched.task.id, model: "task-model", effort: "low" },
+      { taskId: dispatched.task.id, model: "sonnet-task-model", effort: "low" },
       // Leaving the task drops its model and effort overrides back to the session's.
-      { taskId: undefined, model: "test-model", effort: "xhigh" },
+      { taskId: undefined, model: "sonnet-test-model", effort: "xhigh" },
     ]);
 
     releaseRuntime();
@@ -1531,10 +1531,10 @@ describe("RaviBot runtime guards", () => {
     const dispatched = createDispatchedTaskForSession(sessionKey, {
       profileId: "task-doc-none",
       taskRuntimeOverride: {
-        model: "task-model",
+        model: "sonnet-task-model",
       },
       dispatchRuntimeOverride: {
-        model: "dispatch-model",
+        model: "sonnet-dispatch-model",
         thinking: "verbose",
       },
     });
@@ -1546,7 +1546,7 @@ describe("RaviBot runtime guards", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(runtimeStartCalls[0]?.model).toBe("dispatch-model");
+    expect(runtimeStartCalls[0]?.model).toBe("sonnet-dispatch-model");
     expect(runtimeStartCalls[0]?.thinking).toBe("verbose");
   });
 
@@ -1650,7 +1650,7 @@ describe("RaviBot runtime guards", () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
 
     expect(runtimeStartCalls).toHaveLength(1);
-    expect(runtimeStartCalls[0]?.model).toBe("test-model");
+    expect(runtimeStartCalls[0]?.model).toBe("sonnet-test-model");
     expect(interrupt).not.toHaveBeenCalled();
     expect(seenPrompts).toEqual([
       { provider: "codex", prompt: withWhatsAppSurfaceHint("first via codex") },
@@ -1684,12 +1684,12 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    const status = await (bot as any).applySessionModelChange(sessionKey, "test-model-2");
+    const status = await (bot as any).applySessionModelChange(sessionKey, "sonnet-test-model-2");
     const streaming = (bot as any).streamingSessions.get(sessionKey);
 
     expect(status).toBe("applied");
-    expect(setModelCalls).toEqual(["test-model-2"]);
-    expect(streaming?.currentModel).toBe("test-model-2");
+    expect(setModelCalls).toEqual(["sonnet-test-model-2"]);
+    expect(streaming?.currentModel).toBe("sonnet-test-model-2");
 
     releaseRuntime?.();
     await bot.stop();
@@ -2280,7 +2280,7 @@ describe("RaviBot streaming session lifecycle", () => {
       sessionName,
       agentId: "main",
       provider: "claude",
-      model: "test-model",
+      model: "sonnet-test-model",
       requestBlobSha256: "sha-expired-boot-stop",
       originKind: "human",
       deliveryBarrier: "after_response",

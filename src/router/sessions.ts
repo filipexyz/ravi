@@ -176,6 +176,9 @@ interface SessionStatements {
   updateModelOverride: Statement;
   updateEffortOverride: Statement;
   updateThinkingLevel: Statement;
+  restoreRuntimeConfigIfOwned: Statement;
+  runtimeConfigOwned: Statement;
+  clearProviderStateIfRuntimeConfigOwned: Statement;
 }
 
 export interface SessionTurnUsage {
@@ -326,6 +329,23 @@ function getStatements(): SessionStatements {
     updateModelOverride: db.prepare("UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"),
     updateEffortOverride: db.prepare("UPDATE sessions SET effort_override = ?, updated_at = ? WHERE session_key = ?"),
     updateThinkingLevel: db.prepare("UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE session_key = ?"),
+    restoreRuntimeConfigIfOwned: db.prepare(
+      `UPDATE sessions SET
+        runtime_provider_override = ?, model_override = ?, effort_override = ?, thinking_level = ?,
+        runtime_provider_config_revision = runtime_provider_config_revision + 1, updated_at = ?
+      WHERE session_key = ? AND runtime_provider_config_revision = ?
+        AND runtime_provider_override IS ? AND model_override IS ? AND effort_override IS ? AND thinking_level IS ?`,
+    ),
+    runtimeConfigOwned: db.prepare(
+      `SELECT 1 FROM sessions
+      WHERE session_key = ? AND runtime_provider_config_revision = ?
+        AND runtime_provider_override IS ? AND model_override IS ? AND effort_override IS ? AND thinking_level IS ?`,
+    ),
+    clearProviderStateIfRuntimeConfigOwned: db.prepare(
+      `UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ?
+      WHERE session_key = ? AND runtime_provider_config_revision = ?
+        AND runtime_provider_override IS ? AND model_override IS ? AND effort_override IS ? AND thinking_level IS ?`,
+    ),
   };
   statementsDbPath = currentDbPath;
 
@@ -639,6 +659,90 @@ export function clearProviderSession(sessionKey: string): void {
   const s = getStatements();
   s.clearProviderState.run(Date.now(), sessionKey);
   log.debug("Cleared provider session state", { sessionKey });
+}
+
+/** The four runtime-config override axes an atomic update owns while its probe runs. */
+export interface SessionRuntimeConfigSnapshot {
+  runtimeProviderOverride: string | null;
+  modelOverride: string | null;
+  effortOverride: string | null;
+  thinkingLevel: string | null;
+}
+
+function runtimeConfigOwnershipParams(
+  sessionKey: string,
+  ownedRevision: number,
+  written: SessionRuntimeConfigSnapshot,
+) {
+  return [
+    sessionKey,
+    ownedRevision,
+    written.runtimeProviderOverride,
+    written.modelOverride,
+    written.effortOverride,
+    written.thinkingLevel,
+  ] as const;
+}
+
+/**
+ * Conditionally restore the four runtime-config axes after a failed probe.
+ *
+ * The restore applies only while the caller still owns the configuration: the
+ * persisted revision and all four values must still be exactly what the caller
+ * wrote. One statement, so there is no window between the ownership check and
+ * the write. Returns false when a concurrent update superseded the caller —
+ * the newer configuration is left untouched (CodeRabbit lost-update finding
+ * on #829). Bumps the revision so the live daemon reloads the restored config.
+ */
+export function restoreSessionRuntimeConfigIfOwned(
+  sessionKey: string,
+  ownedRevision: number,
+  written: SessionRuntimeConfigSnapshot,
+  restore: SessionRuntimeConfigSnapshot,
+): boolean {
+  const result = getStatements().restoreRuntimeConfigIfOwned.run(
+    restore.runtimeProviderOverride,
+    restore.modelOverride,
+    restore.effortOverride,
+    restore.thinkingLevel,
+    Date.now(),
+    ...runtimeConfigOwnershipParams(sessionKey, ownedRevision, written),
+  );
+  const restored = Number(result.changes ?? 0) > 0;
+  log.debug(restored ? "Restored runtime config after failed probe" : "Runtime config superseded; restore skipped", {
+    sessionKey,
+    ownedRevision,
+  });
+  return restored;
+}
+
+/** True while the atomic update that persisted (ownedRevision, written) still owns the runtime config. */
+export function sessionRuntimeConfigOwned(
+  sessionKey: string,
+  ownedRevision: number,
+  written: SessionRuntimeConfigSnapshot,
+): boolean {
+  return Boolean(
+    getStatements().runtimeConfigOwned.get(...runtimeConfigOwnershipParams(sessionKey, ownedRevision, written)),
+  );
+}
+
+/**
+ * Clear provider continuity only while the caller still owns the runtime
+ * config (same single-statement ownership condition as the restore): a
+ * superseded update must not destroy the continuity of the configuration that
+ * replaced it.
+ */
+export function clearProviderSessionIfRuntimeConfigOwned(
+  sessionKey: string,
+  ownedRevision: number,
+  written: SessionRuntimeConfigSnapshot,
+): boolean {
+  const result = getStatements().clearProviderStateIfRuntimeConfigOwned.run(
+    Date.now(),
+    ...runtimeConfigOwnershipParams(sessionKey, ownedRevision, written),
+  );
+  return Number(result.changes ?? 0) > 0;
 }
 
 /**

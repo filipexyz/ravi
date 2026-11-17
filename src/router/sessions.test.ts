@@ -5,7 +5,11 @@ import {
   attachChatToSession,
   bumpSessionRuntimeProviderConfigRevision,
   clearProviderSession,
+  clearProviderSessionIfRuntimeConfigOwned,
   closeSessionStore,
+  restoreSessionRuntimeConfigIfOwned,
+  sessionRuntimeConfigOwned,
+  updateSessionModelOverride,
   detachChatFromSession,
   expireEphemeralSession,
   findSessionByChatId,
@@ -501,5 +505,65 @@ describe("sessions store", () => {
       ephemeral: true,
     });
     expect(getSession(sessionKey)?.expiresAt).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("guards runtime-config restore and continuity clear behind revision+value ownership", () => {
+    const session = getOrCreateSession("agent:main:runtime-ownership", "main", stateDir!);
+    const original = {
+      runtimeProviderOverride: null,
+      modelOverride: null,
+      effortOverride: null,
+      thinkingLevel: null,
+    };
+
+    // Update A applies (the provider setter bumps the persisted revision).
+    updateSessionRuntimeProviderOverride(session.sessionKey, "claude");
+    updateSessionModelOverride(session.sessionKey, "sonnet");
+    const appliedA = getSession(session.sessionKey);
+    if (!appliedA) throw new Error("expected session after apply");
+    const ownedA = appliedA.runtimeProviderConfigRevision ?? 0;
+    const writtenA = {
+      runtimeProviderOverride: appliedA.runtimeProviderOverride ?? null,
+      modelOverride: appliedA.modelOverride ?? null,
+      effortOverride: appliedA.effortOverride ?? null,
+      thinkingLevel: appliedA.thinkingLevel ?? null,
+    };
+    expect(sessionRuntimeConfigOwned(session.sessionKey, ownedA, writtenA)).toBe(true);
+
+    // Update B lands while A's probe is in flight and completes successfully.
+    updateSessionRuntimeProviderOverride(session.sessionKey, "codex");
+    updateSessionModelOverride(session.sessionKey, "gpt-6-astra");
+    updateProviderSessionId(session.sessionKey, "prov-b", "codex");
+
+    // A lost ownership: its failed-probe restore and continuity clear refuse,
+    // and B's successful configuration survives untouched (lost-update guard).
+    expect(sessionRuntimeConfigOwned(session.sessionKey, ownedA, writtenA)).toBe(false);
+    expect(restoreSessionRuntimeConfigIfOwned(session.sessionKey, ownedA, writtenA, original)).toBe(false);
+    expect(clearProviderSessionIfRuntimeConfigOwned(session.sessionKey, ownedA, writtenA)).toBe(false);
+    const afterRefusal = getSession(session.sessionKey);
+    expect(afterRefusal).toMatchObject({
+      runtimeProviderOverride: "codex",
+      modelOverride: "gpt-6-astra",
+      providerSessionId: "prov-b",
+    });
+
+    // The current owner still passes the same gate: continuity clear applies,
+    // and its own rollback restores in one conditional statement, bumping the
+    // revision so the live daemon reloads the restored configuration.
+    const current = getSession(session.sessionKey);
+    if (!current) throw new Error("expected session after concurrent update");
+    const ownedB = current.runtimeProviderConfigRevision ?? 0;
+    const writtenB = {
+      runtimeProviderOverride: current.runtimeProviderOverride ?? null,
+      modelOverride: current.modelOverride ?? null,
+      effortOverride: current.effortOverride ?? null,
+      thinkingLevel: current.thinkingLevel ?? null,
+    };
+    expect(clearProviderSessionIfRuntimeConfigOwned(session.sessionKey, ownedB, writtenB)).toBe(true);
+    expect(getSession(session.sessionKey)?.providerSessionId ?? null).toBeNull();
+    expect(restoreSessionRuntimeConfigIfOwned(session.sessionKey, ownedB, writtenB, writtenA)).toBe(true);
+    const restored = getSession(session.sessionKey);
+    expect(restored).toMatchObject({ runtimeProviderOverride: "claude", modelOverride: "sonnet" });
+    expect(restored?.runtimeProviderConfigRevision).toBe(ownedB + 1);
   });
 });

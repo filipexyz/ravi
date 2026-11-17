@@ -81,6 +81,12 @@ import {
   listRegisteredRuntimeProviderIds,
 } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import {
+  applySessionRuntimeUpdate,
+  parseSessionRuntimeUpdateAxes,
+  SessionRuntimeUpdateError,
+} from "../../runtime/session-runtime-update.js";
+import { DEFAULT_RUNTIME_PROBE_TIMEOUT_MS } from "../../runtime/runtime-probe.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../command-access.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
@@ -334,6 +340,59 @@ export const sessionSetModelReturnSchema = z.object({
   notification: z.object({}).passthrough().optional(),
   ...sessionAgentDefaultDiffReturnSchema,
 });
+const sessionRuntimeConfigSnapshotReturnSchema = z
+  .object({
+    runtimeProviderOverride: z.string().nullable(),
+    modelOverride: z.string().nullable(),
+    effortOverride: z.string().nullable(),
+    thinkingLevel: z.string().nullable(),
+  })
+  .strict();
+const sessionRuntimeProbeReturnSchema = z
+  .object({
+    ok: z.boolean(),
+    provider: z.string(),
+    model: z.string(),
+    effort: z.string().optional(),
+    thinking: z.string().optional(),
+    durationMs: z.number(),
+    credentialId: z.string().optional(),
+    credentialLabel: z.string().optional(),
+    error: z.string().optional(),
+    timedOut: z.boolean().optional(),
+  })
+  .strict();
+export const sessionRuntimeUpdateReturnSchema = z
+  .object({
+    action: z.literal("update"),
+    session: z.object({ sessionKey: z.string(), sessionName: z.string().nullable() }).strict(),
+    changed: z
+      .object({ provider: z.boolean(), model: z.boolean(), effort: z.boolean(), thinking: z.boolean() })
+      .strict(),
+    before: sessionRuntimeConfigSnapshotReturnSchema,
+    after: sessionRuntimeConfigSnapshotReturnSchema,
+    effective: z
+      .object({
+        provider: z.string(),
+        model: z.string().nullable(),
+        effort: z.string().nullable(),
+        thinking: z.string().nullable(),
+      })
+      .strict(),
+    /** Null when --skip-probe applied the change without proof. */
+    probe: sessionRuntimeProbeReturnSchema.nullable(),
+    rolledBack: z.boolean(),
+    /** A concurrent update replaced this configuration while the probe ran. */
+    superseded: z.boolean(),
+    clearedProviderSession: z.boolean(),
+    rematerializedToAgentRuntime: z.boolean(),
+    notification: z
+      .object({ topic: z.string(), delivered: z.boolean(), error: z.string().nullable() })
+      .strict()
+      .optional(),
+    appliesOn: z.literal("next-turn-runtime-restart"),
+  })
+  .strict();
 const sessionCommandTargetReturnSchema = z
   .object({
     sessionKey: z.string(),
@@ -2150,6 +2209,8 @@ function formatWaitTimeoutError(sessionName: string): string {
   const seconds = Math.round(SEND_TIMEOUT_MS / 1000);
   return `Timed out waiting for response from ${sessionName} after ${seconds}s`;
 }
+
+const SESSION_UPDATE_USAGE_HINT = "Fix the value named in the message; see: ravi sessions update --help";
 
 function failSessionUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
@@ -4166,6 +4227,212 @@ export class SessionCommands {
     }
 
     console.log("Note: takes effect on next session start (reset or daemon restart).");
+  }
+
+  @Command({
+    name: "update",
+    description:
+      "Atomically update session provider/model/effort/thinking, prove the result with a live provider turn, and roll back on failure",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "update",
+    risk: "medium",
+    consoleScope: "session",
+    resourceId: "nameOrKey",
+  })
+  async update(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({
+      flags: "--provider <provider>",
+      description: `Runtime provider (${listRegisteredRuntimeProviderIds().join("|")}) or 'clear' to remove the override`,
+    })
+    provider?: string,
+    @Option({
+      flags: "--model <model>",
+      description: "Model id for the effective provider, or 'clear' to remove the override",
+    })
+    model?: string,
+    @Option({
+      flags: "--effort <level>",
+      description: `Reasoning effort (${formatRuntimeEffortLevels()}) or 'clear'`,
+    })
+    effort?: string,
+    @Option({
+      flags: "--thinking <level>",
+      description: "Thinking level (off|normal|verbose) or 'clear'",
+    })
+    thinking?: string,
+    @Option({
+      flags: "--skip-probe",
+      description: "Apply without the liveness probe (no rollback protection)",
+    })
+    skipProbe?: boolean,
+    @Option({
+      flags: "--probe-timeout <seconds>",
+      description: `Liveness probe timeout in seconds (default ${Math.round(DEFAULT_RUNTIME_PROBE_TIMEOUT_MS / 1000)})`,
+    })
+    probeTimeout?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Fail fast: every requested axis is parsed and validated before any write.
+    let axes: ReturnType<typeof parseSessionRuntimeUpdateAxes>;
+    try {
+      axes = parseSessionRuntimeUpdateAxes({
+        ...(provider !== undefined ? { provider } : {}),
+        ...(model !== undefined ? { model } : {}),
+        ...(effort !== undefined ? { effort } : {}),
+        ...(thinking !== undefined ? { thinking } : {}),
+      });
+    } catch (error) {
+      if (error instanceof SessionRuntimeUpdateError) {
+        failSessionUsage("sessions update", error.message, SESSION_UPDATE_USAGE_HINT, asJson);
+      }
+      throw error;
+    }
+
+    let probeTimeoutMs: number | undefined;
+    if (probeTimeout !== undefined) {
+      const seconds = Number.parseInt(probeTimeout, 10);
+      if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 600) {
+        failSessionUsage(
+          "sessions update",
+          `Invalid --probe-timeout: ${probeTimeout}. Use a number of seconds between 1 and 600.`,
+          "Pass --probe-timeout as whole seconds between 1 and 600, or omit it for the default",
+          asJson,
+        );
+      }
+      probeTimeoutMs = seconds * 1000;
+    }
+
+    if (axes.provider?.set) {
+      assertSessionProviderSelectionAuthorized(s, axes.provider.set);
+    }
+
+    const label = s.name ?? s.sessionKey;
+    const agent = getAgent(s.agentId) ?? loadRouterConfig().agents[s.agentId] ?? null;
+
+    let result: Awaited<ReturnType<typeof applySessionRuntimeUpdate>>;
+    try {
+      result = await applySessionRuntimeUpdate({
+        session: s,
+        agent,
+        axes,
+        probe: skipProbe !== true,
+        ...(probeTimeoutMs ? { probeTimeoutMs } : {}),
+      });
+    } catch (error) {
+      if (error instanceof SessionRuntimeUpdateError) {
+        failSessionUsage("sessions update", error.message, SESSION_UPDATE_USAGE_HINT, asJson);
+      }
+      throw error;
+    }
+
+    if (result.probe && !result.probe.ok) {
+      const probeError = result.probe.error ?? "probe failed";
+      const outcome = result.rolledBack
+        ? `restored the previous runtime config for ${label}`
+        : `a concurrent runtime update replaced this configuration during the probe, so nothing was restored — the newer update owns ${label} now`;
+      contractFail(
+        "sessions update",
+        "RUNTIME_PROBE_FAILED",
+        `Liveness probe failed for ${result.effective.provider}/${result.effective.model ?? "(default model)"}; ${outcome}. Probe error: ${probeError}`,
+        {
+          ...{
+            asJson,
+            details: {
+              session: { sessionKey: result.sessionKey, sessionName: result.sessionName },
+              effective: result.effective,
+              probe: result.probe,
+              rolledBack: result.rolledBack,
+              superseded: result.superseded,
+              restored: result.after,
+              suggestedAction: result.rolledBack
+                ? "Pick a model/provider this installation can run (see the probe error), then retry ravi sessions update"
+                : "Inspect the session's current runtime (ravi sessions show) before retrying; a newer update already changed it",
+            },
+          },
+          diagnostic: errorDiagnostic(probeError, { operation: "sessions update" }),
+        },
+      );
+    }
+
+    // The live daemon only hears about the model after the probe proved it —
+    // and never about a configuration a concurrent update already replaced.
+    let notification = { delivered: false, error: null as string | null };
+    if (result.changed.model && !result.superseded) {
+      const event: SessionModelChangedEvent = {
+        sessionKey: s.sessionKey,
+        sessionName: label,
+        modelOverride: result.after.modelOverride,
+        effectiveModel: result.effective.model ?? resolveEffectiveSessionModel(s, result.after.modelOverride),
+        changedAt: Date.now(),
+      };
+      try {
+        await nats.emit(SESSION_MODEL_CHANGED_TOPIC, event);
+        notification = { delivered: true, error: null };
+      } catch (err) {
+        notification = { delivered: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    if (!asJson) {
+      const changedAxes = Object.entries(result.changed)
+        .filter(([, changed]) => changed)
+        .map(([axis]) => axis)
+        .join(", ");
+      console.log(`Updated ${changedAxes} for: ${label}`);
+      console.log(
+        `Effective runtime: provider=${result.effective.provider} model=${result.effective.model ?? "(default)"} effort=${result.effective.effort ?? "(default)"} thinking=${result.effective.thinking ?? "(default)"}`,
+      );
+      if (result.probe) {
+        console.log(`Liveness probe passed in ${Math.round(result.probe.durationMs / 1000)}s.`);
+      } else {
+        console.log("Liveness probe skipped (--skip-probe): this change is unproven.");
+      }
+      if (result.superseded) {
+        console.log(
+          "Note: a concurrent runtime update has since replaced this configuration; the newer update governs the session now.",
+        );
+      }
+      if (result.clearedProviderSession) {
+        console.log("Cleared incompatible provider session state; the next turn starts fresh on the new provider.");
+      }
+      console.log("Note: takes effect on the next turn; active runtime restarts when the selection changes.");
+    }
+
+    if (shouldReturnStructuredResult(asJson)) {
+      const payload = {
+        action: "update",
+        session: { sessionKey: result.sessionKey, sessionName: result.sessionName },
+        changed: result.changed,
+        before: result.before,
+        after: result.after,
+        effective: result.effective,
+        probe: result.probe,
+        rolledBack: false,
+        superseded: result.superseded,
+        clearedProviderSession: result.clearedProviderSession,
+        rematerializedToAgentRuntime: result.rematerializedToAgentRuntime,
+        ...(result.changed.model ? { notification: { topic: SESSION_MODEL_CHANGED_TOPIC, ...notification } } : {}),
+        appliesOn: "next-turn-runtime-restart",
+      };
+      return returnStructuredResult(payload, asJson);
+    }
   }
 
   @Command({ name: "reset", description: "Reset a session (fresh start)" })
@@ -7643,6 +7910,7 @@ declareCommandReturns(SessionCommands, {
   threadSend: sessionThreadSendReturnSchema,
   threads: sessionThreadsReturnSchema,
   trace: commandEnvelopeReturnSchema,
+  update: sessionRuntimeUpdateReturnSchema,
   visibility: commandEnvelopeReturnSchema,
 });
 
