@@ -198,13 +198,20 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
     };
     const save = at("(a) Save what will be sent again, read only, before any write.");
     const listing = at("LEFT JOIN json_each(COALESCE(s.pending_messages_json, '[]')) m");
-    const deliveries = at("INSERT INTO daemon_restart_resume_deliveries");
+    const deliveries = at("INSERT OR IGNORE INTO daemon_restart_resume_deliveries");
     // Ninth review: after (b) the file is the only carrier, the legacy included.
     const carrier = at("From here on `resend-<epoch>.json` is the only carrier of these messages.");
     const retry = at("ravi maintenance thread-fence-recover --mode retry --execute");
     const confirm = at("(d) Confirm the successor takes prompts before anything is sent.");
-    const ready = at("must show the line `Daemon ready` for this boot");
-    const send = at("xargs -0 ravi sessions send -w");
+    const ready = at("must show the line `Daemon ready` for this boot, that is, timestamped after the `retry` of (c)");
+    // Tenth review: the time is noted before the send, and the receipt is the session's own line.
+    const noted = at("T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)   # noted before sending");
+    const send = at("xargs -0 -r -n 2 ravi sessions send -w --");
+    const notExit = at("The receipt is the session's own record, not the exit code.");
+    const anyTurn = at("`-w` only waits up to 120 s for a `turn.complete` of that session, of any turn");
+    const readAlways = at("Whatever `-w` returned, read the session");
+    const receipt = at('select(.role == "user" and (.createdAt // "") >= $since)');
+    const wait60 = at("first wait 60 s, the life of a prompt in `SESSION_PROMPTS`");
     const abandon = at("(f) Abandon after (b), as a step and not as an exception");
     expect(
       save < listing &&
@@ -213,9 +220,19 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
         carrier < retry &&
         retry < confirm &&
         confirm < ready &&
-        ready < send &&
-        send < abandon,
+        ready < noted &&
+        noted < send &&
+        send < notExit &&
+        notExit < anyTurn &&
+        anyTurn < readAlways &&
+        readAlways < receipt &&
+        receipt < wait60 &&
+        wait60 < abandon,
     ).toBe(true);
+    // The send refuses entries it cannot send instead of sending "null" or exiting 0.
+    expect(recipe).toContain("halt_error(2)");
+    expect(recipe).toContain("halt_error(3)");
+    expect(recipe).not.toContain("The receipt for each entry is `-w`");
     // Nothing is sent before (e), and no message text is ever pasted between double quotes.
     expect(recipe.slice(0, send)).not.toContain("sessions send");
     expect(recipe).not.toMatch(/sessions send[^\n]*"<text>"/);
