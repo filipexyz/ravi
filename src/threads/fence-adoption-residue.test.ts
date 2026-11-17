@@ -97,18 +97,15 @@ describe("legacy durable residue", () => {
     );
     db.exec("CREATE TABLE thread_handoffs (id TEXT, status TEXT NOT NULL)");
     db.exec("INSERT INTO thread_handoffs VALUES ('h1', 'delivered'), ('h2', 'queued')");
-    db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
-    db.exec("INSERT INTO reaction_actions VALUES ('x', 5)");
     db.close();
     const residue = collectSqliteResidue(legacyResidueRules(path));
     const bySource = Object.fromEntries(residue.sources.map((source) => [source.source, source]));
     expect(residue.unknown).toEqual(["ravi.db:thread_handoffs.status=queued (1): resumption not verified"]);
     expect(bySource["ravi.db:session_adapters.status"]).toMatchObject({ pending: 0, inFlight: 1 });
     expect(bySource["ravi.db:library_agent_requests.status"]).toMatchObject({ pending: 1, inFlight: 1 });
-    expect(bySource["ravi.db:reaction_actions.completed_at"]).toMatchObject({ pending: 0, inFlight: 0 });
   });
 
-  it("a refused call tool is final, a stale approval claim waits, an unfinished reaction blocks", () => {
+  it("a refused call tool is final, a stale approval claim waits, an unexpired lease says until when", () => {
     const path = join(root(), "ravi.db");
     const db = new Database(path);
     db.exec("CREATE TABLE call_tool_runs (id TEXT, status TEXT NOT NULL)");
@@ -117,14 +114,17 @@ describe("legacy durable residue", () => {
     // Tag chat-db.ts l.369: a click's claim of a stopped process is reopened after 2 min; it waits for a person.
     db.exec("CREATE TABLE cloud_chat_approvals (approval_id TEXT, status TEXT NOT NULL)");
     db.exec("INSERT INTO cloud_chat_approvals VALUES ('a1', 'deciding'), ('a2', 'approved')");
-    db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
-    db.exec("INSERT INTO reaction_actions VALUES ('done', 5), ('open', 0)");
+    const until = Date.now() + 120_000;
+    db.exec("CREATE TABLE pr_publication_leases (id TEXT, expires_at INTEGER NOT NULL)");
+    db.exec(`INSERT INTO pr_publication_leases VALUES ('old', 1), ('live', ${until})`);
     db.close();
     const residue = collectSqliteResidue(legacyResidueRules(path));
     const bySource = Object.fromEntries(residue.sources.map((source) => [source.source, source]));
     expect(residue.unknown.filter((entry) => entry.includes("call_tool_runs"))).toEqual([]);
     expect(residue.unknown).toHaveLength(1);
-    expect(residue.unknown[0]).toStartWith("ravi.db:reaction_actions.completed_at: 1 row(s) where completed_at = 0: ");
+    expect(residue.unknown[0]).toStartWith(
+      `ravi.db:pr_publication_leases.expires_at: 1 row(s) where expires_at > ?: wait until ${new Date(until).toISOString()} (the latest expires_at), then retry; `,
+    );
     expect(bySource["ravi.db:call_tool_runs.status"]).toMatchObject({ pending: 0, inFlight: 0 });
     expect(bySource["ravi.db:cloud_chat_approvals.status"]).toMatchObject({ pending: 1, inFlight: 0 });
   });
@@ -202,6 +202,42 @@ describe("legacy durable residue", () => {
       pending: 2,
       inFlight: 0,
     });
+  });
+
+  it("seventh review: runtime state, receipts, cron runs and outboxes block with their settle step; reactions and reminders are excluded", () => {
+    const path = join(root(), "ravi.db");
+    const db = new Database(path);
+    db.exec("CREATE TABLE channel_backend_runtime_state (turn_id TEXT, state TEXT NOT NULL)");
+    db.exec("INSERT INTO channel_backend_runtime_state VALUES ('t1', 'running'), ('t2', 'completed')");
+    db.exec("CREATE TABLE channel_outbound_receipts (idempotency_key TEXT, state TEXT NOT NULL)");
+    db.exec("INSERT INTO channel_outbound_receipts VALUES ('k1', 'sent'), ('k2', 'complete')");
+    db.exec("CREATE TABLE cron_runs (id TEXT, status TEXT NOT NULL)");
+    db.exec("INSERT INTO cron_runs VALUES ('c1', 'pending')");
+    db.exec("CREATE TABLE mail_outbox (id TEXT, status TEXT NOT NULL)");
+    db.exec("INSERT INTO mail_outbox VALUES ('m1', 'sending')");
+    // One SQLite transaction claims and completes a reaction (tag policy/reaction-actions.ts l.132-176).
+    db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
+    db.exec("INSERT INTO reaction_actions VALUES ('done', 5)");
+    db.close();
+    const residue = collectSqliteResidue(
+      legacyResidueRules(path).filter((rule) =>
+        ["channel_backend_runtime_state", "channel_outbound_receipts", "cron_runs", "mail_outbox"].includes(rule.table),
+      ),
+    );
+    expect(residue.unknown.sort()).toEqual([
+      "channel_backend_runtime_state.state=running (1): resumption not verified",
+      "channel_outbound_receipts.state=sent (1): resumption not verified",
+      "cron_runs.status=pending (1): resumption not verified",
+      "mail_outbox.status=sending (1): resumption not verified",
+    ]);
+    for (const source of residue.sources)
+      expect(String((source.detail as { owner?: string } | undefined)?.owner)).toContain(
+        "the RUNBOOK settle step for this table",
+      );
+    const excluded = new Set(LEGACY_RESIDUE_EXCLUSIONS.map((entry) => entry.table));
+    expect(excluded.has("reaction_actions")).toBe(true);
+    expect(excluded.has("calendar_event_reminders")).toBe(true);
+    expect(legacyResidueRules(path).some((rule) => rule.table === "reaction_actions")).toBe(false);
   });
 
   it("a cleanly closed WAL database (no -wal/-shm) is read without creating any file", () => {

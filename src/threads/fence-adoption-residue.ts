@@ -34,7 +34,7 @@ export type ResidueRule = {
   /** Why each value in `pending` is at rest by design: who resumes it, or why nothing needs resuming. */
   restReasons?: Readonly<Record<string, string>>;
   /** Work expressed without a status: rows matching `where` (static SQL from this file) are pending or block. */
-  condition?: { where: string; usesNow?: boolean; outcome: "pending" | "blocking" };
+  condition?: { where: string; usesNow?: boolean; outcome: "pending" | "blocking"; deadline?: string };
 };
 
 /**
@@ -42,6 +42,17 @@ export type ResidueRule = {
  * (src/router/router-db.ts, jobs, mail/calendar outbox, cloud deliveries) and the
  * writers where the column is free text (decisions, signals).
  */
+// Exits for blocking rows (seventh review). A value blocks only when neither release resumes or
+// recomputes it; the coordinator never writes a row. The exit is the RUNBOOK settle step for that
+// table: the same columns the tag's own writer sets, run by the operator with explicit
+// authorization while the adoption is blocked and both runtimes are stopped (exits proven, so the
+// row's writer is provably gone), then `retry`. That works for rows the stop itself creates; rows
+// that already exist show in the adopt preview and can be settled the same way before the window.
+const SETTLE_EXIT =
+  "only its writer settles it, and that process is gone; exit: the RUNBOOK settle step for this table (operator-authorized, both runtimes stopped while the adoption is blocked), then retry";
+const CALL_EXIT =
+  "a call in progress, closed only by its own dial or webhook (no reconcile in either release); exit: let calls end before the window (the adopt preview lists them); a call the stop caught goes through the RUNBOOK settle step for calls, then retry";
+
 export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">[] = [
   {
     table: "runtime_prompt_queue",
@@ -126,17 +137,16 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     inFlight: ["processing"],
     owner: "slack socket mode (resumePendingInboundEnvelopes)",
   },
-  // The next three are closed by their CHECK constraints and nothing reconciles
-  // them at boot, in the tag or in the successor. cron_runs moves only through
-  // settleCronRun when its own session reports (cron/run-db.ts l.47-54);
-  // channel_backend_runtime_state is written per turn (router-db.ts ~l.7595-7640).
-  // channel_outbound_receipts: a claimed receipt whose lease expired is taken by
-  // another owner (pid:uuid, outbound-consumer.ts l.455) when resend_prohibited = 0
-  // (outbound-receipts.ts l.251-262), driven by the job's redelivery from the
-  // CHANNEL_OUTBOUND stream; with resend_prohibited = 1 it is never resent.
-  // Decision (operator): these non-terminal rows block. A stale-row criterion may
-  // only come in its own change, backed by a read-only collection over a copy of
-  // the production database.
+  // The next three keep blocking (operator decision, risk A (a)); each has a settle step.
+  // channel_outbound_receipts (tag outbound-receipts.ts): claimed l.251-262 (an expired claim is
+  // taken over only when its job is redelivered from CHANNEL_OUTBOUND and resend_prohibited = 0,
+  // outbound-consumer.ts l.455, l.552 in this release), sent l.322-331, persisted l.353-365,
+  // complete l.392-408, suppressed l.432-440. A receipt whose job is no longer in the stream is
+  // never touched again; telling the two apart needs the stream's content (risk A (b), its own PR).
+  // channel_backend_runtime_state: upsert router-db.ts l.7710 (this release l.7718), read only by
+  // turn_id (l.7595, l.7634; l.7603, l.7642, l.7759): nothing lists or reconciles it.
+  // cron_runs: settled only by settleCronRun when its own session reports (cron/run-db.ts l.47-54);
+  // a pending run also holds back the job's next run (l.61).
   {
     table: "channel_outbound_receipts",
     column: "state",
@@ -144,7 +154,7 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     pending: [],
     inFlight: [],
     blocking: ["claimed", "sent", "persisted"],
-    owner: "channel outbound claim owner (non-terminal receipts block)",
+    owner: `channel outbound receipts: carried only while their job is in CHANNEL_OUTBOUND, which this read cannot tell; ${SETTLE_EXIT}`,
   },
   {
     table: "channel_backend_runtime_state",
@@ -153,7 +163,7 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     pending: [],
     inFlight: [],
     blocking: ["accepted", "running", "waiting_approval"],
-    owner: "channel backend runtime (non-terminal turns block)",
+    owner: `channel backend runtime state of a turn the stop cut: nothing lists or reconciles it; ${SETTLE_EXIT}`,
   },
   {
     table: "cron_runs",
@@ -162,7 +172,7 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     pending: [],
     inFlight: [],
     blocking: ["pending"],
-    owner: "cron run settled by its own session outcome (unfinished runs block)",
+    owner: `cron runs: settled only when their session reports; ${SETTLE_EXIT}`,
   },
   // src/channels/outbound-publish-outbox.ts: pending jobs are selected for publication again (l.270).
   {
@@ -229,8 +239,9 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     inFlight: ["running"],
     owner: "job runner orphan reconciliation",
   },
-  // No dispatcher in the legacy daemon leases these rows, so 'leased' and 'sending'
-  // have no owner that resumes them here: they stay outside the rule and block.
+  // No dispatcher in the tag leases these rows ('leased'/'sending' have no writer there and no
+  // owner that resumes them); the tag's own retry requeues a row (mailbox/db.ts l.868-880,
+  // calendar/db.ts l.1069-1080).
   {
     table: "mail_outbox",
     column: "status",
@@ -238,7 +249,7 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     pending: ["pending"],
     inFlight: [],
     blocking: ["leased", "sending"],
-    owner: "mail outbox (explicit retry)",
+    owner: `mail outbox: ${SETTLE_EXIT}`,
   },
   {
     table: "calendar_outbox",
@@ -247,7 +258,7 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     pending: ["pending"],
     inFlight: [],
     blocking: ["leased", "sending"],
-    owner: "calendar outbox (explicit retry)",
+    owner: `calendar outbox: ${SETTLE_EXIT}`,
   },
   {
     table: "cloud_delivery_items",
@@ -266,6 +277,16 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
 export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string }[] = [
   { table: "session_turns", reason: "trace of turns; the unit of work is runtime_turn_attempts" },
   { table: "daemon_restart_resume_deliveries", reason: "log of resumes already delivered (delivered_at NOT NULL)" },
+  {
+    table: "reaction_actions",
+    reason:
+      "claim and completion commit in one SQLite transaction (tag policy/reaction-actions.ts l.132-176, this release l.139-176): every committed row is complete, none is in progress",
+  },
+  {
+    table: "calendar_event_reminders",
+    reason:
+      "no writer or reader outside tests, in the tag or this release (calendar/db.ts l.286-298 create the table and its index only): a row holds no work any code does",
+  },
   {
     table: "daemon_restart_session_snapshots",
     reason:
@@ -405,17 +426,6 @@ export type LegacyVocabulary = { file: string; declaration: string };
 
 const NO_PROCESS_HOLDS_IT =
   "no claim or lease column: the row is the whole state, no process holds it, and nothing is lost when processes stop";
-
-// Exits for blocking rows (seventh review). A value blocks only when neither release resumes or
-// recomputes it; the coordinator never writes a row. The exit is the RUNBOOK settle step for that
-// table: the same columns the tag's own writer sets, run by the operator with explicit
-// authorization while the adoption is blocked and both runtimes are stopped (exits proven, so the
-// row's writer is provably gone), then `retry`. That works for rows the stop itself creates; rows
-// that already exist show in the adopt preview and can be settled the same way before the window.
-const SETTLE_EXIT =
-  "only its writer settles it, and that process is gone; exit: the RUNBOOK settle step for this table (operator-authorized, both runtimes stopped while the adoption is blocked), then retry";
-const CALL_EXIT =
-  "a call in progress, closed only by its own dial or webhook (no reconcile in either release); exit: let calls end before the window (the adopt preview lists them); a call the stop caught goes through the RUNBOOK settle step for calls, then retry";
 
 /**
  * Work tables of v3.261113.2 searched in every runtime database. Terminal values
@@ -629,16 +639,6 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     anyDatabase: true,
     owner: "library request runner: interrupted received requests are failed on its first run after a restart",
   },
-  {
-    table: "calendar_event_reminders",
-    column: "status",
-    terminal: [],
-    pending: [],
-    inFlight: [],
-    unverified: true,
-    anyDatabase: true,
-    owner: "calendar reminders (no writer in the tag outside tests): any row blocks",
-  },
   // Writer (tag cloud-agents/chat-db.ts l.369-386, same in dev): a click claims the row `deciding`
   // with decided_at; the open-approval query of both releases treats a claim older than
   // CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS (2 min, l.278) as open again. A claim of a stopped process is
@@ -732,10 +732,10 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     terminal: [],
     pending: [],
     inFlight: [],
-    condition: { where: "expires_at > ?", usesNow: true, outcome: "blocking" },
+    condition: { where: "expires_at > ?", usesNow: true, outcome: "blocking", deadline: "expires_at" },
     anyDatabase: true,
     owner:
-      "pr publish lease (src/pr/journal.ts l.52-54): an unexpired lease may belong to a running publication; an expired one is taken over",
+      "pr publish lease (src/pr/journal.ts l.52-54): an unexpired lease may belong to a running publication, an expired one is taken over; exit: wait for expires_at, then retry",
   },
   {
     table: "console_inbox_poll_locks",
@@ -743,10 +743,10 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     terminal: [],
     pending: [],
     inFlight: [],
-    condition: { where: "expires_at > ?", usesNow: true, outcome: "blocking" },
+    condition: { where: "expires_at > ?", usesNow: true, outcome: "blocking", deadline: "expires_at" },
     anyDatabase: true,
     owner:
-      "console inbox poll lock (src/inbox/inbox-db.ts l.239-257): an unexpired lock may be held; an expired one is taken over",
+      "console inbox poll lock (src/inbox/inbox-db.ts l.239-257): an unexpired lock may be held, an expired one is taken over; exit: wait for expires_at, then retry",
   },
   {
     table: "console_inbox_items",
@@ -757,17 +757,6 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     condition: { where: "delivered_at IS NULL", outcome: "pending" },
     anyDatabase: true,
     owner: "console inbox delivery: an undelivered item is a row with no holder (holding is console_inbox_poll_locks)",
-  },
-  {
-    table: "reaction_actions",
-    column: "completed_at",
-    terminal: [],
-    pending: [],
-    inFlight: [],
-    condition: { where: "completed_at = 0", outcome: "blocking" },
-    anyDatabase: true,
-    owner:
-      "reaction actions (router-db.ts l.3383-3394, policy/reaction-actions.ts l.132-180): completed_at is NOT NULL, inserted 0 and set in the same transaction; a committed 0 would be an action that never completed",
   },
 ];
 
@@ -857,10 +846,21 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
           }
         }
         if (rule.condition) {
-          const statement = database.query(`SELECT COUNT(*) AS count FROM ${rule.table} WHERE ${rule.condition.where}`);
-          const { count } = (rule.condition.usesNow ? statement.get(Date.now()) : statement.get()) as { count: number };
+          const deadline = rule.condition.deadline;
+          if (deadline && !identifier.test(deadline)) throw new Error(`invalid deadline column ${deadline}`);
+          const statement = database.query(
+            `SELECT COUNT(*) AS count${deadline ? `, MAX(${deadline}) AS deadline` : ""} FROM ${rule.table} WHERE ${rule.condition.where}`,
+          );
+          const { count, deadline: until } = (rule.condition.usesNow ? statement.get(Date.now()) : statement.get()) as {
+            count: number;
+            deadline?: number | null;
+          };
           if (rule.condition.outcome === "blocking" && count > 0)
-            unknown.push(`${label}: ${count} row(s) where ${rule.condition.where}: ${rule.owner}`);
+            unknown.push(
+              typeof until === "number"
+                ? `${label}: ${count} row(s) where ${rule.condition.where}: wait until ${new Date(until).toISOString()} (the latest ${deadline}), then retry; ${rule.owner}`
+                : `${label}: ${count} row(s) where ${rule.condition.where}: ${rule.owner}`,
+            );
           sources.push({
             source: label,
             pending: rule.condition.outcome === "pending" ? count : 0,
