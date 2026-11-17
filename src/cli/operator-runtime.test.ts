@@ -119,6 +119,8 @@ describe("the installed operator CLI on real state", () => {
       }
       expect(isLocalRecoveryCommand(group, "run")).toBe(false);
     }
+    expect(isLocalRecoveryCommand("maintenance", "thread-fence-adopt")).toBe(true);
+    expect(isLocalRecoveryCommand("maintenance", "thread-fence-recover")).toBe(true);
     expect(isLocalRecoveryCommand("daemon", "admin-key")).toBe(false);
     expect(isLocalRecoveryCommand("agents", "create")).toBe(false);
     expect(isLocalRecoveryCommand("unknown", "status")).toBe(false);
