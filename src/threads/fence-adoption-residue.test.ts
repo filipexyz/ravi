@@ -82,6 +82,34 @@ describe("legacy durable residue", () => {
     expect(LEGACY_RESIDUE_EXCLUSIONS.map((entry) => entry.table)).toContain("session_turns");
   });
 
+  it("adapters left running, answered library requests and restart snapshots do not block; a dead handoff does", () => {
+    const path = join(root(), "ravi.db");
+    const db = new Database(path);
+    db.exec("CREATE TABLE session_adapters (adapter_id TEXT, status TEXT NOT NULL)");
+    db.exec("INSERT INTO session_adapters VALUES ('a1', 'running'), ('a2', 'stopped')");
+    db.exec("CREATE TABLE library_agent_requests (id TEXT, status TEXT NOT NULL)");
+    db.exec(
+      "INSERT INTO library_agent_requests VALUES ('r1', 'answered'), ('r2', 'open'), ('r3', 'queued'), ('r4', 'expired')",
+    );
+    db.exec("CREATE TABLE thread_handoffs (id TEXT, status TEXT NOT NULL)");
+    db.exec("INSERT INTO thread_handoffs VALUES ('h1', 'delivered'), ('h2', 'queued')");
+    db.exec(
+      "CREATE TABLE daemon_restart_session_snapshots (restart_epoch TEXT, session_key TEXT, pending_message_count INTEGER NOT NULL)",
+    );
+    db.exec("INSERT INTO daemon_restart_session_snapshots VALUES ('e1', 's1', 2), ('e1', 's2', 0)");
+    db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
+    db.exec("INSERT INTO reaction_actions VALUES ('x', 5)");
+    db.close();
+    const residue = collectSqliteResidue(legacyResidueRules(path));
+    const bySource = Object.fromEntries(residue.sources.map((source) => [source.source, source]));
+    expect(residue.unknown).toEqual(["ravi.db:thread_handoffs.status=queued (1): resumption not verified"]);
+    expect(bySource["ravi.db:session_adapters.status"]).toMatchObject({ pending: 0, inFlight: 1 });
+    expect(bySource["ravi.db:library_agent_requests.status"]).toMatchObject({ pending: 1, inFlight: 1 });
+    // Counted in the evidence: one session snapshot with pending messages.
+    expect(bySource["ravi.db:daemon_restart_session_snapshots.pending_message_count"]).toMatchObject({ pending: 1 });
+    expect(bySource["ravi.db:reaction_actions.completed_at"]).toMatchObject({ pending: 0, inFlight: 0 });
+  });
+
   it("a cleanly closed WAL database (no -wal/-shm) is read without creating any file", () => {
     const directory = root();
     const path = join(directory, "ravi.db");

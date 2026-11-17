@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 /**
  * Derives the table inventory of a legacy tag from every CREATE TABLE in its
@@ -26,8 +26,24 @@ function git(repo: string, args: string[]): string {
   return execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
 }
 
+const verifiedTags = new Set<string>();
+
+/** Fails with the fetch command when the clone lacks the tag (CI checks out with fetch-depth 0). */
+export function assertLegacyTag(repo: string, tag: string): void {
+  if (verifiedTags.has(`${repo}\0${tag}`)) return;
+  const probe = spawnSync("git", ["-C", repo, "rev-parse", "--verify", "--quiet", `${tag}^{commit}`], {
+    encoding: "utf8",
+  });
+  if (probe.status !== 0)
+    throw new Error(
+      `LEGACY_TAG_MISSING: ${tag} is not in this clone; fetch it with: git fetch --no-tags origin refs/tags/${tag}:refs/tags/${tag}`,
+    );
+  verifiedTags.add(`${repo}\0${tag}`);
+}
+
 /** Reads the source text of a file at the tag. */
 export function legacySource(repo: string, tag: string, file: string): string {
+  assertLegacyTag(repo, tag);
   return git(repo, ["show", `${tag}:${file}`]);
 }
 
@@ -48,6 +64,7 @@ function splitTopLevel(body: string): string[] {
 }
 
 export function deriveLegacyTableInventory(repo: string, tag: string): DerivedInventory {
+  assertLegacyTag(repo, tag);
   const files = git(repo, ["grep", "-l", "CREATE TABLE", tag, "--", "src/*.ts", ":!*.test.ts", ":!src/test/*"])
     .split("\n")
     .filter(Boolean)

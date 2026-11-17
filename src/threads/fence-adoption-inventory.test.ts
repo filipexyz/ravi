@@ -20,7 +20,7 @@ const RULES = [...LEGACY_ROUTER_RESIDUE_RULES, ...LEGACY_BRIDGE_RESIDUE_RULES, .
 
 /** Columns that express work without a status: they also require a rule or an exclusion. */
 const WORK_MARKER =
-  /^(expires_at|delivered_at|acked_at|completed_at|processed_at|owner|owner_id|attempts|next_attempt_at)$|^pending_|(^|_)(claim|claimed|lease|leased)(_|$)/;
+  /^(expires_at|delivered_at|acked_at|completed_at|processed_at|owner|owner_id|attempts|attempt|attempt_count|next_attempt_at|last_delivered_at|lock_key)$|^pending_|(^|_)(claim|claimed|lease|leased)(_|$)/;
 
 /** CREATE TABLE statements of the tag whose name is computed; each resolved by reading the source. */
 const DYNAMIC_RESOLUTION: Record<string, string[]> = {

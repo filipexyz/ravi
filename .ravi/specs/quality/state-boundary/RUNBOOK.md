@@ -118,6 +118,12 @@ The runtime databases are those of `runtimeStateDatabasePaths` for the state dir
 
 The preview does not read the residue: it is read only after both stops, so a block is discovered with production stopped. Plan the window for that: every block has an exit (`retry` once the cause is gone, or `abandon` and back to `3.261113.2`).
 
+**60-minute window for pending messages.** The legacy daemon's own stop (any signal) writes a restart epoch to `restart-reason.txt` and snapshots every non-idle session with its pending messages in `daemon_restart_session_snapshots`. The next daemon to boot (the successor, or `3.261113.2` after `abandon`) resumes that epoch only if it starts within 60 minutes of the stop (`RESTART_RESUME_WINDOW_MS`). The evidence counts the sessions with pending messages. Adoption and recovery never touch `restart-reason.txt`. If a block keeps production down close to 60 minutes, decide before it expires: fix and `retry`, or `abandon` and start `3.261113.2` at once. If the window expires, those messages are not resumed by anyone: read `pending_messages_json` of that epoch's snapshots and send them again by hand.
+
+Rows mirrored from remote systems (Devin sessions in `new`, `creating`, `claimed`, `running` or `resuming`; cloud thread runs in `starting` or `running`) only change when the legacy release syncs them; a row that is never synced again blocks. Let `3.261113.2` settle them before the window; the census shows which exist.
+
+The inventory test reads `v3.261113.2` from git. A clone without the tag fails with `LEGACY_TAG_MISSING` and the command to fetch it: `git fetch --no-tags origin refs/tags/v3.261113.2:refs/tags/v3.261113.2` (the gate job checks out with `fetch-depth: 0`).
+
 If a command reports "another adoption coordinator or recovery is running" and none should be: the holder is the process with `runtime-maintenance/coordinator.lock` open (`lsof` on that file). Stop that process; the kernel releases the lock when it exits. Never delete the lock file.
 
 ### When something stops

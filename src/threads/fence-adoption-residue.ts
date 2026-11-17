@@ -351,11 +351,6 @@ export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string
   { table: "task_observer_state", reason: "observer bookkeeping (last_status)" },
   // Work-like tables without a status column (read in the tag's writers).
   {
-    table: "daemon_restart_session_snapshots",
-    reason:
-      "written only by `ravi daemon restart` for its own restart epoch and read at boot for that epoch alone (daemon.ts l.683, same in the successor); the adoption stops through PM2 and writes no epoch",
-  },
-  {
     table: "task_launch_plans",
     reason: "launch plans of tasks; execution is the task's session turn, which has rules",
   },
@@ -378,6 +373,10 @@ export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string
     reason: "Slack response URLs kept until they expire; a stop only lets them expire, as Slack does",
   },
   { table: "migrated", reason: "fixture of src/db/fixtures/schema-lock-worker.ts, never in a runtime database" },
+  {
+    table: "observer_bindings",
+    reason: "observer binding configuration (last_delivered_at is a cursor); deliveries are observer_delivery_events",
+  },
   {
     table: "runtime_boot_epochs",
     reason: "runtime incarnation bookkeeping; a stale active epoch of the stopped legacy is expected",
@@ -550,25 +549,35 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     anyDatabase: true,
     owner: "permission grants (not verified, writers in src/permissions/apply-grant.ts): applying blocks",
   },
+  // src/threads/service.ts (tag l.611-650): inserted `queued`, marked delivered or failed by the
+  // same command right after the send. A `queued` row outlives only a command that died mid-send;
+  // nothing resumes it and its outcome is unknown: it blocks, labelled.
   {
     table: "thread_handoffs",
     column: "status",
     terminal: ["delivered", "failed"],
     pending: [],
     inFlight: [],
+    blocking: ["queued"],
     unverified: true,
     anyDatabase: true,
-    owner: "thread handoffs (not verified, router-db.ts l.655-663): anything not delivered or failed blocks",
+    owner: "thread handoffs (threads/service.ts): a handoff whose command died mid-send has an unknown outcome",
   },
+  // Writers (tag): requests.ts l.240-248 `open` (sent); request-runner.ts l.445-452 `queued`,
+  // l.514-522 `running`, l.531 `answered`, l.386/536/561-566 `failed`/`closed`, l.409-425 Console
+  // statuses answered/failed/expired. Successor (HEAD request-runner.ts l.321-323, 353-354): its
+  // first run after a restart fails every received request left `queued` or `running`.
   {
     table: "library_agent_requests",
     column: "status",
-    terminal: [],
-    pending: [],
-    inFlight: [],
-    unverified: true,
+    terminal: ["answered", "failed", "closed", "expired"],
+    pending: ["open"],
+    restReasons: {
+      open: "a sent request waits for its reply; the successor's request runner pulls replies from the Console (request-runner.ts l.325-329)",
+    },
+    inFlight: ["queued", "running"],
     anyDatabase: true,
-    owner: "library agent requests (vocabulary not read): every row blocks until classified",
+    owner: "library request runner: interrupted received requests are failed on its first run after a restart",
   },
   {
     table: "calendar_event_reminders",
@@ -591,16 +600,32 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     anyDatabase: true,
     owner: "cloud chat approvals: a decision in progress blocks",
   },
+  // A clean legacy stop keeps `running` by design (tag session-adapter-bus.ts l.801, daemon.ts
+  // l.323-324). The successor's startDaemon (HEAD daemon.ts l.593) starts the adapter bus, whose
+  // start() lists every adapter and restarts those left `running`; a missing session marks it
+  // `broken` (HEAD session-adapter-bus.ts l.705-778).
   {
     table: "session_adapters",
     column: "status",
     terminal: ["configured", "stopped", "broken"],
     pending: [],
-    inFlight: [],
-    // Whether a clean legacy stop leaves `running` was not verified: it blocks.
-    blocking: ["running"],
+    inFlight: ["running"],
     anyDatabase: true,
-    owner: "session adapters: a running adapter at stop blocks (restart by the successor not verified)",
+    owner: "session adapter bus start() of the successor restarts adapters left running",
+  },
+  // The stop of the legacy daemon (any signal) snapshots every non-idle session with its pending
+  // messages under a restart epoch (tag daemon.ts l.249-265, session-dispatcher.ts l.400-470). The
+  // successor resumes only that epoch, and only within 60 min of the stop (RESTART_RESUME_WINDOW_MS,
+  // daemon.ts l.132): counted in the evidence, and the window is in the RUNBOOK.
+  {
+    table: "daemon_restart_session_snapshots",
+    column: "pending_message_count",
+    terminal: [],
+    pending: [],
+    inFlight: [],
+    condition: { where: "pending_message_count > 0", outcome: "pending" },
+    anyDatabase: true,
+    owner: "restart resume of the successor: the stop's own epoch, within 60 min of the stop",
   },
   {
     table: "slack_thread_lifecycle",
@@ -671,9 +696,10 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     terminal: [],
     pending: [],
     inFlight: [],
-    condition: { where: "completed_at IS NULL", outcome: "blocking" },
+    condition: { where: "completed_at = 0", outcome: "blocking" },
     anyDatabase: true,
-    owner: "reaction actions (not verified): an action not completed blocks",
+    owner:
+      "reaction actions (router-db.ts l.3383-3394, policy/reaction-actions.ts l.132-180): completed_at is NOT NULL, inserted 0 and set in the same transaction; a committed 0 would be an action that never completed",
   },
 ];
 
