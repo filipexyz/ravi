@@ -96,6 +96,12 @@ When a user replies in a Slack thread, Ravi MUST create or reuse a dedicated chi
   `thread.report` without closing the thread. No `access session` grant is
   needed for `thread.report` or `thread.send`: the parent/child relation is the
   authority, and both stay within one agent.
+- Threads MUST NOT message each other directly; the channel-root session is the
+  only relay. Its "Slack Threads" section MUST tell it to send a follow-up about
+  an existing thread's subject to that thread with `thread.send` instead of
+  opening another, and to relay what one thread reports needing from another.
+  The thread variant MUST tell the child to ask for that relay with
+  `thread.report`.
 - Every parent notice (report or close return) MUST name the thread by the first
   line of its initial message, when it has one, and its child session name, and
   MUST include a Slack link when the workspace id is known. The link MUST be a
