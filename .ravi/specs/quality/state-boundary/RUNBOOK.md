@@ -108,19 +108,56 @@ Run it from the operator's terminal (offline recovery path), never from an agent
    - writes evidence under `runtime-maintenance/evidence/<id>/` and the authorization in `runtime-maintenance/adoption.json`;
    - starts `ravi` through PM2. The entrypoint admits only the authorized bundle, once (`runtime-maintenance/successor`), installs the fence inside `withExitedThreadBootstrapAuthorization`, records `adopted` and releases the interlock last. Channels start after that, through their ordinary guarded entry.
 
-Residue that blocks: a status outside the rule of its table, an unreadable table, an unreachable broker, prompts left in `SESSION_PROMPTS` (memory storage, 60 s, not durable), mail/calendar rows `leased`/`sending` (no legacy owner resumes them), and non-terminal rows of `channel_outbound_receipts`, `channel_backend_runtime_state` and `cron_runs` (owner not verified). Pending and in-flight work with a named owner (prompt queue, turn attempts, ingress receipts, Slack inbound envelopes, recovery, outboxes, sync inbox, decision deliveries, jobs, broker consumers) is recorded with its counts and carried by the successor, which re-reads the SQLite residue itself before installing the fence.
+Residue that blocks: a status outside the rule of its table, an unreadable table, an unreachable broker, prompts left in `SESSION_PROMPTS` (memory storage, 60 s, not durable), mail/calendar rows `leased`/`sending` (no legacy owner resumes them), and non-terminal rows of `channel_outbound_receipts`, `channel_backend_runtime_state` and `cron_runs` (their resumption was not verified; kept blocking). Pending and in-flight work with a named owner (prompt queue, turn attempts, ingress receipts, Slack inbound envelopes, recovery, outboxes, sync inbox, decision deliveries, jobs, broker consumers) is recorded with its counts and carried by the successor, which re-reads the SQLite residue itself before installing the fence.
 
-Work tables whose resumption in the successor was not verified (calls, workflow and automation runs, Devin sessions, cloud thread runs, credential attempts, grant applications, handoffs, library requests, reminders, Slack thread lifecycle, turn health and attention notices, adapters, reaction actions, unexpired publish and inbox leases) are searched in every runtime database. Their terminal and at-rest values come from the tag's own types; a value at rest carries its reason; any other value blocks, labelled `owner not verified`.
+Work tables whose resumption in the successor was not verified (calls, workflow and automation runs, Devin sessions, cloud thread runs, credential attempts, grant applications, handoffs, library requests, reminders, Slack thread lifecycle, turn health and attention notices, adapters, reaction actions, unexpired publish and inbox leases) are searched in every runtime database. Their terminal and at-rest values come from the tag's own types; a value at rest carries its reason; a value listed as blocking is labelled `resumption not verified`, and a value outside the tag's vocabulary also blocks, labelled `owner not verified`.
 
 The complete table set of the tag is `src/threads/fence-adoption-inventory.ts`, derived from every `CREATE TABLE` of `v3.261113.2` by `bun scripts/fence-adoption-inventory.ts`. `fence-adoption-inventory.test.ts` (in `test:runtime-identity`) re-derives it from the tag and compares, reads each declared vocabulary from the tag, and fails when a table with a status, state, claim, lease or work-marker column has neither a rule nor an exclusion with a reason.
 
 The runtime databases are those of `runtimeStateDatabasePaths` for the state directory; the credentials database follows `RAVI_CREDENTIALS_DB_PATH` from the environment of the process that runs the command, so run it with the same environment as the daemon.
 
-The preview does not read the residue: it is read only after both stops, so a block is discovered with production stopped. Plan the window for that: every block has an exit (`retry` once the cause is gone, or `abandon` and back to `3.261113.2`).
+**Before the window: read the residue while `3.261113.2` runs.** The step 2 preview also returns `residuePreview`: the same SQLite rules, read only, before any stop (the broker is not read; its residue is what the stop drains). Work in flight there is normal and drains with the stop. The evidence that counts is still the one read after both stops. What the preview is for is residue that no process settles after the stop, because the window then blocks with production stopped, and neither `retry` (nothing settles it while production is stopped) nor `abandon` (`3.261113.2` does not settle it either) is an exit for it:
 
-**60-minute window for pending messages.** The legacy daemon's own stop (any signal) writes a restart epoch to `restart-reason.txt` and snapshots every non-idle session with its pending messages in `daemon_restart_session_snapshots`. The next daemon to boot (the successor, or `3.261113.2` after `abandon`) resumes that epoch only if it starts within 60 minutes of the stop (`RESTART_RESUME_WINDOW_MS`). The evidence counts the sessions with pending messages. Adoption and recovery never touch `restart-reason.txt`. If a block keeps production down close to 60 minutes, decide before it expires: fix and `retry`, or `abandon` and start `3.261113.2` at once. If the window expires, those messages are not resumed by anyone: read `pending_messages_json` of that epoch's snapshots and send them again by hand.
+- `thread_handoffs` `queued`: `sessions send --thread` inserts it before the send and settles it only after waiting for the reply (tag `src/cli/commands/sessions.ts` l.4906-5046, `src/threads/service.ts` l.611-650); task dispatch settles `delivered` only (`src/tasks/dispatch-admission.ts` l.45-97). A sender that died leaves it `queued` for good.
+- `permission_grant_applications` `applying` (`src/permissions/apply-grant.ts` l.383-398, l.504-541), `task_automation_runs` `claimed` (`src/tasks/automations.ts` l.474-581), `runtime_credential_attempts` `reserved`/`started` (`src/runtime/credential-store.ts` l.552-582): same class, a process that died between begin and end.
+- Calls (`call_requests` `running`, `call_runs` `queued` to `in_progress`, `call_tool_runs` `pending`/`running`), workflow runs `ready`/`running`, Devin sessions and cloud thread runs end with their call, run or tasks: wait for them, then preview again.
 
-Rows mirrored from remote systems (Devin sessions in `new`, `creating`, `claimed`, `running` or `resuming`; cloud thread runs in `starting` or `running`) only change when the legacy release syncs them; a row that is never synced again blocks. Let `3.261113.2` settle them before the window; the census shows which exist.
+Exit, in this order: wait and preview again; for the dead-process class, the settle step below; otherwise postpone the window.
+
+**Settle step: writes production rows by hand, so it runs only with the operator's explicit authorization**, under `3.261113.2`, before the window, only on rows the preview listed, after confirming that the work of each row is not running. List them first with `sqlite3 -readonly "${RAVI_STATE_DIR:-$HOME/.ravi}/ravi.db" "SELECT rowid, * FROM thread_handoffs WHERE status = 'queued'"` (same for the other tables, in the database the preview label names). Then, in the same database:
+
+```sql
+-- A handoff whose sender died: the same write as the tag's failure path (threads/service.ts).
+UPDATE thread_handoffs
+   SET status = 'failed',
+       failed_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+       failure_reason = 'sender died before the outcome; settled before thread-fence adoption',
+       updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+ WHERE status = 'queued' AND rowid IN (<rowids>);
+-- An automation claim that never spawned, and a credential attempt of a dead process.
+UPDATE task_automation_runs SET status = 'failed' WHERE status = 'claimed' AND rowid IN (<rowids>);
+UPDATE runtime_credential_attempts
+   SET status = 'abandoned', completed_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+ WHERE status IN ('reserved', 'started') AND rowid IN (<rowids>);
+```
+
+A grant `applying` is settled only if its effect is in place (`ravi permissions list` shows the grant for that subject and scope): `UPDATE permission_grant_applications SET status = 'done', updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 WHERE status = 'applying' AND idempotency_key = '<key>'`. `result_json` stays empty, so a later click with the same key applies again instead of replaying. If the effect is not in place, leave the row and postpone: applying a grant again is a decision of its own. Preview again; the window starts only with no dead-process residue listed.
+
+**60-minute window for pending messages.** The legacy daemon's own stop (any signal) writes a restart epoch to `restart-reason.txt` and snapshots every non-idle session with its pending messages in `daemon_restart_session_snapshots`. The next daemon to boot (the successor, or `3.261113.2` after `abandon`) resumes that epoch only if it starts within 60 minutes of the stop (`RESTART_RESUME_WINDOW_MS`). The evidence counts the sessions with pending messages of the latest epoch only (older epochs are history). Adoption and recovery never touch `restart-reason.txt`. If a block keeps production down close to 60 minutes, decide before it expires: fix and `retry`, or `abandon` and start `3.261113.2` at once. If the window expires, those messages are not resumed by anyone. To send them again, read them from `ravi.db` (the latest epoch is the stop's own; check that its `stopped_at` is the time of this stop):
+
+```sh
+sqlite3 -readonly -json "${RAVI_STATE_DIR:-$HOME/.ravi}/ravi.db" "
+  SELECT s.session_name, s.stopped_at, json_extract(m.value, '$.message.content') AS text
+    FROM daemon_restart_session_snapshots s, json_each(s.pending_messages_json) m
+   WHERE s.restart_epoch = (SELECT restart_epoch FROM daemon_restart_session_snapshots ORDER BY stopped_at DESC LIMIT 1)
+   ORDER BY s.session_name, json_extract(m.value, '$.queuedAt')"
+```
+
+Each entry is a queued user message of the tag (`createQueuedRuntimeUserMessage`, `src/runtime/delivery-queue.ts` l.38-52): `text` is the prompt as it was queued, header included. Send each one again, in order, with `ravi sessions send <session_name> "<text>"`.
+
+**Check PM2's kill timeout before the window.** `pm2 stop` sends SIGINT and then SIGKILL after the registration's `kill_timeout`; the tag's launchers set none, so PM2's default (1600 ms) applies, while the legacy shutdown gives itself 15 s (`src/daemon.ts` l.244-247). A SIGKILL before the snapshot is written loses the pending messages of that stop. See the value with `pm2 jlist` (field `pm2_env.kill_timeout`; absent means the default). Raising it changes the PM2 registration, so it is the operator's decision; without it, after the stop compare the latest epoch's `stopped_at` with the time of the stop: an older epoch means this stop wrote no snapshot (nothing was pending, or the shutdown was cut).
+
+Rows mirrored from remote systems (Devin sessions in `new`, `creating`, `claimed`, `running` or `resuming`; cloud thread runs in `starting` or `running`) only change when the legacy release syncs them; a row that is never synced again blocks. Let `3.261113.2` settle them before the window; the step 2 preview lists which exist.
 
 The inventory test reads `v3.261113.2` from git. A clone without the tag fails with `LEGACY_TAG_MISSING` and the command to fetch it: `git fetch --no-tags origin refs/tags/v3.261113.2:refs/tags/v3.261113.2` (the gate job checks out with `fetch-depth: 0`).
 

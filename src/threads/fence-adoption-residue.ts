@@ -400,6 +400,16 @@ export type LegacyVocabulary = { file: string; declaration: string };
 const NO_PROCESS_HOLDS_IT =
   "no claim or lease column: the row is the whole state, no process holds it, and nothing is lost when processes stop";
 
+// Exits for blocking rows (sixth review). The coordinator never settles a row: it blocks and says
+// why. The order is in the RUNBOOK: adopt without --execute lists this residue read-only before any
+// stop, so the operator clears it under 3.261113.2 before the window.
+const DEAD_PROCESS_EXIT =
+  "only the process that wrote it settles it, and that process is gone; exit: the adopt preview lists it before any stop, then the RUNBOOK settle step (authorized by the operator, under 3.261113.2) or postpone the window";
+const REMOTE_EXIT =
+  "it ends with the call or run on the provider's side; exit: the adopt preview lists it before any stop, wait for it to end before the window; a row the stop left open goes through the RUNBOOK settle step";
+const DERIVED_EXIT =
+  "recomputed from its tasks while 3.261113.2 runs; exit: the adopt preview lists it before any stop, finish or cancel those tasks before the window";
+
 /**
  * Work tables of v3.261113.2 whose resumption in the successor was not verified.
  * Each is searched in every runtime database. Terminal values come from the
@@ -420,6 +430,8 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     anyDatabase: true,
     owner: "Devin session sync (not verified): sessions being created or running block",
   },
+  // Writer (tag automations.ts l.474-581): claimed, then finalized as skipped, spawned or failed in
+  // the same flow. A `claimed` row outlives only a process that died between the two.
   {
     table: "task_automation_runs",
     column: "status",
@@ -430,7 +442,7 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["claimed"],
     unverified: true,
     anyDatabase: true,
-    owner: "task automations (not verified): a claimed run that never spawned blocks",
+    owner: `task automations (automations.ts l.474-581): a claim of a process that died before finalizing; ${DEAD_PROCESS_EXIT}`,
   },
   {
     table: "call_requests",
@@ -448,7 +460,7 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["running"],
     unverified: true,
     anyDatabase: true,
-    owner: "prox calls (not verified): a running request blocks",
+    owner: `prox calls (index.ts l.297-304 sets running with the call): ${REMOTE_EXIT}`,
   },
   {
     table: "call_runs",
@@ -460,20 +472,21 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["queued", "dialing", "ringing", "in_progress"],
     unverified: true,
     anyDatabase: true,
-    owner: "prox calls (not verified): a call being placed or in progress blocks",
+    owner: `prox calls (agora.ts l.482, provider.ts l.148; later states from the provider): ${REMOTE_EXIT}`,
   },
+  // Writer (tag tool-bridge.ts l.400-429): a policy refusal creates the row `blocked`, records the
+  // reason, emits tool.blocked and returns; nothing writes `blocked` again. It is final.
   {
     table: "call_tool_runs",
     column: "status",
     vocabulary: { file: "src/prox/calls/types.ts", declaration: "CallToolRunStatus" },
-    terminal: ["completed", "failed", "timeout"],
+    terminal: ["completed", "failed", "timeout", "blocked"],
     pending: [],
     inFlight: [],
-    // `blocked` may be a final refusal or a wait; not read in the writers, so it blocks.
-    blocking: ["pending", "running", "blocked"],
+    blocking: ["pending", "running"],
     unverified: true,
     anyDatabase: true,
-    owner: "prox call tools (not verified): unfinished tool runs block",
+    owner: `prox call tools (tool-bridge.ts): a tool run of a call in progress; ${REMOTE_EXIT}`,
   },
   {
     table: "workflow_runs",
@@ -490,7 +503,7 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["ready", "running"],
     unverified: true,
     anyDatabase: true,
-    owner: "workflow runs (not verified): ready or running runs block",
+    owner: `workflow runs (states derived from their tasks, workflows/service.ts l.577): ${DERIVED_EXIT}`,
   },
   {
     table: "workflow_node_runs",
@@ -507,7 +520,7 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["ready", "running"],
     unverified: true,
     anyDatabase: true,
-    owner: "workflow node runs (not verified): ready or running nodes block",
+    owner: `workflow node runs (derived from their tasks, workflows/service.ts l.577): ${DERIVED_EXIT}`,
   },
   {
     table: "cloud_thread_runs",
@@ -523,8 +536,9 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["starting", "running"],
     unverified: true,
     anyDatabase: true,
-    owner: "cloud thread runs (not verified): starting or running runs block",
+    owner: `cloud thread runs (mirror of Console runs): ${REMOTE_EXIT}`,
   },
+  // Writer (tag credential-store.ts l.552 reserved, l.582 started, completed by the same process).
   {
     table: "runtime_credential_attempts",
     column: "status",
@@ -535,9 +549,11 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["reserved", "started"],
     unverified: true,
     anyDatabase: true,
-    owner: "runtime credential pool (not verified): reserved or started attempts block",
+    owner: `runtime credential attempts (credential-store.ts l.552-582): an attempt of a process that died; ${DEAD_PROCESS_EXIT}`,
   },
-  // Free text without a type in the tag: only the values its writers set are known.
+  // Writer (tag apply-grant.ts l.383-398 and l.504-541): `applying` on begin, `done` on success,
+  // in the same call; the key comes from an approval click (approval/service.ts l.958). Nothing in
+  // the tag or the successor settles an `applying` row whose process died.
   {
     table: "permission_grant_applications",
     column: "status",
@@ -547,11 +563,13 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["applying"],
     unverified: true,
     anyDatabase: true,
-    owner: "permission grants (not verified, writers in src/permissions/apply-grant.ts): applying blocks",
+    owner: `permission grants (apply-grant.ts l.504-541): a grant whose process died before done; ${DEAD_PROCESS_EXIT}`,
   },
-  // src/threads/service.ts (tag l.611-650): inserted `queued`, marked delivered or failed by the
-  // same command right after the send. A `queued` row outlives only a command that died mid-send;
-  // nothing resumes it and its outcome is unknown: it blocks, labelled.
+  // Writers (tag): `sessions send --thread` inserts `queued` before the send (sessions.ts
+  // l.4906-4908, threads/service.ts l.611-650) and marks delivered or failed only after waiting for
+  // the reply (sessions.ts ~l.4945-5046); task dispatch (tasks/dispatch-admission.ts l.45-97) marks
+  // delivered after publishing and never failed. Nothing else settles a `queued` row, in the tag or
+  // in the successor (recoverActiveTasksAfterRestart has no caller).
   {
     table: "thread_handoffs",
     column: "status",
@@ -561,7 +579,7 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["queued"],
     unverified: true,
     anyDatabase: true,
-    owner: "thread handoffs (threads/service.ts): a handoff whose command died mid-send has an unknown outcome",
+    owner: `thread handoffs: a handoff whose command or dispatch died has an unknown outcome; ${DEAD_PROCESS_EXIT}`,
   },
   // Writers (tag): requests.ts l.240-248 `open` (sent); request-runner.ts l.445-452 `queued`,
   // l.514-522 `running`, l.531 `answered`, l.386/536/561-566 `failed`/`closed`, l.409-425 Console
@@ -623,9 +641,15 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     terminal: [],
     pending: [],
     inFlight: [],
-    condition: { where: "pending_message_count > 0", outcome: "pending" },
+    // Only the latest epoch is resumed (daemon.ts l.132 window, one epoch per stop); older epochs
+    // are history and are not counted.
+    condition: {
+      where:
+        "pending_message_count > 0 AND restart_epoch = (SELECT restart_epoch FROM daemon_restart_session_snapshots ORDER BY stopped_at DESC LIMIT 1)",
+      outcome: "pending",
+    },
     anyDatabase: true,
-    owner: "restart resume of the successor: the stop's own epoch, within 60 min of the stop",
+    owner: "restart resume of the successor: the latest epoch only (the stop's own), within 60 min of the stop",
   },
   {
     table: "slack_thread_lifecycle",

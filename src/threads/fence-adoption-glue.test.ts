@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -13,7 +13,12 @@ import {
   prepareThreadFenceAdoption,
   successorOutcome,
 } from "./fence-adoption.js";
-import { adoptThreadFenceAtEntry, legacyStateDatabasePaths, liveResidue } from "./fence-adoption-live.js";
+import {
+  adoptThreadFenceAtEntry,
+  legacyStateDatabasePaths,
+  liveResidue,
+  previewLiveSqliteResidue,
+} from "./fence-adoption-live.js";
 import { collectSqliteResidue, legacyBridgeDatabasePath, legacyResidueRules } from "./fence-adoption-residue.js";
 
 /** ravi.db of v3.261113.2, generated from the tag (see the fixture header); never a production copy. */
@@ -141,6 +146,33 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
       legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
     );
     expect(residue.unknown).toEqual(["turns.status=running (1): resumption not verified"]);
+  });
+
+  it("the adopt preview lists a queued handoff read only, while the legacy runs and before any stop", () => {
+    const { stateDir, databasePath, host } = legacyState();
+    const db = new Database(databasePath);
+    // What sessions send --thread of the tag leaves when its process dies between the insert and the send.
+    db.exec(
+      "INSERT INTO thread_handoffs (id, thread_id, target_session_key, brief_text, created_at, updated_at) VALUES ('h1', 'th1', 'agent:x', 'brief', 1, 1)",
+    );
+    db.close();
+    const before = readdirSync(stateDir).sort();
+    const stopped: string[] = [];
+    const watched: AdoptionHost = {
+      ...host,
+      stop: async (name) => {
+        stopped.push(name);
+      },
+    };
+    const preview = previewLiveSqliteResidue(watched.databasePath);
+    expect(preview.unknown).toEqual(["ravi.db:thread_handoffs.status=queued (1): resumption not verified"]);
+    const source = preview.sources.find((entry) => entry.source === "ravi.db:thread_handoffs.status");
+    expect(String((source?.detail as { owner?: string } | undefined)?.owner)).toContain(
+      "the adopt preview lists it before any stop",
+    );
+    // Nothing stopped, no maintenance record, no new file.
+    expect(stopped).toEqual([]);
+    expect(readdirSync(stateDir).sort()).toEqual(before);
   });
 
   it("entry admission, then the production fence (prepareRegisteredThreadFence) on the legacy schema", async () => {

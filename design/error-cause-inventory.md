@@ -653,7 +653,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/knowledge.ts | 654 | fixed | binding retained / no recognized error surface | src/cli/commands/knowledge.ts:6d6c42cb870d5afaf198b032 |
 | cli | src/cli/commands/mail.ts | 1153 | fixed | binding retained / no recognized error surface | src/cli/commands/mail.ts:0f56287e3fb9a13379bebd17 |
 | cli | src/cli/commands/mail.ts | 1594 | fixed | binding retained / no recognized error surface | src/cli/commands/mail.ts:9874378795c5b8e720a5cb9e |
-| cli | src/cli/commands/maintenance.ts | 79 | fixed | binding retained / no recognized error surface | src/cli/commands/maintenance.ts:73f4f37a3475b4dae8518d2d |
+| cli | src/cli/commands/maintenance.ts | 80 | fixed | binding retained / no recognized error surface | src/cli/commands/maintenance.ts:73f4f37a3475b4dae8518d2d |
 | media-send | src/cli/commands/media.ts | 156 | fixed | binding retained / no recognized error surface | src/cli/commands/media.ts:b191129d3188910a8ba20ff6 |
 | cli | src/cli/commands/meetings.ts | 164 | triaged-follow-up | catch-without-binding | src/cli/commands/meetings.ts:3886f15a9a291adc16ff9b18 |
 | cli | src/cli/commands/meetings.ts | 173 | triaged-follow-up | catch-without-binding | src/cli/commands/meetings.ts:3e71f8217f7147abff10ee13 |
@@ -2148,9 +2148,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | tasks | src/tasks/task-doc.ts | 48 | triaged-follow-up | catch-without-binding | src/tasks/task-doc.ts:83de56d8333a9356b7c1b3b2 |
 | threads | src/threads/bootstrap-authorization.ts | 37 | no-cause | Async authorization is rejected synchronously; consume only its later rejection. | src/threads/bootstrap-authorization.ts:da98c87013b5e1f81516236b |
 | threads | src/threads/fence-adoption-live.ts | 100 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption-live.ts:177b3e9a3efc65ca20a49767 |
-| threads | src/threads/fence-adoption-live.ts | 131 | no-cause | An unreachable broker is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-live.ts:5c21be34e03e3285ebdafccb |
-| threads | src/threads/fence-adoption-residue.ts | 818 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:cac882736cd99cb83e8b2a23 |
-| threads | src/threads/fence-adoption-residue.ts | 884 | no-cause | An unreadable broker source is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:89497d605f16912495e5e8b1 |
+| threads | src/threads/fence-adoption-live.ts | 144 | no-cause | An unreachable broker is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-live.ts:5c21be34e03e3285ebdafccb |
+| threads | src/threads/fence-adoption-residue.ts | 842 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:cac882736cd99cb83e8b2a23 |
+| threads | src/threads/fence-adoption-residue.ts | 908 | no-cause | An unreadable broker source is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:89497d605f16912495e5e8b1 |
 | threads | src/threads/fence-adoption.ts | 143 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:6b81ec65f8a6464f04d53849 |
 | threads | src/threads/fence-adoption.ts | 208 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:46490b12ec7da2fe894e8d92 |
 | threads | src/threads/fence-adoption.ts | 250 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:975cec06d3d595eeb4638f36 |

@@ -94,9 +94,9 @@ describe("legacy durable residue", () => {
     db.exec("CREATE TABLE thread_handoffs (id TEXT, status TEXT NOT NULL)");
     db.exec("INSERT INTO thread_handoffs VALUES ('h1', 'delivered'), ('h2', 'queued')");
     db.exec(
-      "CREATE TABLE daemon_restart_session_snapshots (restart_epoch TEXT, session_key TEXT, pending_message_count INTEGER NOT NULL)",
+      "CREATE TABLE daemon_restart_session_snapshots (restart_epoch TEXT, session_key TEXT, stopped_at INTEGER NOT NULL, pending_message_count INTEGER NOT NULL)",
     );
-    db.exec("INSERT INTO daemon_restart_session_snapshots VALUES ('e1', 's1', 2), ('e1', 's2', 0)");
+    db.exec("INSERT INTO daemon_restart_session_snapshots VALUES ('e1', 's1', 100, 2), ('e1', 's2', 100, 0)");
     db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
     db.exec("INSERT INTO reaction_actions VALUES ('x', 5)");
     db.close();
@@ -108,6 +108,31 @@ describe("legacy durable residue", () => {
     // Counted in the evidence: one session snapshot with pending messages.
     expect(bySource["ravi.db:daemon_restart_session_snapshots.pending_message_count"]).toMatchObject({ pending: 1 });
     expect(bySource["ravi.db:reaction_actions.completed_at"]).toMatchObject({ pending: 0, inFlight: 0 });
+  });
+
+  it("a refused call tool is final, an unfinished reaction blocks, only the latest restart epoch counts", () => {
+    const path = join(root(), "ravi.db");
+    const db = new Database(path);
+    db.exec("CREATE TABLE call_tool_runs (id TEXT, status TEXT NOT NULL)");
+    // Tag tool-bridge.ts l.400-429: a policy refusal is written blocked, reported, and never written again.
+    db.exec("INSERT INTO call_tool_runs VALUES ('t1', 'blocked'), ('t2', 'completed')");
+    db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
+    db.exec("INSERT INTO reaction_actions VALUES ('done', 5), ('open', 0)");
+    db.exec(
+      "CREATE TABLE daemon_restart_session_snapshots (restart_epoch TEXT, session_key TEXT, stopped_at INTEGER NOT NULL, pending_message_count INTEGER NOT NULL)",
+    );
+    // An older stop left two sessions with pending messages; the latest stop left one. Only the latest is resumed.
+    db.exec(
+      "INSERT INTO daemon_restart_session_snapshots VALUES ('old', 's1', 100, 3), ('old', 's2', 100, 1), ('new', 's1', 200, 2), ('new', 's3', 200, 0)",
+    );
+    db.close();
+    const residue = collectSqliteResidue(legacyResidueRules(path));
+    const bySource = Object.fromEntries(residue.sources.map((source) => [source.source, source]));
+    expect(residue.unknown.filter((entry) => entry.includes("call_tool_runs"))).toEqual([]);
+    expect(residue.unknown).toHaveLength(1);
+    expect(residue.unknown[0]).toStartWith("ravi.db:reaction_actions.completed_at: 1 row(s) where completed_at = 0: ");
+    expect(bySource["ravi.db:call_tool_runs.status"]).toMatchObject({ pending: 0, inFlight: 0 });
+    expect(bySource["ravi.db:daemon_restart_session_snapshots.pending_message_count"]).toMatchObject({ pending: 1 });
   });
 
   it("a cleanly closed WAL database (no -wal/-shm) is read without creating any file", () => {

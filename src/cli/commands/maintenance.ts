@@ -18,6 +18,7 @@ import {
   liveRegistrations,
   liveResidue,
   liveStop,
+  previewLiveSqliteResidue,
 } from "../../threads/fence-adoption-live.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { getRaviStateDir } from "../../utils/paths.js";
@@ -170,7 +171,10 @@ export class MaintenanceCommands {
       const host = liveHost(stateDir);
       const target = targetBundlePath();
       const plan = planThreadFenceAdoption(host, target);
-      if (!execute) contractDryRun(ADOPT, plan, { asJson });
+      // Read only, before any stop: residue that no process will settle shows up here, while
+      // 3.261113.2 still runs and the operator can clear it (RUNBOOK, "Before the window").
+      if (!execute)
+        contractDryRun(ADOPT, { ...plan, residuePreview: previewLiveSqliteResidue(host.databasePath) }, { asJson });
       const adoption = await prepareThreadFenceAdoption(host, target);
       const successor = await startSuccessorAndWait(stateDir);
       if (!successor.adopted) successorFailure(ADOPT, asJson, adoption.maintenanceId, successor.detail);

@@ -115,6 +115,19 @@ export async function withLiveJetStreamReader<T>(
   }
 }
 
+/**
+ * Preview for `thread-fence-adopt` without --execute, while 3.261113.2 still runs: the same SQLite
+ * rules, read only, before any stop. Advisory: work in flight now is normal and drains with the
+ * stop; a row that only a dead process could settle (a queued handoff, an applying grant) is
+ * already here and will block the window, so the operator clears it first (RUNBOOK). The broker is
+ * not read: its residue is what the stop itself drains.
+ */
+export function previewLiveSqliteResidue(databasePath: string): DurableResidue {
+  return collectSqliteResidue(
+    legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
+  );
+}
+
 /** Read only after both predecessors exited: router database, broker, and the excluded tables. */
 export async function liveResidue(
   databasePath: string,
