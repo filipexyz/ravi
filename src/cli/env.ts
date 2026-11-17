@@ -4,6 +4,7 @@ import { admitDaemonEntry, assertRuntimeMaintenanceInactive } from "../runtime-m
  * This file must be imported FIRST before any other modules.
  */
 
+import { sleepSync } from "bun";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -17,6 +18,8 @@ captureRuntimeBootObservation();
 const envFile = join(getRaviStateDir(), ".env");
 const isChannelRunner = process.argv[2] === "channels" && process.argv[3] === "run";
 const isDaemon = process.argv[2] === "daemon" && process.argv[3] === "run";
+/** Same pause as a refused upgrade at the daemon entry (fence-adoption-live). */
+const DAEMON_REFUSAL_PAUSE_MS = 30_000;
 
 if (existsSync(envFile)) {
   const content = readFileSync(envFile, "utf-8");
@@ -48,14 +51,25 @@ if (existsSync(envFile)) {
 // A replacement stays PM2-supervised here without opening SQLite or NATS.
 if (isChannelRunner) assertRuntimeMaintenanceInactive();
 // Under a thread fence adoption only the authorized successor bundle is admitted.
-const daemonAdmission = isDaemon ? admitDaemonEntry() : "normal";
-if (isDaemon) acquireDaemonSchemaOwnership();
-// The successor installs the fence before the command graph can open a store,
-// then releases the interlock; startDaemon's own guard sees ordinary state.
-if (daemonAdmission === "successor") {
-  const { adoptThreadFenceAtEntry } =
-    require("../threads/fence-adoption-live.js") as typeof import("../threads/fence-adoption-live.js");
-  adoptThreadFenceAtEntry();
+// A refusal here is one line, then a pause before exiting, so PM2 does not spin
+// (synchronous: PM2 require()s this bundle, so no top-level await).
+let daemonAdmission: "normal" | "successor" = "normal";
+try {
+  daemonAdmission = isDaemon ? admitDaemonEntry() : "normal";
+  if (isDaemon) acquireDaemonSchemaOwnership();
+  // The successor installs the fence before the command graph can open a store,
+  // then releases the interlock; startDaemon's own guard sees ordinary state.
+  if (daemonAdmission === "successor") {
+    const { adoptThreadFenceAtEntry } =
+      require("../threads/fence-adoption-live.js") as typeof import("../threads/fence-adoption-live.js");
+    adoptThreadFenceAtEntry();
+  }
+} catch (cause) {
+  if (!isDaemon) throw cause;
+  process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
+  // Only a launcher restarts at once; PM2 marks its children with pm_id.
+  if (process.env.pm_id !== undefined) sleepSync(DAEMON_REFUSAL_PAUSE_MS);
+  process.exit(1);
 }
 // A pre-fence database is adopted by the daemon itself, at the start of
 // bootstrapCli (src/cli/index.ts): it needs the broker, so it cannot run in

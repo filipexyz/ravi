@@ -1,5 +1,7 @@
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { connect } from "nats";
+import { buildRunnerPm2Env } from "../channels/pm2-env.js";
+import { buildChannelsPm2Env, buildChannelsPm2StartArgs } from "../daemon-stdin.js";
 import { openStateDatabase } from "../db/state-boundary.js";
 import { runtimeStateDatabasePaths } from "../db/state-paths.js";
 import { managedRuntimeBundlePath } from "../managed-runtime.js";
@@ -17,9 +19,11 @@ import {
   adoptThreadFenceAtBoot,
   adoptThreadFenceAsSuccessor,
   type BootAdoptionResult,
+  type ChannelsResumeOutcome,
   type DurableResidue,
   type ManagedRegistration,
   planThreadFenceAdoption,
+  resumeChannelsAfterUpgrade,
   type ThreadFenceAdoption,
   type ThreadFenceAdoptionPlan,
 } from "./fence-adoption.js";
@@ -129,8 +133,8 @@ export async function withLiveJetStreamReader<T>(
 }
 
 /**
- * Preview for `thread-fence-adopt` without --execute, while 3.261113.2 still runs: the same SQLite
- * rules, read only, before any stop. Advisory: rows in flight now are carried or recomputed by the
+ * Read-only preview of the SQLite residue, while 3.261113.2 still runs: the same rules the
+ * daemon entry applies after the stop. Advisory: rows in flight now are carried or recomputed by the
  * successor; a blocking row (`resumption not verified`) is already here and will block the window,
  * so the operator can settle it before (RUNBOOK). Not read: the broker, whose residue is what the
  * stop drains, and the restart snapshots, whose epoch only the stop creates.
@@ -141,7 +145,7 @@ export function previewLiveSqliteResidue(databasePath: string): DurableResidue {
   );
 }
 
-/** What `thread-fence-adopt` without --execute returns: the read-only plan and the residue preview. */
+/** The coordinator's read-only plan plus the residue preview (no production caller; tests fabricate states with it). */
 export function adoptionDryRun(
   host: AdoptionHost,
   targetBundlePath: string,
@@ -288,13 +292,6 @@ export async function adoptThreadFenceOnUpgrade(stateDir = getRaviStateDir()): P
     },
     brokerReady: () => waitForBroker(),
     stop: liveStop,
-    start: (name) => {
-      const result = runPm2(["start", name]);
-      if (result.status !== 0)
-        process.stderr.write(
-          `Thread fence adopted, but 'pm2 start ${name}' exited ${result.status}; run 'ravi channels start'\n`,
-        );
-    },
     residue: (context) => liveResidue(databasePath, undefined, undefined, context?.daemonStartedAt),
     successorResidue: successorSqliteResidue(databasePath, RESTART_REASON_FILE),
     open: installFence(databasePath),
@@ -316,7 +313,44 @@ export async function adoptThreadFenceAtDaemonEntry(): Promise<void> {
       process.stderr.write(`Thread fence installed on upgrade (${upgrade.maintenanceId})\n`);
   } catch (cause) {
     process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
-    await new Promise((resolve) => setTimeout(resolve, UPGRADE_RETRY_PAUSE_MS));
+    // Only a launcher restarts at once; PM2 marks its children with pm_id.
+    if (process.env.pm_id !== undefined) await new Promise((resolve) => setTimeout(resolve, UPGRADE_RETRY_PAUSE_MS));
     process.exit(1);
+  }
+}
+
+/**
+ * Called once the daemon is ready: starts the channel runner an upgrade stopped,
+ * on this daemon's bundle. Never throws; a failure keeps the intent for the next
+ * ready daemon and is logged with the command that fixes it.
+ */
+export function resumeChannelsAfterUpgradeLive(stateDir = getRaviStateDir()): ChannelsResumeOutcome {
+  const ownBundlePath = runtimeBootBundlePath();
+  try {
+    return resumeChannelsAfterUpgrade({
+      stateDir,
+      databasePath: join(stateDir, "ravi.db"),
+      ownBundlePath,
+      registry: liveRegistrations,
+      startExisting: () => runPm2(["start", "ravi-channels"]).status,
+      recreate: () => {
+        if (getPm2Process("ravi-channels") && runPm2(["delete", "ravi-channels"]).status !== 0) return 1;
+        const args = buildChannelsPm2StartArgs({ bundlePath: ownBundlePath, processes: getPm2Processes() });
+        const started = runPm2(
+          args,
+          { ...buildRunnerPm2Env(), ...buildChannelsPm2Env() },
+          {
+            cwd: resolve(dirname(ownBundlePath), "../.."),
+          },
+        ).status;
+        if (started === 0) runPm2(["save", "--force"]);
+        return started;
+      },
+    });
+  } catch (cause) {
+    process.stderr.write(
+      `The channel runner stopped for the upgrade could not be started (${cause instanceof Error ? cause.message : String(cause)}); run 'ravi channels start'\n`,
+    );
+    return "failed";
   }
 }

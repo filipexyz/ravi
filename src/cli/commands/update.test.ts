@@ -26,6 +26,8 @@ import {
   rebindManagedRuntimeProcesses,
 } from "../../managed-runtime-rebind.js";
 import type { Pm2Process } from "../../pm2.js";
+import { readChannelsStoppedForUpgrade, resumeChannelsAfterUpgrade } from "../../threads/fence-adoption.js";
+import { Database } from "bun:sqlite";
 import { observeRuntimeBoot, readRuntimeBootReceipt, writeRuntimeBootReceipt } from "../../runtime-process-identity.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { OUTDATED_PM2_BANNER } from "../../test/pm2-jlist.js";
@@ -752,6 +754,88 @@ describe("update command helpers", () => {
       expect(readdirSync(callerState)).toEqual(["runtime-processes"]);
     } finally {
       rmSync(callerState, { recursive: true, force: true });
+    }
+  });
+
+  it("pre-fence database: a refused adoption leaves the runner's intent, and a later adopting daemon recreates it", async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "ravi-update-upgrade-state-"));
+    const runtime = createRuntimePackage();
+    const old = createRuntimePackage("3.261113.2");
+    try {
+      let processes: Pm2Process[] = [
+        pm2Process("ravi", old.bundlePath, old.root, { pid: 10, createdAt: 1 }),
+        pm2Process("ravi-channels", old.bundlePath, old.root, { pid: 20, createdAt: 1 }),
+      ];
+      const calls: string[] = [];
+      let clock = 0;
+      let intentBeforeChannelsDelete: unknown = "unset";
+      const ok = await rebindManagedRuntimeProcesses(
+        processes.map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
+        runtime.target,
+        {
+          stateDir,
+          bunPath: process.execPath,
+          assertPrepared: () => "adopt-on-start" as const,
+          runnerEnv: () => ({}),
+          pidAlive: () => true,
+          // The new daemon refuses at its entry (for example, broker down): it never reports ready.
+          schemaPhase: () => null,
+          getProcesses: () => processes,
+          now: () => clock,
+          wait: async (ms) => {
+            clock += ms;
+          },
+          readyTimeoutMs: 2_000,
+          run: async (_command, args) => {
+            calls.push(args.slice(0, 2).join(" "));
+            if (args[0] === "delete") {
+              if (args[1] === "2") intentBeforeChannelsDelete = readChannelsStoppedForUpgrade(stateDir);
+              processes = processes.filter((process) => String(process.pm_id) !== args[1]);
+            } else if (args[0] === "start") {
+              const name = args[args.indexOf("--name") + 1] as "ravi" | "ravi-channels";
+              processes.push(pm2Process(name, runtime.bundlePath, runtime.root, { pid: 11, createdAt: 2 }));
+            }
+            return { success: true, output: "" };
+          },
+        },
+      );
+      expect(ok).toBe(false);
+      // Recorded before the runner's registration was deleted, and the update never started a runner itself.
+      expect(intentBeforeChannelsDelete).toMatchObject({ by: "update" });
+      expect(processes.some((process) => process.name === "ravi-channels")).toBe(false);
+      expect(calls.some((call) => call.startsWith("start") && call.includes(process.execPath.split("/").pop()!))).toBe(
+        false,
+      );
+
+      // PM2 starts the daemon again; this time it adopts, and once ready it consumes the intent.
+      new Database(join(stateDir, "ravi.db")).exec("CREATE TABLE thread_schema_fence (id INTEGER)");
+      const recreated: string[] = [];
+      const outcome = resumeChannelsAfterUpgrade({
+        stateDir,
+        databasePath: join(stateDir, "ravi.db"),
+        ownBundlePath: runtime.bundlePath,
+        registry: () =>
+          processes.map((process) => ({
+            name: process.name,
+            pid: process.pid,
+            startedAt: 1,
+            online: process.status === "online",
+            scriptPath: runtime.bundlePath,
+            status: process.status,
+          })),
+        startExisting: () => 1,
+        recreate: () => {
+          recreated.push("ravi-channels");
+          return 0;
+        },
+      });
+      expect(outcome).toBe("started");
+      expect(recreated).toEqual(["ravi-channels"]);
+      expect(readChannelsStoppedForUpgrade(stateDir)).toBeNull();
+    } finally {
+      runtime.cleanup();
+      old.cleanup();
+      rmSync(stateDir, { recursive: true, force: true });
     }
   });
 

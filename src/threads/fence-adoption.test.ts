@@ -613,6 +613,15 @@ describe("daemon entry settles adoption leftovers by itself (heal)", () => {
     expect(readThreadFenceAdoption(f.stateDir)).toMatchObject({ phase: "adopting" });
   });
 
+  it("an authorized adoption with a claim left by a successor that died before recording itself is settled", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    mkdirSync(join(f.stateDir, "runtime-maintenance", "successor"));
+    expect(admit(f, { pid: process.pid, startedAt: Date.now() - 1_000 })).toBe("normal");
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+    expect(databaseHasThreadFence(f.databasePath)).toBe(false);
+  });
+
   it("records of different maintenances, with no successor alive, are settled instead of refusing forever", async () => {
     const f = fixture();
     await prepareThreadFenceAdoption(f.host, f.bundlePath);

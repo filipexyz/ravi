@@ -584,6 +584,8 @@ function admitUnderLease(input: AdmissionInput, refuse: (detail: string) => neve
   try {
     mkdirSync(successorClaimPath(input.stateDir), { mode: 0o700 });
   } catch (cause) {
+    // A claim left by a successor that died before recording itself settles like any other leftover.
+    if (input.heal && healUnderLease(input, adoption)) return "normal";
     throw new Error("RUNTIME_MAINTENANCE_ACTIVE: another successor already claimed thread fence adoption", { cause });
   }
   persistAdoption(input.stateDir, { ...adoption, phase: "adopting", successor: { ...input.self } });
@@ -599,7 +601,7 @@ function admitUnderLease(input: AdmissionInput, refuse: (detail: string) => neve
  * running (alive, or an exit that cannot be read) keeps the start refused; the
  * launcher retries it.
  */
-function healUnderLease(input: AdmissionInput, adoption: ThreadFenceAdoption | null): boolean {
+function healUnderLease(input: { stateDir: string }, adoption: ThreadFenceAdoption | null): boolean {
   if (adoption?.successor && recordedProcessExitState(adoption.successor) !== "exited") return false;
   const record = readRuntimeMaintenance(input.stateDir);
   releaseInterlock(input.stateDir, adoption?.maintenanceId ?? record?.id ?? `orphan-${randomUUID()}`);
@@ -864,7 +866,6 @@ export interface BootAdoptionHost {
   /** Durable broker reachable; the residue cannot be classified without it. */
   brokerReady(): Promise<boolean>;
   stop(name: Name): Promise<void>;
-  start(name: Name): void;
   residue(context?: { daemonStartedAt?: number }): Promise<DurableResidue>;
   /** Re-read by the successor verifier, inside the authorization scope. */
   successorResidue?: (adoption: ThreadFenceAdoption) => DurableResidue;
@@ -876,9 +877,7 @@ export interface BootAdoptionHost {
   now?: () => number;
 }
 
-export type BootAdoptionResult =
-  | { outcome: "not-needed" }
-  | { outcome: "adopted"; maintenanceId: string; channelsStarted: boolean };
+export type BootAdoptionResult = { outcome: "not-needed" } | { outcome: "adopted"; maintenanceId: string };
 
 /**
  * Prefix of every boot adoption refusal: the daemon exits, nothing in the
@@ -896,7 +895,8 @@ function upgradeBlocked(detail: string): never {
  * coordinator, with the daemon as its own successor. Legacy identities come
  * from the last boot receipts; every one must have exited (a process started
  * before the current OS boot has). A running channel runner is stopped through
- * its launcher first and started again once the fence is installed.
+ * its launcher first; the intent is written before the stop, and the daemon
+ * starts the runner again once it is ready (`resumeChannelsAfterUpgrade`).
  *
  * Refuses, without touching anything, while a legacy daemon still runs (an
  * older CLI's overlapping restart). After the interlock, any failure before
@@ -904,20 +904,18 @@ function upgradeBlocked(detail: string): never {
  * re-derives everything; unknown residue keeps refusing with its list.
  */
 export async function adoptThreadFenceAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
-  // A refused attempt may have stopped the channel runner; the attempt that succeeds starts it again.
-  const progress = { channelsStopped: readUpgradeFailure(host.stateDir)?.channelsStopped === true };
   try {
-    const result = await adoptAtBoot(host, progress);
+    const result = await adoptAtBoot(host);
     if (result.outcome === "adopted") clearUpgradeFailure(host.stateDir);
     return result;
   } catch (cause) {
-    recordUpgradeFailure(host.stateDir, cause, progress.channelsStopped);
+    recordUpgradeFailure(host.stateDir, cause);
     throw cause;
   }
 }
 
 const upgradeFailurePath = (stateDir: string) => join(maintenanceDirectory(stateDir), "upgrade-failure.json");
-export type UpgradeFailure = { at: number; pid: number; failure: string; channelsStopped?: boolean };
+export type UpgradeFailure = { at: number; pid: number; failure: string };
 
 /** Why the last boot adoption refused, for the CLI that is waiting on it. Never an authority to act. */
 export function readUpgradeFailure(stateDir: string): UpgradeFailure | null {
@@ -930,13 +928,12 @@ export function readUpgradeFailure(stateDir: string): UpgradeFailure | null {
   }
 }
 
-function recordUpgradeFailure(stateDir: string, cause: unknown, channelsStopped: boolean): void {
+function recordUpgradeFailure(stateDir: string, cause: unknown): void {
   try {
     writeAtomic(upgradeFailurePath(stateDir), maintenanceDirectory(stateDir), {
       at: Date.now(),
       pid: process.pid,
       failure: cause instanceof Error ? cause.message : String(cause),
-      ...(channelsStopped ? { channelsStopped } : {}),
     } satisfies UpgradeFailure);
   } catch {
     // no-cause: The note only speeds up the waiting CLI; the refusal itself is rethrown by the caller.
@@ -951,10 +948,7 @@ function clearUpgradeFailure(stateDir: string): void {
   }
 }
 
-async function adoptAtBoot(
-  host: BootAdoptionHost,
-  progress: { channelsStopped: boolean },
-): Promise<BootAdoptionResult> {
+async function adoptAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
   if (!existsSync(host.databasePath) || databaseHasThreadFence(host.databasePath)) return { outcome: "not-needed" };
   assertRuntimeMaintenanceInactive(host.stateDir);
   const exitState = host.exitState ?? ((entry: { pid: number; startedAt: number }) => recordedProcessExitState(entry));
@@ -1015,8 +1009,6 @@ async function adoptAtBoot(
   const lease = acquireCoordinatorLease(host.stateDir);
   let installed = false;
   let maintenanceId = "";
-  // `stopped` is an operator choice, unless an earlier attempt of this upgrade made it.
-  const channelsToRestart = channels[0] !== undefined && (channels[0].status !== "stopped" || progress.channelsStopped);
   try {
     assertRuntimeMaintenanceInactive(host.stateDir);
     if (readThreadFenceAdoption(host.stateDir)) upgradeBlocked("an adoption record appeared; restart to settle it");
@@ -1055,8 +1047,9 @@ async function adoptAtBoot(
     };
     const runningChannels = host.registry().find((entry) => entry.name === "ravi-channels" && entry.online);
     if (runningChannels) {
+      // Written before the stop: whoever adopts later (this start, or a later one) restarts the runner.
+      recordChannelsStoppedForUpgrade(host.stateDir, "daemon entry");
       await host.stop("ravi-channels");
-      progress.channelsStopped = true;
       // Its incarnation may predate its boot record; wait for the pid the launcher reported.
       await waitExit(
         { pid: runningChannels.pid, startedAt: runningChannels.startedAt || host.self.startedAt },
@@ -1079,7 +1072,7 @@ async function adoptAtBoot(
       upgradeBlocked("durable residue could not be read; Ravi retries on the next start");
     if (residue.unknown.length > 0)
       upgradeBlocked(
-        `accepted work with unknown outcome blocks the upgrade: ${residue.unknown.slice(0, 5).join(", ")}${residue.unknown.length > 5 ? ` (+${residue.unknown.length - 5})` : ""}. Settle it, then restart with 'ravi daemon restart -m "upgrade"'`,
+        `accepted work with unknown outcome blocks the upgrade: ${residue.unknown.slice(0, 5).join(", ")}${residue.unknown.length > 5 ? ` (+${residue.unknown.length - 5})` : ""}. The legacy runtime is stopped; settle these rows (spec quality/state-boundary, RUNBOOK "Settle step") and the next start retries, or reinstall 3.261113.2 to go back`,
       );
     const evidenceDirectory = join(maintenanceDirectory(host.stateDir), "evidence", maintenanceId, randomUUID());
     const observedAt = (host.now ?? Date.now)();
@@ -1153,10 +1146,86 @@ async function adoptAtBoot(
   } finally {
     lease.release();
   }
-  let channelsStarted = false;
-  if (channelsToRestart) {
-    host.start("ravi-channels");
-    channelsStarted = true;
+  return { outcome: "adopted", maintenanceId };
+}
+
+/**
+ * The channel runner an upgrade stopped. Written by whoever stops it for the
+ * upgrade (daemon restart, update, or the daemon entry), before the stop, and
+ * consumed only by a daemon that is ready on a fenced database: a refusal in
+ * between, by anyone, keeps it for the start that adopts. A runner the
+ * operator stopped has no intent and stays stopped.
+ */
+const channelsIntentPath = (stateDir: string) => join(maintenanceDirectory(stateDir), "channels-after-upgrade.json");
+export type ChannelsIntent = { at: number; by: string };
+
+export function recordChannelsStoppedForUpgrade(stateDir: string, by: string): void {
+  mkdirSync(maintenanceDirectory(stateDir), { recursive: true, mode: 0o700 });
+  writeAtomic(channelsIntentPath(stateDir), maintenanceDirectory(stateDir), {
+    at: Date.now(),
+    by,
+  } satisfies ChannelsIntent);
+}
+
+export function readChannelsStoppedForUpgrade(stateDir: string): ChannelsIntent | null {
+  try {
+    const value = JSON.parse(readFileSync(channelsIntentPath(stateDir), "utf8")) as ChannelsIntent;
+    return Number.isFinite(value?.at) ? value : null;
+  } catch {
+    // no-cause: No readable intent means no runner stopped by an upgrade; nothing is started.
+    return null;
   }
-  return { outcome: "adopted", maintenanceId, channelsStarted };
+}
+
+export interface ChannelsResumeHost {
+  stateDir: string;
+  databasePath: string;
+  /** The bundle the ready daemon runs; the runner must start the same one. */
+  ownBundlePath: string;
+  registry(): ManagedRegistration[];
+  /** `pm2 start ravi-channels`: the existing registration, its script and environment. */
+  startExisting(): number;
+  /** Deletes any registration, then registers the runner on `ownBundlePath`. */
+  recreate(): number;
+}
+
+export type ChannelsResumeOutcome = "none" | "fence-missing" | "already-running" | "started" | "failed";
+
+/** Runs in a ready daemon. Starts the runner the upgrade stopped, on this daemon's bundle, once. */
+export function resumeChannelsAfterUpgrade(host: ChannelsResumeHost): ChannelsResumeOutcome {
+  if (!readChannelsStoppedForUpgrade(host.stateDir)) return "none";
+  if (!databaseHasThreadFence(host.databasePath)) return "fence-missing";
+  const registrations = host.registry().filter((entry) => entry.name === "ravi-channels");
+  let outcome: ChannelsResumeOutcome;
+  if (registrations.length === 1 && registrations[0]!.online) outcome = "already-running";
+  else if (registrations.length === 1 && samePath(registrations[0]!.scriptPath, host.ownBundlePath))
+    outcome = host.startExisting() === 0 ? "started" : "failed";
+  else outcome = host.recreate() === 0 ? "started" : "failed";
+  if (outcome !== "failed") rmSync(channelsIntentPath(host.stateDir), { force: true });
+  return outcome;
+}
+
+/**
+ * Settles adoption leftovers for a lifecycle command (daemon start/restart,
+ * update, channels start) before it checks the interlock, with the same rule
+ * and lease as the daemon entry: once the claimed successor has exited, or
+ * there is none, the leftovers are released. Otherwise, or when the lease is
+ * held by an adoption in progress, nothing changes and the caller's own check
+ * reports it.
+ */
+export function settleThreadFenceLeftovers(stateDir: string, leaseTimeoutMs = 2_000): "none" | "settled" | "running" {
+  if (!pathExists(interlockPath(stateDir)) && !readRuntimeMaintenance(stateDir)) return "none";
+  let lease: { release(): void };
+  try {
+    lease = acquireCoordinatorLease(stateDir, leaseTimeoutMs);
+  } catch {
+    // no-cause: The lease is held by an adoption in progress; the caller's check refuses with that state.
+    return "running";
+  }
+  try {
+    if (!pathExists(interlockPath(stateDir)) && !readRuntimeMaintenance(stateDir)) return "none";
+    return healUnderLease({ stateDir }, readThreadFenceAdoption(stateDir)) ? "settled" : "running";
+  } finally {
+    lease.release();
+  }
 }

@@ -4,6 +4,7 @@ import {
   runtimeReplacementReadiness,
 } from "../../runtime-maintenance.js";
 import { performUpgradeRestart } from "../daemon-upgrade-restart.js";
+import { settleThreadFenceLeftovers } from "../../threads/fence-adoption.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { getRestartReasonPath } from "../../runtime/restart-reason.js";
@@ -56,7 +57,12 @@ import {
   getPm2Processes,
   PM2_PROCESS_NAME,
 } from "../../pm2.js";
-import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
+import {
+  buildManagedRuntimeIdentity,
+  managedRuntimeBundlePath,
+  managedRuntimeWarnings,
+  normalizeRuntimePath,
+} from "../../managed-runtime.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
   ADMIN_BOOTSTRAP_KIND,
@@ -454,6 +460,8 @@ export class DaemonCommands {
   @CommandAccess({ kind: "mutate", resource: "daemon", action: "start", risk: "high" })
   @Returns(daemonMutationReturnSchema)
   start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    // Leftovers of an interrupted upgrade settle here too, so this start reaches the daemon entry.
+    settleThreadFenceLeftovers(getRaviStateDir());
     assertRuntimeMaintenanceInactive();
     requirePm2();
 
@@ -558,6 +566,7 @@ export class DaemonCommands {
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    settleThreadFenceLeftovers(getRaviStateDir());
     assertRuntimeMaintenanceInactive();
     requirePm2();
     const readiness = runtimeReplacementReadiness();
@@ -679,10 +688,21 @@ export class DaemonCommands {
             name: process.name,
             pid: process.pid,
             status: process.status,
+            onTarget:
+              normalizeRuntimePath(managedRuntimeBundlePath(process)) === normalizeRuntimePath(target.bundlePath),
           })),
         stop: (name) => runPm2Status(["stop", name]),
         start: (name) => runPm2Status(["start", name]),
+        remove: (name) => runPm2Status(["delete", name]),
         startNew: () => runPm2Status(startDaemonPm2Args(target.bundlePath), target.cwd),
+        daemonReady: () => {
+          const daemon = getPm2Processes({ strict: true }).find(
+            (process) => process.name === PM2_PROCESS_NAME && process.status === "online",
+          );
+          return Boolean(
+            daemon && readDaemonSchemaPhase({ pid: daemon.pid, startedAt: daemon.startedAt ?? undefined }) === "ready",
+          );
+        },
         exitState: (pid) => processExitState(pid),
         wait: () => new Promise((resolve) => setTimeout(resolve, 500)),
         timeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_READY_TIMEOUT_MS"),
