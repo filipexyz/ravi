@@ -636,25 +636,37 @@ describe("diagnostic identifier egress", () => {
     });
   });
 
+  it("keeps the flags and reports a snapshot as null when one of its ids is not representable", () => {
+    const four = { runtimeProviderOverride: null, modelOverride: "sonnet", effortOverride: null, thinkingLevel: null };
+    for (const [before, stored] of [
+      [{ ...four, modelOverride: "claude-sonnet[1m]" }, four],
+      [four, { ...four, modelOverride: "two words" }],
+      [{ ...four, effortOverride: "PRIVATE_BEFORE_BODY?key=PRIVATE_SECRET" }, four],
+      [four, { ...four, modelOverride: 7 }],
+    ] as const) {
+      const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {
+        ...errorDiagnostic(new Error("Probe failed.")),
+        runtimeUpdate: { rolledBack: false, superseded: false, storedStateKnown: true, before, stored },
+      });
+      const runtimeUpdate = error.envelope().error.runtimeUpdate as Record<string, unknown>;
+      expect(runtimeUpdate.rolledBack).toBe(false);
+      expect(runtimeUpdate.superseded).toBe(false);
+      expect(runtimeUpdate.storedStateKnown).toBe(true);
+      // Only the offending snapshot is nulled; the other one still reaches the envelope.
+      expect(runtimeUpdate.before === null).toBe(before !== four);
+      expect(runtimeUpdate.stored === null).toBe(stored !== four);
+      const serialized = JSON.stringify(error.envelope());
+      expect(serialized).not.toContain("[1m]");
+      expect(serialized).not.toContain("two words");
+      expect(serialized).not.toContain("PRIVATE_");
+    }
+  });
+
   it("drops the runtime update control when its shape is not the contract", () => {
     const four = { runtimeProviderOverride: null, modelOverride: "sonnet", effortOverride: null, thinkingLevel: null };
     for (const runtimeUpdate of [
       { rolledBack: "no", superseded: false, storedStateKnown: true, before: four, stored: four },
-      { rolledBack: false, superseded: false, storedStateKnown: true, before: null, stored: four },
-      {
-        rolledBack: false,
-        superseded: false,
-        storedStateKnown: true,
-        before: { ...four, modelOverride: "two words" },
-        stored: four,
-      },
-      {
-        rolledBack: false,
-        superseded: false,
-        storedStateKnown: true,
-        before: four,
-        stored: { ...four, modelOverride: 7 },
-      },
+      { rolledBack: false, superseded: false, storedStateKnown: "yes", before: four, stored: four },
       { rolledBack: false, superseded: "maybe", storedStateKnown: true, before: four, stored: four },
     ]) {
       const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {

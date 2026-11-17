@@ -167,6 +167,8 @@ describe("sessions update RUNTIME_PROBE_FAILED envelope", () => {
     );
     expect(String(error.suggestedAction)).toContain(`ravi sessions info ${SESSION_NAME} --json`);
     expect(String(error.suggestedAction)).not.toContain("sessions show");
+    // Check before restoring: a newer update may have landed since the report.
+    expect(String(error.suggestedAction)).toMatch(/^Check first: ravi sessions info update-failure --json/);
     // The unproven configuration really is what is stored.
     expect(resolveSession(SESSION_KEY)).toMatchObject({ modelOverride: "sonnet", effortOverride: "low" });
   });
@@ -200,6 +202,57 @@ describe("sessions update RUNTIME_PROBE_FAILED envelope", () => {
     expect(String(error.suggestedAction)).toContain("Nothing to restore");
     expect(String(error.suggestedAction)).not.toContain("--skip-probe");
     expect(resolveSession(SESSION_KEY)).toMatchObject({ modelOverride: "opus", effortOverride: "medium" });
+  });
+
+  it("says nothing is left to restore when the restore threw after committing the previous values", async () => {
+    duringProbe = () => {
+      // The restore's UPDATE committed (previous values stored, revision up) and
+      // the call still failed: reproduced by writing that state, then locking.
+      updateSessionModelOverride(SESSION_KEY, "haiku");
+      updateSessionEffortOverride(SESSION_KEY, "high");
+      bumpSessionRuntimeProviderConfigRevision(SESSION_KEY);
+      breakRestore();
+    };
+
+    const { error } = await runFailingUpdate();
+
+    expect(error.runtimeUpdate).toMatchObject({
+      rolledBack: false,
+      // The revision moved, so the update is superseded as far as the data can say.
+      superseded: true,
+      storedStateKnown: true,
+      before: BEFORE,
+      stored: BEFORE,
+    });
+    // Not "a newer update owns it": the values are the previous ones, written either
+    // by this restore before it failed or by a newer update, and the text says so.
+    expect(String(error.message)).not.toContain("a newer update owns");
+    expect(String(error.message)).toContain("already equals the previous runtime config");
+    expect(String(error.message)).toContain("either that restore committed before failing or a newer update");
+    expect(String(error.suggestedAction)).toContain("Nothing to restore");
+    expect(String(error.suggestedAction)).not.toContain("--skip-probe");
+    expect(resolveSession(SESSION_KEY)).toMatchObject({ modelOverride: "haiku", effortOverride: "high" });
+  });
+
+  it("builds no restore command from a legacy id outside the accepted format, and keeps the flags", async () => {
+    updateSessionModelOverride(SESSION_KEY, "claude-sonnet[1m]");
+    duringProbe = breakRestore;
+
+    const { error } = await runFailingUpdate();
+
+    // The snapshot is reported as null; the flags still reach the envelope.
+    expect(error.runtimeUpdate).toMatchObject({
+      rolledBack: false,
+      superseded: false,
+      storedStateKnown: true,
+      before: null,
+    });
+    expect(String(error.runtimeUpdate?.rollbackError)).toContain("database is locked");
+    expect(String(error.suggestedAction)).toMatch(/^Check first: ravi sessions info update-failure --json/);
+    expect(String(error.suggestedAction)).toContain("cannot be written as a command");
+    expect(String(error.suggestedAction)).not.toContain("--skip-probe");
+    expect(String(error.suggestedAction)).not.toContain("[1m]");
+    expect(JSON.stringify(error)).not.toContain("[1m]");
   });
 
   it("tells the operator to inspect first when the restore fails and the stored configuration cannot be read", async () => {

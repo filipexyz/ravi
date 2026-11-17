@@ -424,6 +424,70 @@ describe("applySessionRuntimeUpdate", () => {
     expect(harness.record().modelOverride).toBe("opus");
   });
 
+  it("keeps the revision authoritative when a newer update wrote the previous values and the restore throws", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => {
+        // Update B puts the original values back (revision up) while A's probe runs.
+        harness.concurrentUpdate({
+          runtimeProviderOverride: session.runtimeProviderOverride ?? null,
+          modelOverride: session.modelOverride ?? null,
+          effortOverride: session.effortOverride ?? null,
+          thinkingLevel: session.thinkingLevel ?? null,
+        });
+        return failingProbe(request);
+      },
+    });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { provider: { set: "claude" }, model: { set: "sonnet" }, effort: { set: "low" } },
+      deps: {
+        ...harness.deps,
+        restoreIfOwned: () => {
+          throw new Error("SQLITE_IOERR: disk I/O error before the ownership check");
+        },
+      },
+    });
+
+    expect(result.storedStateKnown).toBe(true);
+    // The stored values equal `before`, but the revision is B's: not this update's.
+    expect(result.after).toEqual(result.before);
+    expect(result.superseded).toBe(true);
+  });
+
+  it("stays superseded by revision, with the previous values stored, when the restore throws after committing", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    const harness = makeHarness({ initial: session, probe: failingProbe });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { provider: { set: "claude" }, model: { set: "sonnet" }, effort: { set: "low" } },
+      deps: {
+        ...harness.deps,
+        // The conditional UPDATE commits (previous values stored, revision up) and
+        // the call still fails afterwards.
+        restoreIfOwned: (...args) => {
+          harness.deps.restoreIfOwned?.(...args);
+          throw new Error("SQLITE_IOERR: disk I/O error after commit");
+        },
+      },
+    });
+
+    expect(harness.calls).toContain("restoreIfOwned:restored");
+    expect(result.rollbackError).toContain("SQLITE_IOERR");
+    expect(result.rolledBack).toBe(false);
+    expect(result.storedStateKnown).toBe(true);
+    // The stored values are the previous ones, under a revision this update did not
+    // write. The data cannot tell its own committed restore from a newer writer of
+    // the same values, so the revision decides and the CLI words the ambiguity.
+    expect(result.superseded).toBe(true);
+    expect(result.after).toEqual(result.before);
+  });
+
   it("reports the stored state as unknown when the restore throws and the stored configuration cannot be read", async () => {
     const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
     let probed = false;
