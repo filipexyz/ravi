@@ -44,21 +44,24 @@ export function ModelPicker({ agentId, currentProvider, currentModel, onApply, o
 
   const [providerIndex, setProviderIndex] = useState(initialProviderIndex);
   const [focusZone, setFocusZone] = useState<FocusZone>("provider");
-  const [modelByProvider, setModelByProvider] = useState<Record<RuntimeProviderId, string>>(() => ({
-    claude: resolvePreferredRuntimeModel("claude", currentProvider === "claude" ? currentModel : null),
-    codex: resolvePreferredRuntimeModel("codex", currentProvider === "codex" ? currentModel : null),
+  const [modelByProvider, setModelByProvider] = useState<Partial<Record<RuntimeProviderId, string>>>(() => ({
+    [currentProvider]: resolvePreferredRuntimeModel(currentProvider, currentModel),
   }));
 
   const selectedProvider = (providerOptions[providerIndex]?.value as RuntimeProviderId | undefined) ?? "claude";
-  const modelOptions = useMemo(
-    () =>
-      listRuntimeModels(selectedProvider).map((option) => ({
-        name: option.name,
-        description: option.description,
-        value: option.id,
-      })),
-    [selectedProvider],
-  );
+  const modelOptions = useMemo(() => {
+    const options = listRuntimeModels(selectedProvider).map((option) => ({
+      name: option.name,
+      description: option.description,
+      value: option.id,
+    }));
+    const configuredModel =
+      selectedProvider === currentProvider ? resolvePreferredRuntimeModel(selectedProvider, currentModel) : null;
+    if (configuredModel && !options.some((option) => option.value === configuredModel)) {
+      options.unshift({ name: configuredModel, description: "Current model", value: configuredModel });
+    }
+    return options;
+  }, [selectedProvider, currentProvider, currentModel]);
 
   const selectedModelId = modelByProvider[selectedProvider] ?? getDefaultModelForProvider(selectedProvider);
   const selectedModelIndex = Math.max(

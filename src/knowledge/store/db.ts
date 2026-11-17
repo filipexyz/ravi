@@ -1,5 +1,5 @@
-import { initializeStateSchema } from "../../db/schema-owner.js";
-import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../../db/state-boundary.js";
+import { configureStateJournalMode, initializeStateSchema } from "../../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../../db/state-boundary.js";
 // Local Knowledge database `~/.ravi/knowledge.db` (spec knowledge, contract
 // §10.1). Its own file, not ravi.db: FTS5 tables cannot go through
 // `reconcileColumns`, chat history lives in chat.db, and the file can be
@@ -144,7 +144,7 @@ export function getKnowledgeDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
   const db = openStateDatabase(nextDbPath);
-  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
+  configureStateJournalMode(db);
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA synchronous = NORMAL");
   db.exec("PRAGMA foreign_keys = ON");

@@ -32,6 +32,8 @@ export interface SlackTextSendDependencies {
   readonly authority?: CredentialBrokerAuthority;
   readonly fetchImpl?: typeof fetch;
   readonly apiBaseUrl?: string;
+  /** Synchronous accounting for captured errors, including recovered fallbacks. */
+  readonly onFailure?: () => void;
 }
 
 export interface SlackNativeTextDelivery {
@@ -77,6 +79,7 @@ export async function sendSlackText(
           ...destination,
           markdown: input.text,
           allowDocuments: input.unfurlLinks !== false,
+          onFailure: dependencies.onFailure,
         })
       ).first;
 
@@ -173,6 +176,7 @@ export async function sendSlackPrivateCards(
       deliveries.push({ userId, kind: "ephemeral", chatId: input.chatId, messageId: ephemeral.messageId });
       continue;
     } catch (error) {
+      dependencies.onFailure?.();
       // Usually `user_not_in_channel` / `channel_not_found`: the person cannot
       // see the chat. Any refusal still leaves their DM, which stays private.
       ephemeralError = error instanceof Error ? error.message : String(error);
@@ -182,6 +186,7 @@ export async function sendSlackPrivateCards(
       const direct = await client.postMessage({ channel: userId, text, blocks: input.blocks });
       deliveries.push({ userId, kind: "dm", chatId: direct.channel, messageId: direct.messageId });
     } catch (error) {
+      dependencies.onFailure?.();
       const dmError = error instanceof Error ? error.message : String(error);
       failures.push({ userId, error: ephemeralError ? `${ephemeralError}; DM: ${dmError}` : dmError });
     }

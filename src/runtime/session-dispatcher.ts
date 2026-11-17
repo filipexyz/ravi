@@ -3,6 +3,15 @@ import {
   RuntimeStartCapacityError,
   type RuntimeStartCapacitySnapshot,
 } from "./start-admission.js";
+import {
+  BACKGROUND_TASK_LOST_REASON,
+  buildBackgroundTaskLostPrompt,
+  decideIdleEviction,
+  deliverBackgroundWake,
+  hasProcessBoundBackgroundWork,
+  resolveRuntimeBackgroundTaskTtlMs,
+  type BackgroundWakePublisher,
+} from "./background-work.js";
 import { configStore } from "../config-store.js";
 import { DecisionDispatchRejectedError } from "../decisions/model.js";
 import { isThreadAttentionPrompt, assertThreadAttentionSession } from "./message-types.js";
@@ -41,6 +50,7 @@ import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
   hasIsolatedRuntimeTurnEnvelope,
+  withoutSharedTriggerAuthority,
   runtimeTurnActorKey,
   hasDeliverableRuntimeMessages,
   prepareRuntimeInterruptSuccessor,
@@ -48,6 +58,7 @@ import {
   type RuntimeInterruptSuccessorPreparation,
   wakeRuntimeSessionIfDeliverable,
 } from "./delivery-queue.js";
+import { triggerAuthorityLendsOwner, triggerOwnSessionAdmitsPrompt } from "../triggers/authority.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
   CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
@@ -187,8 +198,12 @@ export interface RuntimeSessionDispatcherOptions {
   crashRecovery: RuntimeCrashRecoveryCoordinator;
   pendingStartTimeoutMs?: number;
   idleSessionTtlMs?: number;
+  /** How long a session with pending background work may sit without a turn. */
+  backgroundTaskTtlMs?: number;
   turnInactivityMs?: number;
   reclaimIntervalMs?: number;
+  /** Durable wake used to report background work lost on eviction. Injectable for tests. */
+  publishBackgroundWake?: BackgroundWakePublisher;
 }
 
 export interface RuntimeAbortProvenance {
@@ -226,6 +241,10 @@ export class RuntimeSessionDispatcher {
 
   private idleSessionTtlMs(): number {
     return this.options.idleSessionTtlMs ?? resolveRuntimeIdleSessionTtlMs();
+  }
+
+  private backgroundTaskTtlMs(): number {
+    return this.options.backgroundTaskTtlMs ?? resolveRuntimeBackgroundTaskTtlMs();
   }
 
   private turnInactivityMs(): number {
@@ -895,6 +914,32 @@ export class RuntimeSessionDispatcher {
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
     assertThreadAttentionSession(prompt, sessionEntry);
+    // Every prompt a producer publishes comes through here. A trigger's own
+    // session runs that trigger's fires and nothing else, so no relay, task
+    // report, cron run, hook action or chat message becomes a turn there.
+    // The session as stored and the one a runtime still living under this
+    // name was started for: neither may be an own session this prompt is not
+    // for. With neither left the name itself says it, since an own session
+    // goes by its key.
+    const targetSession = sessionEntry ?? getSession(sessionName);
+    const liveSessionKey = this.streamingSessions.get(sessionName)?.sessionKey;
+    const targetKeys = targetSession || liveSessionKey ? [targetSession?.sessionKey, liveSessionKey] : [sessionName];
+    const refusedKey = targetKeys.find((key) => key && !triggerOwnSessionAdmitsPrompt(key, prompt));
+    if (refusedKey) {
+      if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+      if (prompt._taskAssignmentId) throw new Error("Task assignment session runs a trigger's fires only");
+      if (isThreadAttentionPrompt(prompt)) throw new Error("Thread attention session runs a trigger's fires only");
+      reportRuntimePromptIntakeFailure({
+        sessionName,
+        prompt,
+        reason: "trigger_own_session",
+        stage: "dispatch",
+        instanceId: this.options.instanceId,
+        safeEmit: this.options.safeEmit,
+        details: { sessionKey: refusedKey },
+      });
+      return;
+    }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent =
       routerConfig.agents[agentId] ??
@@ -1950,6 +1995,9 @@ export class RuntimeSessionDispatcher {
   private isReclaimableForStart(sessionName: string, session: RuntimeHostStreamingSession): boolean {
     return (
       !isRuntimeSessionServing(session) &&
+      // A provider-owned background task dies with the process; pool pressure
+      // must not be the thing that loses its completion.
+      !hasProcessBoundBackgroundWork(session) &&
       !this.startReservations.has(sessionName) &&
       !this.startingSessions.has(sessionName) &&
       !this.debounceStates.has(sessionName) &&
@@ -2428,11 +2476,32 @@ export class RuntimeSessionDispatcher {
         session.pendingMessages.length > 0 ||
         Boolean(session.pendingWake);
       if (!servingWork && idleTtlMs > 0 && idleMs >= idleTtlMs) {
-        log.info("Reclaiming idle runtime session", { sessionName, idleMs, timeoutMs: idleTtlMs });
-        shutdownRuntimeStreamingSession(session, "idle_session_ttl");
+        // Pending background work is not idleness: the completion would die
+        // with the provider process (bug 081dac32).
+        const decision = decideIdleEviction({
+          sessionName,
+          holder: session,
+          idleMs,
+          idleTtlMs,
+          backgroundTtlMs: this.backgroundTaskTtlMs(),
+        });
+        if (!decision.evict) continue;
+        const reason = decision.reason === "background_task_ttl" ? BACKGROUND_TASK_LOST_REASON : "idle_session_ttl";
+        log.info("Reclaiming idle runtime session", { sessionName, idleMs, timeoutMs: idleTtlMs, reason });
+        shutdownRuntimeStreamingSession(session, reason);
         this.releaseRuntimeSessionSlot(sessionName);
         markRuntimeLiveIdle(sessionName, "idle evicted");
         idleEvicted.push(sessionName);
+        if (decision.lostNativeTasks.length > 0) {
+          this.reportLostBackgroundTasks(
+            sessionName,
+            buildBackgroundTaskLostPrompt({
+              tasks: decision.lostNativeTasks,
+              idleMs,
+            }),
+            decision.lostNativeTasks.map((task) => task.taskId),
+          );
+        }
         continue;
       }
       if (servingWork && (session.turnActive || session.toolRunning || session.starting) && idleMs >= stuckAfterMs) {
@@ -2454,6 +2523,24 @@ export class RuntimeSessionDispatcher {
     const orphanTasks = this.auditOrphanTaskSessions();
     const timedOutStarts = this.failExpiredPendingStarts(now);
     return { idleEvicted, stuckReleased, orphanTasks, timedOutStarts };
+  }
+
+  private reportLostBackgroundTasks(sessionName: string, prompt: string, taskIds: string[]): void {
+    void deliverBackgroundWake({
+      sessionName,
+      prompt,
+      meta: { kind: "native_task_lost", taskIds },
+      ...(this.options.publishBackgroundWake ? { publish: this.options.publishBackgroundWake } : {}),
+      onAttemptFailed: ({ error, attempt, willRetry }) => {
+        log.error("Could not report lost background tasks; the session owes an answer", {
+          sessionName,
+          taskIds,
+          attempt,
+          willRetry,
+          error,
+        });
+      },
+    });
   }
 
   reclaimIdleObserverSessions(now = Date.now(), options: { drainPendingStarts?: boolean } = {}): string[] {
@@ -2527,6 +2614,11 @@ export class RuntimeSessionDispatcher {
   }
 
   private consumeDeferredBootstrap(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+    // A trigger fire that lends its owner's authority runs its own text only;
+    // the deferred bootstrap waits for the next turn.
+    if (triggerAuthorityLendsOwner(prompt._triggerAuthority)) {
+      return prompt;
+    }
     const deferred = this.deferredBootstraps.get(sessionName);
     if (!deferred) {
       return prompt;
@@ -2554,7 +2646,8 @@ export class RuntimeSessionDispatcher {
   ): void {
     const debounce = this.debounceStates.get(sessionName);
     const lastDebounced = debounce?.messages.at(-1);
-    if (debounce && lastDebounced) {
+    // Never onto a trigger fire that lends its owner's authority: `!!` text is someone else's.
+    if (debounce && lastDebounced && !triggerAuthorityLendsOwner(lastDebounced._triggerAuthority)) {
       // Ride along with the batch that is already waiting so arrival order
       // holds, without extending its window.
       debounce.messages[debounce.messages.length - 1] = appendSkipTurnText(lastDebounced, prompt);
@@ -2596,6 +2689,11 @@ export class RuntimeSessionDispatcher {
     // Deferred bootstraps are re-read from `prompt` only, and resume envelopes
     // replay already persisted atoms; the next real turn carries the text.
     if (prompt._deferRuntimeStart || prompt._resumeStashedMessages || prompt._daemonRestartResume) {
+      return prompt;
+    }
+    // A trigger fire that lends its owner's authority runs its own text only;
+    // the held `!!` text waits for the next turn.
+    if (triggerAuthorityLendsOwner(prompt._triggerAuthority)) {
       return prompt;
     }
     const held = this.heldSkipTurnMessages.get(sessionName);
@@ -3297,6 +3395,8 @@ export function canUseNativeRuntimeSteer(
   return (
     barrier === "after_tool" &&
     !hasIsolatedRuntimeTurnEnvelope(prompt) &&
+    // Nothing is injected into a running trigger turn that lends its owner's authority.
+    !triggerAuthorityLendsOwner(session.currentTurnAuthority?._triggerAuthority) &&
     isSameRuntimeTurnSurface(session.currentSource, prompt?.source) &&
     isSameRuntimeTurnActor(session, prompt) &&
     supportsNativeSteer &&
@@ -3386,13 +3486,16 @@ function combineDebounceBatch(batch: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt
     })),
   );
 
-  return {
-    ...last,
-    prompt: batch.map((entry) => entry.prompt).join("\n\n"),
-    deliveryBarrier: delivery.barrier,
-    deliveryBarrierSource: delivery.source,
-    commands: batch.flatMap((entry) => entry.commands ?? []),
-  };
+  return withoutSharedTriggerAuthority(
+    {
+      ...last,
+      prompt: batch.map((entry) => entry.prompt).join("\n\n"),
+      deliveryBarrier: delivery.barrier,
+      deliveryBarrierSource: delivery.source,
+      commands: batch.flatMap((entry) => entry.commands ?? []),
+    },
+    batch.length,
+  );
 }
 
 function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
@@ -3479,7 +3582,7 @@ export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): Runti
     .join("\n\n")
     .trim();
 
-  return {
+  const restart: RuntimeLaunchPrompt = {
     ...(newestLaunchPrompt ?? {
       prompt: combinedPrompt,
       deliveryBarrier: delivery.barrier,
@@ -3496,6 +3599,8 @@ export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): Runti
         : messages.flatMap((message) => message.commands ?? []),
     _resumeStashedMessages: true,
   };
+  // The combined text of several stashed prompts never runs as one trigger's owner.
+  return withoutSharedTriggerAuthority(restart, messages.length);
 }
 
 function selectStashedRestartPromptEnvelope(launchPrompts: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt | undefined {

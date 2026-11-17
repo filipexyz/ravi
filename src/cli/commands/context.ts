@@ -3,8 +3,18 @@ import "reflect-metadata";
 import { pagesLinkGuardReason } from "../../hooks/pages-link-guard.js";
 import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
-import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  ContractError,
+  CONTRACT_EXIT_USAGE,
+  contractDryRun,
+  contractFail,
+  pickFields,
+  renderContractError,
+  suggestSimilar,
+} from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
+import { isLocalCredentialOperatorContext } from "../operator-runtime.js";
+import { dispatchRemote, remoteGatewayErrorToContractError, resolveRemoteGatewayConfig } from "../remote-gateway.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   contextAuthorizeReturnSchema,
@@ -498,7 +508,12 @@ export class ContextCommands {
       );
     }
     const cascade = !noCascade;
-    const result = revokeRuntimeContext(contextId, { cascade, reason });
+    // Public audit text cannot select a host-only completion/rotation reason.
+    const auditNote = reason?.trim();
+    const result = revokeRuntimeContext(contextId, {
+      cascade,
+      reason: auditNote ? `context_revoked: ${auditNote}` : "context_revoked",
+    });
     const payload = this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
     this.printPayload(payload, asJson, () =>
       this.printRevokeResult(payload.context, payload.cascaded, payload.revokedAt),
@@ -1177,7 +1192,7 @@ export class ContextCredentialsCommands {
 
   @Command({ name: "add", description: "Add a runtime context-key to the local credentials store" })
   @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "add", risk: "medium" })
-  add(
+  async add(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--label <label>", description: "Human label (defaults to hostname)" }) label?: string,
     @Option({ flags: "--set-default", description: "Mark this entry as the default" }) setDefault = false,
@@ -1186,7 +1201,9 @@ export class ContextCredentialsCommands {
     if (!contextKey.startsWith("rctx_")) {
       fail(`Expected an rctx_* key, got "${contextKey.slice(0, 8)}..."`);
     }
-    const record = resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+    const record = isLocalCredentialOperatorContext()
+      ? await this.validateCredentialForOperator(contextKey, asJson)
+      : resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path) ?? emptyCredentialsFile();
     const entry = {
@@ -1288,6 +1305,79 @@ export class ContextCredentialsCommands {
       console.log(`Removed ${contextKey} from ${payload.path}`);
     }
     return payload;
+  }
+
+  /**
+   * The operator's terminal checks the candidate with the running daemon when
+   * its gateway is reachable, and against the state on this machine when it is
+   * not (a stopped daemon must not keep a credential from being stored).
+   */
+  private async validateCredentialForOperator(contextKey: string, asJson: boolean) {
+    const operation = "context credentials add";
+    const refuse = (cause: unknown): never => {
+      const error =
+        cause instanceof ContractError
+          ? cause
+          : new ContractError(operation, "SERVER_UNAVAILABLE", "Credential validation through the gateway failed.", 1, {
+              ...errorDiagnostic(cause, { operation }),
+              retryable: true,
+            });
+      renderContractError(error, asJson);
+      throw error;
+    };
+    let config: Awaited<ReturnType<typeof resolveRemoteGatewayConfig>>;
+    try {
+      config = await resolveRemoteGatewayConfig(process.env, operation, { installedOperator: true });
+    } catch (cause) {
+      return refuse(cause);
+    }
+    if (!config) return resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+    try {
+      // Authenticate the candidate itself: adding the first credential must not
+      // need an existing default, and the daemon must never receive a file write.
+      const result = await dispatchRemote({
+        groupSegments: ["context"],
+        command: "whoami",
+        body: { json: true },
+        config,
+        contextKey,
+        cwd: process.cwd(),
+      });
+      const remoteError = remoteGatewayErrorToContractError(operation, result);
+      if (remoteError) throw remoteError;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(result.body);
+      } catch {
+        // no-cause: JSON SyntaxError can quote credential-bearing response text; refuse validation without echoing that payload or writing the store.
+        throw new ContractError(
+          operation,
+          "GATEWAY_RESPONSE_INVALID",
+          "Credential validation returned invalid JSON.",
+          1,
+          {
+            cause: "The gateway credential-validation response was not valid JSON.",
+            context: { operation },
+          },
+        );
+      }
+      const parsed = contextWhoamiReturnSchema.safeParse(payload);
+      if (!parsed.success || parsed.data.status !== "active") {
+        throw new ContractError(
+          operation,
+          "GATEWAY_RESPONSE_INVALID",
+          "Credential validation did not return an active context.",
+          1,
+          {
+            cause: "The gateway response did not describe a schema-valid active context.",
+            context: { operation },
+          },
+        );
+      }
+      return parsed.data;
+    } catch (cause) {
+      return refuse(cause);
+    }
   }
 
   private loadCredentialsOrFail(path: string): CredentialsFile | null {

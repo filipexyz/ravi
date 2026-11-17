@@ -1,7 +1,9 @@
-import { initializeStateSchema } from "../db/schema-owner.js";
+import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
 import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { migrateDecisions } from "../decisions/schema.js";
+import { assertThreadFenceReady } from "../threads/schema-fence.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
+import { isOrdinaryTurnCompletionRevocation } from "../runtime/context-revocation.js";
 /**
  * Router Database - SQLite-backed configuration storage
  *
@@ -1401,6 +1403,7 @@ function getDb(): Database {
   const nextDbPath = resolveDbPath();
   assertDatabaseTargetAllowed(nextDbPath);
   if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
+    assertThreadFenceReady(routerDbState.db);
     return routerDbState.db;
   }
   if (routerDbState.db !== null && routerDbState.dbPath !== nextDbPath) {
@@ -1435,30 +1438,38 @@ function getDb(): Database {
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
-  // WAL mode for concurrent read/write access (CLI + daemon).
-  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
-  // Wait up to 5s for locks to clear instead of failing immediately.
-  db.exec("PRAGMA busy_timeout = 5000");
-  // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
-  // WAL mode (only the WAL is fsynced per commit; the DB file is fsynced at
-  // checkpoint). This is the single biggest knob to mitigate disk-pressure
-  // induced lock spirals.
-  db.exec("PRAGMA synchronous = NORMAL");
-  // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
-  db.exec("PRAGMA cache_size = -64000");
-  // Temp tables & sort scratch stay off the process heap. MEMORY + a multi-GB
-  // DB can OOM SQLite/process memory even when the host disk still has free
-  // space (SQLITE_NOMEM / "out of memory").
-  db.exec("PRAGMA temp_store = DEFAULT");
-  // 256MB memory-mapped read window. Hot queries become page-cache hits.
-  db.exec("PRAGMA mmap_size = 268435456");
-
-  // Enable foreign keys before schema creation
-  db.exec("PRAGMA foreign_keys = ON");
   try {
+    if (isSchemaConsumer()) assertThreadFenceReady(db);
+    // WAL mode for concurrent read/write access (CLI + daemon).
+    configureStateJournalMode(db);
+    // Wait up to 5s for locks to clear instead of failing immediately.
+    db.exec("PRAGMA busy_timeout = 5000");
+    // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
+    // WAL mode (only the WAL is fsynced per commit; the DB file is fsynced at
+    // checkpoint). This is the single biggest knob to mitigate disk-pressure
+    // induced lock spirals.
+    db.exec("PRAGMA synchronous = NORMAL");
+    // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
+    db.exec("PRAGMA cache_size = -64000");
+    // Temp tables & sort scratch stay off the process heap. MEMORY + a multi-GB
+    // DB can OOM SQLite/process memory even when the host disk still has free
+    // space (SQLITE_NOMEM / "out of memory").
+    db.exec("PRAGMA temp_store = DEFAULT");
+    // 256MB memory-mapped read window. Hot queries become page-cache hits.
+    db.exec("PRAGMA mmap_size = 268435456");
+
+    // Enable foreign keys before schema creation
+    db.exec("PRAGMA foreign_keys = ON");
     initializeStateSchema(db, "router", () => initializeRouterSchema(db, nextDbPath));
   } catch (error) {
-    closeRouterDb();
+    routerDbState.db = null;
+    routerDbState.stmts = null;
+    routerDbState.dbPath = null;
+    try {
+      db.close();
+    } catch {
+      // no-cause: Cleanup must not replace the setup error rethrown below; the cache was already cleared.
+    }
     throw error;
   }
   return db;
@@ -1621,6 +1632,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0,
       runtime_session_json TEXT,
       history_reset_after_id INTEGER,
+      trigger_owner_lent_at INTEGER,
       runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
       agent_cwd TEXT NOT NULL,
@@ -2005,7 +2017,8 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       notified_turn_id TEXT,
       notified_at INTEGER,
       claim_id TEXT,
-      claim_expires_at INTEGER
+      claim_expires_at INTEGER,
+      notice_retry_after INTEGER
     );
 
     -- Occurrence receipts outlive the mutable current-health row and transport dedup window.
@@ -3099,6 +3112,17 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
 
+  const threadHealthColumns = db.prepare("PRAGMA table_info(slack_thread_turn_health)").all() as Array<{
+    name: string;
+  }>;
+  if (!threadHealthColumns.some((c) => c.name === "notice_retry_after")) {
+    try {
+      db.exec("ALTER TABLE slack_thread_turn_health ADD COLUMN notice_retry_after INTEGER");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+    }
+  }
+
   // Migration: turn-output marker (`final` | `incomplete`) on session_turns.
   const sessionTurnColumns = db.prepare("PRAGMA table_info(session_turns)").all() as Array<{ name: string }>;
   if (!sessionTurnColumns.some((c) => c.name === "output_state")) {
@@ -3172,6 +3196,9 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   }
   if (!sessionColumns.some((c) => c.name === "history_reset_after_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN history_reset_after_id INTEGER");
+  }
+  if (!sessionColumns.some((c) => c.name === "trigger_owner_lent_at")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN trigger_owner_lent_at INTEGER");
   }
   if (!sessionColumns.some((c) => c.name === "runtime_session_display_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_display_id TEXT");
@@ -3462,6 +3489,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);
+  migrateTriggerOwner(db);
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -10539,7 +10567,12 @@ export function dbListContexts(options: ListContextsOptions = {}): ContextRecord
   if (!options.includeInactive) {
     where.push("(revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)");
     params.push(now);
-    where.push("(expires_at IS NULL OR expires_at = 0 OR expires_at > ?)");
+    // Select expiry candidates first so creation-order sorting cannot scan all historical payloads.
+    where.push(`context_id IN (
+      SELECT context_id FROM contexts WHERE expires_at IS NULL
+      UNION ALL SELECT context_id FROM contexts WHERE expires_at = 0
+      UNION ALL SELECT context_id FROM contexts WHERE expires_at > ?
+    )`);
     params.push(now);
   }
 
@@ -10668,7 +10701,7 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
   }
 
   const db = getDb();
-  const reasonNote = options.reason?.trim();
+  const reasonNote = options.reason?.trim() || "context_revoked";
   const reasonKey = "revocationReason";
   const cascadeKey = "cascadedFrom";
   const cascadeFlagKey = "revokedViaCascade";
@@ -10683,7 +10716,13 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
       const metadata: Record<string, unknown> = {
         ...(target.metadata ?? {}),
       };
-      if (reasonNote) {
+      // Terminal cleanup must never turn an explicit withdrawal back into a
+      // benign completion and thereby revive already queued human work.
+      if (
+        !target.revokedAt ||
+        isOrdinaryTurnCompletionRevocation(metadata[reasonKey]) ||
+        !isOrdinaryTurnCompletionRevocation(reasonNote)
+      ) {
         metadata[reasonKey] = reasonNote;
       }
       if (target.contextId !== root.contextId) {
@@ -11770,6 +11809,15 @@ export function migrateTriggerDebounce(database: Database): void {
 }
 
 const LEGACY_TRIGGER_SESSION_CHECK = /\s*CHECK\s*\(\s*session\s+IN\s*\(\s*'main'\s*,\s*'isolated'\s*\)\s*\)/;
+
+/**
+ * `triggers.owner_principal`: who a trigger's agent turns act as in Bases.
+ * No backfill: a trigger written before owners were recorded stays without
+ * one and keeps acting as nobody.
+ */
+export function migrateTriggerOwner(database: Database): void {
+  ensureColumn(database, "triggers", "owner_principal", "TEXT");
+}
 
 /**
  * Older databases constrain `triggers.session` to main|isolated, but a trigger

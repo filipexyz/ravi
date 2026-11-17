@@ -22,6 +22,20 @@ An environment opt-in was rejected: it confuses environment with caller role, pr
 
 Installed code is established from the module's package root, not cwd. The caller's actual PID and entrypoint are checked against the live PM2 registry; its parent must already be PM2 before the bounded registry query, so identity inspection cannot bootstrap a process manager. Inherited process labels and daemon-looking argv are insufficient. No new launch configuration is introduced.
 
+## Missing PM2 manager PID file
+
+An existing installation had a live PM2 7.1.2 manager and its RPC socket but no
+default `pm2.pid`. The guard returned an empty registry before invoking PM2,
+so reinstalling the launcher or removing the CLI's version banner could not
+restore access. PM2 7 still attempts to write this file and supports a custom
+PID-file path; this is a missing-file dependency, not a general PM2 7 removal.
+
+The fallback verifies the actual parent process title and its canonical PM2
+home, then performs the unchanged live registration checks. Boot receipts are
+observability, written later by the runtime; the old inert-stdin shell wrapper
+never created or granted runtime identity. Restoring that wrapper would not
+repair the missing manager metadata.
+
 ## Single schema owner
 
 Allowing daemon and channels to migrate the same SQLite introduces a race disguised as authorization. Channels needs normal data writes, not schema ownership. A ready marker per component and exact release makes startup order observable: the daemon prepares state; channels refuses incompatible or unfinished state before serving. The schema split is explicit in each store, and an integration test compares the entire SQLite schema before and after a channels startup/open.
@@ -40,3 +54,14 @@ explicit and isolated.
 ## Confirmed bypass evidence
 
 The initial publications of [#766](https://github.com/filipexyz/ravi/pull/766) and [#767](https://github.com/filipexyz/ravi/pull/767) used `git -c core.hooksPath=/dev/null push`. That is a bypass even though persistent hooksPath remained `.githooks`, hook blobs were unchanged, and local/remote commit/tree hashes matched. Content integrity does not establish an authorized publication mechanism. Later checks must not rewrite that history.
+
+## Why preparation precedes the thread cutover
+
+Slack socket callbacks and outbound receipts write lifecycle alongside the daemon. A healthy successor or a JS adapter does not stop an older cached SQL writer. Scoped drain completion also cannot prove that a legacy process persisted every accepted message. Preparation therefore enforces SQL ownership, retains explicit deployment blockers and keeps a persistent two-process interlock; canonical state and audience changes remain separate work.
+
+
+A populated schema alone does not establish a live legacy process, and an empty process list does not establish absence. Bootstrap distinguishes proof from labels: exclusive fresh-state ownership supports realistic legacy fixtures, while adoption requires an explicit trusted verifier for complete predecessor inventory, persistence/completion and launcher exclusion plus physical exit probes. Lexical scopes avoid lending that authority to detached tasks. Caught delivery failures likewise remain failed drain evidence even when a transport helper recovers through an existing fallback.
+
+A collector cannot report failures its children swallow. Knowledge and database aggregators previously logged stop/close errors and returned success, and other shutdown subscribers discarded cleanup rejections. The component latch must extend through those stop boundaries: attempt independent siblings, retain the original named causes, and return a nonzero shutdown result. Awaiting an idle generator's return alone is insufficient; its underlying subscription needs cancellation so honest cleanup does not stall on the next message.
+
+The fence shipped without a production coordinator, so every release after it refused to boot on the live database and production stayed pinned to the last pre-fence release. The proof the authorization scope asks for (closed admissions, completion reports) cannot come from a legacy process: it has no code to produce it. What can be observed is the durable state the legacy process leaves after it physically exits, which is also all a legacy restart ever preserved. Adoption therefore moves the proof after exit and makes every unit of that state answer to a closed rule with a named owner; anything the rule cannot explain blocks instead of being assumed safe. The interlock outlives the coordinator so a crash anywhere between the first stop and the fence leaves both starts refused, and the successor installs the fence itself because only the process that will own the database can do it inside the authorization scope.

@@ -1,9 +1,11 @@
+import { TrackedWorkDrain, type WorkDrainProof, type WorkDrainStatus } from "../../runtime/work-drain.js";
 import { guardedSessionForChat } from "../../knowledge/egress/guard.js";
 import { createHash, randomUUID } from "node:crypto";
 import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
 import {
   ensureContactFromInbound,
+  getContactById,
   isSlackHumanUserId,
   resolvePlatformIdentity,
   saveAccountPending,
@@ -758,6 +760,7 @@ export class SlackSocketModeService {
   private reconnectCount = 0;
   private inboundReconcileTimer: ReturnType<typeof setInterval> | null = null;
   private reconcilingInbound = false;
+  private readonly workDrain = new TrackedWorkDrain("slack.socket-mode");
   private lastInboundPruneAt = 0;
 
   constructor(private readonly options: SlackSocketModeServiceOptions) {
@@ -803,6 +806,7 @@ export class SlackSocketModeService {
   }
 
   start(): void {
+    if (this.workDrain.status().phase !== "accepting") throw new Error("WORK_DRAIN_ADMISSION_CLOSED");
     if (this.running) return;
     this.running = true;
     this.connectedAt = undefined;
@@ -813,7 +817,25 @@ export class SlackSocketModeService {
     this.loopPromise = this.runLoop();
   }
 
+  drainStatus(): WorkDrainStatus {
+    return this.workDrain.status();
+  }
+
+  async requestDrain(timeoutMs?: number): Promise<WorkDrainProof> {
+    this.workDrain.beginDrain();
+    this.running = false;
+    if (this.inboundReconcileTimer) {
+      clearInterval(this.inboundReconcileTimer);
+      this.inboundReconcileTimer = null;
+    }
+    this.interruptConnectionOpen?.();
+    this.interruptReconnectDelay?.();
+    // Keep the socket usable until already admitted envelopes finish their ACK.
+    return this.workDrain.waitForDrain(timeoutMs);
+  }
+
   async stop(): Promise<void> {
+    await this.requestDrain();
     this.running = false;
     if (this.inboundReconcileTimer) {
       clearInterval(this.inboundReconcileTimer);
@@ -843,9 +865,16 @@ export class SlackSocketModeService {
     };
   }
 
-  async handleEnvelope(
+  handleEnvelope(
     envelope: SlackSocketEnvelope,
     ack: (envelopeId: string, payload?: Record<string, unknown>) => Promise<void> | void = async () => {},
+  ): Promise<"duplicate" | "ignored" | "processed"> {
+    return this.workDrain.run("envelope", () => this.processEnvelope(envelope, ack));
+  }
+
+  private async processEnvelope(
+    envelope: SlackSocketEnvelope,
+    ack: (envelopeId: string, payload?: Record<string, unknown>) => Promise<void> | void,
   ): Promise<"duplicate" | "ignored" | "processed"> {
     if (isCredentialIntakeEnvelope(envelope)) {
       await handleCredentialIntakeEnvelope({
@@ -919,7 +948,11 @@ export class SlackSocketModeService {
     return "processed";
   }
 
-  async resumePendingInboundEnvelopes(): Promise<{
+  resumePendingInboundEnvelopes(): Promise<{ scanned: number; processed: number; busy: number; failed: number }> {
+    return this.workDrain.run("inbound-reconciliation", () => this.processPendingInboundEnvelopes());
+  }
+
+  private async processPendingInboundEnvelopes(): Promise<{
     scanned: number;
     processed: number;
     busy: number;
@@ -945,6 +978,7 @@ export class SlackSocketModeService {
         }
       } catch (error) {
         result.failed += 1;
+        this.workDrain.recordFailure("inbound-reconciliation-record");
         log.warn("Pending Slack inbound envelope retry failed", {
           envelopeId: record.envelopeId,
           accountId: this.options.accountId,
@@ -1027,7 +1061,7 @@ export class SlackSocketModeService {
   private startInboundReconciler(): void {
     if (this.inboundReconcileTimer) return;
     const reconcile = () => {
-      if (this.reconcilingInbound) return;
+      if (!this.running || this.reconcilingInbound) return;
       this.reconcilingInbound = true;
       const now = this.now();
       if (now - this.lastInboundPruneAt >= DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS) {
@@ -1176,6 +1210,7 @@ export class SlackSocketModeService {
         heartbeatTimer = this.timeout(sendPing, this.heartbeatIntervalMs);
       });
       socket.on("message", (data) => {
+        if (!isCurrent()) return;
         this.handleSocketMessage(data, socket)
           .then((control) => {
             if (!isCurrent()) return;
@@ -1864,9 +1899,26 @@ export class SlackSocketModeService {
     const inboundPolicy = isGroup
       ? (routePolicy ?? instanceConfig?.groupPolicy ?? "open")
       : (routePolicy ?? instanceConfig?.dmPolicy ?? "open");
+    let approvedDmContact = false;
+    if (!isGroup && !explicitRoute && inboundPolicy === "pairing" && matched && message.senderKind !== "bot") {
+      const actor = resolveSlackActorIdentity({
+        chatId: canonicalChat.id,
+        instanceAliases,
+        platformUserId: message.slackUserId ?? message.userId,
+        senderKind: message.senderKind,
+      });
+      const contact = actor.contactId ? getContactById(actor.contactId) : null;
+      approvedDmContact = Boolean(
+        contact?.status === "allowed" &&
+          !contact.opt_out &&
+          (!contact.allowedAgents?.length || contact.allowedAgents.includes(matched.agentId)),
+      );
+    }
     const needsReview =
       !matched ||
-      (!explicitRoute && ((isGroup && inboundPolicy === "allowlist") || (!isGroup && inboundPolicy === "pairing")));
+      (!explicitRoute &&
+        ((isGroup && inboundPolicy === "allowlist") ||
+          (!isGroup && inboundPolicy === "pairing" && !approvedDmContact)));
     if (needsReview) {
       await this.holdSlackSenderForReview({
         message,

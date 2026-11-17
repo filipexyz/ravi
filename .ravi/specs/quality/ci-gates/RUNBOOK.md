@@ -9,6 +9,16 @@ status: active
 
 # CI Quality Gates Runbook
 
+## When Version And Publish Fails In Git Hooks
+
+Inspect the failing step's commands: `Commit and tag version` also pushes the
+tag and branch, so a failure there is not necessarily a pre-commit failure.
+`REAL_STATE_ACCESS_REFUSED` from a test means missing fixture/launcher isolation.
+Repair both owners; keep the guard and hooks active. Run only the affected
+tests and `bun test src/ci/pre-push.test.ts` locally on the production host.
+After merge, verify final dev CI, the release run, its remote tag and the npm
+`next` version. A green CI or local tag is not a completed release.
+
 ## When The Runtime Isolation Regression Fails
 
 Run `bun test --timeout 20000 --preload ./src/test/isolated-runtime-preload.ts src/runtime/session-dispatcher.test.ts`.

@@ -375,6 +375,8 @@ Capture `retry-after`, `request-id`, `anthropic-ratelimit-requests-*`, `anthropi
 
 Claude Code CLI/SDK may surface subscription or OAuth usage limits as result errors or exceptions rather than raw HTTP. The adapter MUST preserve enough native error detail to classify those cases without leaking credentials.
 
+Claude's explicit `You've hit your weekly limit` error identifies exhausted account quota, even when wrapped in SDK `rate_limit` or HTTP 429. It MUST be classified as `quota_exhausted` before transient capacity handling, retaining structured reset/retry headers and the existing exhausted-credential cooldown policy. A generic weekly-limit mention without that native failure signature MUST NOT imply exhaustion.
+
 ### Google Gemini and Vertex AI
 
 Treat these as credential/provider limit signals:

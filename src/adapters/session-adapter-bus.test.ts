@@ -4,6 +4,7 @@ import { getDb, dbCreateAgent } from "../router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createSessionAdapterBus } from "./session-adapter-bus.js";
+import { stopRuntimeComponents } from "../runtime/shutdown.js";
 import { ensureSessionAdapterStoreSchema, saveSessionAdapter, saveSessionAdapterSubscription } from "./adapter-db.js";
 import type {
   StdioCommandInput,
@@ -403,5 +404,132 @@ describe("session adapter bus", () => {
     );
 
     await bus.stop();
+  });
+
+  it("propagates subscription and supervisor stop failures while retaining failed adapter cleanup", async () => {
+    const subscriptionCause = new Error("unsubscribe failed");
+    const supervisorCause = new Error("supervisor stop failed");
+    const otherTopic = `${COMMAND_TOPIC}.other`;
+    saveSessionAdapterSubscription({
+      subscriptionId: "adapter-bus-other-command",
+      adapterId: TEST_ADAPTER_ID,
+      sessionKey: TEST_SESSION_KEY,
+      direction: "to-adapter",
+      topic: otherTopic,
+      enabled: true,
+    });
+    const harness = createNatsHarness();
+    const calls: string[] = [];
+    let fail = true;
+    const bus = createSessionAdapterBus({
+      transport: {
+        publish: harness.emit,
+        subscribe(topic) {
+          const stream = harness.subscribe(topic);
+          const unsubscribe = stream.unsubscribe;
+          stream.unsubscribe = () => {
+            calls.push(topic);
+            if (fail && topic === COMMAND_TOPIC) throw subscriptionCause;
+            unsubscribe();
+          };
+          return stream;
+        },
+      },
+      createSupervisor(options) {
+        const supervisor = new FakeSupervisor(options);
+        const stop = supervisor.stop.bind(supervisor);
+        supervisor.stop = async () => {
+          calls.push("supervisor");
+          if (fail) throw supervisorCause;
+          return stop();
+        };
+        return supervisor;
+      },
+    });
+    try {
+      await bus.start();
+      const failure = await bus.stop().then(
+        () => {
+          throw new Error("Expected adapter shutdown failure");
+        },
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(AggregateError);
+      const errors = (failure as AggregateError).errors as Error[];
+      expect(errors.map((error) => error.cause)).toEqual([subscriptionCause, supervisorCause]);
+      expect(errors[0]?.message).toContain(`${TEST_ADAPTER_ID}.subscription.`);
+      expect(errors[1]?.message).toContain(`${TEST_ADAPTER_ID}.supervisor`);
+      expect(calls).toContain(COMMAND_TOPIC);
+      expect(calls).toContain(otherTopic);
+      // Equal created_at timestamps use subscription_id order. Both siblings
+      // must close exactly once before the supervisor, in either DB order.
+      expect(calls.slice(0, -1).sort()).toEqual([COMMAND_TOPIC, otherTopic].sort());
+      expect(calls.at(-1)).toBe("supervisor");
+      expect(bus.health()).toEqual({ running: false, adapters: 1 });
+      calls.length = 0;
+      await expect(bus.stop()).rejects.toThrow("Session adapter shutdown failed");
+      expect(calls).toEqual([COMMAND_TOPIC, "supervisor"]);
+    } finally {
+      fail = false;
+      await bus.stop();
+    }
+    expect(bus.health()).toEqual({ running: false, adapters: 0 });
+  });
+
+  it.each(["success", "failure"])("waits for command-loop cleanup and closes once (%s)", async (outcome) => {
+    const cause = new Error("command iterator cleanup failed");
+    let finish!: () => void;
+    let fail!: (error: Error) => void;
+    const next = new Promise<IteratorResult<{ topic: string; data: Record<string, unknown> }>>((resolve, reject) => {
+      finish = () => resolve({ done: true, value: undefined });
+      fail = reject;
+    });
+    let closes = 0;
+    const bus = createSessionAdapterBus({
+      transport: {
+        publish: async () => {},
+        subscribe: () => ({
+          unsubscribe() {
+            closes += 1;
+          },
+          [Symbol.asyncIterator]() {
+            return { next: () => next };
+          },
+        }),
+      },
+      createSupervisor: (options) => new FakeSupervisor(options),
+    });
+    await bus.start();
+    let settled = false;
+    const shutdown = stopRuntimeComponents([{ name: "session-adapters", stop: () => bus.stop() }], []).then(
+      (result) => {
+        settled = true;
+        return result;
+      },
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(closes).toBe(1);
+    expect(settled).toBe(false);
+    if (outcome === "failure") fail(cause);
+    else finish();
+    const result = await shutdown;
+    expect(closes).toBe(1);
+    expect(result.exitCode).toBe(outcome === "failure" ? 1 : 0);
+    expect(result.drain.phase).toBe(outcome === "failure" ? "blocked" : "drained");
+    if (outcome === "failure") {
+      const aggregate = result.failures[0]?.cause as AggregateError;
+      expect(aggregate.errors[0].cause.errors).toContain(cause);
+      const retried = await stopRuntimeComponents([{ name: "session-adapters", stop: () => bus.stop() }], []);
+      expect(retried).toMatchObject({ exitCode: 1, drain: { phase: "blocked", failures: ["session-adapters"] } });
+      const retryCause = retried.failures[0]?.cause;
+      expect(retryCause).toBeInstanceOf(AggregateError);
+      expect((retryCause as AggregateError).errors[0]).toBe(aggregate.errors[0]);
+      expect(bus.health()).toEqual({ running: false, adapters: 1 });
+    } else {
+      const retried = await stopRuntimeComponents([{ name: "session-adapters", stop: () => bus.stop() }], []);
+      expect(retried).toMatchObject({ exitCode: 0, drain: { phase: "drained", failures: [] } });
+      expect(bus.health()).toEqual({ running: false, adapters: 0 });
+    }
+    expect(closes).toBe(1);
   });
 });

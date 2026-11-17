@@ -27,6 +27,7 @@ import type { CommandRegistryEntry } from "../../cli/registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../../cli/context.js";
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "../../cli/command-access.js";
 import { emitCliAuditEvent, sanitizeCliAuditValue, type CliAuditOutcome } from "../../cli/audit.js";
+import { isTriggerOwnSessionKey } from "../../triggers/authority.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
@@ -73,6 +74,8 @@ export interface AuditEvent {
   contextId: string | null;
   parentContextId: string | null;
   agentId: string | null;
+  /** The command ran in a trigger's own session: its audit event fires no trigger. */
+  fromTriggerOwnSession?: boolean;
 }
 
 export interface DispatchResult {
@@ -323,15 +326,18 @@ interface AuditLineage {
   contextId: string | null;
   parentContextId: string | null;
   agentId: string | null;
+  /** The context belongs to a trigger's own session. */
+  fromTriggerOwnSession: boolean;
 }
 
 function extractLineage(record: ContextRecord | null | undefined): AuditLineage {
-  if (!record) return { contextId: null, parentContextId: null, agentId: null };
+  if (!record) return { contextId: null, parentContextId: null, agentId: null, fromTriggerOwnSession: false };
   const parentContextId = typeof record.metadata?.parentContextId === "string" ? record.metadata.parentContextId : null;
   return {
     contextId: record.contextId,
     parentContextId,
     agentId: record.agentId ?? null,
+    fromTriggerOwnSession: isTriggerOwnSessionKey(record.sessionKey),
   };
 }
 
@@ -358,6 +364,7 @@ function buildAuditEvent(
     contextId: lineage.contextId,
     parentContextId: lineage.parentContextId,
     agentId: lineage.agentId,
+    ...(lineage.fromTriggerOwnSession ? { fromTriggerOwnSession: true } : {}),
   };
 }
 
@@ -621,6 +628,9 @@ async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["e
     contextId: event.contextId,
     parentContextId: event.parentContextId,
     agentId: event.agentId,
+    // The command ran inside the caller's context, but this event is built
+    // outside it, so the session it ran in is said here.
+    fromTriggerOwnSession: event.fromTriggerOwnSession,
     closeLazyConnection: false,
   });
   return true;

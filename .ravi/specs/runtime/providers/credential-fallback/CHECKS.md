@@ -16,6 +16,7 @@ normative: false
 - OpenAI 429 rate limit with `x-ratelimit-*` headers -> `rate_limited`, cooldown from reset/retry headers.
 - OpenAI quota or monthly spend exceeded -> `quota_exhausted` or `billing_blocked`, no same-credential retry.
 - Anthropic 429 `rate_limit_error` with `retry-after` -> `rate_limited`.
+- Claude SDK `rate_limit` or HTTP 429 with the native `You've hit your weekly limit` signature -> `quota_exhausted`, account scope, no capacity retry; retain reset/retry headers. A generic weekly-limit mention remains transient or unknown.
 - Anthropic 529 `overloaded_error` -> `provider_overloaded`, no credential exhaustion.
 - Google/Vertex 429 `RESOURCE_EXHAUSTED` with quota details -> `rate_limited` or `quota_exhausted`.
 - Google/Vertex shared-capacity 429 without key/project quota detail -> provider/capacity classification, no credential exhaustion.

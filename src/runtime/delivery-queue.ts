@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { DEFAULT_DELIVERY_BARRIER, type DeliveryBarrier } from "../delivery-barriers.js";
 import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
+import { triggerAuthorityLendsOwner } from "../triggers/authority.js";
 import { logger } from "../utils/logger.js";
 import {
   getReplayablePendingRuntimeMessages,
@@ -65,6 +66,7 @@ export type RuntimeTurnAuthorityEnvelope = Pick<
   | "_cronAuthority"
   | "_trigger"
   | "_triggerId"
+  | "_triggerAuthority"
   | "_sessionFollowup"
   | "_sessionFollowupCadenceId"
   | "_sessionFollowupRunId"
@@ -95,6 +97,7 @@ export function pickRuntimeTurnAuthorityEnvelope(
   if (prompt._trigger) {
     envelope._trigger = prompt._trigger;
     if (prompt._triggerId) envelope._triggerId = prompt._triggerId;
+    if (prompt._triggerAuthority) envelope._triggerAuthority = { ...prompt._triggerAuthority };
   }
   if (prompt._sessionFollowup) {
     envelope._sessionFollowup = prompt._sessionFollowup;
@@ -105,9 +108,37 @@ export function pickRuntimeTurnAuthorityEnvelope(
 }
 
 export function hasIsolatedRuntimeTurnEnvelope(
-  prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin" | "_cronRunId"> | null | undefined,
+  prompt:
+    | Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin" | "_cronRunId" | "_triggerAuthority">
+    | null
+    | undefined,
 ): boolean {
-  return prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined || prompt?._cronRunId !== undefined;
+  return (
+    prompt?._channelBackend !== undefined ||
+    prompt?._turnOrigin !== undefined ||
+    prompt?._cronRunId !== undefined ||
+    // A trigger fire that lends its owner's authority: no other prompt's text may share its turn.
+    triggerAuthorityLendsOwner(prompt?._triggerAuthority)
+  );
+}
+
+/**
+ * A trigger's owner snapshot belongs to the one fire it was published with.
+ * Isolation keeps such a fire alone in its turn; should prompts be folded
+ * together anyway, the folded turn carries nobody's authority.
+ */
+export function withoutSharedTriggerAuthority<T extends Pick<RuntimeLaunchPrompt, "_triggerAuthority">>(
+  prompt: T,
+  foldedPromptCount: number,
+): T {
+  return foldedPromptCount <= 1 ? prompt : withoutTriggerAuthority(prompt);
+}
+
+/** The same prompt with no trigger owner: for text that is not the fire's own. */
+export function withoutTriggerAuthority<T extends Pick<RuntimeLaunchPrompt, "_triggerAuthority">>(prompt: T): T {
+  if (prompt._triggerAuthority === undefined) return prompt;
+  const { _triggerAuthority: _dropped, ...rest } = prompt;
+  return rest as T;
 }
 
 export interface RuntimeInterruptSuccessorPreparation {
@@ -217,10 +248,13 @@ function mergeRuntimeSteeringCohort(
       content,
     },
     launchPrompt: interrupting.launchPrompt
-      ? {
-          ...interrupting.launchPrompt,
-          prompt: content,
-        }
+      ? withoutSharedTriggerAuthority(
+          {
+            ...interrupting.launchPrompt,
+            prompt: content,
+          },
+          cohort.length,
+        )
       : undefined,
   };
 }

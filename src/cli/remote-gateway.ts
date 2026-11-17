@@ -25,8 +25,8 @@ import { errorDiagnostic } from "../utils/error-diagnostic.js";
 
 import { projectDiagnosticContext, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { request as httpRequest } from "node:http";
-import { userInfo } from "node:os";
 import { join } from "node:path";
+import { resolveAccountHome } from "../utils/account-home.js";
 import {
   HOST_CLI_GATEWAY_ENV,
   HOST_CLI_GATEWAY_INTERNAL_ENV,
@@ -160,11 +160,13 @@ export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env, op 
 export interface ResolveRemoteGatewayConfigOptions {
   probeSocket?: (socketPath: string) => Promise<boolean>;
   stateDir?: string;
+  /** Set only after the CLI has verified installed operator provenance. */
+  installedOperator?: boolean;
 }
 
 /**
  * Resolve an explicit HTTP(S)/unix gateway, or auto-bridge to the host unix
- * socket when this process is an isolated CLI (`RAVI_CONTEXT_KEY`) and the
+ * socket for runtime contexts or a verified installed operator when the
  * socket is actually connectable. Never auto-sets a loopback HTTP URL.
  */
 export async function resolveRemoteGatewayConfig(
@@ -181,7 +183,7 @@ export async function resolveAutoHostCliGateway(
   env: NodeJS.ProcessEnv = process.env,
   options: ResolveRemoteGatewayConfigOptions = {},
 ): Promise<RemoteGatewayConfig | null> {
-  if (!shouldAutoUseHostCliGateway(env)) return null;
+  if (!shouldAutoUseHostCliGateway(env, options.installedOperator)) return null;
   const stateDirs = options.stateDir ? [options.stateDir] : resolveHostCliGatewayStateDirs(env);
   const probe = options.probeSocket ?? probeUnixSocket;
   for (const stateDir of stateDirs) {
@@ -200,12 +202,12 @@ export async function resolveAutoHostCliGateway(
   return null;
 }
 
-export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env): boolean {
+export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env, installedOperator = false): boolean {
   if (env[REMOTE_GATEWAY_URL_ENV]?.trim()) return false;
   const disabled = env[HOST_CLI_GATEWAY_ENV]?.trim();
   if (disabled === "0" || disabled?.toLowerCase() === "false" || disabled?.toLowerCase() === "off") return false;
   if (env[HOST_CLI_GATEWAY_INTERNAL_ENV]?.trim() === "1") return false;
-  return Boolean(env.RAVI_CONTEXT_KEY?.trim());
+  return Boolean(env.RAVI_CONTEXT_KEY?.trim()) || installedOperator;
 }
 
 /**
@@ -219,21 +221,8 @@ export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env
 export function resolveHostCliGatewayStateDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   const explicit = env.RAVI_STATE_DIR?.trim();
   if (explicit) return [explicit];
-  const accountHome = accountHomedir();
+  const accountHome = resolveAccountHome();
   return accountHome ? [join(accountHome, ".ravi")] : [];
-}
-
-/**
- * Home directory from the passwd entry. `os.homedir()` is not a fallback: it
- * reads `$HOME`. Without a passwd entry (some containers) nothing is probed,
- * so the daemon must publish `RAVI_STATE_DIR`, or the command fails closed.
- */
-function accountHomedir(): string | null {
-  try {
-    return userInfo().homedir || null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -245,23 +234,17 @@ export function requiresRemoteGateway(env: NodeJS.ProcessEnv = process.env): boo
   return Boolean(env.RAVI_CONTEXT_KEY?.trim());
 }
 
-export function gatewayRequiredError(op: string): ContractError {
-  return new ContractError(
-    op,
-    "GATEWAY_REQUIRED",
-    "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.",
-    1,
-    {
-      ...errorDiagnostic(
-        "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.",
-        { operation: op },
-      ),
-      ...{
-        retryable: true,
-        suggestedAction: `Start the Ravi daemon so its host CLI gateway socket is available, or set ${REMOTE_GATEWAY_URL_ENV}`,
-      },
+export function gatewayRequiredError(op: string, installedOperator = false): ContractError {
+  const message = installedOperator
+    ? "This command requires the installed Ravi gateway, and none is reachable."
+    : "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.";
+  return new ContractError(op, "GATEWAY_REQUIRED", message, 1, {
+    ...errorDiagnostic(message, { operation: op }),
+    ...{
+      retryable: true,
+      suggestedAction: `Start the Ravi daemon so its host CLI gateway socket is available, or set ${REMOTE_GATEWAY_URL_ENV}`,
     },
-  );
+  });
 }
 
 /**
@@ -403,7 +386,9 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
       if (isCompleteContractErrorBody(body, op) || (body.op === "gateway" && isCompleteContractErrorBody(body))) {
         const turnLink = turnLinkRemoteCopy(body.error);
         const connectorTurn = turnLink ?? connectorTurnRemoteCopy(op, body.error);
-        const library = connectorTurn ? null : (operatorOnlyRemoteCopy(op, body) ?? libraryRemoteCopy(op, body));
+        const refusal = connectorTurn
+          ? null
+          : (actorUnknownRemoteCopy(body) ?? operatorOnlyRemoteCopy(op, body) ?? libraryRemoteCopy(op, body));
         const projected = remoteContractFailureMessage(
           op,
           body.outcome,
@@ -411,7 +396,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           body.error.message,
           body.error.code,
         );
-        // An issue-first projection already names the field; the Library copy only replaces the generic line.
+        // An issue-first projection already names the field; refusal copy only replaces the generic line.
         const generic = projected === remoteFailureMessage(op, body.error.code) || projected === REMOTE_GENERIC_BLOCKED;
         const dnsHint =
           op === PAGES_DOMAINS_OP && isRemoteWriteBrake(body) ? plannedDomainDnsHint(body.error.plan) : null;
@@ -420,13 +405,13 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           op,
           body.error.code,
           connectorTurn?.message ??
-            (generic ? library?.message : undefined) ??
+            (generic ? refusal?.message : undefined) ??
             (dnsHint ? `${projected}\n${dnsHint}` : projected),
           body.exitCode,
           {
             ...errorDiagnostic(
               connectorTurn?.message ??
-                (generic ? library?.message : undefined) ??
+                (generic ? refusal?.message : undefined) ??
                 (dnsHint ? `${projected}\n${dnsHint}` : projected),
               { operation: op },
             ),
@@ -434,7 +419,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
               ...projectRemoteContractDetails(op, body, result.status),
               ...(requestId ? { requestId } : {}),
               ...(connectorTurn?.details ?? {}),
-              ...(library?.details ?? {}),
+              ...(refusal?.details ?? {}),
             },
           },
         );
@@ -799,6 +784,50 @@ function isOperatorOnlyRefusal(op: string, code: string): boolean {
   return OPERATOR_ONLY_REMOTE_CODES.get(code)?.(op) ?? false;
 }
 
+/** Preserve the daemon's public actor refusal without copying arbitrary remote details. */
+function actorUnknownRemoteCopy(
+  body: CompleteContractErrorBody,
+): { message: string; details: ContractErrorDetails } | null {
+  const remote = body.error;
+  if (body.outcome !== "blocked" || remote.code !== "ACTOR_UNKNOWN") return null;
+  const message = boundedRemoteLine(remote.message, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (!message) return null;
+  const details: ContractErrorDetails = {};
+  const suggestedAction = boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX, "suggestedAction");
+  if (suggestedAction) details.suggestedAction = suggestedAction;
+  switch (remote.refusalReason) {
+    case "agent_relay":
+    case "ended":
+    case "unknown":
+      details.refusalReason = remote.refusalReason;
+      break;
+    case "routine_not_operator_owned": {
+      details.refusalReason = remote.refusalReason;
+      if (remote.routine === "cron" || remote.routine === "trigger") details.routine = remote.routine;
+      const jobId = boundedRemoteField(remote, ["jobId"], /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, 128);
+      // A routine created from another routine's turn is owned by that automation.
+      const ownerPrincipal = boundedRemoteField(
+        remote,
+        ["ownerPrincipal"],
+        /^(?:unknown|(?:agent|contact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}|automation:[A-Za-z0-9][A-Za-z0-9._:-]{0,123})$/,
+        136,
+      );
+      if (jobId) details.jobId = jobId;
+      if (ownerPrincipal) details.ownerPrincipal = ownerPrincipal;
+      break;
+    }
+    case "routine_shared_session":
+    case "routine_answers_elsewhere": {
+      details.refusalReason = remote.refusalReason;
+      if (remote.routine === "trigger") details.routine = remote.routine;
+      const jobId = boundedRemoteField(remote, ["jobId"], /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, 128);
+      if (jobId) details.jobId = jobId;
+      break;
+    }
+  }
+  return { message, details };
+}
+
 function operatorOnlyRemoteCopy(
   op: string,
   body: CompleteContractErrorBody,
@@ -827,13 +856,14 @@ function operatorOnlyRemoteCopy(
 }
 
 /**
- * Text mode prints the message and the issues; a Library refusal's next step
+ * Text mode prints the message and the issues; a public refusal's next step
  * is printed too when no issue already carries it.
  */
 export function remoteNextStepLine(error: ContractError): string | null {
   if (
     !isLibraryRemoteOp(error.op) &&
     !isOperatorOnlyRefusal(error.op, error.code) &&
+    error.code !== "ACTOR_UNKNOWN" &&
     !safeRequestId(error.details.requestId)
   )
     return null;
@@ -1013,7 +1043,7 @@ function remoteContractFailureMessage(
   code?: string,
 ): string {
   if (outcome === "denied") return sanitizePublicContractMessage(sourceMessage) ?? "Remote gateway denied the command.";
-  if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
+  if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage, true);
   if (op === PAGES_DOMAINS_OP && code === "DOMAIN_SETUP_REQUIRED" && sourceMessage) {
     return safeDomainSetupMessage(sourceMessage);
   }
@@ -1050,12 +1080,16 @@ function remoteContractFailureMessage(
 function remoteValidationFailureMessage(
   issues?: ReturnType<typeof projectPublicIssues>,
   sourceMessage?: unknown,
+  canonical = false,
 ): string {
   const first = issues?.[0];
   if (first) {
     const path = first.path.filter((item) => item !== "<unknown>").join(".");
     return path ? `${path}: ${first.message}` : first.message;
   }
+  // A validated contract already declares a public diagnostic. Keep the bounded
+  // single-line redactor, not a vocabulary allowlist that can erase handler guidance.
+  // Unstructured responses still need the narrower local-validation projection.
   const safe = boundedRemoteLine(sourceMessage, LIBRARY_REMOTE_MESSAGE_MAX);
   if (
     safe &&
@@ -1063,6 +1097,7 @@ function remoteValidationFailureMessage(
     !looksLikeProviderDump(sourceMessage) &&
     !/\bctx_/.test(sourceMessage)
   ) {
+    if (canonical) return safe;
     if (
       safe === sourceMessage &&
       (REMOTE_PROFILE_INSPECTION_MESSAGE.test(safe) ||

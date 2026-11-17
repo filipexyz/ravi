@@ -31,6 +31,12 @@ import {
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
 import { clearSessionReads } from "../knowledge/store/turn-reads.js";
+import {
+  isTriggerOwnSessionKey,
+  looksLikeTriggerSessionKey,
+  triggerOfSessionKey,
+  triggerOwnSessionName,
+} from "../triggers/authority.js";
 
 const log = logger.child("router:sessions");
 
@@ -49,6 +55,7 @@ interface SessionRow {
   runtime_provider_config_revision: number;
   runtime_session_json: string | null;
   history_reset_after_id: number | null;
+  trigger_owner_lent_at: number | null;
   runtime_session_display_id: string | null;
   agent_id: string;
   agent_cwd: string;
@@ -97,6 +104,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     runtimeProviderConfigRevision: row.runtime_provider_config_revision ?? 0,
     runtimeSessionParams,
     historyResetAfterId: row.history_reset_after_id ?? undefined,
+    triggerOwnerLentAt: row.trigger_owner_lent_at ?? undefined,
     runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
     providerSessionId,
     sdkSessionId: row.sdk_session_id ?? undefined,
@@ -168,6 +176,9 @@ interface SessionStatements {
   updateModelOverride: Statement;
   updateEffortOverride: Statement;
   updateThinkingLevel: Statement;
+  restoreRuntimeConfigIfOwned: Statement;
+  runtimeConfigOwned: Statement;
+  clearProviderStateIfRuntimeConfigOwned: Statement;
 }
 
 export interface SessionTurnUsage {
@@ -318,6 +329,23 @@ function getStatements(): SessionStatements {
     updateModelOverride: db.prepare("UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"),
     updateEffortOverride: db.prepare("UPDATE sessions SET effort_override = ?, updated_at = ? WHERE session_key = ?"),
     updateThinkingLevel: db.prepare("UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE session_key = ?"),
+    restoreRuntimeConfigIfOwned: db.prepare(
+      `UPDATE sessions SET
+        runtime_provider_override = ?, model_override = ?, effort_override = ?, thinking_level = ?,
+        runtime_provider_config_revision = runtime_provider_config_revision + 1, updated_at = ?
+      WHERE session_key = ? AND runtime_provider_config_revision = ?
+        AND runtime_provider_override IS ? AND model_override IS ? AND effort_override IS ? AND thinking_level IS ?`,
+    ),
+    runtimeConfigOwned: db.prepare(
+      `SELECT 1 FROM sessions
+      WHERE session_key = ? AND runtime_provider_config_revision = ?
+        AND runtime_provider_override IS ? AND model_override IS ? AND effort_override IS ? AND thinking_level IS ?`,
+    ),
+    clearProviderStateIfRuntimeConfigOwned: db.prepare(
+      `UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ?
+      WHERE session_key = ? AND runtime_provider_config_revision = ?
+        AND runtime_provider_override IS ? AND model_override IS ? AND effort_override IS ? AND thinking_level IS ?`,
+    ),
   };
   statementsDbPath = currentDbPath;
 
@@ -329,13 +357,66 @@ function getStatements(): SessionStatements {
 // ============================================================================
 
 /**
- * Get or create a session entry
+ * A session key only the trigger runner may create: `agent:<agent>:trigger:<id>`
+ * and its `:key:<hash>` form. A session under such a key is one a trigger
+ * created, which is what lends the trigger owner's authority in Bases, so no
+ * session created from a name someone chose may take one.
+ */
+export function isReservedSessionKey(sessionKey: string): boolean {
+  return triggerOfSessionKey(sessionKey) !== null;
+}
+
+/** Refusal to create a session under a key reserved for the trigger runner. */
+export class ReservedSessionKeyError extends Error {
+  readonly code = "SESSION_KEY_RESERVED" as const;
+  constructor(public readonly sessionKey: string) {
+    super(`Session key ${sessionKey} is reserved for the trigger that creates it; use another session name.`);
+    this.name = "ReservedSessionKeyError";
+  }
+}
+
+/**
+ * Whether a session may not go by this name.
+ *
+ * - A trigger's own session goes by one name, its key (`triggerOwnSessionName`),
+ *   and nothing else. The name is therefore never free for another session to
+ *   take, while the own session exists or after it is deleted: what was stored
+ *   under that name stays that trigger's.
+ * - No other session goes by a name spelled like a trigger's session key,
+ *   unless it is that session's own key. Names and keys share one namespace
+ *   (a session is found by either), so a session going by the key a trigger's
+ *   session has, or will have, would be taken for it by whatever looks it up
+ *   by name first.
+ */
+export function isSessionNameReserved(sessionKey: string, name: string): boolean {
+  const trimmed = name.trim();
+  if (isTriggerOwnSessionKey(sessionKey)) return trimmed !== triggerOwnSessionName(sessionKey);
+  return trimmed !== sessionKey && looksLikeTriggerSessionKey(trimmed);
+}
+
+function assertSessionMayTakeName(sessionKey: string, name: string): void {
+  if (!isSessionNameReserved(sessionKey, name)) return;
+  if (isTriggerOwnSessionKey(sessionKey)) {
+    throw new Error(`A trigger's own session goes by its own name only: ${triggerOwnSessionName(sessionKey)}`);
+  }
+  throw new Error(`Session name ${name.trim()} is reserved for the trigger's session with that key`);
+}
+
+export interface CreateSessionOptions {
+  /** The trigger runner creating a trigger's own session. Nothing else sets this. */
+  triggerRunner?: boolean;
+}
+
+/**
+ * Get or create a session entry. An existing session is returned whatever its
+ * key; a new one under a reserved key is created for the trigger runner only.
  */
 export function getOrCreateSession(
   sessionKey: string,
   agentId: string,
   agentCwd: string,
   defaults?: Partial<SessionEntry>,
+  options: CreateSessionOptions = {},
 ): SessionEntry {
   const s = getStatements();
   const existing = s.getByKey.get(sessionKey) as SessionRow | undefined;
@@ -359,10 +440,17 @@ export function getOrCreateSession(
     return rowToEntry(existing);
   }
 
+  if (!options.triggerRunner && isReservedSessionKey(sessionKey)) {
+    throw new ReservedSessionKeyError(sessionKey);
+  }
+  if (defaults?.name) assertSessionMayTakeName(sessionKey, defaults.name);
+  // A trigger's own session goes by its own name, whatever the caller left out.
+  const name = isTriggerOwnSessionKey(sessionKey) ? triggerOwnSessionName(sessionKey) : (defaults?.name ?? null);
+
   const now = Date.now();
   s.upsert.run(
     sessionKey,
-    defaults?.name ?? null,
+    name,
     defaults?.providerSessionId ?? defaults?.sdkSessionId ?? null,
     defaults?.runtimeProvider ?? null,
     defaults?.runtimeProviderOverride ?? null,
@@ -540,10 +628,137 @@ export function updateProviderSessionId(
   updateSdkSessionId(sessionKey, providerSessionId);
 }
 
+/**
+ * Records that a turn in this session runs with its trigger's owner's
+ * authority, answering to no chat. Written before that turn starts and kept
+ * with the session's history: from then on the session answers to no chat,
+ * whoever is attached to it later, until a reset drops the history
+ * (`resetSession`). Returns whether the session now carries the mark; a turn
+ * whose mark could not be written must not lend anything.
+ */
+export function markSessionTriggerOwnerLent(sessionKey: string): boolean {
+  getDb()
+    .prepare("UPDATE sessions SET trigger_owner_lent_at = ? WHERE session_key = ? AND trigger_owner_lent_at IS NULL")
+    .run(Date.now(), sessionKey);
+  return sessionHoldsTriggerOwnerHistory(sessionKey);
+}
+
+/**
+ * Whether this session's history holds what a turn read with its trigger's
+ * owner's authority: read for nobody but the owner, so no chat is answered
+ * from it.
+ */
+export function sessionHoldsTriggerOwnerHistory(sessionKey: string): boolean {
+  const row = getDb()
+    .prepare("SELECT trigger_owner_lent_at AS at FROM sessions WHERE session_key = ?")
+    .get(sessionKey) as { at: number | null } | undefined;
+  return typeof row?.at === "number";
+}
+
 export function clearProviderSession(sessionKey: string): void {
   const s = getStatements();
   s.clearProviderState.run(Date.now(), sessionKey);
   log.debug("Cleared provider session state", { sessionKey });
+}
+
+/** The four runtime-config override axes an atomic update owns while its probe runs. */
+export interface SessionRuntimeConfigSnapshot {
+  runtimeProviderOverride: string | null;
+  modelOverride: string | null;
+  effortOverride: string | null;
+  thinkingLevel: string | null;
+}
+
+function runtimeConfigOwnershipParams(
+  sessionKey: string,
+  ownedRevision: number,
+  written: SessionRuntimeConfigSnapshot,
+) {
+  return [
+    sessionKey,
+    ownedRevision,
+    written.runtimeProviderOverride,
+    written.modelOverride,
+    written.effortOverride,
+    written.thinkingLevel,
+  ] as const;
+}
+
+/**
+ * Run the axis writes of one atomic runtime update as a single SQLite
+ * transaction. The writes (and the read that captures their ownership) all
+ * land or none does: a setter that throws midway rolls back the statements
+ * before it, and no other writer can slot a statement between them — a writer
+ * from another process waits for the commit or the rollback. That removes the
+ * need to infer, from persisted values, whether a half-applied configuration is
+ * "ours" before undoing it (CodeRabbit finding on #829).
+ *
+ * `write` must be synchronous: a transaction cannot span an await. The error it
+ * throws, if any, is rethrown unchanged after the rollback.
+ */
+export function applySessionRuntimeConfigAtomically<T>(write: () => T): T {
+  return getDb().transaction(write)();
+}
+
+/**
+ * Conditionally restore the four runtime-config axes after a failed probe.
+ *
+ * The restore applies only while the caller still owns the configuration: the
+ * persisted revision and all four values must still be exactly what the caller
+ * wrote. One statement, so there is no window between the ownership check and
+ * the write. Returns false when a concurrent update superseded the caller —
+ * the newer configuration is left untouched (CodeRabbit lost-update finding
+ * on #829). Bumps the revision so the live daemon reloads the restored config.
+ */
+export function restoreSessionRuntimeConfigIfOwned(
+  sessionKey: string,
+  ownedRevision: number,
+  written: SessionRuntimeConfigSnapshot,
+  restore: SessionRuntimeConfigSnapshot,
+): boolean {
+  const result = getStatements().restoreRuntimeConfigIfOwned.run(
+    restore.runtimeProviderOverride,
+    restore.modelOverride,
+    restore.effortOverride,
+    restore.thinkingLevel,
+    Date.now(),
+    ...runtimeConfigOwnershipParams(sessionKey, ownedRevision, written),
+  );
+  const restored = Number(result.changes ?? 0) > 0;
+  log.debug(restored ? "Restored runtime config after failed probe" : "Runtime config superseded; restore skipped", {
+    sessionKey,
+    ownedRevision,
+  });
+  return restored;
+}
+
+/** True while the atomic update that persisted (ownedRevision, written) still owns the runtime config. */
+export function sessionRuntimeConfigOwned(
+  sessionKey: string,
+  ownedRevision: number,
+  written: SessionRuntimeConfigSnapshot,
+): boolean {
+  return Boolean(
+    getStatements().runtimeConfigOwned.get(...runtimeConfigOwnershipParams(sessionKey, ownedRevision, written)),
+  );
+}
+
+/**
+ * Clear provider continuity only while the caller still owns the runtime
+ * config (same single-statement ownership condition as the restore): a
+ * superseded update must not destroy the continuity of the configuration that
+ * replaced it.
+ */
+export function clearProviderSessionIfRuntimeConfigOwned(
+  sessionKey: string,
+  ownedRevision: number,
+  written: SessionRuntimeConfigSnapshot,
+): boolean {
+  const result = getStatements().clearProviderStateIfRuntimeConfigOwned.run(
+    Date.now(),
+    ...runtimeConfigOwnershipParams(sessionKey, ownedRevision, written),
+  );
+  return Number(result.changes ?? 0) > 0;
 }
 
 /**
@@ -689,6 +904,9 @@ export function resetSession(sessionKey: string, options: { preserveHistoryConte
   const historyResetAfterId = options.preserveHistoryContext
     ? (session?.historyResetAfterId ?? null)
     : (getRecentHistory(session?.name ?? sessionKey, 1).at(-1)?.id ?? 0);
+  // What a trigger owner's turns read goes with the history: kept with it,
+  // dropped with it.
+  const triggerOwnerLentAt = options.preserveHistoryContext ? (session?.triggerOwnerLentAt ?? null) : null;
   db.prepare(
     `
     UPDATE sessions SET
@@ -697,6 +915,7 @@ export function resetSession(sessionKey: string, options: { preserveHistoryConte
       runtime_session_json = NULL,
       runtime_session_display_id = NULL,
       history_reset_after_id = ?,
+      trigger_owner_lent_at = ?,
       system_sent = 0,
       aborted_last_run = 0,
       compaction_count = 0,
@@ -707,7 +926,7 @@ export function resetSession(sessionKey: string, options: { preserveHistoryConte
       updated_at = ?
     WHERE session_key = ?
   `,
-  ).run(historyResetAfterId, Date.now(), sessionKey);
+  ).run(historyResetAfterId, triggerOwnerLentAt, Date.now(), sessionKey);
   const changed = getDbChanges() > 0;
   try {
     // What the old context read no longer gates writes (Knowledge §11.4).
@@ -756,9 +975,15 @@ function normalizeCanonicalSessionName(name: string): string {
  */
 export function findSessionByChatId(chatId: string): SessionEntry | null {
   const db = getDb();
+  // A trigger's own session (`agent:<agent>:trigger:<id>:own`) runs that
+  // trigger's fires only: a chat it last answered is not reached through it,
+  // so the chat id is not a way to it.
   const row = db
     .prepare(
-      "SELECT * FROM sessions WHERE last_to = ? COLLATE NOCASE AND last_channel IS NOT NULL ORDER BY updated_at DESC LIMIT 1",
+      `SELECT * FROM sessions
+       WHERE last_to = ? COLLATE NOCASE AND last_channel IS NOT NULL
+         AND session_key NOT GLOB 'agent:*:trigger:*:own'
+       ORDER BY updated_at DESC LIMIT 1`,
     )
     .get(chatId) as SessionRow | undefined;
   return row ? rowToEntry(row) : null;
@@ -862,6 +1087,7 @@ export function getSessionByName(name: string): SessionEntry | null {
  */
 export function updateSessionName(sessionKey: string, name: string): void {
   const normalized = normalizeCanonicalSessionName(name);
+  assertSessionMayTakeName(sessionKey, normalized);
   const s = getStatements();
   s.updateName.run(normalized, Date.now(), sessionKey);
 }
@@ -897,7 +1123,9 @@ export function renameSessionName(sessionKey: string, name: string): RenameSessi
   if (keyHolder && keyHolder.sessionKey !== sessionKey) {
     throw new Error(`Session name collides with a session key: ${newName}`);
   }
-  if (newName.toLowerCase().startsWith("agent:") && newName !== sessionKey) {
+  assertSessionMayTakeName(sessionKey, newName);
+  // An own session's one name is spelled like a key and was checked just above.
+  if (newName.toLowerCase().startsWith("agent:") && newName !== sessionKey && !isTriggerOwnSessionKey(sessionKey)) {
     throw new Error(`Session names starting with 'agent:' are reserved for session keys: ${newName}`);
   }
   const reservedBy = findOpenThreadIdentity(newName);

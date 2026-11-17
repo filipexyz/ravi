@@ -1,3 +1,4 @@
+import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
 /**
  * Channels Commands - manage native Ravi channel runner.
  */
@@ -6,6 +7,7 @@ import "reflect-metadata";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { which } from "bun";
 import { z } from "zod";
 import {
   probeChannelRunnerHealth,
@@ -15,6 +17,7 @@ import {
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
 import { inspectManagedChannelRunner } from "../../channels/runner-liveness.js";
 import { buildRunnerPm2Env } from "../../channels/pm2-env.js";
+import { buildChannelsPm2Env, buildChannelsPm2StartArgs } from "../../daemon-stdin.js";
 import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
 import { getCredentialConnection, listCredentialConnections } from "../../credentials/index.js";
 import { nats } from "../../nats.js";
@@ -277,7 +280,9 @@ function runPm2Quiet(
   args: string[],
   options: { cwd?: string; envOverrides?: Record<string, string> } = {},
 ): { status: number } {
-  const result = spawnSync("pm2", args, {
+  const executable = which("pm2", { PATH: process.env.PATH });
+  if (!executable) return { status: 1 };
+  const result = spawnSync(executable, args, {
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
     cwd: options.cwd,
@@ -298,6 +303,12 @@ function recreateChannelRunner(
   runnerEnv: Record<string, string>,
   asJson?: boolean,
 ): { status: number; saveStatus: number | null } {
+  assertRuntimeReplacementPrepared();
+  const args = buildChannelsPm2StartArgs({
+    bundlePath: target.bundlePath,
+    processes: getPm2Processes({ strict: true }),
+  });
+  const env = { ...runnerEnv, ...buildChannelsPm2Env() };
   if (getPm2Process(CHANNELS_PM2_PROCESS_NAME)) {
     const stopped = asJson
       ? runPm2Quiet(["delete", CHANNELS_PM2_PROCESS_NAME])
@@ -305,10 +316,9 @@ function recreateChannelRunner(
     if (stopped.status !== 0) fail("Failed to stop channel runner before restart");
   }
 
-  const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
   const { status } = asJson
-    ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
-    : runPm2(args, runnerEnv, { cwd: target.cwd });
+    ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: env })
+    : runPm2(args, env, { cwd: target.cwd });
   return { status, saveStatus: status === 0 ? persistPm2ProcessList() : null };
 }
 
@@ -688,7 +698,9 @@ export class ChannelsCommands {
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
+    assertRuntimeReplacementPrepared();
 
     // PM2 "online" alone is not liveness: a runner whose Slack Socket Mode
     // loop died keeps its PM2 entry. Probe the PID-scoped health subject and
@@ -741,10 +753,14 @@ export class ChannelsCommands {
       return payload;
     }
 
-    const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
+    const args = buildChannelsPm2StartArgs({
+      bundlePath: target.bundlePath,
+      processes: getPm2Processes({ strict: true }),
+    });
+    const env = { ...runnerEnv, ...buildChannelsPm2Env() };
     const { status } = asJson
-      ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
-      : runPm2(args, runnerEnv, { cwd: target.cwd });
+      ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: env })
+      : runPm2(args, env, { cwd: target.cwd });
     const payload = {
       action: "start" as const,
       changed: status === 0,
@@ -808,6 +824,7 @@ export class ChannelsCommands {
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
     const runnerEnv = buildRunnerPm2Env();
     const target = requireRuntimeTarget(build);

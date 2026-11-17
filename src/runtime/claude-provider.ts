@@ -418,7 +418,7 @@ function isAdaptiveThinkingOnlyClaudeModel(model?: string): boolean {
   if (!normalized) {
     return false;
   }
-  return normalized === "claude-fable-5" || normalized === "fable" || normalized === "claude-mythos-5";
+  return /^(?:claude-)?fable(?:-|$)/.test(normalized) || normalized === "claude-mythos-5";
 }
 
 function stringifyUserPrompt(content: unknown): string {

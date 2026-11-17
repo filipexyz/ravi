@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { Database } from "bun:sqlite";
 import { join } from "node:path";
+import { openStateDatabase } from "../db/state-boundary.js";
 import { closeRouterDb, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { withNewIsolatedThreadState } from "../threads/bootstrap-authorization.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS,
   claimChannelOutboundReceipt,
@@ -222,8 +223,10 @@ describe("channel outbound receipt ledger", () => {
 
   it("upgrades the pre-claim receipt schema before installing claim indexes", () => {
     if (!stateDir) throw new Error("isolated Ravi state was not created");
-    const legacyDb = new Database(join(stateDir, "ravi.db"));
-    legacyDb.exec(`
+    withNewIsolatedThreadState(stateDir, (ownedState) => {
+      process.env.RAVI_STATE_DIR = ownedState;
+      const legacyDb = openStateDatabase(join(ownedState, "ravi.db"));
+      legacyDb.exec(`
       CREATE TABLE channel_outbound_receipts (
         idempotency_key       TEXT PRIMARY KEY,
         job_id                TEXT NOT NULL,
@@ -256,47 +259,48 @@ describe("channel outbound receipt ledger", () => {
         'slack:C123:1', '1.000100', 1000, '{"ok":true}', 'legacy-canonical', 1000, 900, 1000
       )
     `);
-    legacyDb.close();
+      legacyDb.close();
 
-    const database = getDb();
-    const columns = (
-      database.prepare("PRAGMA table_info(channel_outbound_receipts)").all() as Array<{ name: string }>
-    ).map(({ name }) => name);
-    expect(columns).toContain("request_fingerprint");
-    expect(columns).toContain("claim_owner");
-    expect(columns).toContain("claim_expires_at");
-    expect(columns).not.toContain("provider_raw_json");
-    expect(columns).not.toContain("telemetry_emitted_at");
-    expect(
-      (database.prepare("PRAGMA index_list(channel_outbound_receipts)").all() as Array<{ name: string }>).map(
-        ({ name }) => name,
-      ),
-    ).toContain("idx_channel_outbound_receipts_claim");
-    expect(getChannelOutboundReceipt("legacy-idem")).toMatchObject({
-      requestFingerprint: "legacy:legacy-idem",
-      jobId: "legacy-job",
-      state: "sent",
-      platformMessageId: "1.000100",
-      canonicalMessageId: "legacy-canonical",
-    });
-    expect(
-      claim({
-        idempotencyKey: "legacy-idem",
-        requestFingerprint: "current-request",
-        owner: "runner-current",
-        now: 2000,
-      }),
-    ).toMatchObject({ status: "conflict" });
-    expect(
-      claim({
-        idempotencyKey: "new-idem",
-        requestFingerprint: "new-request",
-        owner: "runner-current",
-        now: 2000,
-      }),
-    ).toMatchObject({
-      status: "acquired",
-      receipt: { state: "claimed", claimExpiresAt: 302000 },
+      const database = getDb();
+      const columns = (
+        database.prepare("PRAGMA table_info(channel_outbound_receipts)").all() as Array<{ name: string }>
+      ).map(({ name }) => name);
+      expect(columns).toContain("request_fingerprint");
+      expect(columns).toContain("claim_owner");
+      expect(columns).toContain("claim_expires_at");
+      expect(columns).not.toContain("provider_raw_json");
+      expect(columns).not.toContain("telemetry_emitted_at");
+      expect(
+        (database.prepare("PRAGMA index_list(channel_outbound_receipts)").all() as Array<{ name: string }>).map(
+          ({ name }) => name,
+        ),
+      ).toContain("idx_channel_outbound_receipts_claim");
+      expect(getChannelOutboundReceipt("legacy-idem")).toMatchObject({
+        requestFingerprint: "legacy:legacy-idem",
+        jobId: "legacy-job",
+        state: "sent",
+        platformMessageId: "1.000100",
+        canonicalMessageId: "legacy-canonical",
+      });
+      expect(
+        claim({
+          idempotencyKey: "legacy-idem",
+          requestFingerprint: "current-request",
+          owner: "runner-current",
+          now: 2000,
+        }),
+      ).toMatchObject({ status: "conflict" });
+      expect(
+        claim({
+          idempotencyKey: "new-idem",
+          requestFingerprint: "new-request",
+          owner: "runner-current",
+          now: 2000,
+        }),
+      ).toMatchObject({
+        status: "acquired",
+        receipt: { state: "claimed", claimExpiresAt: 302000 },
+      });
     });
   });
 

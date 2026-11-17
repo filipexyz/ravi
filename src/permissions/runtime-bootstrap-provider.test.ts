@@ -15,6 +15,18 @@ import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
 
 type Cap = { permission: string; objectType: string; objectId: string };
 
+// Capability materialization reads stored profiles even for a new agent.
+let stateDir: string | null = null;
+
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-bootstrap-provider-");
+});
+
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
+});
+
 function materialize(type: string, id: string): Cap[] {
   const fn = runtimeBootstrapProvider.materializeCapabilities;
   if (!fn) throw new Error("materializeCapabilities ausente");
@@ -90,17 +102,6 @@ describe("runtimeBootstrapProvider — least-privilege default", () => {
 });
 
 describe("runtimeBootstrapProvider — chat-only ceiling", () => {
-  let stateDir: string | null = null;
-
-  beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-bootstrap-chat-only-");
-  });
-
-  afterEach(async () => {
-    await cleanupIsolatedRaviState(stateDir);
-    stateDir = null;
-  });
-
   test("suppresses the bootstrap floor when the agent profile is chat-only", () => {
     dbCreateAgent({ id: "reception", cwd: "/tmp/reception" });
     dbUpdateAgent("reception", { defaults: { runtimePermissions: { profile: "chat-only" } } });

@@ -12,10 +12,23 @@ import { CloudAuthError } from "./errors.js";
 
 export type TurnRefusalReason =
   /**
-   * A cron job no person Ravi can act for owns (an unknown or an agent owner):
-   * it never acts as the operator. A contact's job acts as that contact.
+   * A cron job or a trigger no person Ravi can act for owns (an unknown or an
+   * agent owner): it never acts as the operator. A contact's routine acts as
+   * that contact. `jobId` is the cron job's id or the trigger's.
    */
-  | { kind: "routine_not_operator_owned"; routine: "cron"; jobId: string; ownerPrincipal: string }
+  | { kind: "routine_not_operator_owned"; routine: "cron" | "trigger"; jobId: string; ownerPrincipal: string }
+  /**
+   * A trigger a person owns, fired into a session that is not the trigger's
+   * alone (the agent's main session, a chat's, a named or templated one, or
+   * its own session with a chat wired into it): other conversations share
+   * what the turn reads there.
+   */
+  | { kind: "routine_shared_session"; routine: "trigger"; jobId: string }
+  /**
+   * A trigger a person owns, whose turn answers into a chat (or Ravi cannot
+   * tell where it answers): what the call returns would be read there.
+   */
+  | { kind: "routine_answers_elsewhere"; routine: "trigger"; jobId: string }
   /** Another agent's turn relaying a request. */
   | { kind: "agent_relay" }
   /** The turn already ended. */
@@ -44,9 +57,25 @@ export function turnRefusalCopy(
   const action = SURFACE_ACTION[surface];
   switch (reason.kind) {
     case "routine_not_operator_owned":
+      if (reason.routine === "trigger") {
+        return {
+          message: `This turn was fired by trigger ${reason.jobId}, owned by ${reason.ownerPrincipal}: neither the operator nor a person Ravi can act for. A routine never borrows the operator's authority, so Ravi will not ${action} for this turn.`,
+          suggestedAction: `do not retry from this turn and do not disable the trigger; report to the operator that trigger ${reason.jobId} runs as ${reason.ownerPrincipal}: only the turn that creates a trigger owns it, so they review it (\`ravi triggers show ${reason.jobId}\`) and create it again from the turn of the person it should act for (the operator's terminal or own chat, or that person's chat)`,
+        };
+      }
       return {
         message: `This turn is a run of cron job ${reason.jobId}, owned by ${reason.ownerPrincipal}: neither the operator nor a person Ravi can act for. A routine never borrows the operator's authority, so Ravi will not ${action} for this run.`,
         suggestedAction: `do not retry from this run and do not disable the job; report to the operator that cron job ${reason.jobId} runs as ${reason.ownerPrincipal}: they review its message or command (\`ravi cron show ${reason.jobId}\`) and recreate it from the turn of the person it should act for (the operator's terminal or own chat, or that person's chat)`,
+      };
+    case "routine_shared_session":
+      return {
+        message: `This turn was fired by trigger ${reason.jobId} into a session the trigger does not own alone: the agent's main session, a chat's session, a named or templated session, or its own session with a chat attached or routed to it. Other conversations share what a turn reads there, so Ravi will not ${action} for this turn.`,
+        suggestedAction: `do not retry from this turn and do not disable the trigger; report to the operator that trigger ${reason.jobId} can do this only in a session of its own: its owner gives it one with \`ravi triggers set ${reason.jobId} session isolated\``,
+      };
+    case "routine_answers_elsewhere":
+      return {
+        message: `This turn was fired by trigger ${reason.jobId}, and its answer is posted into a chat, or Ravi cannot tell where it goes. What comes back would be read there, so Ravi will not ${action} for this turn.`,
+        suggestedAction: `do not retry from this turn and do not disable the trigger; report to the operator that trigger ${reason.jobId} can do this only when its turns answer to no chat: they detach the chat from its session (\`ravi triggers show ${reason.jobId}\`)`,
       };
     case "agent_relay":
       return {
@@ -89,6 +118,9 @@ export function turnRefusalDetails(reason: TurnRefusalReason): Record<string, st
       jobId: reason.jobId,
       ownerPrincipal: reason.ownerPrincipal,
     };
+  }
+  if (reason.kind === "routine_shared_session" || reason.kind === "routine_answers_elsewhere") {
+    return { refusalReason: reason.kind, routine: reason.routine, jobId: reason.jobId };
   }
   return { refusalReason: reason.kind };
 }

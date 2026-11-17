@@ -4588,6 +4588,9 @@ export type BasesSubscribeReturn = {
     filter: string;
     id: string;
     name: string;
+    ownerPrincipal: string;
+    ownsSession: boolean;
+    runsAsOperator: boolean;
     session: string;
     topic: string;
   };
@@ -21377,6 +21380,72 @@ export type SessionsTraceInput = {
 
 /** Return shape for `sessions.trace`. */
 export type SessionsTraceReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.update`. */
+export type SessionsUpdateInput = {
+  effort?: string;
+  model?: string;
+  nameOrKey: string;
+  probeTimeout?: string;
+  provider?: string;
+  skipProbe?: boolean;
+  thinking?: string;
+};
+
+/** Return shape for `sessions.update`. */
+export type SessionsUpdateReturn = {
+  action: "update";
+  after: {
+    effortOverride: string | null;
+    modelOverride: string | null;
+    runtimeProviderOverride: string | null;
+    thinkingLevel: string | null;
+  };
+  appliesOn: "next-turn-runtime-restart";
+  before: {
+    effortOverride: string | null;
+    modelOverride: string | null;
+    runtimeProviderOverride: string | null;
+    thinkingLevel: string | null;
+  };
+  changed: {
+    effort: boolean;
+    model: boolean;
+    provider: boolean;
+    thinking: boolean;
+  };
+  clearedProviderSession: boolean;
+  effective: {
+    effort: string | null;
+    model: string | null;
+    provider: string;
+    thinking: string | null;
+  };
+  notification?: {
+    delivered: boolean;
+    error: string | null;
+    topic: string;
+  };
+  probe: ({
+    credentialId?: string;
+    credentialLabel?: string;
+    durationMs: number;
+    effort?: string;
+    error?: string;
+    model: string;
+    ok: boolean;
+    provider: string;
+    thinking?: string;
+    timedOut?: boolean;
+  }) | null;
+  rematerializedToAgentRuntime: boolean;
+  rolledBack: boolean;
+  session: {
+    sessionKey: string;
+    sessionName: string | null;
+  };
+  superseded: boolean;
+};
 
 /** Input shape for `sessions.visibility`. */
 export type SessionsVisibilityInput = {

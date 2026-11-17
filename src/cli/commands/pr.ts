@@ -1,16 +1,23 @@
 import "reflect-metadata";
 import { readFile, stat } from "node:fs/promises";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { Command, CommandAccess, Group, Option, Returns, type CommandAccessOptions } from "../decorators.js";
-import { contractDryRun, ContractError } from "../agent-contract.js";
-import { enforceCliCommandAuthorization } from "../command-access.js";
-import { getContext } from "../context.js";
+import { contractDryRun, ContractError, renderContractError, wasContractErrorRendered } from "../agent-contract.js";
+import { enforceCliCommandAuthorization, RUNTIME_CONTEXT_INACTIVE } from "../command-access.js";
 import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
 import { buildAuditContextProvenance } from "../../permissions/audit-provenance.js";
-import { resultSchema, prError, PUBLICATION_TIMEOUT_MS, LIMITS } from "../../pr/contracts.js";
+import { resultSchema, prError, PUBLICATION_CONTEXT_REQUIRED_MESSAGE, LIMITS } from "../../pr/contracts.js";
+import {
+  createPublicationDeadline,
+  publicationBudgetMs,
+  publicationTimeoutError,
+  PUBLICATION_TIMEOUT_CEILING_MS,
+  PUBLICATION_TIMEOUT_ENV,
+} from "../../pr/budget.js";
 import { githubClient, GithubError } from "../../pr/github.js";
 import { LocalGit, utf8 } from "../../pr/git.js";
 import { preparePublication, executePublication } from "../../pr/service.js";
-import { resolvePublicationContext } from "../../pr/context.js";
+import { resolvePublicationCaller, resolvePublicationContext } from "../../pr/context.js";
 import { requireFollowRuntime } from "../../pr/follow-health.js";
 
 const access: CommandAccessOptions = {
@@ -26,16 +33,18 @@ const access: CommandAccessOptions = {
 const HELP = `
 USE
   Publish a committed work branch through Git Data API, then create/reuse its ready PR and CI follow.
-  Publication requires an authenticated gateway context and the installed daemon journal.
-  Run in the publishing Ravi session; a bare operator terminal is not a supported publication path.
-  --reply-session must match the publishing session; it does not authenticate the caller.
+  In a Ravi session (through the gateway/agent), CI follows that session's durable origin.
+  From the operator's terminal, with the installed CLI, pass --reply-session <session>: the session whose
+  chat receives the CI follow. It names a destination and grants no authority.
 NÃO USE
   This is not commit, merge, approval, force-push, fork publication or a draft workflow.
 REGRAS HARD
   Clean named branch, github.com origin matching --repo, head distinct from base/default.
   Exact local/remote tree AND commit SHA. Only fast-forward ref updates. No hook configuration changes.
   Missing signed/nonstandard commits, new submodules, LFS and SHA-256 repositories are unsupported.
-  Limits: ${LIMITS.commits} missing commits, ${LIMITS.objects} objects, 50 MiB total, 8 MiB per blob; 180s total.
+  Limits: ${LIMITS.commits} missing commits, ${LIMITS.objects} objects, 50 MiB total, 8 MiB per blob.
+  Time budget: 180s plus 1s per 250 KiB of measured upload, at most ${PUBLICATION_TIMEOUT_CEILING_MS / 1000}s.
+  ${PUBLICATION_TIMEOUT_ENV}=<ms> in the publishing process replaces it, under the same ceiling.
 CONFIRMAÇÃO
   Dry-run by default. --execute publishes externally; it does not grant permissions or approve review.
 LIFECYCLE
@@ -46,11 +55,20 @@ EXAMPLES
   ravi pr publish --repo owner/repo --base dev --title "Fix parser" --body-file /tmp/pr.md --expect-sha <40-char-sha> --json --execute
   ravi pr publish --repo owner/repo --base dev --json --execute
 ON ERROR
+  PERMISSION_DENIED in a runtime context: ${PUBLICATION_CONTEXT_REQUIRED_MESSAGE}
+  RUNTIME_CONTEXT_INACTIVE: the context that started publish is no longer live (revoked, e.g. its turn ended, or
+  expired), possibly mid-upload; it is not a missing grant. Rerun with the same --expect-sha from a live turn and
+  keep it open until the command exits.
+  PUBLICATION_SESSION_REQUIRED from a terminal: pass --reply-session <session> that has a chat destination.
+  STATE_SCHEMA_NOT_READY from a terminal: the installed daemon prepares state; run ravi daemon restart -m "prepare state".
   WORKTREE_DIRTY: commit changes. GIT_OBJECT_MISMATCH: inspect the object; never accept a substitute SHA.
   NON_FAST_FORWARD / REMOTE_REF_CHANGED: integrate remote changes or choose a new branch.
   PR_PUBLICATION_INCOMPLETE: inspect partial.phase and rerun with the same --expect-sha.
+  PUBLICATION_TIMEOUT: timeout reports the phase and the objects/bytes already uploaded; rerun with the same
+  --expect-sha, objects GitHub already holds are skipped.
+  PUBLICATION_REQUEST_TIMEOUT: one git/GitHub request passed its own limit, not the publication budget; rerun with
+  the same --expect-sha. PUBLICATION_RESPONSE_TOO_LARGE: a response passed the output limit; a rerun does not help.
   FOLLOW_RUNTIME_UNAVAILABLE: update/start Ravi's runtime; no success without its active CI producer.
-  PUBLICATION_AUDIT_FAILED from a local terminal: use the authenticated gateway path; do not open real state locally.
 OUTPUT
   --json returns publication/attempt IDs, repo/head/base, SHAs, PR URL, watch/trigger IDs and CI snapshot.
   Exits: 0 complete; 1 failed/incomplete; 2 invalid usage; 3 preview/write brake (no mutations).
@@ -73,7 +91,7 @@ export class PrCommands {
     name: "publish",
     description: "Upload the current branch, publish a ready PR and verify CI follow",
     helpAfter: HELP,
-    remoteTimeoutMs: PUBLICATION_TIMEOUT_MS + 15_000,
+    remoteTimeoutMs: PUBLICATION_TIMEOUT_CEILING_MS + 15_000,
   })
   @CommandAccess(access)
   @Returns(resultSchema)
@@ -92,7 +110,8 @@ export class PrCommands {
     expectSha?: string,
     @Option({
       flags: "--reply-session <session>",
-      description: "CI publishing session; must match the authenticated session and does not grant authority",
+      description:
+        "From a terminal: the session whose chat receives the CI follow. In a session it must be that session. Grants no authority",
     })
     replySession?: string,
     @Option({ flags: "--dry-run", description: "Preview only; also the default without --execute (exit 3)" })
@@ -100,7 +119,31 @@ export class PrCommands {
     @Option({ flags: "--json", description: "Print one typed JSON result or error envelope" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Publish externally and reconcile CI follow" }) execute?: boolean,
   ) {
-    const context = getContext();
+    try {
+      return await this.publishFor({ repo, base, title, bodyFile, expectSha, replySession, dryRun, asJson, execute });
+    } catch (error) {
+      // A gateway client and a tool caller show the returned failure themselves.
+      // In a terminal nothing else does, so it is shown here, once.
+      if (error instanceof ContractError && !wasContractErrorRendered(error)) renderContractError(error, asJson);
+      throw error;
+    }
+  }
+
+  private async publishFor(input: {
+    repo?: string;
+    base?: string;
+    title?: string;
+    bodyFile?: string;
+    expectSha?: string;
+    replySession?: string;
+    dryRun?: boolean;
+    asJson?: boolean;
+    execute?: boolean;
+  }) {
+    const { repo, base, title, bodyFile, expectSha, replySession, dryRun, asJson, execute } = input;
+    // A session through the gateway/agent, or the operator's own terminal.
+    const caller = resolvePublicationCaller();
+    const context = caller.kind === "session" ? caller.context : undefined;
     let signal: AbortSignal | undefined;
     const authorize = () => {
       if (signal?.aborted)
@@ -115,8 +158,20 @@ export class PrCommands {
         source: context?.transport ?? "cli",
         input: { repo, base, expectSha, replySession },
       });
-      if (!decision.allowed)
+      if (!decision.allowed) {
+        // A context that ended under a running publish is not a missing grant: say so, so nobody asks for one.
+        if (decision.denialDetails?.reason === RUNTIME_CONTEXT_INACTIVE)
+          throw prError(
+            "RUNTIME_CONTEXT_INACTIVE",
+            "The runtime context that started this publication is no longer live (revoked, for example when its turn ended, or expired); the grant is not the problem.",
+            {
+              ...decision.denialDetails,
+              suggestedAction:
+                "Rerun the same ravi pr publish command with the same --expect-sha from a live turn and keep that turn open until it exits; objects already uploaded are skipped.",
+            },
+          );
         throw prError("PERMISSION_DENIED", "This context cannot publish the selected PR.", decision.denialDetails);
+      }
     };
     authorize();
     if (!repo || !base || (dryRun && execute))
@@ -135,24 +190,51 @@ export class PrCommands {
         body = utf8(await readFile(path));
       } catch (error) {
         if (error instanceof ContractError) throw error;
-        throw prError("BODY_FILE_UNREADABLE", "Cannot read the PR description file from the caller directory.");
+        throw prError(
+          "BODY_FILE_UNREADABLE",
+          "Cannot read the PR description file from the caller directory.",
+          errorDiagnostic(error, { operation: "pr publish" }),
+        );
       }
     }
-    signal = AbortSignal.timeout(PUBLICATION_TIMEOUT_MS);
+    // The preflight runs on the base budget; once it has measured the upload, the same deadline grows with it.
+    const deadline = createPublicationDeadline(publicationBudgetMs(0));
+    signal = deadline.signal;
     const request = this.dependencies.github(signal);
+    const measure = async () => {
+      try {
+        return await preparePublication(
+          { cwd, repo, base, title, body, expectSha, context: publisher },
+          request,
+          new LocalGit(cwd, signal),
+        );
+      } catch (error) {
+        // The budget ended before the upload was measured: say so instead of reporting unknown progress.
+        if (error instanceof ContractError && error.code === "PUBLICATION_TIMEOUT")
+          throw publicationTimeoutError(
+            {
+              phase: "preflight",
+              budgetMs: publicationBudgetMs(0),
+              objectsUploaded: 0,
+              objectCount: null,
+              bytesUploaded: 0,
+              uploadBytes: null,
+            },
+            error.details,
+          );
+        throw error;
+      }
+    };
     try {
-      const prepared = await preparePublication(
-        { cwd, repo, base, title, body, expectSha, context: publisher },
-        request,
-        new LocalGit(cwd, signal),
-      );
+      const prepared = await measure();
+      deadline.setBudget(publicationBudgetMs(prepared.plan.uploadBytes));
       await this.dependencies.health();
       if (!execute) contractDryRun("pr publish", prepared.plan, { asJson });
       const provenance = buildAuditContextProvenance(context);
       const result = await this.dependencies.execute(prepared, request, {
         authorize,
         provenance: {
-          actor: provenance?.actorPrincipal ?? (context?.agentId ? `agent:${context.agentId}` : "local-operator"),
+          actor: provenance?.actorPrincipal ?? (context ? `agent:${context.agentId}` : "local-operator"),
           executorAgentId: context?.agentId ?? null,
           sessionKey: publisher.sessionKey ?? null,
           contextId: context?.contextId ?? null,
@@ -172,6 +254,8 @@ export class PrCommands {
           { retryable: error.status >= 500 || error.status === 429 },
         );
       throw error;
+    } finally {
+      deadline.dispose();
     }
   }
 }

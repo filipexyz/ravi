@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   publishGhPr,
@@ -11,6 +12,7 @@ import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { buildGhFollowTriggerInput, type GhWatchFollowDeps } from "./gh-watch.js";
 import { evaluateFilter } from "../triggers/filter.js";
+import { dbCreateTrigger, dbGetTrigger, dbListTriggers, dbUpdateTrigger } from "../triggers/triggers-db.js";
 import type { Trigger } from "../triggers/types.js";
 import type { WatchRecord } from "../watch/types.js";
 
@@ -147,7 +149,129 @@ function makePr(draft = false) {
   };
 }
 
+function persistedFixture() {
+  const f = fixture({ noLifecycle: true });
+  const source = { ...parentSource, instanceId: "slack-instance", canonicalChatId: "canonical-root" };
+  const publication = {
+    ...input,
+    context: { ...input.context, sessionName: "publishing-parent", source },
+  };
+  let runtimeProbes = 0;
+  f.deps.follow.listTriggers = dbListTriggers;
+  f.deps.follow.createTrigger = dbCreateTrigger;
+  f.deps.follow.updateTrigger = dbUpdateTrigger;
+  f.deps.verifyFollow = (value, result, number) =>
+    verifyPublicationFollow(value, result, number, {
+      watch: (id) => f.watches.find((watch) => watch.id === id) ?? null,
+      trigger: dbGetTrigger,
+      runtime: async () => {
+        runtimeProbes += 1;
+      },
+    });
+  return { ...f, publication, runtimeProbes: () => runtimeProbes };
+}
+
 describe("Git Data API publication boundary", () => {
+  it("publishes and reconciles a channel context with instanceId/canonicalChatId through persisted trigger destinations", async () => {
+    const f = persistedFixture();
+    const first = await publishGhPr(f.publication, f.deps);
+    const triggerId = first.follow.triggerId!;
+    expect(first.ready).toBe(true);
+    expect(dbGetTrigger(triggerId)?.replySource).toEqual(parentSource);
+    const stored = getDb().query("SELECT reply_source FROM triggers WHERE id = ?").get(triggerId) as {
+      reply_source: string;
+    };
+    expect(JSON.parse(stored.reply_source)).toEqual(parentSource);
+
+    dbUpdateTrigger(triggerId, { replySource: { ...parentSource, chatId: "stale-chat" } });
+    const reconciled = await publishGhPr(f.publication, f.deps);
+    expect(reconciled).toMatchObject({
+      ready: true,
+      reused: true,
+      number: first.number,
+      follow: { triggerId, triggerReused: true, triggerRepaired: true },
+    });
+    expect(dbGetTrigger(triggerId)?.replySource).toEqual(parentSource);
+    expect(dbListTriggers()).toHaveLength(1);
+    expect(f.watches).toHaveLength(1);
+    expect(f.calls.filter((call) => call.endpoint === "repos/o/r/pulls" && call.method === "POST")).toHaveLength(1);
+    expect(f.runtimeProbes()).toBe(2);
+  });
+
+  it.each([
+    { field: "channel", value: "whatsapp" },
+    { field: "accountId", value: "another-account" },
+    { field: "chatId", value: "another-chat" },
+    { field: "threadId", value: "another-thread" },
+    { field: "channel", value: "" },
+    { field: "accountId", value: "" },
+    { field: "chatId", value: "" },
+  ])("rejects a persisted destination mismatch ($field=$value) before probing runtime", async ({ field, value }) => {
+    const f = persistedFixture();
+    const result = await publishGhPr(f.publication, f.deps);
+    dbUpdateTrigger(result.follow.triggerId!, { replySource: { ...parentSource, [field]: value } });
+    await expect(f.deps.verifyFollow(f.publication, result.follow, 9)).rejects.toMatchObject({
+      code: "PR_PUBLICATION_INCOMPLETE",
+    });
+    expect(f.runtimeProbes()).toBe(1);
+  });
+
+  it.each([
+    { repo: "other/r", number: 9 },
+    { repo: "o/r", number: 10 },
+  ])("rejects a persisted filter for $repo#$number before probing runtime", async ({ repo, number }) => {
+    const f = persistedFixture();
+    const result = await publishGhPr(f.publication, f.deps);
+    dbUpdateTrigger(result.follow.triggerId!, { filter: buildGhFollowTriggerInput(repo, number).filter });
+    await expect(f.deps.verifyFollow(f.publication, result.follow, 9)).rejects.toMatchObject({
+      code: "PR_PUBLICATION_INCOMPLETE",
+    });
+    expect(f.runtimeProbes()).toBe(1);
+  });
+
+  it.each([
+    { description: "missing source", source: undefined },
+    { description: "empty required field", source: { ...parentSource, chatId: "" } },
+  ])("rejects $description even when both destination projections would be absent", async ({ source }) => {
+    const f = persistedFixture();
+    const result = await publishGhPr(f.publication, f.deps);
+    dbUpdateTrigger(result.follow.triggerId!, { replySource: { ...parentSource, chatId: "" } });
+    const invalid = {
+      ...f.publication,
+      context: { ...f.publication.context, source },
+    };
+    await expect(f.deps.verifyFollow(invalid, result.follow, 9)).rejects.toMatchObject({
+      code: "PR_PUBLICATION_INCOMPLETE",
+    });
+    expect(f.runtimeProbes()).toBe(1);
+  });
+
+  it.each([
+    { field: "status", value: "paused" },
+    { field: "placement", value: "console" },
+    { field: "provider", value: "other" },
+    { field: "resourceRef", value: "other/r" },
+    { field: "eventTypes", value: [] },
+  ])("rejects an invalid CI watch $field before probing runtime", async ({ field, value }) => {
+    const f = persistedFixture();
+    const result = await publishGhPr(f.publication, f.deps);
+    Object.assign(f.watches[0]!, { [field]: value });
+    await expect(f.deps.verifyFollow(f.publication, result.follow, 9)).rejects.toMatchObject({
+      code: "PR_PUBLICATION_INCOMPLETE",
+    });
+    expect(f.runtimeProbes()).toBe(1);
+  });
+
+  it("rejects a disabled persisted trigger before probing runtime", async () => {
+    const f = persistedFixture();
+    const result = await publishGhPr(f.publication, f.deps);
+    dbUpdateTrigger(result.follow.triggerId!, { enabled: false });
+    await expect(f.deps.verifyFollow(f.publication, result.follow, 9)).rejects.toMatchObject({
+      code: "PR_PUBLICATION_INCOMPLETE",
+    });
+    expect(f.runtimeProbes()).toBe(1);
+  });
+
   it("publishes ready and registers CI in the same registry without observing a gh shell command", async () => {
     const f = fixture();
     const result = await publishGhPr(input, f.deps);
@@ -195,6 +319,25 @@ describe("Git Data API publication boundary", () => {
       topic: "ravi.watch.github.>",
     });
     expect(f.watches.some((watch) => watch.placement === "local")).toBe(true);
+  });
+
+  it.each([
+    { cooldownMs: 30_000, debounceMs: 0 },
+    { cooldownMs: 0, debounceMs: 2_000 },
+  ])("refuses publication verification with stale persisted delivery policy %j", async (stalePolicy) => {
+    const f = fixture();
+    const result = await publishGhPr(input, f.deps);
+    Object.assign(f.triggers[0]!, stalePolicy);
+    await expect(f.deps.verifyFollow(input, result.follow, 9)).rejects.toMatchObject({
+      code: "PR_PUBLICATION_INCOMPLETE",
+    });
+  });
+
+  it("accepts omitted debounce as disabled in the persisted follow", async () => {
+    const f = fixture();
+    const result = await publishGhPr(input, f.deps);
+    delete f.triggers[0]!.debounceMs;
+    await expect(f.deps.verifyFollow(input, result.follow, 9)).resolves.toBeUndefined();
   });
 
   it("reports follow failure and recovers the already created PR on rerun", async () => {
@@ -306,7 +449,7 @@ describe("Git Data API publication boundary", () => {
           (phase === "before-follow" && endpoint.endsWith("/pulls") && method === "POST") ||
           (phase === "verification" && endpoint.endsWith("/pulls/9"))
         ) {
-          getDb().query("DELETE FROM slack_thread_lifecycle WHERE child_session_key=?").run(childKey);
+          runThreadMutation(getDb(), "DELETE FROM slack_thread_lifecycle WHERE child_session_key=?", childKey);
         }
         return result;
       };

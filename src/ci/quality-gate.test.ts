@@ -366,6 +366,11 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/router/", "src/runtime/"]);
   });
 
+  it("requires and recognizes focused shutdown failure coverage", () => {
+    expect(runCoverageGate(["src/runtime/shutdown.ts"]).ok).toBe(false);
+    expect(runCoverageGate(["src/runtime/shutdown.ts", "src/runtime/shutdown.test.ts"]).ok).toBe(true);
+  });
+
   it("accepts channel backend coverage across channel, router, and runtime changes", () => {
     const result = runCoverageGate([
       "src/channels/backend.ts",
@@ -401,6 +406,15 @@ describe("runCoverageGate", () => {
 
     expect(result.ok).toBe(true);
     expect(result.triggeredPrefixes).toEqual(["src/channels/"]);
+  });
+
+  it("accepts focused Slack thread health regressions for attention retry changes", () => {
+    const source = ["src/channels/slack/thread-lifecycle.ts", "src/channels/slack/thread-turn-health-store.ts"];
+
+    expect(runCoverageGate(source).ok).toBe(false);
+    const covered = runCoverageGate([...source, "src/channels/slack/thread-turn-health.test.ts"]);
+    expect(covered.ok).toBe(true);
+    expect(covered.triggeredPrefixes).toEqual(["src/channels/"]);
   });
 
   it("requires a focused native channel test in the diff", () => {

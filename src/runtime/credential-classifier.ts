@@ -185,7 +185,12 @@ function classifyKind(input: {
   ) {
     return { kind: "billing_blocked", confidence: "high", scope: "account" };
   }
-  if (code === "insufficient_quota" || code === "quota_exhausted" || code === "usagelimitexceeded") {
+  if (
+    code === "insufficient_quota" ||
+    code === "quota_exhausted" ||
+    code === "usagelimitexceeded" ||
+    (input.provider === "claude" && /\byou['’]ve hit your weekly limit\b/.test(text))
+  ) {
     return { kind: "quota_exhausted", confidence: "high", scope: "account" };
   }
   if (

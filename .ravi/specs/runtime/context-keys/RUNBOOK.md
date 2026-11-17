@@ -70,3 +70,20 @@ ravi context list --session <session-key> --kind turn-runtime --json
 
 The next dispatch should create a fresh `turn-runtime` context with
 `authorityMode=agent-identity`.
+
+## Measure Active-Context Lookup
+
+Use synthetic history in an isolated state directory; never copy production
+credentials into a benchmark fixture:
+
+```bash
+RAVI_STATE_DIR="$(mktemp -d)" bun scripts/benchmark-active-contexts.ts
+```
+
+The script creates and removes its own isolated database with 25,000 expired
+contexts and six active records. It captures the current production query,
+compares every returned column with the legacy query, alternates seven runs of
+each, and reports plans, failures, medians, ranges and machine load. The reported
+times cover SQL materialization with a warmed cache, not end-to-end replies.
+Expiry-index candidate lookup should replace the creation-order history scan;
+do not translate its speedup into the same multiplier for the entire runtime.

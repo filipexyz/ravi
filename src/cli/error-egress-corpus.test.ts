@@ -121,6 +121,13 @@ const CORPUS: CorpusVector[] = [
     secrets: ["sk-PATH_TOKEN_SENTINEL_798", "PATH_TOKEN_SENTINEL_798"],
   },
   {
+    name: "credential directory path",
+    makeError: () => failure(`${REASON}; /srv/secrets/hunter2/private - use /srv/profiles/public.json`),
+    expectedCause: `${REASON}; /srv/secrets/[redacted:path] - use /srv/profiles/public.json`,
+    reason: REASON,
+    secrets: ["hunter2", "/private"],
+  },
+  {
     name: "arbitrary exception properties",
     makeError: () =>
       Object.assign(failure(REASON), {
@@ -403,6 +410,7 @@ describe("error egress corpus", () => {
         "password escaped quote tail",
         "DSN credentials",
         "path token",
+        "credential directory path",
         "arbitrary exception properties",
         "high entropy base64",
         "media send real provider failure",

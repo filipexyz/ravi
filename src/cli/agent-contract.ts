@@ -19,6 +19,7 @@
  */
 import { stripVTControlCharacters } from "node:util";
 import type { Command as CommanderCommand, CommanderError } from "commander";
+import { isStateNotReadyError, PREPARE_STATE_COMMAND } from "../db/state-readiness.js";
 import { isSqliteCapacityError, SQLITE_CAPACITY_USER_MESSAGE } from "../db/write-retry.js";
 import { isRuntimeContextError } from "../runtime/context-errors.js";
 import { getContext } from "./context.js";
@@ -264,6 +265,62 @@ function projectHttpControlUrl(value: unknown, key: string): string | undefined 
   return typeof sanitized === "string" ? redactDiagnosticText(sanitized).slice(0, 2048) : undefined;
 }
 
+const RUNTIME_UPDATE_SNAPSHOT_KEYS = [
+  "runtimeProviderOverride",
+  "modelOverride",
+  "effortOverride",
+  "thinkingLevel",
+] as const;
+
+/**
+ * One runtime-config axis value: a provider, model, effort or thinking id, or null for "no override".
+ * Exported so a recovery command is only ever built from ids this projection would also accept.
+ */
+export function projectRuntimeUpdateAxisValue(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 200) return undefined;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/+-]*$/.test(value) || redactDiagnosticText(value) !== value) return undefined;
+  return value;
+}
+
+/** The four override axes of a session, each an id or null. Anything else drops the whole snapshot (reported as null). */
+function projectRuntimeUpdateSnapshot(value: unknown): Record<string, string | null> | null | undefined {
+  if (value === null) return null;
+  const projected: Record<string, string | null> = {};
+  for (const key of RUNTIME_UPDATE_SNAPSHOT_KEYS) {
+    const axis = projectRuntimeUpdateAxisValue(safeDiagnosticField(value, key));
+    if (axis === undefined) return undefined;
+    projected[key] = axis;
+  }
+  return projected;
+}
+
+/**
+ * What a failed `sessions update` left stored, so recovery can work from the
+ * envelope alone: flags and the four override ids (never the probe payload, the
+ * session key or free-form provider text). A restore error is redacted text.
+ */
+function projectRuntimeUpdateControl(value: unknown): Record<string, unknown> | undefined {
+  const rolledBack = safeDiagnosticField(value, "rolledBack");
+  const superseded = safeDiagnosticField(value, "superseded");
+  const storedStateKnown = safeDiagnosticField(value, "storedStateKnown");
+  const before = projectRuntimeUpdateSnapshot(safeDiagnosticField(value, "before"));
+  const stored = projectRuntimeUpdateSnapshot(safeDiagnosticField(value, "stored"));
+  if (typeof rolledBack !== "boolean" || typeof storedStateKnown !== "boolean") return undefined;
+  if (superseded !== null && typeof superseded !== "boolean") return undefined;
+  const rollbackError = safeDiagnosticField(value, "rollbackError");
+  return {
+    rolledBack,
+    superseded,
+    storedStateKnown,
+    // A snapshot with an id outside the accepted format (a legacy value) is
+    // reported as null: the flags still reach the envelope, the raw id never does.
+    before: before ?? null,
+    stored: stored ?? null,
+    ...(typeof rollbackError === "string" ? { rollbackError: redactDiagnosticText(rollbackError).slice(0, 400) } : {}),
+  };
+}
+
 /** Domain controls describe the next action, never the underlying provider payload. */
 function projectOperationalControls(details: unknown): Record<string, unknown> {
   const controls: Record<string, unknown> = {};
@@ -288,7 +345,8 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
     ["draft", "proposed", "published", "superseded", "rejected", "withdrawn"].includes(proposalStatus)
   )
     controls.proposalStatus = proposalStatus;
-  if (read("routine") === "cron") controls.routine = "cron";
+  const routine = read("routine");
+  if (routine === "cron" || routine === "trigger") controls.routine = routine;
   if (read("reason") === "admin_context_exists") controls.reason = "admin_context_exists";
   for (const key of ["expectedSha", "actualSha"] as const) {
     const value = read(key);
@@ -296,6 +354,8 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
   }
   const objectType = read("objectType");
   if (objectType === "blob" || objectType === "tree" || objectType === "commit") controls.objectType = objectType;
+  const runtimeUpdate = projectRuntimeUpdateControl(read("runtimeUpdate"));
+  if (runtimeUpdate) controls.runtimeUpdate = runtimeUpdate;
   const candidates = projectCandidateControls(read("candidates"));
   if (candidates) controls.candidates = candidates;
   const drift = projectDriftControls(read("drift"));
@@ -349,6 +409,18 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
       if (counter(value) || (key === "firstFailedLine" && value === null)) projected[key] = value;
     }
     if (Object.keys(projected).length) controls.importProgress = projected;
+  }
+  // What a publication had confirmed when its time budget ended: a phase name and counters, nothing else.
+  const timeout = read("timeout");
+  const timeoutPhase = safeDiagnosticField(timeout, "phase");
+  if (typeof timeoutPhase === "string" && /^[a-z]{1,16}$/.test(timeoutPhase)) {
+    const projected: Record<string, string | number | null> = { phase: timeoutPhase };
+    for (const key of ["budgetMs", "objectsUploaded", "objectCount", "bytesUploaded", "uploadBytes"] as const) {
+      const value = safeDiagnosticField(timeout, key);
+      if (counter(value) || ((key === "objectCount" || key === "uploadBytes") && value === null))
+        projected[key] = value;
+    }
+    controls.timeout = projected;
   }
   return controls;
 }
@@ -505,10 +577,30 @@ export function sqliteCapacityToContractError(op: string, error: unknown): Contr
   });
 }
 
+/**
+ * State the installed daemon has not prepared for this release. It is a
+ * condition the operator fixes with one command, not an internal failure.
+ */
+export function stateNotReadyToContractError(op: string, error: unknown): ContractError | null {
+  if (!isStateNotReadyError(error)) return null;
+  let source: unknown = error;
+  while ((source as { code?: unknown }).code !== "STATE_SCHEMA_NOT_READY")
+    source = (source as { cause?: unknown }).cause;
+  const message = source instanceof Error ? source.message : "State is not prepared for this release.";
+  return new ContractError(op, "STATE_SCHEMA_NOT_READY", message, CONTRACT_EXIT_ERROR, {
+    ...errorDiagnostic(source, { operation: op }),
+    ...{
+      retryable: true,
+      suggestedAction: `Run \`${PREPARE_STATE_COMMAND}\` (or \`ravi daemon start\` when it never ran), then retry`,
+    },
+  });
+}
+
 export function mapExecutionErrorToContractError(op: string, error: unknown): ContractError {
   return (
     expectedErrorToContractError(op, error) ??
     runtimeContextErrorToContractError(op, error) ??
+    stateNotReadyToContractError(op, error) ??
     sqliteCapacityToContractError(op, error) ??
     unexpectedErrorToContractError(op, error)
   );
@@ -582,8 +674,16 @@ export function binaryResponseToContractError(op: string, status: number): Contr
   });
 }
 
+const renderedContractErrors = new WeakSet<ContractError>();
+
+/** Whether this failure was already shown on this process's output. */
+export function wasContractErrorRendered(error: ContractError): boolean {
+  return renderedContractErrors.has(error);
+}
+
 export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
   if (getContext({ localOnly: true })?.suppressCliOutput === true) return;
+  renderedContractErrors.add(error);
   const envelope = error.envelope();
   if (asJson) {
     console.log(JSON.stringify(envelope, null, 2));

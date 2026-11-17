@@ -141,8 +141,8 @@ describe("writes to runtime provider settings", () => {
     };
     for (const command of [
       "(cd nested); echo ok > notes.txt",
-      "cd nested | echo ok > notes.txt",
-      "cd nested & echo ok > notes.txt",
+      "cd .codex | echo ok > config.toml",
+      "cd .codex & echo ok > config.toml",
       "pushd nested; echo ok > notes.txt",
       "popd; echo ok > notes.txt",
       "cd -; echo ok > notes.txt",
@@ -154,8 +154,8 @@ describe("writes to runtime provider settings", () => {
       "echo ok > */config.toml",
       "echo ok > innocent/[c]onfig.toml",
       "echo ok > innocent/{config,other}.toml",
-      "cd nested # comment\necho ok > innocent/config.toml",
-      "cd nested && \\\necho ok > innocent/config.toml",
+      "cd .codex # comment\necho ok > config.toml",
+      "cd .codex && \\\necho ok > config.toml",
       "echo ok <> innocent/config.toml",
     ]) {
       expect(evaluateBashPermission(command, ctx).allowed, command).toBe(false);

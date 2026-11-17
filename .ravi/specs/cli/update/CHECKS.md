@@ -3,6 +3,12 @@
 - `bun test src/cli/commands/update.test.ts` MUST pass.
 - A source-update fixture with two online siblings MUST invoke the rebind
   supervisor, replace both PIDs and verify new boot receipts before success.
+- This fixture MUST also converge with the actual PM2 7.1.1/7.1.2 version
+  warning preceding every `jlist` result. Parser/consumer regressions MUST
+  cover status, runtime target, channel settings and channel liveness.
+- The real-PM2 launcher regression MUST open existing fixture state after the
+  manager's default PID file is removed and preserve its sentinel after package
+  replacement. No production state or process manager may be used by the test.
 - Every receipt-writing fixture MUST own a disposable state directory, restore
   the caller's `RAVI_STATE_DIR` (including an absent value), and remove its state
   afterward. The managed rebind test MUST pass without an external state override.
@@ -19,3 +25,30 @@
 - A stopped sibling MUST remain stopped after the rebind plan executes.
 - Runtime warnings MUST name the affected process and explicit reconciliation
   command without claiming disk version is the live version.
+- `bun test src/daemon-stdin.test.ts src/pm2.test.ts` MUST cover package
+  replacement, paths containing `bun`, spaces and quotes, forced standby
+  registration that preserves the predecessor, and explicit
+  clearing of context inherited from the PM2 manager. The real-PM2 fixture MUST
+  run both daemon and channels launchers, assert every denied context key is
+  absent in the application environment while PM2 retains empty tombstones,
+  and verify channels registration and application argv match the state boundary.
+  It MUST execute a copied Bun binary under a directory with spaces and quotes,
+  with the installed package cwd preserved. A filename collision MUST fail
+  before the existing runner is deleted. PM2 name/namespace collisions MUST
+  also fail before rebind mutations and preserve unrelated process PIDs.
+- `daemon start --json` MUST launch with the same Bun executable and cleared
+  runtime/session environment as text mode; quiet lifecycle execution MUST NOT
+  depend on launcher variables already existing in the caller environment.
+- `bun test src/cli/operator-runtime.test.ts src/cli/registry-operator-gateway.test.ts`
+  MUST prove that installed operator commands run in the terminal with the
+  daemon's gateway up or down, and that runtime contexts cannot obtain an
+  offline operator fallback. Local recovery MUST not initialize real state.
+- `bun test src/cli/commands/daemon-restart-supervision.test.ts` MUST prove that
+  failed pre-cutover startup preserves the predecessor and that intake stops
+  before ownership transfers. Post-cutover recovery MUST verify readiness.
+- Rebind tests MUST delay daemon readiness and prove channels have not started;
+  missing readiness or a wrong process incarnation MUST fail the update.
+- Simulated rebind starts MUST follow the target bundle's observed filesystem
+  timestamp, independently of wall-clock precision or skew. Boot observations
+  MUST use the same fixture clock as PM2 start times. Replacement tests MUST
+  prove the replacement receipt is valid before testing incarnation rejection.

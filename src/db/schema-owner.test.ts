@@ -1,11 +1,18 @@
 import { afterEach, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { assertRuntimeStateReady } from "./runtime-state.js";
-import { assertStateSchemaReady, initializeStateSchema, STATE_SCHEMA_VERSION } from "./schema-owner.js";
+import { openStateDatabase } from "./state-boundary.js";
+import { runThreadMutation } from "../threads/schema-fence.js";
+import {
+  assertStateSchemaReady,
+  configureStateJournalMode,
+  initializeStateSchema,
+  STATE_SCHEMA_VERSION,
+} from "./schema-owner.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -17,6 +24,46 @@ function fixture(): string {
   return dir;
 }
 const channels = { argv: ["bun", "index.js", "channels", "run"] };
+
+/** The installed CLI in the operator's terminal, with a home of its own: `<home>/.ravi` is its real state. */
+function operatorTerminal() {
+  const homeDir = fixture();
+  const release = join(homeDir, "release");
+  mkdirSync(join(release, "dist", "bundle"), { recursive: true });
+  writeFileSync(join(release, "package.json"), JSON.stringify({ name: "ravi.bot" }));
+  const bundle = join(release, "dist", "bundle", "index.js");
+  writeFileSync(bundle, "");
+  mkdirSync(join(homeDir, ".ravi"));
+  return {
+    realState: join(homeDir, ".ravi"),
+    isolatedState: join(homeDir, "isolated"),
+    boundary: {
+      homeDir,
+      modulePath: join(release, "dist", "bundle", "state-boundary.ts"),
+      argv: ["bun", bundle, "agents", "list"],
+      env: {},
+    },
+  };
+}
+
+it("journal configuration is owner-only and uses the database schema lock", () => {
+  const path = join(fixture(), "journal.db");
+  const db = new Database(path);
+  const argv = process.argv;
+  try {
+    process.argv = channels.argv;
+    configureStateJournalMode(db);
+    expect(db.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+    expect(existsSync(`${path}.schema.lock`)).toBe(false);
+    process.argv = argv;
+    configureStateJournalMode(db);
+    expect(db.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "wal" });
+    expect(existsSync(`${path}.schema.lock`)).toBe(true);
+  } finally {
+    process.argv = argv;
+    db.close();
+  }
+});
 
 it("channels refuses old/unprepared schema without executing migrations or changing schema/data", () => {
   const db = new Database(":memory:");
@@ -39,6 +86,66 @@ it("channels refuses old/unprepared schema without executing migrations or chang
   db.close();
 });
 
+it("the operator's CLI uses a real-state store this release prepared and never migrates one", () => {
+  const { realState, boundary } = operatorTerminal();
+  const db = new Database(join(realState, "ravi.db"));
+  db.exec("CREATE TABLE task_decisions (id TEXT); INSERT INTO task_decisions VALUES ('kept')");
+  let migrated = false;
+  const open = () =>
+    initializeStateSchema(
+      db,
+      "router",
+      () => {
+        migrated = true;
+        db.exec("DROP TABLE task_decisions");
+      },
+      boundary,
+    );
+
+  // Never prepared, then prepared by another release: refused, with what to do next.
+  expect(open).toThrow("router is not prepared for this release");
+  expect(open).toThrow("ravi daemon restart");
+  db.exec("CREATE TABLE state_schema_versions (component TEXT PRIMARY KEY, version TEXT NOT NULL)");
+  db.query("INSERT INTO state_schema_versions VALUES ('router', '1:0.0.0-other')").run();
+  expect(open).toThrow("router is not prepared for this release");
+
+  // Prepared by this release: used as it is.
+  db.query("UPDATE state_schema_versions SET version = ? WHERE component = 'router'").run(STATE_SCHEMA_VERSION);
+  expect(open).not.toThrow();
+
+  expect(migrated).toBe(false);
+  expect(db.query("SELECT id FROM task_decisions").all()).toEqual([{ id: "kept" }]);
+  expect(db.query("SELECT version FROM state_schema_versions WHERE component = 'router'").get()).toEqual({
+    version: STATE_SCHEMA_VERSION,
+  });
+  // It took no schema lock and changed no journal mode.
+  configureStateJournalMode(db, boundary);
+  expect(db.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+  expect(existsSync(join(realState, "ravi.db.schema.lock"))).toBe(false);
+  db.close();
+});
+
+it("the operator's CLI prepares an isolated state directory itself, as before", () => {
+  const { isolatedState, boundary } = operatorTerminal();
+  mkdirSync(isolatedState);
+  const db = new Database(join(isolatedState, "ravi.db"));
+  let migrated = false;
+  initializeStateSchema(
+    db,
+    "router",
+    () => {
+      migrated = true;
+      db.exec("CREATE TABLE created (id TEXT)");
+    },
+    { ...boundary, env: { RAVI_STATE_DIR: isolatedState } },
+  );
+  expect(migrated).toBe(true);
+  expect(db.query("SELECT version FROM state_schema_versions WHERE component = 'router'").get()).toEqual({
+    version: STATE_SCHEMA_VERSION,
+  });
+  db.close();
+});
+
 it("matching release serves normal queries while wrong release fails and failed migration leaves no ready marker", () => {
   const db = new Database(":memory:");
   initializeStateSchema(db, "router", () => db.exec("CREATE TABLE ready (id TEXT)"));
@@ -55,6 +162,30 @@ it("matching release serves normal queries while wrong release fails and failed 
   expect(() => assertStateSchemaReady(db, "partial")).toThrow("STATE_SCHEMA_NOT_READY");
   expect(STATE_SCHEMA_VERSION).toStartWith("1:");
   db.close();
+});
+
+it.each([false, true])("consumer rechecks readiness after a prior successful call (owner cache: %s)", (ownerCached) => {
+  const db = new Database(":memory:");
+  let migrations = 0;
+  const consume = () => initializeStateSchema(db, "chat", () => migrations++, channels);
+  try {
+    if (ownerCached) {
+      initializeStateSchema(db, "chat", () => {});
+    } else {
+      db.exec("CREATE TABLE state_schema_versions (component TEXT PRIMARY KEY, version TEXT NOT NULL)");
+      db.query("INSERT INTO state_schema_versions VALUES (?, ?)").run("chat", STATE_SCHEMA_VERSION);
+    }
+    expect(consume).not.toThrow();
+    db.query("UPDATE state_schema_versions SET version = 'old' WHERE component = 'chat'").run();
+    expect(consume).toThrow("STATE_SCHEMA_NOT_READY");
+    db.query("UPDATE state_schema_versions SET version = ? WHERE component = 'chat'").run(STATE_SCHEMA_VERSION);
+    expect(consume).not.toThrow();
+    db.query("DELETE FROM state_schema_versions WHERE component = 'chat'").run();
+    expect(consume).toThrow("STATE_SCHEMA_NOT_READY");
+    expect(migrations).toBe(0);
+  } finally {
+    db.close();
+  }
 });
 
 it("interleaved initializers publish the same ready marker without a uniqueness failure", () => {
@@ -99,8 +230,8 @@ it.each(["channel-outbound-publish", "slack-automatic-output", "cloud-chat"])(
       `const { initializeRuntimeState } = await import('./src/db/runtime-state.ts'); await initializeRuntimeState();`,
     );
     expect(prepared.status, prepared.stderr).toBe(0);
-    const database = new Database(join(state, "ravi.db"));
-    database.query("DELETE FROM state_schema_versions WHERE component = ?").run(component);
+    const database = openStateDatabase(join(state, "ravi.db"));
+    runThreadMutation(database, "DELETE FROM state_schema_versions WHERE component = ?", component);
     const before = database.query("PRAGMA schema_version").get();
     expect(() => assertRuntimeStateReady({ RAVI_STATE_DIR: state })).toThrow(`STATE_SCHEMA_NOT_READY: ${component}`);
     const consumer = run(
@@ -180,8 +311,8 @@ it("daemon prepares all stores; channels validates and uses those stores with ze
   );
   expect(consumer.status, consumer.stderr).toBe(0);
   expect(snapshot()).toEqual(before);
-  const old = new Database(join(state, "ravi.db"));
-  old.query("UPDATE state_schema_versions SET version = 'old' WHERE component='router'").run();
+  const old = openStateDatabase(join(state, "ravi.db"));
+  runThreadMutation(old, "UPDATE state_schema_versions SET version = 'old' WHERE component='router'");
   old.close();
   expect(() => assertRuntimeStateReady({ RAVI_STATE_DIR: state })).toThrow("STATE_SCHEMA_NOT_READY");
 });

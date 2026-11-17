@@ -1,3 +1,4 @@
+import { seedPreparedThreadState, preparedThreadStateTables } from "../../test/prepared-thread-state.js";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
@@ -50,15 +51,23 @@ function statefulFakePm2Script(): string {
   return [
     "#!/bin/sh",
     'printf "%s\\n" "$*" >> "$DAEMON_TEST_PM2_LOG"',
-    'if [ "$1" = "start" ]; then : > "$DAEMON_TEST_STARTED"; fi',
+    'if [ "$1" = "start" ]; then date +%s000 > "$DAEMON_TEST_STARTED"; fi',
     'if [ "$1" = "delete" ]; then printf "%s\\n" "$2" >> "$DAEMON_TEST_DELETED"; fi',
     'if [ "$1" = "jlist" ]; then',
     "  started=0",
     '  [ -f "$DAEMON_TEST_STARTED" ] && started=1',
+    "  started_at=1",
+    '  [ "$started" = "1" ] && started_at=$(cat "$DAEMON_TEST_STARTED")',
     "  deleted=0",
     '  if [ -f "$DAEMON_TEST_DELETED" ] && grep -qx "4" "$DAEMON_TEST_DELETED"; then deleted=1; fi',
     '  pred="{\\"name\\":\\"ravi\\",\\"pm_id\\":4,\\"pid\\":999999,\\"pm2_env\\":{\\"status\\":\\"online\\"},\\"monit\\":{\\"cpu\\":0,\\"memory\\":0}}"',
-    `  succ="{\\"name\\":\\"ravi\\",\\"pm_id\\":5,\\"pid\\":\${DAEMON_TEST_LIVE_PID},\\"pm2_env\\":{\\"status\\":\\"online\\"},\\"monit\\":{\\"cpu\\":0,\\"memory\\":0}}"`,
+    `  succ="{\\"name\\":\\"ravi\\",\\"pm_id\\":5,\\"pid\\":\${DAEMON_TEST_LIVE_PID},\\"pm2_env\\":{\\"status\\":\\"online\\",\\"pm_uptime\\":\${started_at}},\\"monit\\":{\\"cpu\\":0,\\"memory\\":0}}"`,
+    '  if [ "$started" = "1" ]; then',
+    '    phase="ready"',
+    '    [ "$DAEMON_TEST_PM2_MODE" = "replace" ] && [ "$deleted" = "0" ] && phase="waiting"',
+    '    mkdir -p "$RAVI_STATE_DIR/runtime-processes"',
+    `    printf '{"protocol":1,"pid":%s,"phase":"%s","observedAt":%s}' "$DAEMON_TEST_LIVE_PID" "$phase" "$started_at" > "$RAVI_STATE_DIR/runtime-processes/schema-owner-$DAEMON_TEST_LIVE_PID.json"`,
+    "  fi",
     '  case "$DAEMON_TEST_PM2_MODE" in',
     "    replace)",
     '      if [ "$deleted" = "1" ]; then printf "[%s]\\n" "$succ"',
@@ -78,6 +87,7 @@ function statefulFakePm2Script(): string {
 }
 
 function restartCliEnv(tempRoot: string, pm2LogPath: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  seedPreparedThreadState(join(tempRoot, "state"));
   return {
     ...withoutRaviRuntimeContextEnv(process.env),
     HOME: join(tempRoot, "home"),
@@ -251,7 +261,7 @@ describe("daemon runtime target", () => {
     const tempRoot = makeTempDir("ravi-daemon-restart-once-");
     const fakeBinDir = join(tempRoot, "bin");
     const fakePm2Path = join(fakeBinDir, "pm2");
-    const fakeBundlePath = join(tempRoot, "runtime", "index.js");
+    const fakeBundlePath = join(tempRoot, "runtime", "dist", "bundle", "index.js");
     const pm2LogPath = join(tempRoot, "pm2.log");
     const childMarkerPath = join(tempRoot, "handoff-child.log");
 
@@ -268,6 +278,7 @@ describe("daemon runtime target", () => {
       "utf8",
     );
 
+    seedPreparedThreadState(join(tempRoot, "state"));
     const result = spawnSync("bun", ["src/cli/index.ts", "daemon", "restart", "-m", "restart once", "--json"], {
       cwd: process.cwd(),
       encoding: "utf8",
@@ -292,11 +303,15 @@ describe("daemon runtime target", () => {
     await new Promise((resolve) => setTimeout(resolve, 250));
 
     expect(result.status).toBe(0);
+    expect(preparedThreadStateTables(join(tempRoot, "state"))).toEqual([
+      "thread_schema_fence",
+      "thread_schema_write_lease",
+    ]);
     expect(result.stdout).not.toContain('"mode": "handoff"');
     const pm2Log = readFileSync(pm2LogPath, "utf8");
-    expect(pm2Log).toContain(`start ${realpathSync(fakeBundlePath)}`);
-    expect(pm2Log).toContain("ravi-pm2-stdin");
-    expect(pm2Log).toContain("--interpreter-args bun");
+    expect(pm2Log).toContain(`start dist/bundle/index.js --cwd ${realpathSync(join(tempRoot, "runtime"))}`);
+    expect(pm2Log).toContain("--interpreter /bin/sh");
+    expect(pm2Log).toContain('exec "$RAVI_PM2_EXECUTABLE" "$0" "$@" < /dev/null');
     expect(pm2Log).toContain("daemon run");
     expect(pm2Log).toContain("save --force");
     expect(existsSync(childMarkerPath)).toBe(false);
@@ -420,6 +435,77 @@ describe("daemon runtime target", () => {
 });
 
 describe("DaemonCommands --json", () => {
+  it("starts a quiet daemon with Bun and without inherited session routing", () => {
+    const tempRoot = makeTempDir("ravi-daemon-start-json-");
+    const binDir = join(tempRoot, "bin");
+    const bundlePath = join(tempRoot, "runtime", "dist", "bundle", "index.js");
+    const markerPath = join(tempRoot, "boot.json");
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    writeFileSync(
+      join(binDir, "pm2"),
+      [
+        "#!/bin/sh",
+        'if [ "$1" = "start" ]; then',
+        '  exec "$RAVI_PM2_EXECUTABLE" "$RAVI_BUNDLE" daemon run < /dev/null',
+        "fi",
+        'printf "[]\\n"',
+      ].join("\n"),
+    );
+    chmodSync(join(binDir, "pm2"), 0o755);
+    writeFileSync(
+      bundlePath,
+      [
+        'import { readFileSync, writeFileSync } from "node:fs";',
+        "writeFileSync(process.env.DAEMON_TEST_BOOT, JSON.stringify({",
+        "  executable: process.execPath, argv: process.argv.slice(2), stdin: readFileSync(0, 'utf8'),",
+        "  context: process.env.RAVI_CONTEXT_KEY, session: process.env.RAVI_SESSION_KEY,",
+        "  gateway: process.env.RAVI_GATEWAY_URL, callback: process.env.RAVI_SESSION_CALLBACK_URL,",
+        "}));",
+      ].join("\n"),
+    );
+    const result = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        [
+          'import { DaemonCommands } from "./src/cli/commands/daemon.ts";',
+          'process.env.RAVI_CONTEXT_KEY = "stale-context";',
+          'process.env.RAVI_SESSION_KEY = "stale-session";',
+          'process.env.RAVI_GATEWAY_URL = "unix:///missing-stale-gateway";',
+          'process.env.RAVI_SESSION_CALLBACK_URL = "https://invalid.example/callback";',
+          "delete process.env.RAVI_PM2_EXECUTABLE;",
+          "new DaemonCommands().start(true);",
+        ].join("\n"),
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        timeout: 20_000,
+        env: restartCliEnv(tempRoot, join(tempRoot, "pm2.log"), {
+          RAVI_BUNDLE: bundlePath,
+          DAEMON_TEST_BOOT: markerPath,
+        }),
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ action: "start", changed: true, pm2Status: 0 });
+    expect(JSON.parse(readFileSync(markerPath, "utf8"))).toEqual({
+      executable: process.execPath,
+      argv: ["daemon", "run"],
+      stdin: "",
+      context: "",
+      session: "",
+      gateway: "",
+      callback: "",
+    });
+    expect(preparedThreadStateTables(join(tempRoot, "state"))).toEqual([
+      "thread_schema_fence",
+      "thread_schema_write_lease",
+    ]);
+  }, 25_000);
+
   it("prints structured daemon status without stdout fallback fields", () => {
     const lines: string[] = [];
     const originalLog = console.log;

@@ -14,18 +14,154 @@ A row in the trigger table is not proof of a loaded subscription. The runner
 health request confirms that the existing runner consumed this exact desired
 follow configuration, without adding another watcher or scheduling system.
 
-## Historical preview limitation — resolved by #816
+The originating channel context includes provenance that the trigger destination
+contract does not persist. Comparing that whole context with the stored source
+incorrectly rejects working follows. Reusing the persistence serializer on both
+sides compares the actual destination contract without widening stored data or
+weakening verification of a missing or different destination.
 
-The local-operator path inherited from #793 accepted a nonempty
-`--reply-session` and could return a preview with exit 3 even though execution
-would fail authentication at the publication journal before any mutation.
-The independent review of #769 identified this existing asymmetry; it was not
-a regression introduced by that PR. A reply destination did not authenticate
-the publisher, so the preview did not establish that the plan was executable.
+## Decision (2026-11-15): the operator's terminal publishes again
 
-[PR #816](https://github.com/filipexyz/ravi/pull/816) resolves this limitation
-by removing `--reply-session` from the CLI, OpenAPI and SDK inputs and requiring
-an authenticated session for preview and execution before body/worktree,
-GitHub, health or journal IO. Missing authenticated context is refused with
-exit 1; an authorized preview remains exit 3. This is historical context,
-not an open runtime-warning task or a reason to relax journal authentication.
+The decision below removed publication from the operator's terminal. It
+followed from the state boundary of the time: no CLI could open real state, so
+the journal refused the terminal and the honest contract was to say so. In
+practice it left the person who owns the installation with no way to publish
+from their own machine: the sanctioned command needed an agent's session, and
+`git push` runs a pre-push chain this host must not run.
+
+The boundary changed (`quality/state-boundary`): the installed CLI in the
+operator's terminal opens real state again, without preparing it, and runs its
+commands there. With that the terminal reaches the journal, and a terminal
+caller is added beside the session caller: `--reply-session <session>` names
+where the CI follow reports, and the authority is the local operator's admin
+access. The trust model is the one every other terminal command already has: a
+process running the installed CLI as the account's user, with no runtime
+context, is the operator.
+
+Everything the earlier decision put in place for runtime contexts stays: the
+identity comes from the authenticated record, a session publishes only into
+itself, and a context that belongs to no session is refused. That last rule is
+what keeps `--reply-session` from being a way into another session: before the
+earlier decision, the local-operator check did not look at who was calling, so
+a gateway context with no session and the publish capability could name any
+session it could access. The two callers are told apart by the transport of
+the running context, so a runtime context never takes the terminal's path.
+
+A reply destination is still not authentication, and a checkout or worktree
+CLI still cannot publish. The authenticated terminal flow designed below
+remains a possible future tightening; nothing here depends on it.
+
+## Earlier decision (2026-11-07, superseded): remove bare operator publication
+
+`--reply-session` selected a notification destination but proved no identity.
+The local-operator permission path trusted the host; the protected journal
+correctly refused that execution path. Routing to a socket cannot fix this:
+gateway authentication still requires a live registered runtime credential.
+Weakening the journal, accepting environment identity, or minting a bootstrap
+admin key would turn a destination/host assertion into publication authority.
+
+This is a breaking change, not an authentication feature: remove the flag,
+deny local-operator command admission, and require a resolved session context
+through the gateway/agent before publication IO. Existing authenticated
+sessions keep their permission checks, preview/execute brake, durable follow
+and journal. The state-boundary change motivating this finding is independent
+and must not wait for an operator-login feature.
+
+## What exists today
+
+Approval refusal is part of this same contract. A generic hint offering local
+operator execution becomes invalid when `localOperator:false`; reusing that
+hint in responses and audit merely moves the user to another guaranteed denial.
+Recovery now selects one hint from command metadata and uses it consistently
+in the response and both denial-audit inputs, preserving their existing
+sanitization on storage/emission. Other commands that allow local operators
+retain their existing alternative.
+
+- `src/sdk/gateway/auth.ts` validates bearer runtime credentials through the
+  registry; a reachable socket does not authenticate the caller.
+- `src/cli/commands/context.ts` implements `issue` and `authorize` only after
+  resolving an existing parent context. They do not authenticate a bare human.
+- `src/runtime/context-registry.ts` issues scoped, expiring child contexts and
+  records parent ID/kind, issuance mode and approval source. Ordinary child
+  issuance does not itself establish a human actor; session binding and
+  human identity must not be conflated.
+- `ravi login` authenticates to the Console, not the runtime publication
+  gateway. There is no implemented Console-login-to-publication-rctx exchange.
+- `daemon init-admin-key` is host/bootstrap administration, not proof of
+  the operator's personal identity. It is not a publication onboarding path.
+
+For current use, request publication in an existing authorized Ravi session.
+The runtime issues its turn context; the gateway resolves it and authorization
+checks it again before effects. Existing context capabilities/provider policy
+must authorize the command. Where policy requires approval, the existing
+authority must satisfy it; `--execute` neither grants permission nor substitutes
+for approval. The audit identifies the verified actor when available, otherwise
+the authenticated executing agent, never an inferred local human. The public
+context ID links publication events to the context/approval lineage.
+
+## Future authenticated terminal flow (design only, not implemented)
+
+Reintroducing terminal publication requires a separate identity exchange. No
+new command or endpoint is promised by this fix. Its minimum design is:
+
+1. The terminal starts a short-lived, single-use challenge with a verifier
+   bound to that initiating process. The human authenticates on a trusted
+   authority surface. The challenge code correlates the request; it does not
+   authorize it. Socket possession, host files and environment aliases are
+   never identity evidence.
+2. That authority verifies the person's canonical identity and access to the
+   target installation/session. It presents one approval containing the
+   repository, branch/base, exact commit/tree, requested capability, executor,
+   CI destination and expiry. The person approves this concrete publication;
+   a denial, expiry, replay or changed publication tuple invalidates it.
+3. The authenticated authority issues a runtime context only after verifying
+   both approval and challenge binding. It binds the verified human actor,
+   executor, authorized session, approval ID, parent/issuer, publication tuple
+   and short TTL. Authority is restricted to that publication, with no admin
+   or wildcard grant. This needs real scope enforcement in the runtime, not
+   just metadata claiming a repository restriction.
+4. The initiating process receives the credential over the authenticated
+   exchange and calls the gateway. The gateway validates issuer/audience,
+   liveness, scope and approval binding on every attempt. A credential is a
+   carrier of server-issued authority, never a reason to trust its host or
+   storage location. It must not be printed into logs, prompts or audit rows.
+5. Publication previews the exact plan and executes only after explicit
+   confirmation. Authentication, capability/approval and `--execute` remain
+   separate requirements. The runtime revalidates authority before each effect;
+   expiry/revocation stops further writes and returns any partial state.
+6. Persist challenge/approval issuance and consumption, verified actor,
+   installation, executor, session, parent/public context IDs, scope, TTL and
+   revocation. Link these to the existing publication ID/attempt, intents,
+   confirmations, uncertain outcomes, remote SHA/tree/PR and follow IDs.
+   Keep credentials and content out of the audit. Missing durable audit remains
+   a hard stop. Retrying reconciles actual remote state, never replays approval
+   for a different SHA.
+
+The exchange, human/session binding, approval consumption and scope enforcement
+are absent today. That is why removing support is the honest current contract.
+
+## CLI interaction analysis before implementation
+
+Inspection used the rendered `pr publish --help` from the source CLI. The goal
+is one verified PR with a durable CI recipient; authentication precedes the
+preview, then explicit execution, then the final PR/SHA/CI result. Once execution
+succeeds, setup/recovery guidance gives way to that result.
+
+The existing headings, indentation and aligned option descriptions establish
+hierarchy, similarity, proximity and common regions. The conflict was grouping
+`--reply-session` with publication inputs while describing it as operator
+onboarding: visual proximity incorrectly implied authority. Remove that option;
+put authentication beside USE and its recovery beside ON ERROR. Continuity and
+alignment stay stable from examples to lifecycle. Figure-ground is textual
+(headings versus body), without dependence on color; closure is the verified
+result, while a partial result explicitly remains incomplete. Symmetry has no
+functional role in a linear terminal; common fate is represented by the single
+publication lifecycle. Pragnanz improves by exposing one supported entry path.
+
+Density stays compact: one requirement, one breaking-change note and one
+actionable refusal. Existing typography/contrast belong to the terminal and
+need no styling changes. Text wraps naturally; JSON stays structured and
+screen-reader accessible. Missing authority has an immediate error rather than
+a misleading loading/journal failure. Preview and success preserve their
+different exit codes; detailed partial-state recovery is progressively shown
+only when relevant. No visual UI or new login screen is introduced.

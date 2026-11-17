@@ -553,6 +553,14 @@ function buildDerivedContextMetadata(
     }
   }
 
+  // Lineage is host-owned. A CLI child must not erase its ancestry and pose
+  // as a runtime-issued human turn when it dispatches a relay or bootstrap.
+  derived.parentContextId = parent.contextId;
+  derived.parentContextKind = parent.kind;
+  derived.issuedFor = cliName;
+  derived.issuedAt = now;
+  derived.issuanceMode = inheritCapabilities ? "inherit" : "explicit";
+
   // Applied last so caller-supplied metadata can never forge the projected actor.
   if (sessionActorMetadata) {
     for (const key of PROJECTED_SESSION_ACTOR_KEYS) {

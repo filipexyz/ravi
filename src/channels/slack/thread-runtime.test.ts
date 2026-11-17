@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../../threads/schema-fence.js";
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { getHistory, saveMessage } from "../../db.js";
@@ -474,9 +475,11 @@ describe("Slack parent thread runtime configuration", () => {
 
   it("uses an aligned root subscription when the lifecycle lacks its canonical root id", async () => {
     const fixture = await seedThread({ parentChannel: "whatsapp", slackOutput: false });
-    getDb()
-      .query("UPDATE slack_thread_lifecycle SET root_canonical_chat_id = NULL WHERE request_id = ?")
-      .run(fixture.requestId);
+    runThreadMutation(
+      getDb(),
+      "UPDATE slack_thread_lifecycle SET root_canonical_chat_id = NULL WHERE request_id = ?",
+      fixture.requestId,
+    );
     expect(
       configureSlackThreadRuntime({ parentSession: fixture.parent, ref: fixture.requestId, effort: "ultra" }, () => {})
         .after.effort,
@@ -485,9 +488,11 @@ describe("Slack parent thread runtime configuration", () => {
 
   it("refuses a root without a persisted Slack root binding", async () => {
     const fixture = await seedThread();
-    getDb()
-      .query("UPDATE slack_thread_lifecycle SET root_canonical_chat_id = NULL WHERE request_id = ?")
-      .run(fixture.requestId);
+    runThreadMutation(
+      getDb(),
+      "UPDATE slack_thread_lifecycle SET root_canonical_chat_id = NULL WHERE request_id = ?",
+      fixture.requestId,
+    );
     const unrelated = dbUpsertChat({
       channel: "slack",
       instanceId: "slack-instance-1",
@@ -517,18 +522,18 @@ describe("Slack parent thread runtime configuration", () => {
       if (kind === "parent-name") updateSessionName(fixture.parent.sessionKey, "stale-parent-name");
       if (kind === "child-key") {
         getOrCreateSession("forged-child", "ravi", "/tmp/ravi", { name: "forged-child" });
-        getDb()
-          .query(
-            "UPDATE slack_thread_lifecycle SET child_session_key = 'forged-child', child_session_name = 'forged-child' WHERE request_id = ?",
-          )
-          .run(fixture.requestId);
+        runThreadMutation(
+          getDb(),
+          "UPDATE slack_thread_lifecycle SET child_session_key = 'forged-child', child_session_name = 'forged-child' WHERE request_id = ?",
+          fixture.requestId,
+        );
       }
       if (kind === "canonical-chat")
-        getDb()
-          .query(
-            "UPDATE slack_thread_lifecycle SET thread_canonical_chat_id = root_canonical_chat_id WHERE request_id = ?",
-          )
-          .run(fixture.requestId);
+        runThreadMutation(
+          getDb(),
+          "UPDATE slack_thread_lifecycle SET thread_canonical_chat_id = root_canonical_chat_id WHERE request_id = ?",
+          fixture.requestId,
+        );
       const before = getSession(fixture.child.sessionKey);
       expectErrorCode(
         () =>
@@ -564,7 +569,12 @@ describe("Slack parent thread runtime configuration", () => {
     "refuses %s lifecycle without starting it",
     async (status) => {
       const fixture = await seedThread();
-      getDb().query("UPDATE slack_thread_lifecycle SET status = ? WHERE request_id = ?").run(status, fixture.requestId);
+      runThreadMutation(
+        getDb(),
+        "UPDATE slack_thread_lifecycle SET status = ? WHERE request_id = ?",
+        status,
+        fixture.requestId,
+      );
       const record = getSlackThreadLifecycle(fixture.requestId);
       expectErrorCode(
         () =>

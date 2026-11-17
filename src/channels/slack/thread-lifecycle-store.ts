@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../../threads/schema-fence.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { ContractError } from "../../cli/agent-contract.js";
@@ -143,9 +144,9 @@ export function createSlackThreadLifecycle(input: CreateSlackThreadLifecycleInpu
   executeWrite(
     getDb(),
     (database) => {
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           INSERT INTO slack_thread_lifecycle (
             request_id, source, status, parent_session_key, parent_session_name,
             initiator_session_key, initiator_session_name, account_id, instance_id,
@@ -156,27 +157,25 @@ export function createSlackThreadLifecycle(input: CreateSlackThreadLifecycleInpu
           VALUES (?, 'action', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(request_id) DO NOTHING
         `,
-        )
-        .run(
-          requestId,
-          requireText(input.parentSessionKey, "parentSessionKey"),
-          requireText(input.parentSessionName, "parentSessionName"),
-          cleanOptional(input.initiatorSessionKey),
-          cleanOptional(input.initiatorSessionName),
-          requireText(input.accountId, "accountId"),
-          requireText(input.instanceId, "instanceId"),
-          requireText(input.platformChatId, "platformChatId"),
-          cleanOptional(input.rootCanonicalChatId),
-          initialPrompt,
-          cleanOptional(input.requestedBy),
-          cleanOptional(input.modelOverride),
-          cleanOptional(input.providerOverride),
-          cleanOptional(input.effortOverride),
-          cleanOptional(input.thinkingLevel),
-          cleanOptional(input.initiatorContextId),
-          now,
-          now,
-        );
+        requestId,
+        requireText(input.parentSessionKey, "parentSessionKey"),
+        requireText(input.parentSessionName, "parentSessionName"),
+        cleanOptional(input.initiatorSessionKey),
+        cleanOptional(input.initiatorSessionName),
+        requireText(input.accountId, "accountId"),
+        requireText(input.instanceId, "instanceId"),
+        requireText(input.platformChatId, "platformChatId"),
+        cleanOptional(input.rootCanonicalChatId),
+        initialPrompt,
+        cleanOptional(input.requestedBy),
+        cleanOptional(input.modelOverride),
+        cleanOptional(input.providerOverride),
+        cleanOptional(input.effortOverride),
+        cleanOptional(input.thinkingLevel),
+        cleanOptional(input.initiatorContextId),
+        now,
+        now,
+      );
     },
     { label: "slack_thread_lifecycle_create" },
   );
@@ -242,9 +241,9 @@ export function markSlackThreadRootDelivered(input: {
   executeWrite(
     getDb(),
     (database) => {
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = CASE WHEN status = 'queued' THEN 'root_delivered' ELSE status END,
               provider_thread_id = COALESCE(provider_thread_id, ?),
@@ -255,14 +254,12 @@ export function markSlackThreadRootDelivered(input: {
             AND source = 'action'
             AND (provider_thread_id IS NULL OR provider_thread_id = ?)
         `,
-        )
-        .run(
-          requireText(input.providerThreadId, "providerThreadId"),
-          cleanOptional(input.canonicalRootMessageId),
-          now,
-          requireText(input.requestId, "requestId"),
-          requireText(input.providerThreadId, "providerThreadId"),
-        );
+        requireText(input.providerThreadId, "providerThreadId"),
+        cleanOptional(input.canonicalRootMessageId),
+        now,
+        requireText(input.requestId, "requestId"),
+        requireText(input.providerThreadId, "providerThreadId"),
+      );
     },
     { label: "slack_thread_lifecycle_root_delivered" },
   );
@@ -281,9 +278,9 @@ export function claimSlackThreadCreation(input: {
   return executeWrite(
     getDb(),
     (database) => {
-      const updated = database
-        .prepare(
-          `
+      const updated = runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'starting',
               creation_claim_id = ?,
@@ -301,8 +298,12 @@ export function claimSlackThreadCreation(input: {
               )
             )
         `,
-        )
-        .run(claimId, expiresAt, now, input.requestId, now);
+        claimId,
+        expiresAt,
+        now,
+        input.requestId,
+        now,
+      );
       if (updated.changes === 0) return null;
       return selectSlackThreadLifecycle(database, input.requestId);
     },
@@ -320,9 +321,9 @@ export function releaseSlackThreadCreationClaim(input: {
   return executeWrite(
     getDb(),
     (database) =>
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'root_delivered',
               creation_claim_id = NULL,
@@ -334,8 +335,11 @@ export function releaseSlackThreadCreationClaim(input: {
             AND creation_claim_id = ?
             AND prompt_published_at IS NULL
         `,
-        )
-        .run(input.failureReason, now, input.requestId, input.claimId).changes > 0,
+        input.failureReason,
+        now,
+        input.requestId,
+        input.claimId,
+      ).changes > 0,
     { label: "slack_thread_lifecycle_release_creation" },
   );
 }
@@ -352,9 +356,9 @@ export function completeSlackThreadCreation(input: {
   const completed = executeWrite(
     getDb(),
     (database) =>
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'open',
               child_session_key = ?,
@@ -368,16 +372,14 @@ export function completeSlackThreadCreation(input: {
           WHERE request_id = ?
             AND creation_claim_id = ?
         `,
-        )
-        .run(
-          input.childSessionKey,
-          input.childSessionName,
-          input.threadCanonicalChatId,
-          now,
-          now,
-          input.requestId,
-          input.claimId,
-        ).changes > 0,
+        input.childSessionKey,
+        input.childSessionName,
+        input.threadCanonicalChatId,
+        now,
+        now,
+        input.requestId,
+        input.claimId,
+      ).changes > 0,
     { label: "slack_thread_lifecycle_complete_creation" },
   );
   if (!completed) {
@@ -418,9 +420,9 @@ export function registerInboundSlackThread(input: RegisterInboundSlackThreadInpu
   return executeWrite(
     getDb(),
     (database) => {
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           INSERT INTO slack_thread_lifecycle (
             request_id, source, status, parent_session_key, parent_session_name,
             child_session_key, child_session_name, account_id, instance_id,
@@ -455,23 +457,21 @@ export function registerInboundSlackThread(input: RegisterInboundSlackThreadInpu
             END,
             updated_at = excluded.updated_at
         `,
-        )
-        .run(
-          requestId,
-          input.parentSessionKey,
-          input.parentSessionName,
-          input.childSessionKey,
-          input.childSessionName,
-          input.accountId,
-          input.instanceId,
-          input.platformChatId,
-          cleanOptional(input.rootCanonicalChatId),
-          input.threadCanonicalChatId,
-          input.providerThreadId,
-          now,
-          now,
-          now,
-        );
+        requestId,
+        input.parentSessionKey,
+        input.parentSessionName,
+        input.childSessionKey,
+        input.childSessionName,
+        input.accountId,
+        input.instanceId,
+        input.platformChatId,
+        cleanOptional(input.rootCanonicalChatId),
+        input.threadCanonicalChatId,
+        input.providerThreadId,
+        now,
+        now,
+        now,
+      );
       return selectSlackThreadLifecycleByProviderThread(database, input);
     },
     { label: "slack_thread_lifecycle_register_inbound" },
@@ -543,9 +543,9 @@ export function closeSlackThreadLifecycle(input: {
       }
       const nextSequence = existing.closeSequence + 1;
       const parentEventId = returnResult ? `slack-thread-close:${existing.requestId}:${nextSequence}` : null;
-      const updated = database
-        .prepare(
-          `
+      const updated = runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'closed',
               close_sequence = ?,
@@ -561,17 +561,15 @@ export function closeSlackThreadLifecycle(input: {
           WHERE request_id = ?
             AND status != 'closed'
         `,
-        )
-        .run(
-          nextSequence,
-          returnResult,
-          cleanOptional(input.closeContextId),
-          now,
-          returnResult ? 1 : 0,
-          parentEventId,
-          now,
-          existing.requestId,
-        );
+        nextSequence,
+        returnResult,
+        cleanOptional(input.closeContextId),
+        now,
+        returnResult ? 1 : 0,
+        parentEventId,
+        now,
+        existing.requestId,
+      );
       if (updated.changes === 0) {
         return {
           record: selectSlackThreadLifecycle(database, existing.requestId),
@@ -599,9 +597,9 @@ export function claimSlackThreadParentReturn(input: {
   return executeWrite(
     getDb(),
     (database) => {
-      const updated = database
-        .prepare(
-          `
+      const updated = runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET parent_notification_claim_id = ?,
               parent_notification_claim_expires_at = ?,
@@ -614,8 +612,12 @@ export function claimSlackThreadParentReturn(input: {
               OR COALESCE(parent_notification_claim_expires_at, 0) <= ?
             )
         `,
-        )
-        .run(claimId, expiresAt, now, input.requestId, now);
+        claimId,
+        expiresAt,
+        now,
+        input.requestId,
+        now,
+      );
       if (updated.changes === 0) return null;
       return selectSlackThreadLifecycle(database, input.requestId);
     },
@@ -633,9 +635,9 @@ export function releaseSlackThreadParentReturnClaim(input: {
   return executeWrite(
     getDb(),
     (database) =>
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET parent_notification_claim_id = NULL,
               parent_notification_claim_expires_at = NULL,
@@ -645,8 +647,11 @@ export function releaseSlackThreadParentReturnClaim(input: {
             AND parent_notification_claim_id = ?
             AND parent_notified_at IS NULL
         `,
-        )
-        .run(input.failureReason, now, input.requestId, input.claimId).changes > 0,
+        input.failureReason,
+        now,
+        input.requestId,
+        input.claimId,
+      ).changes > 0,
     { label: "slack_thread_lifecycle_release_parent_return" },
   );
 }
@@ -660,9 +665,9 @@ export function completeSlackThreadParentReturn(input: {
   const completed = executeWrite(
     getDb(),
     (database) =>
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET parent_notified_at = COALESCE(parent_notified_at, ?),
               parent_notification_claim_id = NULL,
@@ -672,8 +677,11 @@ export function completeSlackThreadParentReturn(input: {
           WHERE request_id = ?
             AND parent_notification_claim_id = ?
         `,
-        )
-        .run(now, now, input.requestId, input.claimId).changes > 0,
+        now,
+        now,
+        input.requestId,
+        input.claimId,
+      ).changes > 0,
     { label: "slack_thread_lifecycle_complete_parent_return" },
   );
   if (!completed) {
@@ -731,9 +739,9 @@ export function reopenSlackThreadLifecycle(requestId: string, now = Date.now()):
   return executeWrite(
     getDb(),
     (database) => {
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'open',
               closed_at = NULL,
@@ -741,8 +749,9 @@ export function reopenSlackThreadLifecycle(requestId: string, now = Date.now()):
           WHERE request_id = ?
             AND status = 'closed'
         `,
-        )
-        .run(now, requestId);
+        now,
+        requestId,
+      );
       return selectSlackThreadLifecycle(database, requestId);
     },
     { label: "slack_thread_lifecycle_reopen" },

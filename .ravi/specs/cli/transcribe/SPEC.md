@@ -60,7 +60,7 @@ cost limit or reliable preflight estimate, so the command runs immediately.
    no raw stack or payload is permitted as a private diagnostic shortcut.
 9. APIError normalization MUST extract declared provider reason/code fields
    rather than re-export a body embedded in `message`. Focused transcription
-   tests complement the global 13-row/nine-sink corpus; they do not establish
+   tests complement the global 14-row/nine-sink corpus; they do not establish
    that every inbound-audio consumer or live chat route was exercised.
 
 ## Write classification (brake decision per op)

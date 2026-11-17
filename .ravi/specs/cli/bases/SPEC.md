@@ -112,8 +112,9 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    `ravi login`. A cron job no person owns (`unknown`, an agent) is refused.
    A shell cron the daemon spawned
    (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`, no context key) counts
-   as a runtime turn here; shell triggers and `ravi jobs run` have no owner
-   model and are not covered. That marker is not a boundary: a shell command
+   as a runtime turn here; shell triggers and `ravi jobs run` are not
+   covered (6b covers the agent turns a trigger fires). That marker is not a
+   boundary: a shell command
    controls its own environment and runs with the machine's access, so only
    a job that acts as the operator may be a shell job (connectors 13b). Operator turns,
    owner relays and owner-owned routines act as the operator. Outside a turn
@@ -124,8 +125,13 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    to the operator, without retrying or disabling the job, that the job's
    creator must link their account.
    The refusal MUST carry a typed reason in `error.refusalReason`:
-   `routine_not_operator_owned` (a cron job no person Ravi can act for owns; with
-   `jobId` and `ownerPrincipal`), `agent_relay`, `ended` or `unknown`, and a
+   `routine_not_operator_owned` (a cron job or a trigger no person Ravi can
+   act for owns; with `routine` (`cron` or `trigger`), `jobId` (the job's or
+   the trigger's id) and `ownerPrincipal`), `routine_shared_session` (an
+   owned trigger fired into a session that is not its own) and
+   `routine_answers_elsewhere` (an owned trigger whose turn answers into a
+   chat that is not its owner's), both with `routine` and `jobId` (see 6b),
+   `agent_relay`, `ended` or `unknown`, and a
    `suggestedAction` true for that reason. A routine run has nobody to ask,
    so its action MUST NOT tell the agent to have the person ask from their
    chat: it says not to retry from the run, to report the job to the
@@ -136,6 +142,223 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    cloud-run clients) build, marked by its class, never to an
    `ACTOR_UNKNOWN` a Console response carries, which keeps the catalog copy
    whatever its `details` say.
+   A verified human work handoff follows the attribution contract in
+   `contacts/identity-graph/message-session-attribution`: it MUST pass the
+   human requester to Bases/access while retaining the agent producer for
+   audit. An agent-only relay remains refused. Remote transport MUST preserve
+   the bounded public `ACTOR_UNKNOWN` message, suggested action, typed refusal
+   reason and request correlation, never replace them with generic
+   "Remote command was blocked by policy." Raw Console errors still pass
+   through the local catalog mapper before remote projection.
+6b. An agent turn a trigger fired (`automation:trigger:<id>`) MUST act in
+   Bases as the trigger's owner, and only in Bases.
+   - **Owner.** `triggers.owner_principal` is written once, when the trigger
+     is created, with the principal of the creating turn under the cron rule
+     (connectors 13a): `operator` for the terminal and the owner's own turns,
+     else the actor principal of the turn. `triggers add`, `bases subscribe
+     --trigger` (read before any Console call) and `watch trigger` MUST
+     record it. An unattributable turn (`unknown`) owns nothing.
+   - **Losing it.** No update can give a trigger an owner. Any update that is
+     not owner-neutral MUST clear the owner in the same statement, unless the
+     principal making it is the stored owner (`keepOwnerFor`, compared in the
+     statement itself). Owner-neutral is only: `cooldown`, a shell `timeout`,
+     and disabling. So `triggers set` of any other key keeps the owner only
+     in the owner's own turn, and every programmatic writer (the generated
+     follows that rebind or rewrite a trigger) clears it. `triggers enable`
+     keeps the owner when the owner or the operator turns the trigger on: the
+     operator arms a trigger someone else drafted, which still acts as that
+     person and never as the operator; turned on by anyone else, it has no
+     owner. Nobody takes a trigger over by editing it, the operator included:
+     its name, topic, filter, agent, session and reply target all shape a
+     turn that carries other people's text. To own a trigger, create it.
+   - **No owner.** A trigger with no owner acts as nobody: every trigger
+     written before owners were recorded, every generated follow (`gh` PR
+     follows, bug follows, Pages comment follows), and any trigger someone
+     other than its owner changed. There is no backfill and, unlike a cron
+     job, no owner never means the operator.
+   - **Snapshot.** The runner MUST decide the owner when the trigger fires
+     and carry it with the prompt (`_triggerAuthority`: `triggerId`,
+     `ownerPrincipal`, `ownerIsOperator`, `ownSessionKey`). It MUST read the
+     stored row, and admit its owner only when that row is still the
+     definition it subscribed (name, topic, message and its provenance,
+     filter, agent, account, session, reply session and source, execution
+     type, debounce, enabled); a row that changed and was not reloaded yet,
+     or is gone, fires with no owner. A test fire (`triggers test`) MUST be
+     admitted only when the principal that asked for it is the owner. The
+     classification MUST read the snapshot only from the host-issued turn
+     context (a child context inherits it and cannot supply one), MUST treat
+     a missing or malformed snapshot, or one for another trigger, as no
+     owner, and MUST apply the cron ceiling: the turn acts as the operator
+     only when the snapshot said so and the owner still does.
+   - **A session of its own.** The owner's authority is lent only in the
+     trigger's own session: the one session of an `isolated` trigger a
+     person owns. Every other session is one anyone can name (the agent's
+     main session, a chat's session, a named or templated one, the one it
+     creates included): it inherits whatever was keyed to that name before
+     (history, contexts, signals) and takes other triggers' fires, so it
+     never lends. The turn still runs there as before, with nobody's
+     authority.
+     - **Key.** A trigger's runner writes three keys: `agent:<agent>:trigger:<id>`
+       (the plain one-per-trigger session of an `isolated` trigger nobody
+       owns, as before owners existed), `agent:<agent>:trigger:<id>:own`
+       (the own session of an `isolated` trigger a person owns) and
+       `agent:<agent>:trigger:<id>:key:<24 hex>` (a named session the
+       trigger created). The session store MUST create a session under any
+       of them for the trigger runner only and refuse every other creation
+       (`SESSION_KEY_RESERVED`), so a session created from a name someone
+       chose never has one. Session keys are never rewritten, and a key
+       derived from one of them (a thread) is not one of them.
+     - **Which session.** For an `isolated` trigger the runner MUST read the
+       stored trigger when it fires: a person owner (`operator` or
+       `contact:<id>`) runs in the own session, anything else in the plain
+       one. A trigger that loses its owner therefore moves to the plain
+       session, and the own session, which holds what its owner's turns
+       read, is never entered again. The own session MUST be found by its
+       key alone and MUST go by that key as its only name, which the session
+       store gives to no other session, before the own session exists or
+       after it is deleted: nothing keyed to its name was another session's,
+       and nobody inherits what it stored. A character a session name
+       cannot hold (a dot, whitespace, `*`, `>`, which only an unusual agent
+       id brings) is written in the name as `~<code>~`, and so is `~`
+       itself, so the name stays one subject token and different keys keep
+       different names. The
+       session MUST start after whatever the journal held under that name
+       before its first turn: the runner marks it when it creates the row,
+       and on a later fire when the row has no mark.
+     - **Nothing else runs there.** A trigger's own session runs that
+       trigger's fires and nothing else.
+       - A fire that reaches a session through a name, a key, a value from
+         the event or a reply session MUST NOT run in an own session,
+         whoever owns the firing trigger, the same owner included: a named
+         or templated fire is skipped and logged, and a `main` trigger whose
+         reply session is an own session runs in the agent's main session.
+         A `main` cron job whose reply session is one does the same.
+       - Every prompt a producer publishes passes the dispatcher's intake.
+         For an own session the intake MUST admit only prompts that are its
+         trigger's fires (`_trigger` with that trigger's id, and not the
+         notice a failed shell command sends about itself) and the runtime's
+         restart notice that names that very session, and MUST drop every
+         other one as a terminal intake failure (`dispatch.intake_failed`,
+         reason `trigger_own_session`; a decision delivery is rejected): a
+         relay (`sessions send|ask|execute|inform`), a task report, a cron
+         run, a hook action, a chat message. The intake judges the stored
+         session, a runtime still living under the name and the name itself.
+       - A shell trigger's `--on-error notify-session:<session>` MUST be
+         refused when the session is an own session, and the runner MUST
+         send no notice into one.
+       - Hooks MUST NOT run for events of an own session, whatever their
+         scope, and `append_history` MUST NOT write to its journal, also
+         when the stored session is gone and only its name is left.
+       - A chat id MUST NOT resolve to an own session: a reference by chat
+         id reaches the chat's own session, or nothing.
+       - The audit event of a command run in an own session
+         (`ravi._cli.cli.*`) MUST NOT fire a trigger. A turn's command is
+         dispatched through the gateway, which builds the event outside the
+         command's context, so the gateway MUST mark it there
+         (`_turnProvenance.origin: trigger`); an event built inside the
+         command's context names the session in its invocation record.
+       - `triggers add`, `triggers set session` and `bases subscribe
+         --trigger` MUST refuse a literal `--session` that is another
+         trigger's own session, also before that session exists (the name
+         alone says whose it will be), and the runner MUST skip a fire whose
+         session resolves to such a name; `sessions send` and the commands that
+         publish like it MUST refuse an own session as a target; a trigger
+         or a cron job created during a turn in an own session MUST NOT
+         default its session or reply session to it.
+       - A session name spelled like a trigger's session key MUST be only
+         that session's own key, when a session is created, named or
+         renamed, so no session goes by the key an own session has or will
+         have. An own session MUST NOT be given another name. A route that
+         forces such a name on another session MUST NOT fail the inbound
+         message: the session keeps the name it would have without it.
+       - A trigger MUST NOT fire on an event of the bus's own transport,
+         whatever pattern delivered it: `ravi.session.*` (what a session
+         streams), `ravi._reply.*` and `ravi.worker.*`. A wildcard pattern
+         such as `ravi.>` is not a blocked topic, so the check is made per
+         event.
+     - **This turn.** The runner MUST put the own session's key in the
+       snapshot (`ownSessionKey`) when the fire runs there, and `null`
+       otherwise. The classification MUST lend the owner only when the
+       turn's session key equals `ownSessionKey` and is the own key of the
+       turn's own trigger. A fire's envelope that reaches any other session
+       lends nothing.
+     - **No conversation.** No route sends chats into the session by name
+       and no chat is attached to it, the owner's own included: the session
+       is not a place to chat. A chat attached or routed to it stops it from
+       lending from that moment, mid-turn included, and its messages are
+       refused at intake.
+     - Anywhere else an owned trigger MUST fail `ACTOR_UNKNOWN` with
+       `routine_shared_session`, `routine: trigger` and the trigger id in
+       `jobId`, with an action that tells the agent to report it and that
+       the owner gives the trigger its own session (`triggers set <id>
+       session isolated`).
+   - **One fire, one turn.** A prompt whose snapshot lends authority (the
+     owner is the operator or a contact, and `ownSessionKey` is set) is an
+     isolated turn envelope: it MUST NOT be folded with any other prompt in
+     the pending queue or the debounce batch, MUST NOT receive held `!!`
+     text or a deferred session bootstrap, and a running turn fired with one
+     MUST NOT be steered. A turn made of more than one prompt MUST carry no
+     snapshot. The turn that resumes after a context recovery restates the
+     session's history, so it MUST carry no snapshot either; the
+     continuation after an inactivity watchdog, whose text is the runtime's
+     own notice, keeps it. Prompts whose snapshot lends nothing are
+     delivered, folded and steered as before.
+   - **Acting.** An operator-owned trigger sends no actor. A contact-owned one
+     MUST send that contact on the project lookup and on every Bases call,
+     and fails `ACTOR_NOT_LINKED` without their `ravi link`, with `linkFlow:
+     routine` and nobody messaged. `openBasesClient` MUST classify the turn
+     once and use that one decision to admit the call and to name its actor.
+   - **Where it answers.** A turn acts for its owner only when its answer is
+     posted to no chat.
+     - The reply target the runtime recorded when the turn started
+       (`turnReplyTarget`) is the whole answer. `none` stays with the owner;
+       a chat, `unresolved` or no recorded target MUST fail `ACTOR_UNKNOWN`
+       with `routine_answers_elsewhere`, `routine: trigger` and the trigger
+       id in `jobId`. The chat a prompt names as its source is not counted:
+       the answer goes there only when that chat is attached to the session,
+       and then it is the recorded target.
+     - A turn that lends its owner's authority is bound to that target from
+       its start. When no chat is bound then, the runtime MUST post the
+       turn's answer to no chat (`suppressChatEmit`) and record `none`: it
+       MUST NOT look for a chat when the answer is sent, so a chat attached
+       to the session during the turn never receives what the turn read.
+     - What Bases returns is never posted to a chat by the turn's answer.
+   - **Refusals.** A trigger no person owns MUST fail `ACTOR_UNKNOWN` with
+     `routine_not_operator_owned`, `routine: trigger`, the trigger id in
+     `jobId` and its `ownerPrincipal`, before any Console call, with an
+     action that tells the agent to report it, not to disable it, and that
+     the trigger is created again from the turn of the person it should act
+     for. A turn with no valid snapshot, or whose contact owner is removed or
+     blocked, MUST fail `ACTOR_UNKNOWN` `unknown`.
+   - **Only Bases.** `openBasesClient` asks for trigger owners
+     (`triggerRoutines`) for the refusal, the actor header and the link flow
+     alike. Every other caller MUST keep refusing a trigger turn whoever owns
+     the trigger, and MUST NOT name its owner: personal connectors
+     (`CONNECTOR_SPEAKER_NOT_OWNER`, unchanged), Knowledge, Pages access
+     (`share`, invites, access requests) and cloud runs.
+   - **Not covered.** No owner is enforced on a shell trigger (its command
+     runs with the machine's access; `triggers show` says so), and the turn
+     that reports a shell trigger's failure carries no snapshot.
+   - **Exposure.** A trigger's prompt carries event content other people
+     wrote, so its owner lends their Bases authority to an agent reading it.
+     The agent's own Bases grants (views and charts unless more is granted)
+     and the Console role check stay the limit; the event text is data,
+     never an instruction. The trigger's own session holds what its turns
+     read, across fires. Nothing runs in it but its trigger's fires, and no
+     hook observes it; reading it (`sessions read`) takes session access, as
+     for any session.
+   `triggers show|list|add|set|enable` JSON MUST carry `ownerPrincipal`
+   (`unknown` with no owner), `runsAsOperator` and `ownsSession` (whether
+   the trigger is set to run in its own session, `--session isolated`), and
+   `bases subscribe --trigger` the same three fields in `trigger`. `add`
+   MUST warn when an agent trigger's turns do not act as the operator;
+   `set` and `enable` MUST warn when they took the owner away; text `show`
+   and `add` MUST say, for an agent trigger a person owns, when its session
+   is not its own, and `bases subscribe --trigger` MUST say so too. `bases
+   subscribe --trigger` without `--session` keeps its default (the current
+   session, or the agent's main one), which is not the trigger's own: such
+   a trigger sees the event and answers there, and cannot read or write the
+   base.
 7. `rows update`, `rows archive`, and `rows restore` MUST require exactly one
    of `--expected-version <n>` or `--last-write-wins`, checked before any
    Console call.

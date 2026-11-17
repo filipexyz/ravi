@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
 
 let nextMessages: any[] = [];
@@ -688,54 +688,63 @@ describe("createClaudeRuntimeProvider", () => {
     expect(queryCalls[0]?.options.effort).toBe("max");
   });
 
-  it("omits disabled thinking for Claude Fable 5", async () => {
-    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-fable-thinking" }];
+  for (const model of [
+    "claude-fable-5",
+    "claude-fable-5-1",
+    "claude-fable-5-2",
+    "claude-fable-5-3",
+    "claude-fable-6",
+    "fable",
+    "fable-5-2",
+    " FABLE ",
+    "CLAUDE-FABLE-6",
+    "claude-mythos-5",
+  ]) {
+    it.each(["off", "normal", "verbose"] as const)(
+      `preserves adaptive thinking for ${model} (%s)`,
+      async (thinking) => {
+        nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-fable-thinking" }];
 
-    const provider = createClaudeRuntimeProvider();
-    const session = provider.startSession(
-      makeStartRequest(
-        (async function* () {
-          yield {
-            type: "user" as const,
-            message: { role: "user" as const, content: "hello" },
-            session_id: "",
-            parent_tool_use_id: null,
-          };
-        })(),
-        { model: "claude-fable-5", thinking: "off" },
-      ),
+        const provider = createClaudeRuntimeProvider();
+        const session = provider.startSession(
+          makeStartRequest(
+            (async function* () {
+              yield {
+                type: "user" as const,
+                message: { role: "user" as const, content: "hello" },
+                session_id: "",
+                parent_tool_use_id: null,
+              };
+            })(),
+            { model, thinking },
+          ),
+        );
+
+        await collectEvents(session.events);
+
+        expect(queryCalls).toHaveLength(1);
+        expect(queryCalls[0]?.options.model).toBe(model);
+        expect(queryCalls[0]?.options.thinking).toEqual(
+          thinking === "off"
+            ? undefined
+            : { type: "adaptive", display: thinking === "normal" ? "omitted" : "summarized" },
+        );
+      },
     );
+  }
 
-    await collectEvents(session.events);
+  it.each(["sonnet", "claude-fableish-5", "my-fable-model", "future-model"])(
+    "still disables thinking for %s",
+    (model) => {
+      const options = buildClaudeQueryOptions(
+        makeStartRequest((async function* () {})(), { model, thinking: "off" }),
+        {},
+        {},
+      );
 
-    expect(queryCalls).toHaveLength(1);
-    expect(queryCalls[0]?.options.model).toBe("claude-fable-5");
-    expect(queryCalls[0]?.options.thinking).toBeUndefined();
-  });
-
-  it("keeps summarized adaptive thinking for Claude Fable 5 verbose mode", async () => {
-    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-fable-verbose" }];
-
-    const provider = createClaudeRuntimeProvider();
-    const session = provider.startSession(
-      makeStartRequest(
-        (async function* () {
-          yield {
-            type: "user" as const,
-            message: { role: "user" as const, content: "hello" },
-            session_id: "",
-            parent_tool_use_id: null,
-          };
-        })(),
-        { model: "claude-fable-5", thinking: "verbose" },
-      ),
-    );
-
-    await collectEvents(session.events);
-
-    expect(queryCalls).toHaveLength(1);
-    expect(queryCalls[0]?.options.thinking).toEqual({ type: "adaptive", display: "summarized" });
-  });
+      expect(options.thinking).toEqual({ type: "disabled" });
+    },
+  );
 
   it("updates active and subsequent query models without recreating the provider session", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-model" }];
@@ -1122,6 +1131,38 @@ describe("buildClaudeQueryOptions chat-only host deny", () => {
     );
     expect(denied?.behavior).toBe("deny");
     expect(String((denied as { message?: string })?.message ?? "")).toMatch(/chat-only|denied|permission/i);
+  });
+});
+describe("claude profile credential env", () => {
+  const defaultProfile = join(homedir(), ".claude");
+  const loadBuilder = async () => (await import("./runtime-request-builder.js")).buildRuntimeCredentialProfileEnv;
+
+  it("leaves the default Claude profile implicit so the normal login is found", async () => {
+    const build = await loadBuilder();
+    expect(build("claude", { authProfileRef: "~/.claude" }, {})).toBeUndefined();
+    expect(build("claude", { authProfileRef: defaultProfile }, {})).toBeUndefined();
+    expect(build("claude", { authProfileRef: `${defaultProfile}/` }, {})).toBeUndefined();
+  });
+
+  it("names a non-default Claude profile explicitly", async () => {
+    const build = await loadBuilder();
+    expect(build("claude", { authProfileRef: "/tmp/claude-profile" }, {})).toEqual({
+      CLAUDE_CONFIG_DIR: "/tmp/claude-profile",
+    });
+  });
+
+  it("names the default profile when the daemon itself runs under another config dir", async () => {
+    const build = await loadBuilder();
+    expect(build("claude", { authProfileRef: "~/.claude" }, { CLAUDE_CONFIG_DIR: "/tmp/other-claude" })).toEqual({
+      CLAUDE_CONFIG_DIR: defaultProfile,
+    });
+  });
+
+  it("keeps naming the Codex home and ignores a blank profile reference", async () => {
+    const build = await loadBuilder();
+    expect(build("codex", { authProfileRef: "~/.codex" }, {})).toEqual({ CODEX_HOME: join(homedir(), ".codex") });
+    expect(build("claude", undefined, {})).toBeUndefined();
+    expect(build("claude", { authProfileRef: "  " }, {})).toBeUndefined();
   });
 });
 afterAll(() => mock.restore());

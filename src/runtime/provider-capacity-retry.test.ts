@@ -89,4 +89,16 @@ describe("provider capacity retry budget", () => {
     }
     expect(decideProviderCapacityRetry({ signal: undefined })).toEqual({ action: "not_capacity" });
   });
+
+  test("fresh retry state cannot replay a Claude weekly quota failure", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      providerCode: "rate_limit",
+      message: "You've hit your weekly limit · resets 10am (America/Sao_Paulo)",
+    });
+    expect(decideProviderCapacityRetry({ signal, state: undefined })).toEqual({ action: "not_capacity" });
+    expect(decideProviderCapacityRetry({ signal, state: { startedAt: 0, retries: 1 } })).toEqual({
+      action: "not_capacity",
+    });
+  });
 });

@@ -1,4 +1,5 @@
 import { getSession, type SessionEntry } from "../router/index.js";
+import { isTriggerOwnSessionKey } from "../triggers/authority.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeProviderId } from "./types.js";
 
@@ -47,6 +48,9 @@ function resolveRuntimeForkSession(
   }
 
   const parentKey = options.dbSessionKey.replace(/:thread:.*$/, "");
+  // A trigger's own session holds what its owner's turns read, and only that
+  // trigger's fires run there: a thread opened from it starts on its own.
+  if (isTriggerOwnSessionKey(parentKey)) return undefined;
   const parentSession = getSession(parentKey);
   const parentProviderSessionId =
     parentSession?.runtimeSessionDisplayId ?? parentSession?.providerSessionId ?? parentSession?.sdkSessionId;

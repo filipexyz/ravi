@@ -23910,7 +23910,7 @@ class RaviSchemas {
       "type": "string"
     },
     "session": {
-      "description": "With --trigger: session to run in, by name or template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
+      "description": "With --trigger: session to run in: isolated (the trigger's own, required to read or write the base), a name or a template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
       "type": "string"
     },
     "trigger": {
@@ -24102,6 +24102,15 @@ class RaviSchemas {
         "name": {
           "type": "string"
         },
+        "ownerPrincipal": {
+          "type": "string"
+        },
+        "ownsSession": {
+          "type": "boolean"
+        },
+        "runsAsOperator": {
+          "type": "boolean"
+        },
         "session": {
           "type": "string"
         },
@@ -24119,7 +24128,10 @@ class RaviSchemas {
         "session",
         "topic",
         "filter",
-        "enableCommand"
+        "enableCommand",
+        "ownerPrincipal",
+        "runsAsOperator",
+        "ownsSession"
       ],
       "type": "object"
     }
@@ -96366,7 +96378,7 @@ class RaviSchemas {
       "type": "string"
     },
     "replySession": {
-      "description": "CI publishing session; must match the authenticated session and does not grant authority",
+      "description": "From a terminal: the session whose chat receives the CI follow. In a session it must be that session. Grants no authority",
       "type": "string"
     },
     "repo": {
@@ -111592,6 +111604,361 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+}
+''';
+
+  static const sessionsUpdateInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "effort": {
+      "description": "Reasoning effort (none|minimal|low|medium|high|xhigh|max|ultra) or 'clear'",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model id for the effective provider, or 'clear' to remove the override",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "probeTimeout": {
+      "description": "Liveness probe timeout in seconds (default 120)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider (claude|codex|grok|pi) or 'clear' to remove the override",
+      "type": "string"
+    },
+    "skipProbe": {
+      "description": "Apply without the liveness probe (no rollback protection)",
+      "type": "boolean"
+    },
+    "thinking": {
+      "description": "Thinking level (off|normal|verbose) or 'clear'",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsUpdateReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "update",
+      "type": "string"
+    },
+    "after": {
+      "additionalProperties": false,
+      "properties": {
+        "effortOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProviderOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinkingLevel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "runtimeProviderOverride",
+        "modelOverride",
+        "effortOverride",
+        "thinkingLevel"
+      ],
+      "type": "object"
+    },
+    "appliesOn": {
+      "const": "next-turn-runtime-restart",
+      "type": "string"
+    },
+    "before": {
+      "additionalProperties": false,
+      "properties": {
+        "effortOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProviderOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinkingLevel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "runtimeProviderOverride",
+        "modelOverride",
+        "effortOverride",
+        "thinkingLevel"
+      ],
+      "type": "object"
+    },
+    "changed": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "type": "boolean"
+        },
+        "model": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "boolean"
+        },
+        "thinking": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "effort",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "clearedProviderSession": {
+      "type": "boolean"
+    },
+    "effective": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "effort",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "notification": {
+      "additionalProperties": false,
+      "properties": {
+        "delivered": {
+          "type": "boolean"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "delivered",
+        "error"
+      ],
+      "type": "object"
+    },
+    "probe": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "credentialId": {
+              "type": "string"
+            },
+            "credentialLabel": {
+              "type": "string"
+            },
+            "durationMs": {
+              "type": "number"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "thinking": {
+              "type": "string"
+            },
+            "timedOut": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "provider",
+            "model",
+            "durationMs"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rematerializedToAgentRuntime": {
+      "type": "boolean"
+    },
+    "rolledBack": {
+      "type": "boolean"
+    },
+    "session": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName"
+      ],
+      "type": "object"
+    },
+    "superseded": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "session",
+    "changed",
+    "before",
+    "after",
+    "effective",
+    "probe",
+    "rolledBack",
+    "superseded",
+    "clearedProviderSession",
+    "rematerializedToAgentRuntime",
+    "appliesOn"
+  ],
   "type": "object"
 }
 ''';

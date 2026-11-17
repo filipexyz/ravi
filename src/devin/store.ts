@@ -1,5 +1,5 @@
-import { initializeStateSchema } from "../db/schema-owner.js";
-import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
+import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/state-boundary.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -20,13 +20,23 @@ function getDevinDb(): Database {
   const path = getDevinDbPath();
   assertDatabaseTargetAllowed(path);
   if (db && dbPath === path) return db;
-  db?.close();
+  closeDevinDb();
   mkdirSync(dirname(path), { recursive: true });
-  db = openStateDatabase(path);
+  const opened = openStateDatabase(path);
+  try {
+    configureStateJournalMode(opened);
+    opened.exec("PRAGMA busy_timeout = 5000");
+    opened.exec("PRAGMA foreign_keys = ON");
+  } catch (error) {
+    try {
+      opened.close();
+    } catch {
+      // no-cause: Cleanup must not replace the setup error rethrown below; the handle was never cached.
+    }
+    throw error;
+  }
+  db = opened;
   dbPath = path;
-  if (!isSchemaConsumer()) db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA busy_timeout = 5000");
-  db.exec("PRAGMA foreign_keys = ON");
   return db;
 }
 

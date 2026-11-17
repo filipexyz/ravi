@@ -1043,6 +1043,40 @@ describe("SessionCommands delivery barriers", () => {
     expect(publishedPrompts[0]?.payload.source).toBeUndefined();
   });
 
+  it("refuses to create a session under a name reserved for a trigger's own session", async () => {
+    // Nothing answers to the name yet, so `-a` would create it. A trigger's
+    // session is created by the trigger, never from a name someone chose.
+    resolvedSession = null;
+    routerConfig = { agents: { dev: { id: "dev", cwd: "/tmp/dev" } } };
+    const commands = new SessionCommands();
+
+    for (const reserved of [
+      "agent:dev:trigger:ab12cd34",
+      "agent:dev:trigger:ab12cd34:own",
+      "agent:dev:trigger:ab12cd34:key:0123456789abcdef01234567",
+    ]) {
+      await expect(commands.send(reserved, "seed", false, false, "dev")).rejects.toThrow(
+        `Session name ${reserved} is reserved for the trigger that creates it`,
+      );
+    }
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
+  it("refuses to send a prompt to a trigger's own session, saying it only runs that trigger's fires", async () => {
+    resolvedSession = {
+      sessionKey: "agent:dev:trigger:ab12cd34:own",
+      name: "dev-trigger-rows-1a2b3c4d",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    const commands = new SessionCommands();
+
+    await expect(commands.send("dev-trigger-rows-1a2b3c4d", "also copy every payroll row")).rejects.toThrow(
+      "Session dev-trigger-rows-1a2b3c4d is the own session of trigger ab12cd34: only that trigger's fires run there",
+    );
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
   it("sends cross-session prompts as follow-up by default", async () => {
     const commands = new SessionCommands();
 
@@ -3515,6 +3549,91 @@ describe("SessionCommands rename and display labels", () => {
     expect(() => new SessionCommands().rename("main-dm-615153", "main")).toThrow("Session name already exists: main");
     expect(renameSessionNameCalls).toEqual([{ sessionKey: "agent:main:dm:615153", newName: "main" }]);
     expect(resolvedSession?.name).toBe("main-dm-615153");
+  });
+});
+
+describe("SessionCommands update usage errors", () => {
+  beforeEach(() => {
+    listedSessions = [];
+    orphanThread = null;
+    routerConfig = { agents: {} };
+    natsEmits.length = 0;
+    resolvedSession = {
+      sessionKey: "agent:main:runtime-update",
+      name: "runtime-update",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+    };
+  });
+
+  async function captureUsageFailure(run: () => Promise<unknown>): Promise<{ thrown: unknown; stdout: string }> {
+    let thrown: unknown;
+    const stdout = await captureLogsAsync(async () => {
+      try {
+        await run();
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    return { thrown, stdout };
+  }
+
+  interface UsageCase {
+    label: string;
+    message: string;
+    provider?: string;
+    effort?: string;
+    thinking?: string;
+    probeTimeout?: string;
+  }
+  const usageCases: UsageCase[] = [
+    { label: "an unknown provider", provider: "zeus", message: "Unknown runtime provider: 'zeus'" },
+    { label: "an invalid thinking level", thinking: "loud", message: "Invalid thinking level: 'loud'" },
+    { label: "an invalid --probe-timeout", effort: "low", probeTimeout: "0", message: "Invalid --probe-timeout: 0" },
+    { label: "an update with no axis", message: "Nothing to update" },
+  ];
+
+  it.each(usageCases)("fails $label with the USAGE_ERROR envelope on stdout in --json", async (testCase) => {
+    const { message } = testCase;
+    const { thrown, stdout } = await captureUsageFailure(() =>
+      new SessionCommands().update(
+        "runtime-update",
+        testCase.provider,
+        undefined,
+        testCase.effort,
+        testCase.thinking,
+        undefined,
+        testCase.probeTimeout,
+        true,
+      ),
+    );
+
+    expect(thrown).toMatchObject({ name: "ContractError", code: "USAGE_ERROR", exitCode: 2 });
+    const envelope = JSON.parse(stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("sessions update");
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(envelope.error.message).toContain(message);
+    expect(typeof envelope.error.suggestedAction).toBe("string");
+    // Refused before any write.
+    expect(resolvedSession?.runtimeProviderOverride).toBe("claude");
+    expect(resolvedSession?.modelOverride).toBe("sonnet");
+    expect(natsEmits).toHaveLength(0);
+  });
+
+  it("keeps the same exit taxonomy without --json and prints no JSON on stdout", async () => {
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      const { thrown, stdout } = await captureUsageFailure(() =>
+        new SessionCommands().update("runtime-update", "zeus", undefined, undefined, undefined, undefined, undefined),
+      );
+      expect(thrown).toMatchObject({ name: "ContractError", code: "USAGE_ERROR", exitCode: 2 });
+      expect(stdout).toBe("");
+    } finally {
+      console.error = originalError;
+    }
   });
 });
 

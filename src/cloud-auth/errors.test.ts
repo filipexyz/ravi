@@ -517,7 +517,9 @@ describe("ACTOR_NOT_LINKED after the person's link started", () => {
     // A cron run acting for its creator: nobody to talk to, so no chat line.
     expect(contract("routine").message).toContain("person who created the cron job");
     expect(contract("routine").details.chatLinePt).toBeUndefined();
-    expect(String(contract("routine").details.suggestedAction)).toContain("do not disable the job");
+    // The same copy serves a cron run and a turn a trigger fired.
+    expect(contract("routine").message).toContain("cron job or trigger");
+    expect(String(contract("routine").details.suggestedAction)).toContain("do not disable the cron job or trigger");
     // An unknown value keeps the catalog copy.
     expect(contract("bogus").details.linkFlow).toBeUndefined();
     expect(contract().message).toBe("The person asking is not linked to a Console user on this Ravi.");
@@ -567,5 +569,74 @@ describe("ACTOR_UNKNOWN copy", () => {
     expect(JSON.stringify(remote.envelope())).not.toContain("curl evil");
     expect(JSON.stringify(remote.envelope())).not.toContain("job_1");
     expect(String(remote.details.suggestedAction)).not.toContain("curl");
+  });
+
+  it("words a refused trigger as a trigger, with the step that gives it an owner", () => {
+    const local = cloudErrorToContractError(
+      "bases rows fill",
+      new TurnRefusalError(
+        { kind: "routine_not_operator_owned", routine: "trigger", jobId: "trg_1", ownerPrincipal: "unknown" },
+        "bases",
+      ),
+    );
+    expect(local.exitCode).toBe(3);
+    expect(local.message).toContain("fired by trigger trg_1, owned by unknown");
+    expect(local.message).toContain("will not read or write Bases for this turn");
+    expect(local.message).not.toContain("cron job");
+    expect(local.details).toMatchObject({
+      refusalReason: "routine_not_operator_owned",
+      routine: "trigger",
+      jobId: "trg_1",
+      ownerPrincipal: "unknown",
+    });
+    const next = String(local.details.suggestedAction);
+    expect(next).toContain("do not disable the trigger");
+    expect(next).toContain("ravi triggers show trg_1");
+    // Nobody takes a trigger over by editing it: it is created again.
+    expect(next).toContain("create it again from the turn of the person it should act for");
+    expect(next).not.toContain("triggers set");
+    // Nobody is asking in a turn an event started.
+    expect(next).not.toContain("the person can ask");
+  });
+
+  it("says a trigger needs a session of its own when it was fired into another", () => {
+    const local = cloudErrorToContractError(
+      "bases rows update",
+      new TurnRefusalError({ kind: "routine_shared_session", routine: "trigger", jobId: "trg_1" }, "bases"),
+    );
+    expect(local.exitCode).toBe(3);
+    expect(local.message).toContain("fired by trigger trg_1 into a session the trigger does not own");
+    expect(local.message).toContain("will not read or write Bases for this turn");
+    expect(local.details).toMatchObject({
+      refusalReason: "routine_shared_session",
+      routine: "trigger",
+      jobId: "trg_1",
+    });
+    expect(local.details).not.toHaveProperty("ownerPrincipal");
+    const next = String(local.details.suggestedAction);
+    expect(next).toContain("do not disable the trigger");
+    expect(next).toContain("only in a session of its own");
+    expect(next).toContain("ravi triggers set trg_1 session isolated");
+  });
+
+  it("says where a trigger may answer when its answer goes elsewhere", () => {
+    const local = cloudErrorToContractError(
+      "bases rows update",
+      new TurnRefusalError({ kind: "routine_answers_elsewhere", routine: "trigger", jobId: "trg_1" }, "bases"),
+    );
+    expect(local.exitCode).toBe(3);
+    expect(local.message).toContain("fired by trigger trg_1");
+    expect(local.message).toContain("its answer is posted into a chat");
+    expect(local.message).toContain("will not read or write Bases for this turn");
+    expect(local.details).toMatchObject({
+      refusalReason: "routine_answers_elsewhere",
+      routine: "trigger",
+      jobId: "trg_1",
+    });
+    expect(local.details).not.toHaveProperty("ownerPrincipal");
+    const next = String(local.details.suggestedAction);
+    expect(next).toContain("do not disable the trigger");
+    expect(next).toContain("only when its turns answer to no chat");
+    expect(next).toContain("ravi triggers show trg_1");
   });
 });

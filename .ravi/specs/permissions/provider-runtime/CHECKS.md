@@ -37,6 +37,33 @@
 
 Quoting regressions (`bun test src/bash/`):
 
+- Effective wildcard execution admits substitutions, heredocs, inline Python,
+  shell/source commands and compound `cd` through both the SDK hook and native
+  runtime authorization, without new approvals.
+- The indirect/unsupported shell forms remain denied to named-executable, narrowed child,
+  unresolved-actor, relay/turn-narrowed and contact-limited contexts, including
+  under a full-access executor. Live executor reductions take effect on the next
+  check. Ordinary `cd` chains remain admissible with their named grants.
+  Tool, environment, session and skill authorization remain separate.
+- Syntax refusals emit `shell_syntax` with a stable rule and sanitized command
+  length, without a false missing-capability row or executable name. SDK hooks
+  deny that category. Native skill discovery retains inline executable gates and
+  conservative text/group gates on unsupported syntax.
+- `CI840 quote-aware command discovery` in `src/runtime/skill-gate.test.ts`
+  covers mixed literal Ravi text plus active unrelated expansion, actual nested
+  substitutions/pipelines, quoted command words, configured raw-text rules and
+  native skill delivery/retry. Literal-only mentions MUST NOT load a skill;
+  named-executable contexts MUST remain restricted. The same block covers
+  here-documents: a body under a quoted delimiter (`<<'EOF'`, `<<"EOF"`,
+  `<<\EOF`) MUST NOT load a skill, a body under an unquoted delimiter MUST gate
+  only its active substitutions, the delimiter MUST NOT hide the command on its
+  own line, and lines with no terminator MUST still be read as commands. A `<<`
+  that is an arithmetic shift (`((...))`, `$((...))`, a subscript or an
+  expansion offset) or whose delimiter word cannot be followed MUST NOT hide
+  the Ravi line that follows it.
+- The remaining syntax-refusal checks below use restricted contexts. The parser
+  defaults remain strict; its explicit inline-code discovery mode is not an
+  authorization decision.
 - `X=a#b bash -c id` and `python3 -W ignore#x -c code` MUST be refused,
   including through sudo. URL fragments and real word-start comments MUST
   preserve command boundaries. `echo x#y > .codex/config.toml` MUST retain its
@@ -46,19 +73,33 @@ Quoting regressions (`bun test src/bash/`):
   a real file-script argument MUST retain the documented executable boundary.
 - Single-quoted substitution/backtick/process/heredoc text and escaped dollar
   or backtick in double quotes MUST pass in JSON and rg/grep arguments.
-- Active substitutions outside and inside double quotes MUST fail, including
-  line continuations, nested quote text and escaped backslash parity.
-- Actual heredocs (even with quoted delimiters), here-strings and process
-  substitutions MUST fail. Literal operator text MUST NOT create a pipeline.
+- Active substitutions outside and inside double quotes MUST expose their
+  command (origin `substitution`), including line continuations, nested quote
+  text and escaped backslash parity; an unauthorized inner command is denied as
+  a missing executable grant naming it.
+- Quoted here-document bodies MUST yield no command; unquoted bodies expose only
+  their substitutions (origin `heredoc`). Process substitutions expose their
+  command. Literal operator text MUST NOT create a pipeline.
+- `src/bash/launcher-realpath-policy.test.ts` MUST keep:
+  `bootstrap_denies_shell_launchers` (xargs, find -exec, env, timeout, nice,
+  nohup, parallel, watch refuse a shell/interpreter payload under bootstrap even
+  when the launcher is granted), `realpath_not_basename_defeats_copied_binary`
+  (copied shell, symlinked shell, copy-then-run, relative path and PATH
+  override), `heredoc_quoted_body_is_not_commands`,
+  `substitution_and_redirect_allowed_when_command_authorized` (`printf
+  "$(date)"`, `echo $(git ...)`, `ls | sort > out` with Write, `diff <(...)`),
+  `unknown_parse_fails_closed_with_named_error`, and regressions for keywords
+  (#813), disguised substitutions (#767/#776), quoted assignment values and env
+  spoofing inside substitutions.
 - Quoted/escaped executable names, inline flags and piped interpreter receivers
-  MUST retain their refusals, including with wildcard executable grants.
+  MUST retain their refusals for named-executable grants.
 - Quote concatenation, backslashes inside single quotes, comments after escaped
   whitespace, command boundaries after comments and quoted newlines MUST be tested.
 - Harmless printf fixtures MUST compare actual Bash output with the guard's
   expansion classification when `/bin/bash` is available.
 - Real Bash comparisons MUST include nested and unquoted substitutions, escaped
-  metacharacters, and heredocs with bare, quoted and escaped delimiters. A literal
-  heredoc body does not make the heredoc operator permitted by this policy.
+  metacharacters, and heredocs with bare, quoted and escaped delimiters. The
+  analyzer MUST report a nested command exactly when Bash executed one.
 - Hook tests MUST demonstrate that named-executable grants permit literal search
   arguments, do not permit a later shell, and still permit interpreter file
   scripts: this last case documents the explicitly open capability boundary.

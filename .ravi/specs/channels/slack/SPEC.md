@@ -32,6 +32,12 @@ Slack is a native Ravi channel, not an Omni-owned semantic surface.
 - Slack custom sidebar sections MUST NOT be represented as native Ravi topology until Ravi has a credential path that can read them correctly.
 - New Slack-facing skills SHOULD use native Slack operations first; Omni-backed Slack behavior is migration compatibility only.
 
+## DM Pairing Approval
+
+- A human DM held by `pairing` MUST be admitted on a subsequent inbound after its scoped canonical contact is approved, provided an agent route/default matches. A separate explicit route MUST NOT be necessary to complete contact approval.
+- Pairing admission MUST resolve the current Slack platform identity through configured instance aliases, then check canonical contact policy. Unresolved, ambiguous, bot-owned, blocked, opted-out, or agent-restricted contacts MUST NOT gain admission through this path.
+- Approval MUST NOT bypass a closed policy, missing route, group allowlist, or runtime authorization. Pending contact creation and approval follow `contacts/identity-graph/inbound-contact-intake`.
+
 ## Inbound Message Content
 
 - Inbound normalization MUST preserve the complete visible text of supported Slack blocks, in message order. A top-level `text` notification fallback MUST NOT replace the body of an otherwise readable block message.

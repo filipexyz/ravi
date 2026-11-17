@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { runWithContext } from "../cli/context.js";
@@ -7,12 +7,14 @@ import { dbCreateAgent, dbUpdateAgent, type ContextRecord } from "../router/rout
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getConfiguredCapabilityMaterializers, getConfiguredPermissionProviders } from "./provider-registry.js";
+import * as providerRegistry from "./provider-registry.js";
 import {
   agentCan,
   authorizePermission,
   canWithCapabilities,
   canWithCapabilityContext,
   can,
+  findApprovalRequirement,
   localOperatorCan,
   materializeSubjectCapabilities,
 } from "./provider-runtime.js";
@@ -58,6 +60,24 @@ describe("Permission Provider Runtime", () => {
     expect(decision.requestId).toBeString();
     expect(decision.durationMs).toBeGreaterThanOrEqual(0);
     expect(localOperatorCan("execute", "group", "daemon")).toBe(true);
+  });
+
+  it("authorizes the pinned operator without loading persisted provider settings", () => {
+    const getProviders = spyOn(providerRegistry, "getConfiguredPermissionProviders").mockImplementation(() => {
+      throw new Error("Provider storage unavailable during recovery");
+    });
+    const request = { localOperator: true, permission: "mutate", objectType: "daemon", objectId: "restart" };
+    try {
+      expect(authorizePermission(request).providerId).toBe("operator-control");
+      expect(findApprovalRequirement([request])).toBeNull();
+      expect(getProviders).not.toHaveBeenCalled();
+      expect(authorizePermission(request, { providers: [] }).allowed).toBe(false);
+      expect(() => authorizePermission({ ...request, context: { capabilities: [] } })).toThrow(
+        "Provider storage unavailable during recovery",
+      );
+    } finally {
+      getProviders.mockRestore();
+    }
   });
 
   it("does not authorize direct subject checks without a provider-owned context", () => {

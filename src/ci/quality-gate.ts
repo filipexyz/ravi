@@ -23,6 +23,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    // Inactive delivery protocol/floor oracle and per-boot aggregate compatibility gate.
+    "src/channels/delivery-contract.test.ts",
+    "src/channels/delivery-boot.test.ts",
+    "src/channels/delivery-activation.test.ts",
     "src/db/schema-owner.test.ts",
     "src/channels/presence-consumer.test.ts",
     "src/channels/backend.test.ts",
@@ -49,6 +53,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/credential-intake.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
+    "src/channels/slack/thread-turn-health.test.ts",
     // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
     "src/channels/slack/thread-runtime.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
@@ -67,10 +72,16 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Headless Omni stub: presence/renew no-ops when Omni is not installed.
     "src/omni/stub-consumer.test.ts",
   ],
-  "src/db/schema-owner.ts": ["src/db/schema-owner.test.ts"],
+  "src/db.ts": ["src/db.test.ts", "src/db/journal-mode-retry.test.ts"],
+  "src/db/schema-owner.ts": ["src/db/schema-owner.test.ts", "src/db/schema-lock.test.ts"],
+  "src/db/schema-lock.ts": ["src/db/schema-lock.test.ts"],
+  "src/db/daemon-schema-owner.ts": ["src/db/schema-lock.test.ts", "src/cli/commands/daemon-schema-cutover.test.ts"],
   "src/db/runtime-state.ts": ["src/db/schema-owner.test.ts"],
   "src/db/state-boundary.ts": ["src/router/state-boundary.test.ts"],
   "src/router/": [
+    // Daemon/consumer initialization exercises the router's journal/schema boundary.
+    "src/db/schema-owner.test.ts",
+    "src/db/journal-mode-retry.test.ts",
     "src/router/state-boundary.test.ts",
     "src/channels/backend.test.ts",
     "src/channels/runtime-events.test.ts",
@@ -104,6 +115,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Shutdown failure propagation and scoped drain evidence.
+    "src/runtime/shutdown.test.ts",
     // Reset refusal must still settle its captured logical request under ownership fences.
     "src/runtime/host-event-loop.reset-failure.test.ts",
     // Real host/generator retention, owner and cancellation fences under memory-only isolation.
@@ -114,11 +127,20 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/signals/delivery-seam.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
+    // Fail-fast model existence (catalog-driven) on every runtime write path.
+    "src/runtime/model-validation.test.ts",
+    // Liveness probe: terminal turn events, timeout, credential settlement.
+    "src/runtime/runtime-probe.test.ts",
+    // Atomic update: validate-before-write, probe pass/fail, full rollback.
+    "src/runtime/session-runtime-update.test.ts",
     "src/runtime/context-registry.test.ts",
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/observation-plane.test.ts",
     "src/runtime/runtime-request-context.test.ts",
     "src/runtime/runtime-request-builder.context-key.test.ts",
+    // A trigger fire through the real turn start: its session, where it answers, and what Bases decides.
+    "src/runtime/runtime-request-builder.trigger-owner.test.ts",
+    "src/runtime/runtime-session-continuity.test.ts",
     "src/runtime/runtime-selection.test.ts",
     // Agent default vs last-used runtime_provider rematerialize.
     "src/runtime/agent-session-runtime-sync.test.ts",
@@ -224,6 +246,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/triggers/__tests__/runner-debounce.test.ts",
     "src/triggers/__tests__/debounce.test.ts",
     "src/triggers/__tests__/session-target.test.ts",
+    // Who a trigger's turns act as in Bases: the owner is written on create,
+    // lost on any change its owner did not make, and admitted by the runner
+    // only for the stored definition.
+    "src/triggers/__tests__/ownership.test.ts",
+    "src/triggers/__tests__/triggers-db.test.ts",
+    "src/triggers/__tests__/runner-owner.test.ts",
   ],
   "src/approval/": [
     "src/approval/service.test.ts",
@@ -239,7 +267,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   ],
   "src/apps/router.ts": ["src/apps/router.test.ts"],
   "src/apps/youtube/": ["src/apps/youtube/client.test.ts", "src/apps/youtube/credential-authority.test.ts"],
-  "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
+  "src/devin/": [
+    "src/devin/client.test.ts",
+    "src/devin/store.test.ts",
+    "src/db/schema-owner.test.ts",
+    "src/db/journal-mode-retry.test.ts",
+  ],
 };
 
 export interface SpecGateError {

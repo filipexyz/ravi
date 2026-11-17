@@ -1,3 +1,4 @@
+import { assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
 /**
  * Supervised daemon restart cutover.
  *
@@ -5,8 +6,10 @@
  * tree-kill the predecessor's children. Doing that before a different,
  * still-supervised successor exists is how a handoff ends as a clean stop
  * with nothing left for PM2 to resurrect. The cutover below refuses to stop
- * the running daemon unless a successor has stayed online, and it deletes by
- * pm id so the successor is not part of that stop.
+ * the running daemon unless a successor has stayed supervised at the schema
+ * ownership barrier. Waiting at that barrier is enough to cut over, but only
+ * a ready receipt from that same process can complete the restart. Deletion
+ * uses pm id so the successor is not part of the predecessor's stop.
  */
 
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -47,6 +50,7 @@ export type ManagedDaemonProcess = {
   pmId: number;
   pid: number;
   status: string;
+  startedAt?: number;
 };
 
 export type SupervisedDaemonRestartCode =
@@ -54,7 +58,9 @@ export type SupervisedDaemonRestartCode =
   | "started"
   | "orchestrator_attached"
   | "start_failed"
+  | "intake_stop_failed"
   | "successor_not_supervised"
+  | "successor_not_ready"
   | "save_failed"
   | "predecessor_stop_failed"
   | "successor_lost";
@@ -66,6 +72,7 @@ export type SupervisedDaemonRestartResult = {
   message: string;
   predecessorPmIds: number[];
   successorPmId: number | null;
+  readySuccessor?: ManagedDaemonProcess;
   predecessorPreserved: boolean;
   saveStatus: number | null;
   deletedPmIds: number[];
@@ -74,10 +81,12 @@ export type SupervisedDaemonRestartResult = {
 export type SupervisedDaemonRestartDeps = {
   processName?: string;
   list: () => ManagedDaemonProcess[];
-  start: (input: { force: boolean }) => number;
-  deletePmId: (pmId: number) => number;
-  save: () => number;
+  start: (input: { force: boolean }) => number | Promise<number>;
+  deletePmId: (pmId: number) => number | Promise<number>;
+  save: () => number | Promise<number>;
+  beforePredecessorStop?: () => number | Promise<number>;
   pidAlive: (pid: number) => boolean;
+  schemaPhase: (process: ManagedDaemonProcess) => "waiting" | "owned" | "ready" | null;
   wait?: (ms: number) => Promise<void>;
   now?: () => number;
   mustBeDetached?: boolean;
@@ -113,6 +122,10 @@ function isSupervised(process: ManagedDaemonProcess | undefined, pidAlive: (pid:
   return Boolean(process && process.status === "online" && process.pid > 0 && pidAlive(process.pid));
 }
 
+function sameProcess(a: ManagedDaemonProcess, b: ManagedDaemonProcess): boolean {
+  return a.pmId === b.pmId && a.pid === b.pid && a.startedAt === b.startedAt;
+}
+
 async function pollUntil(deps: TimingDeps, timeoutMs: number, ready: () => boolean): Promise<boolean> {
   const started = deps.now();
   while (deps.now() - started <= timeoutMs) {
@@ -131,6 +144,7 @@ function result(input: SupervisedDaemonRestartResult): SupervisedDaemonRestartRe
 export async function performSupervisedDaemonRestart(
   deps: SupervisedDaemonRestartDeps,
 ): Promise<SupervisedDaemonRestartResult> {
+  assertRuntimeMaintenanceInactive();
   const processName = deps.processName ?? "ravi";
   const clock = timing(deps);
   const deletedPmIds: number[] = [];
@@ -159,37 +173,42 @@ export async function performSupervisedDaemonRestart(
   const beforeIds = new Set(before.map((process) => process.pmId));
   const predecessorPmIds = before.map((process) => process.pmId);
   const replaceRunning = before.some((process) => process.status === "online");
+  let predecessorStopped = false;
 
-  const deletePmId = (pmId: number): number => {
-    const status = deps.deletePmId(pmId);
+  const deletePmId = async (pmId: number): Promise<number> => {
+    assertRuntimeMaintenanceInactive();
+    const status = await deps.deletePmId(pmId);
     if (status === 0) deletedPmIds.push(pmId);
     return status;
   };
 
-  const cleanupUnsupervisedArrivals = (): void => {
+  const cleanupUnsupervisedArrivals = async (): Promise<void> => {
     for (const process of named()) {
-      if (!beforeIds.has(process.pmId)) deletePmId(process.pmId);
+      if (!beforeIds.has(process.pmId)) await deletePmId(process.pmId);
     }
   };
 
   const preserved = (successorPmId: number | null, saveStatus: number | null): SupervisedDaemonRestartResult =>
     result({
       ok: false,
-      changed: false,
-      code: "successor_not_supervised",
-      message: replaceRunning
-        ? "Restart aborted: no supervised successor stayed online, so the running daemon was not stopped."
-        : "Restart aborted: the daemon did not stay supervised after start.",
+      changed: predecessorStopped,
+      code: predecessorStopped ? "successor_lost" : "successor_not_supervised",
+      message: predecessorStopped
+        ? "Restart did not finish: the successor was lost after a predecessor had already stopped."
+        : replaceRunning
+          ? "Restart aborted: no supervised successor stayed online, so the running daemon was not stopped."
+          : "Restart aborted: the daemon did not stay supervised after start.",
       predecessorPmIds,
       successorPmId,
-      predecessorPreserved: replaceRunning,
+      predecessorPreserved: replaceRunning && !predecessorStopped,
       saveStatus,
       deletedPmIds,
     });
 
-  const startStatus = deps.start({ force: replaceRunning });
+  assertRuntimeMaintenanceInactive();
+  const startStatus = await deps.start({ force: replaceRunning });
   if (startStatus !== 0) {
-    cleanupUnsupervisedArrivals();
+    await cleanupUnsupervisedArrivals();
     return result({
       ok: false,
       changed: false,
@@ -212,10 +231,10 @@ export async function performSupervisedDaemonRestart(
     const candidate = named().find((process) => {
       if (!isSupervised(process, deps.pidAlive)) return false;
       if (replaceRunning && beforeIds.has(process.pmId)) return false;
-      return true;
+      return deps.schemaPhase(process) !== null;
     });
     if (candidate) {
-      hits += 1;
+      hits = successor && sameProcess(successor, candidate) ? hits + 1 : 1;
       successor = candidate;
       if (hits >= clock.confirmations) break;
     } else {
@@ -228,25 +247,44 @@ export async function performSupervisedDaemonRestart(
   }
 
   if (!successor || hits < clock.confirmations || !isSupervised(successor, deps.pidAlive)) {
-    cleanupUnsupervisedArrivals();
+    await cleanupUnsupervisedArrivals();
     return preserved(successor?.pmId ?? null, null);
   }
 
   const successorPmId = successor.pmId;
-  const stillSupervised = (): boolean =>
-    isSupervised(
-      named().find((process) => process.pmId === successorPmId),
-      deps.pidAlive,
-    );
+  const confirmedSuccessor = successor;
+  const currentProcess = (expected: ManagedDaemonProcess): ManagedDaemonProcess | undefined => {
+    const current = named().find((process) => sameProcess(process, expected));
+    return isSupervised(current, deps.pidAlive) ? current : undefined;
+  };
+  const stillSupervised = (): boolean => {
+    const current = currentProcess(confirmedSuccessor);
+    return current !== undefined && deps.schemaPhase(current) !== null;
+  };
+
+  const waitForReady = async (expected: ManagedDaemonProcess): Promise<"ready" | "lost" | "timeout"> => {
+    const started = clock.now();
+    let readyHits = 0;
+    while (clock.now() - started <= clock.readyTimeoutMs) {
+      const current = currentProcess(expected);
+      if (!current) return "lost";
+      readyHits = deps.schemaPhase(current) === "ready" ? readyHits + 1 : 0;
+      if (readyHits >= clock.confirmations) return "ready";
+      const beforeWait = clock.now();
+      await clock.wait(clock.pollMs);
+      if (clock.now() <= beforeWait) break;
+    }
+    return "timeout";
+  };
 
   if (!stillSupervised()) {
-    cleanupUnsupervisedArrivals();
+    await cleanupUnsupervisedArrivals();
     return preserved(successorPmId, null);
   }
 
-  const saveBeforeStop = replaceRunning ? deps.save() : null;
+  const saveBeforeStop = replaceRunning ? await deps.save() : null;
   if (replaceRunning && saveBeforeStop !== 0) {
-    deletePmId(successorPmId);
+    await deletePmId(successorPmId);
     return result({
       ok: false,
       changed: false,
@@ -260,9 +298,26 @@ export async function performSupervisedDaemonRestart(
     });
   }
 
+  if (replaceRunning && deps.beforePredecessorStop && (await deps.beforePredecessorStop()) !== 0) {
+    await deletePmId(successorPmId);
+    const restoredSave = await deps.save();
+    return result({
+      ok: false,
+      changed: false,
+      code: "intake_stop_failed",
+      message:
+        "Restart aborted: channel intake could not be stopped before schema cutover; the predecessor was preserved.",
+      predecessorPmIds,
+      successorPmId: null,
+      predecessorPreserved: true,
+      saveStatus: restoredSave,
+      deletedPmIds,
+    });
+  }
+
   if (replaceRunning) {
     if (!stillSupervised()) {
-      cleanupUnsupervisedArrivals();
+      await cleanupUnsupervisedArrivals();
       return preserved(successorPmId, saveBeforeStop);
     }
     for (const pmId of predecessorPmIds) {
@@ -270,49 +325,70 @@ export async function performSupervisedDaemonRestart(
       if (!stillSupervised()) {
         return preserved(successorPmId, saveBeforeStop);
       }
-      const deleteStatus = deletePmId(pmId);
+      const deleteStatus = await deletePmId(pmId);
       if (deleteStatus !== 0) {
         return result({
           ok: false,
-          changed: false,
+          changed: predecessorStopped,
           code: "predecessor_stop_failed",
           message:
             "Restart did not finish: the successor is online, but the previous daemon could not be stopped. Both processes may still be supervised.",
           predecessorPmIds,
           successorPmId,
-          predecessorPreserved: true,
+          predecessorPreserved: !predecessorStopped,
           saveStatus: saveBeforeStop,
           deletedPmIds,
         });
       }
+      predecessorStopped = true;
     }
   }
 
-  if (!stillSupervised()) {
+  const readiness = await waitForReady(successor);
+  if (readiness === "timeout") {
+    return result({
+      ok: false,
+      changed: true,
+      code: "successor_not_ready",
+      message:
+        "Restart did not finish: the supervised successor did not report schema/runtime readiness before the deadline.",
+      predecessorPmIds,
+      successorPmId,
+      predecessorPreserved: false,
+      saveStatus: saveBeforeStop,
+      deletedPmIds,
+    });
+  }
+
+  if (readiness === "lost") {
     if (!replaceRunning) {
-      cleanupUnsupervisedArrivals();
+      await cleanupUnsupervisedArrivals();
       return preserved(successorPmId, saveBeforeStop);
     }
-    const recoveryStatus = deps.start({ force: false });
+    assertRuntimeMaintenanceInactive();
+    const recoveryStatus = await deps.start({ force: false });
     let recovered: ManagedDaemonProcess | undefined;
     if (recoveryStatus === 0) {
       const recoveryStarted = clock.now();
       while (clock.now() - recoveryStarted <= clock.readyTimeoutMs) {
-        recovered = named().find((process) => isSupervised(process, deps.pidAlive));
+        recovered = named().find(
+          (process) => isSupervised(process, deps.pidAlive) && deps.schemaPhase(process) !== null,
+        );
         if (recovered) break;
         const beforeWait = clock.now();
         await clock.wait(clock.pollMs);
         if (clock.now() <= beforeWait) break;
       }
+      if (recovered && (await waitForReady(recovered)) !== "ready") recovered = undefined;
     }
-    const recoverySave = recovered ? deps.save() : null;
+    const recoverySave = recovered ? await deps.save() : null;
     return result({
       ok: false,
       changed: Boolean(recovered),
       code: "successor_lost",
       message: recovered
-        ? "Restart failed closed: the successor exited when the previous daemon stopped. A replacement process was started, but the original restart did not complete cleanly."
-        : "Restart failed closed: stopping the previous daemon left no supervised successor, and the replacement start failed.",
+        ? "Restart failed closed: the successor exited when the previous daemon stopped. A replacement reached readiness, but the original restart did not complete cleanly."
+        : "Restart failed closed: stopping the previous daemon left no ready successor, and the replacement did not reach readiness.",
       predecessorPmIds,
       successorPmId: recovered?.pmId ?? null,
       predecessorPreserved: false,
@@ -321,7 +397,7 @@ export async function performSupervisedDaemonRestart(
     });
   }
 
-  const saveStatus = deps.save();
+  const saveStatus = await deps.save();
   if (saveStatus !== 0) {
     return result({
       ok: false,
@@ -330,6 +406,21 @@ export async function performSupervisedDaemonRestart(
       message: replaceRunning
         ? "Daemon restarted, but failed to save the PM2 process list."
         : "Daemon started, but failed to save the PM2 process list.",
+      predecessorPmIds,
+      successorPmId,
+      predecessorPreserved: false,
+      saveStatus,
+      deletedPmIds,
+    });
+  }
+
+  const finalSuccessor = currentProcess(successor);
+  if (!finalSuccessor || deps.schemaPhase(finalSuccessor) !== "ready") {
+    return result({
+      ok: false,
+      changed: true,
+      code: "successor_lost",
+      message: "Restart did not finish: the ready successor changed or lost readiness while PM2 state was being saved.",
       predecessorPmIds,
       successorPmId,
       predecessorPreserved: false,
@@ -347,6 +438,7 @@ export async function performSupervisedDaemonRestart(
       : "Daemon started and PM2 startup state saved",
     predecessorPmIds,
     successorPmId,
+    readySuccessor: finalSuccessor,
     predecessorPreserved: false,
     saveStatus,
     deletedPmIds,

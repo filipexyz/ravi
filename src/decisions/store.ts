@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../db/write-retry.js";
 import { getDb } from "../router/router-db.js";
@@ -126,12 +127,21 @@ export function askDecisionRecord(origin: DecisionOrigin, raw: DecisionAsk): { d
       return { decision: existing, created: false };
     }
     if (existing) {
-      db.query(
+      runThreadMutation(
+        db,
         "UPDATE decisions SET ask=?,owner_type=?,owner_id=?,blocks=?,updated_at=?,revision=revision+1 WHERE id=?",
-      ).run(input.ask, input.ownerType!, input.ownerId ?? null, input.blocks ? 1 : 0, now, id);
+        input.ask,
+        input.ownerType!,
+        input.ownerId ?? null,
+        input.blocks ? 1 : 0,
+        now,
+        id,
+      );
     } else {
-      db.query(`INSERT INTO decisions(id,origin_type,origin_id,chat_id,session_key,key,status,owner_type,owner_id,ask,asked_by,asked_at,blocks,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,'open',?,?,?,?,?,?,?,?)`).run(
+      runThreadMutation(
+        db,
+        `INSERT INTO decisions(id,origin_type,origin_id,chat_id,session_key,key,status,owner_type,owner_id,ask,asked_by,asked_at,blocks,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,'open',?,?,?,?,?,?,?,?)`,
         id,
         origin.type,
         origin.id,
@@ -162,9 +172,15 @@ export function answerDecisionRecord(id: string, raw: string, actor?: string): D
     if (!old) throw new DecisionError("DECISION_NOT_FOUND", "Decision not found.");
     if (old.status !== "open") throw new DecisionError("DECISION_NOT_OPEN", "Answered decisions are immutable.");
     const now = Date.now();
-    db.query(
+    runThreadMutation(
+      db,
       "UPDATE decisions SET status='answered',answer=?,answered_by=?,answered_at=?,updated_at=?,revision=revision+1 WHERE id=? AND status='open'",
-    ).run(answer, actor ?? null, now, now, id);
+      answer,
+      actor ?? null,
+      now,
+      now,
+      id,
+    );
     const decision = getDecision(id)!;
     appendHistory(decision, "answered", actor);
     if (old.origin.type === "thread") enqueueDelivery(decision, "answer");
@@ -173,15 +189,27 @@ export function answerDecisionRecord(id: string, raw: string, actor?: string): D
 }
 
 function appendHistory(decision: Decision, type: "asked" | "answered", actor?: string): void {
-  getDb()
-    .query("INSERT INTO decision_history(decision_id,type,actor,snapshot_json,created_at) VALUES (?,?,?,?,?)")
-    .run(decision.id, type, actor ?? null, JSON.stringify(decision), Date.now());
+  runThreadMutation(
+    getDb(),
+    "INSERT INTO decision_history(decision_id,type,actor,snapshot_json,created_at) VALUES (?,?,?,?,?)",
+    decision.id,
+    type,
+    actor ?? null,
+    JSON.stringify(decision),
+    Date.now(),
+  );
 }
 
 function enqueueDelivery(decision: Decision, kind: "question" | "answer"): void {
-  getDb()
-    .query("INSERT INTO decision_deliveries(id,decision_id,kind,revision,created_at) VALUES (?,?,?,?,?)")
-    .run(`decision:${decision.id}:${kind}:${decision.revision}`, decision.id, kind, decision.revision, Date.now());
+  runThreadMutation(
+    getDb(),
+    "INSERT INTO decision_deliveries(id,decision_id,kind,revision,created_at) VALUES (?,?,?,?,?)",
+    `decision:${decision.id}:${kind}:${decision.revision}`,
+    decision.id,
+    kind,
+    decision.revision,
+    Date.now(),
+  );
 }
 
 export function decisionWrite<T>(fn: (db: ReturnType<typeof getDb>) => T): T {

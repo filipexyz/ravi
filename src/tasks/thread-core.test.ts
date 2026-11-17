@@ -1,3 +1,4 @@
+import { runThreadMutation } from "../threads/schema-fence.js";
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { closeRouterDb, dbCreateAgent, getDb } from "../router/router-db.js";
@@ -132,7 +133,9 @@ describe("channel-independent task threads", () => {
     expect(() => dbCreateTask({ ...input, title: "Another" })).toThrow("different input");
     expect(count("threads")).toBe(1);
     expect(() => getDb().query("UPDATE tasks SET thread_id=NULL WHERE id=?").run(first.task.id)).toThrow();
-    expect(() => getDb().query("DELETE FROM threads WHERE id=?").run(first.task.threadId)).toThrow();
+    expect(() => runThreadMutation(getDb(), "DELETE FROM threads WHERE id=?", first.task.threadId)).toThrow(
+      "Task thread is still referenced",
+    );
     expect(() => updateThreadStatus(first.task.threadId, "closed")).toThrow("task runtime");
   });
 
@@ -172,12 +175,13 @@ describe("channel-independent task threads", () => {
     dbDecideTask(task.id, { key: "choose", ask: "Which result?" });
     expect(() => dbCompleteTask(task.id, { message: "Result" })).toThrow("open decision");
     expect(getThreadById(task.threadId)?.status).toBe("active");
-    getDb().exec("UPDATE decisions SET status='answered',answer='A'");
-    getDb().exec(
+    runThreadMutation(getDb(), "UPDATE decisions SET status='answered',answer='A'");
+    runThreadMutation(
+      getDb(),
       "INSERT INTO decision_deliveries(id,decision_id,kind,revision,status,created_at) SELECT 'answer',id,'answer',1,'uncertain',0 FROM decisions",
     );
     expect(() => dbCompleteTask(task.id, { message: "Result" })).toThrow("undelivered answer");
-    getDb().exec("UPDATE decision_deliveries SET status='delivered'");
+    runThreadMutation(getDb(), "UPDATE decision_deliveries SET status='delivered'");
     expect(dbCompleteTask(task.id, { message: "Result" }).task.status).toBe("done");
   });
 

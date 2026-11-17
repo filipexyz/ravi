@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dropExpiredPendingGhFollows,
   PENDING_GH_FOLLOW_TTL_MS,
@@ -17,6 +18,18 @@ import { ghFollowFilter } from "./gh-watch.js";
 import { validateFilter } from "../triggers/filter.js";
 import type { Trigger } from "../triggers/index.js";
 
+// Maintenance defaults can read the watch store even when trigger I/O is injected.
+let stateDir: string | null = null;
+
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-gh-follow-sweep-");
+});
+
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
+});
+
 const LEGACY_UNQUOTED_FILTER = (repo: string, prNumber: number) =>
   `data.payload.repository == ${JSON.stringify(repo)} && (data.payload.number == ${prNumber} || data.payload.pull_request.number == ${prNumber})`;
 
@@ -29,7 +42,7 @@ const runMaintenance = (deps: Parameters<typeof runMaintenanceRaw>[0] = {}) =>
   runMaintenanceRaw({ ensureWatches: async () => undefined, ...deps });
 
 function trigger(name: string, id = "t1"): Trigger {
-  return { id, name } as Trigger;
+  return { id, name, cooldownMs: 0, debounceMs: 0 } as Trigger;
 }
 
 function pending(overrides: Partial<PendingGhFollow> = {}): PendingGhFollow {
@@ -65,7 +78,7 @@ describe("gh follow pending queue", () => {
   });
 
   it("writes and reads the queue from disk", () => {
-    const dir = `/tmp/gh-follow-test-${process.pid}-${Date.now()}`;
+    const dir = stateDir!;
     writePendingGhFollows([pending()], dir);
     expect(readPendingGhFollows(dir)).toEqual([pending()]);
     const left = removePendingGhFollow(readPendingGhFollows(dir), (entry) => entry.repo === "o/r", dir);

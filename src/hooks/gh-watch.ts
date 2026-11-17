@@ -91,8 +91,6 @@ const GH_ADMIN_SCOPES = new Set([
   "search",
 ]);
 
-export const GH_FOLLOW_COOLDOWN_MS = 30_000;
-
 /**
  * O follow precisa dos dois lados: o evento de ciclo de vida da PR e o resultado
  * de CI. `ravi.watch.github.>` cobre ambos (o filtro por repo+PR descarta o
@@ -602,7 +600,10 @@ export function buildGhFollowTriggerInput(
     replySession: context.sessionName ?? context.sessionKey,
     replySource: context.source,
     session: "main",
-    cooldownMs: GH_FOLLOW_COOLDOWN_MS,
+    // Every distinct review/CI event matters. Dedupe handles retries; neither
+    // cooldown nor the bounded in-memory debounce can preserve every event.
+    cooldownMs: 0,
+    debounceMs: 0,
     filter: ghFollowFilter(repo, prNumber),
   };
 }
@@ -662,6 +663,14 @@ export function ghFollowReplyTargetPatch(trigger: Trigger): Partial<TriggerInput
     replySession: resolved.sessionName,
     replySource: resolved.source,
   };
+}
+
+/** Cooldown drops distinct events; the bounded in-memory debounce can too. */
+export function ghFollowDeliveryPatch(trigger: Trigger): Partial<TriggerInput> {
+  const patch: Partial<TriggerInput> = {};
+  if (trigger.cooldownMs !== 0) patch.cooldownMs = 0;
+  if ((trigger.debounceMs ?? 0) !== 0) patch.debounceMs = 0;
+  return patch;
 }
 
 export function findExistingGhFollowTrigger(repo: string, prNumber: number, triggers: Trigger[]): Trigger | undefined {
@@ -909,7 +918,7 @@ export async function ensureGhWatchFollow(
     // A instrução envelhece: quando a declaração de eventos cresce (comentário),
     // o trigger antigo continua mandando o agente ler só ciclo de vida e CI. Sem
     // atualizar aqui, acompanhamentos existentes nunca recebem o texto novo.
-    const patch: Partial<TriggerInput> = {};
+    const patch: Partial<TriggerInput> = ghFollowDeliveryPatch(existing);
     if (existing.message !== desired.message) patch.message = desired.message;
     if (existing.filter !== desired.filter) patch.filter = desired.filter;
     if (existing.topic !== desired.topic) patch.topic = desired.topic;

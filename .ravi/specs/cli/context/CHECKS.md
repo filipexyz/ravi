@@ -32,3 +32,13 @@
 - `bun test src/cli/commands/context-hook-gateway.test.ts` checks original
   permission provider reason, principal and operation survive the hook response
   while credentials remain redacted and denied tools never run.
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts
+  src/cli/registry-operator-credentials.test.ts` MUST exercise an installed
+  package fixture with distinct client and daemon stores: missing/empty/list,
+  default selection and braked/executed removal remain client-local, without
+  opening SQLite. Adding a candidate MUST call authenticated `context whoami`
+  and write only the client store, including its first credential. Gateway
+  401/403, malformed/inactive replies and unavailability MUST leave stores
+  unchanged. Runtime authority, explicit remote configuration and forged
+  transport metadata MUST never activate the local operator path.

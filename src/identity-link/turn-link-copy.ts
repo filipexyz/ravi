@@ -54,9 +54,9 @@ export function turnLinkCopy(flow: TurnLinkFlow): TurnLinkCopy {
     case "routine":
       return {
         message:
-          "This scheduled run acts as the person who created the cron job, and that person has not linked their Ravi Console account, so Ravi did not do this. Nobody is asking in this run, so Ravi did not message them.",
+          "This run acts as the person who created the cron job or trigger behind it, and that person has not linked their Ravi Console account, so Ravi did not do this. Nobody is asking in this run, so Ravi did not message them.",
         suggestedAction:
-          "do not retry from this run and do not disable the job; report to the operator that the job's creator must link their Ravi Console account (they message the agent in private and approve the link) before the job can use the Console",
+          "do not retry from this run and do not disable the cron job or trigger; report to the operator that its creator must link their Ravi Console account (they message the agent in private and approve the link) before it can use the Console",
       };
     case "unavailable":
       return {

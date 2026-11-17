@@ -1,5 +1,4 @@
 #!/usr/bin/env tsx
-import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Ravi Bot CLI - Unified command-line interface
  *
@@ -14,6 +13,7 @@ import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import "../daemon-stdin.js";
 // Loads ~/.ravi/.env before other modules initialize
 import "./env.js";
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 
 import "reflect-metadata";
 import { Command } from "commander";
@@ -31,6 +31,7 @@ import {
   installUsageContract,
   renderContractError,
   sqliteCapacityToContractError,
+  stateNotReadyToContractError,
   unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
@@ -45,6 +46,8 @@ import { requireTuiSessionName } from "../tui/session-arg.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation } from "../apps/router.js";
 import { cliOnlyCommandError, REMOTE_GATEWAY_URL_ENV, requiresRemoteGateway } from "./remote-gateway.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
+import { runWithContext } from "./context.js";
+import { usesOperatorRecoveryPath } from "./operator-runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -220,16 +223,20 @@ program
   .option("--json", "Print a machine-readable result")
   .action(async (options: RaviUpdateOptions) => {
     refuseRootCommandInRuntimeSession("update", options.json);
-    await runWithCliAudit(
-      {
-        group: "_root",
-        name: "update",
-        tool: "root_update",
-        input: { ...options },
-        closeLazyConnection: true,
-      },
-      () => runUpdate(options),
-    );
+    const update = () =>
+      runWithCliAudit(
+        {
+          group: "_root",
+          name: "update",
+          tool: "root_update",
+          input: { ...options },
+          closeLazyConnection: true,
+        },
+        () => runUpdate(options),
+      );
+    // An update must work while state is not prepared for the running release:
+    // the operator's terminal runs it without resolving a credential from SQLite.
+    await (usesOperatorRecoveryPath() ? runWithContext({}, update) : update());
   });
 
 program
@@ -417,7 +424,9 @@ void bootstrapCli().catch(async (error: unknown) => {
     return;
   }
   const contractError =
-    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap", error);
+    stateNotReadyToContractError("cli bootstrap", error) ??
+    sqliteCapacityToContractError("cli bootstrap", error) ??
+    unexpectedErrorToContractError("cli bootstrap", error);
   renderContractError(contractError, process.argv.includes("--json"));
   await emitCliAuditEvent({
     group: "cli",

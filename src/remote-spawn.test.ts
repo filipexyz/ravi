@@ -45,6 +45,39 @@ async function flush(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+describe("createRemoteSpawn SDK arguments", () => {
+  it.each(["separate", "equals"] as const)(
+    "strips local options in %s form without dropping following arguments",
+    (form) => {
+      const { spawnImpl, calls } = createFakeSpawn();
+      const localOption = (flag: string, value: string) => (form === "equals" ? [`${flag}=${value}`] : [flag, value]);
+      createRemoteSpawn(
+        "worker.example",
+        "ravi",
+        spawnImpl,
+        {},
+      )({
+        ...spawnOptions({}),
+        args: [
+          "/local/sdk.mjs",
+          ...localOption("--plugin-dir", "/local/plugins=one"),
+          "--model=claude-fable-5-2",
+          ...localOption("--plugin-dir-no-mcp", "/local/plugins-two"),
+          "--output-format=stream-json",
+          ...localOption("--setting-sources", ""),
+          "--verbose",
+          ...localOption("--plugin-dir", "/local/plugins-three"),
+        ],
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.args.at(-1)).toBe(
+        "cd '/srv/work' && claude '--model=claude-fable-5-2' '--output-format=stream-json' '--verbose'",
+      );
+    },
+  );
+});
+
 describe("createRemoteSpawn credentials", () => {
   it("never puts credential values in the ssh argv or child env", () => {
     const { spawnImpl, calls } = createFakeSpawn();

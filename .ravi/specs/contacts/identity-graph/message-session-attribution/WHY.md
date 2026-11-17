@@ -66,6 +66,13 @@ distinct from a plain not-found, keeps the wrong principal from inheriting a tur
 
 ## Tradeoff
 
+A programmatic thread already stores the context of the turn that requested
+it. Replacing that turn's verified human with the forwarding agent discarded
+the evidence Bases needs and caused `ACTOR_UNKNOWN`; asking the human to type
+again merely bypassed the broken handoff. Reading the exact persisted caller
+fixes this without trusting an agent's claimed contact. Notifications remain
+agent turns, and connector consent is not implied by identifying a requester.
+
 This adds more nullable columns and more writes on the inbound/outbound path.
 
 The cost is acceptable because it prevents identity bugs that are expensive to debug later: wrong contact timelines, wrong permission checks, incorrect outbound targeting, and agents refining the wrong person's context.

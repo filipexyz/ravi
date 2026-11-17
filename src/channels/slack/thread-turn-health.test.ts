@@ -206,6 +206,9 @@ describe("thread turn health reconciliation", () => {
       expect(result.failures).toBe(1);
       expect(publishPrompt).not.toHaveBeenCalled();
       expect(getThreadTurnHealth(requestId)).toMatchObject({ state: "attention", reason: "no_signal" });
+      now += 30_000;
+      await tick();
+      expect(publishPrompt).not.toHaveBeenCalled();
     });
   }
 
@@ -444,7 +447,7 @@ describe("thread turn health reconciliation", () => {
     await first;
   });
 
-  it("retries publication failures with the same id and stops after success", async () => {
+  it("retries publication failures after five minutes across reopen with the same envelope", async () => {
     publishPrompt = mock(async () => {
       throw new Error("transport unavailable");
     });
@@ -454,11 +457,125 @@ describe("thread turn health reconciliation", () => {
       now: () => now,
     });
     expect(failed.failures).toBe(1);
-    const firstId = publishPrompt.mock.calls[0]?.[2];
+    const firstCall = publishPrompt.mock.calls[0];
+    closeSessionStore();
+    closeRouterDb();
     publishPrompt = mock(async () => {});
+    now += 30_000;
+    lease(now - 1);
+    expect(await tick()).toMatchObject({ state: "attention", reason: "owner_lost" });
+    now += 269_999;
     await tick();
+    expect(publishPrompt).not.toHaveBeenCalled();
+    now += 1;
     await tick();
     expect(publishPrompt).toHaveBeenCalledTimes(1);
-    expect(publishPrompt.mock.calls[0]?.[2]).toEqual(firstId);
+    expect(publishPrompt.mock.calls[0]).toEqual(firstCall);
+    expect(
+      getDb().prepare("SELECT notice_retry_after FROM slack_thread_turn_health WHERE request_id = ?").get(requestId),
+    ).toEqual({ notice_retry_after: null });
+    await tick();
+    expect(publishPrompt).toHaveBeenCalledTimes(1);
+    now += 30_000;
+    await tick();
+    expect(publishPrompt).toHaveBeenCalledTimes(2);
+    const prompt = publishPrompt.mock.calls[0]?.[1] as RuntimeLaunchPrompt;
+    await admitThreadAttention(
+      parentKey,
+      prompt,
+      mock(async () => {}),
+    );
+    now += 30_000;
+    await tick();
+    expect(publishPrompt).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts failure backoff at completion of a slow failed publication", async () => {
+    publishPrompt = mock(async () => {
+      now += 120_000;
+      throw new Error("transport timeout");
+    });
+    expect(
+      (await reconcileSlackThreadLifecycle({ publishPrompt, publishEvent: mock(async () => {}), now: () => now }))
+        .failures,
+    ).toBe(1);
+    publishPrompt = mock(async () => {});
+    now += 299_999;
+    await tick();
+    expect(publishPrompt).not.toHaveBeenCalled();
+    now += 1;
+    await tick();
+    expect(publishPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a failed turn's retry delay when a new physical turn needs attention", async () => {
+    getDb()
+      .prepare("UPDATE session_events SET payload_json = '{}' WHERE turn_id = ? AND event_type = 'adapter.request'")
+      .run(turnId);
+    expect(
+      (await reconcileSlackThreadLifecycle({ publishPrompt, publishEvent: mock(async () => {}), now: () => now }))
+        .failures,
+    ).toBe(1);
+    now += 30_000;
+    turnId = "health-turn-after-failure";
+    startedAt += 1;
+    seedTurn();
+    await tick();
+    expect(publishPrompt).toHaveBeenCalledTimes(1);
+    expect(publishPrompt.mock.calls[0]?.[1]).toMatchObject({ _slackThreadLifecycle: { turnId } });
+  });
+
+  it.each(["same", "new"])("does not let a late failure delay a replacement claim on the %s turn", async (mode) => {
+    let entered!: () => void;
+    let reject!: (error: Error) => void;
+    const sending = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const firstSend = new Promise<void>((_resolve, fail) => {
+      reject = fail;
+    });
+    let sends = 0;
+    publishPrompt = mock(async () => {
+      if (++sends === 1) {
+        entered();
+        await firstSend;
+      }
+    });
+    const first = reconcileSlackThreadLifecycle({ publishPrompt, publishEvent: mock(async () => {}), now: () => now });
+    await sending;
+    now += 60_001;
+    if (mode === "new") {
+      turnId = "health-turn-during-publication";
+      startedAt += 1;
+      seedTurn();
+    }
+    await tick();
+    reject(new Error("old transport failed"));
+    expect((await first).failures).toBe(1);
+    expect(
+      getDb()
+        .prepare("SELECT notified_turn_id, notice_retry_after FROM slack_thread_turn_health WHERE request_id = ?")
+        .get(requestId),
+    ).toEqual({ notified_turn_id: turnId, notice_retry_after: null });
+    await tick();
+    expect(publishPrompt).toHaveBeenCalledTimes(2);
+  });
+
+  it("adds retry state to an existing database without changing health or receipts", async () => {
+    await tick();
+    const previous = getThreadTurnHealth(requestId);
+    getDb().exec("ALTER TABLE slack_thread_turn_health DROP COLUMN notice_retry_after");
+    closeSessionStore();
+    closeRouterDb();
+    expect(getThreadTurnHealth(requestId)).toEqual(previous);
+    expect(
+      getDb()
+        .prepare("SELECT notified_turn_id, notice_retry_after FROM slack_thread_turn_health WHERE request_id = ?")
+        .get(requestId),
+    ).toEqual({ notified_turn_id: turnId, notice_retry_after: null });
+    closeSessionStore();
+    closeRouterDb();
+    await tick();
+    expect(publishPrompt).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,11 +3,19 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parsePm2Jlist } from "../pm2-output.js";
+import { registerThreadFenceConnection } from "../threads/schema-fence.js";
+import { resolveAccountHome } from "../utils/account-home.js";
 
 export class StateDatabaseError extends Error {
   readonly code = "REAL_STATE_ACCESS_REFUSED";
+}
+
+/** A store this process uses but does not prepare, and that nothing has prepared yet. */
+export class StateNotPreparedError extends Error {
+  readonly code = "STATE_SCHEMA_NOT_READY";
 }
 
 // Resolve existing ancestors and dangling links before SQLite can create a file.
@@ -58,25 +66,44 @@ export interface RegisteredRuntimeProcess {
   pm2_env?: { pm_exec_path?: string; args?: string[] };
 }
 
-function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
-  // The CLI can auto-start PM2. Do not invoke it for an unmanaged foreground
-  // process: its actual parent must already be the recorded live PM2 manager.
+function hasPm2Parent(): boolean {
+  const pm2Home = process.env.PM2_HOME || join(homedir(), ".pm2");
+  // The CLI can auto-start PM2. Check the actual parent before invoking it,
+  // without trusting inherited pm_id/name or the child app's PID file.
   try {
-    const managerPid = Number(
-      readFileSync(join(process.env.PM2_HOME || join(homedir(), ".pm2"), "pm2.pid"), "utf8").trim(),
-    );
-    if (!Number.isInteger(managerPid) || managerPid <= 1 || process.ppid !== managerPid) return [];
-  } catch {
-    // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
-    return [];
+    const managerPid = Number(readFileSync(join(pm2Home, "pm2.pid"), "utf8").trim());
+    return Number.isInteger(managerPid) && managerPid > 1 && process.ppid === managerPid;
+  } catch (cause) {
+    // PM2 may have no default PID file (for example, PM2_PID_FILE_PATH was
+    // customized). A present but unreadable/mismatched file still fails closed.
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") return false;
   }
+  if (process.ppid <= 1) return false;
+  const parent = spawnSync("/bin/ps", ["-ww", "-p", String(process.ppid), "-o", "args="], {
+    encoding: "utf8",
+    timeout: 2000,
+    maxBuffer: 64 * 1024,
+  });
+  if (parent.error || parent.status !== 0) return false;
+  // This is the live parent process title, not a caller-supplied env label.
+  const home = /^PM2 v[^:\s]+: God Daemon \(([^\r\n]+)\)$/.exec(parent.stdout.trim())?.[1];
+  if (!home || !isAbsolute(home)) return false;
+  try {
+    return canonicalStatePath(home) === canonicalStatePath(pm2Home);
+  } catch {
+    // no-cause: An unverifiable manager home cannot establish runtime identity.
+    return false;
+  }
+}
+
+function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
+  if (!hasPm2Parent()) return [];
   // Query the process manager, not inherited pm_id/name environment variables.
   // Bounded and read-only; stdout contains env secrets, so it never gets logged.
   const result = spawnSync("pm2", ["jlist"], { encoding: "utf8", timeout: 2000, maxBuffer: 8 * 1024 * 1024 });
   if (result.error || result.status !== 0) return [];
   try {
-    const rows: unknown = JSON.parse(result.stdout);
-    return Array.isArray(rows) ? rows : [];
+    return parsePm2Jlist(result.stdout) as RegisteredRuntimeProcess[];
   } catch {
     // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
     return [];
@@ -86,6 +113,8 @@ function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
 export interface DatabaseBoundaryOptions {
   env?: NodeJS.ProcessEnv;
   homeDir?: string;
+  /** The OS account's home, when it is not `homeDir`. Resolved by UID when neither is injected. */
+  accountHome?: string | null;
   argv?: string[];
   modulePath?: string;
   pid?: number;
@@ -139,6 +168,107 @@ function runtimeRole(options: DatabaseBoundaryOptions): RuntimeRole | null {
   return match ? role : null;
 }
 
+const RUNTIME_INVOCATION_ENV = [
+  "RAVI_CONTEXT_KEY",
+  "RAVI_GATEWAY_URL",
+  "RAVI_SESSION_KEY",
+  "RAVI_SESSION_NAME",
+  "RAVI_AGENT_ID",
+] as const;
+
+/** A process that carries one of these acts for a runtime context or a remote gateway, never as the operator's terminal. */
+export function hasRuntimeInvocationEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  return RUNTIME_INVOCATION_ENV.some((name) => Boolean(env[name]?.trim()));
+}
+
+let installedCliEntry: string | null | undefined;
+
+/** The process entry, when it is the CLI bundle of the installed package this code belongs to. */
+function installedCliBundle(root: string, entry: string | undefined, cache: boolean): boolean {
+  if (!entry) return false;
+  if (cache && installedCliEntry !== undefined) return installedCliEntry !== null;
+  let match = false;
+  try {
+    match = canonicalStatePath(entry) === canonicalStatePath(join(root, "dist", "bundle", "index.js"));
+  } catch {
+    // no-cause: an entry that cannot be resolved is not the installed CLI.
+    match = false;
+  }
+  if (cache) installedCliEntry = match ? entry : null;
+  return match;
+}
+
+/**
+ * The installed CLI run by the operator in a terminal. The process entry must
+ * be the bundle of an installed package (one with no `src` or `.git` beside
+ * it), so a source checkout, a worktree, a build or a test never qualifies,
+ * whatever directory or environment it names. A process that carries a
+ * runtime context acts for the daemon and goes through its gateway, and
+ * `daemon run` / `channels run` are runtime roles with their own check.
+ *
+ * Such a CLI reads and writes real state. It never prepares its schema (see
+ * `isSchemaConsumer`): the daemon of the same release does.
+ */
+export function isInstalledOperatorCli(options: DatabaseBoundaryOptions = {}): boolean {
+  const env = options.env ?? process.env;
+  const argv = options.argv ?? process.argv;
+  // A test runner's entry is its test file, which the entry check below
+  // refuses. The operator's own arguments may name anything, a test file too.
+  if (env.NODE_ENV === "test") return false;
+  if (hasRuntimeInvocationEnv(env)) return false;
+  if ((argv[2] === "daemon" || argv[2] === "channels") && argv[3] === "run") return false;
+  const root = options.modulePath ? installedPackageRoot(options.modulePath) : packageRoot;
+  if (!root) return false;
+  return installedCliBundle(root, argv[1], options.argv === undefined && options.modulePath === undefined);
+}
+
+function isRealStateTarget(path: string, home: string): boolean {
+  const target = canonicalStatePath(path);
+  return (
+    within(target, canonicalStatePath(join(home, ".ravi"))) ||
+    target === canonicalStatePath(join(home, "ravi", "ravi.db"))
+  );
+}
+
+let processAccountHome: string | null | undefined;
+
+/** The account's home by UID, which a `HOME` override does not move. Looked up once, and only for the operator's CLI. */
+function accountHomeOf(options: DatabaseBoundaryOptions): string | null {
+  if (options.accountHome !== undefined) return options.accountHome;
+  if (options.homeDir !== undefined) return null;
+  processAccountHome ??= resolveAccountHome();
+  return processAccountHome;
+}
+
+/**
+ * The operator's CLI on real state: the state directory it selected, or one
+ * database it opens. Real state is `~/.ravi` under `HOME` and under the
+ * account's own home, so a `HOME` override cannot turn the CLI into the one
+ * that prepares the account's real state.
+ */
+function operatorCliUsesRealState(options: DatabaseBoundaryOptions, path?: string): boolean {
+  if (!isInstalledOperatorCli(options)) return false;
+  const home = options.homeDir ?? homedir();
+  const selected = path ?? ((options.env ?? process.env).RAVI_STATE_DIR || join(home, ".ravi"));
+  try {
+    if (isRealStateTarget(selected, home)) return true;
+    const accountHome = accountHomeOf(options);
+    return accountHome !== null && isRealStateTarget(selected, accountHome);
+  } catch {
+    // no-cause: a location that cannot be resolved is treated as real state, which this CLI never prepares.
+    return true;
+  }
+}
+
+/**
+ * Whether this process is the operator's installed CLI using real state, as
+ * the boundary itself sees it. The commands that must work with no database
+ * are chosen by this, so access and recovery never disagree.
+ */
+export function isOperatorCliOnRealState(options: DatabaseBoundaryOptions = {}): boolean {
+  return operatorCliUsesRealState(options);
+}
+
 const schemaConsumerScope = new AsyncLocalStorage<true>();
 
 /** Restricts this execution and its async work; it never grants real-state access. */
@@ -146,10 +276,25 @@ export function runAsSchemaConsumer<T>(callback: () => T): T {
   return schemaConsumerScope.run(true, callback);
 }
 
-/** The runner never initializes schemas, including when exercised in isolated state. */
+/**
+ * Whether this execution uses stores without preparing their schema. The
+ * channel runner never initializes schemas, including in isolated state. The
+ * operator's installed CLI never does on real state; on an isolated state
+ * directory it prepares what it needs, as before.
+ */
 export function isSchemaConsumer(options: DatabaseBoundaryOptions = {}): boolean {
   const argv = options.argv ?? process.argv;
-  return schemaConsumerScope.getStore() === true || (argv[2] === "channels" && argv[3] === "run");
+  return (
+    schemaConsumerScope.getStore() === true ||
+    (argv[2] === "channels" && argv[3] === "run") ||
+    operatorCliUsesRealState(options)
+  );
+}
+
+/** The same question for one database, which may be real state while the selected directory is not. */
+export function isSchemaConsumerOf(path: string | null | undefined, options: DatabaseBoundaryOptions = {}): boolean {
+  if (isSchemaConsumer(options)) return true;
+  return !!path && path !== ":memory:" && operatorCliUsesRealState(options, path);
 }
 
 /** Must run before mkdir, legacy file moves, opening SQLite, or cached reuse. */
@@ -167,10 +312,11 @@ export function assertDatabaseTargetAllowed(path: string, options: DatabaseBound
   }
   if (!within(target, realState) && !legacy) return;
   if (runtimeRole(options)) return;
+  if (isInstalledOperatorCli(options)) return;
   throw new StateDatabaseError(
-    `Refusing the real Ravi state database: ${target}. Only the installed daemon registered in PM2 may initialize or migrate it. ` +
-      'For CLI, build or test execution, pass an isolated state directory on that command: RAVI_STATE_DIR="$(mktemp -d)" bun <command>. ' +
-      "Selecting the real directory explicitly does not authorize a worktree or test. For real state, use the installed daemon gateway. No launcher setting or confirmation variable is required.",
+    `Refusing the real Ravi state database: ${target}. Only the installed Ravi runtime may open it: the daemon registered in PM2, which prepares its schema, and the installed ravi CLI in the operator's terminal. ` +
+      'A source checkout, worktree, build or test must pass an isolated state directory on that command: RAVI_STATE_DIR="$(mktemp -d)" bun <command>. ' +
+      "Selecting the real directory explicitly does not authorize a worktree or test. A process that carries a runtime context uses the installed daemon gateway. No launcher setting or confirmation variable is required.",
   );
 }
 
@@ -180,12 +326,32 @@ export function openStateDatabase(
   boundary?: DatabaseBoundaryOptions,
 ): Database {
   assertDatabaseTargetAllowed(path, boundary);
-  if (isSchemaConsumer(boundary)) {
+  const consumer = isSchemaConsumerOf(path, boundary);
+  if (consumer) {
     if (!existsSync(path))
-      throw new Error(
-        "STATE_SCHEMA_NOT_READY: start the installed daemon first to initialize state, then start ravi-channels with the same release.",
+      throw new StateNotPreparedError(
+        operatorCliUsesRealState(boundary ?? {}, path)
+          ? `STATE_SCHEMA_NOT_READY: ${path} does not exist. The installed daemon creates the stores it serves when it starts: run \`ravi daemon start\`, then retry. The CLI never creates a store in real state; for one the daemon does not serve, select an isolated state directory with RAVI_STATE_DIR.`
+          : "STATE_SCHEMA_NOT_READY: start the installed daemon first to initialize state, then start ravi-channels with the same release.",
       );
-    return new Database(path, { readwrite: !options?.readonly, ...options, create: false });
   }
-  return new Database(path, options);
+  const database = new Database(
+    path,
+    consumer ? { readwrite: !options?.readonly, ...options, create: false } : options,
+  );
+  try {
+    if (path !== ":memory:" && path !== "" && basename(canonicalStatePath(path)) === "ravi.db") {
+      // Separate publication/console handles and schema consumers share the
+      // bootstrap boundary. Registration grants no SQL lease and changes no schema.
+      registerThreadFenceConnection(database, (context) => {
+        const { assertThreadFenceBootstrapAuthorized } =
+          require("../runtime-maintenance.js") as typeof import("../runtime-maintenance.js");
+        return assertThreadFenceBootstrapAuthorized(context);
+      });
+    }
+    return database;
+  } catch (cause) {
+    database.close();
+    throw cause;
+  }
 }

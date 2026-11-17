@@ -40,6 +40,16 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   compartment `agent_identity:<agent-id>:workspace:default`.
 - Child contexts issued from a `turn-runtime` context MUST remain derived
   credentials and MUST NOT bypass `resolveRuntimeContext`.
+- Caller-supplied child metadata MUST NOT replace or erase `parentContextId`,
+  `parentContextKind`, `issuedFor`, `issuedAt` or `issuanceMode`. A child MUST
+  NOT impersonate a host-issued root for human bootstrap/relay attribution.
+- Revocation reasons MUST be monotonic with respect to authority withdrawal:
+  normal completion/rotation cleanup MUST NOT replace an explicit withdrawal
+  (including an unnamed revoke) with a benign reason. A later explicit revoke
+  MUST invalidate a previously completed context's admitted work.
+- Public `context revoke --reason` text MUST be an audit note on an explicit
+  withdrawal, never a selector for host completion/rotation semantics. Even
+  a note matching a host cleanup reason MUST invalidate admitted human work.
 - Daemon bootstrap admin detection MUST only consider `admin-bootstrap`
   contexts. Agent identity turn contexts that happen to snapshot
   `admin:system:*` MUST NOT count as bootstrap admin credentials.
@@ -70,6 +80,13 @@ Runtime context keys are opaque credentials that connect provider turns, Ravi to
   services while removing optional fields absent from the new snapshot,
   including `revokedAt` and `source`. A live key in storage is insufficient if
   host tools still see stale revocation or surface state from the previous turn.
+- Listing active contexts MUST select expiry candidates through the expiry
+  index before loading historical context payloads. Retained expired history
+  MUST NOT require a full payload scan on each global active-context lookup.
+  Both expiry and revocation remain active only when absent, zero, or strictly
+  later than the lookup timestamp. Agent, session and kind filters, descending
+  creation order, and explicit `includeInactive` inspection MUST be preserved.
+  This optimization MUST NOT cache authority decisions or delete audit history.
 
 ## Acceptance
 

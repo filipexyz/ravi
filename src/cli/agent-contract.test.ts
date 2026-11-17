@@ -98,6 +98,13 @@ describe("audited operational error controls", () => {
     expect(JSON.stringify(controls)).not.toContain("full-access --apply");
   });
 
+  it("names the refused routine only when it is a cron job or a trigger", () => {
+    expect(envelope({ routine: "cron" }).routine).toBe("cron");
+    expect(envelope({ routine: "trigger" }).routine).toBe("trigger");
+    expect(envelope({ routine: "shell" }).routine).toBeUndefined();
+    expect(envelope({ routine: { kind: "trigger" } }).routine).toBeUndefined();
+  });
+
   it("retains typed recovery and publication metadata without forwarding nested payloads", () => {
     const result = envelope({
       runId: "run_123",
@@ -435,6 +442,41 @@ describe("expectedErrorToContractError", () => {
   });
 });
 
+describe("state that is not prepared for this release", () => {
+  const notReady = Object.assign(
+    new Error(
+      'STATE_SCHEMA_NOT_READY: router is not prepared for this release. The installed daemon prepares state when it starts: run `ravi daemon restart -m "prepare state"`, then retry. The CLI never migrates state.',
+    ),
+    { code: "STATE_SCHEMA_NOT_READY" },
+  );
+
+  it("is reported under its own code with the command that fixes it, not as an internal failure", () => {
+    for (const error of [notReady, new Error("credential lookup failed", { cause: notReady })]) {
+      const contract = mapExecutionErrorToContractError("agents list", error);
+      expect(contract.exitCode).toBe(1);
+      const envelope = contract.envelope();
+      expect(envelope).toMatchObject({
+        success: false,
+        op: "agents list",
+        error: { code: "STATE_SCHEMA_NOT_READY", retryable: true },
+      });
+      expect(envelope.error.message).toContain("router is not prepared for this release");
+      expect(String(envelope.error.suggestedAction)).toContain('ravi daemon restart -m "prepare state"');
+      expect(envelope.error.message).not.toContain("failed internally");
+    }
+  });
+
+  it("leaves every other failure as it was", () => {
+    expect(mapExecutionErrorToContractError("agents list", new Error("boom")).code).toBe("UNHANDLED_ERROR");
+    expect(
+      mapExecutionErrorToContractError(
+        "agents list",
+        Object.assign(new Error("refused"), { code: "REAL_STATE_ACCESS_REFUSED" }),
+      ).code,
+    ).toBe("UNHANDLED_ERROR");
+  });
+});
+
 describe("CliExpectedError default code", () => {
   it("defaults to COMMAND_FAILED and still surfaces a safe fail() message", () => {
     const error = new CliExpectedError("Agent not found: ghost. Pass --create-agent to create it.");
@@ -532,6 +574,107 @@ describe("diagnostic identifier egress", () => {
       importProgress: { failedBatch: 0, batches: 2, rowsCreated: 0, firstFailedLine: null },
     });
     expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_");
+  });
+
+  it("keeps the runtime update recovery state in the envelope and nothing else under it", () => {
+    const before = {
+      runtimeProviderOverride: null,
+      modelOverride: "deepseek/deepseek-flash",
+      effortOverride: "high",
+      thinkingLevel: null,
+    };
+    const stored = {
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+      effortOverride: "low",
+      thinkingLevel: null,
+    };
+    const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {
+      ...errorDiagnostic(new Error("Probe failed.")),
+      runtimeUpdate: {
+        rolledBack: false,
+        superseded: false,
+        storedStateKnown: true,
+        rollbackError: "SQLITE_IOERR: disk I/O error https://example.test?key=PRIVATE_RESTORE",
+        before: { ...before, body: "PRIVATE_BEFORE_BODY" },
+        stored,
+        sessionKey: "agent:main:PRIVATE_SESSION_KEY",
+        probe: { error: "PRIVATE_PROBE_PAYLOAD" },
+      },
+    });
+
+    const runtimeUpdate = error.envelope().error.runtimeUpdate as Record<string, unknown>;
+    expect(runtimeUpdate).toEqual({
+      rolledBack: false,
+      superseded: false,
+      storedStateKnown: true,
+      before,
+      stored,
+      rollbackError: expect.stringContaining("SQLITE_IOERR"),
+    });
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_");
+  });
+
+  it("keeps an unknown stored state as nulls instead of inventing one", () => {
+    const before = {
+      runtimeProviderOverride: "codex",
+      modelOverride: null,
+      effortOverride: null,
+      thinkingLevel: "off",
+    };
+    const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {
+      ...errorDiagnostic(new Error("Probe failed.")),
+      runtimeUpdate: { rolledBack: false, superseded: null, storedStateKnown: false, before, stored: null },
+    });
+
+    expect(error.envelope().error.runtimeUpdate).toEqual({
+      rolledBack: false,
+      superseded: null,
+      storedStateKnown: false,
+      before,
+      stored: null,
+    });
+  });
+
+  it("keeps the flags and reports a snapshot as null when one of its ids is not representable", () => {
+    const four = { runtimeProviderOverride: null, modelOverride: "sonnet", effortOverride: null, thinkingLevel: null };
+    for (const [before, stored] of [
+      [{ ...four, modelOverride: "claude-sonnet[1m]" }, four],
+      [four, { ...four, modelOverride: "two words" }],
+      [{ ...four, effortOverride: "PRIVATE_BEFORE_BODY?key=PRIVATE_SECRET" }, four],
+      [four, { ...four, modelOverride: 7 }],
+    ] as const) {
+      const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {
+        ...errorDiagnostic(new Error("Probe failed.")),
+        runtimeUpdate: { rolledBack: false, superseded: false, storedStateKnown: true, before, stored },
+      });
+      const runtimeUpdate = error.envelope().error.runtimeUpdate as Record<string, unknown>;
+      expect(runtimeUpdate.rolledBack).toBe(false);
+      expect(runtimeUpdate.superseded).toBe(false);
+      expect(runtimeUpdate.storedStateKnown).toBe(true);
+      // Only the offending snapshot is nulled; the other one still reaches the envelope.
+      expect(runtimeUpdate.before === null).toBe(before !== four);
+      expect(runtimeUpdate.stored === null).toBe(stored !== four);
+      const serialized = JSON.stringify(error.envelope());
+      expect(serialized).not.toContain("[1m]");
+      expect(serialized).not.toContain("two words");
+      expect(serialized).not.toContain("PRIVATE_");
+    }
+  });
+
+  it("drops the runtime update control when its shape is not the contract", () => {
+    const four = { runtimeProviderOverride: null, modelOverride: "sonnet", effortOverride: null, thinkingLevel: null };
+    for (const runtimeUpdate of [
+      { rolledBack: "no", superseded: false, storedStateKnown: true, before: four, stored: four },
+      { rolledBack: false, superseded: false, storedStateKnown: "yes", before: four, stored: four },
+      { rolledBack: false, superseded: "maybe", storedStateKnown: true, before: four, stored: four },
+    ]) {
+      const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {
+        ...errorDiagnostic(new Error("Probe failed.")),
+        runtimeUpdate,
+      });
+      expect(Object.hasOwn(error.envelope().error, "runtimeUpdate")).toBe(false);
+    }
   });
 
   it("rejects invalid control types and redacts permitted text", () => {

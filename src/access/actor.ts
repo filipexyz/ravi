@@ -24,6 +24,13 @@
  *   session, a routine with no person as owner, a turn that already ended): refused
  *   here, with that reason, and nothing is sent. A turn that cannot be
  *   attributed never falls back to the operator's authority.
+ *
+ * A turn a trigger fired is refused too, except for a caller that asks for
+ * trigger owners (`triggerRoutines`, Bases only): there it acts as whoever
+ * owns the trigger, the operator or a contact, when it runs in the trigger's
+ * own session and its answer is posted to no chat. A trigger no person owns,
+ * one that runs in any other session, or one that answers into a chat is
+ * refused with that reason.
  */
 
 import { dbGetAgent } from "../router/router-db.js";
@@ -54,7 +61,7 @@ export type AccessActorDecision =
     };
 
 export interface AccessRoutine {
-  kind: "cron";
+  kind: "cron" | "trigger";
   id: string;
 }
 
@@ -68,6 +75,11 @@ export interface AccessActorDeps {
   readCredentials?: PagesClientDeps["readCredentials"];
   /** Overrides the classification (tests). */
   actor?: AccessActorDecision;
+  /**
+   * Let a turn a trigger fired act as the trigger's owner. Bases sets it;
+   * every other caller keeps refusing trigger turns.
+   */
+  triggerRoutines?: boolean;
   /** An agent's display name (default: the agents table). */
   getAgentName?: (agentId: string) => string | null | undefined;
 }
@@ -91,6 +103,11 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
     if (turn.speaker.kind === "agent") return refused(turn.actorPrincipal, { kind: "agent_relay" });
     return { kind: "operator", ...agentOf(turn, deps) };
   }
+  const requester = result.delegatedRequester;
+  if (requester?.speaker.kind === "owner") return { kind: "operator", ...agentOf(requester, deps) };
+  if (requester?.speaker.kind === "contact" && requester.speaker.contactId) {
+    return { kind: "contact", contactId: requester.speaker.contactId, ...agentOf(requester, deps) };
+  }
   // The operator's own relay, refused by the connector rule only for where
   // the session posts its answer.
   if (result.relay?.speaker.kind === "owner") return { kind: "operator", ...agentOf(result.relay, deps) };
@@ -105,6 +122,32 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
   if (candidate?.speaker.kind === "contact" && candidate.speaker.contactId) {
     return { kind: "contact", contactId: candidate.speaker.contactId, ...agentOf(candidate, deps) };
   }
+  // A trigger turn, for a caller that honors trigger owners: it acts as the
+  // operator when the owner does, as the contact who owns it through their
+  // own `ravi link`, and for nobody otherwise. Even then only in the
+  // trigger's own session and when its answer is posted to no chat, so what
+  // Bases returns is never read inside, or posted into, a conversation.
+  if (deps.triggerRoutines && result.triggerOwner) {
+    const { id, ownerPrincipal, actsAsOperator, ownSession, answersToOwner } = result.triggerOwner;
+    const contactId = actsAsOperator ? null : contactIdOfPrincipal(ownerPrincipal);
+    if (!actsAsOperator && !contactId) {
+      return refused(result.actorPrincipal, {
+        kind: "routine_not_operator_owned",
+        routine: "trigger",
+        jobId: id,
+        ownerPrincipal,
+      });
+    }
+    // In a session that is not the trigger's own, other conversations share
+    // what the turn reads: the owner's authority is not lent there.
+    if (!ownSession) {
+      return refused(result.actorPrincipal, { kind: "routine_shared_session", routine: "trigger", jobId: id });
+    }
+    if (!answersToOwner) {
+      return refused(result.actorPrincipal, { kind: "routine_answers_elsewhere", routine: "trigger", jobId: id });
+    }
+    return contactId ? { kind: "contact", contactId, routine: { kind: "trigger", id } } : { kind: "operator" };
+  }
   // A cron job a contact created runs as that person: Console acts for them
   // through their own `ravi link` (and refuses without one), never as the
   // operator. Any other owner (an unknown or an agent) is refused.
@@ -117,9 +160,12 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
 }
 
 function routineOwnerContactId(result: Extract<ConnectorTurnResult, { ok: false }>): string | null {
-  const owner = result.routineOwner?.ownerPrincipal;
-  if (!owner?.startsWith("contact:")) return null;
-  const contactId = owner.slice("contact:".length).trim();
+  return contactIdOfPrincipal(result.routineOwner?.ownerPrincipal);
+}
+
+function contactIdOfPrincipal(principal: string | undefined): string | null {
+  if (!principal?.startsWith("contact:")) return null;
+  const contactId = principal.slice("contact:".length).trim();
   return contactId || null;
 }
 

@@ -5,9 +5,12 @@ import {
   createRuntimeMessageGenerator,
   getDeliverableRuntimeMessages,
   getRuntimeMessagesAfterTurn,
+  hasIsolatedRuntimeTurnEnvelope,
   pickRuntimeTurnAuthorityEnvelope,
   prepareRuntimeInterruptSuccessor,
   shouldInterruptRuntimeForIncoming,
+  withoutSharedTriggerAuthority,
+  withoutTriggerAuthority,
 } from "./delivery-queue.js";
 import {
   resolveRuntimeToolEffectFence,
@@ -780,6 +783,131 @@ describe("runtime delivery queue", () => {
       _cronRunId: "run-1",
     });
   });
+  describe("trigger fires that lend their owner's authority", () => {
+    /** The trigger's own session: the snapshot names it when the fire was sent there. */
+    const OWN_SESSION = "agent:dev:trigger:trg_1:own";
+    const authority = (
+      ownerPrincipal: string,
+      ownerIsOperator = false,
+      triggerId = "trg_1",
+      ownSessionKey: string | null = OWN_SESSION,
+    ) => ({ triggerId, ownerPrincipal, ownerIsOperator, ownSessionKey });
+    const fire = (text: string, snapshot?: ReturnType<typeof authority>) =>
+      createQueuedRuntimeUserMessage({
+        prompt: text,
+        _trigger: true,
+        _triggerId: snapshot?.triggerId ?? "trg_1",
+        ...(snapshot ? { _triggerAuthority: snapshot } : {}),
+      });
+
+    it("are isolated envelopes only when a person owns the trigger and the fire runs in its own session", () => {
+      const isolated = (snapshot?: unknown) =>
+        hasIsolatedRuntimeTurnEnvelope({ _triggerAuthority: snapshot } as Parameters<
+          typeof hasIsolatedRuntimeTurnEnvelope
+        >[0]);
+      expect(isolated(authority("operator", true))).toBe(true);
+      expect(isolated(authority("contact:c_ana"))).toBe(true);
+      // Nobody to act for.
+      expect(isolated(authority("unknown"))).toBe(false);
+      expect(isolated(authority("agent:helper"))).toBe(false);
+      expect(isolated(undefined)).toBe(false);
+      // A person's trigger fired into a session that is not its own lends
+      // nothing, so it is delivered as every trigger fire always was.
+      expect(isolated(authority("operator", true, "trg_1", null))).toBe(false);
+      expect(isolated(authority("contact:c_ana", false, "trg_1", null))).toBe(false);
+    });
+
+    it("never throw on a snapshot that is not one", () => {
+      for (const malformed of ["operator", 7, true, [], {}, { ownerPrincipal: 3, ownSessionKey: OWN_SESSION }]) {
+        const prompt = { prompt: "x", _trigger: true, _triggerId: "trg_1", _triggerAuthority: malformed } as never;
+        expect(hasIsolatedRuntimeTurnEnvelope(prompt)).toBe(false);
+      }
+    });
+
+    it("never share a turn with another trigger's prompt, in either order", () => {
+      const theirs = fire("their text", authority("contact:c_ana", false, "trg_ana"));
+      const mine = fire("my text", authority("operator", true, "trg_op"));
+
+      // The contact's prompt first: it must not run under the operator's envelope, which would come last.
+      const contactFirst = makeStreamingSession({ pendingMessages: [theirs, mine] });
+      expect(getDeliverableRuntimeMessages("dev", contactFirst)).toEqual([theirs]);
+      const operatorFirst = makeStreamingSession({ pendingMessages: [mine, theirs] });
+      expect(getDeliverableRuntimeMessages("dev", operatorFirst)).toEqual([mine]);
+    });
+
+    it("never share a turn with a prompt that carries no actor at all", () => {
+      const inform = createQueuedRuntimeUserMessage({ prompt: "[System] Inform: a job finished" });
+      const mine = fire("my text", authority("operator", true));
+
+      expect(getDeliverableRuntimeMessages("dev", makeStreamingSession({ pendingMessages: [inform, mine] }))).toEqual([
+        inform,
+      ]);
+      expect(getDeliverableRuntimeMessages("dev", makeStreamingSession({ pendingMessages: [mine, inform] }))).toEqual([
+        mine,
+      ]);
+    });
+
+    it("leave fires that lend nothing folding as they always did", () => {
+      const first = fire("first", authority("unknown"));
+      const second = fire("second");
+      // A person's trigger in the agent's main session, or in a chat's: no authority, no isolation.
+      const third = fire("third", authority("operator", true, "trg_1", null));
+      const session = makeStreamingSession({ pendingMessages: [first, second, third] });
+      expect(getDeliverableRuntimeMessages("dev", session)).toEqual([first, second, third]);
+    });
+
+    it("lose the snapshot should prompts be folded together anyway", () => {
+      type FoldablePrompt = Parameters<typeof createQueuedRuntimeUserMessage>[0];
+      const snapshot = authority("operator", true);
+      const prompt: FoldablePrompt = { prompt: "x", _trigger: true, _triggerId: "trg_1", _triggerAuthority: snapshot };
+      expect(withoutSharedTriggerAuthority(prompt, 1)).toBe(prompt);
+      expect(withoutSharedTriggerAuthority(prompt, 0)).toBe(prompt);
+      const folded = withoutSharedTriggerAuthority(prompt, 2);
+      expect({ ...folded }).toEqual({ prompt: "x", _trigger: true, _triggerId: "trg_1" });
+      expect(folded).not.toHaveProperty("_triggerAuthority");
+      const bare: FoldablePrompt = { prompt: "y" };
+      expect(withoutSharedTriggerAuthority(bare, 5)).toBe(bare);
+    });
+
+    it("lose the snapshot for text that is not the fire's own, however many prompts it came from", () => {
+      type FoldablePrompt = Parameters<typeof createQueuedRuntimeUserMessage>[0];
+      const prompt: FoldablePrompt = {
+        prompt: "x",
+        _trigger: true,
+        _triggerId: "trg_1",
+        _triggerAuthority: authority("operator", true),
+      };
+      const stripped = withoutTriggerAuthority(prompt);
+      expect({ ...stripped }).toEqual({ prompt: "x", _trigger: true, _triggerId: "trg_1" });
+      expect(stripped).not.toHaveProperty("_triggerAuthority");
+      // The prompt it was given is left as it was, and one with no snapshot is returned as is.
+      expect(prompt._triggerAuthority).toEqual(authority("operator", true));
+      const bare: FoldablePrompt = { prompt: "y", _trigger: true, _triggerId: "trg_1" };
+      expect(withoutTriggerAuthority(bare)).toBe(bare);
+      expect(withoutTriggerAuthority({})).toEqual({});
+    });
+  });
+
+  it("keeps the trigger owner a turn was fired with in its continuations", () => {
+    const authority = {
+      triggerId: "trg_1",
+      ownerPrincipal: "contact:c_ana",
+      ownerIsOperator: false,
+      ownSessionKey: "agent:dev:trigger:trg_1:own",
+    };
+    const fired = createQueuedRuntimeUserMessage({
+      prompt: "row created",
+      _trigger: true,
+      _triggerId: "trg_1",
+      _triggerAuthority: authority,
+    });
+    const envelope = pickRuntimeTurnAuthorityEnvelope(fired.launchPrompt);
+    expect(envelope).toEqual({ _trigger: true, _triggerId: "trg_1", _triggerAuthority: authority });
+    expect(envelope._triggerAuthority).not.toBe(authority);
+    // A prompt that is not a trigger's never carries one.
+    expect(pickRuntimeTurnAuthorityEnvelope({ prompt: "x", _triggerAuthority: authority })).toEqual({});
+  });
+
   it("distinguishes host write-ahead from Codex and Pi asynchronous tool observation", () => {
     expect(resolveRuntimeToolEffectFence("claude", "ravi-host")).toBe("host_write_ahead");
     expect(resolveRuntimeToolEffectFence("grok", "ravi-host")).toBe("host_write_ahead");

@@ -19,6 +19,10 @@ applies_to:
   - src/runtime/host-hooks.ts
   - src/runtime/runtime-host-attachments.ts
   - src/runtime/*provider.test.ts
+  - src/runtime/model-catalog.ts
+  - src/runtime/model-catalog.test.ts
+  - src/tui/components/ModelPicker.tsx
+  - src/tui/components/ModelPicker.test.ts
   - src/remote-spawn.ts
   - src/remote-spawn.test.ts
 owners:
@@ -104,6 +108,37 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - A provider stream that ends without a terminal result MUST become recoverable `turn.failed`.
 - `setModel` MUST update current and subsequent turns; if native live switch fails, the next query MUST still use the requested model.
 - Claude native `forkSession` MUST NOT be treated as arbitrary prompt-history fork unless the SDK exposes a tested cursor that maps to Ravi prompt atoms.
+
+## Model Compatibility
+
+- SSH and NATS remote spawn MUST remove local-only `--plugin-dir`,
+  `--plugin-dir-no-mcp`, and `--setting-sources` options in both `--flag value`
+  and `--flag=value` encodings. Removing an equals-form option MUST NOT consume
+  the following argument; model, effort, and output options MUST be preserved.
+- The bundled SDK MUST support the model ids advertised by the runtime catalog.
+  Fable support includes `claude-fable-5`, `claude-fable-5-1`, and
+  `claude-fable-5-2`. Model normalization MUST preserve the requested name
+  (apart from surrounding whitespace), including `fable`, `claude-mythos-5`,
+  explicit versions, and unknown ids. Alias resolution and fallback belong to
+  the provider; Ravi MUST NOT translate names by family substrings or pin an
+  alias to a catalog version. Mythos is a distinct model, not a Fable alias.
+- Preferred model resolution MUST NOT use the display catalog as an allowlist.
+  A nonempty name MUST pass through; only an absent or blank name selects the
+  provider default. Existing handling of incompatible runtimes remains.
+- The model picker MUST retain a configured compatible id missing from its
+  display catalog as a visible selected option. Confirming without choosing
+  another model MUST preserve that id; choosing a listed alternative MUST
+  apply the newly selected id. The current option MUST NOT alter the shared
+  catalog or leak into another provider's choices.
+- The Fable family (the `fable` alias and names beginning with `fable-` or
+  `claude-fable-`, including future versions) and `claude-mythos-5` MUST NOT
+  receive `thinking: { type:
+  "disabled" }` when Ravi requests `thinking=off`. The provider MUST omit that
+  override, preserve adaptive thinking with display `omitted` for `normal`, and
+  preserve adaptive thinking with display `summarized` for `verbose`.
+- Adding an advertised model or upgrading its SDK support MUST include a real
+  Ravi session round-trip with the explicit provider and model. Compilation and
+  mocked provider tests alone MUST NOT be recorded as live acceptance.
 
 ## Validation
 

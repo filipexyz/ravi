@@ -212,6 +212,7 @@ describe("CLI command access enforcement", () => {
       expect(result.errorMessage).toContain("external_authority_requires_approval");
       expect(result.errorMessage).not.toContain("Missing capability");
       expect(result.errorMessage).not.toContain("ravi permissions allow");
+      expect(result.errorMessage).toContain("or have the operator run it");
       expect(auditEvents).toEqual([
         {
           topic: "ravi.audit.denied",
@@ -222,6 +223,37 @@ describe("CLI command access enforcement", () => {
           }),
         },
       ]);
+    });
+
+    it("keeps the operator approval alternative when localOperator is explicitly true", () => {
+      configureExternalAuthority("external-authority", approvalOnSemantic);
+      const result = runWithContext({ agentId: "dev", context: context([]) }, () =>
+        enforceCliCommandAccess({
+          group: "demo",
+          command: "create",
+          access: { ...ACCESS, localOperator: true },
+          source: "gateway",
+        }),
+      );
+      expect(result.allowed).toBe(false);
+      expect(result.decision?.decision).toBe("needs_approval");
+      expect(result.errorMessage).toContain("or have the operator run it");
+    });
+
+    it("does not offer the operator alternative for commands that disallow it without a custom note", () => {
+      configureExternalAuthority("external-authority", approvalOnSemantic);
+      const result = runWithContext({ agentId: "dev", context: context([]) }, () =>
+        enforceCliCommandAccess({
+          group: "demo",
+          command: "create",
+          access: { ...ACCESS, localOperator: false },
+          source: "gateway",
+        }),
+      );
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain("ask the authority to reissue the scope without requiresApproval");
+      expect(result.errorMessage).toContain("authorized runtime context through the gateway/agent");
+      expect(result.errorMessage).not.toContain("or have the operator run it");
     });
 
     it("keeps the approval when context-capabilities denies earlier candidates first", () => {
@@ -386,6 +418,19 @@ describe("CLI command access enforcement", () => {
     expect(result.attempted).toEqual([]);
   });
 
+  it("includes the command's recovery note when denying local operator fallback", () => {
+    const note = "Requires an authenticated session; run through the gateway/agent.";
+    const result = enforceCliCommandAccess({
+      group: "demo",
+      command: "create",
+      source: "cli",
+      access: { ...ACCESS, localOperator: false, notes: note },
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain(note);
+    expect(result.attempted).toEqual([]);
+  });
+
   it("authorizes runtime contexts through semantic command capabilities first", () => {
     const record = context([{ permission: "mutate", objectType: "demo.items", objectId: "create" }]);
     const result = runWithContext({ agentId: "dev", context: record }, () =>
@@ -544,6 +589,43 @@ describe("CLI command access enforcement", () => {
       "execute:group:tasks_report",
       "execute:group:tasks",
     ]);
+  });
+
+  it("tags a revoked context apart from a missing grant and audits the whole concrete resource id", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const record = { ...context([]), revokedAt: 1 };
+    const colonAccess: CommandAccessOptions = {
+      kind: "read",
+      resource: "env.vars",
+      action: "show",
+      risk: "low",
+      resourceId: "name",
+      requireConcreteResource: true,
+      input: ["name"],
+    };
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "env_vars",
+        command: "show",
+        access: colonAccess,
+        input: { name: "env:OPENAI_API_KEY" },
+        source: "tool",
+      }),
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.denialDetails).toMatchObject({
+      stage: "command_access",
+      reason: "runtime_context_inactive",
+      contextId: "ctx_command_access_test",
+    });
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+      expect.objectContaining({ relation: "read", objectType: "env.vars", objectId: "env:OPENAI_API_KEY" }),
+    );
+    await flushPermissionAuditEvents();
+    expect(auditEvents.at(-1)?.data).toMatchObject({
+      denied: "read:env.vars:env:OPENAI_API_KEY",
+      blockType: "cli_command_access_context_inactive",
+    });
   });
 
   it("requires the canonical concrete resource when configured and rejects semantic or legacy fallbacks", () => {

@@ -75,3 +75,5 @@ Expected:
 - manifest is sent with relative asset paths;
 - response includes cloud artifact id and version id;
 - safe server errors retain stable codes.
+
+- `src/runtime/runtime-request-context.test.ts` verifies human work handoffs use the original contact for Bases/access and do not become personal connector consent; notifications remain agent turns.

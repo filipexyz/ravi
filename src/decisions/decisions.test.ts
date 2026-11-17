@@ -1,3 +1,9 @@
+import {
+  installThreadFenceTriggers,
+  prepareThreadFence,
+  registerThreadFenceConnection,
+  runThreadMutation,
+} from "../threads/schema-fence.js";
 import { RuntimeStartCapacityError } from "../runtime/start-admission.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
@@ -418,7 +424,7 @@ describe("generic decisions and managed threads", () => {
     const first = (await askDecision(origin, { key: "a", ask: "First?" })).decision;
     const second = (await askDecision(origin, { key: "b", ask: "Second?" })).decision;
     // Stable FIFO order for the deterministic interleaving below.
-    getDb().query("UPDATE decision_deliveries SET created_at=0 WHERE decision_id=?").run(first.id);
+    runThreadMutation(getDb(), "UPDATE decision_deliveries SET created_at=0 WHERE decision_id=?", first.id);
     const firstId = decisionDeliveries(first.id)[0]!.id;
     const secondId = decisionDeliveries(second.id)[0]!.id;
     const attempts: unknown[] = [];
@@ -635,7 +641,7 @@ describe("generic decisions and managed threads", () => {
     const published: RuntimeLaunchPrompt[] = [];
     await reconcileDecisionDeliveries(deps(published), decision.id);
     const id = published[0]!._decisionDeliveryId!;
-    getDb().query("UPDATE decision_deliveries SET status='accepting',claim_until=0 WHERE id=?").run(id);
+    runThreadMutation(getDb(), "UPDATE decision_deliveries SET status='accepting',claim_until=0 WHERE id=?", id);
     await reconcileDecisionDeliveries(deps(published), decision.id);
     expect(() => resetFailedDecisionDeliveries(decision.id)).toThrow("uncertain");
     resolveUncertainDecisionDelivery(decision.id, "not_received", "fixture trace has no admission");
@@ -675,7 +681,7 @@ describe("decision wait summaries (isolated fixtures)", () => {
     });
     const { decision } = askDecisionRecord(origin, { key: "window", ask: "When?" });
     askDecisionRecord(origin, { key: "window", ask: "When exactly?" });
-    getDb().query("UPDATE decision_deliveries SET status='uncertain' WHERE decision_id=?").run(decision.id);
+    runThreadMutation(getDb(), "UPDATE decision_deliveries SET status='uncertain' WHERE decision_id=?", decision.id);
     expect(getDecisionWaitSummary(origin)).toEqual({
       openDecisionCount: 1,
       pendingAnswerCount: 0,
@@ -698,7 +704,12 @@ describe("decision wait summaries (isolated fixtures)", () => {
     const { decision } = askDecisionRecord(origin, { key: "window", ask: "When?" });
     answerDecisionRecord(decision.id, "Now");
     const db = getDb();
-    db.query("UPDATE decision_deliveries SET status=? WHERE decision_id=? AND kind='answer'").run(status, decision.id);
+    runThreadMutation(
+      db,
+      "UPDATE decision_deliveries SET status=? WHERE decision_id=? AND kind='answer'",
+      status,
+      decision.id,
+    );
     const before = db.query("SELECT total_changes() AS count").get();
     const expected = { openDecisionCount: 0, pendingAnswerCount: pending, uncertainAnswerCount: uncertain };
     expect(getDecisionWaitSummary(origin)).toEqual(expected);
@@ -719,11 +730,13 @@ describe("decision wait summaries (isolated fixtures)", () => {
     const origin = await thread();
     const { decision } = askDecisionRecord(origin, { key: "window", ask: "When?" });
     answerDecisionRecord(decision.id, "Now");
-    getDb()
-      .query(`INSERT INTO decision_deliveries(id,decision_id,kind,revision,status,created_at)
+    runThreadMutation(
+      getDb(),
+      `INSERT INTO decision_deliveries(id,decision_id,kind,revision,status,created_at)
         SELECT id || ':extra',decision_id,kind,revision+1,'uncertain',created_at
-        FROM decision_deliveries WHERE decision_id=? AND kind='answer'`)
-      .run(decision.id);
+        FROM decision_deliveries WHERE decision_id=? AND kind='answer'`,
+      decision.id,
+    );
     askDecisionRecord(origin, { key: "window", ask: "And next time?" });
     expect(getDecisionWaitSummary(origin)).toEqual({
       openDecisionCount: 1,
@@ -744,7 +757,7 @@ describe("decision wait summaries (isolated fixtures)", () => {
     askDecisionRecord(origin, { key: "window", ask: "When?" });
     const { decision } = askDecisionRecord(sibling, { key: "window", ask: "When?" });
     answerDecisionRecord(decision.id, "Now");
-    getDb().query("UPDATE decision_deliveries SET status='uncertain' WHERE decision_id=?").run(decision.id);
+    runThreadMutation(getDb(), "UPDATE decision_deliveries SET status='uncertain' WHERE decision_id=?", decision.id);
     askDecisionRecord({ ...origin, type: "task" }, { key: "task", ask: "Unrelated task?" });
     askDecisionRecord({ ...origin, id: origin.sessionKey! }, { key: "session", ask: "Unrelated origin?" });
     const before = getDb().query("SELECT total_changes() AS count").get();
@@ -767,10 +780,18 @@ describe("decision wait summaries (isolated fixtures)", () => {
 describe("decision schema migration (memory fixtures only)", () => {
   it("rolls back a colliding legacy import without losing either ledger", () => {
     const db = new Database(":memory:");
+    registerThreadFenceConnection(db);
+    prepareThreadFence(db);
     migrateDecisions(db);
-    db.exec(`INSERT INTO decisions(id,origin_type,origin_id,key,status,owner_type,ask,asked_at,created_at,updated_at) VALUES('same','task','t','k','open','unassigned','Existing',1,1,1);
-      CREATE TABLE task_decisions AS SELECT id,origin_id AS task_id,key,status,owner_type,owner_id,ask,asked_by,asked_at,answer,answered_by,answered_at,blocks,created_at,updated_at FROM decisions;`);
-    expect(() => migrateDecisions(db)).toThrow();
+    installThreadFenceTriggers(db);
+    runThreadMutation(
+      db,
+      "INSERT INTO decisions(id,origin_type,origin_id,key,status,owner_type,ask,asked_at,created_at,updated_at) VALUES('same','task','t','k','open','unassigned','Existing',1,1,1)",
+    );
+    db.exec(
+      "CREATE TABLE task_decisions AS SELECT id,origin_id AS task_id,key,status,owner_type,owner_id,ask,asked_by,asked_at,answer,answered_by,answered_at,blocks,created_at,updated_at FROM decisions",
+    );
+    expect(() => migrateDecisions(db)).toThrow("UNIQUE constraint failed");
     expect(db.query("SELECT ask FROM task_decisions").get()).toEqual({ ask: "Existing" });
     expect(db.query("SELECT * FROM decisions").all()).toHaveLength(1);
     expect(db.query("SELECT * FROM decision_history").all()).toEqual([]);
@@ -778,6 +799,8 @@ describe("decision schema migration (memory fixtures only)", () => {
   });
   it("preserves every legacy field and audit row and is idempotent", () => {
     const db = new Database(":memory:");
+    registerThreadFenceConnection(db);
+    prepareThreadFence(db);
     db.exec(`CREATE TABLE task_decisions(id TEXT PRIMARY KEY,task_id TEXT,key TEXT,status TEXT,owner_type TEXT,owner_id TEXT,ask TEXT,asked_by TEXT,asked_at INTEGER,answer TEXT,answered_by TEXT,answered_at INTEGER,blocks INTEGER,created_at INTEGER,updated_at INTEGER);
       CREATE TABLE task_events(id INTEGER,type TEXT); INSERT INTO task_events VALUES(1,'task.decision.answered');`);
     const rows = [
@@ -806,6 +829,7 @@ describe("decision schema migration (memory fixtures only)", () => {
         ...(row as (string | number | null)[]),
       );
     migrateDecisions(db);
+    installThreadFenceTriggers(db);
     migrateDecisions(db);
     const actual = db
       .query(

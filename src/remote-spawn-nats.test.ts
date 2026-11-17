@@ -54,7 +54,10 @@ const SECRET_ENV = {
   PATH: "/usr/bin",
 };
 
-function spawnAndCapturePayload(processEnv: NodeJS.ProcessEnv) {
+function spawnAndCapturePayload(
+  processEnv: NodeJS.ProcessEnv,
+  args: string[] = ["/local/cli.js", "--model", "sonnet"],
+) {
   const { nc, requests } = createMockNats();
   const spawnFn = createNatsRemoteSpawn("worker-x", {
     getNats: () => nc as any,
@@ -62,7 +65,7 @@ function spawnAndCapturePayload(processEnv: NodeJS.ProcessEnv) {
   });
   const proc = spawnFn({
     command: "bun",
-    args: ["/local/cli.js", "--model", "sonnet"],
+    args,
     cwd: "/srv/work",
     env: SECRET_ENV,
     signal: new AbortController().signal,
@@ -126,6 +129,27 @@ describe("NatsSpawnedProcess", () => {
     expect((writeError as Error).message).toContain("spawn rejected");
     expect(exit).toEqual({ code: 1, signal: null });
   });
+});
+
+describe("createNatsRemoteSpawn SDK arguments", () => {
+  it.each(["separate", "equals"] as const)(
+    "strips local options in %s form without dropping following arguments",
+    (form) => {
+      const localOption = (flag: string, value: string) => (form === "equals" ? [`${flag}=${value}`] : [flag, value]);
+      const { payload } = spawnAndCapturePayload({}, [
+        "/local/sdk.mjs",
+        ...localOption("--plugin-dir", "/local/plugins=one"),
+        "--model=claude-fable-5-2",
+        ...localOption("--plugin-dir-no-mcp", "/local/plugins-two"),
+        "--output-format=stream-json",
+        ...localOption("--setting-sources", ""),
+        "--verbose",
+        ...localOption("--plugin-dir", "/local/plugins-three"),
+      ]);
+
+      expect(payload.args).toEqual(["--model=claude-fable-5-2", "--output-format=stream-json", "--verbose"]);
+    },
+  );
 });
 
 describe("createNatsRemoteSpawn credentials", () => {
