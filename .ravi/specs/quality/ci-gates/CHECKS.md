@@ -15,6 +15,12 @@ status: active
 - `actionlint .github/workflows/*.yml` validates the release workflows.
 - Package owners follow the exact npmjs.com configuration in `CONTRIBUTING.md`; both packages require their own workflow filename and direct-publish/dist-tag allowed actions. PR validation MUST NOT publish a package, dispatch a release or change package trust/secrets.
 
+## Quality Gate Aggregator Checks
+
+- `bun test src/ci/quality-gate-shards.test.ts` fails when `test` is not exactly the sequence of `test:shard-N` scripts, when a shard script is not run by CI, or when a segment appears in two shards.
+- The same test fails when the job named `Quality Gate` loses `if: always()`, drops a `needs` entry, is renamed, or stops requiring `success` from every dependency (failed, cancelled and skipped all fail it).
+- A new CI job that is neither gated nor listed as deliberately not gated fails the same test until someone decides.
+
 ## Spec Gate Checks
 
 - `ravi specs sync --json` succeeds for the full spec tree including `quality/ci-gates`.

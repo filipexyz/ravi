@@ -26,8 +26,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  quality-gate:
-    name: Quality Gate
+  # `Quality Gate` is the only required status check. It is the last job below
+  # and passes only when every job it needs succeeded. The work itself runs in
+  # parallel jobs so wall-clock is the slowest job, not the sum of all of them.
+  policy:
+    name: Ratchet and quality policy
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -62,6 +65,39 @@ jobs:
           ERROR_CAUSE_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || '' }}
           ERROR_CAUSE_HEAD_REF: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      # The quality policy is diff-based and must evaluate the pull request delta.
+      # Push events on long-lived branches can include merge commits or branch
+      # divergence that make `origin/<base>...HEAD` much broader than the change
+      # being validated; build/typecheck/test still run for those pushes.
+      - name: Quality policy (specs + coverage)
+        if: github.event_name == 'pull_request'
+        run: bun src/ci/run-quality-gate.ts
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          # Reverts delete a feature and its focused tests, so the coverage gate
+          # would never see a test in the diff. This is an explicit signal, opt-in
+          # per PR via the `revert` label or a `revert` title prefix. It only
+          # exempts the focused-coverage check; every other gate is unchanged.
+          QUALITY_GATE_REVERT: ${{ contains(github.event.pull_request.labels.*.name, 'revert') || startsWith(github.event.pull_request.title, 'revert') }}
+
+  static:
+    name: Build, typecheck and lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Isolate Ravi state
+        run: echo "RAVI_STATE_DIR=$RUNNER_TEMP/ravi-ci-state" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Build
         run: bun run build
 
@@ -71,6 +107,24 @@ jobs:
       - name: Lint
         run: bun run lint
 
+  runtime-checks:
+    name: Runtime shutdown, state ownership and interruption
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Isolate Ravi state
+        run: echo "RAVI_STATE_DIR=$RUNNER_TEMP/ravi-ci-state" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Test shutdown failure propagation
         run: >-
           bun --no-env-file test --preload ./src/test/isolated-runtime-preload.ts
@@ -79,9 +133,6 @@ jobs:
           src/leader/shutdown.test.ts src/cli/host-cli-gateway.test.ts
           src/nats-shutdown.test.ts src/cron/runner-shutdown.test.ts
           src/triggers/__tests__/runner-shutdown.test.ts src/work-objects/nats-shutdown.test.ts
-
-      - name: Test
-        run: bun run test
 
       - name: Test state ownership
         run: bun test src/router/state-boundary.test.ts src/db/schema-owner.test.ts src/db/schema-lock.test.ts src/db/journal-mode-retry.test.ts src/cli/commands/daemon-schema-cutover.test.ts src/test/ravi-state.test.ts
@@ -99,6 +150,53 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The shards are slices of the `test` script (see `test:shard-N` in
+  # package.json). `bun run test` runs all four, so local pre-push and CI cover
+  # the same set; src/ci/quality-gate-shards.test.ts fails if they ever diverge.
+  tests:
+    name: Tests / shard ${{ matrix.shard }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    steps:
+      # Full history and tags: the fence adoption tests read legacy tags
+      # (e.g. v3.261113.2) and fail with LEGACY_TAG_MISSING in a shallow clone.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Isolate Ravi state
+        run: echo "RAVI_STATE_DIR=$RUNNER_TEMP/ravi-ci-state" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        run: bun run test:shard-${{ matrix.shard }}
+
+  swift:
+    name: Swift SDK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Isolate Ravi state
+        run: echo "RAVI_STATE_DIR=$RUNNER_TEMP/ravi-ci-state" >> "$GITHUB_ENV"
+
       - name: Set up Swift
         uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
@@ -109,20 +207,22 @@ jobs:
           swift --version
           bun run test:swift-sdk
 
-      # The quality gate is diff-based and must evaluate the pull request delta.
-      # Push events on long-lived branches can include merge commits or branch
-      # divergence that make `origin/<base>...HEAD` much broader than the change
-      # being validated; build/typecheck/test still run for those pushes.
-      - name: Quality Gate (specs + coverage)
-        if: github.event_name == 'pull_request'
-        run: bun src/ci/run-quality-gate.ts
+  quality-gate:
+    name: Quality Gate
+    # Always run: a skipped gate counts as passing for a required check, so the
+    # gate must run and fail by itself when any dependency did not succeed.
+    if: always()
+    needs: [policy, static, runtime-checks, tests, swift]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Require every gated job to succeed
         env:
-          GITHUB_BASE_REF: ${{ github.base_ref }}
-          # Reverts delete a feature and its focused tests, so the coverage gate
-          # would never see a test in the diff. This is an explicit signal, opt-in
-          # per PR via the `revert` label or a `revert` title prefix. It only
-          # exempts the focused-coverage check; every other gate is unchanged.
-          QUALITY_GATE_REVERT: ${{ contains(github.event.pull_request.labels.*.name, 'revert') || startsWith(github.event.pull_request.title, 'revert') }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'length == 5 and all(.[]; .result == "success")' > /dev/null
 
   managed-runtime-launcher:
     name: Managed runtime launcher / ${{ matrix.os }}

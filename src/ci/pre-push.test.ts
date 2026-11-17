@@ -11,7 +11,7 @@ type WorkflowJob = {
 };
 
 for (const [workflow, jobName, command, stateName] of [
-  ["ci.yml", "quality-gate", "bun run test", "ravi-ci-state"],
+  ["ci.yml", "tests", "bun run test:shard", "ravi-ci-state"],
   ["version.yml", "version-and-publish", "git push origin", "ravi-version-state"],
   ["sdk-release.yml", "release", "git push origin", "ravi-sdk-release-state"],
 ] as const) {
