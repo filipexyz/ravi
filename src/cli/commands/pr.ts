@@ -56,8 +56,9 @@ EXAMPLES
   ravi pr publish --repo owner/repo --base dev --json --execute
 ON ERROR
   PERMISSION_DENIED in a runtime context: ${PUBLICATION_CONTEXT_REQUIRED_MESSAGE}
-  RUNTIME_CONTEXT_INACTIVE: the turn that started publish ended (context revoked/expired), possibly mid-upload; it is
-  not a missing grant. Rerun with the same --expect-sha from a live turn and keep it open until the command exits.
+  RUNTIME_CONTEXT_INACTIVE: the context that started publish is no longer live (revoked, e.g. its turn ended, or
+  expired), possibly mid-upload; it is not a missing grant. Rerun with the same --expect-sha from a live turn and
+  keep it open until the command exits.
   PUBLICATION_SESSION_REQUIRED from a terminal: pass --reply-session <session> that has a chat destination.
   STATE_SCHEMA_NOT_READY from a terminal: the installed daemon prepares state; run ravi daemon restart -m "prepare state".
   WORKTREE_DIRTY: commit changes. GIT_OBJECT_MISMATCH: inspect the object; never accept a substitute SHA.
@@ -162,7 +163,7 @@ export class PrCommands {
         if (decision.denialDetails?.reason === RUNTIME_CONTEXT_INACTIVE)
           throw prError(
             "RUNTIME_CONTEXT_INACTIVE",
-            "The runtime context that started this publication was revoked or expired (its turn ended); the grant is not the problem.",
+            "The runtime context that started this publication is no longer live (revoked, for example when its turn ended, or expired); the grant is not the problem.",
             {
               ...decision.denialDetails,
               suggestedAction:

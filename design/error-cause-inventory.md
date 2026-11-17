@@ -671,10 +671,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/pages.ts | 1531 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2403 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:362b802d766dcf83c4cb7620 |
 | cli | src/cli/commands/pages.ts | 2829 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa |
-| cli | src/cli/commands/pr.ts | 123 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:6dc250c56e86cef1e8a12b0a |
-| cli | src/cli/commands/pr.ts | 190 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:f2cfbe4db8427d9da814ffde |
-| cli | src/cli/commands/pr.ts | 210 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:5542d2a05595df529681fc30 |
-| cli | src/cli/commands/pr.ts | 248 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:7ae995b61fa1be7cd180d3f6 |
+| cli | src/cli/commands/pr.ts | 124 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:6dc250c56e86cef1e8a12b0a |
+| cli | src/cli/commands/pr.ts | 191 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:f2cfbe4db8427d9da814ffde |
+| cli | src/cli/commands/pr.ts | 211 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:5542d2a05595df529681fc30 |
+| cli | src/cli/commands/pr.ts | 249 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:7ae995b61fa1be7cd180d3f6 |
 | cli | src/cli/commands/projects.ts | 178 | fixed | binding retained / no recognized error surface | src/cli/commands/projects.ts:865c35ce0a8d92d905d8f4ee |
 | cli | src/cli/commands/prox-calls.ts | 569 | fixed | binding retained / no recognized error surface | src/cli/commands/prox-calls.ts:c74f0951b8fad167c123479a |
 | cli | src/cli/commands/prox-calls.ts | 1599 | triaged-follow-up | catch-without-binding | src/cli/commands/prox-calls.ts:fb030687fa118a84b786ec8c |
@@ -1635,9 +1635,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | pr | src/pr/journal.ts | 91 | triaged-follow-up | catch-without-binding | src/pr/journal.ts:3145d57414f258193d41f330 |
 | pr | src/pr/journal.ts | 107 | fixed | binding retained / no recognized error surface | src/pr/journal.ts:09aaf61b134f593fe2233482 |
 | pr | src/pr/service.ts | 152 | fixed | binding retained / no recognized error surface | src/pr/service.ts:b8163c956737ef1f22b2c7c6 |
-| pr | src/pr/service.ts | 243 | fixed | binding retained / no recognized error surface | src/pr/service.ts:2b0c8faf46293fd0637db8d8 |
-| pr | src/pr/service.ts | 324 | fixed | binding retained / no recognized error surface | src/pr/service.ts:c05fa19a4d48b8859e0af47d |
-| pr | src/pr/service.ts | 354 | triaged-follow-up | catch-without-binding | src/pr/service.ts:33a082f827152892352f8ea2 |
+| pr | src/pr/service.ts | 243 | fixed | binding retained / no recognized error surface | src/pr/service.ts:f1b1fc7d98ae1d310aaa4e2a |
+| pr | src/pr/service.ts | 329 | fixed | binding retained / no recognized error surface | src/pr/service.ts:c05fa19a4d48b8859e0af47d |
+| pr | src/pr/service.ts | 359 | triaged-follow-up | catch-without-binding | src/pr/service.ts:33a082f827152892352f8ea2 |
 | pr | src/pr/test-fixture.ts | 40 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:60d092aaec01b4962f56ab04 |
 | pr | src/pr/test-fixture.ts | 79 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:cafd5f68270c88168afab8e4 |
 | pr | src/pr/test-fixture.ts | 115 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:7bfdcaa0eb9fb376d4a9f61d |

@@ -113,14 +113,18 @@ PR reconciliation and follow are internal helpers, not separate public commands.
 
 - Publication re-authorizes before every write, so a runtime context revoked or
   expired mid-publication (the turn that launched a detached `--execute` ended)
-  MUST fail as `RUNTIME_CONTEXT_INACTIVE` with a `suggestedAction` to rerun the
+  MUST fail as `RUNTIME_CONTEXT_INACTIVE` (message covering revoked and expired) with a `suggestedAction` to rerun the
   same command with the same `--expect-sha` from a live turn and keep it open
   until it exits. It MUST NOT surface as `PERMISSION_DENIED`: a missing grant is
   fixed by the operator, an ended context is not, and mistaking one for the
   other sends the operator after a grant that is already there. The refusal
-  MUST be audited (`cli_command_access_context_inactive`). Pattern: an
-  authority failure of a different kind than the one the caller's error code
-  names MUST get its own code and its own audit row.
+  MUST be audited (`cli_command_access_context_inactive`). This holds for `pr
+  publish` only: the gateway preflight (`src/sdk/gateway/dispatcher.ts`) still
+  answers an inactive context with `PERMISSION_DENIED` 403 carrying the tag in
+  `details`, next to the existing `runtime_context_not_live` and `CONTEXT_EXPIRED`
+  401 names. Unifying those names is a follow-up, not part of this contract.
+  The ref write MUST rethrow `RUNTIME_CONTEXT_INACTIVE` like `PERMISSION_DENIED`,
+  without reading the ref back or journaling "ref confirmed".
 - Object upload is not transactional. A failed upload can leave unreachable
   objects; do not delete them or roll back someone else's ref. Rerun the same
   command, preferably with `--expect-sha`, observing actual remote state.
