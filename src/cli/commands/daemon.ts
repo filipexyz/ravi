@@ -6,6 +6,7 @@ import {
 import { performUpgradeRestart } from "../daemon-upgrade-restart.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { getRestartReasonPath } from "../../runtime/restart-reason.js";
 import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
 /**
  * Daemon Commands - Manage ravi via PM2
@@ -76,7 +77,7 @@ import {
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
-const RESTART_REASON_FILE = join(RAVI_DIR, "restart-reason.txt");
+const RESTART_REASON_FILE = getRestartReasonPath();
 type RestartReasonFile = {
   reason?: string;
   sessionName?: string;
@@ -151,7 +152,7 @@ function writeRestartReason(
   sessionName?: string,
   options: { preserveExistingSession?: boolean } = {},
 ): void {
-  mkdirSync(RAVI_DIR, { recursive: true });
+  mkdirSync(dirname(RESTART_REASON_FILE), { recursive: true });
   const existing = options.preserveExistingSession ? readRestartReason() : null;
   const existingSession = existing?.sessionName;
   const targetSession = sessionName ?? existingSession;
@@ -599,6 +600,8 @@ export class DaemonCommands {
       cleanEnv.RAVI_BUNDLE = target.bundlePath;
       cleanEnv.RAVI_DAEMON_CWD = target.cwd;
       cleanEnv[DAEMON_RESTART_HANDOFF_ENV] = "1";
+      // The caller wrote restart-reason.txt in its state dir; the worker must read and rewrite the same file.
+      if (process.env.RAVI_STATE_DIR) cleanEnv.RAVI_STATE_DIR = process.env.RAVI_STATE_DIR;
 
       const logPath = daemonRestartLogPath();
       appendDaemonRestartLog(

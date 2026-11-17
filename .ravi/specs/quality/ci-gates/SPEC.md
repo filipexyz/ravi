@@ -39,7 +39,8 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 - CI MUST validate changed specs with `ravi specs get <spec_id> --mode full --json` and `ravi specs get <spec_id> --mode checks --json`.
 - CI MUST fail on spec id/path/kind mismatch, invalid frontmatter, missing required companion, or empty/non-verifiable CHECKS for changed specs.
 - Runtime/consumer changes MUST include or trigger focused tests.
-- Both the Quality Gate job and Version And Publish job MUST persist `RAVI_STATE_DIR` under `$RUNNER_TEMP` through `$GITHUB_ENV` before the first source command, so later steps and inherited pre-push hooks share an isolated outer sandbox. `runner` context MUST NOT appear in job-level `env`, where Actions does not allow it. Regression checks MUST execute the setup step, verify its ordering and reject a hook that drops the selection; workflow changes MUST also pass `actionlint`.
+- `Quality Gate` MUST be a final aggregator job named exactly `Quality Gate` with `if: always()` and `needs` on every other gated job (ratchet and policy, build/typecheck/lint, runtime checks, each test shard, Swift SDK). It MUST fail unless every dependency result is `success`, so failed, cancelled and skipped dependencies all fail it. The test shards `test:shard-N` MUST together be exactly `bun run test`; `src/ci/quality-gate-shards.test.ts` enforces both rules.
+- Every CI job that runs source commands and the Version And Publish job MUST persist `RAVI_STATE_DIR` under `$RUNNER_TEMP` through `$GITHUB_ENV` before the first source command, so later steps and inherited pre-push hooks share an isolated outer sandbox. `runner` context MUST NOT appear in job-level `env`, where Actions does not allow it. Regression checks MUST execute the setup step, verify its ordering and reject a hook that drops the selection; workflow changes MUST also pass `actionlint`.
 - Release verification MUST include successful tag push and npm publication under the intended dist-tag. A successful branch CI or version commit alone does not prove that release succeeded.
 - npm release jobs MUST prefer trusted publishing with job-scoped `id-token: write`, a pinned compatible npm CLI, and matching package repository metadata. npm dist-tag operations MUST use npm >=11.21.0 on npm 11 (>=12.2.0 on npm 12) with explicit trusted-publisher dist-tag permission. The existing NPM_TOKEN MAY remain a migration fallback only in the publish step; logs MUST distinguish OIDC exchange success/failure and fallback availability without printing credentials. A missing token MUST NOT skip publication or prevent OIDC. Publish/dist-tag errors, including EOTP, MUST fail the job. Workflow changes MUST NOT configure npm trust, mutate secrets/policies or trigger a release as part of PR validation.
 - Tests sharing a Bun process MUST preserve the complete export surface of shared
@@ -84,6 +85,7 @@ The production-host publication path is `ravi pr publish`, governed by `cli/pr`;
 ## Validation
 
 - `bun test src/ci/quality-gate.test.ts`
+- `bun test src/ci/quality-gate-shards.test.ts`
 - `bun run typecheck`
 - `bun run build`
 
