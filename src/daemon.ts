@@ -21,8 +21,7 @@ import { reportErrorDiagnostic } from "./utils/error-reporting.js";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { maybeNeuterDaemonStdin } from "./daemon-stdin.js";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
 import { OmniSender, OmniConsumer, createStubOmniConsumer } from "./omni/index.js";
@@ -94,6 +93,7 @@ import {
   type NatsExposureReport,
 } from "./security/nats-exposure.js";
 import { tightenStateDirPermissions } from "./security/state-dir-permissions.js";
+import { getRestartReasonPath, resolveBootRestartReason } from "./runtime/restart-reason.js";
 import { getRaviStateDir } from "./utils/paths.js";
 
 import { recordManagedRuntimeBoot } from "./runtime-process-identity.js";
@@ -131,7 +131,7 @@ function loadEnvFile() {
 
 loadEnvFile();
 
-const RESTART_REASON_FILE = join(homedir(), ".ravi", "restart-reason.txt");
+const RESTART_REASON_FILE = getRestartReasonPath();
 const RESTART_RESUME_WINDOW_MS = 60 * 60 * 1000;
 
 type RestartReasonInfo = {
@@ -204,7 +204,7 @@ function readRestartReasonInfo(options: { consume?: boolean; ensureEpoch?: boole
 }
 
 function writeRestartReasonInfo(info: RestartReasonInfo): void {
-  mkdirSync(join(homedir(), ".ravi"), { recursive: true });
+  mkdirSync(dirname(RESTART_REASON_FILE), { recursive: true });
   writeFileSync(RESTART_REASON_FILE, JSON.stringify(info));
 }
 
@@ -662,15 +662,25 @@ function createStubSender(): OmniSender {
  * A plain `pm2 restart` (deploy, supervised bounce, crash) never writes
  * `restart-reason.txt`, so this used to return early and the sessions were
  * never told the daemon had restarted. Synthesize a boot reason instead and
- * let the notice path run: without a snapshot the delivery fences into a
- * `Daemon reiniciou` notice, which is exactly what the operator needs to see.
+ * let the notice path run, but only when the fallback session exists: without a
+ * snapshot the delivery fences into a `Daemon reiniciou` notice, which is
+ * exactly what the operator needs to see. On a first boot (no reason file and
+ * no session to tell) nothing was restarted, so the boot returns quietly.
  */
 async function notifyRestartReason() {
-  const restartInfo = readRestartReasonInfo({ consume: true }) ?? {
-    reason: "supervised_restart",
-    restartEpoch: newRestartEpoch(),
-    createdAt: Date.now(),
-  };
+  const restartInfo = resolveBootRestartReason<RestartReasonInfo>({
+    fromFile: readRestartReasonInfo({ consume: true }),
+    fallbackSessionExists: Boolean(getMainSession(dbGetSetting("defaultAgent") || "main")),
+    synthesize: () => ({
+      reason: "supervised_restart",
+      restartEpoch: newRestartEpoch(),
+      createdAt: Date.now(),
+    }),
+  });
+  if (!restartInfo) {
+    log.info("First boot: no restart reason and no main session; skipping the restart notice");
+    return;
+  }
 
   dbUpsertDaemonRestartEpoch({
     restartEpoch: restartInfo.restartEpoch,

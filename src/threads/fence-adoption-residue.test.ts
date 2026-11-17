@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import {
@@ -16,6 +16,7 @@ import {
   readRestartEpoch,
   restartSnapshotResidue,
 } from "./fence-adoption-residue.js";
+import { getRestartReasonPath } from "../runtime/restart-reason.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -386,9 +387,9 @@ describe("restart snapshots (CodeRabbit r4595928941)", () => {
 
   it("the reason file, the window and the eligibility match this release's daemon and router", () => {
     const daemon = readFileSync(join(import.meta.dir, "..", "daemon.ts"), "utf8");
-    expect(daemon).toContain('const RESTART_REASON_FILE = join(homedir(), ".ravi", "restart-reason.txt");');
+    expect(daemon).toContain("const RESTART_REASON_FILE = getRestartReasonPath();");
     expect(daemon).toContain("const RESTART_RESUME_WINDOW_MS = 60 * 60 * 1000;");
-    expect(RESTART_REASON_FILE).toBe(join(homedir(), ".ravi", "restart-reason.txt"));
+    expect(RESTART_REASON_FILE).toBe(getRestartReasonPath());
     const router = readFileSync(join(import.meta.dir, "..", "router", "router-db.ts"), "utf8");
     for (const fragment of [
       "JOIN sessions live_sessions ON live_sessions.session_key = snapshots.session_key",

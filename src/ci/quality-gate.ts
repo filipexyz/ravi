@@ -117,6 +117,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/runtime/": [
     // Shutdown failure propagation and scoped drain evidence.
     "src/runtime/shutdown.test.ts",
+    // Restart-reason path follows the state dir; a first boot sends no restart notice.
+    "src/runtime/restart-reason.test.ts",
     // Reset refusal must still settle its captured logical request under ownership fences.
     "src/runtime/host-event-loop.reset-failure.test.ts",
     // Real host/generator retention, owner and cancellation fences under memory-only isolation.
