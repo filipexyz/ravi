@@ -112,7 +112,8 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
     const { databasePath } = legacyState();
     const residue = collectSqliteResidue(legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath)));
     expect(residue.unknown).toEqual([]);
-    for (const source of residue.sources) {
+    // Unverified rules are searched in every database (labelled db:table); only explicit rules must find their table here.
+    for (const source of residue.sources.filter((entry) => !entry.source.includes(":"))) {
       expect(source.detail).not.toMatchObject({ table: "absent" });
       expect(source.detail).not.toMatchObject({ database: "absent" });
     }

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
 import { type DurableResidue, type DurableResidueSource, openStateReadOnly } from "./fence-adoption.js";
 
@@ -24,6 +24,10 @@ export type ResidueRule = {
   blocking?: readonly string[];
   /** The schema itself defines the active set (a partial index); every other status is terminal. */
   terminalComplement?: boolean;
+  /** Resumption in the successor was not verified: every non-terminal status blocks, labelled so. */
+  unverified?: boolean;
+  /** Searched in every runtime database; a database whose table lacks the column holds another table. */
+  anyDatabase?: boolean;
 };
 
 /**
@@ -104,11 +108,28 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     inFlight: [],
     owner: "sync inbox applier",
   },
-  // The next three are closed by their CHECK constraints, and nothing reconciles
-  // their non-terminal rows at boot, in the tag or in the successor: only the
-  // owning flow moves them (claim owner in outbound-receipts.ts l.251-332, the
-  // turn in router-db.ts ~l.7595-7640, settleCronRun in cron/run-db.ts l.47-54).
-  // Those rows block; see the stale-row criterion pending in the PR.
+  // src/channels/slack/inbound-inbox.ts (l.284): envelopes are recorded before
+  // processing; socket-mode.ts (l.923-932, resumePendingInboundEnvelopes) resumes
+  // accepted and expired processing claims when the successor connects.
+  {
+    table: "slack_inbound_envelopes",
+    column: "state",
+    terminal: ["processed"],
+    pending: ["accepted"],
+    inFlight: ["processing"],
+    owner: "slack socket mode (resumePendingInboundEnvelopes)",
+  },
+  // The next three are closed by their CHECK constraints and nothing reconciles
+  // them at boot, in the tag or in the successor. cron_runs moves only through
+  // settleCronRun when its own session reports (cron/run-db.ts l.47-54);
+  // channel_backend_runtime_state is written per turn (router-db.ts ~l.7595-7640).
+  // channel_outbound_receipts: a claimed receipt whose lease expired is taken by
+  // another owner (pid:uuid, outbound-consumer.ts l.455) when resend_prohibited = 0
+  // (outbound-receipts.ts l.251-262), driven by the job's redelivery from the
+  // CHANNEL_OUTBOUND stream; with resend_prohibited = 1 it is never resent.
+  // Decision (operator): these non-terminal rows block. A stale-row criterion may
+  // only come in its own change, backed by a read-only collection over a copy of
+  // the production database.
   {
     table: "channel_outbound_receipts",
     column: "state",
@@ -209,6 +230,7 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     terminal: ["sent", "acked", "failed", "dead"],
     pending: ["pending"],
     inFlight: [],
+    blocking: ["leased", "sending"],
     owner: "mail outbox (explicit retry)",
   },
   {
@@ -217,6 +239,7 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     terminal: ["sent", "acked", "failed", "dead"],
     pending: ["pending"],
     inFlight: [],
+    blocking: ["leased", "sending"],
     owner: "calendar outbox (explicit retry)",
   },
   {
@@ -239,17 +262,210 @@ export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string
   { table: "approval_request_deliveries", reason: "log of approval messages already sent" },
   { table: "observer_delivery_events", reason: "log of observer events already delivered" },
   { table: "inbox_items", reason: "human inbox, not runtime work in flight" },
+  // human-bridge/bridge.db
   {
-    table: "bridge.db gateway_receipts",
-    reason: "idempotency cache of gateway operations already answered (status is the HTTP result, body the reply)",
+    table: "gateway_receipts",
+    reason: "bridge.db: idempotency cache of gateway operations already answered (status is the HTTP result)",
   },
-  { table: "bridge.db receipts", reason: "idempotency cache of bridge requests already answered" },
-  { table: "bridge.db replays", reason: "replay-protection ids with expiry, no work" },
-  { table: "bridge.db delegation_heads", reason: "delegation revisions, configuration" },
-  { table: "bridge.db conversations, messages, events, audit", reason: "conversation history and audit log" },
+  { table: "receipts", reason: "bridge.db: idempotency cache of bridge requests already answered" },
+  { table: "replays", reason: "bridge.db: replay-protection ids with expiry, no work" },
+  { table: "delegation_heads", reason: "bridge.db: delegation revisions, configuration" },
+  { table: "conversations", reason: "bridge.db: conversation history" },
+  { table: "messages", reason: "bridge.db: conversation history" },
+  { table: "events", reason: "bridge.db: conversation event log" },
+  { table: "audit", reason: "bridge.db: audit log" },
+  { table: "enrollments", reason: "bridge.db: device enrollments, configuration" },
+  { table: "state_schema_versions", reason: "bridge.db: schema bookkeeping" },
   {
-    table: "bridge.db approvals",
-    reason: "decision records; an open approval belongs to an awaiting_approval turn, which blocks",
+    table: "approvals",
+    reason: "bridge.db: decision records; an open approval belongs to an awaiting_approval turn, which blocks",
+  },
+  // Configuration, entity lifecycle and logs with a status column: no unit of accepted runtime
+  // work lives in them; the unit that does (outbox, run, delivery) has its own rule.
+  ...[
+    "calendar_accounts",
+    "calendar_calendars",
+    "calendar_event_attendees",
+    "calendar_events",
+    "calendar_sync_cursors",
+    "console_inbox_subscriptions",
+    "contact_policies",
+    "credential_connections",
+    "credential_connections_file_backend",
+    "mail_accounts",
+    "mail_mailboxes",
+    "mail_sync_cursors",
+    "watches",
+    "workflows",
+    "runtime_credentials",
+    "specs_index",
+  ].map((table) => ({ table, reason: "configuration or definition state, not work in flight" })),
+  ...[
+    "artifacts",
+    "artifact_versions",
+    "knowledge_items",
+    "crm_account_contacts",
+    "crm_facts",
+    "crm_opportunities",
+    "crm_pipeline_stage_topics",
+    "crm_pipeline_stages",
+    "crm_pipelines",
+    "crm_tasks",
+    "chat_participants",
+    "chat_messages",
+    "contact_link_states",
+    "threads",
+    "tasks",
+    "task_assignments",
+    "session_goals",
+    "session_goals_next",
+    "decisions",
+    "calendar_sync_conflicts",
+  ].map((table) => ({
+    table,
+    reason: "durable entity lifecycle (people, records, long-lived tasks); a stop does not change it",
+  })),
+  ...[
+    "artifact_events",
+    "call_events",
+    "cost_events",
+    "credential_audit_events",
+    "session_events",
+    "pr_publication_events",
+    "slack_automatic_output_decisions",
+    "mail_attachments",
+  ].map((table) => ({ table, reason: "append-only log or record metadata" })),
+  { table: "mail_messages", reason: "message records; the delivery unit is mail_outbox, which has a rule" },
+  { table: "signals", reason: "signal lifecycle; the delivery unit is signal_outbox, which has a rule" },
+  { table: "cron_jobs", reason: "job definitions (last_status); the run unit is cron_runs, which has a rule" },
+  {
+    table: "session_followup_cadences",
+    reason: "cadence definitions (last_status); the run unit is session_followup_runs, which has a rule",
+  },
+  { table: "task_observer_state", reason: "observer bookkeeping (last_status)" },
+  {
+    table: "runtime_boot_epochs",
+    reason: "runtime incarnation bookkeeping; a stale active epoch of the stopped legacy is expected",
+  },
+  ...[
+    "knowledge_gaps",
+    "knowledge_write_approvals",
+    "cloud_chat_questions",
+    "cloud_link_requests",
+    "credential_intake_requests",
+    "approval_requests",
+  ].map((table) => ({
+    table,
+    reason: "human-in-the-loop request: a pending one waits for a person, durably, and a stop does not change it",
+  })),
+];
+
+/** Statuses read as terminal for work tables whose resumption was not verified; anything else blocks. */
+const UNVERIFIED_TERMINAL = [
+  "complete",
+  "completed",
+  "done",
+  "succeeded",
+  "success",
+  "ok",
+  "failed",
+  "error",
+  "cancelled",
+  "canceled",
+  "aborted",
+  "abandoned",
+  "expired",
+  "closed",
+  "dead",
+  "rejected",
+  "denied",
+  "superseded",
+  "skipped",
+  "sent",
+  "delivered",
+  "applied",
+  "resolved",
+] as const;
+
+/**
+ * Work tables of v3.261113.2 whose resumption in the successor was not verified.
+ * Each is searched in every runtime database; a row in any status outside its
+ * terminal set blocks, labelled "owner not verified".
+ */
+export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "database">[] = [
+  ...[
+    "call_requests",
+    "call_runs",
+    "call_tool_runs",
+    "task_automation_runs",
+    "workflow_runs",
+    "workflow_node_runs",
+    "cloud_thread_runs",
+    "devin_sessions",
+    "library_agent_requests",
+    "thread_handoffs",
+    "permission_grant_applications",
+    "runtime_credential_attempts",
+    "calendar_event_reminders",
+  ].map((table) => ({
+    table,
+    column: "status",
+    terminal: UNVERIFIED_TERMINAL,
+    pending: [],
+    inFlight: [],
+    unverified: true,
+    anyDatabase: true,
+    owner: "not verified: non-terminal rows block",
+  })),
+  {
+    table: "cloud_chat_approvals",
+    column: "status",
+    terminal: ["approved", "denied", "closed"],
+    pending: ["pending"],
+    inFlight: [],
+    blocking: ["deciding"],
+    anyDatabase: true,
+    owner: "cloud chat approvals: pending waits for a person; a decision in progress blocks",
+  },
+  {
+    table: "session_adapters",
+    column: "status",
+    terminal: ["configured", "stopped", "broken"],
+    pending: [],
+    inFlight: [],
+    blocking: ["running"],
+    anyDatabase: true,
+    owner: "session adapters: a running adapter at stop blocks (restart by the successor not verified)",
+  },
+  {
+    table: "slack_thread_lifecycle",
+    column: "status",
+    terminal: ["open", "closed", "failed"],
+    pending: [],
+    inFlight: [],
+    blocking: ["queued", "root_delivered", "starting"],
+    anyDatabase: true,
+    owner: "slack thread creation: a thread being created blocks (claim resumption not verified)",
+  },
+  {
+    table: "slack_thread_turn_health",
+    column: "state",
+    terminal: ["idle", "interrupted", "attention", "closed"],
+    pending: [],
+    inFlight: [],
+    blocking: ["running"],
+    anyDatabase: true,
+    owner: "slack thread turn health: a running turn blocks (resumption not verified)",
+  },
+  {
+    table: "slack_thread_attention_notices",
+    column: "admission_status",
+    terminal: ["admitted", "refused", "uncertain"],
+    pending: [],
+    inFlight: [],
+    blocking: ["pending", "accepting"],
+    anyDatabase: true,
+    owner: "slack attention notices: an admission in progress blocks (resumption not verified)",
   },
 ];
 
@@ -276,12 +492,20 @@ export function legacyBridgeDatabasePath(routerDatabasePath: string): string {
 }
 
 /** Router rules read `ravi.db`; bridge rules read `human-bridge/bridge.db` (absent database: no work). */
-export function legacyResidueRules(routerDatabasePath: string, bridgeDatabasePath?: string): ResidueRule[] {
+export function legacyResidueRules(
+  routerDatabasePath: string,
+  bridgeDatabasePath?: string,
+  otherDatabasePaths: readonly string[] = [],
+): ResidueRule[] {
+  const everyDatabase = [
+    ...new Set([routerDatabasePath, ...(bridgeDatabasePath ? [bridgeDatabasePath] : []), ...otherDatabasePaths]),
+  ];
   return [
     ...LEGACY_ROUTER_RESIDUE_RULES.map((rule) => ({ ...rule, database: routerDatabasePath })),
     ...(bridgeDatabasePath
       ? LEGACY_BRIDGE_RESIDUE_RULES.map((rule) => ({ ...rule, database: bridgeDatabasePath }))
       : []),
+    ...LEGACY_UNVERIFIED_RESIDUE_RULES.flatMap((rule) => everyDatabase.map((database) => ({ ...rule, database }))),
   ];
 }
 
@@ -294,7 +518,9 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
   const handles = new Map<string, Database>();
   try {
     for (const rule of rules) {
-      const label = `${rule.table}.${rule.column}`;
+      const label = rule.anyDatabase
+        ? `${basename(rule.database)}:${rule.table}.${rule.column}`
+        : `${rule.table}.${rule.column}`;
       if (!identifier.test(rule.table) || !identifier.test(rule.column)) {
         unknown.push(`${label}: invalid rule`);
         continue;
@@ -316,6 +542,14 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
           sources.push({ source: label, pending: 0, inFlight: 0, detail: { table: "absent" } });
           continue;
         }
+        if (rule.anyDatabase) {
+          const columns = database.query(`PRAGMA table_info(${rule.table})`).all() as { name: string }[];
+          if (!columns.some((column) => column.name === rule.column)) {
+            // Same name, another table: the inventoried one has this column.
+            sources.push({ source: label, pending: 0, inFlight: 0, detail: { column: "absent" } });
+            continue;
+          }
+        }
         const rows = database
           .query(`SELECT ${rule.column} AS status, COUNT(*) AS count FROM ${rule.table} GROUP BY ${rule.column}`)
           .all() as { status: unknown; count: number }[];
@@ -330,7 +564,8 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
           else if (rule.inFlight.includes(status)) inFlight += row.count;
           else if (rule.blocking?.includes(status))
             unknown.push(`${label}=${status} (${row.count}): resumption not verified`);
-          else if (!rule.terminalComplement) unknown.push(`${label}=${status} (${row.count})`);
+          else if (!rule.terminalComplement)
+            unknown.push(`${label}=${status} (${row.count})${rule.unverified ? ": owner not verified" : ""}`);
         }
         sources.push({ source: label, pending, inFlight, detail: { owner: rule.owner, counts } });
       } catch (cause) {

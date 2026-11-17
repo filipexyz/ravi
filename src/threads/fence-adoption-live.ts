@@ -1,6 +1,7 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { connect } from "nats";
 import { openStateDatabase } from "../db/state-boundary.js";
+import { runtimeStateDatabasePaths } from "../db/state-paths.js";
 import { managedRuntimeBundlePath } from "../managed-runtime.js";
 import { getPm2Processes, runPm2, type Pm2Process } from "../pm2.js";
 import type { MaintenanceProcess } from "../runtime-maintenance.js";
@@ -22,6 +23,11 @@ import {
   mergeResidue,
 } from "./fence-adoption-residue.js";
 import { prepareRegisteredThreadFence } from "./schema-fence.js";
+
+/** Every runtime database of the state directory that holds `ravi.db` (the unverified rules search them all). */
+export function legacyStateDatabasePaths(routerDatabasePath: string): string[] {
+  return runtimeStateDatabasePaths({ ...process.env, RAVI_STATE_DIR: dirname(routerDatabasePath) });
+}
 
 /** Strict PM2 snapshot reduced to launcher identity; environment is never read or kept. */
 export function liveRegistrations(): ManagedRegistration[] {
@@ -116,7 +122,9 @@ export async function liveResidue(
     use: (reader: JetStreamResidueReader) => Promise<DurableResidue>,
   ) => Promise<DurableResidue> = withLiveJetStreamReader,
 ): Promise<DurableResidue> {
-  const sqlite = collectSqliteResidue(legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath)));
+  const sqlite = collectSqliteResidue(
+    legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
+  );
   let broker: DurableResidue;
   try {
     broker = await withReader((reader) => collectJetStreamResidue(reader));
@@ -159,7 +167,14 @@ export function adoptThreadFenceAtEntry(
     bundleDigest: host.bundleDigest,
     self: { pid: host.pid },
     // The successor re-derives the SQLite residue itself instead of trusting the coordinator's record.
-    residue: () => collectSqliteResidue(legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath))),
+    residue: () =>
+      collectSqliteResidue(
+        legacyResidueRules(
+          databasePath,
+          legacyBridgeDatabasePath(databasePath),
+          legacyStateDatabasePaths(databasePath),
+        ),
+      ),
     open: () => {
       const database = openStateDatabase(databasePath);
       try {

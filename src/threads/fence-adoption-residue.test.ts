@@ -74,7 +74,7 @@ describe("legacy durable residue", () => {
     db.exec("INSERT INTO jobs VALUES ('j1', 'running'), ('j2', 'succeeded')");
     db.close();
     const residue = collectSqliteResidue(legacyResidueRules(path));
-    expect(residue.unknown).toEqual(["mail_outbox.status=leased (1)"]);
+    expect(residue.unknown).toEqual(["mail_outbox.status=leased (1): resumption not verified"]);
     const byTable = Object.fromEntries(residue.sources.map((entry) => [entry.source, entry]));
     expect(byTable["decision_deliveries.status"]).toMatchObject({ pending: 1, inFlight: 2 });
     expect(byTable["jobs.status"]).toMatchObject({ pending: 0, inFlight: 1 });
